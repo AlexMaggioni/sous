@@ -76,6 +76,11 @@ import {
   deepFreeze,
 } from "./strict-json.js";
 import { createWorktree, removeWorktree, type Worktree } from "./worktree.js";
+import {
+  createOrchestratorGlobals,
+  DEFAULT_MAX_NESTING_DEPTH,
+  orchestratorRunExtras,
+} from "./orchestrator-globals.js";
 
 // WorkflowMeta / WorkflowMetaPhase / JournalEntry / WorkflowRunResult are the shared,
 // host-facing types (defined once in @automatalabs/shared-types). The bare engine
@@ -134,6 +139,8 @@ export interface SharedRuntime {
   depth: number;
   /** Root-run-wide workflow() invocation ordinal. Monotonic and never decremented. */
   nestedSeq: number;
+  /** orchestrator: the root run's id, so a nested run's journal key is relative to it. */
+  rootRunId?: string;
   /** Root-execution activity shared by nested workflow engines. */
   resumeActivity?: {
     active: number;
@@ -240,8 +247,28 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   onNestedWorkflow?: (ordinal: number, childRunId: string) => void;
   /** Internal: shared runtime inherited by a nested workflow() call. */
   sharedRuntime?: SharedRuntime;
+  /** Internal (orchestrator): how many workflow() levels sit above this run. The root is 0. */
+  nestingDepth?: number;
   /** Resolve a saved-workflow name to its script, enabling `workflow('name', args)`. */
   loadSavedWorkflow?: (name: string) => string | undefined;
+  /**
+   * orchestrator: journals of nested runs to replay on resume, keyed by the child's run id
+   * without the root run's id, such as "-nested2-nested1". A child numbers its own workflow()
+   * calls in call order, so the key is the same on every replay.
+   */
+  nestedResumeJournals?: ReadonlyMap<string, Map<number, JournalEntry>>;
+  /** orchestrator: per-run changes to steps, by label, such as { reviewer: { model: "haiku" } }. */
+  stepOverrides?: Record<string, Record<string, unknown>>;
+  /** orchestrator: how deep workflow() may nest. Default 5. */
+  maxNestingDepth?: number;
+  /** orchestrator: names of the saved workflows an agent may pick with choose({ any: true }). */
+  listSavedWorkflows?: () => Array<{ name: string; description?: string }>;
+  /**
+   * orchestrator: prepare the place a nested workflow() runs in ("worktree", "folder" or
+   * "none"). Returns the cwd for the child run, and a cleanup the engine calls when it ends.
+   */
+  prepareNestedPlace?: (request: { place: string; childRunId: string; name: string; cwd: string }) =>
+    Promise<{ cwd: string } | undefined> | { cwd: string } | undefined;
   /**
    * APPROVED script-declared custom ACP backends (from `meta.backends`), threaded to every
    * agent() call as RunOptions.backends. The engine NEVER reads meta.backends itself — a
@@ -342,6 +369,12 @@ const AGENT_OPTION_KEYS = [
   "meta",
   "promptMeta",
   "keepSession",
+  // orchestrator additions
+  "timeout",
+  "effort",
+  "skills",
+  "mcp",
+  "continue",
 ] as const;
 const AGENT_OPTION_KEY_SET = new Set<string>(AGENT_OPTION_KEYS);
 
@@ -433,6 +466,23 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    * part of the resume identity hash (hashAgentCall).
    */
   keepSession?: boolean;
+  /**
+   * orchestrator: time limit for one attempt, in seconds or as "90s", "10m", "1h". When it
+   * runs out the attempt fails with a recoverable error, so the step's retries apply.
+   */
+  timeout?: number | string;
+  /** orchestrator: reasoning effort for this step ("low" | "medium" | "high" | "xhigh" | "max"). Replaces the agent definition's. */
+  effort?: string;
+  /** orchestrator: skill names for this step. Replaces the agent definition's list. */
+  skills?: string[];
+  /** orchestrator: MCP server names (from the host's servers file). Replaces the agent definition's list. */
+  mcp?: string[];
+  /**
+   * orchestrator: continue the session of an earlier step with this label instead of a fresh
+   * session. The earlier step should set keepSession: true. Falls back to fresh when the
+   * session cannot be reopened.
+   */
+  continue?: string;
 }
 
 /** Options for a human checkpoint() — a deterministic, journaled, replayable gate. */
@@ -638,6 +688,18 @@ export async function runWorkflow<T = unknown>(
     settlementSeq: 0,
   };
 
+  // orchestrator: the latest session of the step with this label, for agent({ continue }).
+  const sessionForLabel = (label: string | undefined): AgentSessionRef | undefined => {
+    if (typeof label !== "string" || label === "") return undefined;
+    for (let i = state.agentSessions.length - 1; i >= 0; i--) {
+      const record = state.agentSessions[i]!;
+      if (record.label !== label) continue;
+      const { callIndex: _callIndex, label: _label, phase: _phase, keptOpen: _keptOpen, ...ref } = record;
+      return ref as AgentSessionRef;
+    }
+    return undefined;
+  };
+
   const agentRunner = options.agent;
   // Global caps are shared with any nested workflow() so they hold across nesting.
   const shared: SharedRuntime = options.sharedRuntime ?? {
@@ -646,6 +708,7 @@ export async function runWorkflow<T = unknown>(
     tokenUsage: copyTokenUsageBaseline(options.tokenUsageBaseline),
     depth: 0,
     nestedSeq: 0,
+    rootRunId: runId,
     ...(options.pauseSignal ? { pauseSignal: options.pauseSignal } : {}),
   };
   const pauseSignal = shared.pauseSignal;
@@ -658,6 +721,8 @@ export async function runWorkflow<T = unknown>(
   shared.resumeActivity = resumeActivity;
   const limiter = shared.limiter;
   let nestedWorkflows = false;
+  // orchestrator: this run's own workflow() count, taken in call order.
+  let nestedLocalSeq = 0;
   let abortSignaled = false;
   let rootCallsAllocated = 0;
   let realmObjectPrototype: object | undefined;
@@ -1476,9 +1541,9 @@ export async function runWorkflow<T = unknown>(
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           const slot: AttemptSlots = { sealed: false, modelFallbacks: [] };
-          const continueFromSession = attempt === 1 && continuationCandidate && !continuationSkipReason
+          const continueFromSession = (attempt === 1 && continuationCandidate && !continuationSkipReason
             ? continuationCandidate.sessionRef
-            : undefined;
+            : undefined) ?? sessionForLabel(agentOptions.continue);
           let attemptController: AbortController | undefined;
           let unregisterAttempt: (() => void) | undefined;
           let hostAttemptRegistered = false;
@@ -1533,6 +1598,8 @@ export async function runWorkflow<T = unknown>(
                   runId,
                   keepSession: agentOptions.keepSession,
                   ...(continueFromSession === undefined ? {} : { continueFromSession }),
+                  // orchestrator: per-step extras the orc runner reads.
+                  ...orchestratorRunExtras(agentOptions, agentDef),
                   callIndex,
                   callHash,
                   callPath,
@@ -2146,11 +2213,13 @@ export async function runWorkflow<T = unknown>(
   };
 
   // Nested workflow(): run a saved workflow (or a raw script) inline, sharing this
-  // run's limiter/counters so the global caps hold. One level deep only.
+  // run's limiter/counters so the global caps hold. Five levels deep by default.
   const workflowImplementation = async (
     nameOrScript: string,
     childArgs: unknown,
     resumeGate: ResumeDecisionGate | undefined,
+    nestedOptions: { place?: string } | undefined,
+    localOrdinal: number,
   ) => {
     if (resumeGate) {
       try {
@@ -2161,18 +2230,36 @@ export async function runWorkflow<T = unknown>(
       }
     }
     throwIfAborted();
-    if (shared.depth >= 1) {
-      throw new WorkflowError("workflow() can nest only one level deep", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
-        recoverable: false,
-      });
+    const maxNestingDepth = options.maxNestingDepth ?? DEFAULT_MAX_NESTING_DEPTH;
+    // orchestrator: depth is this run's own level, so parallel siblings don't add up.
+    const ownDepth = options.nestingDepth ?? 0;
+    if (ownDepth >= maxNestingDepth) {
+      throw new WorkflowError(
+        `workflow() can nest at most ${maxNestingDepth} levels deep`,
+        WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+        { recoverable: false },
+      );
     }
     options.onResumeFilesystemTainted?.();
     const ordinal = ++shared.nestedSeq;
-    const childRunId = `${runId}-nested${ordinal}`;
+    const childRunId = `${runId}-nested${localOrdinal}`;
+    const childJournalKey = childRunId.slice((shared.rootRunId ?? runId).length);
     nestedWorkflows = true;
     options.onNestedWorkflow?.(ordinal, childRunId);
     const resolved = options.loadSavedWorkflow?.(String(nameOrScript));
     const childScript = resolved ?? String(nameOrScript);
+    // orchestrator: a nested workflow can ask for its own place (a worktree, a folder, none).
+    let childCwd = options.cwd;
+    const place = nestedOptions?.place;
+    if (place !== undefined && options.prepareNestedPlace) {
+      const prepared = await options.prepareNestedPlace({
+        place: String(place),
+        childRunId,
+        name: resolved ? String(nameOrScript) : "inline",
+        cwd: options.cwd ?? process.cwd(),
+      });
+      if (prepared?.cwd) childCwd = prepared.cwd;
+    }
     shared.depth++;
     try {
       const child = await runWorkflow(childScript, {
@@ -2181,12 +2268,16 @@ export async function runWorkflow<T = unknown>(
         // approves it, and only the composition root can).
         ...options,
         args: childArgs,
+        cwd: childCwd,
         // The COMBINED signal, so a parent-side fault/abort cancels the child's agents too
         // (the child layers its own fault controller on top of this).
         signal,
         sharedRuntime: shared,
+        nestingDepth: ownDepth + 1,
         // A nested run is its own script; never reuse the parent's resume journal.
-        resumeJournal: undefined,
+        // orchestrator: it replays its own journal, recorded under its run id.
+        resumeJournal: options.nestedResumeJournals?.get(childJournalKey),
+        injectedCheckpointReplies: undefined,
         resumeFromRunId: undefined,
         preparedResume: undefined,
         preparedContinuation: undefined,
@@ -2203,12 +2294,12 @@ export async function runWorkflow<T = unknown>(
     }
   };
 
-  const workflowFn = (nameOrScript: string, childArgs?: unknown): Promise<unknown> => {
+  const workflowFn = (nameOrScript: string, childArgs?: unknown, nestedOptions?: { place?: string }): Promise<unknown> => {
     const resumeGate = appendResumeDecisionGate();
     beginResumeActivity();
     let promise: Promise<unknown>;
     try {
-      promise = workflowImplementation(nameOrScript, childArgs, resumeGate);
+      promise = workflowImplementation(nameOrScript, childArgs, resumeGate, nestedOptions, ++nestedLocalSeq);
     } catch (error) {
       promise = Promise.reject(error);
     }
@@ -2879,8 +2970,26 @@ export async function runWorkflow<T = unknown>(
       return out instanceof Promise && realmPromiseCtor ? realmPromiseCtor.resolve(out) : out;
     }) as F;
 
+  // orchestrator: code steps, questions, breakpoints and choose(), built on agent() and checkpoint().
+  const orchestrator = createOrchestratorGlobals({
+    agent: agent as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
+    checkpoint: checkpoint as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
+    workflow: workflowFn,
+    log,
+    listSavedWorkflows: options.listSavedWorkflows,
+    stepOverrides: options.stepOverrides,
+  });
+
   const context = vm.createContext({
-    agent: tracked(agent),
+    agent: tracked(orchestrator.agent),
+    sh: tracked(orchestrator.sh),
+    js: tracked(orchestrator.js),
+    py: tracked(orchestrator.py),
+    run: tracked(orchestrator.run),
+    waitUntil: tracked(orchestrator.waitUntil),
+    ask: tracked(orchestrator.ask),
+    breakpoint: tracked(orchestrator.breakpoint),
+    choose: tracked(orchestrator.choose),
     parallel: tracked(parallel),
     pipeline: tracked(pipeline),
     workflow: tracked(workflowFn),
@@ -3577,6 +3686,9 @@ function hashAgentCall(
     // this call's cached result on a later resume.
     agentDef: agentDefKey,
     schema: options.schema ?? null,
+    // orchestrator: included only when set, so older journals keep replaying.
+    ...(options.effort !== undefined ? { effort: options.effort } : {}),
+    ...(options.skills !== undefined ? { skills: options.skills } : {}),
   });
   return createHash("sha256").update(identity).digest("hex");
 }

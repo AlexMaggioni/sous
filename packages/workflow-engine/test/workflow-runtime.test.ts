@@ -928,26 +928,41 @@ return { a, nested }`;
   assert.equal(result.result.nested.child, "ran:child task");
 });
 
-test("workflow() nesting is one level deep (second level throws)", async () => {
-  const map: Record<string, string> = {
-    gc: `export const meta = { name: 'gc', description: 'g' }
-await agent('gc', { label: 'g' })
-return 1`,
-    child: `export const meta = { name: 'child', description: 'c' }
-await workflow('gc')
-return 2`,
-  };
-  const parent = `export const meta = { name: 'parent', description: 'p' }
+test("workflow() nests five levels deep, and a sixth level throws", async () => {
+  // orchestrator: the limit was one level; it is now five by default.
+  const level = `export const meta = { name: 'level', description: 'l' }
+const n = args.n
+await agent('level ' + n, { label: 'l' + n })
+if (n === args.stop) return n
+return await workflow('level', { n: n + 1, stop: args.stop })`;
+  const parent = (stop: number) => `export const meta = { name: 'parent', description: 'p' }
 let err = null
-try { await workflow('child') } catch (e) { err = String(e && e.message || e) }
-return { err }`;
+let deepest = null
+try { deepest = await workflow('level', { n: 1, stop: ${stop} }) } catch (e) { err = String(e && e.message || e) }
+return { err, deepest }`;
 
-  const result = await runWorkflow<{ err: string }>(parent, {
+  const five = await runWorkflow<{ err: string | null; deepest: number }>(parent(5), {
     agent: countingAgent().runner,
     persistLogs: false,
-    loadSavedWorkflow: (name) => map[name],
+    loadSavedWorkflow: (name) => (name === "level" ? level : undefined),
   });
-  assert.match(result.result.err, /one level deep/);
+  assert.equal(five.result.err, null);
+  assert.equal(five.result.deepest, 5);
+
+  const six = await runWorkflow<{ err: string }>(parent(6), {
+    agent: countingAgent().runner,
+    persistLogs: false,
+    loadSavedWorkflow: (name) => (name === "level" ? level : undefined),
+  });
+  assert.match(six.result.err, /at most 5 levels deep/);
+
+  const custom = await runWorkflow<{ err: string }>(parent(3), {
+    agent: countingAgent().runner,
+    persistLogs: false,
+    maxNestingDepth: 2,
+    loadSavedWorkflow: (name) => (name === "level" ? level : undefined),
+  });
+  assert.match(custom.result.err, /at most 2 levels deep/);
 });
 
 test("non-recoverable agent-limit propagates out of pipeline() too", async () => {

@@ -241,6 +241,8 @@ export interface PersistedRunState {
   };
   /** Cached agent results for resume, keyed by deterministic call index. */
   journal?: JournalEntry[];
+  /** orchestrator: cached results of nested runs' calls, each under its child run id (scope). */
+  nestedJournal?: JournalEntry[];
   /** Additive terminal observability; absent on legacy runs and when no event occurred. */
   fallbacks?: WorkflowRunFallback[];
   checkpointsTaken?: WorkflowCheckpointTaken[];

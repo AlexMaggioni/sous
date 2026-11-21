@@ -157,6 +157,17 @@ export {
   type AgentRegistry,
 } from "./agent-registry.js";
 
+// ── Orchestrator additions (code steps, questions, breakpoints, choices) ──
+export {
+  EXEC_MODEL,
+  EXEC_RESULT_SCHEMA,
+  DEFAULT_MAX_NESTING_DEPTH,
+  parseDurationSeconds,
+  orchestratorRunExtras,
+  type ExecKind,
+  type ExecSpec,
+} from "./orchestrator-globals.js";
+
 // ── Workflow directory view (folders of versioned workflow scripts) ──
 export {
   openWorkflowDir,

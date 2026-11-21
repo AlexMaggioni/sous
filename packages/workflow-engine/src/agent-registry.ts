@@ -39,6 +39,14 @@ export interface AgentDefinition {
   model?: string;
   /** Isolation mode. When "worktree", agents using this type run in a git worktree. */
   isolation?: "worktree";
+  /** orchestrator: default skills for this agent. A step's list replaces them. */
+  skills?: string[];
+  /** orchestrator: default MCP server names (from the host's servers file). A step's list replaces them. */
+  mcp?: string[];
+  /** orchestrator: default reasoning effort. */
+  effort?: string;
+  /** orchestrator: default time limit for one attempt, such as "10m". */
+  timeout?: string;
   /** Markdown body, prepended to the subagent's task as role guidance. */
   prompt: string;
   /** Where the definition was loaded from (project wins over user). */
@@ -57,6 +65,26 @@ function toStringArray(value: unknown): string[] | undefined {
  * Parse one agent-definition markdown file. Returns null only when there is no
  * usable content (no name derivable and an empty body).
  */
+function optionalString(value: unknown): string | undefined {
+  if (typeof value === "number") return String(value);
+  return typeof value === "string" ? value.trim() || undefined : undefined;
+}
+
+// orchestrator: skills, MCP servers, effort and timeout. Set only when present, so a
+// definition without them keeps its old shape and journal identity.
+function orchestratorFields(fm: Record<string, unknown>): Pick<AgentDefinition, "skills" | "mcp" | "effort" | "timeout"> {
+  const skills = toStringArray(fm.skills);
+  const mcp = toStringArray(fm.mcp ?? fm.mcpServers);
+  const effort = optionalString(fm.effort);
+  const timeout = optionalString(fm.timeout);
+  return {
+    ...(skills ? { skills } : {}),
+    ...(mcp ? { mcp } : {}),
+    ...(effort ? { effort } : {}),
+    ...(timeout ? { timeout } : {}),
+  };
+}
+
 export function parseAgentDefinition(
   content: string,
   source: "project" | "user",
@@ -83,6 +111,7 @@ export function parseAgentDefinition(
     model: typeof fm.model === "string" ? fm.model.trim() || undefined : undefined,
     isolation:
       typeof fm.isolation === "string" && fm.isolation.toLowerCase().trim() === "worktree" ? "worktree" : undefined,
+    ...orchestratorFields(fm),
     prompt,
     source,
   };
@@ -168,6 +197,9 @@ export function agentDefinitionKey(def: AgentDefinition | undefined): string | n
     disallowedTools: def.disallowedTools ?? null,
     model: def.model ?? null,
     isolation: def.isolation ?? null,
+    // orchestrator: only when set, so older journals keep replaying.
+    ...(def.skills ? { skills: def.skills } : {}),
+    ...(def.effort ? { effort: def.effort } : {}),
     prompt: def.prompt,
   });
 }

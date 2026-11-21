@@ -130,6 +130,8 @@ export interface ManagedRun {
   meta?: WorkflowMeta;
   /** Accumulated agent results for resume (deterministic call index -> result). */
   journal: JournalEntry[];
+  /** orchestrator: results of nested runs' calls, each under its child run id (entry.scope). */
+  nestedJournal?: JournalEntry[];
   /** Result-only observability collected during this execution. */
   fallbacks: WorkflowRunFallback[];
   checkpointsTaken: WorkflowCheckpointTaken[];
@@ -377,6 +379,8 @@ export interface ExecOptions {
   ) => Promise<unknown>;
   /** Called synchronously when workflow() allocates a unique child-run ordinal. */
   onNestedWorkflow?: (ordinal: number, childRunId: string) => void;
+  /** orchestrator: per-run changes to steps, by label. Pass them again on resume. */
+  stepOverrides?: Record<string, Record<string, unknown>>;
   /**
    * APPROVED script-declared custom ACP backends (`meta.backends`) for this run. The
    * composition root owns the approval decision (MCP elicitation, SDK allowScriptBackends,
@@ -391,6 +395,8 @@ export interface WorkflowManagerOptions {
   concurrency?: number;
   /** Resolve a saved-workflow name to its script, enabling nested `workflow('name')`. */
   loadSavedWorkflow?: (name: string) => string | undefined;
+  /** orchestrator: options every run gets, such as the nesting limit and nested places. */
+  orchestrator?: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "prepareNestedPlace">;
   /**
    * The injected agent backend (the frozen AgentRunner seam). May be overridden
    * per-run via ExecOptions.agent. The engine depends on this injection and never
@@ -647,6 +653,19 @@ export interface WorkflowManager {
  * best-effort observers, isolated from sibling listeners and from run execution. A
  * throwing host observer never fails, pauses, aborts, or masks cleanup for the run.
  */
+/** orchestrator: group nested journal rows by the child run id without the root run id. */
+function nestedJournalsByKey(rows: readonly JournalEntry[], rootRunId: string): Map<string, Map<number, JournalEntry>> {
+  const byKey = new Map<string, Map<number, JournalEntry>>();
+  for (const row of rows) {
+    if (typeof row.scope !== "string" || !row.scope.startsWith(rootRunId)) continue;
+    const key = row.scope.slice(rootRunId.length);
+    let entries = byKey.get(key);
+    if (!entries) byKey.set(key, (entries = new Map()));
+    entries.set(row.index, row);
+  }
+  return byKey;
+}
+
 export class WorkflowManager extends EventEmitter {
   private runs = new Map<string, ManagedRun>();
   private agentAttempts = new Map<string, Set<RegisteredAgentAttempt>>();
@@ -655,6 +674,7 @@ export class WorkflowManager extends EventEmitter {
   readonly cwd: string;
   private concurrency: number;
   private loadSavedWorkflow?: (name: string) => string | undefined;
+  private orchestratorOptions: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "prepareNestedPlace">;
   private agent?: AgentRunner;
   /** The session's main model (provider/id), for auto-tiering explore agents. */
   private mainModel?: string;
@@ -672,6 +692,7 @@ export class WorkflowManager extends EventEmitter {
     this.cwd = options.cwd ?? process.cwd();
     this.concurrency = options.concurrency ?? 8;
     this.loadSavedWorkflow = options.loadSavedWorkflow;
+    this.orchestratorOptions = options.orchestrator ?? {};
     this.agent = options.agent;
     this.mainModel = options.mainModel;
     this.sessionId = options.sessionId;
@@ -2157,6 +2178,11 @@ export class WorkflowManager extends EventEmitter {
         },
         scriptBackends: managed.admission?.scriptBackends ?? scriptBackends,
         loadSavedWorkflow: this.loadSavedWorkflow,
+        ...this.orchestratorOptions,
+        ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
+        ...(managed.nestedJournal?.length
+          ? { nestedResumeJournals: nestedJournalsByKey(managed.nestedJournal, managed.runId) }
+          : {}),
         // Manager-level `journal` events are observation, not persistence. Keep the engine's
         // deterministic journal callback active even when file journaling is disabled; the
         // manager decides below whether an entry is persisted or only emitted.
@@ -2531,7 +2557,14 @@ export class WorkflowManager extends EventEmitter {
       managed.journal = managed.journal.filter((e) => e.index !== entry.index);
       managed.journal.push(entry);
       if (entry.kind === "checkpoint") this.persistRunOrThrow(managed);
+    } else if (entry.scope!.startsWith(`${managed.runId}-nested`)) {
+      // orchestrator: keep nested results too, so a resumed run replays finished child steps.
+      managed.nestedJournal = (managed.nestedJournal ?? []).filter(
+        (e) => !(e.scope === entry.scope && e.index === entry.index),
+      );
+      managed.nestedJournal.push(entry);
     }
+    const nested = !rootScope && entry.scope!.startsWith(`${managed.runId}-nested`);
     this.publishRunEvent(
       managed,
       this.createRunEvent("journal", {
@@ -2540,7 +2573,7 @@ export class WorkflowManager extends EventEmitter {
         entry,
       }),
       () => this.persistRun(managed),
-      rootScope ? { beforeLive: () => this.persistRun(managed) } : undefined,
+      rootScope || nested ? { beforeLive: () => this.persistRun(managed) } : undefined,
     );
   }
 
@@ -2844,6 +2877,7 @@ export class WorkflowManager extends EventEmitter {
       legacyResume: managed.legacyResume,
       sessionId: this.sessionId,
       journal: managed.journal,
+      ...(managed.nestedJournal?.length ? { nestedJournal: managed.nestedJournal } : {}),
       ...(managed.fallbacks.length === 0 ? {} : { fallbacks: managed.fallbacks }),
       ...(managed.checkpointsTaken.length === 0 ? {} : { checkpointsTaken: managed.checkpointsTaken }),
       calls: managed.calls,
@@ -3346,6 +3380,7 @@ export class WorkflowManager extends EventEmitter {
       cwd: persisted.cwd,
       meta,
       journal: latestRootRows(persisted.journal ?? [], runId),
+      ...(persisted.nestedJournal?.length ? { nestedJournal: [...persisted.nestedJournal] } : {}),
       fallbacks: persisted.fallbacks ?? [],
       checkpointsTaken: [],
       calls: latestRootRows(persisted.calls ?? [], runId).map(stripLegacyCallBudgetFields),
@@ -3466,6 +3501,7 @@ export class WorkflowManager extends EventEmitter {
       onProgress: exec.onProgress,
       confirm: exec.confirm,
       onNestedWorkflow: exec.onNestedWorkflow,
+      ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
       onMissingAgentConfiguration: exec.onMissingAgentConfiguration,
       ...(revisedExecution ? {} : { resumeJournal }),
     }, revisedExecution ?? (checkpointReplies.accepted
