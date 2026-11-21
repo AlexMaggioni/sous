@@ -247,7 +247,7 @@ return [a, b]`,
       assert.deepEqual(result.effectiveLimits, {
         maxAgents: 7,
         concurrency: 3,
-        agentRetries: 3,
+        agentRetries: 4,
       });
       const estimated = Math.ceil(JSON.stringify("four").length / 4) +
         Math.ceil(JSON.stringify("long prompt").length / 4);

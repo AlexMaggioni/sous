@@ -84,6 +84,7 @@ import {
   type WorkflowAgentAttemptControl,
   type WorkflowRunOptions,
   hashWorkflowAdmissionRouting,
+  isStepFailedPause,
   parseWorkflowScript,
   resolveWorkflowRunLimits,
   runWorkflow,
@@ -396,7 +397,7 @@ export interface WorkflowManagerOptions {
   /** Resolve a saved-workflow name to its script, enabling nested `workflow('name')`. */
   loadSavedWorkflow?: (name: string) => string | undefined;
   /** orchestrator: options every run gets, such as the nesting limit and nested places. */
-  orchestrator?: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "prepareNestedPlace">;
+  orchestrator?: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "prepareNestedPlace" | "pauseOnFailedStep">;
   /**
    * The injected agent backend (the frozen AgentRunner seam). May be overridden
    * per-run via ExecOptions.agent. The engine depends on this injection and never
@@ -591,6 +592,7 @@ function runReason(status: RunStatus, error: WorkflowError | undefined): string 
   if (error?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT) return "usage_limit";
   if (error?.code === WorkflowErrorCode.AUTH_REQUIRED) return "auth_required";
   if (error?.code === WorkflowErrorCode.CHECKPOINT_REQUIRED) return "checkpoint_required";
+  if (isStepFailedPause(error)) return error?.message;
   if (error?.code === WorkflowErrorCode.PAUSE_REQUESTED) return "requested";
   return error?.message;
 }
@@ -674,7 +676,7 @@ export class WorkflowManager extends EventEmitter {
   readonly cwd: string;
   private concurrency: number;
   private loadSavedWorkflow?: (name: string) => string | undefined;
-  private orchestratorOptions: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "prepareNestedPlace">;
+  private orchestratorOptions: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "prepareNestedPlace" | "pauseOnFailedStep">;
   private agent?: AgentRunner;
   /** The session's main model (provider/id), for auto-tiering explore agents. */
   private mainModel?: string;
@@ -2902,7 +2904,9 @@ export class WorkflowManager extends EventEmitter {
               : managed.error?.code === WorkflowErrorCode.CHECKPOINT_REQUIRED
                 ? "checkpoint_required"
                 : managed.error?.code === WorkflowErrorCode.PAUSE_REQUESTED
-                  ? "requested"
+                  ? isStepFailedPause(managed.error)
+                    ? "step_failed"
+                    : "requested"
                   : undefined
           : undefined,
       // resetHint stays usage-limit-only.

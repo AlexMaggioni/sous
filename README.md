@@ -155,10 +155,11 @@ pnpm build        # tsc -b across all packages
 
 ## Packages
 
-These are the packages you interact with directly. The first two are the primary workflow entry points; the latter two expose ACP servers:
+These are the packages you interact with directly. `orc` is orchestrator's command line. The next two are AgentPrism's workflow entry points; the last two expose ACP servers:
 
 | Package | What it is |
 |---|---|
+| **`@orchestrator/orc`** | The **`orc` command**: runs saved workflows in the background with a machine-wide agent cap, answers their questions and breakpoints, pauses and resumes them, and schedules them. See [`docs/orchestrator.md`](docs/orchestrator.md). |
 | **`@automatalabs/workflows`** | The canonical public **SDK** — a thin facade that runs workflow scripts programmatically over the default ACP backend, and re-exports the supported engine + backend integration surface. Start here. |
 | **`@automatalabs/mcp-server`** | The stdio **MCP server** (bin: `agentprism-workflow`) exposing the `workflow` tool (asynchronous run/resume, setup response, bounded status/result, permission response, stop, and an Apps monitor) — built on `@automatalabs/workflows`. |
 | **`@automatalabs/acp-server`** | The extension-aware **ACP proxy** (bin: `agentprism-acp-server`) over stdio, Streamable HTTP, or WebSocket: probe every configured backend on a discovery connection, then pin each operational connection to Claude, Codex, OpenCode, pi, or a custom ACP server. |

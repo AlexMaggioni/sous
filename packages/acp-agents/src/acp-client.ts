@@ -1484,7 +1484,21 @@ function initializeTimeoutMs(): number {
 function layerMeta(...layers: Array<Record<string, unknown> | undefined>): Record<string, unknown> | undefined {
   const present = layers.filter((l): l is Record<string, unknown> => Boolean(l && Object.keys(l).length > 0));
   if (present.length === 0) return undefined;
-  return Object.assign({}, ...present);
+  // orchestrator: merge nested objects, so a caller's `claudeCode.options.effort` survives
+  // the backend's `claudeCode.options.outputFormat`. A later layer wins on a plain value.
+  return present.reduce<Record<string, unknown>>((merged, layer) => deepMergeMeta(merged, layer), {});
+}
+
+function deepMergeMeta(base: Record<string, unknown>, over: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(over)) {
+    const existing = out[key];
+    const bothObjects =
+      existing !== null && typeof existing === "object" && !Array.isArray(existing) &&
+      value !== null && typeof value === "object" && !Array.isArray(value);
+    out[key] = bothObjects ? deepMergeMeta(existing as Record<string, unknown>, value as Record<string, unknown>) : value;
+  }
+  return out;
 }
 
 function acpMcpServerIds(servers: McpServerConfig[] | undefined): string[] {

@@ -333,3 +333,49 @@ return { first, kids, last }`;
     }
   });
 });
+
+describe("failed steps", () => {
+  it("pause the run with pauseOnFailedStep, even when the script catches, and resume runs the step again", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { WorkflowManager } = await import("../src/workflow-manager.js");
+    let fixed = false;
+    const prompts: string[] = [];
+    const runner: AgentRunner = {
+      async run<S extends TSchema | undefined = undefined>(prompt: string): Promise<AgentResult<S>> {
+        prompts.push(prompt);
+        if (prompt === "flaky" && !fixed) throw new Error("the build is broken");
+        return `done:${prompt}` as AgentResult<S>;
+      },
+    };
+    const cwd = mkdtempSync(join(tmpdir(), "failed-step-cwd-"));
+    const persistenceRoot = mkdtempSync(join(tmpdir(), "failed-step-store-"));
+    try {
+      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: runner, orchestrator: { pauseOnFailedStep: true } });
+      const script = `export const meta = { name: 'steps', description: 's' }
+const first = await agent('first', { label: 'first' })
+let flaky
+try { flaky = await agent('flaky', { label: 'flaky', retries: 1 }) } catch (e) { flaky = 'caught' }
+const other = await agent('other', { label: 'other' })
+return { first, flaky, other }`;
+      const paused = await manager.runSync(script, undefined, { runId: "failed-step" });
+      assert.equal(paused.status, "paused");
+      assert.deepEqual(prompts, ["first", "flaky", "flaky"], "one retry, then nothing new starts");
+      const persisted = manager.getPersistence().load("failed-step");
+      assert.equal(persisted?.pauseReason, "step_failed");
+      assert.match(persisted?.reason ?? "", /step "flaky" failed after 2 tries: .*the build is broken/);
+
+      fixed = true;
+      const started = await manager.resumeInBackground("failed-step");
+      if (!started.accepted) assert.fail("resume refused");
+      const completed = await started.promise;
+      assert.equal(completed.status, "completed");
+      assert.deepEqual(prompts.slice(3), ["flaky", "other"], "the finished step replays");
+      assert.deepEqual(structuredClone(completed.result), { first: "done:first", flaky: "done:flaky", other: "done:other" });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(persistenceRoot, { recursive: true, force: true });
+    }
+  });
+});

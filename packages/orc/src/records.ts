@@ -1,0 +1,97 @@
+// What orc knows about a run beyond the engine's own state: which workflow, where it works,
+// who started it and which process runs it. One JSON file per root run in records/.
+
+import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import type { HomePaths, Place } from "./home.js";
+import type { Priority } from "./slots.js";
+
+export interface RunRecord {
+  runId: string;
+  /** The workflow's name, or the file's stem when run from a path. */
+  workflow: string;
+  /** The script file the run started from. */
+  file: string;
+  args: Record<string, unknown>;
+  place: Place;
+  /** Where the run works. */
+  cwd: string;
+  /** The project the run belongs to: its agents, workflows and servers. */
+  projectDir: string;
+  worktree?: string;
+  branch?: string;
+  priority: Priority;
+  /** Who started it: a person at the command line, a schedule, or a rerun. */
+  origin: "cli" | "schedule" | "rerun";
+  schedule?: string;
+  /** The worker process, while one runs the run. */
+  pid?: number;
+  createdAt: string;
+  /** Per-run changes to steps, by label. */
+  overrides?: Record<string, Record<string, unknown>>;
+  /** Model for agent steps that name none. */
+  defaultModel?: string;
+  concurrency?: number;
+  /** Set when the run was started again from another run. */
+  rerunOf?: string;
+}
+
+function recordFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.json`);
+}
+
+export function saveRecord(paths: HomePaths, record: RunRecord): void {
+  const file = recordFile(paths, record.runId);
+  const temp = `${file}.${process.pid}.tmp`;
+  writeFileSync(temp, `${JSON.stringify(record, null, 2)}\n`);
+  renameSync(temp, file);
+}
+
+export function loadRecord(paths: HomePaths, runId: string): RunRecord | undefined {
+  const file = recordFile(paths, runId);
+  if (!existsSync(file)) return undefined;
+  return JSON.parse(readFileSync(file, "utf8")) as RunRecord;
+}
+
+export function updateRecord(paths: HomePaths, runId: string, change: Partial<RunRecord>): RunRecord | undefined {
+  const record = loadRecord(paths, runId);
+  if (!record) return undefined;
+  const next = { ...record, ...change };
+  for (const [key, value] of Object.entries(change)) if (value === undefined) delete (next as Record<string, unknown>)[key];
+  saveRecord(paths, next);
+  return next;
+}
+
+/** Every run orc started, newest first. */
+export function listRecords(paths: HomePaths): RunRecord[] {
+  if (!existsSync(paths.records)) return [];
+  const out: RunRecord[] = [];
+  for (const name of readdirSync(paths.records)) {
+    if (!name.endsWith(".json")) continue;
+    try {
+      out.push(JSON.parse(readFileSync(join(paths.records, name), "utf8")) as RunRecord);
+    } catch {
+      // a record being written
+    }
+  }
+  return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** Find a run by its full id or a unique start of it. */
+export function findRecord(paths: HomePaths, idOrPrefix: string): RunRecord | undefined {
+  const exact = loadRecord(paths, idOrPrefix);
+  if (exact) return exact;
+  const matches = listRecords(paths).filter((record) => record.runId.startsWith(idOrPrefix));
+  if (matches.length > 1) throw new Error(`"${idOrPrefix}" matches ${matches.length} runs. Give more of the id.`);
+  return matches[0];
+}
+
+export function processAlive(pid: number | undefined): boolean {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}

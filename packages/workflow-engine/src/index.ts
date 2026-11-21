@@ -6,6 +6,7 @@
 export {
   runWorkflow,
   parseWorkflowScript,
+  isStepFailedPause,
   workflowMayUseDefaultModel,
   hashCheckpointInputs,
   hashWorkflowAdmissionRouting,
@@ -148,6 +149,7 @@ export {
 // ── Agent registry (parameterized agents dir) ──
 export {
   loadAgentRegistry,
+  agentDirsFromOption,
   resolveAgentType,
   parseAgentDefinition,
   applyToolPolicy,

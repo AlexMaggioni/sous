@@ -9,7 +9,7 @@ export const MAX_AGENTS_PER_RUN = 1000;
 export const MAX_CONCURRENCY = 16;
 
 /** Maximum automatic retry attempts after a recoverable agent failure. */
-export const MAX_AGENT_RETRIES = 3;
+export const MAX_AGENT_RETRIES = 4;
 
 /** Legacy project-relative directory for persisted workflow run state. New writes use workflowProjectPaths(). */
 export const WORKFLOW_RUNS_DIR = ".agentprism/workflows/runs";

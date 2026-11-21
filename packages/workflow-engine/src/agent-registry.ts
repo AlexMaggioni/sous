@@ -22,7 +22,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, delimiter, join } from "node:path";
 import { AGENTS_DIR } from "./config.js";
 import { parseFrontmatter } from "./frontmatter.js";
 
@@ -160,6 +160,16 @@ export function loadAgentRegistry(cwd: string, opts?: { projectDir?: string; use
     }
   }
   return registry;
+}
+
+/**
+ * orchestrator: turn the engine's `agentsDir` option into the registry's dirs. It may hold
+ * a project dir and a user dir joined by the path delimiter, so the project wins over the user.
+ */
+export function agentDirsFromOption(agentsDir: string | undefined): { projectDir: string; userDir: string } | undefined {
+  if (!agentsDir) return undefined;
+  const [projectDir, userDir] = agentsDir.split(delimiter);
+  return { projectDir: projectDir!, userDir: userDir || projectDir! };
 }
 
 /** Resolve an agentType name to its definition, or undefined if not registered. */

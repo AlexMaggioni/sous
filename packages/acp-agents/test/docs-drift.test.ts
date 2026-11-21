@@ -179,14 +179,10 @@ test("root agent entrypoints preserve planning freedom and monorepo delivery rul
   const codexAgents = readRepoFile("packages/codex-acp/AGENTS.md");
 
   assert.equal(claude.trim(), "@AGENTS.md", "CLAUDE.md must import the canonical root AGENTS.md");
-  assert.ok(
-    agents.includes("Existing implementations are not the design authority"),
-    "root agent guidance must make first-principles design the default",
-  );
-  assert.ok(
-    agents.includes('Nothing in this repository is "frozen"'),
-    "root agent guidance must not let any document freeze an implementation",
-  );
+  // orchestrator replaced upstream's root guidance with its own. These are its rules.
+  assert.ok(agents.includes("`upstream` remote"), "root agent guidance must name the upstream remote");
+  assert.ok(agents.includes("Change AgentPrism's code freely"), "root agent guidance must allow changing upstream code");
+  assert.ok(agents.includes("Never weaken a test"), "root agent guidance must forbid weakening tests");
   assert.ok(
     !agents.includes("docs/specs") && !agents.includes("design-notes"),
     "root agent guidance must not route agents to archived design records",
@@ -194,11 +190,6 @@ test("root agent entrypoints preserve planning freedom and monorepo delivery rul
   assert.ok(
     contributing.includes("Existing implementations are not the design authority"),
     "CONTRIBUTING.md must carry the same first-principles rule",
-  );
-  assert.match(
-    agents,
-    /Any stale package or dependency[\s\S]*immediate maintenance work[\s\S]*separate update PR/,
-    "root agent policy must make every gated update an immediate separate maintenance lane",
   );
   assert.match(
     contributing,
@@ -234,7 +225,7 @@ test("public package inventories cover every workspace package", () => {
       manifest: JSON.parse(readRepoFile(`packages/${entry.name}/package.json`)) as { name: string },
     }));
 
-  assert.equal(manifests.length, 9, "update the documented package-count contract when the workspace changes");
+  assert.equal(manifests.length, 10, "update the documented package-count contract when the workspace changes");
   for (const path of ["README.md", "docs/api.md"]) {
     const text = readRepoFile(path);
     for (const { manifest } of manifests) {
@@ -255,7 +246,7 @@ test("public package inventories cover every workspace package", () => {
   for (const { dir } of manifests) {
     assert.ok(contributing.includes(`packages/${dir}`), `CONTRIBUTING.md must inventory packages/${dir}`);
   }
-  assert.match(contributing, /\(monorepo\) of nine packages/);
+  assert.match(contributing, /\(monorepo\) of ten packages/);
 });
 
 test("auth, MCP, and authoring docs retain the implemented contracts", () => {

@@ -33,6 +33,7 @@ import {
   type AgentDefinition,
   type AgentRegistry,
   agentDefinitionKey,
+  agentDirsFromOption,
   loadAgentRegistry,
   resolveAgentType,
 } from "./agent-registry.js";
@@ -79,6 +80,7 @@ import { createWorktree, removeWorktree, type Worktree } from "./worktree.js";
 import {
   createOrchestratorGlobals,
   DEFAULT_MAX_NESTING_DEPTH,
+  EXEC_MODEL,
   orchestratorRunExtras,
 } from "./orchestrator-globals.js";
 
@@ -115,6 +117,25 @@ export interface WorkflowAgentOptions {
    * identity hash and therefore stays deterministic throughout the run and its nested workflows.
    */
   defaultModel?: string;
+}
+
+/** orchestrator: codes the host already turns into a pause, a stop or a reply. pauseOnFailedStep leaves them alone. */
+const HOST_HANDLED_CODES: ReadonlySet<WorkflowErrorCode> = new Set([
+  WorkflowErrorCode.PROVIDER_USAGE_LIMIT,
+  WorkflowErrorCode.AUTH_REQUIRED,
+  WorkflowErrorCode.CHECKPOINT_REQUIRED,
+  WorkflowErrorCode.PAUSE_REQUESTED,
+  WorkflowErrorCode.WORKFLOW_ABORTED,
+]);
+
+/** orchestrator: true for the pause a failed step causes under pauseOnFailedStep. */
+export function isStepFailedPause(error: { code?: unknown; details?: unknown } | undefined): boolean {
+  return (
+    error?.code === WorkflowErrorCode.PAUSE_REQUESTED &&
+    typeof error.details === "object" &&
+    error.details !== null &&
+    (error.details as { stepFailed?: unknown }).stepFailed === true
+  );
 }
 
 /**
@@ -261,11 +282,19 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   stepOverrides?: Record<string, Record<string, unknown>>;
   /** orchestrator: how deep workflow() may nest. Default 5. */
   maxNestingDepth?: number;
+  /**
+   * orchestrator: a step that fails on its last try, or fails in a way a retry cannot fix,
+   * pauses the whole run instead of returning null or failing it. Steps already running finish
+   * and journal, nothing new starts, and the run's pauseReason is "step_failed". The user fixes
+   * the cause and resumes: the finished steps replay and the failed step runs again.
+   */
+  pauseOnFailedStep?: boolean;
   /** orchestrator: names of the saved workflows an agent may pick with choose({ any: true }). */
   listSavedWorkflows?: () => Array<{ name: string; description?: string }>;
   /**
    * orchestrator: prepare the place a nested workflow() runs in ("worktree", "folder" or
-   * "none"). Returns the cwd for the child run, and a cleanup the engine calls when it ends.
+   * "none"). Returns the cwd for the child run. Nothing is cleaned up: worktrees are kept
+   * until their branch is merged.
    */
   prepareNestedPlace?: (request: { place: string; childRunId: string; name: string; cwd: string }) =>
     Promise<{ cwd: string } | undefined> | { cwd: string } | undefined;
@@ -657,7 +686,7 @@ export async function runWorkflow<T = unknown>(
     (options.routingSnapshot ? new Map(options.routingSnapshot.agentDefinitions.map((definition) => [definition.name, definition])) : options.agentRegistry) ??
     loadAgentRegistry(
       baseCwd,
-      options.agentsDir ? { projectDir: options.agentsDir, userDir: options.agentsDir } : undefined,
+      agentDirsFromOption(options.agentsDir),
     );
 
   // Initialize logger
@@ -810,7 +839,9 @@ export async function runWorkflow<T = unknown>(
   // A pause request is a gate, not a cancellation: nothing already executing is interrupted, but
   // every later admission (and every queued attempt) refuses with PAUSE_REQUESTED. Like a pending
   // checkpoint, the refusal is remembered so a script that catches it cannot keep the run going.
-  const pauseRequested = () => pauseSignal?.aborted === true && !signal.aborted;
+  // orchestrator: a step that failed with pauseOnFailedStep sets pendingPause, which gates
+  // admissions the same way.
+  const pauseRequested = () => (pauseSignal?.aborted === true || shared.pendingPause !== undefined) && !signal.aborted;
   const pauseError = () =>
     (shared.pendingPause ??= new WorkflowError(
       "workflow paused by host request: executing agent calls finished, nothing new was admitted",
@@ -1367,7 +1398,8 @@ export async function runWorkflow<T = unknown>(
       }
 
       const recordTokens = (value: unknown, usage: AgentUsage | undefined): number => {
-        const tokens = usage && usage.total > 0 ? usage.total : estimateTokens(value) + estimateTokens(prompt);
+        // A code step uses no model, so it counts no tokens.
+        const tokens = modelSpec === EXEC_MODEL ? 0 : usage && usage.total > 0 ? usage.total : estimateTokens(value) + estimateTokens(prompt);
         if (usage) {
           shared.tokenUsage.input += usage.input;
           shared.tokenUsage.output += usage.output;
@@ -1802,6 +1834,17 @@ export async function runWorkflow<T = unknown>(
               continue;
             }
 
+            if (options.pauseOnFailedStep && !HOST_HANDLED_CODES.has(workflowError.code)) {
+              const tries = workflowError.recoverable ? `after ${maxAttempts} tr${maxAttempts === 1 ? "y" : "ies"}` : "and a retry cannot fix it";
+              const message = `step "${label}" failed ${tries}: ${workflowError.message}`;
+              log(`${message}. The run pauses: fix the cause and resume it.`);
+              emitFailure(workflowError, "runner", "error", slot, false);
+              throw (shared.pendingPause ??= new WorkflowError(message, WorkflowErrorCode.PAUSE_REQUESTED, {
+                recoverable: false,
+                agentLabel: label,
+                details: { stepFailed: true, code: workflowError.code, ...(workflowError.details !== undefined ? { details: workflowError.details } : {}) },
+              }));
+            }
             if (workflowError.recoverable) {
               log(
                 `agent "${label}" exhausted ${maxAttempts} attempt${maxAttempts === 1 ? "" : "s"}: ${workflowError.code} ${workflowError.message}`,

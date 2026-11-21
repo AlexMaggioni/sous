@@ -1,6 +1,6 @@
 # Contributing
 
-This is a **pnpm workspace** (monorepo) of nine packages under the `@automatalabs` scope. The user-facing overview is in [`README.md`](README.md); the integration API is in [`docs/api.md`](docs/api.md).
+This is a **pnpm workspace** (monorepo) of ten packages: nine under the `@automatalabs` scope and `@orchestrator/orc`. The user-facing overview is in [`README.md`](README.md); the integration API is in [`docs/api.md`](docs/api.md).
 
 ## Prerequisites
 
@@ -33,6 +33,7 @@ pnpm typecheck      # pnpm -r exec tsc --noEmit
 | `packages/mcp-server` | The stdio MCP server / composition root (bin `agentprism-workflow`; the `workflow` tool plus the Apps-capable `workflow_monitor` launcher — no auth tools). |
 | `packages/workflows` | The importable SDK facade. |
 | `packages/agentprism-otel` | Optional OpenTelemetry bridge for `WorkflowManager` events. |
+| `packages/orc` | The `orc` command line: background runs, questions, breakpoints, schedules. |
 | `packages/pi-acp` | Standalone in-process ACP server and library adapter for the pi coding agent. |
 | `packages/codex-acp` | Our codex-acp fork (full upstream history, non-squashed subtree): the ACP server the Codex backend spawns. |
 

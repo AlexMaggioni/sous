@@ -180,6 +180,21 @@ importers:
         specifier: ^2.3.3
         version: 2.3.3(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
 
+  packages/orc:
+    dependencies:
+      '@automatalabs/acp-agents':
+        specifier: workspace:*
+        version: link:../acp-agents
+      '@automatalabs/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+      '@automatalabs/workflow-engine':
+        specifier: workspace:*
+        version: link:../workflow-engine
+      '@automatalabs/workflows':
+        specifier: workspace:*
+        version: link:../workflows
+
   packages/pi-acp:
     dependencies:
       '@agentclientprotocol/sdk':
