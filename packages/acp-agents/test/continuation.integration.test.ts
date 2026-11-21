@@ -188,6 +188,34 @@ test("resume continuation wins once, reports provenance before setup, omits orig
   assert.equal(blocks.some((block) => block.type === "image"), false);
 });
 
+test("continueWithPrompt reopens the session and sends the step's own prompt", async () => {
+  const { cwd, readLog } = harness.configure<LogEntry>({
+    lifecycleSupport: true,
+    modes: MODES,
+    configOptions: CONFIG_OPTIONS,
+    turns: [{ text: "changes made" }],
+  });
+  const provenances: AgentResultProvenance[] = [];
+  const runner = harness.makeRunner();
+  const output = await runner.run("ADDRESS THIS REVIEW", {
+    model: "claude/claude-opus-4-1",
+    cwd,
+    continueFromSession: sessionRef(cwd),
+    continueWithPrompt: true,
+    onResultProvenance: (value) => provenances.push(value),
+  });
+
+  assert.equal(output, "changes made");
+  assert.deepEqual(continuationReports(provenances), [{ reattached: true, method: "resume" }]);
+  const log = readLog();
+  assert.equal(count(log, "resumeSession"), 1);
+  assert.equal(count(log, "newSession"), 0);
+  const blocks = promptBlocks(log);
+  assert.equal(blocks.length, 1);
+  assert.match(String(blocks[0]?.text), /ADDRESS THIS REVIEW/);
+  assert.doesNotMatch(String(blocks[0]?.text), /previous turn was interrupted/);
+});
+
 test("load-only cold connection waits for initialize, replays, then continues without session/new", async () => {
   const { cwd, readLog } = harness.configure<LogEntry>({
     loadSessionSupport: true,

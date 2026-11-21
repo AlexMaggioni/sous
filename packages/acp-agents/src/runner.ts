@@ -1000,14 +1000,16 @@ export class AcpAgentRunner implements AgentRunner, AuthCapableRunner, ProviderC
         await activeSession.setMode(effectiveMode);
       }
 
+      // A reopened session resumes an interrupted turn, unless the step continues it with a prompt of its own.
+      const resuming = continuationMethod !== undefined && !opts.continueWithPrompt;
       const text = buildRunPrompt(
-        continuationMethod ? CONTINUATION_INSTRUCTION : prompt,
+        resuming ? CONTINUATION_INSTRUCTION : prompt,
         opts,
         schema,
         prepared.backend,
         structuredToolActive,
       );
-      const initialPrompt = continuationMethod
+      const initialPrompt = resuming
         ? text
         : opts.images && opts.images.length > 0
           ? promptWithImages(text, opts.images)

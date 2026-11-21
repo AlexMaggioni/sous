@@ -171,6 +171,9 @@ return 1`;
     assert.equal(calls[0]!.options.continueFromSession, undefined);
     const ref = calls[1]!.options.continueFromSession as { sessionId: string };
     assert.equal(ref.sessionId, "session-1");
+    // The runner sends the step's own prompt, not the resume instruction for an interrupted turn.
+    assert.equal(calls[0]!.options.continueWithPrompt, undefined);
+    assert.equal(calls[1]!.options.continueWithPrompt, true);
   });
 
   it("step overrides change one step for one run", async () => {
@@ -198,6 +201,7 @@ return await agent('build the store', { label: 'builder', ask: true })`;
     assert.equal(result.result, "done with SQLite");
     assert.equal(calls.length, 2);
     assert.match(calls[1]!.prompt, /The user answered: SQLite/);
+    assert.equal(calls[1]!.options.continueWithPrompt, true);
     assert.equal((calls[1]!.options.continueFromSession as { sessionId: string }).sessionId, "session-1");
   });
 });

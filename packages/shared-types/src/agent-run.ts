@@ -250,6 +250,9 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
    *  its result, never the logical call. Omitted => today's fresh session/new + original-prompt
    *  path. */
   continueFromSession?: AgentSessionRef;
+  /** orchestrator: with `continueFromSession`, send this call's own prompt into the reopened
+   *  session instead of the resume instruction. The engine sets it for agent({ continue }). */
+  continueWithPrompt?: boolean;
   /** The engine's deterministic journal index for THIS agent() call — the same
    *  value as JournalEntry.index / WorkflowCallRecord.index. Assigned at lexical
    *  call time BEFORE the concurrency limiter; identical on every retry attempt.

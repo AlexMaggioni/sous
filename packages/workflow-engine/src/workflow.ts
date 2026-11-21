@@ -1573,9 +1573,9 @@ export async function runWorkflow<T = unknown>(
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           const slot: AttemptSlots = { sealed: false, modelFallbacks: [] };
-          const continueFromSession = (attempt === 1 && continuationCandidate && !continuationSkipReason
-            ? continuationCandidate.sessionRef
-            : undefined) ?? sessionForLabel(agentOptions.continue);
+          const resumingTurn = attempt === 1 && continuationCandidate !== undefined && !continuationSkipReason;
+          const continueFromSession = (resumingTurn ? continuationCandidate.sessionRef : undefined)
+            ?? sessionForLabel(agentOptions.continue);
           let attemptController: AbortController | undefined;
           let unregisterAttempt: (() => void) | undefined;
           let hostAttemptRegistered = false;
@@ -1630,6 +1630,9 @@ export async function runWorkflow<T = unknown>(
                   runId,
                   keepSession: agentOptions.keepSession,
                   ...(continueFromSession === undefined ? {} : { continueFromSession }),
+                  // orchestrator: agent({ continue }) sends this step's prompt into the earlier
+                  // session. Only a resumed, interrupted turn gets the runner's resume instruction.
+                  ...(continueFromSession !== undefined && !resumingTurn ? { continueWithPrompt: true } : {}),
                   // orchestrator: per-step extras the orc runner reads.
                   ...orchestratorRunExtras(agentOptions, agentDef),
                   callIndex,
