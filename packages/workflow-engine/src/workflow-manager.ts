@@ -2277,6 +2277,7 @@ export class WorkflowManager extends EventEmitter {
             model: event.model,
             callIndex: event.callIndex,
             scope: event.scope,
+            startedAt: new Date().toISOString(),
           });
           const scope = event.scope ?? managed.runId;
           publish(this.createRunEvent("agentStart", {
@@ -2326,6 +2327,7 @@ export class WorkflowManager extends EventEmitter {
             agentSnapshot.provenance = event.provenance;
             if (event.model) agentSnapshot.model = event.model;
             if (event.session) agentSnapshot.session = event.session;
+            agentSnapshot.endedAt = new Date().toISOString();
           }
           publish(this.createRunEvent("agentEnd", {
             runId: managed.runId,
@@ -2929,10 +2931,11 @@ export class WorkflowManager extends EventEmitter {
           : undefined,
       phases: managed.snapshot.phases,
       currentPhase: managed.snapshot.currentPhase,
+      // orchestrator: each step keeps its own start and end time.
       agents: managed.snapshot.agents.map((a) => ({
         ...a,
-        startedAt: managed.startedAt.toISOString(),
-        endedAt: new Date().toISOString(),
+        startedAt: a.startedAt ?? managed.startedAt.toISOString(),
+        ...(a.endedAt ? { endedAt: a.endedAt } : {}),
       })),
       logs: managed.snapshot.logs,
       result: managed.result?.result,

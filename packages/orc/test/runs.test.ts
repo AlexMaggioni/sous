@@ -141,6 +141,9 @@ return await agent('review', { label: 'reviewer' })`,
     const record = createRun(paths, { workflow: "changes", projectDir, inputs: {}, overrides: { reviewer: { model: "claude/opus" } } });
     await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
     assert.equal(calls[0]!.options.model, "claude/opus");
+    // Each step keeps its own start and end time.
+    const step = managerFor(paths, projectDir).getPersistence().load(record.runId)!.agents[0]!;
+    assert.ok(step.startedAt && step.endedAt && step.endedAt >= step.startedAt);
   });
 });
 

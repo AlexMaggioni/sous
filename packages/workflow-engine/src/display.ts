@@ -39,6 +39,9 @@ export interface WorkflowAgentSnapshot {
   scope?: string;
   usage?: AgentUsage;
   provenance?: AgentResultProvenance;
+  /** orchestrator: when this step started and ended, as ISO times. */
+  startedAt?: string;
+  endedAt?: string;
 }
 
 export interface WorkflowSnapshot {
