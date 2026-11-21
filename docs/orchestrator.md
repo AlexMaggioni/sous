@@ -222,6 +222,10 @@ Proven end to end with real agents on `claude/haiku`, in a copy of `examples/tex
   worktrees, each on its own branch, and the vague one is skipped.
 - [Emails](proof/emails.md). The inbox gets sorted, the replies drafted in parallel, sent back once
   with a note, redrafted and approved.
+- [An agent's tool lists](proof/tools.md). An agent denied Bash, and one allowed only Read, Grep
+  and Glob, are both refused Bash, even with Claude Code settings that bypass permissions.
+- A schedule in a workflow's meta. With `schedule: "* * * * *"`, `orc daemon run` started one run
+  a minute, each marked as started by the schedule.
 
 Waiting:
 
