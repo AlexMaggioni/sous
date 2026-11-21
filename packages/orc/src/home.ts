@@ -1,7 +1,7 @@
 // The orc home folder (~/.orchestrator, or $ORC_HOME) and a project's .orchestrator folder.
 // A project's agents, workflows and servers win over the home folder's.
 
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import type { McpServerConfig } from "@automatalabs/shared-types";
@@ -46,6 +46,7 @@ export function homePaths(home = orcHome()) {
     secrets: join(home, "secrets.env"),
     mcp: join(home, "mcp.json"),
     schedules: join(home, "schedules.json"),
+    projects: join(home, "projects.json"),
     daemonPid: join(home, "daemon.pid"),
     daemonState: join(home, "daemon-state.json"),
   };
@@ -82,6 +83,25 @@ export function findProjectDir(cwd = process.cwd()): string {
     if (parent === dir) return resolve(cwd);
     dir = parent;
   }
+}
+
+/** The projects where orc ran, whose workflow files the service reads for a schedule. */
+export function knownProjects(paths: HomePaths = homePaths()): string[] {
+  try {
+    return readJson<string[]>(paths.projects, []).filter((dir) => typeof dir === "string");
+  } catch {
+    return [];
+  }
+}
+
+export function rememberProject(paths: HomePaths, projectDir: string): void {
+  const dir = resolve(projectDir);
+  const known = knownProjects(paths);
+  if (known.includes(dir) || !existsSync(join(dir, ".orchestrator", "workflows"))) return;
+  mkdirSync(paths.home, { recursive: true });
+  const temp = `${paths.projects}.${process.pid}.tmp`;
+  writeFileSync(temp, `${JSON.stringify([...known, dir], null, 2)}\n`);
+  renameSync(temp, paths.projects);
 }
 
 export function workflowDirs(projectDir: string, paths: HomePaths = homePaths()): string[] {

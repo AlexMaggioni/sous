@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { agentDirsFromOption, loadAgentRegistry, openWorkflowDir, parseWorkflowScript } from "@automatalabs/workflow-engine";
 import { agentsDirOption, loadMcpServers, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
+import { nextRun, parseCron } from "./cron.js";
 import { checkInputs } from "./inputs.js";
 import { resolveWorkflow } from "./launch.js";
 
@@ -92,6 +93,10 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
 
   const extras = resolved.extras;
   if (!Object.keys(extras.inputs).length) notes.push("declares no inputs, so it takes any");
+  if (extras.schedule) {
+    const next = nextRun(parseCron(extras.schedule.cron));
+    notes.push(`the service starts it at "${extras.schedule.cron}"${next ? `, next ${next.toLocaleString()}` : ""}, when it runs (orc daemon start)`);
+  }
   return {
     workflow: resolved.name,
     file: resolved.file,

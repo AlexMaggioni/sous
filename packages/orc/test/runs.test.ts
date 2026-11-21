@@ -8,9 +8,9 @@ import { WorkflowError, WorkflowErrorCode, type AgentRunner } from "@automatalab
 import { checkWorkflow } from "../src/check.js";
 import { dryRun } from "../src/dryrun.js";
 import { main, runningSteps } from "../src/cli.js";
-import { saveSchedules, tick, unfinishedRuns } from "../src/daemon.js";
+import { fileSchedules, saveSchedules, tick, unfinishedRuns } from "../src/daemon.js";
 import { gcWorktrees } from "../src/places.js";
-import { ensureHome, homePaths, type HomePaths } from "../src/home.js";
+import { ensureHome, homePaths, knownProjects, rememberProject, type HomePaths } from "../src/home.js";
 import { listQuestions, writeAnswer } from "../src/inbox.js";
 import { createRun, logFile } from "../src/launch.js";
 import { listRecords, loadRecord, updateRecord } from "../src/records.js";
@@ -556,6 +556,50 @@ describe("service", () => {
       assert.equal(started.length, 1);
       assert.match(lines.join("\n"), /skipped, run .* has not finished/);
     }
+  });
+
+  it("starts a workflow on the cron in its meta, once orc has run in its project", () => {
+    const nightly = `export const meta = { name: 'nightly', description: 'n', inputs: { who: 'Who' }, schedule: { cron: '0 3 * * *', inputs: { who: 'night' } } }\nreturn args.who`;
+    const { paths, projectDir } = setup({ nightly, hand: `export const meta = { name: 'hand', description: 'h' }\nreturn 1` });
+    const file = join(projectDir, ".orchestrator", "workflows", "nightly.js");
+    const started: string[] = [];
+    const spawn = (runId: string) => started.push(runId);
+    tick(paths, { now: new Date(2026, 10, 21, 3, 0), spawn, log: quiet });
+    assert.equal(started.length, 0, "the service does not know the project yet");
+
+    createRun(paths, { workflow: "hand", projectDir, inputs: {} });
+    assert.deepEqual(knownProjects(paths), [projectDir]);
+    assert.deepEqual(fileSchedules(paths).map((schedule) => [schedule.name, schedule.cron]), [[file, "0 3 * * *"]]);
+    tick(paths, { now: new Date(2026, 10, 22, 2, 59), spawn, log: quiet });
+    tick(paths, { now: new Date(2026, 10, 22, 3, 0, 5), spawn, log: quiet });
+    tick(paths, { now: new Date(2026, 10, 22, 3, 0, 40), spawn, log: quiet });
+    assert.equal(started.length, 1, "once in that minute");
+    const record = loadRecord(paths, started[0]!);
+    assert.equal(record?.origin, "schedule");
+    assert.equal(record?.schedule, file);
+    assert.deepEqual(record?.args, { who: "night" });
+    assert.equal(checkWorkflow(paths, projectDir, "nightly").notes.some((note) => note.startsWith('the service starts it at "0 3 * * *"')), true);
+  });
+
+  it("refuses a bad schedule in the meta, and runs a home workflow's schedule in a scratch folder", () => {
+    const { paths, projectDir } = setup({
+      badCron: `export const meta = { name: 'badCron', description: 'b', schedule: '0 25 * * *' }\nreturn 1`,
+      noInput: `export const meta = { name: 'noInput', description: 'b', inputs: { who: 'Who' }, schedule: '0 3 * * *' }\nreturn 1`,
+    });
+    rememberProject(paths, projectDir);
+    assert.match(checkWorkflow(paths, projectDir, "badCron").problems.join("\n"), /meta.schedule: bad hour in cron: "25"/);
+    assert.match(checkWorkflow(paths, projectDir, "noInput").problems.join("\n"), /meta.schedule.inputs: missing input who/);
+    assert.deepEqual(fileSchedules(paths), [], "a file with a problem in its meta has no schedule");
+
+    mkdirSync(paths.workflows, { recursive: true });
+    writeFileSync(join(paths.workflows, "digest.js"), `export const meta = { name: 'digest', description: 'd', place: 'worktree', schedule: '@daily' }\nreturn 1`);
+    const started: string[] = [];
+    tick(paths, { now: new Date(2026, 10, 22, 0, 0), spawn: (runId: string) => started.push(runId), log: quiet });
+    assert.equal(started.length, 1);
+    const record = loadRecord(paths, started[0]!);
+    assert.equal(record?.place, "none");
+    assert.equal(record?.projectDir, paths.home);
+    assert.equal(record?.cwd, join(paths.scratch, record!.runId));
   });
 
   it("tells the user once about a run cut off by a crash and leaves it for them to resume, while a limit pause resumes", () => {

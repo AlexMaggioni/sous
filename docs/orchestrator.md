@@ -46,6 +46,7 @@ export const meta = {
   concurrency: 2,         // steps at once in this run
   startedBy: "people",    // agents may not start it; the default is "anyone"
   timeout: "2h",          // then the running steps stop and the run pauses
+  schedule: "0 9 * * 1-5", // the service starts it then; without it, it starts by hand only
 }
 
 const built = await agent(`Implement this ticket:\n${args.ticket}`, { agentType: "implementer", keepSession: true })
@@ -181,6 +182,18 @@ not finished. It resumes runs paused at the limit, and removes runs older than `
 off by a crash or a restart shows as interrupted and waits for `orc resume`. The service tells you
 about it once. `orc schedule test <name>` says whether the schedule matches now and when it
 runs next.
+
+A workflow can also carry its own schedule, in its meta:
+
+```js
+schedule: { cron: "0 2 * * *", inputs: { team: "ENG" } },   // or just "0 2 * * *"
+```
+
+The service reads it from the workflows in `~/.orchestrator/workflows/` and from those of each
+project where orc ran, so run `orc check <workflow>` once in a new project. A home workflow's
+scheduled runs work in a scratch folder. `orc schedule list` shows these schedules with the file
+they come from. To stop one, change or remove `schedule` in the file. `orc check` refuses a bad
+cron, and a schedule whose inputs miss a required one.
 
 ## From a session
 

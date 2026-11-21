@@ -1,5 +1,7 @@
 // The background service: `orc daemon start`. Every 20 seconds it
-//  - starts scheduled runs, and skips one when the schedule's last run has not finished;
+//  - starts scheduled runs, and skips one when the schedule's last run has not finished. A
+//    schedule comes from `orc schedule add`, or from `schedule` in a workflow file's meta, in the
+//    home folder or in a project where orc ran;
 //  - resumes runs paused at the subscription limit once the limit resets;
 //  - tells the user, once, about a run cut off by a crash or a restart. It waits for `orc resume`;
 //  - removes finished runs older than keepDays, when config.json sets it;
@@ -8,9 +10,10 @@
 import { existsSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RunStatus } from "@automatalabs/shared-types";
-import { workflowProjectPaths } from "@automatalabs/workflow-engine";
+import { openWorkflowDir, workflowProjectPaths } from "@automatalabs/workflow-engine";
 import { cronMatches, parseCron } from "./cron.js";
-import { ensureHome, loadConfig, type HomePaths, type Place } from "./home.js";
+import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
+import { workflowExtras } from "./inputs.js";
 import { createRun, logFile, spawnWorker } from "./launch.js";
 import { gcWorktrees } from "./places.js";
 import { notify } from "./notify.js";
@@ -26,6 +29,8 @@ export interface Schedule {
   place?: Place;
   enabled: boolean;
   createdAt: string;
+  /** Set on a schedule read from a workflow file's meta. Its name is the file's path. */
+  fromFile?: boolean;
 }
 
 interface DaemonState {
@@ -60,6 +65,39 @@ export function loadSchedules(paths: HomePaths): Schedule[] {
 
 export function saveSchedules(paths: HomePaths, schedules: Schedule[]): void {
   writeJson(paths.schedules, schedules);
+}
+
+/**
+ * The schedules set in workflow files: those of the home folder, which run in a scratch folder,
+ * and those of each project where orc ran. A file with a problem in its meta has none; `orc check`
+ * shows the problem.
+ */
+export function fileSchedules(paths: HomePaths): Schedule[] {
+  const out: Schedule[] = [];
+  const read = (dir: string, projectDir: string, place?: Place) => {
+    for (const entry of openWorkflowDir(dir).list()) {
+      if (!entry.meta) continue;
+      const extras = workflowExtras(entry.meta as unknown as Record<string, unknown>);
+      if (!extras.schedule || extras.metaProblems?.length) continue;
+      out.push({
+        name: entry.file,
+        workflow: entry.file,
+        projectDir,
+        cron: extras.schedule.cron,
+        inputs: extras.schedule.inputs,
+        ...(place ? { place } : {}),
+        enabled: true,
+        createdAt: "",
+        fromFile: true,
+      });
+    }
+  };
+  if (existsSync(paths.workflows)) read(paths.workflows, paths.home, "none");
+  for (const projectDir of knownProjects(paths)) {
+    const dir = join(projectDir, ".orchestrator", "workflows");
+    if (existsSync(dir)) read(dir, projectDir);
+  }
+  return out;
 }
 
 function minuteKey(date: Date): string {
@@ -117,7 +155,13 @@ export function tick(paths: HomePaths, deps: TickDeps = {}): void {
 
   // Schedules.
   const key = minuteKey(now);
-  for (const schedule of loadSchedules(paths)) {
+  let schedules = loadSchedules(paths);
+  try {
+    schedules = [...schedules, ...fileSchedules(paths)];
+  } catch (error) {
+    log(`could not read the schedules in workflow files: ${(error as Error).message}`);
+  }
+  for (const schedule of schedules) {
     if (!schedule.enabled || state.fired[schedule.name] === key) continue;
     let cron;
     try {

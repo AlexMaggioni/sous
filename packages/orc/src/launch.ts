@@ -6,7 +6,7 @@ import { existsSync, openSync, readFileSync, closeSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateRunId, openWorkflowDir, parseWorkflowScript } from "@automatalabs/workflow-engine";
-import { loadConfig, workflowDirs, type HomePaths, type Place } from "./home.js";
+import { loadConfig, rememberProject, workflowDirs, type HomePaths, type Place } from "./home.js";
 import { checkInputs, workflowExtras, type WorkflowExtras } from "./inputs.js";
 import { preparePlace } from "./places.js";
 import { saveRecord, type RunRecord } from "./records.js";
@@ -112,6 +112,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
   };
   saveRecord(paths, record);
+  rememberProject(paths, request.projectDir);
   return record;
 }
 

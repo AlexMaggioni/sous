@@ -10,12 +10,14 @@
 //     concurrency: 2,
 //     startedBy: "people",   // or "anyone", the default: agents may start it too
 //     timeout: "2h",          // the running steps stop and the run pauses after this long
+//     schedule: "0 9 * * 1-5", // the service starts it on this cron; or { cron, inputs }
 //   }
 //
 // `orc run ticket --ticket "Add a --json flag"` turns the flags into the run's args.
 
 import type { Place } from "./home.js";
 import { parseDurationSeconds } from "@automatalabs/workflow-engine";
+import { parseCron } from "./cron.js";
 import { isPlace } from "./places.js";
 
 export interface InputSpec {
@@ -36,6 +38,9 @@ export interface WorkflowExtras {
   startedBy: "anyone" | "people";
   /** The time limit on a run of it, as written, such as "2h". */
   timeout?: string;
+  /** The cron the service starts it on, with the inputs of those runs. Without it, people and
+   *  agents start it. */
+  schedule?: { cron: string; inputs: Record<string, unknown> };
   /** What is wrong in the meta itself. */
   metaProblems?: string[];
 }
@@ -50,21 +55,47 @@ export function workflowExtras(meta: Record<string, unknown>): WorkflowExtras {
       inputs[name] = typeof spec === "string" ? { type: "string", description: spec, required: true } : (spec as InputSpec);
     }
   }
-  return {
+  const extras: WorkflowExtras = {
     ...(typeof meta.description === "string" ? { description: meta.description } : {}),
     inputs,
     ...(meta.outputs && typeof meta.outputs === "object" ? { outputs: meta.outputs as Record<string, unknown> } : {}),
     ...(isPlace(meta.place) ? { place: meta.place } : {}),
     ...(typeof meta.concurrency === "number" && meta.concurrency > 0 ? { concurrency: Math.floor(meta.concurrency) } : {}),
     startedBy: meta.startedBy === "people" ? "people" : "anyone",
-    ...timeoutOf(meta.timeout),
   };
+  const problems: string[] = [];
+  const timeout = timeoutOf(meta.timeout);
+  if (timeout.timeout) extras.timeout = timeout.timeout;
+  if (timeout.problem) problems.push(timeout.problem);
+  const schedule = scheduleOf(meta.schedule);
+  if (schedule.problem) problems.push(schedule.problem);
+  if (schedule.schedule) {
+    extras.schedule = schedule.schedule;
+    for (const problem of checkInputs(extras, schedule.schedule.inputs).problems) problems.push(`meta.schedule.inputs: ${problem.replace(/--/g, "")}`);
+  }
+  if (problems.length) extras.metaProblems = problems;
+  return extras;
 }
 
-function timeoutOf(value: unknown): Pick<WorkflowExtras, "timeout" | "metaProblems"> {
+function scheduleOf(value: unknown): { schedule?: WorkflowExtras["schedule"]; problem?: string } {
+  if (value === undefined) return {};
+  const shape = 'meta.schedule must be a cron such as "0 9 * * 1-5", or { cron: "0 9 * * 1-5", inputs: { ... } }';
+  const raw = typeof value === "string" ? { cron: value, inputs: {} } : value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  if (!raw || typeof raw.cron !== "string") return { problem: `${shape}, got ${JSON.stringify(value)}` };
+  const inputs = raw.inputs ?? {};
+  if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)) return { problem: `meta.schedule.inputs must be an object of input values` };
+  try {
+    parseCron(raw.cron);
+  } catch (error) {
+    return { problem: `meta.schedule: ${(error as Error).message}` };
+  }
+  return { schedule: { cron: raw.cron.trim(), inputs: inputs as Record<string, unknown> } };
+}
+
+function timeoutOf(value: unknown): { timeout?: string; problem?: string } {
   if (value === undefined) return {};
   if (parseDurationSeconds(value) === undefined) {
-    return { metaProblems: [`meta.timeout must be a time such as "90s", "10m" or "2h", got ${JSON.stringify(value)}`] };
+    return { problem: `meta.timeout must be a time such as "90s", "10m" or "2h", got ${JSON.stringify(value)}` };
   }
   return { timeout: typeof value === "number" ? `${value}s` : String(value).trim() };
 }

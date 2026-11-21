@@ -10,8 +10,8 @@ import { openWorkflowDir, type PersistedRunState } from "@automatalabs/workflow-
 import { checkWorkflow } from "./check.js";
 import { cronMatches, nextRun, parseCron } from "./cron.js";
 import { dryRun, readAnswers } from "./dryrun.js";
-import { daemonMain, daemonPid, loadSchedules, prune, saveSchedules, unfinishedRuns, type Schedule } from "./daemon.js";
-import { ensureHome, findProjectDir, homePaths, loadConfig, workflowDirs, type HomePaths, type Place } from "./home.js";
+import { daemonMain, daemonPid, fileSchedules, loadSchedules, prune, saveSchedules, unfinishedRuns, type Schedule } from "./daemon.js";
+import { ensureHome, findProjectDir, homePaths, loadConfig, rememberProject, workflowDirs, type HomePaths, type Place } from "./home.js";
 import { listQuestions, normalizeAnswer, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
 import { workflowExtras } from "./inputs.js";
 import { createRun, InputProblems, logFile, resolveWorkflow, spawnWorker } from "./launch.js";
@@ -684,6 +684,8 @@ async function cmdCheck(parsed: Parsed): Promise<number> {
   if (!name) throw new Usage("orc check <workflow> [--name value ...] [--dry-run [--answers file.json]]");
   const inputs = Object.keys(parsed.inputs).length ? parsed.inputs : undefined;
   const result = checkWorkflow(paths, projectDir, name, inputs);
+  // The service reads this project's workflow files for a schedule from now on.
+  rememberProject(paths, projectDir);
   const json = parsed.flags.json === true;
   const wantsDryRun = parsed.flags["dry-run"] === true;
   if (!json) {
@@ -715,10 +717,15 @@ function cmdSchedule(parsed: Parsed): number {
   const { paths, projectDir } = context(parsed);
   const [action, name, workflow] = parsed.positionals;
   const schedules = loadSchedules(paths);
-  const find = () => {
-    const found = schedules.find((schedule) => schedule.name === name);
-    if (!found) throw new Error(`no schedule "${name}". orc schedule list shows them.`);
-    return found;
+  if (action === "list" || action === undefined || action === "test") rememberProject(paths, projectDir);
+  const inFiles = fileSchedules(paths);
+  const tilde = (path: string) => (process.env.HOME && path.startsWith(process.env.HOME) ? `~${path.slice(process.env.HOME.length)}` : path);
+  const find = (all = false) => {
+    const found = schedules.find((schedule) => schedule.name === name) ?? (all ? inFiles.find((schedule) => schedule.name === resolve(name ?? "")) : undefined);
+    if (found) return found;
+    const fromFile = inFiles.find((schedule) => schedule.name === resolve(name ?? ""));
+    if (fromFile) throw new Error(`the schedule of ${tilde(fromFile.workflow)} is set in its meta. Change or remove meta.schedule there.`);
+    throw new Error(`no schedule "${name}". orc schedule list shows them.`);
   };
   switch (action) {
     case "add": {
@@ -742,22 +749,26 @@ function cmdSchedule(parsed: Parsed): number {
       saveSchedules(paths, [...schedules, schedule]);
       const next = nextRun(parseCron(cron));
       out(`schedule ${name}: ${resolved.name} at "${cron}"${next ? `, next ${next.toLocaleString()}` : ""}`);
+      if (resolved.extras.schedule) out(`note: ${resolved.name} also sets "${resolved.extras.schedule.cron}" in its meta, and both start it`);
       if (!daemonPid(paths)) out("the service is not running, so nothing will start: orc daemon start");
       return 0;
     }
     case "list":
     case undefined: {
+      const all = [...schedules, ...inFiles];
       if (parsed.flags.json) {
-        printJson(schedules);
+        printJson(all);
         return 0;
       }
-      if (!schedules.length) {
+      if (!all.length) {
         out("no schedules");
         return 0;
       }
-      for (const schedule of schedules) {
+      for (const schedule of all) {
         const next = schedule.enabled ? nextRun(parseCron(schedule.cron)) : undefined;
-        out(`${schedule.name}  ${schedule.cron}  ${schedule.workflow}  ${schedule.enabled ? (next ? `next ${next.toLocaleString()}` : "") : "disabled"}`);
+        const when = schedule.enabled ? (next ? `next ${next.toLocaleString()}` : "") : "disabled";
+        if (schedule.fromFile) out(`${tilde(schedule.workflow)}  ${schedule.cron}  set in the file  ${when}`);
+        else out(`${schedule.name}  ${schedule.cron}  ${tilde(schedule.workflow)}  ${when}`);
       }
       if (!daemonPid(paths)) out("\nthe service is not running: orc daemon start");
       return 0;
@@ -774,10 +785,10 @@ function cmdSchedule(parsed: Parsed): number {
       out(`${action}d ${name}`);
       return 0;
     case "test": {
-      const schedule = find();
+      const schedule = find(true);
       const cron = parseCron(schedule.cron);
       const at = new Date();
-      out(`${schedule.name} ${cronMatches(cron, at) ? "matches" : "does not match"} now; next ${nextRun(cron)?.toLocaleString() ?? "never"}`);
+      out(`${tilde(schedule.name)} ${cronMatches(cron, at) ? "matches" : "does not match"} now; next ${nextRun(cron)?.toLocaleString() ?? "never"}`);
       return 0;
     }
     default:
@@ -894,6 +905,7 @@ const HELP = `orc runs saved workflows in the background.
         --answers <file.json>          what the stand-ins answer, by step label: {"reviewer *": {...}}
   orc schedule add <name> <workflow> --cron "<min hour day month weekday>" [--name value ...]
   orc schedule list|remove|enable|disable|test <name>
+                                       schedule: "0 9 * * 1-5" in a workflow's meta also schedules it
   orc daemon start|stop|status         the service that starts schedules and resumes runs after the limit
   orc gc [--dry-run]                   remove worktrees whose branch is merged
   orc discard <run> [--yes]            delete the run's branches and worktrees, merged or not
