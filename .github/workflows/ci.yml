@@ -1,119 +1,24 @@
 name: CI
 
-# workflow_dispatch is for ad-hoc manual runs on any ref. The release flow does not
-# depend on it: the Version Packages PR is authored with the release app token, so its
-# pull_request run triggers natively and satisfies the main ruleset's required check.
+# Runs on pull requests and by hand only, to save Actions minutes on a private repo.
 on:
   pull_request:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 
 jobs:
   build-and-test:
-    # Version-agnostic job name ON PURPOSE: the main ruleset's required status
-    # check matches this string exactly — renaming it wedges every merge until
-    # the ruleset context is updated to match.
     name: Build & test
     runs-on: ubuntu-latest
-    # A wedged job otherwise squats for GitHub's 360-minute default before anyone sees a
-    # log: on 2026-08-08 two post-merge runs on main each burned the full six hours and
-    # surfaced only as "cancelled", which reads like someone cancelled them. Healthy runs
-    # finish in 4-6 minutes, so this bounds a hang to a fast, visibly-failed run whose log
-    # is downloadable (logs are not retrievable while a job is still in progress).
     timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          # Full history so Changesets / git-aware tooling has the base ref.
-          fetch-depth: 0
-
-      # pnpm must be installed before setup-node so the `cache: pnpm` step
-      # below can locate the pnpm store.
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
           version: 10.34.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
-
-      # Attribution gate — a step of the REQUIRED check on purpose, and the ONLY
-      # enforcement point that runs before the squash button. GitHub builds a squash
-      # message from the branch's commit messages AND synthesizes a "Co-authored-by:"
-      # trailer for every distinct author identity among them, so an agent-authored
-      # branch commit puts agent attribution on main even when no branch commit message
-      # ever contained it — exactly how it happened in #297, past the message-only
-      # commit-msg hook. Checking base..head here catches the identity before the merge.
-      # Zero-dep script, so it runs before the install. On a push to main the range is
-      # the newly-pushed commits: too late to block, but a loud, self-clearing tripwire.
-      - name: Attribution gate
-        env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          PUSH_AFTER: ${{ github.event.after }}
-        run: |
-          set -euo pipefail
-          if [ -n "${PR_BASE:-}" ]; then
-            node scripts/check-attribution.mjs "$PR_BASE..$PR_HEAD"
-          elif [ -n "${PUSH_AFTER:-}" ]; then
-            # A first push / force-push leaves no usable "before" anchor — check the tip alone.
-            if git cat-file -e "${PUSH_BEFORE:-}^{commit}" 2>/dev/null; then
-              node scripts/check-attribution.mjs "$PUSH_BEFORE..$PUSH_AFTER"
-            else
-              node scripts/check-attribution.mjs --no-walk "$PUSH_AFTER"
-            fi
-          else
-            echo "attribution: no commit range for this event (workflow_dispatch) — nothing to check"
-          fi
-
-      # ACP dependency freshness gate — a step of the REQUIRED check on purpose:
-      # while any tracked ACP dependency (@agentclientprotocol/*, the codex-acp
-      # fork vs its upstream, the wrapped claude-agent-sdk runtime, or
-      # @earendil-works/pi-coding-agent) is stale, EVERY merge is blocked until
-      # a PR lands that does the maintenance (owner policy, 2026-07-16 — no
-      # bypasses). Fails closed if the registry cannot be reached or the fork
-      # clone cannot be verified; with no fork clone on the runner the gate
-      # clones the fork itself (public repos, no token). Needs no node_modules
-      # (zero-dep script), so it runs before the install. Triage:
-      # CONTRIBUTING.md "When the dependency gate blocks".
-      - name: ACP dependency freshness gate
-        run: node scripts/check-acp-deps.mjs
-
-      # These tests use a local fixture npm registry and need no install or credentials.
-      # They pin the public ACP registry's format, version/package alignment, and
-      # fail-closed behavior before the Pages workflow can publish anything.
-      - name: Repository generator tests
-        run: node --test scripts/test/*.test.mjs
-
-      # --frozen-lockfile restores the exact dependency tree (incl. the
-      # @automatalabs/codex-acp fork, which bakes the outputSchema forward into
-      # its dist) AND fetches the linux-x64 codex/claude native binaries. Keep
-      # this on an ubuntu (glibc) x64 runner and do NOT pass --no-optional, or
-      # those platform binaries would be skipped.
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build (project references)
-        run: pnpm build
-
-      - name: Typecheck (no emit)
-        run: pnpm -r exec tsc --noEmit
-
-      # AGENTPRISM_LIVE_E2E is intentionally left UNSET here so the gated live
-      # end-to-end test is skipped — this keeps CI deterministic and
-      # credential-free.
-      # codex-acp is EXCLUDED on purpose (owner decision, 2026-08-07): its suite is
-      # UPSTREAM's own vitest tests for vendored code we sync mechanically — upstream CI
-      # runs them, and our acp-agents integration tests cover the adapter behavior we
-      # depend on. It entered `pnpm -r test` when upstream switched to pnpm; our merges
-      # must not gate on upstream test infra (their vitest worker pools also crash in
-      # the docker runners). Run it explicitly during codex-acp sync maintenance:
-      # pnpm --filter @automatalabs/codex-acp test
-      - name: Test
-        run: pnpm -r --filter '!@automatalabs/codex-acp' test
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm -r --filter '!@automatalabs/codex-acp' test

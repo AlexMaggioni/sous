@@ -1,0 +1,9 @@
+orchestrator
+Copyright 2026 Alex Maggioni
+
+This product starts from AgentPrism Workflows
+(https://github.com/agentprism/agentprism-workflows), licensed under the
+Apache License, Version 2.0. Its git history is kept in this repository.
+Files that came from AgentPrism Workflows and were changed here are listed by
+the git history after commit f6475370, the last upstream commit this
+repository started from.
