@@ -46,6 +46,7 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
     problems.push((error as Error).message);
   }
 
+  problems.push(...(resolved.extras.metaProblems ?? []));
   if (given) {
     problems.push(...checkInputs(resolved.extras, given).problems);
   }

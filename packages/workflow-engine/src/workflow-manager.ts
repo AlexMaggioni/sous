@@ -2907,9 +2907,7 @@ export class WorkflowManager extends EventEmitter {
                 ? "checkpoint_required"
                 : managed.error?.code === WorkflowErrorCode.PAUSE_REQUESTED
                   ? isStepFailedPause(managed.error)
-                    ? (managed.error.details as { code?: unknown } | undefined)?.code === WorkflowErrorCode.AGENT_CANCELLED
-                      ? "step_stopped"
-                      : "step_failed"
+                    ? stepPauseReason(managed.error.details)
                     : "requested"
                   : undefined
           : undefined,
@@ -3578,21 +3576,33 @@ export class WorkflowManager extends EventEmitter {
   }
 
   /**
-   * orchestrator: stop every in-flight attempt of the step with this label, in the run itself or,
-   * with `scope`, in that nested run. Returns how many it stopped. Under pauseOnFailedStep the run
-   * then pauses on the step, and resume runs it again.
+   * orchestrator: stop the in-flight steps of a run: those with `label`, or all of them, in the
+   * run itself or, with `scope`, in that nested run. Returns how many attempts it stopped. Under
+   * pauseOnFailedStep the run then pauses on them, and resume runs them again. `pauseReason`
+   * replaces the paused run's "step_stopped", and `message` says why in the run's reason.
    */
-  cancelAgentStep(runId: string, label: string, scope?: string): number {
+  cancelAgentSteps(
+    runId: string,
+    select: { label?: string; scope?: string; pauseReason?: string; message?: string } = {},
+  ): number {
     const managed = this.runs.get(runId);
     if (!managed || managed.status !== "running") return 0;
     const matching = this.currentAgentAttempts(runId).filter(
-      (attempt) => attempt.label === label && (scope === undefined || attempt.scope === scope),
+      (attempt) =>
+        (select.label === undefined || attempt.label === select.label) &&
+        (select.scope === undefined || attempt.scope === select.scope),
     );
-    for (const attempt of matching) this.requestAgentCancellation(attempt).catch(() => {});
+    for (const attempt of matching) {
+      this.requestAgentCancellation(attempt, select.message, select.pauseReason).catch(() => {});
+    }
     return matching.length;
   }
 
-  private requestAgentCancellation(attempt: RegisteredAgentAttempt): Promise<WorkflowAgentCallCancellation> {
+  private requestAgentCancellation(
+    attempt: RegisteredAgentAttempt,
+    message?: string,
+    pauseReason?: string,
+  ): Promise<WorkflowAgentCallCancellation> {
     if (!attempt.cancellation) {
       let resolve!: (result: WorkflowAgentCallCancellation) => void;
       let reject!: (error: WorkflowError) => void;
@@ -3603,9 +3613,9 @@ export class WorkflowManager extends EventEmitter {
       attempt.cancellation = { promise, resolve, reject, settled: false };
       attempt.controller.abort(
         new WorkflowError(
-          "agent call cancelled by host",
+          message ?? "agent call cancelled by host",
           WorkflowErrorCode.AGENT_CANCELLED,
-          { recoverable: true },
+          { recoverable: true, ...(pauseReason ? { details: { pauseReason } } : {}) },
         ),
       );
     }
@@ -4075,4 +4085,11 @@ function contiguousJournalPrefix(entries: readonly JournalEntry[], runId: string
   let index = 0;
   while (indexes.has(index)) index++;
   return index;
+}
+
+/** orchestrator: the pause reason of a step that failed or was stopped under pauseOnFailedStep. */
+function stepPauseReason(details: unknown): string {
+  const { code, pauseReason } = (details ?? {}) as { code?: unknown; pauseReason?: unknown };
+  if (typeof pauseReason === "string") return pauseReason;
+  return code === WorkflowErrorCode.AGENT_CANCELLED ? "step_stopped" : "step_failed";
 }

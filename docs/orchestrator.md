@@ -45,6 +45,7 @@ export const meta = {
   place: "worktree",      // or "folder", "none"
   concurrency: 2,         // steps at once in this run
   startedBy: "people",    // agents may not start it; the default is "anyone"
+  timeout: "2h",          // then the running steps stop and the run pauses
 }
 
 const built = await agent(`Implement this ticket:\n${args.ticket}`, { agentType: "implementer", keepSession: true })
@@ -133,6 +134,9 @@ something, pauses or fails.
 - `maxAgents` caps the agents running at once across all runs. Others wait in a queue, and a
   person's run goes before a scheduled one.
 - A loop's rounds are the workflow's to cap, usually with an input such as `rounds`.
+- A workflow's `timeout` limits each start and each resume of a run. When it is reached, the
+  running steps stop and the run pauses on them, shown as `paused: time limit`. `orc resume` runs
+  them again with the whole limit, and `orc stop` ends the run.
 
 ### Places
 

@@ -75,7 +75,9 @@ export class InputProblems extends Error {
 /** Check the request and write the run's record. Nothing runs yet. */
 export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecord {
   const resolved = resolveWorkflow(paths, request.projectDir, request.workflow);
-  const { args, problems } = checkInputs(resolved.extras, request.inputs);
+  const checked = checkInputs(resolved.extras, request.inputs);
+  const args = checked.args;
+  const problems = [...(resolved.extras.metaProblems ?? []), ...checked.problems];
   if (problems.length) throw new InputProblems(resolved.name, problems);
   if (request.startedByRun && resolved.extras.startedBy === "people") {
     throw new Error(`${resolved.name} is started by people only, so the agent in run ${request.startedByRun} cannot start it.`);
@@ -104,6 +106,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
     ...(request.overrides && Object.keys(request.overrides).length ? { overrides: request.overrides } : {}),
     ...(request.defaultModel ? { defaultModel: request.defaultModel } : {}),
     ...((request.concurrency ?? resolved.extras.concurrency) ? { concurrency: request.concurrency ?? resolved.extras.concurrency } : {}),
+    ...(resolved.extras.timeout ? { timeout: resolved.extras.timeout } : {}),
     ...(request.rerunOf ? { rerunOf: request.rerunOf } : {}),
     ...(reuse ? { reuseFrom: reuse.runId } : {}),
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),

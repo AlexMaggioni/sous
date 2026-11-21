@@ -4,7 +4,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { WorkflowManager, openWorkflowDir, parseWorkflowScript, type WorkflowRunResult } from "@automatalabs/workflow-engine";
+import { WorkflowManager, openWorkflowDir, parseDurationSeconds, parseWorkflowScript, type WorkflowRunResult } from "@automatalabs/workflow-engine";
 import type { AgentRunner } from "@automatalabs/shared-types";
 import { agentsDirOption, ensureHome, homePaths, loadConfig, loadMcpServers, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
 import { checkInputs, workflowExtras } from "./inputs.js";
@@ -215,9 +215,9 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
       let stopped = 0;
       for (const scope of new Set([...prefixes.keys(), ...Object.keys(loadRecord(paths, runId)?.nested ?? {})])) {
         const prefix = from(scope);
-        if (prefix && name.startsWith(prefix)) stopped += manager.cancelAgentStep(runId, name.slice(prefix.length), scope);
+        if (prefix && name.startsWith(prefix)) stopped += manager.cancelAgentSteps(runId, { label: name.slice(prefix.length), scope });
       }
-      if (!stopped) stopped = manager.cancelAgentStep(runId, name);
+      if (!stopped) stopped = manager.cancelAgentSteps(runId, { label: name });
       log(`${stamp()} ${stopped ? `stopping   ${name}` : `no step    ${name} runs; nothing stopped`}`);
     }
   };
@@ -242,6 +242,16 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
     ...(record.defaultModel ?? config.defaultModel ? { defaultModel: record.defaultModel ?? config.defaultModel } : {}),
   };
 
+  // The workflow's time limit: the running steps stop and the run pauses on them.
+  const limit = record.timeout ? parseDurationSeconds(record.timeout) : undefined;
+  const limitTimer = limit
+    ? setTimeout(() => {
+        log(`${stamp()} time limit ${record.timeout} reached: the running steps stop and the run pauses`);
+        const message = `the workflow's time limit of ${record.timeout} was reached`;
+        if (!manager.cancelAgentSteps(runId, { pauseReason: "time_limit", message })) manager.pause(runId);
+      }, limit * 1000)
+    : undefined;
+
   let result: WorkflowRunResult | undefined;
   try {
     if (mode === "start") {
@@ -264,6 +274,7 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
       result = await resumed.promise.catch(() => undefined);
     }
   } finally {
+    clearTimeout(limitTimer);
     waits.abort();
     if (options.handleSignals) {
       process.off("SIGUSR1", onPause);

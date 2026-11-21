@@ -228,6 +228,32 @@ return { first, built }`,
     assert.deepEqual(calls.map((c) => c.label), ["first", "build", "build"], "first is not run again");
   });
 
+  it("a workflow's time limit stops the running steps and pauses the run, and resume runs them again", async () => {
+    const { paths, projectDir } = setup({
+      slow: `export const meta = { name: 'slow', description: 'slow', timeout: '200ms' }
+const first = await agent('first', { label: 'first' })
+const second = await agent('second', { label: 'second' })
+return { first, second }`,
+      vague: `export const meta = { name: 'vague', description: 'vague', timeout: 'soon' }\nreturn 1`,
+    });
+    assert.throws(() => createRun(paths, { workflow: "vague", projectDir, inputs: {} }), /meta.timeout must be a time such as "90s", "10m" or "2h", got "soon"/);
+
+    let hang = true;
+    const { runner, calls } = fakeRunner((call) => (call.label === "second" && hang ? new Promise(() => {}) : `${call.label} done`));
+    const record = createRun(paths, { workflow: "slow", projectDir, inputs: {} });
+    assert.equal(record.timeout, "200ms");
+    await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const state = managerFor(paths, projectDir).getPersistence().load(record.runId);
+    assert.equal(state?.status, "paused");
+    assert.equal(state?.pauseReason, "time_limit");
+    assert.match(String(state?.reason), /step "second" was stopped: the workflow's time limit of 200ms was reached/);
+
+    hang = false;
+    const done = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: quiet });
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"]);
+  });
+
   it("the running steps come from the log", () => {
     const text = [
       "10:00:00 start      first (claude/haiku)",

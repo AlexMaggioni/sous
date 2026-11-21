@@ -239,6 +239,7 @@ function statusWord(paths: HomePaths, record: RunRecord, state: PersistedRunStat
     if (reason === "usage_limit") return "paused: limit";
     if (reason === "step_failed") return "paused: failed step";
     if (reason === "step_stopped") return "paused: stopped step";
+    if (reason === "time_limit") return "paused: time limit";
     if (reason === "checkpoint_required") return "paused: asks";
     if (reason === "requested") return "paused";
     if (reason === "interrupted") return "interrupted";

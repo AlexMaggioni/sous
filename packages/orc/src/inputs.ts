@@ -9,11 +9,13 @@
 //     place: "worktree",
 //     concurrency: 2,
 //     startedBy: "people",   // or "anyone", the default: agents may start it too
+//     timeout: "2h",          // the running steps stop and the run pauses after this long
 //   }
 //
 // `orc run ticket --ticket "Add a --json flag"` turns the flags into the run's args.
 
 import type { Place } from "./home.js";
+import { parseDurationSeconds } from "@automatalabs/workflow-engine";
 import { isPlace } from "./places.js";
 
 export interface InputSpec {
@@ -32,6 +34,10 @@ export interface WorkflowExtras {
   concurrency?: number;
   /** "people" keeps agents from starting it. */
   startedBy: "anyone" | "people";
+  /** The time limit on a run of it, as written, such as "2h". */
+  timeout?: string;
+  /** What is wrong in the meta itself. */
+  metaProblems?: string[];
 }
 
 export function workflowExtras(meta: Record<string, unknown>): WorkflowExtras {
@@ -51,7 +57,16 @@ export function workflowExtras(meta: Record<string, unknown>): WorkflowExtras {
     ...(isPlace(meta.place) ? { place: meta.place } : {}),
     ...(typeof meta.concurrency === "number" && meta.concurrency > 0 ? { concurrency: Math.floor(meta.concurrency) } : {}),
     startedBy: meta.startedBy === "people" ? "people" : "anyone",
+    ...timeoutOf(meta.timeout),
   };
+}
+
+function timeoutOf(value: unknown): Pick<WorkflowExtras, "timeout" | "metaProblems"> {
+  if (value === undefined) return {};
+  if (parseDurationSeconds(value) === undefined) {
+    return { metaProblems: [`meta.timeout must be a time such as "90s", "10m" or "2h", got ${JSON.stringify(value)}`] };
+  }
+  return { timeout: typeof value === "number" ? `${value}s` : String(value).trim() };
 }
 
 function coerce(name: string, spec: InputSpec, value: unknown): unknown {

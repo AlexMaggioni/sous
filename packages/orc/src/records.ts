@@ -32,6 +32,8 @@ export interface RunRecord {
   /** Model for agent steps that name none. */
   defaultModel?: string;
   concurrency?: number;
+  /** The workflow's time limit, such as "2h". Each start and resume gets the whole of it. */
+  timeout?: string;
   /** Set when the run was started again from another run. */
   rerunOf?: string;
   /** The run whose unchanged steps this run reuses. */
