@@ -12,8 +12,9 @@
  * of tools+model+system-prompt, not a prose hint.
  *
  * Bound: `tools` (allowlist), `disallowedTools` (denylist), `model`, and the
- * markdown body (`prompt`). Unknown frontmatter keys such as `mcp`, `skills`, and
- * `background` are ignored. Wired: `isolation` ("worktree") → createWorktree().
+ * markdown body (`prompt`). orchestrator: `skills`, `mcp`, `effort` and `timeout` are defaults that
+ * a step's own values replace. Other keys, such as `background`, are ignored. Wired: `isolation`
+ * ("worktree") → createWorktree().
  *
  * The scanned directory is PARAMETERIZED (loadAgentRegistry's `opts`), replacing
  * Pi's old hardcoded agents directory. The `agentDefinitionKey` serialization is

@@ -2,13 +2,15 @@
 //  - starts scheduled runs, and skips one when the schedule's last run has not finished;
 //  - resumes runs paused at the subscription limit once the limit resets, and runs cut off
 //    by a crash or a restart;
-//  - removes finished runs older than keepDays, when config.json sets it.
+//  - removes finished runs older than keepDays, when config.json sets it;
+//  - once an hour, removes the worktrees whose branch was merged and that have nothing uncommitted.
 
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import type { RunStatus } from "@automatalabs/shared-types";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, loadConfig, type HomePaths, type Place } from "./home.js";
 import { createRun, logFile, spawnWorker } from "./launch.js";
+import { gcWorktrees } from "./places.js";
 import { listRecords, processAlive, updateRecord, type RunRecord } from "./records.js";
 import { managerFor } from "./worker.js";
 
@@ -29,6 +31,7 @@ interface DaemonState {
   /** Automatic resumes tried per run. */
   resumes: Record<string, { count: number; lastAt: string }>;
   lastPrune?: string;
+  lastGc?: string;
 }
 
 function readJson<T>(file: string, fallback: T): T {
@@ -171,7 +174,30 @@ export function tick(paths: HomePaths, deps: TickDeps = {}): void {
     if (removed.length) log(`pruned ${removed.length} finished runs older than ${config.keepDays} days`);
   }
 
+  // Merged worktrees.
+  if (!state.lastGc || now.getTime() - Date.parse(state.lastGc) > 3600_000) {
+    state.lastGc = now.toISOString();
+    try {
+      const projects = [...new Set(records.map((record) => record.projectDir))];
+      const { removed } = gcWorktrees(paths, projects, { unfinished: unfinishedRuns(paths, records) });
+      for (const entry of removed) log(`removed worktree ${entry.dir} (${entry.reason})`);
+    } catch (error) {
+      log(`worktree cleanup failed: ${(error as Error).message}`);
+    }
+  }
+
   writeJson(paths.daemonState, state);
+}
+
+/** The runs that have not finished: a worker runs them, or they wait paused. */
+export function unfinishedRuns(paths: HomePaths, records = listRecords(paths)): Set<string> {
+  const ids = new Set<string>();
+  for (const record of records) {
+    // A run with no state yet is about to start.
+    const status = managerFor(paths, record.projectDir).getPersistence().load(record.runId)?.status;
+    if (processAlive(record.pid) || !status || UNFINISHED.includes(status)) ids.add(record.runId);
+  }
+  return ids;
 }
 
 /** Remove finished runs older than `days`: the engine's state, orc's record and the log. Worktrees stay. */

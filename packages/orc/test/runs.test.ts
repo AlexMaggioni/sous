@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { WorkflowError, WorkflowErrorCode, type AgentRunner } from "@automatalabs/shared-types";
 import { checkWorkflow } from "../src/check.js";
-import { saveSchedules, tick } from "../src/daemon.js";
+import { main } from "../src/cli.js";
+import { saveSchedules, tick, unfinishedRuns } from "../src/daemon.js";
+import { gcWorktrees } from "../src/places.js";
 import { ensureHome, homePaths, type HomePaths } from "../src/home.js";
 import { listQuestions, writeAnswer } from "../src/inbox.js";
 import { createRun } from "../src/launch.js";
@@ -138,6 +141,98 @@ return await agent('review', { label: 'reviewer' })`,
     const record = createRun(paths, { workflow: "changes", projectDir, inputs: {}, overrides: { reviewer: { model: "claude/opus" } } });
     await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
     assert.equal(calls[0]!.options.model, "claude/opus");
+  });
+});
+
+describe("places and reruns", () => {
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const gitProject = (workflows: Record<string, string>) => {
+    const made = setup(workflows, { defaultPlace: "worktree" });
+    git(made.projectDir, "init", "-q", "-b", "main");
+    git(made.projectDir, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "start");
+    return made;
+  };
+
+  it("a run that changed no file removes its worktree when it ends, and one that did keeps it", async () => {
+    const { paths, projectDir } = gitProject({
+      look: `export const meta = { name: 'look', description: 'reads only' }\nreturn await agent('look around', { label: 'reader' })`,
+      write: `export const meta = { name: 'write', description: 'writes a file' }\nreturn await agent('write it', { label: 'writer' })`,
+    });
+    const { runner } = fakeRunner((call) => {
+      if (call.label === "writer") writeFileSync(join(String(call.options.cwd), "new.txt"), "hello\n");
+      return "done";
+    });
+    const reader = createRun(paths, { workflow: "look", projectDir, inputs: {} });
+    const writer = createRun(paths, { workflow: "write", projectDir, inputs: {} });
+    assert.ok(existsSync(reader.worktree!) && existsSync(writer.worktree!));
+    await runWorker(reader.runId, "start", { paths, inner: runner, log: quiet });
+    await runWorker(writer.runId, "start", { paths, inner: runner, log: quiet });
+    assert.equal(existsSync(reader.worktree!), false, "nothing changed, so the worktree is gone");
+    assert.equal(git(projectDir, "branch", "--list", reader.branch!), "", "and its branch");
+    assert.equal(existsSync(join(writer.worktree!, "new.txt")), true, "the writer's work stays for review");
+
+    // Cleanup keeps the worktree of a run that has not finished, even with no commit yet, and
+    // removes a finished run's worktree once its branch is merged.
+    const waiting = createRun(paths, { workflow: "look", projectDir, inputs: {} });
+    git(writer.worktree!, "add", "new.txt");
+    git(writer.worktree!, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "work");
+    git(projectDir, "merge", "-q", writer.branch!);
+    const records = [loadRecord(paths, waiting.runId)!, loadRecord(paths, writer.runId)!];
+    const result = gcWorktrees(paths, [projectDir], { unfinished: unfinishedRuns(paths, records) });
+    assert.deepEqual(result.removed.map((r) => r.reason), ["merged"]);
+    assert.equal(existsSync(writer.worktree!), false);
+    assert.equal(existsSync(waiting.worktree!), true);
+
+    // Discarding a run deletes its branch and worktree, but only with --yes.
+    const before = process.env.ORC_HOME;
+    process.env.ORC_HOME = paths.home;
+    try {
+      assert.equal(await main(["discard", waiting.runId]), 1);
+      assert.equal(existsSync(waiting.worktree!), true);
+      assert.equal(await main(["discard", waiting.runId, "--yes"]), 0);
+    } finally {
+      if (before === undefined) delete process.env.ORC_HOME;
+      else process.env.ORC_HOME = before;
+    }
+    assert.equal(existsSync(waiting.worktree!), false);
+    assert.equal(git(projectDir, "branch", "--list", waiting.branch!), "");
+  });
+
+  it("a rerun after an edit reuses the steps before the edit, in the same place", async () => {
+    const { paths, projectDir } = setup({
+      two: `export const meta = { name: 'two', description: 'two steps' }
+const plan = await agent('plan it', { label: 'planner' })
+const build = await agent('build ' + plan, { label: 'builder' })
+return build`,
+    });
+    const { runner, calls } = fakeRunner((call) => (call.label === "planner" ? "the plan" : `built: ${call.prompt}`));
+    const first = createRun(paths, { workflow: "two", projectDir, inputs: {} });
+    await runWorker(first.runId, "start", { paths, inner: runner, log: quiet });
+    writeFileSync(join(projectDir, ".orchestrator", "workflows", "two.js"), `export const meta = { name: 'two', description: 'two steps' }
+const plan = await agent('plan it', { label: 'planner' })
+const build = await agent('build carefully ' + plan, { label: 'builder' })
+return build`);
+    const again = createRun(paths, { workflow: "two", projectDir, inputs: {}, reuseFrom: first, origin: "rerun", rerunOf: first.runId });
+    assert.equal(again.cwd, first.cwd);
+    const result = await runWorker(again.runId, "start", { paths, inner: runner, log: quiet });
+    assert.equal(result?.result, "built: build carefully the plan");
+    assert.deepEqual(calls.map((c) => c.label), ["planner", "builder", "builder"], "the planner ran once");
+  });
+
+  it("an agent cannot start a workflow kept for people, nor pick it", async () => {
+    const { paths, projectDir } = setup({
+      private: `export const meta = { name: 'private', description: 'people only', startedBy: 'people' }\nreturn 1`,
+      open: `export const meta = { name: 'open', description: 'anyone' }\nreturn 2`,
+      picker: `export const meta = { name: 'picker', description: 'lets an agent pick' }\nreturn await choose('Pick one', { any: true })`,
+    });
+    assert.throws(() => createRun(paths, { workflow: "private", projectDir, inputs: {}, startedByRun: "r1" }), /started by people only/);
+    assert.ok(createRun(paths, { workflow: "private", projectDir, inputs: {} }), "a person can");
+    const { runner, calls } = fakeRunner(() => ({ choice: "open", reason: "it is open" }));
+    const record = createRun(paths, { workflow: "picker", projectDir, inputs: {} });
+    const result = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    assert.match(calls[0]!.prompt, /- open: anyone/);
+    assert.doesNotMatch(calls[0]!.prompt, /private/);
+    assert.equal((result?.result as { result: unknown }).result, 2);
   });
 });
 

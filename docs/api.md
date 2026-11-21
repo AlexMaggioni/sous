@@ -2026,7 +2026,7 @@ Scripts run in a deterministic `vm` realm (`Date.now`/`Math.random`/argless `new
 
 Orchestrator additions: `sh(command, opts?)`, `js(source, input?, opts?)`, `py(source, input?, opts?)`, `run(file, opts?)` and `waitUntil(command, { every?, timeout? })` are code steps. Each runs as an `agent()` call with model `exec`, a JSON spec as its prompt and a fixed result schema, so the journal, resume, retries and limits treat it like any other call. The host's runner must handle the `exec` model. `ask(question, { choices? })` and `breakpoint(title, stepOrOptions?, opts?)` wait for the user through `checkpoint()`. `choose(prompt, { steps?, workflows?, any?, none?, input? })` lets an agent pick the next step or workflow and runs it. `stepOverrides` in the run options changes a step's options by its label for one run.
 
-Nested workflows don't reuse the parent's resume journal. On resume, a nested child runs again live.
+A nested run keeps its own journal under its run id, `<run>-nested<n>`, and never reuses the parent's. On resume, the finished steps of a nested run replay from that journal, and the rest runs live.
 
 `gate()` validators may return `{ ok: boolean, feedback?: string, ... }`, a bare boolean, or
 `null`. A fulfilled gate returns exactly `{ ok, value, verdict, attempts }`: `value` is the final

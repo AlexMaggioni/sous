@@ -9,12 +9,12 @@ import { resolve } from "node:path";
 import { openWorkflowDir, type PersistedRunState } from "@automatalabs/workflow-engine";
 import { checkWorkflow } from "./check.js";
 import { cronMatches, nextRun, parseCron } from "./cron.js";
-import { daemonMain, daemonPid, loadSchedules, prune, saveSchedules, type Schedule } from "./daemon.js";
+import { daemonMain, daemonPid, loadSchedules, prune, saveSchedules, unfinishedRuns, type Schedule } from "./daemon.js";
 import { ensureHome, findProjectDir, homePaths, loadConfig, workflowDirs, type HomePaths, type Place } from "./home.js";
 import { listQuestions, normalizeAnswer, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
 import { workflowExtras } from "./inputs.js";
 import { createRun, InputProblems, logFile, resolveWorkflow, spawnWorker } from "./launch.js";
-import { gcWorktrees, isPlace } from "./places.js";
+import { gcWorktrees, isPlace, removeWorktree, runWorktrees } from "./places.js";
 import { findRecord, listRecords, processAlive, updateRecord, type RunRecord } from "./records.js";
 import { managerFor, workerMain } from "./worker.js";
 
@@ -29,7 +29,7 @@ interface Parsed {
 
 /** orc's own flags. Any other --name before `--`, and everything after it, is a workflow input. */
 const OWN_FLAGS = new Set(["place", "model", "project", "concurrency", "priority", "cron", "days", "lines"]);
-const OWN_SWITCHES = new Set(["wait", "json", "all", "follow", "f", "dry-run", "yes", "help", "h"]);
+const OWN_SWITCHES = new Set(["wait", "json", "all", "follow", "f", "dry-run", "yes", "reuse", "help", "h"]);
 
 export function parseArgs(argv: string[], ownFlags = OWN_FLAGS, ownSwitches = OWN_SWITCHES): Parsed {
   const parsed: Parsed = { positionals: [], flags: {}, sets: [], inputs: {} };
@@ -330,6 +330,8 @@ async function cmdRun(parsed: Parsed): Promise<number> {
     ...(parsed.sets.length ? { overrides: parseSets(parsed.sets) } : {}),
     ...(str(parsed.flags.model) ? { defaultModel: str(parsed.flags.model)! } : {}),
     ...(concurrency ? { concurrency: Number(concurrency) } : {}),
+    // An agent in a run starts workflows through this command too. Its shell carries the run's id.
+    ...(process.env.ORC_RUN_ID ? { startedByRun: process.env.ORC_RUN_ID, origin: "agent" as const } : {}),
   });
   return startAndMaybeWait(paths, record, "start", parsed);
 }
@@ -375,7 +377,7 @@ function cmdShow(parsed: Parsed): number {
   out(`status    ${statusWord(paths, record, state)}${state?.resetHint ? ` (${state.resetHint})` : ""}`);
   if (state?.reason && state.status !== "completed" && state.reason !== state.pauseReason) out(`reason    ${state.reason}`);
   out(`place     ${record.place}  ${record.cwd}${record.branch ? `  (branch ${record.branch})` : ""}`);
-  out(`started   ${record.createdAt}  by ${record.origin}${record.schedule ? ` (${record.schedule})` : ""}${record.rerunOf ? `, rerun of ${record.rerunOf}` : ""}`);
+  out(`started   ${record.createdAt}  by ${record.origin}${record.schedule ? ` (${record.schedule})` : ""}${record.rerunOf ? `, rerun of ${record.rerunOf}` : ""}${record.reuseFrom ? `, reusing its unchanged steps` : ""}${record.startedByRun ? `, from run ${record.startedByRun}` : ""}`);
   if (Object.keys(record.args).length) out(`inputs    ${JSON.stringify(record.args)}`);
   if (record.overrides) out(`changes   ${JSON.stringify(record.overrides)}`);
   if (state?.tokenUsage) out(`tokens    ${state.tokenUsage.total}${state.durationMs ? `  in ${Math.round(state.durationMs / 1000)}s` : ""}`);
@@ -383,8 +385,10 @@ function cmdShow(parsed: Parsed): number {
     out("steps");
     for (const agent of state.agents) {
       const mark = agent.status === "done" ? "done " : agent.status === "error" ? "error" : agent.status.padEnd(5);
+      const seconds = agent.startedAt && agent.endedAt ? Math.round((Date.parse(agent.endedAt) - Date.parse(agent.startedAt)) / 1000) : undefined;
+      const cost = [seconds !== undefined ? `${seconds}s` : "", agent.tokens ? `${agent.tokens} tokens` : ""].filter(Boolean).join(", ");
       const extra = agent.error ? `  ${agent.error.replace(/\s+/g, " ").slice(0, 120)}` : agent.model ? `  ${agent.model}` : "";
-      out(`  ${mark} ${agent.label}${extra}`);
+      out(`  ${mark} ${agent.label}${cost ? `  (${cost})` : ""}${extra}`);
     }
   }
   for (const question of questions) out(`asks      ${question.id}: ${question.prompt}\n          ${howToAnswer(question)}`);
@@ -490,7 +494,15 @@ async function cmdRerun(parsed: Parsed): Promise<number> {
   const old = needRecord(paths, parsed.positionals[0]);
   const place = str(parsed.flags.place) ?? old.place;
   if (!isPlace(place)) throw new Usage(`--place is worktree, folder or none, got "${place}"`);
+  const reuse = Boolean(parsed.flags.reuse);
+  if (reuse) {
+    const state = stateOf(paths, old);
+    if (processAlive(old.pid) || state?.status === "running" || state?.status === "pending") throw new Error(`${old.runId} is still running. orc stop ${old.runId} first.`);
+    if (state?.status === "paused") throw new Error(`${old.runId} is paused. orc resume ${old.runId} takes your edits and keeps the finished steps.`);
+    if (parsed.flags.place) throw new Usage("--reuse works where the earlier run worked, so it takes no --place");
+  }
   const record = createRun(paths, {
+    ...(reuse ? { reuseFrom: old } : {}),
     workflow: old.file,
     projectDir: old.projectDir,
     inputs: { ...old.args, ...parsed.inputs },
@@ -660,11 +672,33 @@ async function cmdDaemon(parsed: Parsed): Promise<number> {
 
 function cmdGc(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
-  const projects = [...new Set(listRecords(paths).map((record) => record.projectDir))];
-  const result = gcWorktrees(paths, projects, { dryRun: parsed.flags["dry-run"] === true });
+  const records = listRecords(paths);
+  const projects = [...new Set(records.map((record) => record.projectDir))];
+  const result = gcWorktrees(paths, projects, { dryRun: parsed.flags["dry-run"] === true, unfinished: unfinishedRuns(paths, records) });
   for (const item of result.removed) out(`${parsed.flags["dry-run"] ? "would remove" : "removed"} ${item.dir} (${item.branch}): ${item.reason}`);
   for (const item of result.kept) out(`kept ${item.dir} (${item.branch}): ${item.reason}`);
   if (!result.removed.length && !result.kept.length) out("no worktrees");
+  return 0;
+}
+
+function cmdDiscard(parsed: Parsed): number {
+  const paths = ensureHome(homePaths());
+  const record = needRecord(paths, parsed.positionals[0]);
+  if (processAlive(record.pid)) throw new Error(`${record.runId} is running. orc stop ${record.runId} first.`);
+  const trees = runWorktrees(paths, record.runId);
+  if (!trees.length) {
+    out(`${record.runId} has no worktree left`);
+    return 0;
+  }
+  if (parsed.flags.yes !== true) {
+    for (const tree of trees) out(`would delete ${tree.branch} and ${tree.dir}`);
+    out(`the work on these branches is lost. orc discard ${record.runId} --yes deletes them.`);
+    return 1;
+  }
+  for (const tree of trees) {
+    removeWorktree(record.projectDir, tree.dir, tree.branch);
+    out(`deleted ${tree.branch} and ${tree.dir}`);
+  }
   return 0;
 }
 
@@ -699,12 +733,14 @@ const HELP = `orc runs saved workflows in the background.
   orc resume <run> [--wait]            go on from where the run paused or failed
   orc stop <run>                       end the run; its worktree stays
   orc rerun <run> [--name value ...]   start the same workflow again with the same inputs
+        --reuse                      keep the results of the steps you did not edit, in the same place
   orc workflows                        saved workflows and their inputs
   orc check <workflow> [--name value]  check a workflow without running it
   orc schedule add <name> <workflow> --cron "<min hour day month weekday>" [--name value ...]
   orc schedule list|remove|enable|disable|test <name>
   orc daemon start|stop|status         the service that starts schedules and resumes runs after the limit
   orc gc [--dry-run]                   remove worktrees whose branch is merged
+  orc discard <run> [--yes]            delete the run's branches and worktrees, merged or not
   orc prune --days N                   remove finished runs older than N days
 
 Home: ${homePaths().home} (set ORC_HOME to change). A project's .orchestrator/ folder holds its
@@ -764,6 +800,8 @@ export async function main(argv: string[]): Promise<number> {
         return cmdGc(parsed);
       case "prune":
         return cmdPrune(parsed);
+      case "discard":
+        return cmdDiscard(parsed);
       default:
         throw new Usage(`unknown command "${command}". orc help lists them.`);
     }

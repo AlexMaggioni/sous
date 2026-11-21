@@ -21,8 +21,8 @@ export interface RunRecord {
   worktree?: string;
   branch?: string;
   priority: Priority;
-  /** Who started it: a person at the command line, a schedule, or a rerun. */
-  origin: "cli" | "schedule" | "rerun";
+  /** Who started it: a person at the command line, a schedule, a rerun, or an agent in another run. */
+  origin: "cli" | "schedule" | "rerun" | "agent";
   schedule?: string;
   /** The worker process, while one runs the run. */
   pid?: number;
@@ -34,6 +34,10 @@ export interface RunRecord {
   concurrency?: number;
   /** Set when the run was started again from another run. */
   rerunOf?: string;
+  /** The run whose unchanged steps this run reuses. */
+  reuseFrom?: string;
+  /** The run whose agent started this one. */
+  startedByRun?: string;
 }
 
 function recordFile(paths: HomePaths, runId: string): string {

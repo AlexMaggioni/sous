@@ -9,7 +9,7 @@ import type { AgentRunner } from "@automatalabs/shared-types";
 import { agentsDirOption, ensureHome, homePaths, loadConfig, loadMcpServers, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
 import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuestion, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
-import { isPlace, preparePlace } from "./places.js";
+import { dropUnchangedWorktrees, isPlace, preparePlace } from "./places.js";
 import { loadRecord, updateRecord, type RunRecord } from "./records.js";
 import { createOrcRunner } from "./runner.js";
 import { SlotPool } from "./slots.js";
@@ -55,10 +55,11 @@ export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<
     orchestrator: {
       maxNestingDepth: 5,
       pauseOnFailedStep: true,
+      // What an agent may pick with choose({ any: true }). Workflows for people only stay out.
       listSavedWorkflows: () =>
         dirs
           .list()
-          .filter((entry) => entry.meta)
+          .filter((entry) => entry.meta && (entry.meta as { startedBy?: unknown }).startedBy !== "people")
           .map((entry) => ({ name: entry.name, ...(entry.meta?.description ? { description: entry.meta.description } : {}) })),
       prepareNestedPlace: ({ place, childRunId, cwd }) => {
         if (!isPlace(place)) throw new Error(`place must be worktree, folder or none, got "${place}"`);
@@ -182,7 +183,11 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
   try {
     if (mode === "start") {
       log(`${stamp()} run        ${record.workflow} in ${record.cwd}`);
-      result = await manager.runSync(readFileSync(record.file, "utf8"), record.args, { ...exec, runId });
+      result = await manager.runSync(readFileSync(record.file, "utf8"), record.args, {
+        ...exec,
+        runId,
+        ...(record.reuseFrom ? { resumeFromRunId: record.reuseFrom } : {}),
+      });
     } else {
       log(`${stamp()} resume     ${record.workflow}`);
       const script = existsSync(record.file) ? readFileSync(record.file, "utf8") : undefined;
@@ -212,16 +217,25 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
   const reason = state?.pauseReason ? ` (${state.pauseReason}${state.resetHint ? `, ${state.resetHint}` : ""})` : "";
   const error = result?.reason ?? state?.reason;
   log(`${stamp()} ${status.padEnd(10)} ${record.workflow}${reason}${status === "failed" && error ? `: ${oneLine(String(error), 400)}` : ""}`);
-  notify(
-    `${record.workflow} ${status}`,
-    status === "paused" ? `paused${reason}. orc resume ${runId}` : status === "failed" ? oneLine(String(error ?? "failed"), 200) : `run ${runId}`,
-    config.notify,
-  );
+  if (status === "completed" || status === "aborted") {
+    for (const dir of dropUnchangedWorktrees(paths, record.projectDir, runId)) log(`${stamp()} removed    ${dir}, which changed no file`);
+  }
+  // A scheduled run speaks up only when it needs the user or fails.
+  const quiet = record.origin === "schedule" && (status === "completed" || status === "aborted");
+  if (!quiet) {
+    notify(
+      `${record.workflow} ${status}`,
+      status === "paused" ? `paused${reason}. orc resume ${runId}` : status === "failed" ? oneLine(String(error ?? "failed"), 200) : `run ${runId}`,
+      config.notify,
+    );
+  }
   return result;
 }
 
 /** The detached process: `orc _worker <runId> start|resume`. */
 export async function workerMain(runId: string, mode: "start" | "resume"): Promise<number> {
+  // The agents' shells inherit it, so `orc run` knows when an agent starts a workflow.
+  process.env.ORC_RUN_ID = runId;
   try {
     const result = await runWorker(runId, mode, { handleSignals: true });
     return result?.status === "failed" ? 1 : 0;

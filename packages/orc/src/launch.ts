@@ -60,6 +60,10 @@ export interface CreateRunRequest {
   defaultModel?: string;
   concurrency?: number;
   rerunOf?: string;
+  /** Reuse the results of this run's steps that did not change. The new run works in its place. */
+  reuseFrom?: RunRecord;
+  /** The run whose agent asks for this one, when an agent starts it. */
+  startedByRun?: string;
 }
 
 export class InputProblems extends Error {
@@ -73,10 +77,17 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   const resolved = resolveWorkflow(paths, request.projectDir, request.workflow);
   const { args, problems } = checkInputs(resolved.extras, request.inputs);
   if (problems.length) throw new InputProblems(resolved.name, problems);
+  if (request.startedByRun && resolved.extras.startedBy === "people") {
+    throw new Error(`${resolved.name} is started by people only, so the agent in run ${request.startedByRun} cannot start it.`);
+  }
   const config = loadConfig(paths);
-  const place = request.place ?? resolved.extras.place ?? config.defaultPlace;
   const runId = generateRunId();
-  const prepared = preparePlace(paths, place, runId, request.projectDir);
+  const reuse = request.reuseFrom;
+  // A run that reuses another's results needs that run's files too, so it works where it did.
+  const place = reuse ? reuse.place : (request.place ?? resolved.extras.place ?? config.defaultPlace);
+  const prepared = reuse
+    ? { cwd: reuse.cwd, ...(reuse.worktree ? { worktree: reuse.worktree, branch: reuse.branch } : {}) }
+    : preparePlace(paths, place, runId, request.projectDir);
   const record: RunRecord = {
     runId,
     workflow: resolved.name,
@@ -94,6 +105,8 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
     ...(request.defaultModel ? { defaultModel: request.defaultModel } : {}),
     ...((request.concurrency ?? resolved.extras.concurrency) ? { concurrency: request.concurrency ?? resolved.extras.concurrency } : {}),
     ...(request.rerunOf ? { rerunOf: request.rerunOf } : {}),
+    ...(reuse ? { reuseFrom: reuse.runId } : {}),
+    ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
   };
   saveRecord(paths, record);
   return record;

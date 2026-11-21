@@ -8,6 +8,7 @@
 //     outputs: { summary: "What was built" },
 //     place: "worktree",
 //     concurrency: 2,
+//     startedBy: "people",   // or "anyone", the default: agents may start it too
 //   }
 //
 // `orc run ticket --ticket "Add a --json flag"` turns the flags into the run's args.
@@ -29,6 +30,8 @@ export interface WorkflowExtras {
   outputs?: Record<string, unknown>;
   place?: Place;
   concurrency?: number;
+  /** "people" keeps agents from starting it. */
+  startedBy: "anyone" | "people";
 }
 
 export function workflowExtras(meta: Record<string, unknown>): WorkflowExtras {
@@ -47,6 +50,7 @@ export function workflowExtras(meta: Record<string, unknown>): WorkflowExtras {
     ...(meta.outputs && typeof meta.outputs === "object" ? { outputs: meta.outputs as Record<string, unknown> } : {}),
     ...(isPlace(meta.place) ? { place: meta.place } : {}),
     ...(typeof meta.concurrency === "number" && meta.concurrency > 0 ? { concurrency: Math.floor(meta.concurrency) } : {}),
+    startedBy: meta.startedBy === "people" ? "people" : "anyone",
   };
 }
 
