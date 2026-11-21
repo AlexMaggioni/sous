@@ -12,7 +12,7 @@ import { gcWorktrees } from "../src/places.js";
 import { ensureHome, homePaths, type HomePaths } from "../src/home.js";
 import { listQuestions, writeAnswer } from "../src/inbox.js";
 import { createRun } from "../src/launch.js";
-import { loadRecord } from "../src/records.js";
+import { loadRecord, updateRecord } from "../src/records.js";
 import { managerFor, runWorker } from "../src/worker.js";
 
 // Whole runs in this process, with a fake agent runner, the way `orc run` drives them.
@@ -130,6 +130,53 @@ return { first, second }`,
     assert.equal(resumed?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(resumed?.result)), { first: "first done", second: "second done" });
     assert.deepEqual(calls.slice(3).map((c) => c.label), ["second"], "first is not run again");
+  });
+
+  it("a run keeps the workflows it started with, and resume asks before it takes an edit", async () => {
+    const childFile = (projectDir: string) => join(projectDir, ".orchestrator", "workflows", "child.js");
+    const child = (version: string) => `export const meta = { name: 'child', description: 'child' }\nreturn await agent('${version}', { label: 'build' })`;
+    const { paths, projectDir } = setup(
+      {
+        child: child("v1"),
+        parent: `export const meta = { name: 'parent', description: 'parent' }\nawait agent('look', { label: 'look' })\nreturn await workflow('child', {})`,
+      },
+      { retries: 1 },
+    );
+    let broken = true;
+    const { runner, calls } = fakeRunner((call) => {
+      // Someone edits the child while the run goes on.
+      if (call.label === "look") writeFileSync(childFile(projectDir), child("v2"));
+      if (call.label === "build" && broken) throw new WorkflowError("the tests fail", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true });
+      return `${call.prompt} done`;
+    });
+    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    assert.equal((await runWorker(record.runId, "start", { paths, inner: runner, log: quiet }))?.status, "paused");
+    assert.deepEqual(calls.filter((c) => c.label === "build").map((c) => c.prompt), ["v1", "v1"], "the edit did not reach the run");
+
+    const before = process.env.ORC_HOME;
+    process.env.ORC_HOME = paths.home;
+    const errors: string[] = [];
+    const write = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => (errors.push(String(chunk)), true)) as typeof process.stderr.write;
+    try {
+      assert.equal(await main(["resume", record.runId]), 1);
+    } finally {
+      process.stderr.write = write;
+      if (before === undefined) delete process.env.ORC_HOME;
+      else process.env.ORC_HOME = before;
+    }
+    assert.match(errors.join(""), /child changed since .*--latest takes the new version.*--same goes on with the version it started with/);
+
+    await runWorker(record.runId, "resume", { paths, inner: runner, log: quiet });
+    assert.equal(managerFor(paths, projectDir).getPersistence().load(record.runId)?.status, "paused");
+    assert.equal(calls.at(-1)?.prompt, "v1", "a plain resume keeps the run's version");
+
+    updateRecord(paths, record.runId, { resumeLatest: true });
+    broken = false;
+    const done = await runWorker(record.runId, "resume", { paths, inner: runner, log: quiet });
+    assert.equal(done?.result, "v2 done");
+    assert.equal(loadRecord(paths, record.runId)?.resumeLatest, undefined);
+    assert.equal(calls.filter((c) => c.label === "look").length, 1, "the finished step is not run again");
   });
 
   it("per-run step changes and a default model reach the agent", async () => {
@@ -422,5 +469,23 @@ describe("service", () => {
       assert.equal(started.length, 1);
       assert.match(lines.join("\n"), /skipped, run .* has not finished/);
     }
+  });
+
+  it("tells the user once about a run cut off by a crash and leaves it for them to resume, while a limit pause resumes", () => {
+    const { paths, projectDir } = setup({ job: `export const meta = { name: 'job', description: 'j' }\nreturn 1` });
+    const cut = createRun(paths, { workflow: "job", projectDir, inputs: {} });
+    const limited = createRun(paths, { workflow: "job", projectDir, inputs: {} });
+    const persistence = managerFor(paths, projectDir).getPersistence() as unknown as { save: (state: unknown) => void };
+    const at = new Date(2026, 10, 21, 10, 0).toISOString();
+    const base = { startedAt: at, updatedAt: at, agents: [], logs: [], phases: [] };
+    persistence.save({ ...base, runId: cut.runId, status: "paused", pauseReason: "interrupted" });
+    persistence.save({ ...base, runId: limited.runId, status: "paused", pauseReason: "usage_limit", resetHint: "Resets at 2026-11-21T10:30:00.000Z" });
+    const spawned: string[] = [];
+    const told: string[] = [];
+    const deps = { spawn: (runId: string) => spawned.push(runId), notify: (title: string, body: string) => told.push(`${title}: ${body}`), log: quiet };
+    tick(paths, { ...deps, now: new Date("2026-11-21T11:00:00.000Z") });
+    tick(paths, { ...deps, now: new Date("2026-11-21T11:05:00.000Z") });
+    assert.deepEqual(spawned, [limited.runId]);
+    assert.deepEqual(told, [`job was cut off: orc resume ${cut.runId} goes on from where it stopped`]);
   });
 });

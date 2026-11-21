@@ -11,7 +11,7 @@ import { checkInputs, workflowExtras } from "./inputs.js";
 import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuestion, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
 import { dropUnchangedWorktrees, isPlace, preparePlace } from "./places.js";
-import { loadRecord, noteNested, updateRecord, type RunRecord } from "./records.js";
+import { loadRecord, loadSnapshot, noteNested, saveSnapshot, updateRecord, type RunRecord } from "./records.js";
 import { createOrcRunner } from "./runner.js";
 import { SlotPool } from "./slots.js";
 
@@ -42,6 +42,17 @@ async function loadInner(): Promise<AgentRunner | undefined> {
   const loaded = (await import(pathToFileURL(module).href)) as { default?: AgentRunner };
   if (!loaded.default || typeof loaded.default.run !== "function") throw new Error(`${module} must export a default runner with run()`);
   return loaded.default;
+}
+
+/** Every saved workflow the project sees now, by name, as script text. */
+export function currentWorkflows(paths: HomePaths, projectDir: string): Record<string, string> {
+  const dirs = openWorkflowDir(workflowDirs(projectDir, paths));
+  const out: Record<string, string> = {};
+  for (const entry of dirs.list()) {
+    const script = dirs.resolve(entry.name);
+    if (script !== undefined) out[entry.name] = script;
+  }
+  return out;
 }
 
 export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<ConstructorParameters<typeof WorkflowManager>[0]> = {}) {
@@ -107,7 +118,14 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
       }
     },
   });
-  const manager = managerFor(paths, record.projectDir);
+  // A run keeps the workflows as they were when it started. A resume takes the edited ones only
+  // after `orc resume --latest`.
+  const takeLatest = mode === "resume" && record.resumeLatest === true;
+  if (mode === "start" || takeLatest) saveSnapshot(paths, runId, currentWorkflows(paths, record.projectDir));
+  if (takeLatest) updateRecord(paths, runId, { resumeLatest: undefined });
+  const snapshot = loadSnapshot(paths, runId);
+  const live = openWorkflowDir(workflowDirs(record.projectDir, paths));
+  const manager = managerFor(paths, record.projectDir, { loadSavedWorkflow: (name) => snapshot[name] ?? live.resolve(name) });
 
   const waits = new AbortController();
   const pollMs = options.pollMs ?? 500;
@@ -219,7 +237,7 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
       });
     } else {
       log(`${stamp()} resume     ${record.workflow}`);
-      const script = existsSync(record.file) ? readFileSync(record.file, "utf8") : undefined;
+      const script = takeLatest && existsSync(record.file) ? readFileSync(record.file, "utf8") : undefined;
       // The engine keeps the place and the model from the start, so a resume passes neither.
       const { cwd: _cwd, defaultModel: _model, ...controls } = exec as typeof exec & { defaultModel?: string };
       const resumed = await manager.resumeInBackground(runId, { ...controls, ...(script ? { script } : {}) });

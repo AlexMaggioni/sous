@@ -15,8 +15,8 @@ import { listQuestions, normalizeAnswer, readQuestion, removeRunQuestions, write
 import { workflowExtras } from "./inputs.js";
 import { createRun, InputProblems, logFile, resolveWorkflow, spawnWorker } from "./launch.js";
 import { gcWorktrees, isPlace, removeWorktree, runWorktrees } from "./places.js";
-import { findRecord, listRecords, processAlive, updateRecord, type RunRecord } from "./records.js";
-import { managerFor, workerMain } from "./worker.js";
+import { findRecord, listRecords, loadSnapshot, processAlive, updateRecord, type RunRecord } from "./records.js";
+import { currentWorkflows, managerFor, workerMain } from "./worker.js";
 
 class Usage extends Error {}
 
@@ -29,7 +29,7 @@ interface Parsed {
 
 /** orc's own flags. Any other --name before `--`, and everything after it, is a workflow input. */
 const OWN_FLAGS = new Set(["place", "model", "project", "concurrency", "priority", "cron", "days", "lines"]);
-const OWN_SWITCHES = new Set(["wait", "json", "all", "follow", "f", "dry-run", "yes", "reuse", "help", "h"]);
+const OWN_SWITCHES = new Set(["wait", "json", "all", "follow", "f", "dry-run", "yes", "reuse", "latest", "same", "help", "h"]);
 
 export function parseArgs(argv: string[], ownFlags = OWN_FLAGS, ownSwitches = OWN_SWITCHES): Parsed {
   const parsed: Parsed = { positionals: [], flags: {}, sets: [], inputs: {} };
@@ -240,6 +240,7 @@ function statusWord(paths: HomePaths, record: RunRecord, state: PersistedRunStat
     if (reason === "step_failed") return "paused: failed step";
     if (reason === "checkpoint_required") return "paused: asks";
     if (reason === "requested") return "paused";
+    if (reason === "interrupted") return "interrupted";
     return `paused: ${reason ?? "?"}`;
   }
   if (state.status === "aborted") return "stopped";
@@ -563,8 +564,23 @@ async function cmdResume(parsed: Parsed): Promise<number> {
   if (!state) throw new Error(`${record.runId} never started. orc rerun ${record.runId} starts it fresh.`);
   if (state.status === "completed") throw new Error(`${record.runId} completed. orc rerun ${record.runId} runs it again.`);
   if (state.status === "aborted") throw new Error(`${record.runId} was stopped. orc rerun ${record.runId} starts it again.`);
-  const edited = existsSync(record.file) && readFileSync(record.file, "utf8") !== state.script;
-  if (edited) out(`note: ${record.file} changed since the run started. The run goes on with the new version; finished steps stay done where they match.`);
+  // An edit reaches a run only when the user says so at resume.
+  const snapshot = loadSnapshot(paths, record.runId);
+  const current = currentWorkflows(paths, record.projectDir);
+  const used = new Set(Object.values(record.nested ?? {}).map((child) => child.workflow));
+  const changed = [
+    ...(existsSync(record.file) && readFileSync(record.file, "utf8") !== state.script ? [record.workflow] : []),
+    ...[...used].filter((name) => name !== record.workflow && snapshot[name] !== undefined && current[name] !== snapshot[name]),
+  ];
+  if (parsed.flags.latest && parsed.flags.same) throw new Usage("--latest or --same, not both");
+  if (changed.length && !parsed.flags.latest && !parsed.flags.same) {
+    throw new Error(
+      `${changed.join(", ")} changed since ${record.runId} started. ` +
+        `orc resume ${record.runId} --latest takes the new version, and the finished steps that match stay done. ` +
+        `orc resume ${record.runId} --same goes on with the version it started with.`,
+    );
+  }
+  if (parsed.flags.latest) updateRecord(paths, record.runId, { resumeLatest: true });
   return startAndMaybeWait(paths, record, "resume", parsed);
 }
 
@@ -809,7 +825,8 @@ const HELP = `orc runs saved workflows in the background.
   orc approve <question>               approve a breakpoint
   orc send-back <question> <note>      send a breakpoint's step back with a note
   orc pause <run>                      finish running steps, start nothing new
-  orc resume <run> [--wait]            go on from where the run paused or failed
+  orc resume <run> [--wait]            go on from where the run paused, failed or was cut off
+        --latest | --same              after an edit: take the new version, or keep the run's own
   orc stop <run>                       end the run; its worktree stays
   orc rerun <run> [--name value ...]   start the same workflow again with the same inputs
         --reuse                      keep the results of the steps you did not edit, in the same place

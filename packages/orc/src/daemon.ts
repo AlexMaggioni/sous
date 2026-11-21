@@ -1,7 +1,7 @@
 // The background service: `orc daemon start`. Every 20 seconds it
 //  - starts scheduled runs, and skips one when the schedule's last run has not finished;
-//  - resumes runs paused at the subscription limit once the limit resets, and runs cut off
-//    by a crash or a restart;
+//  - resumes runs paused at the subscription limit once the limit resets;
+//  - tells the user, once, about a run cut off by a crash or a restart. It waits for `orc resume`;
 //  - removes finished runs older than keepDays, when config.json sets it;
 //  - once an hour, removes the worktrees whose branch was merged and that have nothing uncommitted.
 
@@ -11,7 +11,8 @@ import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, loadConfig, type HomePaths, type Place } from "./home.js";
 import { createRun, logFile, spawnWorker } from "./launch.js";
 import { gcWorktrees } from "./places.js";
-import { listRecords, processAlive, updateRecord, type RunRecord } from "./records.js";
+import { notify } from "./notify.js";
+import { listRecords, processAlive, snapshotFile, updateRecord, type RunRecord } from "./records.js";
 import { managerFor } from "./worker.js";
 
 export interface Schedule {
@@ -30,6 +31,8 @@ interface DaemonState {
   fired: Record<string, string>;
   /** Automatic resumes tried per run. */
   resumes: Record<string, { count: number; lastAt: string }>;
+  /** Runs cut off by a crash or a restart that the user was told about. */
+  told?: Record<string, string>;
   lastPrune?: string;
   lastGc?: string;
 }
@@ -80,6 +83,7 @@ export interface TickDeps {
   now?: Date;
   log?: (line: string) => void;
   spawn?: (runId: string, mode: "start" | "resume") => void;
+  notify?: (title: string, body: string) => void;
 }
 
 export function tick(paths: HomePaths, deps: TickDeps = {}): void {
@@ -91,6 +95,8 @@ export function tick(paths: HomePaths, deps: TickDeps = {}): void {
   });
   const state = readJson<DaemonState>(paths.daemonState, { fired: {}, resumes: {} });
   const config = loadConfig(paths);
+  const tell = deps.notify ?? ((title: string, body: string) => notify(title, body, config.notify));
+  state.told ??= {};
   const records = listRecords(paths);
   const managers = new Map<string, ReturnType<typeof managerFor>>();
   const manager = (projectDir: string) => {
@@ -151,6 +157,16 @@ export function tick(paths: HomePaths, deps: TickDeps = {}): void {
     const persisted = statusOf(record);
     if (persisted?.status !== "paused") {
       delete state.resumes[record.runId];
+      delete state.told[record.runId];
+      continue;
+    }
+    if (persisted.pauseReason === "interrupted") {
+      // A run cut off by a crash or a restart never starts again on its own.
+      if (!state.told[record.runId]) {
+        state.told[record.runId] = now.toISOString();
+        log(`run ${record.runId} was cut off. orc resume ${record.runId} goes on from there.`);
+        tell(`${record.workflow} was cut off`, `orc resume ${record.runId} goes on from where it stopped`);
+      }
       continue;
     }
     const tried = state.resumes[record.runId];
@@ -158,8 +174,6 @@ export function tick(paths: HomePaths, deps: TickDeps = {}): void {
     let due = false;
     if (persisted.pauseReason === "usage_limit") {
       due = now.getTime() >= resumeTime(persisted.resetHint, persisted.updatedAt);
-    } else if (persisted.pauseReason === "interrupted") {
-      due = (tried?.count ?? 0) < 3;
     }
     if (!due) continue;
     state.resumes[record.runId] = { count: (tried?.count ?? 0) + 1, lastAt: now.toISOString() };
@@ -210,7 +224,7 @@ export function prune(paths: HomePaths, days: number, now = new Date()): string[
     const status = m.getPersistence().load(record.runId)?.status;
     if (status && UNFINISHED.includes(status)) continue;
     m.deleteRun(record.runId);
-    for (const file of [`${paths.records}/${record.runId}.json`, logFile(paths, record.runId)]) {
+    for (const file of [`${paths.records}/${record.runId}.json`, snapshotFile(paths, record.runId), logFile(paths, record.runId)]) {
       try {
         unlinkSync(file);
       } catch {

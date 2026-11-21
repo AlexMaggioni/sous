@@ -40,6 +40,8 @@ export interface RunRecord {
   startedByRun?: string;
   /** Workflows this run started inside itself, by child run id. */
   nested?: Record<string, NestedRun>;
+  /** Set by `orc resume --latest`: the next resume takes the edited workflows. */
+  resumeLatest?: boolean;
 }
 
 export interface NestedRun {
@@ -64,6 +66,26 @@ export function noteNested(paths: HomePaths, childRunId: string, change: Partial
   const before = record.nested?.[childRunId];
   const next = { ...before, ...change } as NestedRun;
   saveRecord(paths, { ...record, nested: { ...record.nested, [childRunId]: next } });
+}
+
+/** The saved workflows as they were when the run started, by name. Nested workflows come from it,
+ * so an edit made during the run never reaches it. */
+export function snapshotFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.workflows`);
+}
+
+export function saveSnapshot(paths: HomePaths, runId: string, scripts: Record<string, string>): void {
+  const file = snapshotFile(paths, runId);
+  writeFileSync(`${file}.tmp`, JSON.stringify(scripts));
+  renameSync(`${file}.tmp`, file);
+}
+
+export function loadSnapshot(paths: HomePaths, runId: string): Record<string, string> {
+  try {
+    return JSON.parse(readFileSync(snapshotFile(paths, runId), "utf8")) as Record<string, string>;
+  } catch {
+    return {};
+  }
 }
 
 function recordFile(paths: HomePaths, runId: string): string {

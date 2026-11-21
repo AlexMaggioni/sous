@@ -108,7 +108,7 @@ You review one change. Report what blocks it, then what could be better.
 | `orc list`, `orc show <run>`, `orc log <run> -f` | runs; one run's steps with the time and tokens of each, its questions and result; its log |
 | `orc inbox`, `orc answer <q> <text>` | questions waiting for you, and answering one |
 | `orc approve <q>`, `orc send-back <q> <note>` | answer a breakpoint |
-| `orc pause <run>`, `orc resume <run>` | finish the running steps and start nothing new; go on from there |
+| `orc pause <run>`, `orc resume <run> [--latest \| --same]` | finish the running steps and start nothing new; go on from there |
 | `orc stop <run>` | end the run. Its worktree stays. |
 | `orc rerun <run> [--reuse]` | the same workflow with the same inputs. `--reuse` keeps the results of the steps you did not edit and works in the same place. |
 | `orc wait <run>` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer. |
@@ -123,7 +123,10 @@ something, pauses or fails.
 
 - A step that fails is tried again up to its `retries` (the config's `retries` when the step sets
   none, 5 tries at most). After the last try the run pauses on that step. `orc resume` runs the step
-  again and keeps the finished ones. You can edit the workflow first: unchanged steps replay.
+  again and keeps the finished ones.
+- A run keeps the workflows as they were when it started, nested ones included. After an edit,
+  `orc resume` asks first: `--latest` takes the new version and keeps the finished steps that
+  match, and `--same` goes on with the run's own version.
 - At the subscription limit the run pauses. The service resumes it after the reset time, or 30
   minutes later when no time is known.
 - `maxAgents` caps the agents running at once across all runs. Others wait in a queue, and a
@@ -147,8 +150,9 @@ orc daemon start
 ```
 
 Every 20 seconds the service starts the schedules that are due, skipping one whose last run has
-not finished. It resumes runs paused at the limit or cut off by a crash, and removes runs older
-than `keepDays`. `orc schedule test <name>` says whether the schedule matches now and when it
+not finished. It resumes runs paused at the limit, and removes runs older than `keepDays`. A run cut
+off by a crash or a restart shows as interrupted and waits for `orc resume`. The service tells you
+about it once. `orc schedule test <name>` says whether the schedule matches now and when it
 runs next.
 
 ## From a session
