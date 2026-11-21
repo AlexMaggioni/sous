@@ -146,6 +146,44 @@ return await agent('review', { label: 'reviewer' })`,
     assert.ok(step.startedAt && step.endedAt && step.endedAt >= step.startedAt);
   });
 
+  it("show lists the step that runs now, before the run saves it", async () => {
+    const { paths, projectDir } = setup({
+      slow: `export const meta = { name: 'slow', description: 'slow' }
+await agent('first', { label: 'first' })
+return await agent('second', { label: 'second' })`,
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let secondStarted!: () => void;
+    const started = new Promise<void>((resolve) => (secondStarted = resolve));
+    const { runner } = fakeRunner(async (call) => {
+      if (call.label === "second") {
+        secondStarted();
+        await held;
+      }
+      return "ok";
+    });
+    const record = createRun(paths, { workflow: "slow", projectDir, inputs: {} });
+    const running = runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    await started;
+    const before = process.env.ORC_HOME;
+    process.env.ORC_HOME = paths.home;
+    const printed: string[] = [];
+    const write = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => (printed.push(String(chunk)), true)) as typeof process.stdout.write;
+    try {
+      assert.equal(await main(["show", record.runId, "--json"]), 0);
+    } finally {
+      process.stdout.write = write;
+      if (before === undefined) delete process.env.ORC_HOME;
+      else process.env.ORC_HOME = before;
+      release();
+    }
+    await running;
+    const shown = JSON.parse(printed.join("")) as { state: { agents: { label: string; status: string }[] } };
+    assert.deepEqual(shown.state.agents.map((a) => [a.label, a.status]), [["first", "done"], ["second", "running"]]);
+  });
+
   it("a code step in a scratch folder finds the project through ORC_PROJECT", async () => {
     const { paths, projectDir } = setup({
       where: `export const meta = { name: 'where', description: 'where', place: 'none' }

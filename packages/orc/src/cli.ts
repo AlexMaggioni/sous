@@ -143,6 +143,55 @@ function stateOf(paths: HomePaths, record: RunRecord): PersistedRunState | undef
   return state;
 }
 
+type Step = PersistedRunState["agents"][number];
+
+/** The saved state lags a live run: it is saved when a step ends. The event log has every step
+ *  that started or ended since, so show and the monitor see what runs now. */
+function withLiveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): PersistedRunState | undefined {
+  if (!state || !processAlive(record.pid)) return state;
+  const persistence = managerFor(paths, record.projectDir).getPersistence();
+  const agents: Step[] = state.agents.map((agent) => ({ ...agent }));
+  const key = (scope: unknown, callIndex: unknown) => `${typeof scope === "string" ? scope : record.runId}#${String(callIndex)}`;
+  const byKey = new Map(agents.map((agent) => [key(agent.scope, agent.callIndex), agent]));
+  try {
+    let after = state.eventSeq ?? 0;
+    for (;;) {
+      const page = persistence.readEvents(record.runId, { after, limit: 1000 });
+      for (const { event, timestamp } of page.events) {
+        const e = event as unknown as Record<string, unknown>;
+        const k = key(e.scope, e.callIndex);
+        if (e.type === "agentStart" && !byKey.has(k)) {
+          const step = {
+            id: agents.length + 1,
+            label: String(e.label ?? "agent"),
+            status: "running",
+            startedAt: timestamp,
+            ...(typeof e.phase === "string" ? { phase: e.phase } : {}),
+            ...(typeof e.model === "string" ? { model: e.model } : {}),
+            ...(typeof e.callIndex === "number" ? { callIndex: e.callIndex } : {}),
+            ...(typeof e.scope === "string" ? { scope: e.scope } : {}),
+          } as Step;
+          agents.push(step);
+          byKey.set(k, step);
+        } else if (e.type === "agentEnd") {
+          const step = byKey.get(k);
+          if (step && step.status === "running") {
+            step.status = e.errorRecord ? "error" : "done";
+            step.endedAt = timestamp;
+            if (typeof e.tokens === "number") step.tokens = e.tokens;
+            if (typeof e.error === "string") step.error = e.error;
+          }
+        }
+      }
+      if (!page.hasMore || page.events.length === 0) break;
+      after = page.events[page.events.length - 1]!.seq;
+    }
+  } catch {
+    return state;
+  }
+  return { ...state, agents };
+}
+
 /** One word for the list: what the run is doing, or what it waits for. */
 function statusWord(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): string {
   const alive = processAlive(record.pid);
@@ -367,7 +416,7 @@ function cmdList(parsed: Parsed): number {
 function cmdShow(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
   const record = needRecord(paths, parsed.positionals[0]);
-  const state = stateOf(paths, record);
+  const state = withLiveSteps(paths, record, stateOf(paths, record));
   const questions = listQuestions(paths, record.runId);
   if (parsed.flags.json) {
     printJson({ record, state: state ? { ...state, script: undefined, journal: undefined, nestedJournal: undefined, calls: undefined } : undefined, questions });
