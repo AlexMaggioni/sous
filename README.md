@@ -10,6 +10,8 @@
   <a href="https://deepwiki.com/agentprism/agentprism-workflows"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
 </p>
 
+> This fork adds `orc`, a command that runs saved workflows on this machine in the background. [`docs/orchestrator.md`](docs/orchestrator.md) says how it works and what is proven so far, and [`examples/`](examples/README.md) has three workflows to try.
+
 Run **dynamic, multi-agent workflow scripts** — `agent()`, `parallel()`, `pipeline()` — over real coding agents (Claude Code, OpenAI Codex, OpenCode, and pi), with deterministic journaling, resume, and git-worktree isolation.
 
 **Your agent authors** a small JavaScript *script* (`export const meta`, then call `agent()` / `parallel()` / `pipeline()`); the engine runs it in a sandboxed realm, fanning each `agent()` call out to an [Agent Client Protocol](https://agentclientprotocol.com) (ACP) backend. It's available two ways:

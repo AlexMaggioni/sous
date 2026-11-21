@@ -78,7 +78,7 @@ The engine's own steps all work: `agent`, `parallel`, `pipeline`, `gate`, `retry
 - `workflow(name, args, { place, label })` runs a saved workflow inside this one, five levels
   deep at most. It gets the defaults of its inputs, and a missing or wrong input fails the call.
   A nested worktree is a branch of its own. `orc show` lists the nested run's steps under its
-  label.
+  label, and `orc log` starts each of its lines with that label.
 
 Agents pass text to each other through prompts, or structured objects with `schema`. Steps that
 should share files run in the same place.
@@ -161,3 +161,23 @@ orc run ticket --ticket "Fix the empty count" --wait --json
 
 Agents inside a run get `ORC_RUN_ID` in their environment. A run they start records the run that
 started it, and `orc` refuses a workflow with `startedBy: "people"`.
+
+## Status
+
+Proven end to end with real agents on `claude/haiku`, in a copy of `examples/textkit`:
+
+- [The ticket workflow](proof/ticket.md), in one round, and with the review loop, where each
+  review goes back to the implementer's own session until the reviewer approves.
+- [The factory](proof/factory.md). A triager reads three tickets, two get built at once in nested
+  worktrees, each on its own branch, and the vague one is skipped.
+- [Emails](proof/emails.md). The inbox gets sorted, the replies drafted in parallel, sent back once
+  with a note, redrafted and approved.
+
+Waiting:
+
+- Real Linear tickets need `LINEAR_API_KEY` in `~/.orchestrator/secrets.env`. Until then the
+  factory reads `tickets/`.
+- A real mailbox, such as Gmail, needs its connection set up. Until then the emails workflow reads
+  `mail/inbox.json`.
+- Cloud places come later. A run works in a worktree, the project folder or a scratch folder on
+  this machine.
