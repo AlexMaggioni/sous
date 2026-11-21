@@ -42,6 +42,8 @@ export interface RunRecord {
   nested?: Record<string, NestedRun>;
   /** Set by `orc resume --latest`: the next resume takes the edited workflows. */
   resumeLatest?: boolean;
+  /** Steps `orc stop --step` asked the worker to stop, by the name the log gives them. */
+  stopSteps?: string[];
 }
 
 export interface NestedRun {

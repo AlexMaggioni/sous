@@ -110,6 +110,7 @@ You review one change. Report what blocks it, then what could be better.
 | `orc approve <q>`, `orc send-back <q> <note>` | answer a breakpoint |
 | `orc pause <run>`, `orc resume <run> [--latest \| --same]` | finish the running steps and start nothing new; go on from there |
 | `orc stop <run>` | end the run. Its worktree stays. |
+| `orc stop <run> --step <name>` | stop one running step, by the name `orc log` gives it, such as `"ticket A: implementer"`. The run pauses on it, and `orc resume` runs it again. |
 | `orc rerun <run> [--reuse]` | the same workflow with the same inputs. `--reuse` keeps the results of the steps you did not edit and works in the same place. |
 | `orc wait <run>` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer. |
 | `orc gc [--dry-run]` | remove worktrees whose branch is merged |

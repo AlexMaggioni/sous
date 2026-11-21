@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { WorkflowError, WorkflowErrorCode, type AgentRunner } from "@automatalabs/shared-types";
 import { checkWorkflow } from "../src/check.js";
-import { main } from "../src/cli.js";
+import { main, runningSteps } from "../src/cli.js";
 import { saveSchedules, tick, unfinishedRuns } from "../src/daemon.js";
 import { gcWorktrees } from "../src/places.js";
 import { ensureHome, homePaths, type HomePaths } from "../src/home.js";
 import { listQuestions, writeAnswer } from "../src/inbox.js";
-import { createRun } from "../src/launch.js";
+import { createRun, logFile } from "../src/launch.js";
 import { loadRecord, updateRecord } from "../src/records.js";
 import { managerFor, runWorker } from "../src/worker.js";
 
@@ -177,6 +177,66 @@ return { first, second }`,
     assert.equal(done?.result, "v2 done");
     assert.equal(loadRecord(paths, record.runId)?.resumeLatest, undefined);
     assert.equal(calls.filter((c) => c.label === "look").length, 1, "the finished step is not run again");
+  });
+
+  it("stopping one step pauses the run on it, and resume runs it again", async () => {
+    const { paths, projectDir } = setup({
+      child: `export const meta = { name: 'child', description: 'child' }\nreturn await agent('build it', { label: 'build' })`,
+      parent: `export const meta = { name: 'parent', description: 'parent' }
+const first = await agent('first', { label: 'first' })
+const built = await workflow('child', {}, { label: 'ticket A' })
+return { first, built }`,
+    });
+    let hang = true;
+    const { runner, calls } = fakeRunner((call) =>
+      call.label === "build" && hang
+        ? new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted"))))
+        : `${call.label} done`,
+    );
+    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const file = logFile(paths, record.runId);
+    const log = (line: string) => appendFileSync(file, `${line}\n`);
+    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log, handleSignals: true });
+    for (let i = 0; i < 500 && !calls.some((c) => c.label === "build"); i++) await new Promise((r) => setTimeout(r, 10));
+
+    const before = process.env.ORC_HOME;
+    process.env.ORC_HOME = paths.home;
+    const errors: string[] = [];
+    const write = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => (errors.push(String(chunk)), true)) as typeof process.stderr.write;
+    try {
+      assert.equal(await main(["stop", record.runId, "--step", "build"]), 1);
+      assert.equal(await main(["stop", record.runId, "--step", "ticket A: build"]), 0);
+    } finally {
+      process.stderr.write = write;
+      if (before === undefined) delete process.env.ORC_HOME;
+      else process.env.ORC_HOME = before;
+    }
+    assert.match(errors.join(""), /no step named "build" runs .*Running now: "ticket A: build"/);
+
+    await running;
+    const state = managerFor(paths, projectDir).getPersistence().load(record.runId);
+    assert.equal(state?.status, "paused");
+    assert.equal(state?.pauseReason, "step_stopped");
+    assert.match(readFileSync(file, "utf8"), /stopping   ticket A: build/);
+    assert.equal(loadRecord(paths, record.runId)?.stopSteps, undefined);
+
+    hang = false;
+    const done = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: quiet });
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), { first: "first done", built: "build done" });
+    assert.deepEqual(calls.map((c) => c.label), ["first", "build", "build"], "first is not run again");
+  });
+
+  it("the running steps come from the log", () => {
+    const text = [
+      "10:00:00 start      first (claude/haiku)",
+      "10:00:01 done       first, 12 tokens",
+      "10:00:01 start      ticket A: build (exec)",
+      "10:00:01 start      ticket B: build",
+      "10:00:02 failed     ticket B: build: the tests fail",
+    ].join("\n");
+    assert.deepEqual(runningSteps(text), ["ticket A: build"]);
   });
 
   it("per-run step changes and a default model reach the agent", async () => {

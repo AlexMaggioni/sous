@@ -1,6 +1,6 @@
 // One run, in its own background process. `orc run` and `orc resume` start it detached, and it
 // keeps running when the terminal closes. It holds the run's lease, asks questions through the
-// inbox, and answers `orc pause` (SIGUSR1) and `orc stop` (SIGTERM).
+// inbox, and answers `orc pause` (SIGUSR1), `orc stop --step` (SIGUSR2) and `orc stop` (SIGTERM).
 
 import { readFileSync, existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -206,6 +206,21 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
     log(`${stamp()} pausing`);
     manager.pause(runId);
   };
+  // `orc stop --step` writes the steps to the record, then sends SIGUSR2.
+  const onStopSteps = () => {
+    const asked = loadRecord(paths, runId)?.stopSteps ?? [];
+    if (!asked.length) return;
+    updateRecord(paths, runId, { stopSteps: undefined });
+    for (const name of asked) {
+      let stopped = 0;
+      for (const scope of new Set([...prefixes.keys(), ...Object.keys(loadRecord(paths, runId)?.nested ?? {})])) {
+        const prefix = from(scope);
+        if (prefix && name.startsWith(prefix)) stopped += manager.cancelAgentStep(runId, name.slice(prefix.length), scope);
+      }
+      if (!stopped) stopped = manager.cancelAgentStep(runId, name);
+      log(`${stamp()} ${stopped ? `stopping   ${name}` : `no step    ${name} runs; nothing stopped`}`);
+    }
+  };
   const onStop = () => {
     stopping = true;
     log(`${stamp()} stopping`);
@@ -213,6 +228,7 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
   };
   if (options.handleSignals) {
     process.on("SIGUSR1", onPause);
+    process.on("SIGUSR2", onStopSteps);
     process.on("SIGTERM", onStop);
     process.on("SIGINT", onStop);
   }
@@ -251,6 +267,7 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
     waits.abort();
     if (options.handleSignals) {
       process.off("SIGUSR1", onPause);
+      process.off("SIGUSR2", onStopSteps);
       process.off("SIGTERM", onStop);
       process.off("SIGINT", onStop);
     }

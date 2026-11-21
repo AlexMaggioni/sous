@@ -28,7 +28,7 @@ interface Parsed {
 }
 
 /** orc's own flags. Any other --name before `--`, and everything after it, is a workflow input. */
-const OWN_FLAGS = new Set(["place", "model", "project", "concurrency", "priority", "cron", "days", "lines"]);
+const OWN_FLAGS = new Set(["place", "model", "project", "concurrency", "priority", "cron", "days", "lines", "step"]);
 const OWN_SWITCHES = new Set(["wait", "json", "all", "follow", "f", "dry-run", "yes", "reuse", "latest", "same", "help", "h"]);
 
 export function parseArgs(argv: string[], ownFlags = OWN_FLAGS, ownSwitches = OWN_SWITCHES): Parsed {
@@ -238,6 +238,7 @@ function statusWord(paths: HomePaths, record: RunRecord, state: PersistedRunStat
     const reason = state.pauseReason;
     if (reason === "usage_limit") return "paused: limit";
     if (reason === "step_failed") return "paused: failed step";
+    if (reason === "step_stopped") return "paused: stopped step";
     if (reason === "checkpoint_required") return "paused: asks";
     if (reason === "requested") return "paused";
     if (reason === "interrupted") return "interrupted";
@@ -540,7 +541,44 @@ function cmdAnswer(parsed: Parsed, kind: "answer" | "approve" | "send-back"): nu
 
 function cmdStop(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
-  out(stopRun(paths, needRecord(paths, parsed.positionals[0])));
+  const record = needRecord(paths, parsed.positionals[0]);
+  if (typeof parsed.flags.step === "string") return stopStep(paths, record, parsed.flags.step);
+  out(stopRun(paths, record));
+  return 0;
+}
+
+/** The steps the log shows as started and not yet ended, by the name the log gives them. */
+export function runningSteps(logText: string): string[] {
+  const running: string[] = [];
+  for (const line of logText.split("\n")) {
+    const match = /^\S+ (start|done|failed)\s+(.*)$/.exec(line);
+    if (!match) continue;
+    const rest = match[2]!;
+    if (match[1] === "start") {
+      running.push(rest.replace(/ \([^()]*\)$/, ""));
+      continue;
+    }
+    const ended = running.findIndex((name) => rest === name || rest.startsWith(`${name}:`) || rest.startsWith(`${name},`));
+    if (ended !== -1) running.splice(ended, 1);
+  }
+  return running;
+}
+
+/** Stop one running step. The run pauses on it, and resume runs it again. */
+function stopStep(paths: HomePaths, record: RunRecord, step: string): number {
+  if (!processAlive(record.pid)) {
+    out(`${record.runId} is not running, so no step runs`);
+    return 1;
+  }
+  const file = logFile(paths, record.runId);
+  const running = runningSteps(existsSync(file) ? readFileSync(file, "utf8") : "");
+  if (!running.includes(step)) {
+    const now = running.length ? `Running now: ${running.map((name) => `"${name}"`).join(", ")}.` : "No step runs now.";
+    throw new Error(`no step named "${step}" runs in ${record.runId}. ${now}`);
+  }
+  updateRecord(paths, record.runId, { stopSteps: [...(record.stopSteps ?? []), step] });
+  process.kill(record.pid!, "SIGUSR2");
+  out(`stopping "${step}" in ${record.runId}. The run pauses on it, and orc resume ${record.runId} runs it again.`);
   return 0;
 }
 
@@ -828,6 +866,7 @@ const HELP = `orc runs saved workflows in the background.
   orc resume <run> [--wait]            go on from where the run paused, failed or was cut off
         --latest | --same              after an edit: take the new version, or keep the run's own
   orc stop <run>                       end the run; its worktree stays
+        --step <name>                  stop one running step instead; the run pauses on it
   orc rerun <run> [--name value ...]   start the same workflow again with the same inputs
         --reuse                      keep the results of the steps you did not edit, in the same place
   orc workflows                        saved workflows and their inputs

@@ -1817,6 +1817,17 @@ export async function runWorkflow<T = unknown>(
                 `agent ${label} attempt ${attempt}/${maxAttempts} cancelled by host: ${cancellationReason.message}`,
               );
               recordTokens(null, slot.usage);
+              if (options.pauseOnFailedStep) {
+                // orchestrator: a step the user stopped pauses the run on it, like a failed step.
+                const message = `step "${label}" was stopped`;
+                log(`${message}. The run pauses: resume it to run the step again.`);
+                emitFailure(cancellationReason, "engine", "error", slot, false);
+                throw (shared.pendingPause ??= new WorkflowError(message, WorkflowErrorCode.PAUSE_REQUESTED, {
+                  recoverable: false,
+                  agentLabel: label,
+                  details: { stepFailed: true, code: WorkflowErrorCode.AGENT_CANCELLED },
+                }));
+              }
               log(`agent "${label}" cancelled by host; retries skipped`);
               emitFailure(cancellationReason, "engine", "null", slot, false);
               return null;
