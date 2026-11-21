@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -144,6 +144,20 @@ return await agent('review', { label: 'reviewer' })`,
     // Each step keeps its own start and end time.
     const step = managerFor(paths, projectDir).getPersistence().load(record.runId)!.agents[0]!;
     assert.ok(step.startedAt && step.endedAt && step.endedAt >= step.startedAt);
+  });
+
+  it("a code step in a scratch folder finds the project through ORC_PROJECT", async () => {
+    const { paths, projectDir } = setup({
+      where: `export const meta = { name: 'where', description: 'where', place: 'none' }
+const step = await js('return { project: process.env.ORC_PROJECT, cwd: process.cwd() }', null)
+return step.result`,
+    });
+    const { runner } = fakeRunner(() => "ok");
+    const record = createRun(paths, { workflow: "where", projectDir, inputs: {} });
+    const result = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const found = result!.result as { project: string; cwd: string };
+    assert.equal(found.project, projectDir);
+    assert.notEqual(realpathSync(found.cwd), realpathSync(projectDir));
   });
 });
 

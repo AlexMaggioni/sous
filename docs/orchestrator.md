@@ -69,7 +69,7 @@ The engine's own steps all work: `agent`, `parallel`, `pipeline`, `gate`, `retry
 - Code steps: `sh(command)`, `js(source, input)`, `py(source, input)`, `run(file)` and
   `waitUntil(command, { every })`. They run on this machine, count no tokens and take no agent
   slot. Each returns `{ code, stdout, stderr, result }`. A non-zero exit fails the step unless
-  `allowFail: true`.
+  `allowFail: true`. They run in the run's place, and `ORC_PROJECT` holds the project folder.
 - `ask(question, { choices })` waits for the user's answer.
 - `breakpoint(title, step, { show, max })` runs the step, then waits for the user to approve,
   stop the run, or send the step back with a note. The step reruns with the note.
