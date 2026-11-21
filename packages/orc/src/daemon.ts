@@ -5,8 +5,10 @@
 //  - removes finished runs older than keepDays, when config.json sets it;
 //  - once an hour, removes the worktrees whose branch was merged and that have nothing uncommitted.
 
-import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { RunStatus } from "@automatalabs/shared-types";
+import { workflowProjectPaths } from "@automatalabs/workflow-engine";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, loadConfig, type HomePaths, type Place } from "./home.js";
 import { createRun, logFile, spawnWorker } from "./launch.js";
@@ -214,6 +216,28 @@ export function unfinishedRuns(paths: HomePaths, records = listRecords(paths)): 
   return ids;
 }
 
+/** Delete a run's saved state, record, workflow snapshot and logs. Its worktrees stay. */
+export function forgetRun(paths: HomePaths, record: RunRecord): void {
+  managerFor(paths, record.projectDir).deleteRun(record.runId);
+  // The engine keeps its own copy of the log, in a folder named after where the run worked.
+  const engineLogs = workflowProjectPaths(record.cwd, { persistenceRoot: paths.runs });
+  const files = [`${paths.records}/${record.runId}.json`, snapshotFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
+  for (const file of files) {
+    try {
+      unlinkSync(file);
+    } catch {
+      // already gone
+    }
+  }
+  for (const dir of [engineLogs.runsDir, engineLogs.rootDir]) {
+    try {
+      rmdirSync(dir);
+    } catch {
+      // not empty, or gone
+    }
+  }
+}
+
 /** Remove finished runs older than `days`: the engine's state, orc's record and the log. Worktrees stay. */
 export function prune(paths: HomePaths, days: number, now = new Date()): string[] {
   const cutoff = now.getTime() - days * 86_400_000;
@@ -223,14 +247,7 @@ export function prune(paths: HomePaths, days: number, now = new Date()): string[
     const m = managerFor(paths, record.projectDir);
     const status = m.getPersistence().load(record.runId)?.status;
     if (status && UNFINISHED.includes(status)) continue;
-    m.deleteRun(record.runId);
-    for (const file of [`${paths.records}/${record.runId}.json`, snapshotFile(paths, record.runId), logFile(paths, record.runId)]) {
-      try {
-        unlinkSync(file);
-      } catch {
-        // already gone
-      }
-    }
+    forgetRun(paths, record);
     removed.push(record.runId);
   }
   return removed;

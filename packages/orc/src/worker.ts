@@ -25,6 +25,17 @@ export interface WorkerOptions {
   log?: (line: string) => void;
   /** Set by the process wrapper so signals pause and stop the run. */
   handleSignals?: boolean;
+  /** A dry run (`orc check --dry-run`): each question gets a stand-in answer at once, agents take
+   *  no slot, and nothing notifies. */
+  dryRun?: boolean;
+}
+
+/** The answer a dry run gives a question: approve, yes, the first choice, or a stand-in text. */
+export function standInAnswer(prompt: string, checkpoint: { kind?: "confirm" | "input" | "select"; choices?: readonly string[] }): unknown {
+  if (prompt.startsWith("Breakpoint: ")) return "approve";
+  if (checkpoint.kind === "select") return checkpoint.choices?.[0] ?? "";
+  if (checkpoint.kind === "input") return "stand-in answer";
+  return true;
 }
 
 function stamp(): string {
@@ -108,7 +119,7 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
   const runner = createOrcRunner({
     cwd: record.cwd,
     inner: options.inner ?? (await loadInner()),
-    slots,
+    ...(options.dryRun ? {} : { slots }),
     mcpServers,
     // Code steps also get the project folder, since a run may work elsewhere (a worktree, a scratch folder).
     env: { ...secrets, ORC_PROJECT: record.projectDir },
@@ -133,6 +144,11 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
     const scope = context?.scope ?? runId;
     const callIndex = context?.callIndex ?? 0;
     const id = questionId(scope, callIndex);
+    if (options.dryRun) {
+      const value = standInAnswer(prompt, checkpoint);
+      log(`${stamp()} question   ${from(scope)}${oneLine(prompt, 200)}\n           answered   ${JSON.stringify(value)} (dry run)`);
+      return Promise.resolve(value);
+    }
     const question: Question = {
       id,
       runId,
@@ -296,7 +312,7 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
     for (const dir of dropUnchangedWorktrees(paths, record.projectDir, runId)) log(`${stamp()} removed    ${dir}, which changed no file`);
   }
   // A scheduled run speaks up only when it needs the user or fails.
-  const quiet = record.origin === "schedule" && (status === "completed" || status === "aborted");
+  const quiet = options.dryRun || (record.origin === "schedule" && (status === "completed" || status === "aborted"));
   if (!quiet) {
     notify(
       `${record.workflow} ${status}`,

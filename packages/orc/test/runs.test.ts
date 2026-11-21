@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { WorkflowError, WorkflowErrorCode, type AgentRunner } from "@automatalabs/shared-types";
 import { checkWorkflow } from "../src/check.js";
+import { dryRun } from "../src/dryrun.js";
 import { main, runningSteps } from "../src/cli.js";
 import { saveSchedules, tick, unfinishedRuns } from "../src/daemon.js";
 import { gcWorktrees } from "../src/places.js";
 import { ensureHome, homePaths, type HomePaths } from "../src/home.js";
 import { listQuestions, writeAnswer } from "../src/inbox.js";
 import { createRun, logFile } from "../src/launch.js";
-import { loadRecord, updateRecord } from "../src/records.js";
+import { listRecords, loadRecord, updateRecord } from "../src/records.js";
 import { managerFor, runWorker } from "../src/worker.js";
 
 // Whole runs in this process, with a fake agent runner, the way `orc run` drives them.
@@ -573,5 +574,102 @@ describe("service", () => {
     tick(paths, { ...deps, now: new Date("2026-11-21T11:05:00.000Z") });
     assert.deepEqual(spawned, [limited.runId]);
     assert.deepEqual(told, [`job was cut off: orc resume ${cut.runId} goes on from where it stopped`]);
+  });
+});
+
+describe("dry runs", () => {
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const gitProject = (workflows: Record<string, string>) => {
+    const made = setup(workflows, { defaultPlace: "folder" });
+    git(made.projectDir, "init", "-q", "-b", "main");
+    git(made.projectDir, "add", "-A");
+    git(made.projectDir, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "start");
+    return made;
+  };
+  const review = `export const meta = { name: 'review', description: 'loops with a reviewer', inputs: { rounds: { type: 'number', default: 3 } } }
+const made = await sh('echo hi > out.txt && cat out.txt', { label: 'write' })
+const verdictSchema = { type: 'object', properties: { approved: { type: 'boolean' }, review: { type: 'string' } }, required: ['approved', 'review'] }
+let round = 0
+let verdict
+while (round < args.rounds) {
+  round++
+  verdict = await agent('Review', { label: 'reviewer ' + round, schema: verdictSchema })
+  if (verdict.approved) break
+}
+const text = await agent('Write', { label: 'writer' })
+const kept = await breakpoint('Keep it?', async () => text)
+return { out: made.stdout.trim(), approved: verdict.approved, rounds: round, kept }`;
+
+  it("a dry run runs the code steps in a copy, gives stand-in answers, and leaves nothing behind", async () => {
+    const { paths, projectDir } = gitProject({ review });
+    const lines: string[] = [];
+    const dry = await dryRun(paths, { workflow: "review", projectDir, inputs: {}, log: (line) => lines.push(line.slice(9)) });
+    assert.equal(dry.status, "completed");
+    assert.deepEqual(dry.result, { out: "hi", approved: true, rounds: 1, kept: "stand-in answer from writer" });
+    assert.deepEqual(dry.agents, ["reviewer 1", "writer"]);
+    assert.ok(lines.some((line) => line.startsWith("question   Breakpoint: Keep it?")), lines.join("\n"));
+    // The code step wrote in the copy, never in the project. The run, its worktree and its branch are gone.
+    assert.equal(existsSync(join(projectDir, "out.txt")), false);
+    assert.deepEqual(listRecords(paths), []);
+    assert.deepEqual(existsSync(paths.worktrees) ? readdirSync(paths.worktrees) : [], []);
+    assert.equal(git(projectDir, "branch", "--list", "orc/*"), "");
+    assert.equal(listQuestions(paths).length, 0);
+    // The engine keeps a small note that the run was deleted, and nothing else.
+    const left = (readdirSync(paths.home, { recursive: true }) as string[]).filter((name) => name.includes(dry.runId) && !name.endsWith(".lineage"));
+    assert.deepEqual(left, []);
+  });
+
+  it("answers given by step label, in turn, drive a dry run through a loop", async () => {
+    const { paths, projectDir } = gitProject({ review });
+    const answers = { "reviewer *": [{ approved: false, review: "Add a test" }, { approved: true, review: "Good" }], writer: "the text" };
+    const dry = await dryRun(paths, { workflow: "review", projectDir, inputs: {}, answers });
+    assert.equal(dry.status, "completed");
+    assert.deepEqual(dry.result, { out: "hi", approved: true, rounds: 2, kept: "the text" });
+  });
+
+  it("a dry run catches a step that reads a field its answer does not have", async () => {
+    const { paths, projectDir } = gitProject({
+      broken: `export const meta = { name: 'broken', description: 'reads a field the schema lacks' }
+const verdict = await agent('Review', { label: 'reviewer', schema: { type: 'object', properties: { approved: { type: 'boolean' } }, required: ['approved'] } })
+return verdict.details.length`,
+    });
+    const dry = await dryRun(paths, { workflow: "broken", projectDir, inputs: {} });
+    assert.equal(dry.status, "failed");
+    assert.match(dry.reason ?? "", /Cannot read properties of undefined \(reading 'length'\)/);
+    assert.deepEqual(listRecords(paths), []);
+  });
+
+  it("a dry run keeps a workflow's scratch folder, and deletes it after", async () => {
+    const { paths, projectDir } = gitProject({
+      scratch: `export const meta = { name: 'scratch', description: 'works in a scratch folder', place: 'none' }
+return (await sh('pwd', { label: 'where' })).stdout.trim()`,
+    });
+    const dry = await dryRun(paths, { workflow: "scratch", projectDir, inputs: {} });
+    assert.equal(dry.status, "completed");
+    assert.equal(String(dry.result).startsWith(realpathSync(paths.scratch)), true, String(dry.result));
+    assert.equal(existsSync(String(dry.result)), false);
+  });
+
+  it("orc check --dry-run prints the run and exits 0 when it completes", async () => {
+    const { paths, projectDir } = gitProject({ review });
+    const printed: string[] = [];
+    const write = process.stdout.write.bind(process.stdout);
+    // The test runner reports through stdout too, so every chunk still goes out.
+    process.stdout.write = ((chunk: string) => {
+      printed.push(String(chunk));
+      return write(chunk);
+    }) as typeof process.stdout.write;
+    const home = process.env.ORC_HOME;
+    process.env.ORC_HOME = paths.home;
+    try {
+      assert.equal(await main(["check", "review", "--dry-run", "--project", projectDir]), 0);
+    } finally {
+      process.stdout.write = write;
+      if (home === undefined) delete process.env.ORC_HOME;
+      else process.env.ORC_HOME = home;
+    }
+    const text = printed.join("");
+    assert.match(text, /dry run completed, with 2 agent steps answered by stand-ins/);
+    assert.match(text, /"rounds": 1/);
   });
 });

@@ -11,7 +11,7 @@ export const meta = {
     approved: "Whether the reviewer approved",
     verified: "Whether the verifier passed it and the tests pass",
     rounds: "Review rounds used",
-    commit: "The commit on the run's branch, when it passed",
+    commit: "The commit on the run's branch, when it passed and changed a file",
   },
   place: "worktree",
 }
@@ -79,11 +79,12 @@ const verified = check.passed && tests.code === 0
 
 let commit
 if (approved && verified) {
-  const made = await sh('git add -A && git commit -q -m "$TITLE" && git rev-parse --short HEAD', {
-    label: "commit",
-    env: { TITLE: title },
-  })
-  commit = made.stdout.trim()
+  // A ticket that needed no change leaves nothing to commit.
+  const made = await sh(
+    'git add -A && if git diff --cached --quiet; then echo; else git commit -q -m "$TITLE" && git rev-parse --short HEAD; fi',
+    { label: "commit", env: { TITLE: title } },
+  )
+  commit = made.stdout.trim() || undefined
 }
 
 return { approved, verified, rounds: round, commit, evidence: check.evidence }

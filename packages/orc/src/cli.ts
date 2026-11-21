@@ -9,6 +9,7 @@ import { resolve } from "node:path";
 import { openWorkflowDir, type PersistedRunState } from "@automatalabs/workflow-engine";
 import { checkWorkflow } from "./check.js";
 import { cronMatches, nextRun, parseCron } from "./cron.js";
+import { dryRun, readAnswers } from "./dryrun.js";
 import { daemonMain, daemonPid, loadSchedules, prune, saveSchedules, unfinishedRuns, type Schedule } from "./daemon.js";
 import { ensureHome, findProjectDir, homePaths, loadConfig, workflowDirs, type HomePaths, type Place } from "./home.js";
 import { listQuestions, normalizeAnswer, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
@@ -28,7 +29,7 @@ interface Parsed {
 }
 
 /** orc's own flags. Any other --name before `--`, and everything after it, is a workflow input. */
-const OWN_FLAGS = new Set(["place", "model", "project", "concurrency", "priority", "cron", "days", "lines", "step"]);
+const OWN_FLAGS = new Set(["place", "model", "project", "concurrency", "priority", "cron", "days", "lines", "step", "answers"]);
 const OWN_SWITCHES = new Set(["wait", "json", "all", "follow", "f", "dry-run", "yes", "reuse", "latest", "same", "help", "h"]);
 
 export function parseArgs(argv: string[], ownFlags = OWN_FLAGS, ownSwitches = OWN_SWITCHES): Parsed {
@@ -677,20 +678,37 @@ function cmdWorkflows(parsed: Parsed): number {
   return 0;
 }
 
-function cmdCheck(parsed: Parsed): number {
+async function cmdCheck(parsed: Parsed): Promise<number> {
   const { paths, projectDir } = context(parsed);
   const name = parsed.positionals[0];
-  if (!name) throw new Usage("orc check <workflow> [--name value ...]");
-  const result = checkWorkflow(paths, projectDir, name, Object.keys(parsed.inputs).length ? parsed.inputs : undefined);
-  if (parsed.flags.json) {
-    printJson(result);
+  if (!name) throw new Usage("orc check <workflow> [--name value ...] [--dry-run [--answers file.json]]");
+  const inputs = Object.keys(parsed.inputs).length ? parsed.inputs : undefined;
+  const result = checkWorkflow(paths, projectDir, name, inputs);
+  const json = parsed.flags.json === true;
+  const wantsDryRun = parsed.flags["dry-run"] === true;
+  if (!json) {
+    out(`${result.workflow}  ${result.file}`);
+    for (const problem of result.problems) out(`  problem: ${problem}`);
+    for (const note of result.notes) out(`  note: ${note}`);
+    out(result.problems.length ? `${result.problems.length} problem${result.problems.length === 1 ? "" : "s"}` : "ok");
+  }
+  if (result.problems.length || !wantsDryRun) {
+    if (json) printJson(result);
     return result.problems.length ? 1 : 0;
   }
-  out(`${result.workflow}  ${result.file}`);
-  for (const problem of result.problems) out(`  problem: ${problem}`);
-  for (const note of result.notes) out(`  note: ${note}`);
-  out(result.problems.length ? `${result.problems.length} problem${result.problems.length === 1 ? "" : "s"}` : "ok");
-  return result.problems.length ? 1 : 0;
+  const answersFile = str(parsed.flags.answers);
+  const answers = answersFile ? readAnswers(resolve(answersFile)) : undefined;
+  if (!json) out("dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.");
+  const dry = await dryRun(paths, { workflow: name, projectDir, inputs: parsed.inputs, ...(answers ? { answers } : {}), ...(json ? {} : { log: (line: string) => out(`  ${line}`) }) });
+  if (json) {
+    printJson({ ...result, dryRun: dry });
+  } else if (dry.status === "completed") {
+    out(`dry run completed, with ${dry.agents.length} agent step${dry.agents.length === 1 ? "" : "s"} answered by stand-ins`);
+    if (dry.result !== undefined) out(JSON.stringify(dry.result, null, 2));
+  } else {
+    out(`the dry run did not complete: ${dry.status}${dry.reason ? ` (${dry.reason.replace(/\s+/g, " ")})` : ""}`);
+  }
+  return dry.status === "completed" ? 0 : 1;
 }
 
 function cmdSchedule(parsed: Parsed): number {
@@ -872,6 +890,8 @@ const HELP = `orc runs saved workflows in the background.
         --reuse                      keep the results of the steps you did not edit, in the same place
   orc workflows                        saved workflows and their inputs
   orc check <workflow> [--name value]  check a workflow without running it
+        --dry-run                      then run it once with stand-in agents; code steps run, in a copy
+        --answers <file.json>          what the stand-ins answer, by step label: {"reviewer *": {...}}
   orc schedule add <name> <workflow> --cron "<min hour day month weekday>" [--name value ...]
   orc schedule list|remove|enable|disable|test <name>
   orc daemon start|stop|status         the service that starts schedules and resumes runs after the limit
@@ -926,7 +946,7 @@ export async function main(argv: string[]): Promise<number> {
       case "workflows":
         return cmdWorkflows(parsed);
       case "check":
-        return cmdCheck(parsed);
+        return await cmdCheck(parsed);
       case "schedule":
       case "schedules":
         return cmdSchedule(parsed);

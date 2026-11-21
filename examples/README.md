@@ -26,6 +26,12 @@ orc show <run>
 `--reviewer strict-reviewer` swaps in a reviewer with a higher bar on edge cases, which usually
 sends the first change back.
 
+To try a workflow without real agents, which costs nothing, add `--dry-run` to `orc check`:
+
+```sh
+orc check ticket --ticket "$(cat tickets/TK-1.md)" --dry-run
+```
+
 ## The factory
 
 `factory.js` takes open tickets labelled `Bug` from Linear when `LINEAR_API_KEY` is set, in the

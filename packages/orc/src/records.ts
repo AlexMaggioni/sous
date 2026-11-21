@@ -22,7 +22,7 @@ export interface RunRecord {
   branch?: string;
   priority: Priority;
   /** Who started it: a person at the command line, a schedule, a rerun, or an agent in another run. */
-  origin: "cli" | "schedule" | "rerun" | "agent";
+  origin: "cli" | "schedule" | "rerun" | "agent" | "check";
   schedule?: string;
   /** The worker process, while one runs the run. */
   pid?: number;

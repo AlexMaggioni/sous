@@ -58,6 +58,28 @@ return { summary: built }
 checks a workflow without running it: the script parses, the inputs fit, and each workflow, agent,
 MCP server and script file it names exists.
 
+`orc check ticket --ticket x --dry-run` then runs the workflow once with stand-in agents, to catch
+mistakes in its steps and in how they connect. Each agent step answers at once: with a value that
+fits its schema, where booleans are true so loops end, or else with a line of text. Code steps
+run for real, in the workflow's own place, except that a worktree stands in for the project
+folder. Each question gets a stand-in answer, and a breakpoint is approved. Nested workflows run
+too. At the end the run, its worktrees and its scratch folders are deleted. The command exits 0
+when the run completes, and 1 when a step fails or the script throws, with the reason.
+
+A made-up value rarely matches real data, such as an id the next step looks up. `--answers
+answers.json` gives the stand-ins' answers by step label, or by a pattern with `*`. A list is a
+series of answers given in turn, the last one repeating:
+
+```json
+{
+  "reviewer *": [{ "approved": false, "review": "Add a test" }, { "approved": true, "review": "Good" }],
+  "implementer*": "Done. The tests pass."
+}
+```
+
+A dry run of the example ticket workflow found a bug: when the implementer changed nothing, the
+commit step failed with "nothing to commit". The workflow now commits only when a file changed.
+
 ### Steps
 
 The engine's own steps all work: `agent`, `parallel`, `pipeline`, `gate`, `retry`, `checkpoint`,
