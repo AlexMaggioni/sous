@@ -5,6 +5,7 @@ export const meta = {
     ticket: { type: "string", description: "What to build or fix", required: true },
     rounds: { type: "number", description: "Most review rounds", default: 3 },
     test: { type: "string", description: "The command that runs the tests", default: "npm test" },
+    reviewer: { type: "string", description: "The agent that reviews", default: "reviewer" },
   },
   outputs: {
     approved: "Whether the reviewer approved",
@@ -40,7 +41,7 @@ while (round < args.rounds) {
   const diff = await sh("git add -A && git diff --cached", { label: `diff ${round}` })
   const verdict = await agent(
     `Review this change for the ticket below.\n\nTicket:\n${ticket}\n\nChange (git diff):\n${last(diff.stdout, 20000)}`,
-    { agentType: "reviewer", label: `reviewer ${round}`, schema: verdictSchema },
+    { agentType: args.reviewer, label: `reviewer ${round}`, schema: verdictSchema },
   )
   log(`review ${round}: ${verdict.approved ? "approved" : "changes asked"}`)
   if (verdict.approved) {

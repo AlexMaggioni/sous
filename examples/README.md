@@ -2,7 +2,7 @@
 
 `textkit/` is a small Node library with two known bugs, three tickets and an inbox. Its
 `.orchestrator/` folder holds three workflows and the agents they use. Each agent runs on
-`claude/haiku`, to keep the runs cheap.
+`claude/haiku`, to keep the runs cheap. `docs/proof/` has real runs of all three.
 
 Set up a copy, since the ticket workflow needs a git repo to branch from:
 
@@ -22,6 +22,9 @@ branch only when the reviewer approved, the verifier passed it and `npm test` pa
 orc run ticket --ticket "$(cat tickets/TK-1.md)" --rounds 3 --wait
 orc show <run>
 ```
+
+`--reviewer strict-reviewer` swaps in a reviewer with a higher bar on edge cases, which usually
+sends the first change back.
 
 ## The factory
 
