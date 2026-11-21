@@ -247,6 +247,36 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { task: id 
       ["  done  triage", "  ticket A  (workflow child)", "    done  implementer", "  ticket B  (workflow child)", "    done  implementer"],
     );
   });
+
+  it("the log starts a nested run's lines with its label", async () => {
+    const { paths, projectDir } = setup({
+      child: `export const meta = { name: 'child', description: 'child', inputs: { task: 'The task' } }
+phase('build')
+log('working on ' + args.task)
+return await agent('do ' + args.task, { label: 'implementer' })`,
+      parent: `export const meta = { name: 'parent', description: 'parent' }
+await agent('look', { label: 'triage' })
+await workflow('child', { task: 'A' }, { label: 'ticket A' })
+return await workflow('child', { task: 'B' })`,
+    });
+    const { runner } = fakeRunner(() => "ok");
+    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const lines: string[] = [];
+    await runWorker(record.runId, "start", { paths, inner: runner, log: (line) => lines.push(line.slice(9)) });
+    const kept = lines.filter((l) => /^(start|done|phase|log) /.test(l) && !l.includes("Logs persisted"));
+    assert.deepEqual(kept.map((l) => l.replace(/, \d+ tokens$/, "")), [
+      "start      triage",
+      "done       triage",
+      "phase      ticket A: build",
+      "log        ticket A: working on A",
+      "start      ticket A: implementer",
+      "done       ticket A: implementer",
+      "phase      child: build",
+      "log        child: working on B",
+      "start      child: implementer",
+      "done       child: implementer",
+    ]);
+  });
 });
 
 describe("places and reruns", () => {

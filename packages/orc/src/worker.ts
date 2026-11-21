@@ -156,16 +156,32 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
     });
   };
 
+  // A nested run's lines start with its label, so parallel nested runs read apart in the log.
+  const prefixes = new Map<string, string>();
+  const from = (scope: string | undefined) => {
+    if (!scope || scope === runId) return "";
+    const known = prefixes.get(scope);
+    if (known !== undefined) return known;
+    const nested = loadRecord(paths, runId)?.nested ?? {};
+    const parts = scope.slice(runId.length).split(/(?=-nested\d)/).filter(Boolean);
+    const names = parts.map((_, i) => {
+      const id = runId + parts.slice(0, i + 1).join("");
+      return nested[id]?.label ?? nested[id]?.workflow ?? id;
+    });
+    const prefix = `${names.join(" / ")}: `;
+    prefixes.set(scope, prefix);
+    return prefix;
+  };
   manager.on("agentStart", (event) => {
-    log(`${stamp()} start      ${event.label}${event.model ? ` (${event.model})` : ""}`);
+    log(`${stamp()} start      ${from(event.scope)}${event.label}${event.model ? ` (${event.model})` : ""}`);
   });
   manager.on("agentEnd", (event) => {
     const tokens = event.tokens ? `, ${event.tokens} tokens` : "";
-    if (event.error) log(`${stamp()} failed     ${event.label}: ${oneLine(event.error)}${tokens}`);
-    else log(`${stamp()} done       ${event.label}${tokens}`);
+    if (event.error) log(`${stamp()} failed     ${from(event.scope)}${event.label}: ${oneLine(event.error)}${tokens}`);
+    else log(`${stamp()} done       ${from(event.scope)}${event.label}${tokens}`);
   });
-  manager.on("log", (event) => log(`${stamp()} log        ${oneLine(event.message, 400)}`));
-  manager.on("phase", (event) => log(`${stamp()} phase      ${event.title}`));
+  manager.on("log", (event) => log(`${stamp()} log        ${from(event.scope)}${oneLine(event.message, 400)}`));
+  manager.on("phase", (event) => log(`${stamp()} phase      ${from(event.scope)}${event.title}`));
 
   let stopping = false;
   const onPause = () => {
