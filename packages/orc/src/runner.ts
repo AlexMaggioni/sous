@@ -35,18 +35,39 @@ interface OrcRunExtras {
   skills?: string[];
   mcpNames?: string[];
   agentType?: string;
+  toolNames?: string[];
+  disallowedToolNames?: string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-/** Put effort and skills where the Claude adapter reads them: _meta.claudeCode.options. */
-export function claudeMeta(meta: Record<string, unknown> | undefined, effort: string | undefined, skills: string[] | undefined) {
-  if (effort === undefined && skills === undefined) return meta;
+export interface ClaudeOptions {
+  effort?: string;
+  skills?: string[];
+  /** The agent's allow list. Only the built-in tools in it exist for the agent. */
+  tools?: string[];
+  /** The agent's deny list. */
+  disallowedTools?: string[];
+}
+
+/** A tool name without its rule, such as Bash for "Bash(git *)". */
+const toolName = (entry: string) => entry.replace(/\(.*\)$/, "").trim();
+
+/**
+ * Put effort, skills and the agent's tool lists where the Claude adapter reads them:
+ * _meta.claudeCode.options. The tool lists go there because the adapter answers permission
+ * requests itself when the user's Claude Code settings allow a tool or bypass permissions, so
+ * orc's own answers never see them. Claude Code applies a deny list in every permission mode.
+ */
+export function claudeMeta(meta: Record<string, unknown> | undefined, given: ClaudeOptions = {}) {
+  const { effort, skills, tools, disallowedTools } = given;
+  if (effort === undefined && skills === undefined && tools === undefined && !disallowedTools?.length) return meta;
   const base = isRecord(meta) ? meta : {};
   const claudeCode = isRecord(base.claudeCode) ? base.claudeCode : {};
   const options = isRecord(claudeCode.options) ? claudeCode.options : {};
+  const builtIn = tools?.filter((entry) => !entry.startsWith("mcp__")).map(toolName);
   return {
     ...base,
     claudeCode: {
@@ -55,6 +76,8 @@ export function claudeMeta(meta: Record<string, unknown> | undefined, effort: st
         ...options,
         ...(effort === undefined ? {} : { effort }),
         ...(skills === undefined ? {} : { skills: [...skills] }),
+        ...(builtIn === undefined ? {} : { tools: [...new Set(builtIn)], allowedTools: [...tools!] }),
+        ...(disallowedTools?.length ? { disallowedTools: [...disallowedTools] } : {}),
       },
     },
   };
@@ -107,7 +130,7 @@ export function createOrcRunner(options: OrcRunnerOptions): AgentRunner & { disp
         ...rest,
         ...(signal ? { signal } : {}),
         ...(servers.length ? { mcpServers: servers } : {}),
-        meta: claudeMeta(extras.meta, extras.effort, extras.skills),
+        meta: claudeMeta(extras.meta, { effort: extras.effort, skills: extras.skills, tools: extras.toolNames, disallowedTools: extras.disallowedToolNames }),
       } as never);
     } catch (error) {
       if (timeout?.aborted && !extras.signal?.aborted) {

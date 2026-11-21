@@ -155,8 +155,12 @@ describe("runner", () => {
 
   it("keeps the meta it was given when there is no effort or skill", () => {
     const meta = { other: 1 };
-    assert.equal(claudeMeta(meta, undefined, undefined), meta);
-    assert.deepEqual(claudeMeta({ claudeCode: { options: { model: "x" } } }, "low", undefined), { claudeCode: { options: { model: "x", effort: "low" } } });
+    assert.equal(claudeMeta(meta), meta);
+    assert.deepEqual(claudeMeta({ claudeCode: { options: { model: "x" } } }, { effort: "low" }), { claudeCode: { options: { model: "x", effort: "low" } } });
+    // The agent's tool lists reach the Claude adapter, which applies them in every permission mode.
+    assert.deepEqual(claudeMeta(undefined, { tools: ["Read", "Bash(npm test)", "mcp__linear__list_issues"], disallowedTools: ["Edit", "Write"] }), {
+      claudeCode: { options: { tools: ["Read", "Bash"], allowedTools: ["Read", "Bash(npm test)", "mcp__linear__list_issues"], disallowedTools: ["Edit", "Write"] } },
+    });
   });
 });
 

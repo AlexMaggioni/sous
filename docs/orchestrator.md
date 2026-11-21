@@ -114,6 +114,12 @@ with `model`, `tools`, `disallowedTools`, `skills`, `mcp`, `effort` and `timeout
 with `agentType: "<name>"`. A step's own `skills`, `mcp`, `effort`, `timeout` or `model` replaces
 the agent's, never adds to it.
 
+An agent in a run never stops to ask for permission. `tools` is its allow list: the built-in tools
+it does not name don't exist for it. `disallowedTools` is its deny list. Both apply whatever your
+own Claude Code settings allow, even in bypass mode. A refused tool comes back to the agent, which
+works around it or fails the step. With neither list, the agent may use every tool. An allow list
+names whole tools: `Bash(npm test)` allows all of Bash.
+
 ```md
 ---
 name: reviewer
