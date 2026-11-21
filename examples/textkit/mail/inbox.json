@@ -1,0 +1,32 @@
+[
+  {
+    "id": "m1",
+    "from": "Dana Okafor <dana@northwind.example>",
+    "subject": "Team plan pricing",
+    "body": "Hi, we are a team of 12 and would like to use textkit at work. Is there a team plan, and what does it cost per seat? Thanks, Dana"
+  },
+  {
+    "id": "m2",
+    "from": "Weekly JS Digest <news@jsdigest.example>",
+    "subject": "This week in JavaScript: 14 new releases",
+    "body": "Top stories this week: a new bundler, two runtime releases and more. Unsubscribe at any time."
+  },
+  {
+    "id": "m3",
+    "from": "Sam Rivera <sam@textkit.example>",
+    "subject": "Move our sync to Thursday?",
+    "body": "Hey, something came up Wednesday afternoon. Could we move our 2pm sync to Thursday at the same time?"
+  },
+  {
+    "id": "m4",
+    "from": "GitHub <notifications@github.example>",
+    "subject": "[textkit] CI passed on main",
+    "body": "All checks have passed for commit 4f2a9c1 on main."
+  },
+  {
+    "id": "m5",
+    "from": "Lee Chen <lee@example.org>",
+    "subject": "slugify bug",
+    "body": "Hello! slugify(\"Hello, World!\") gives me \"hello-world-\" with a dash at the end. Is that expected? Love the library otherwise."
+  }
+]

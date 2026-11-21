@@ -87,7 +87,8 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
     inner: options.inner ?? (await loadInner()),
     slots,
     mcpServers,
-    env: secrets,
+    // Code steps also get the project folder, since a run may work elsewhere (a worktree, a scratch folder).
+    env: { ...secrets, ORC_PROJECT: record.projectDir },
     onSlot: ({ label, state }) => {
       if (state === "waiting" && slots.held().length >= Math.max(1, loadConfig(paths).maxAgents)) {
         log(`${stamp()} queued     ${label ?? "agent"} waits for a free agent slot`);
