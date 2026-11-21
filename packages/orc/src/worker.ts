@@ -4,13 +4,14 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { WorkflowManager, openWorkflowDir, type WorkflowRunResult } from "@automatalabs/workflow-engine";
+import { WorkflowManager, openWorkflowDir, parseWorkflowScript, type WorkflowRunResult } from "@automatalabs/workflow-engine";
 import type { AgentRunner } from "@automatalabs/shared-types";
 import { agentsDirOption, ensureHome, homePaths, loadConfig, loadMcpServers, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
+import { checkInputs, workflowExtras } from "./inputs.js";
 import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuestion, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
 import { dropUnchangedWorktrees, isPlace, preparePlace } from "./places.js";
-import { loadRecord, updateRecord, type RunRecord } from "./records.js";
+import { loadRecord, noteNested, updateRecord, type RunRecord } from "./records.js";
 import { createOrcRunner } from "./runner.js";
 import { SlotPool } from "./slots.js";
 
@@ -63,7 +64,18 @@ export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<
           .map((entry) => ({ name: entry.name, ...(entry.meta?.description ? { description: entry.meta.description } : {}) })),
       prepareNestedPlace: ({ place, childRunId, cwd }) => {
         if (!isPlace(place)) throw new Error(`place must be worktree, folder or none, got "${place}"`);
-        return { cwd: preparePlace(paths, place, childRunId, cwd).cwd };
+        const prepared = preparePlace(paths, place, childRunId, cwd);
+        noteNested(paths, childRunId, { cwd: prepared.cwd, ...(prepared.branch ? { branch: prepared.branch } : {}) });
+        return { cwd: prepared.cwd };
+      },
+      // A nested run gets the same inputs check and defaults as one started from the command line.
+      prepareNestedArgs: ({ name, script, args, childRunId, label }) => {
+        noteNested(paths, childRunId, { workflow: name, ...(label ? { label } : {}) });
+        if (args !== undefined && (args === null || typeof args !== "object" || Array.isArray(args))) return args;
+        const extras = workflowExtras(parseWorkflowScript(script).meta as unknown as Record<string, unknown>);
+        const checked = checkInputs(extras, (args ?? {}) as Record<string, unknown>);
+        if (checked.problems.length) throw new Error(`workflow("${name}"): ${checked.problems.join("; ")}`);
+        return checked.args;
       },
     },
     ...extra,

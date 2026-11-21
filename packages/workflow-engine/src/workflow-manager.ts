@@ -397,7 +397,7 @@ export interface WorkflowManagerOptions {
   /** Resolve a saved-workflow name to its script, enabling nested `workflow('name')`. */
   loadSavedWorkflow?: (name: string) => string | undefined;
   /** orchestrator: options every run gets, such as the nesting limit and nested places. */
-  orchestrator?: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "prepareNestedPlace" | "pauseOnFailedStep">;
+  orchestrator?: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "prepareNestedPlace" | "prepareNestedArgs" | "pauseOnFailedStep">;
   /**
    * The injected agent backend (the frozen AgentRunner seam). May be overridden
    * per-run via ExecOptions.agent. The engine depends on this injection and never
@@ -676,7 +676,7 @@ export class WorkflowManager extends EventEmitter {
   readonly cwd: string;
   private concurrency: number;
   private loadSavedWorkflow?: (name: string) => string | undefined;
-  private orchestratorOptions: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "prepareNestedPlace" | "pauseOnFailedStep">;
+  private orchestratorOptions: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "prepareNestedPlace" | "prepareNestedArgs" | "pauseOnFailedStep">;
   private agent?: AgentRunner;
   /** The session's main model (provider/id), for auto-tiering explore agents. */
   private mainModel?: string;

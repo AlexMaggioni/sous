@@ -299,6 +299,12 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   prepareNestedPlace?: (request: { place: string; childRunId: string; name: string; cwd: string }) =>
     Promise<{ cwd: string } | undefined> | { cwd: string } | undefined;
   /**
+   * orchestrator: check a nested workflow()'s args against the child's declared inputs and
+   * return the args it runs with, defaults filled in. Throws when an input is wrong or missing.
+   * The request also names the child run and the label the script gave it, for display.
+   */
+  prepareNestedArgs?: (request: { name: string; script: string; args: unknown; childRunId: string; label?: string }) => unknown;
+  /**
    * APPROVED script-declared custom ACP backends (from `meta.backends`), threaded to every
    * agent() call as RunOptions.backends. The engine NEVER reads meta.backends itself — a
    * composition root must obtain approval (MCP elicitation / SDK allowScriptBackends / env
@@ -2264,7 +2270,7 @@ export async function runWorkflow<T = unknown>(
     nameOrScript: string,
     childArgs: unknown,
     resumeGate: ResumeDecisionGate | undefined,
-    nestedOptions: { place?: string } | undefined,
+    nestedOptions: { place?: string; label?: string } | undefined,
     localOrdinal: number,
   ) => {
     if (resumeGate) {
@@ -2294,6 +2300,17 @@ export async function runWorkflow<T = unknown>(
     options.onNestedWorkflow?.(ordinal, childRunId);
     const resolved = options.loadSavedWorkflow?.(String(nameOrScript));
     const childScript = resolved ?? String(nameOrScript);
+    const childName = resolved ? String(nameOrScript) : "inline";
+    // orchestrator: the child gets its declared defaults, as it would started on its own.
+    const args = options.prepareNestedArgs
+      ? options.prepareNestedArgs({
+          name: childName,
+          script: childScript,
+          args: childArgs,
+          childRunId,
+          ...(typeof nestedOptions?.label === "string" ? { label: nestedOptions.label } : {}),
+        })
+      : childArgs;
     // orchestrator: a nested workflow can ask for its own place (a worktree, a folder, none).
     let childCwd = options.cwd;
     const place = nestedOptions?.place;
@@ -2301,7 +2318,7 @@ export async function runWorkflow<T = unknown>(
       const prepared = await options.prepareNestedPlace({
         place: String(place),
         childRunId,
-        name: resolved ? String(nameOrScript) : "inline",
+        name: childName,
         cwd: options.cwd ?? process.cwd(),
       });
       if (prepared?.cwd) childCwd = prepared.cwd;
@@ -2313,7 +2330,7 @@ export async function runWorkflow<T = unknown>(
         // parent chose to nest); the child's own meta.backends stays inert (nothing here
         // approves it, and only the composition root can).
         ...options,
-        args: childArgs,
+        args,
         cwd: childCwd,
         // The COMBINED signal, so a parent-side fault/abort cancels the child's agents too
         // (the child layers its own fault controller on top of this).
@@ -2340,7 +2357,7 @@ export async function runWorkflow<T = unknown>(
     }
   };
 
-  const workflowFn = (nameOrScript: string, childArgs?: unknown, nestedOptions?: { place?: string }): Promise<unknown> => {
+  const workflowFn = (nameOrScript: string, childArgs?: unknown, nestedOptions?: { place?: string; label?: string }): Promise<unknown> => {
     const resumeGate = appendResumeDecisionGate();
     beginResumeActivity();
     let promise: Promise<unknown>;

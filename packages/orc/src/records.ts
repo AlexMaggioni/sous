@@ -38,6 +38,32 @@ export interface RunRecord {
   reuseFrom?: string;
   /** The run whose agent started this one. */
   startedByRun?: string;
+  /** Workflows this run started inside itself, by child run id. */
+  nested?: Record<string, NestedRun>;
+}
+
+export interface NestedRun {
+  workflow: string;
+  /** What the script called it, such as the ticket it builds. */
+  label?: string;
+  /** Where it works, when it asked for a place of its own. */
+  cwd?: string;
+  branch?: string;
+}
+
+/** The run a nested run belongs to: its child run id starts with the root run's id. */
+export function rootRunId(childRunId: string): string {
+  const at = childRunId.indexOf("-nested");
+  return at === -1 ? childRunId : childRunId.slice(0, at);
+}
+
+/** Note a nested run on its root run's record. */
+export function noteNested(paths: HomePaths, childRunId: string, change: Partial<NestedRun> & { workflow?: string }): void {
+  const record = loadRecord(paths, rootRunId(childRunId));
+  if (!record) return;
+  const before = record.nested?.[childRunId];
+  const next = { ...before, ...change } as NestedRun;
+  saveRecord(paths, { ...record, nested: { ...record.nested, [childRunId]: next } });
 }
 
 function recordFile(paths: HomePaths, runId: string): string {

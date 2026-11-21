@@ -75,8 +75,10 @@ The engine's own steps all work: `agent`, `parallel`, `pipeline`, `gate`, `retry
   stop the run, or send the step back with a note. The step reruns with the note.
 - `choose(prompt, { steps, workflows, any, none, input })` lets an agent pick the next step or
   workflow and runs it. `any: true` allows every saved workflow except those for people only.
-- `workflow(name, args, { place })` runs a saved workflow inside this one, five levels deep at
-  most. A nested worktree is a branch of its own.
+- `workflow(name, args, { place, label })` runs a saved workflow inside this one, five levels
+  deep at most. It gets the defaults of its inputs, and a missing or wrong input fails the call.
+  A nested worktree is a branch of its own. `orc show` lists the nested run's steps under its
+  label.
 
 Agents pass text to each other through prompts, or structured objects with `schema`. Steps that
 should share files run in the same place.

@@ -88,7 +88,7 @@ export function orchestratorRunExtras(
 
 type AgentFn = (prompt: string, options?: Record<string, unknown>) => Promise<unknown>;
 type CheckpointFn = (prompt: string, options?: Record<string, unknown>) => Promise<unknown>;
-type WorkflowFn = (name: string, args?: unknown, options?: { place?: string }) => Promise<unknown>;
+type WorkflowFn = (name: string, args?: unknown, options?: { place?: string; label?: string }) => Promise<unknown>;
 
 export interface OrchestratorGlobalDeps {
   agent: AgentFn;

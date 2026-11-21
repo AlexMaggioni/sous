@@ -197,6 +197,56 @@ return step.result`,
     assert.equal(found.project, projectDir);
     assert.notEqual(realpathSync(found.cwd), realpathSync(projectDir));
   });
+
+  it("a nested workflow gets the defaults of its inputs, and a missing input fails the call", async () => {
+    const { paths, projectDir } = setup({
+      child: `export const meta = { name: 'child', description: 'child', inputs: {
+  task: { type: 'string', required: true }, rounds: { type: 'number', default: 3 }, test: { type: 'string', default: 'npm test' } } }
+return args`,
+      parent: `export const meta = { name: 'parent', description: 'parent' }
+const given = await workflow('child', { task: 'fix it', rounds: 2 })
+let missing
+try { await workflow('child', { rounds: 1 }) } catch (error) { missing = error.message }
+return { given, missing }`,
+    });
+    const { runner } = fakeRunner(() => "ok");
+    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const result = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const out = result!.result as { given: Record<string, unknown>; missing: string };
+    assert.deepEqual(out.given, { task: "fix it", rounds: 2, test: "npm test" });
+    assert.match(out.missing, /workflow\("child"\): missing input --task/);
+  });
+
+  it("show puts a nested workflow's steps under it, by the label the script gave it", async () => {
+    const { paths, projectDir } = setup({
+      child: `export const meta = { name: 'child', description: 'child', inputs: { task: 'The task' } }
+return await agent('do ' + args.task, { label: 'implementer' })`,
+      parent: `export const meta = { name: 'parent', description: 'parent' }
+await agent('look', { label: 'triage' })
+return await parallel(['A', 'B'].map((id) => () => workflow('child', { task: id }, { label: 'ticket ' + id })))`,
+    });
+    const { runner } = fakeRunner(() => "ok");
+    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const before = process.env.ORC_HOME;
+    process.env.ORC_HOME = paths.home;
+    const printed: string[] = [];
+    const write = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => (printed.push(String(chunk)), true)) as typeof process.stdout.write;
+    try {
+      assert.equal(await main(["show", record.runId]), 0);
+    } finally {
+      process.stdout.write = write;
+      if (before === undefined) delete process.env.ORC_HOME;
+      else process.env.ORC_HOME = before;
+    }
+    const text = printed.join("");
+    const steps = text.slice(text.indexOf("steps\n") + 6, text.indexOf("result\n")).trimEnd().split("\n");
+    assert.deepEqual(
+      steps.map((l) => l.replace(/\s+\([^)]*tokens\)$/, "")),
+      ["  done  triage", "  ticket A  (workflow child)", "    done  implementer", "  ticket B  (workflow child)", "    done  implementer"],
+    );
+  });
 });
 
 describe("places and reruns", () => {

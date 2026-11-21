@@ -192,6 +192,42 @@ function withLiveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunS
   return { ...state, agents };
 }
 
+/** The steps in the order they started. A nested workflow's steps go together under it, indented. */
+function printSteps(record: RunRecord, agents: readonly Step[], ended: boolean): void {
+  const scopeOf = (agent: Step) => (typeof agent.scope === "string" ? agent.scope : record.runId);
+  const line = (agent: Step, indent: string) => {
+    // A step the run left running when it ended never finished.
+    const status = ended && agent.status === "running" ? "stopped" : agent.status;
+    const mark = status === "done" ? "done " : status === "error" ? "error" : status.padEnd(5);
+    const seconds = agent.startedAt && agent.endedAt ? Math.round((Date.parse(agent.endedAt) - Date.parse(agent.startedAt)) / 1000) : undefined;
+    const cost = [seconds !== undefined ? `${seconds}s` : "", agent.tokens ? `${agent.tokens} tokens` : ""].filter(Boolean).join(", ");
+    const extra = agent.error ? `  ${agent.error.replace(/\s+/g, " ").slice(0, 120)}` : agent.model ? `  ${agent.model}` : "";
+    out(`${indent}${mark} ${agent.label}${cost ? `  (${cost})` : ""}${extra}`);
+  };
+  const printScope = (scope: string, indent: string) => {
+    const opened = new Set<string>();
+    for (const agent of agents) {
+      const own = scopeOf(agent);
+      if (own === scope) {
+        line(agent, indent);
+        continue;
+      }
+      if (!own.startsWith(`${scope}-nested`)) continue;
+      // The child of this scope that holds the step, which may itself hold deeper ones.
+      const next = own.indexOf("-nested", scope.length + 1);
+      const child = next === -1 ? own : own.slice(0, next);
+      if (opened.has(child)) continue;
+      opened.add(child);
+      const nested = record.nested?.[child];
+      const name = nested?.workflow ?? "nested workflow";
+      const where = nested?.branch ? `, branch ${nested.branch}` : "";
+      out(`${indent}${nested?.label ? `${nested.label}  (workflow ${name}${where})` : `workflow ${name}${where ? ` (${where.slice(2)})` : ""}`}`);
+      printScope(child, `${indent}  `);
+    }
+  };
+  printScope(record.runId, "  ");
+}
+
 /** One word for the list: what the run is doing, or what it waits for. */
 function statusWord(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): string {
   const alive = processAlive(record.pid);
@@ -432,13 +468,7 @@ function cmdShow(parsed: Parsed): number {
   if (state?.tokenUsage) out(`tokens    ${state.tokenUsage.total}${state.durationMs ? `  in ${Math.round(state.durationMs / 1000)}s` : ""}`);
   if (state?.agents.length) {
     out("steps");
-    for (const agent of state.agents) {
-      const mark = agent.status === "done" ? "done " : agent.status === "error" ? "error" : agent.status.padEnd(5);
-      const seconds = agent.startedAt && agent.endedAt ? Math.round((Date.parse(agent.endedAt) - Date.parse(agent.startedAt)) / 1000) : undefined;
-      const cost = [seconds !== undefined ? `${seconds}s` : "", agent.tokens ? `${agent.tokens} tokens` : ""].filter(Boolean).join(", ");
-      const extra = agent.error ? `  ${agent.error.replace(/\s+/g, " ").slice(0, 120)}` : agent.model ? `  ${agent.model}` : "";
-      out(`  ${mark} ${agent.label}${cost ? `  (${cost})` : ""}${extra}`);
-    }
+    printSteps(record, state.agents, state.status !== "running" && state.status !== "pending");
   }
   for (const question of questions) out(`asks      ${question.id}: ${question.prompt}\n          ${howToAnswer(question)}`);
   if (state?.status === "completed" && state.result !== undefined) {

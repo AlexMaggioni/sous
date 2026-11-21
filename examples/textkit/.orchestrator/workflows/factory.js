@@ -57,7 +57,7 @@ const outcomes = await parallel(
       steps: {
         build: {
           description: "The ticket is clear enough to build without asking anyone",
-          run: () => workflow("ticket", { ticket: text, rounds: args.rounds }, { place: "worktree" }),
+          run: () => workflow("ticket", { ticket: text, rounds: args.rounds }, { place: "worktree", label: t.id }),
         },
         skip: {
           description: "The ticket is too vague to build; a person must add detail first",
