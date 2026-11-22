@@ -369,6 +369,18 @@ return await agent('review', { label: 'reviewer' })`,
     assert.ok(step.startedAt && step.endedAt && step.endedAt >= step.startedAt);
   });
 
+  it("per-run step changes reach the agent that choose() asks", async () => {
+    const { paths, projectDir } = setup({
+      picking: `export const meta = { name: 'picking', description: 'picks a step' }
+return await choose('Pick one', { label: 'picker', steps: { a: () => 'A', b: () => 'B' } })`,
+    });
+    const { runner, calls } = fakeRunner(() => ({ choice: "b", reason: "b fits" }));
+    const record = createRun(paths, { workflow: "picking", projectDir, inputs: {}, overrides: { picker: { model: "claude/opus" } } });
+    const done = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    assert.equal(calls[0]!.options.model, "claude/opus");
+    assert.equal((done?.result as { result?: unknown } | undefined)?.result, "B");
+  });
+
   it("show lists the step that runs now, before the run saves it", async () => {
     const { paths, projectDir } = setup({
       slow: `export const meta = { name: 'slow', description: 'slow' }

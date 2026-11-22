@@ -271,7 +271,8 @@ export function createOrchestratorGlobals(deps: OrchestratorGlobalDeps) {
     if (options.none) entries.push({ name: "none", description: "Do nothing more.", kind: "step" });
     if (entries.length === 0) fail("choose() needs at least one step or workflow");
     const listing = entries.map((e) => `- ${e.name}${e.description ? `: ${e.description}` : ""}`).join("\n");
-    const picked = (await deps.agent(`${prompt}\n\nPick exactly one of these and say why in one sentence:\n${listing}`, {
+    // Through agent(), so the run's changes for this step's label apply as they do to any step.
+    const picked = (await agent(`${prompt}\n\nPick exactly one of these and say why in one sentence:\n${listing}`, {
       label: options.label ?? "choose",
       schema: {
         type: "object",
