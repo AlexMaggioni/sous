@@ -23,6 +23,7 @@ import {
   startWorker,
   unfinishedRuns,
   useAccount,
+  verdictOf,
   type HomePaths,
   type RunRecord,
 } from "@orchestrator/engine";
@@ -41,10 +42,7 @@ export interface AccountCommandOptions {
 }
 
 function atLimit(paths: HomePaths): (record: RunRecord) => boolean {
-  return (record) => {
-    const state = savedState(paths, record);
-    return state?.status === "paused" && state.pauseReason === "usage_limit";
-  };
+  return (record) => verdictOf(paths, record, savedState(paths, record)).pause?.reason === "usage_limit";
 }
 
 /** Read a line without showing it. Pasted text works. */

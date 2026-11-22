@@ -20,7 +20,7 @@ export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
 export { createRun, InputProblems, logFile, startWorker } from "./runs/launch.js";
 export { savedState, workerMain } from "./runs/worker.js";
 export { busyWorktrees, daemonMain, daemonPid, fileSchedules, loadSchedules, prune, saveSchedules, unfinishedRuns, type Schedule } from "./runs/service.js";
-export { readLogFrom, stateOf, statusWord, waitForRun, withLiveSteps } from "./runs/view.js";
+export { readLogFrom, stateOf, verdictOf, waitForRun, withLiveSteps } from "./runs/view.js";
 export { answerQuestion, answerValue, breakpointValue, discardRun, findQuestion, pauseRun, rerun, resumeCheck, resumeRun, reuseCheck, stopRun, stopStep, type AnswerKind } from "./runs/control.js";
 export type { PersistedRunState } from "./runs/persistence/run-persistence.js";
 export { gcWorktrees, isPlace } from "./places/places.js";

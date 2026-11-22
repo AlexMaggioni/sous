@@ -1,5 +1,5 @@
-// Reading a run: its state, the steps that run now, one word for its status, and the wait for
-// it to end. orc prints what these return.
+// Reading a run: its state, the steps that run now, what the pause rule says of it, and the
+// wait for it to end. orc prints what these return.
 
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import type { PersistedRunState } from "./persistence/run-persistence.js";
@@ -7,6 +7,7 @@ import type { HomePaths } from "./home.js";
 import { listQuestions, type Question } from "./inbox.js";
 import { logFile } from "./launch.js";
 import { findRecord, loadRecord, processAlive, scopePrefix, type RunRecord } from "./records.js";
+import { judge, type Verdict } from "./rule.js";
 import { managerFor } from "./worker.js";
 
 /** The run's saved state. A run left running by a process that died reads as interrupted. */
@@ -106,33 +107,15 @@ export function runningSteps(paths: HomePaths, record: RunRecord): string[] {
   return [...running.values()].map((step) => `${scopePrefix(record.runId, step.scope, nested)}${step.label}`);
 }
 
-/** One word for the list: what the run is doing, or what it waits for. */
-export function statusWord(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): string {
+/** What the pause rule says of the run: its word, its pause, and whether it may resume. It
+ *  lists the run's questions only while the worker runs, since the rule counts them only then. */
+export function verdictOf(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): Verdict {
   const alive = processAlive(record.pid);
-  if (alive && listQuestions(paths, record.runId).length) return "asks";
-  if (!state) return alive ? "starting" : "not started";
-  if (state.status === "running" && !alive) return "interrupted";
-  if (state.status === "paused") {
-    const reason = state.pauseReason;
-    if (reason === "usage_limit") return "paused: limit";
-    if (reason === "step_failed") return "paused: failed step";
-    if (reason === "step_stopped") return "paused: stopped step";
-    if (reason === "time_limit") return "paused: time limit";
-    if (reason === "checkpoint_required") return "paused: asks";
-    if (reason === "requested") return "paused";
-    if (reason === "interrupted") return "interrupted";
-    return `paused: ${reason ?? "?"}`;
-  }
-  if (state.status === "aborted") return "stopped";
-  return state.status;
+  return judge({ state, alive, openQuestions: alive ? listQuestions(paths, record.runId).length : 0 });
 }
 
-/** The exit code of `orc wait` and `orc run --wait` for each way a run ends. */
-export const EXIT: Record<string, number> = { completed: 0, failed: 1, paused: 2, aborted: 3, asks: 4 };
-
-/** What `orc wait --json` prints. */
-export function runSummary(paths: HomePaths, record: RunRecord): Record<string, unknown> {
-  const state = stateOf(paths, record);
+/** What `orc wait --json` prints. Its status is the saved one, not the rule's word. */
+function runSummary(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): Record<string, unknown> {
   const questions = listQuestions(paths, record.runId);
   return {
     runId: record.runId,
@@ -172,7 +155,7 @@ export interface WaitHooks {
 }
 
 export interface WaitEnd {
-  /** EXIT's code for how the wait ended. */
+  /** The rule's exit code for how the wait ended. */
   code: number;
   summary: Record<string, unknown>;
   /** Set when the wait ended at questions. */
@@ -194,12 +177,16 @@ export async function waitForRun(paths: HomePaths, runId: string, hooks: WaitHoo
     if (!processAlive(record.pid)) {
       await new Promise((r) => setTimeout(r, 150));
       follow();
-      const summary = runSummary(paths, record);
-      return { code: EXIT[String(summary.status)] ?? 1, summary };
+      const state = stateOf(paths, record);
+      // The rule gives every run with a gone worker an exit code.
+      return { code: judge({ state, alive: false, openQuestions: 0 }).exit!, summary: runSummary(paths, record, state) };
     }
     const open = listQuestions(paths, runId).filter((q) => !asked.has(q.id));
     if (open.length) {
-      if (!hooks.asks) return { code: EXIT.asks!, summary: runSummary(paths, record), questions: open };
+      if (!hooks.asks) {
+        const state = stateOf(paths, record);
+        return { code: judge({ state, alive: true, openQuestions: open.length }).exit!, summary: runSummary(paths, record, state), questions: open };
+      }
       for (const question of open) asked.add(question.id);
       await hooks.asks(open, record);
     }

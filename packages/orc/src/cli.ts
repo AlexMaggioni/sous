@@ -7,7 +7,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { answerQuestion, answerValue, breakpointValue, busyWorktrees, createRun, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listQuestions, listRecords, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, saveSchedules, scopePath, startWorker, stateOf, statusWord, stopRun, stopStep, waitForRun, withLiveSteps, workerMain, workflowDirs, writeAnswer, type AnswerKind, type Answers, type HomePaths, type PersistedRunState, type Place, type Question, type RunRecord, type Schedule } from "@orchestrator/engine";
+import { answerQuestion, answerValue, breakpointValue, busyWorktrees, createRun, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listQuestions, listRecords, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, saveSchedules, scopePath, startWorker, stateOf, stopRun, stopStep, verdictOf, waitForRun, withLiveSteps, workerMain, workflowDirs, writeAnswer, type AnswerKind, type Answers, type HomePaths, type PersistedRunState, type Place, type Question, type RunRecord, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { checkWorkflow } from "./check.js";
 import { doctor } from "./doctor.js";
@@ -290,7 +290,7 @@ function cmdList(parsed: Parsed): number {
   const shown = parsed.flags.all ? records : records.slice(0, 20);
   const rows = shown.map((record) => {
     const state = stateOf(paths, record);
-    return { record, state, status: statusWord(paths, record, state) };
+    return { record, state, status: verdictOf(paths, record, state).word };
   });
   if (parsed.flags.json) {
     printJson(rows.map(({ record, state, status }) => ({ runId: record.runId, workflow: record.workflow, status, state: state?.status, pauseReason: state?.pauseReason, createdAt: record.createdAt, place: record.place, cwd: record.cwd, origin: record.origin })));
@@ -322,7 +322,8 @@ function cmdShow(parsed: Parsed): number {
     return 0;
   }
   out(`${record.workflow}  ${record.runId}`);
-  out(`status    ${statusWord(paths, record, state)}${state?.resetHint ? ` (${state.resetHint})` : ""}`);
+  const verdict = verdictOf(paths, record, state);
+  out(`status    ${verdict.word}${state?.resetHint ? ` (${state.resetHint})` : ""}`);
   if (state?.reason && state.status !== "completed" && state.reason !== state.pauseReason) out(`reason    ${state.reason}`);
   out(`place     ${record.place}  ${record.cwd}${record.branch ? `  (branch ${record.branch})` : ""}`);
   out(`started   ${record.createdAt}  by ${record.origin}${record.schedule ? ` (${record.schedule})` : ""}${record.rerunOf ? `, rerun of ${record.rerunOf}` : ""}${record.reuseFrom ? `, reusing its unchanged steps` : ""}${record.startedByRun ? `, from run ${record.startedByRun}` : ""}`);
@@ -335,7 +336,7 @@ function cmdShow(parsed: Parsed): number {
   for (const program of HARNESSES) {
     if (record.accounts?.[program]) out(`account   ${harnessName(program)}: ${describeAccount(program, record.accounts[program])}`);
   }
-  if (record.limit && state?.status === "paused" && state.pauseReason === "usage_limit") out(`limit     ${limitNotice(paths, record, state.resetHint)}`);
+  if (record.limit && verdict.pause?.reason === "usage_limit") out(`limit     ${limitNotice(paths, record, state?.resetHint)}`);
   if (state?.tokenUsage) out(`tokens    ${state.tokenUsage.total}${state.durationMs ? `  in ${Math.round(state.durationMs / 1000)}s` : ""}`);
   if (state?.agents.length) {
     out("steps");

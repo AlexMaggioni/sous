@@ -8,6 +8,7 @@ import type { HomePaths, Place } from "./home.js";
 import { listQuestions, normalizeAnswer, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
 import { createRun, startWorker } from "./launch.js";
 import { findRecord, loadSnapshot, processAlive, updateRecord, type RunRecord } from "./records.js";
+import { judge, type ResumeRefusal, type ReuseRefusal } from "./rule.js";
 import { stateOf, runningSteps } from "./view.js";
 import { currentWorkflows, managerFor } from "./worker.js";
 
@@ -63,13 +64,22 @@ export function changedWorkflows(paths: HomePaths, record: RunRecord, state: Per
 /** Check a run can resume. Returns the workflows edited since it started, which reach it only
  *  when the user says so. */
 export function resumeCheck(paths: HomePaths, record: RunRecord): string[] {
-  if (processAlive(record.pid)) throw new Error(`${record.runId} is running already`);
-  const state = stateOf(paths, record);
-  if (!state) throw new Error(`${record.runId} never started. orc rerun ${record.runId} starts it fresh.`);
-  if (state.status === "completed") throw new Error(`${record.runId} completed. orc rerun ${record.runId} runs it again.`);
-  if (state.status === "aborted") throw new Error(`${record.runId} was stopped. orc rerun ${record.runId} starts it again.`);
-  return changedWorkflows(paths, record, state);
+  const alive = processAlive(record.pid);
+  // The rule refuses a live worker whatever its state. So the state is read only once the
+  // worker is gone, since stateOf can write.
+  const state = alive ? undefined : stateOf(paths, record);
+  const { resume } = judge({ state, alive, openQuestions: 0 });
+  if (!resume.ok) throw new Error(RESUME_REFUSALS[resume.why](record.runId));
+  return changedWorkflows(paths, record, state!);
 }
+
+/** What resume says when the rule refuses it. */
+const RESUME_REFUSALS: Record<ResumeRefusal, (runId: string) => string> = {
+  running: (runId) => `${runId} is running already`,
+  "never-started": (runId) => `${runId} never started. orc rerun ${runId} starts it fresh.`,
+  completed: (runId) => `${runId} completed. orc rerun ${runId} runs it again.`,
+  stopped: (runId) => `${runId} was stopped. orc rerun ${runId} starts it again.`,
+};
 
 /** Resume a run in a new worker. With `latest`, it takes the edited workflows. */
 export function resumeRun(paths: HomePaths, cliFile: string, record: RunRecord, latest: boolean): void {
@@ -80,9 +90,15 @@ export function resumeRun(paths: HomePaths, cliFile: string, record: RunRecord, 
 /** Check an earlier run can be run again with its unchanged steps reused. */
 export function reuseCheck(paths: HomePaths, old: RunRecord): void {
   const state = stateOf(paths, old);
-  if (processAlive(old.pid) || state?.status === "running" || state?.status === "pending") throw new Error(`${old.runId} is still running. orc stop ${old.runId} first.`);
-  if (state?.status === "paused") throw new Error(`${old.runId} is paused. orc resume ${old.runId} takes your edits and keeps the finished steps.`);
+  const { reuse } = judge({ state, alive: processAlive(old.pid), openQuestions: 0 });
+  if (!reuse.ok) throw new Error(REUSE_REFUSALS[reuse.why](old.runId));
 }
+
+/** What rerun --reuse says when the rule refuses it. */
+const REUSE_REFUSALS: Record<ReuseRefusal, (runId: string) => string> = {
+  running: (runId) => `${runId} is still running. orc stop ${runId} first.`,
+  paused: (runId) => `${runId} is paused. orc resume ${runId} takes your edits and keeps the finished steps.`,
+};
 
 export interface RerunRequest {
   place: Place;

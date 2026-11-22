@@ -30,6 +30,10 @@ export interface RunFacts {
   openQuestions: number;
 }
 
+/** Why resume or reuse says no. */
+export type ResumeRefusal = "running" | "never-started" | "completed" | "stopped";
+export type ReuseRefusal = "running" | "paused";
+
 export interface Verdict {
   status: ViewStatus;
   /** What orc list prints, such as "paused: limit". */
@@ -40,8 +44,8 @@ export interface Verdict {
   unfinished: boolean;
   /** Set when the saved state is paused, whatever the worker and the questions. */
   pause?: RunPause;
-  resume: { ok: true } | { ok: false; why: "running" | "never-started" | "completed" | "stopped" };
-  reuse: { ok: true } | { ok: false; why: "running" | "paused" };
+  resume: { ok: true } | { ok: false; why: ResumeRefusal };
+  reuse: { ok: true } | { ok: false; why: ReuseRefusal };
 }
 
 /** The service resumes a run this long after its limit resets. */
