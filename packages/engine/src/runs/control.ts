@@ -5,7 +5,6 @@ import { existsSync, readFileSync } from "node:fs";
 import type { PersistedRunState } from "./persistence/run-persistence.js";
 import { removeWorktree, runWorktrees } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
-import type { RunHost } from "./host.js";
 import { listQuestions, normalizeAnswer, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
 import { createRun, startWorker } from "./launch.js";
 import { findRecord, loadSnapshot, processAlive, updateRecord, type RunRecord } from "./records.js";
@@ -73,9 +72,9 @@ export function resumeCheck(paths: HomePaths, record: RunRecord): string[] {
 }
 
 /** Resume a run in a new worker. With `latest`, it takes the edited workflows. */
-export function resumeRun(paths: HomePaths, host: RunHost, record: RunRecord, latest: boolean): void {
+export function resumeRun(paths: HomePaths, cliFile: string, record: RunRecord, latest: boolean): void {
   if (latest) updateRecord(paths, record.runId, { resumeLatest: true });
-  startWorker(paths, host, record.runId, "resume");
+  startWorker(paths, cliFile, record.runId, "resume");
 }
 
 /** Check an earlier run can be run again with its unchanged steps reused. */
@@ -99,9 +98,9 @@ export interface RerunRequest {
 }
 
 /** Start an earlier run again as a new run, with its inputs, step changes and model. */
-export function rerun(paths: HomePaths, host: RunHost, old: RunRecord, request: RerunRequest): RunRecord {
+export function rerun(paths: HomePaths, cliFile: string, old: RunRecord, request: RerunRequest): RunRecord {
   const defaultModel = request.defaultModel ?? old.defaultModel;
-  const record = createRun(paths, host, {
+  const record = createRun(paths, {
     ...(request.reuse ? { reuseFrom: old } : {}),
     workflow: old.file,
     projectDir: old.projectDir,
@@ -115,7 +114,7 @@ export function rerun(paths: HomePaths, host: RunHost, old: RunRecord, request: 
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
     caller: request.caller === true,
   });
-  startWorker(paths, host, record.runId, "start");
+  startWorker(paths, cliFile, record.runId, "start");
   return record;
 }
 

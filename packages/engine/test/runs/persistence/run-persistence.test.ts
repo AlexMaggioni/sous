@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { AgentSessionRecord, AgentSessionRef } from "@orchestrator/shared-types";
+import type { AgentSessionRecord, AgentSessionRef } from "../../../src/workflow-result.js";
 import { WORKFLOW_RUNS_DIR } from "../../../src/config.js";
 import { WorkflowError, WorkflowErrorCode } from "../../../src/errors.js";
 import { createRunPersistence, generateRunId, type PersistedRunState, type RunPersistence } from "../../../src/runs/persistence/run-persistence.js";

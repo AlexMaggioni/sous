@@ -6,7 +6,7 @@ import type {
   WorkflowResumeCallLiveReason,
   WorkflowResumeDisabledReason,
   WorkflowResumeFallbackReason,
-} from "@orchestrator/shared-types";
+} from "./workflow-result.js";
 import type { PersistedResumeSeed } from "./runs/persistence/run-persistence.js";
 
 /** One interrupted root agent occurrence that may be continued at its live boundary. */

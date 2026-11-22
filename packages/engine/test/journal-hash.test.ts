@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
-import type { AgentRunner, AgentSessionRef, RunOptions } from "@orchestrator/shared-types";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { AgentSessionRef } from "../src/workflow-result.js";
+import type { RunOptions } from "../src/steps/agent-run.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
 

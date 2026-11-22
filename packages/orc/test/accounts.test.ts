@@ -5,12 +5,27 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
-import { WorkflowError, WorkflowErrorCode, type AgentRunner } from "@orchestrator/shared-types";
+import {
+  addAccount,
+  createRun,
+  currentAccount,
+  ensureHome,
+  homePaths,
+  limitNotice,
+  listAccounts,
+  loadRecord,
+  managerFor,
+  removeAccount,
+  runWorker,
+  useAccount,
+  WorkflowError,
+  WorkflowErrorCode,
+  type AgentRunner,
+  type HomePaths,
+  type RunRecord,
+} from "@orchestrator/engine";
 import { cmdAccount } from "../src/account-cli.js";
-import { accountsForRun, addAccount, currentAccount, limitNotice, listAccounts, removeAccount, useAccount } from "../src/accounts.js";
 import { main } from "../src/cli.js";
-import { createRun, ensureHome, homePaths, loadRecord, managerFor, runWorker, type HomePaths, type RunRecord } from "@orchestrator/engine";
-import { host } from "../src/host.js";
 
 // orc's accounts: one per program, the program's own login by default. Tokens here are made up.
 
@@ -39,16 +54,19 @@ function setup(workflows: Record<string, string> = {}): { paths: HomePaths; proj
 
 const ONE_STEP = `export const meta = { name: 'one', description: 'one step' }\nreturn await agent('go', { label: 'go' })`;
 
-/** A runner that notes the login each step sees, and can stop at the usage limit. */
-function loginRunner(limited: () => boolean = () => false): { runner: AgentRunner; seen: Array<Record<string, string | undefined>> } {
-  const seen: Array<Record<string, string | undefined>> = [];
+/** The account a step gets: its folder, its token, and whether it is one of orc's named logins. */
+interface SeenAccount {
+  token?: string;
+  folder?: string;
+  named?: boolean;
+}
+
+/** A runner that notes the account each step gets, and can stop at the usage limit. */
+function loginRunner(limited: () => boolean = () => false): { runner: AgentRunner; seen: SeenAccount[] } {
+  const seen: SeenAccount[] = [];
   const runner = {
     async run(_prompt: string, options: Record<string, unknown> = {}) {
-      seen.push({
-        token: process.env.CLAUDE_CODE_OAUTH_TOKEN,
-        apiKey: process.env.ANTHROPIC_API_KEY,
-        folder: process.env.CLAUDE_CONFIG_DIR,
-      });
+      seen.push({ ...(options.account as SeenAccount | undefined) });
       (options.onSessionOpen as ((ref: unknown) => void) | undefined)?.({ sessionId: `s${seen.length}`, backendId: "claude", cwd: options.cwd, reopen: { load: true, resume: true, list: true } });
       if (limited()) {
         const reset = new Date(Date.now() + 2 * 3600_000).toISOString();
@@ -114,20 +132,20 @@ describe("accounts", () => {
     assert.doesNotMatch(readFileSync(paths.accounts, "utf8"), new RegExp(WORK));
   });
 
-  it("a run records orc's account, and its steps run on that login, with the API key out of the way", async () => {
+  it("a run records orc's account, and its steps run on that login, as a named one whose API key the harness removes", async () => {
     const { paths, projectDir } = setup({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
     useAccount(paths, "work", { atLimit: () => false, resume: quiet });
     process.env.ANTHROPIC_API_KEY = "sk-ant-api03-made-up";
     try {
-      const record = createRun(paths, host, { workflow: "one", projectDir, inputs: {} });
+      const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
       assert.deepEqual(record.accounts, { claude: { name: "work", folder: process.env.CLAUDE_CONFIG_DIR }, codex: { name: "default", folder: process.env.CODEX_HOME } });
 
       const { runner, seen } = loginRunner();
-      const done = await runWorker(record.runId, "start", { host, paths, inner: runner, log: quiet });
+      const done = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
       assert.equal(done?.status, "completed");
-      assert.deepEqual(seen, [{ token: WORK, apiKey: undefined, folder: process.env.CLAUDE_CONFIG_DIR }]);
-      assert.equal(process.env.CLAUDE_CODE_OAUTH_TOKEN, undefined, "the worker puts the environment back");
+      assert.deepEqual(seen, [{ token: WORK, named: true, folder: process.env.CLAUDE_CONFIG_DIR }]);
+      assert.equal(process.env.CLAUDE_CODE_OAUTH_TOKEN, undefined, "the worker leaves its own environment alone");
       assert.equal(process.env.ANTHROPIC_API_KEY, "sk-ant-api03-made-up");
 
       const { printed } = await withHome(paths, () => main(["show", record.runId]));
@@ -146,30 +164,30 @@ describe("accounts", () => {
     useAccount(paths, "spare", { atLimit: () => false, resume: quiet });
 
     process.env.CLAUDE_CODE_OAUTH_TOKEN = WORK;
-    const known = createRun(paths, host, { workflow: "one", projectDir, inputs: {}, caller: true });
+    const known = createRun(paths, { workflow: "one", projectDir, inputs: {}, caller: true });
     assert.equal(known.accounts?.claude?.name, "work", "a session on a login orc has gets that account");
 
     process.env.CLAUDE_CODE_OAUTH_TOKEN = AGENT;
-    const record = createRun(paths, host, { workflow: "one", projectDir, inputs: {}, caller: true });
+    const record = createRun(paths, { workflow: "one", projectDir, inputs: {}, caller: true });
     assert.equal(record.accounts?.claude?.name, "caller");
     assert.ok(record.accounts?.claude?.kept);
     assert.doesNotMatch(readFileSync(join(paths.records, `${record.runId}.json`), "utf8"), /sk-ant/, "the run's record holds no token");
 
-    const plain = createRun(paths, host, { workflow: "one", projectDir, inputs: {} });
+    const plain = createRun(paths, { workflow: "one", projectDir, inputs: {} });
     assert.equal(plain.accounts?.claude?.name, "spare", "without the session flag, a run uses orc's account");
 
     // The service starts the worker from its own environment, without the session's token.
     delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
     const { runner, seen } = loginRunner();
-    await runWorker(record.runId, "start", { host, paths, inner: runner, log: quiet });
+    await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
     assert.equal(seen[0]?.token, AGENT);
 
     // A session on Claude Code's own login keeps no token, and its steps get none.
-    const own = createRun(paths, host, { workflow: "one", projectDir, inputs: {}, caller: true });
+    const own = createRun(paths, { workflow: "one", projectDir, inputs: {}, caller: true });
     assert.deepEqual(own.accounts?.claude, { name: "caller", folder: process.env.CLAUDE_CONFIG_DIR });
     process.env.CLAUDE_CODE_OAUTH_TOKEN = WORK;
     try {
-      await runWorker(own.runId, "start", { host, paths, inner: runner, log: quiet });
+      await runWorker(own.runId, "start", { paths, inner: runner, log: quiet });
       assert.equal(seen[1]?.token, undefined);
     } finally {
       delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
@@ -180,20 +198,19 @@ describe("accounts", () => {
     const { paths, projectDir } = setup({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
     useAccount(paths, "work", { atLimit: () => false, resume: quiet });
-    const parent = createRun(paths, host, { workflow: "one", projectDir, inputs: {} });
+    const parent = createRun(paths, { workflow: "one", projectDir, inputs: {} });
     useAccount(paths, "default", { atLimit: () => false, resume: quiet });
-    const child = createRun(paths, host, { workflow: "one", projectDir, inputs: {}, startedByRun: parent.runId, caller: true });
+    const child = createRun(paths, { workflow: "one", projectDir, inputs: {}, startedByRun: parent.runId, caller: true });
     assert.deepEqual(child.accounts, parent.accounts);
-    assert.deepEqual(accountsForRun(paths, {}, { parentRunId: "nope" }).claude, { name: "default", folder: null });
   });
 
   it("at the usage limit the run waits and says whose limit it is; orc account use moves it and it goes on", async () => {
     const { paths, projectDir } = setup({ one: ONE_STEP });
     let limited = true;
     const { runner, seen } = loginRunner(() => limited);
-    const record = createRun(paths, host, { workflow: "one", projectDir, inputs: {} });
+    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
     const lines: string[] = [];
-    const paused = await runWorker(record.runId, "start", { host, paths, inner: runner, log: (line) => lines.push(line) });
+    const paused = await runWorker(record.runId, "start", { paths, inner: runner, log: (line) => lines.push(line) });
     assert.equal(paused?.status, "paused");
     assert.equal(managerFor(paths, projectDir).getPersistence().load(record.runId)?.pauseReason, "usage_limit");
     assert.deepEqual({ ...loadRecord(paths, record.runId)?.limit, at: undefined }, { program: "claude", account: "default", at: undefined });
@@ -209,8 +226,8 @@ describe("accounts", () => {
     assert.equal(loadRecord(paths, record.runId)?.accounts?.claude?.folder, process.env.CLAUDE_CONFIG_DIR, "the run keeps its settings folder");
 
     // A run at the limit of the account orc uses now waits for the reset.
-    const second = createRun(paths, host, { workflow: "one", projectDir, inputs: {} });
-    await runWorker(second.runId, "start", { host, paths, inner: runner, log: quiet });
+    const second = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    await runWorker(second.runId, "start", { paths, inner: runner, log: quiet });
     const show = await withHome(paths, () => main(["show", second.runId]));
     assert.match(show.printed, /limit     Claude Code account spare hit its usage limit\. It resets at \d\d:\d\d\. orc account use <name> goes on now on another account\./);
     useAccount(paths, "default", { atLimit: () => false, resume: quiet });
@@ -223,7 +240,7 @@ describe("accounts", () => {
 
     // The worker that resumes it runs the step on the new login, and the limit is gone from the record.
     limited = false;
-    const done = await runWorker(record.runId, "resume", { host, paths, inner: runner, log: quiet });
+    const done = await runWorker(record.runId, "resume", { paths, inner: runner, log: quiet });
     assert.equal(done?.status, "completed");
     assert.equal(seen.at(-1)?.token, SPARE);
     assert.equal(loadRecord(paths, record.runId)?.limit, undefined);
@@ -233,7 +250,7 @@ describe("accounts", () => {
     const { paths, projectDir } = setup({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
     useAccount(paths, "work", { atLimit: () => false, resume: quiet });
-    const record = createRun(paths, host, { workflow: "one", projectDir, inputs: {} });
+    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
     assert.throws(() => removeAccount(paths, "work", new Set([record.runId])), new RegExp(`${record.runId} uses account work`));
     removeAccount(paths, "work", new Set());
   });

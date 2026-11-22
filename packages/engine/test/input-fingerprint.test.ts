@@ -5,7 +5,9 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import type { AgentResult, AgentRunner, RunOptions, WorkflowBackendConfig } from "@orchestrator/shared-types";
+import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { WorkflowBackendConfig } from "../src/workflow-result.js";
 import type { TSchema } from "typebox";
 import { CALL_INPUTS_FORMAT, type WorkflowRunOptions, runWorkflow } from "../src/workflow.js";
 

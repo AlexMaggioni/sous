@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { AuthErrorContext } from "@orchestrator/shared-types";
+import type { AuthErrorContext } from "../src/errors.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
@@ -11,8 +11,8 @@ import { WorkflowManager } from "../src/workflow-manager.js";
 // PR4 (§2.12/§2.13): the engine generalizes the PROVIDER_USAGE_LIMIT pause branch so an
 // AUTH_REQUIRED fault CHECKPOINTS the run as paused (reason "auth_required") carrying the
 // structured, non-secret authContext — never the intent's secret payload. These tests drive the
-// engine seam with stub runners; the acp-agents halves (real pool, real -32000) live in
-// packages/acp-agents/test (§4.6.2).
+// engine seam with stub runners. steps.test.ts checks that a harness's auth failure on the fake
+// programs becomes AUTH_REQUIRED.
 
 const ONE_AGENT = `export const meta = { name: 'auth_pause_demo', description: 'auth pause demo' }
 const a = await agent('first', { label: 'first' })

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentRunner, AgentUsage, JournalEntry, RunOptions } from "@orchestrator/shared-types";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { AgentUsage, RunOptions } from "../src/steps/agent-run.js";
+import type { JournalEntry } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";

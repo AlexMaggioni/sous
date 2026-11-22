@@ -5,7 +5,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import type { AgentRunner, JournalEntry, WorkflowCallRecord } from "@orchestrator/shared-types";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { validateResumeSafetyMarker, type PreparedResume } from "../src/resume.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";

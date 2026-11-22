@@ -42,8 +42,10 @@
     "prepublishOnly": "tsc -b"
   },
   "dependencies": {
-    "@orchestrator/shared-types": "workspace:*",
+    "@orchestrator/harnesses": "workspace:*",
     "acorn": "^8.17.0",
-    "typebox": "1.3.2"
+    "smol-toml": "1.9.1",
+    "typebox": "1.3.2",
+    "yaml": "2.9.0"
   }
 }

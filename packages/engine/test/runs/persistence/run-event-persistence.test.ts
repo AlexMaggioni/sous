@@ -20,7 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { PersistableEngineRunEvent, RunEventLogRecord } from "@orchestrator/shared-types";
+import type { PersistableEngineRunEvent, RunEventLogRecord } from "../../../src/run-events.js";
 import {
   RUN_EVENT_MAX_RECORD_BYTES,
   RUN_EVENT_READ_LIMIT_DEFAULT,

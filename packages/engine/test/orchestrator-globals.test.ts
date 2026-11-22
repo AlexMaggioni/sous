@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
-import type { AgentResult, AgentRunner, JournalEntry, RunOptions } from "@orchestrator/shared-types";
+import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { JournalEntry } from "../src/workflow-result.js";
 import { parseAgentDefinition, type AgentRegistry } from "../src/agent-registry.js";
 import { parseDurationSeconds } from "../src/orchestrator-globals.js";
 import { runWorkflow } from "../src/workflow.js";
@@ -427,6 +429,32 @@ return { first, flaky, other }`;
       assert.equal(completed.status, "completed");
       assert.deepEqual(prompts.slice(3), ["flaky", "other"], "the finished step replays");
       assert.deepEqual(structuredClone(completed.result), { first: "done:first", flaky: "done:flaky", other: "done:other" });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(persistenceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("log one period between a failure that ends in a period and the pause advice", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { WorkflowManager } = await import("../src/workflow-manager.js");
+    const runner: AgentRunner = {
+      async run<S extends TSchema | undefined = undefined>(): Promise<AgentResult<S>> {
+        throw new Error("Claude Code 1.0.0 is older than 2.1.330. Update it.");
+      },
+    };
+    const cwd = mkdtempSync(join(tmpdir(), "failed-step-cwd-"));
+    const persistenceRoot = mkdtempSync(join(tmpdir(), "failed-step-store-"));
+    try {
+      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: runner, orchestrator: { pauseOnFailedStep: true } });
+      const script = `export const meta = { name: 'steps', description: 's' }
+return await agent('old', { label: 'old', retries: 0 })`;
+      const paused = await manager.runSync(script, undefined, { runId: "failed-period" });
+      assert.equal(paused.status, "paused");
+      const line = paused.logs.find((entry) => entry.includes("The run pauses"));
+      assert.equal(line, 'step "old" failed after 1 try: Claude Code 1.0.0 is older than 2.1.330. Update it. The run pauses: fix the cause and resume it.');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(persistenceRoot, { recursive: true, force: true });

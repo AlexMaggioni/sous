@@ -28,7 +28,7 @@ rulesync-mcp  <run-1>
 status    completed
 place     none  <tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>
 started   <time>  by cli
-program   Claude Code 2.1.329  <repo>/test/fakes/claude
+program   Claude Code 2.1.330  <repo>/test/fakes/claude
 program   Codex 0.169.0  <repo>/test/fakes/codex
 account   Claude Code: default, Claude Code's own login in ~/.claude
 account   Codex: default, Codex's own login in ~/.codex
@@ -73,7 +73,7 @@ exit 0
     "programs": {
       "claude": {
         "path": "<repo>/test/fakes/claude",
-        "version": "2.1.329"
+        "version": "2.1.330"
       },
       "codex": {
         "path": "<repo>/test/fakes/codex",
@@ -125,12 +125,6 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
-            "timestamp": "<timestamp>"
-          },
-          {
-            "role": "assistant",
-            "kind": "text",
             "text": "Fake claude answer.",
             "timestamp": "<timestamp>"
           }
@@ -149,31 +143,6 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "initializeMeta": {
-            "jetbrains": {
-              "air": {
-                "version": 1,
-                "capabilities": [
-                  "sessionFailure",
-                  "agentFileChangeReport",
-                  "nativeSubagentSessions",
-                  "asyncTasks",
-                  "recommendedValue"
-                ]
-              }
-            },
-            "steering": {
-              "supported": true
-            },
-            "goal": {
-              "version": 1,
-              "controlMethod": "_session/goal",
-              "actions": [
-                "set",
-                "clear"
-              ]
-            }
-          },
           "cwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
           "reopen": {
             "load": true,
@@ -220,36 +189,6 @@ exit 0
           "sessionId": "<id-2>",
           "backendId": "codex",
           "poolKey": "codex",
-          "initializeMeta": {
-            "steering": {
-              "supported": true
-            },
-            "loadedTurn": {
-              "supported": true
-            },
-            "goal": {
-              "version": 1,
-              "controlMethod": "_session/goal",
-              "actions": [
-                "set",
-                "pause",
-                "resume",
-                "clear"
-              ]
-            },
-            "jetbrains": {
-              "air": {
-                "version": 1,
-                "capabilities": [
-                  "sessionFailure",
-                  "agentFileChangeReport",
-                  "nativeSubagentSessions",
-                  "asyncTasks",
-                  "recommendedValue"
-                ]
-              }
-            }
-          },
           "cwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
           "reopen": {
             "load": true,
@@ -276,12 +215,6 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
-            "timestamp": "<timestamp>"
-          },
-          {
-            "role": "assistant",
-            "kind": "text",
             "text": "Fake claude answer.",
             "timestamp": "<timestamp>"
           }
@@ -300,31 +233,6 @@ exit 0
           "sessionId": "<id-3>",
           "backendId": "claude",
           "poolKey": "claude",
-          "initializeMeta": {
-            "jetbrains": {
-              "air": {
-                "version": 1,
-                "capabilities": [
-                  "sessionFailure",
-                  "agentFileChangeReport",
-                  "nativeSubagentSessions",
-                  "asyncTasks",
-                  "recommendedValue"
-                ]
-              }
-            },
-            "steering": {
-              "supported": true
-            },
-            "goal": {
-              "version": 1,
-              "controlMethod": "_session/goal",
-              "actions": [
-                "set",
-                "clear"
-              ]
-            }
-          },
           "cwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
           "reopen": {
             "load": true,
@@ -370,36 +278,6 @@ exit 0
           "sessionId": "<id-4>",
           "backendId": "codex",
           "poolKey": "codex",
-          "initializeMeta": {
-            "steering": {
-              "supported": true
-            },
-            "loadedTurn": {
-              "supported": true
-            },
-            "goal": {
-              "version": 1,
-              "controlMethod": "_session/goal",
-              "actions": [
-                "set",
-                "pause",
-                "resume",
-                "clear"
-              ]
-            },
-            "jetbrains": {
-              "air": {
-                "version": 1,
-                "capabilities": [
-                  "sessionFailure",
-                  "agentFileChangeReport",
-                  "nativeSubagentSessions",
-                  "asyncTasks",
-                  "recommendedValue"
-                ]
-              }
-            }
-          },
           "cwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
           "reopen": {
             "load": true,
@@ -440,7 +318,7 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--effort","high","--permission-prompt-tool","stdio","--allowedTools","Skill(lookup)","--disallowedTools","AskUserQuestion","--tools","default","--mcp-config","{\"mcpServers\":{\"notes\":{\"type\":\"stdio\",\"command\":\"node\",\"args\":[\"notes-server.js\"],\"env\":{\"NOTES_DIR\":\"notes\"}}}}","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-1>","--replay-user-messages",""],"cwd":"<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>","model":"haiku","effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[{"name":"notes","transport":"stdio"}],"allowedTools":["Skill(lookup)"],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":["lookup"],"login":[],"prompt":"You look things up in the notes and the docs, then answer in one line.\n\nTask label: researcher\n\nMCP-CLAUDE Look it up.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--mcp-config","{\"mcpServers\":{\"docs\":{\"type\":\"http\",\"url\":\"https://example.invalid/mcp\",\"headers\":{}},\"notes\":{\"type\":\"stdio\",\"command\":\"node\",\"args\":[\"notes-server.js\"],\"env\":{\"NOTES_DIR\":\"notes\"}}}}","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-3>","--replay-user-messages",""],"cwd":"<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"},{"name":"notes","transport":"stdio"}],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: docs step\n\nMCP-STEP Use the docs.","rule":null,"outcome":"answer"}
-{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>","model":"gpt-fake","effort":"low","sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"},{"name":"notes","transport":"stdio"}],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":null,"login":[],"prompt":"You look things up in the notes and the docs, then answer in one line.\n\nTask label: researcher on codex\n\nMCP-CODEX Look it up.","rule":null,"outcome":"answer"}
-{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>","model":"gpt-fake","effort":"medium","sessionId":"<id-4>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"}],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":null,"login":[],"prompt":"Task label: docs step on codex\n\nMCP-STEP-CODEX Use the docs.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--effort=high","--model=haiku","--permission-prompt-tool=stdio","--allowedTools=Skill(lookup)","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--await-initialize","--session-id=<id-1>"],"cwd":"<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>","model":"haiku","effort":"high","sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[{"name":"notes","transport":"stdio"}],"allowedTools":["Skill(lookup)"],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"You look things up in the notes and the docs, then answer in one line.","skills":["lookup"],"login":[],"prompt":"Task label: researcher\n\nMCP-CLAUDE Look it up.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--await-initialize","--session-id=<id-3>"],"cwd":"<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"},{"name":"notes","transport":"stdio"}],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: docs step\n\nMCP-STEP Use the docs.","rule":null,"outcome":"answer"}
+{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>","model":"gpt-fake","effort":"low","sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"},{"name":"notes","transport":"stdio"}],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":"You look things up in the notes and the docs, then answer in one line.","login":[],"prompt":"Task label: researcher on codex\n\nMCP-CODEX Look it up.","rule":null,"outcome":"answer"}
+{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>","model":"gpt-fake","effort":null,"sessionId":"<id-4>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"}],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":null,"login":[],"prompt":"Task label: docs step on codex\n\nMCP-STEP-CODEX Use the docs.","rule":null,"outcome":"answer"}

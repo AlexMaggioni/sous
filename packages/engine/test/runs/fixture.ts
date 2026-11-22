@@ -1,12 +1,11 @@
-// A home, a project and a fake RunHost for the runs tests. The host's runner hands each step to
-// the test's runner, so no program runs.
+// A home and a project for the runs tests. The worker hands each step to the test's runner, so
+// no program runs.
 
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentRunner } from "@orchestrator/shared-types";
+import type { AgentRunner } from "../../src/steps/agent-runner.js";
 import { ensureHome, homePaths, type HomePaths } from "../../src/runs/home.js";
-import type { RunHost } from "../../src/runs/host.js";
 
 export function setup(workflows: Record<string, string>, config: Record<string, unknown> = {}): { paths: HomePaths; projectDir: string } {
   const root = mkdtempSync(join(tmpdir(), "engine-runs-"));
@@ -18,16 +17,8 @@ export function setup(workflows: Record<string, string>, config: Record<string, 
   return { paths, projectDir };
 }
 
-export const fakeHost: RunHost = {
-  cliFile: () => {
-    throw new Error("the tests run the worker in this process");
-  },
-  accountsForRun: () => ({}),
-  applyAccounts: () => () => {},
-  limitNotice: (_paths, record) => `${record.runId} hit a limit`,
-  agents: () => new Map(),
-  runner: (options) => ({ run: (prompt, runOptions) => options.inner!.run(prompt, runOptions), dispose: async () => {} }),
-};
+/** The tests run the worker in this process, so no cli file ever starts. */
+export const NO_CLI = "/nonexistent/orc/cli.js";
 
 export interface Call {
   prompt: string;

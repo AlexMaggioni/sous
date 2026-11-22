@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { CheckpointContext } from "@orchestrator/shared-types";
+import type { CheckpointContext } from "../src/errors.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { projectRunEventForPersistence } from "../src/run-observability.js";

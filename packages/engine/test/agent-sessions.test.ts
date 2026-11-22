@@ -11,7 +11,8 @@
 //   - a retry's record is the SUCCEEDING attempt's session, never a failed attempt's.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { WorkflowError, WorkflowErrorCode, type AgentSessionRef } from "@orchestrator/shared-types";
+import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
+import { type AgentSessionRef } from "../src/workflow-result.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
 

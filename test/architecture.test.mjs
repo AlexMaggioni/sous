@@ -91,46 +91,15 @@ const CALLERS = { engine: "orc", harnesses: "engine" };
 // ── The breaks of today. They can only go. ──────────────────────────────────────────────────────
 
 const BREAKS = {
-  packages: [
-    "acp-agents must go",
-    "codex-acp must go",
-    "shared-types must go",
-    "harnesses is missing"
-  ],
-  imports: [
-    "acp-agents imports @agentclientprotocol/*",
-    "codex-acp imports @agentclientprotocol/*",
-    "engine depends on shared-types",
-    "engine imports shared-types",
-    "orc depends on acp-agents",
-    "orc depends on shared-types",
-    "orc depends on smol-toml",
-    "orc depends on yaml",
-    "orc imports acp-agents",
-    "orc imports shared-types",
-    "orc imports smol-toml",
-    "orc imports yaml"
-  ],
+  packages: [],
+  imports: [],
   homes: [
-    "making a git worktree, in packages/engine/src/worktree.ts",
-    "naming a program's login or folder variable, in packages/acp-agents",
-    "naming a program's login or folder variable, in packages/codex-acp",
-    "naming a program's login or folder variable, in packages/orc/src/account-cli.ts",
-    "naming a program's login or folder variable, in packages/orc/src/accounts.ts",
-    "naming a program's login or folder variable, in packages/orc/src/agents.ts",
-    "naming a program's login or folder variable, in packages/orc/src/doctor.ts",
-    "naming a program's login or folder variable, in packages/orc/src/programs.ts",
-    "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/codex-acp",
-    "starting codex, in packages/codex-acp"
+    "making a git worktree, in packages/engine/src/worktree.ts"
   ],
   exports: {
-    "engine exports names orc never imports": 263
+    "engine exports names orc never imports": 262
   },
-  contract: [
-    "the claude adapter is missing",
-    "the codex adapter is missing",
-    "packages/harnesses/test/contract.test.ts is missing"
-  ]
+  contract: []
 };
 
 // ── Reading the source ──────────────────────────────────────────────────────────────────────────

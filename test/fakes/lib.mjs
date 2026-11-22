@@ -9,7 +9,17 @@
 //               hold       wait until a file of this name exists next to FAKE_LOG, or until
 //                          the request is interrupted
 //               fail       fail with this message
-//               limit      fail with a usage limit: { "resetsAt": epoch seconds }
+//               limit      fail with a usage limit: { "resetsAt": epoch seconds }. With
+//                          "first": true, Claude hits it before any answer. With "silent":
+//                          true, Codex sends no rate-limit update before the error.
+//               auth       fail as a program that is not logged in
+//               exit       the program exits mid-turn with this code, as a crash does
+//               stop       Claude ends its answer with this stop reason, such as refusal
+//               errorInfo  Codex fails a fail rule's turn with this codexErrorInfo
+//               usage      the tokens a failed or stopped turn spent:
+//                          { "input", "output", "cacheRead", "cacheWrite" }
+//               approval   Codex asks to run this command first, and logs the decision
+//               listTools  answer with the names of the tools the session has
 //               times      apply the rule to the first N matching requests only. The count
 //                          comes from earlier lines in FAKE_LOG, so it holds across processes.
 // FAKE_DEBUG  a file. Each program appends what it reads and writes, for debugging.
@@ -61,7 +71,8 @@ function loadRules() {
 
 /**
  * The answer for one request. Returns { rule, kind, text, value, delayMs, hold, message,
- * resetsAt }. kind is "answer", "fail" or "limit".
+ * resetsAt, first, silent, usage, approval, listTools, stop, errorInfo, code }. kind is "answer", "fail",
+ * "limit", "auth" or "exit".
  */
 export function decide(program, prompt, schema) {
   const rules = loadRules();
@@ -78,8 +89,10 @@ export function decide(program, prompt, schema) {
     break;
   }
   const rule = picked?.rule ?? {};
-  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold };
-  if (rule.limit) return { ...out, kind: "limit", resetsAt: rule.limit.resetsAt };
+  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, stop: rule.stop, errorInfo: rule.errorInfo };
+  if (rule.exit !== undefined) return { ...out, kind: "exit", code: rule.exit };
+  if (rule.limit) return { ...out, kind: "limit", resetsAt: rule.limit.resetsAt, first: rule.limit.first === true, silent: rule.limit.silent === true };
+  if (rule.auth) return { ...out, kind: "auth" };
   if (rule.fail) return { ...out, kind: "fail", message: rule.fail };
   let value;
   if (schema) {
@@ -87,6 +100,11 @@ export function decide(program, prompt, schema) {
   }
   const text = schema ? JSON.stringify(value) : typeof rule.answer === "string" ? rule.answer : rule.answer === undefined ? `Fake ${program} answer.` : JSON.stringify(rule.answer);
   return { ...out, kind: "answer", text, value };
+}
+
+/** The first limit rule for a program, for a program that reads its limits on request. */
+export function limitRule(program) {
+  return loadRules().find((rule) => rule.limit && (!rule.program || rule.program === program))?.limit;
 }
 
 function parseOr(text) {

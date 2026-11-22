@@ -5,14 +5,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type {
-  AgentRunner,
   AgentSessionRecord,
   JournalEntry,
-  RunOptions,
   WorkflowCallRecord,
   WorkflowRunFallback,
-} from "@orchestrator/shared-types";
+} from "../src/workflow-result.js";
+import type { RunOptions } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { ContinuationCandidate, PreparedContinuation, PreparedResume } from "../src/resume.js";
 import { runWorkflow } from "../src/workflow.js";

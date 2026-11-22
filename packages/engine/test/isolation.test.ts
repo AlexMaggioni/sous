@@ -4,13 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import vm from "node:vm";
 import { describe, it } from "node:test";
-import type {
-  AgentRunner,
-  AgentUsage,
-  RunOptions,
-  WorkflowCallRecord,
-  WorkflowRecordedError,
-} from "@orchestrator/shared-types";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { AgentUsage, RunOptions } from "../src/steps/agent-run.js";
+import type { WorkflowCallRecord } from "../src/workflow-result.js";
+import type { WorkflowRecordedError } from "../src/errors.js";
 import {
   createReplayRunner,
   RECORDING_UNUSABLE_REASONS,

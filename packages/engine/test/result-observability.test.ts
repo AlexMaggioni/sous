@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { AgentRunner, RunOptions } from "@orchestrator/shared-types";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { RunOptions } from "../src/steps/agent-run.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { runWorkflow } from "../src/workflow.js";
 

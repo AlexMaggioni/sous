@@ -25,7 +25,7 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve as resolvePath } from "node:path";
-import type { WorkflowMeta } from "@orchestrator/shared-types";
+import type { WorkflowMeta } from "./workflow-result.js";
 import { parseWorkflowScript } from "./workflow.js";
 
 /** One workflow file found by WorkflowDir.list(). */

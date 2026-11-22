@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentRunner, JournalEntry, RunOptions, WorkflowRunLimits } from "@orchestrator/shared-types";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { JournalEntry, WorkflowRunLimits } from "../src/workflow-result.js";
+import type { RunOptions } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import {
   MAX_STRUCTURED_STATUS_BYTES,

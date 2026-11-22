@@ -33,7 +33,7 @@ harnesses  <run-1>
 status    completed
 place     none  <tmp>/scenario-harnesses/orc-home/scratch/<run-1>
 started   <time>  by cli
-program   Claude Code 2.1.329  <repo>/test/fakes/claude
+program   Claude Code 2.1.330  <repo>/test/fakes/claude
 program   Codex 0.169.0  <repo>/test/fakes/codex
 account   Claude Code: default, Claude Code's own login in ~/.claude
 account   Codex: default, Codex's own login in ~/.codex
@@ -82,7 +82,7 @@ exit 0
     "programs": {
       "claude": {
         "path": "<repo>/test/fakes/claude",
-        "version": "2.1.329"
+        "version": "2.1.330"
       },
       "codex": {
         "path": "<repo>/test/fakes/codex",
@@ -134,12 +134,6 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
-            "timestamp": "<timestamp>"
-          },
-          {
-            "role": "assistant",
-            "kind": "text",
             "text": "{\"answer\":\"fake-answer\",\"sure\":true}",
             "timestamp": "<timestamp>"
           }
@@ -158,31 +152,6 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "initializeMeta": {
-            "jetbrains": {
-              "air": {
-                "version": 1,
-                "capabilities": [
-                  "sessionFailure",
-                  "agentFileChangeReport",
-                  "nativeSubagentSessions",
-                  "asyncTasks",
-                  "recommendedValue"
-                ]
-              }
-            },
-            "steering": {
-              "supported": true
-            },
-            "goal": {
-              "version": 1,
-              "controlMethod": "_session/goal",
-              "actions": [
-                "set",
-                "clear"
-              ]
-            }
-          },
           "cwd": "<tmp>/scenario-harnesses/orc-home/scratch/<run-1>",
           "reopen": {
             "load": true,
@@ -229,36 +198,6 @@ exit 0
           "sessionId": "<id-2>",
           "backendId": "codex",
           "poolKey": "codex",
-          "initializeMeta": {
-            "steering": {
-              "supported": true
-            },
-            "loadedTurn": {
-              "supported": true
-            },
-            "goal": {
-              "version": 1,
-              "controlMethod": "_session/goal",
-              "actions": [
-                "set",
-                "pause",
-                "resume",
-                "clear"
-              ]
-            },
-            "jetbrains": {
-              "air": {
-                "version": 1,
-                "capabilities": [
-                  "sessionFailure",
-                  "agentFileChangeReport",
-                  "nativeSubagentSessions",
-                  "asyncTasks",
-                  "recommendedValue"
-                ]
-              }
-            }
-          },
           "cwd": "<tmp>/scenario-harnesses/orc-home/scratch/<run-1>",
           "reopen": {
             "load": true,
@@ -303,36 +242,6 @@ exit 0
           "sessionId": "<id-3>",
           "backendId": "codex",
           "poolKey": "codex",
-          "initializeMeta": {
-            "steering": {
-              "supported": true
-            },
-            "loadedTurn": {
-              "supported": true
-            },
-            "goal": {
-              "version": 1,
-              "controlMethod": "_session/goal",
-              "actions": [
-                "set",
-                "pause",
-                "resume",
-                "clear"
-              ]
-            },
-            "jetbrains": {
-              "air": {
-                "version": 1,
-                "capabilities": [
-                  "sessionFailure",
-                  "agentFileChangeReport",
-                  "nativeSubagentSessions",
-                  "asyncTasks",
-                  "recommendedValue"
-                ]
-              }
-            }
-          },
           "cwd": "<tmp>/scenario-harnesses/orc-home/scratch/<run-1>",
           "reopen": {
             "load": true,
@@ -378,6 +287,6 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--effort","low","--json-schema","{\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\"},\"sure\":{\"type\":\"boolean\"}},\"required\":[\"answer\",\"sure\"],\"additionalProperties\":false}","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-1>","--replay-user-messages",""],"cwd":"<tmp>/scenario-harnesses/orc-home/scratch/<run-1>","model":"opus","effort":"low","sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"answer":{"type":"string"},"sure":{"type":"boolean"}},"required":["answer","sure"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: on claude\n\nHARNESS-CLAUDE Answer on Claude Code.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}
-{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-harnesses/orc-home/scratch/<run-1>","model":"gpt-fake","effort":"high","sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":null,"login":[],"prompt":"You answer on Codex.\n\nTask label: codex agent\n\nHARNESS-CODEX-AGENT Answer as the Codex agent.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--effort=low","--model=opus","--json-schema={\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\"},\"sure\":{\"type\":\"boolean\"}},\"required\":[\"answer\",\"sure\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-harnesses/orc-home/scratch/<run-1>","model":"opus","effort":"low","sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"answer":{"type":"string"},"sure":{"type":"boolean"}},"required":["answer","sure"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: on claude\n\nHARNESS-CLAUDE Answer on Claude Code.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}
+{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-harnesses/orc-home/scratch/<run-1>","model":"gpt-fake","effort":"high","sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":"You answer on Codex.","login":[],"prompt":"Task label: codex agent\n\nHARNESS-CODEX-AGENT Answer as the Codex agent.","rule":null,"outcome":"answer"}
 {"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-harnesses/orc-home/scratch/<run-1>","model":"gpt-fake","effort":"high","sessionId":"<id-2>","resume":false,"schema":{"type":"object","properties":{"answer":{"type":"string"},"sure":{"type":"boolean"}},"required":["answer","sure"],"additionalProperties":false},"mcpServers":[],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":null,"login":[],"prompt":"Task label: on codex\n\nHARNESS-CODEX Answer on Codex.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}

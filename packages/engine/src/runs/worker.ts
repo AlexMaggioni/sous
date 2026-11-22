@@ -3,8 +3,9 @@
 // inbox, and answers `orc pause` (SIGUSR1), `orc stop --step` (SIGUSR2) and `orc stop` (SIGTERM).
 
 import { readFileSync, existsSync } from "node:fs";
-import { pathToFileURL } from "node:url";
-import type { AgentRunner, WorkflowRunResult } from "@orchestrator/shared-types";
+import type { WorkflowRunResult } from "../workflow-result.js";
+import { limitNotice, runAccounts } from "../accounts.js";
+import { envFor, lookupAgents, lookupMcpServers, lookupSettings, registryOf } from "../agents.js";
 import { parseDurationSeconds } from "../orchestrator-globals.js";
 import type { PersistedRunState } from "./persistence/run-persistence.js";
 import { parseWorkflowScript } from "../workflow.js";
@@ -13,18 +14,17 @@ import { checkInputs, workflowExtras } from "../workflow-inputs.js";
 import { WorkflowManager } from "../workflow-manager.js";
 import { dropUnchangedWorktrees, isPlace, preparePlace } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
-import type { RunHost } from "./host.js";
 import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuestion, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
 import { loadRecord, loadSnapshot, noteNested, saveSnapshot, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { SlotPool } from "./slots.js";
+import { createSteps, type InnerRunner } from "../steps/steps.js";
+import { programLookup } from "../programs.js";
 
 export interface WorkerOptions {
-  /** What runs the steps and picks the accounts. */
-  host: RunHost;
   paths?: HomePaths;
-  /** The agent runner. Defaults to $ORC_AGENT_MODULE's default export, else the host's own runner. */
-  inner?: AgentRunner;
+  /** A runner that takes the place of the programs, for tests and the dry run. */
+  inner?: InnerRunner;
   /** How often to look for an answer, in ms. */
   pollMs?: number;
   /** Where progress lines go. Default stdout. */
@@ -53,14 +53,6 @@ function oneLine(text: string, max = 160): string {
   return flat.length > max ? `${flat.slice(0, max)}...` : flat;
 }
 
-async function loadInner(): Promise<AgentRunner | undefined> {
-  const module = process.env.ORC_AGENT_MODULE;
-  if (!module) return undefined;
-  const loaded = (await import(pathToFileURL(module).href)) as { default?: AgentRunner };
-  if (!loaded.default || typeof loaded.default.run !== "function") throw new Error(`${module} must export a default runner with run()`);
-  return loaded.default;
-}
-
 /** Every saved workflow the project sees now, by name, as script text. */
 export function currentWorkflows(paths: HomePaths, projectDir: string): Record<string, string> {
   const dirs = openWorkflowDir(workflowDirs(projectDir, paths));
@@ -72,18 +64,15 @@ export function currentWorkflows(paths: HomePaths, projectDir: string): Record<s
   return out;
 }
 
-/**
- * The engine's manager for a project's runs. Reading and stopping a run needs no host. Starting
- * or resuming one does, since the host knows the agents.
- */
-export function managerFor(paths: HomePaths, projectDir: string, host?: RunHost, extra: Partial<ConstructorParameters<typeof WorkflowManager>[0]> = {}) {
+/** The engine's manager for a project's runs. */
+export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<ConstructorParameters<typeof WorkflowManager>[0]> = {}) {
   const dirs = openWorkflowDir(workflowDirs(projectDir, paths));
   return new WorkflowManager({
     // Run state is keyed to the manager's folder, so every orc manager uses the home folder.
     cwd: paths.home,
     persistenceRoot: paths.runs,
     // Agents come from rulesync and the harnesses' own folders, looked up from the run's project.
-    ...(host ? { loadAgents: () => host.agents(paths, projectDir) } : {}),
+    loadAgents: () => registryOf(lookupAgents(lookupSettings(paths, projectDir))),
     defaultAgentRetries: loadConfig(paths).retries,
     loadSavedWorkflow: (name) => dirs.resolve(name),
     orchestrator: {
@@ -127,30 +116,41 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
   if (!record) throw new Error(`no run ${runId}`);
   // The steps run on the run's recorded accounts, also when the service resumes it with its own
   // environment. A dry run talks to no agent.
-  const restore = options.dryRun ? () => {} : options.host.applyAccounts(paths, record.accounts);
-  try {
-    return await runOnAccounts(paths, record, mode, options);
-  } finally {
-    restore();
-  }
+  const accounts = options.dryRun ? {} : runAccounts(paths, record.accounts);
+  return runOnAccounts(paths, record, mode, options, accounts);
 }
 
-async function runOnAccounts(paths: HomePaths, record: RunRecord, mode: "start" | "resume", options: WorkerOptions): Promise<WorkflowRunResult | undefined> {
+async function runOnAccounts(
+  paths: HomePaths,
+  record: RunRecord,
+  mode: "start" | "resume",
+  options: WorkerOptions,
+  accounts: ReturnType<typeof runAccounts>,
+): Promise<WorkflowRunResult | undefined> {
   const runId = record.runId;
   const config = loadConfig(paths);
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
   updateRecord(paths, runId, { pid: process.pid, limit: undefined });
 
+  // The environment with the run's accounts on it, for code steps and the agent lookup.
+  const base = envFor("codex", accounts.codex, envFor("claude", accounts.claude, process.env));
+  const settings = lookupSettings(paths, record.projectDir, config, base);
+  const agents = lookupAgents(settings);
+  const secrets = loadSecrets(paths);
   const slots = new SlotPool(paths.slots, paths.queue, () => loadConfig(paths).maxAgents, record.priority);
-  const inner = options.inner ?? (await loadInner());
-  const runner = options.host.runner({
-    paths,
-    projectDir: record.projectDir,
+  const inner = options.inner;
+  const runner = createSteps({
     cwd: record.cwd,
-    config,
-    secrets: loadSecrets(paths),
     ...(inner ? { inner } : {}),
     ...(options.dryRun ? {} : { slots }),
+    agents,
+    mcp: lookupMcpServers(settings, { ...base, ...secrets }),
+    // Code steps also get the project folder, since a run may work elsewhere (a worktree, a scratch folder).
+    env: { ...secrets, ORC_PROJECT: record.projectDir },
+    base,
+    accounts,
+    // A runner from a test or the dry run brings its own programs.
+    ...(inner ? {} : { programs: programLookup(config) }),
     onSlot: ({ label, state }) => {
       if (state === "waiting" && slots.held().length >= Math.max(1, loadConfig(paths).maxAgents)) {
         log(`${stamp()} queued     ${label ?? "agent"} waits for a free agent slot`);
@@ -173,7 +173,10 @@ async function runOnAccounts(paths: HomePaths, record: RunRecord, mode: "start" 
   if (takeLatest) updateRecord(paths, runId, { resumeLatest: undefined });
   const snapshot = loadSnapshot(paths, runId);
   const live = openWorkflowDir(workflowDirs(record.projectDir, paths));
-  const manager = managerFor(paths, record.projectDir, options.host, { loadSavedWorkflow: (name) => snapshot[name] ?? live.resolve(name) });
+  const manager = managerFor(paths, record.projectDir, {
+    loadAgents: () => registryOf(agents),
+    loadSavedWorkflow: (name) => snapshot[name] ?? live.resolve(name),
+  });
 
   const waits = new AbortController();
   const pollMs = options.pollMs ?? 500;
@@ -340,7 +343,7 @@ async function runOnAccounts(paths: HomePaths, record: RunRecord, mode: "start" 
   const error = result?.reason ?? state?.reason;
   log(`${stamp()} ${status.padEnd(10)} ${record.workflow}${reason}${status === "failed" && error ? `: ${oneLine(String(error), 400)}` : ""}`);
   const atLimit = status === "paused" && state?.pauseReason === "usage_limit" && !stopping;
-  const limitText = atLimit ? options.host.limitNotice(paths, loadRecord(paths, runId) ?? record, state?.resetHint) : undefined;
+  const limitText = atLimit ? limitNotice(paths, loadRecord(paths, runId) ?? record, state?.resetHint) : undefined;
   if (limitText) log(`${stamp()} limit      ${limitText}`);
   if (status === "completed" || status === "aborted") {
     for (const dir of dropUnchangedWorktrees(paths, record.projectDir, runId)) log(`${stamp()} removed    ${dir}, which changed no file`);
@@ -358,11 +361,11 @@ async function runOnAccounts(paths: HomePaths, record: RunRecord, mode: "start" 
 }
 
 /** The detached process: `orc _worker <runId> start|resume`. */
-export async function workerMain(runId: string, mode: "start" | "resume", host: RunHost): Promise<number> {
+export async function workerMain(runId: string, mode: "start" | "resume"): Promise<number> {
   // The agents' shells inherit it, so `orc run` knows when an agent starts a workflow.
   process.env.ORC_RUN_ID = runId;
   try {
-    const result = await runWorker(runId, mode, { host, handleSignals: true });
+    const result = await runWorker(runId, mode, { handleSignals: true });
     return result?.status === "failed" ? 1 : 0;
   } catch (error) {
     process.stderr.write(`${stamp()} error      ${(error as Error).stack ?? String(error)}\n`);

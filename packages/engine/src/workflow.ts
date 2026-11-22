@@ -6,29 +6,31 @@ import vm from "node:vm";
 import type { Node } from "acorn";
 import { parse } from "acorn";
 import type { TSchema } from "typebox";
+import type { AgentHistoryEntry } from "./steps/agent-history.js";
 import type {
-  AgentHistoryEntry,
   AgentResultProvenance,
   ContinuationSkipReason,
-  AgentRunner,
+  AgentUsage,
+  PromptImage,
+} from "./steps/agent-run.js";
+import type { AgentRunner } from "./steps/agent-runner.js";
+import type {
   AgentSessionRecord,
   AgentSessionRef,
-  AgentUsage,
   JournalEntry,
-  McpServerConfig,
-  PromptImage,
   WorkflowBackendConfig,
   WorkflowCallRecord,
   WorkflowCheckpointTaken,
   WorkflowMeta,
   WorkflowMetaPhase,
-  WorkflowRecordedError,
   WorkflowResumeCallDecision,
   WorkflowResumeSafety,
   WorkflowRunFallback,
   WorkflowRunLimits,
   WorkflowRunResult,
-} from "@orchestrator/shared-types";
+} from "./workflow-result.js";
+import type { McpServerConfig } from "./steps/mcp-config.js";
+import type { WorkflowRecordedError } from "./errors.js";
 import {
   type AgentDefinition,
   type AgentRegistry,
@@ -84,11 +86,11 @@ import {
   orchestratorRunExtras,
 } from "./orchestrator-globals.js";
 
-// WorkflowMeta / WorkflowMetaPhase / JournalEntry / WorkflowRunResult are the shared,
-// host-facing types (defined once in @orchestrator/shared-types). The bare engine
+// WorkflowMeta / WorkflowMetaPhase / JournalEntry / WorkflowRunResult are the
+// host-facing types (defined once in workflow-result.ts). The bare engine
 // returns the result MINUS the run-manager's terminal status trio; the manager stamps
 // status/reason/resetHint on top (the engine seam is never widened).
-export type { WorkflowMeta, WorkflowMetaPhase, JournalEntry } from "@orchestrator/shared-types";
+export type { WorkflowMeta, WorkflowMetaPhase, JournalEntry } from "./workflow-result.js";
 
 /** Bare engine return: the host-facing WorkflowRunResult MINUS the manager's terminal
  *  status trio (status/reason/resetHint). The WorkflowManager composes those on top. */
@@ -127,6 +129,9 @@ const HOST_HANDLED_CODES: ReadonlySet<WorkflowErrorCode> = new Set([
   WorkflowErrorCode.PAUSE_REQUESTED,
   WorkflowErrorCode.WORKFLOW_ABORTED,
 ]);
+
+/** The message as a sentence, with one period at its end. */
+const sentence = (message: string) => (/[.!?]$/.test(message.trimEnd()) ? message.trimEnd() : `${message}.`);
 
 /** True for the pause a failed step causes under pauseOnFailedStep. */
 export function isStepFailedPause(error: { code?: unknown; details?: unknown } | undefined): boolean {
@@ -1821,7 +1826,7 @@ export async function runWorkflow<T = unknown>(
                 // A step the user stopped pauses the run on it, like a failed step.
                 const why = (cancellationReason.details as { pauseReason?: unknown } | undefined)?.pauseReason;
                 const message = `step "${label}" was stopped${typeof why === "string" ? `: ${cancellationReason.message}` : ""}`;
-                log(`${message}. The run pauses: resume it to run the step again.`);
+                log(`${sentence(message)} The run pauses: resume it to run the step again.`);
                 emitFailure(cancellationReason, "engine", "error", slot, false);
                 throw (shared.pendingPause ??= new WorkflowError(message, WorkflowErrorCode.PAUSE_REQUESTED, {
                   recoverable: false,
@@ -1858,7 +1863,7 @@ export async function runWorkflow<T = unknown>(
             if (options.pauseOnFailedStep && !HOST_HANDLED_CODES.has(workflowError.code)) {
               const tries = workflowError.recoverable ? `after ${maxAttempts} tr${maxAttempts === 1 ? "y" : "ies"}` : "and a retry cannot fix it";
               const message = `step "${label}" failed ${tries}: ${workflowError.message}`;
-              log(`${message}. The run pauses: fix the cause and resume it.`);
+              log(`${sentence(message)} The run pauses: fix the cause and resume it.`);
               emitFailure(workflowError, "runner", "error", slot, false);
               throw (shared.pendingPause ??= new WorkflowError(message, WorkflowErrorCode.PAUSE_REQUESTED, {
                 recoverable: false,

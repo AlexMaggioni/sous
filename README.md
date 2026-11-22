@@ -32,18 +32,15 @@ node <this repo>/packages/orc/dist/cli.js check ticket --ticket "$(cat tickets/T
 | --- | --- |
 | `packages/orc` | The `orc` command: runs, the inbox, schedules and the service. |
 | `packages/engine` | Runs a workflow script, with its journal and resume. |
-| `packages/acp-agents` | Drives Claude Code and Codex over the Agent Client Protocol. |
-| `packages/codex-acp` | The Codex adapter that acp-agents starts. |
-| `packages/shared-types` | The types the other packages share. |
+| `packages/harnesses` | Runs one step on Claude Code or Codex, each through its own SDK. |
 
-[`docs/refactor-plan.md`](docs/refactor-plan.md) brings these down to three: orc, engine and
-harnesses.
+[`docs/refactor-plan.md`](docs/refactor-plan.md) says how the packages came down to these three.
 
 ## Tests
 
-`pnpm test` builds every package, runs the architecture test, then the tests of every package but
-codex-acp. The default run needs no credentials and starts no real agent. The live agent tests run
-only with `AGENTPRISM_LIVE_E2E=1`.
+`pnpm test` builds every package, runs the architecture test, the tests of every package, then the
+baseline. It needs no credentials and starts no real agent. The steps run on the fake programs in
+`test/fakes`. The proofs in `test/proofs` run on the real programs, by hand.
 
 ## License
 

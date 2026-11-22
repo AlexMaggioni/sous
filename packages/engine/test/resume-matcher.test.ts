@@ -3,11 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import type {
-  JournalEntry,
-  WorkflowCallRecord,
-  WorkflowResumeCallDecision,
-} from "@orchestrator/shared-types";
+import type { JournalEntry, WorkflowCallRecord, WorkflowResumeCallDecision } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import {
   admitResumeSource,

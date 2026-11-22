@@ -1,17 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
-import type {
-  AgentResult,
-  AgentRunner,
-  JournalEntry,
-  PromptImage,
-  RunOptions,
-} from "@orchestrator/shared-types";
+import type { AgentResult, PromptImage, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { JournalEntry } from "../src/workflow-result.js";
 import { runWorkflow } from "../src/workflow.js";
 
 // agent({ images }) is an ADDITIVE run input: the engine must thread it through to the runner
-// opts verbatim (the ACP runner turns it into image ContentBlocks), but it must NOT enter the
+// opts verbatim (the steps module hands each image to the harness), but it must NOT enter the
 // resume identity hash (hashAgentCall) — it shapes the agent, not the logical call, exactly like
 // mcpServers/meta.
 

@@ -3,10 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-// Adapted import: AgentUsage is part of the frozen seam contract, which now lives in
-// @orchestrator/shared-types (pi imported it from "../src/agent.js"). The engine re-exports
-// it, but importing from its canonical home keeps the seam explicit.
-import type { AgentRunner, AgentUsage } from "@orchestrator/shared-types";
+// Adapted import: AgentUsage is part of the seam contract, which lives in
+// src/steps/agent-run.ts (pi imported it from "../src/agent.js").
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { AgentUsage } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { type JournalEntry, runWorkflow } from "../src/workflow.js";
 

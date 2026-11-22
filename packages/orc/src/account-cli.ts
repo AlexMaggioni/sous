@@ -1,10 +1,32 @@
 // `orc account`: list the accounts, add a Claude Code login, switch, and remove one.
 
 import { spawnSync } from "node:child_process";
-import { accountLabel, addAccount, checkNewAccount, currentAccount, folderText, listAccounts, removeAccount, useAccount } from "./accounts.js";
-import { ensureHome, homePaths, listRecords, loadConfig, loadRecord, processAlive, rootRunId, savedState, startWorker, unfinishedRuns, type HomePaths, type RunRecord } from "@orchestrator/engine";
-import { host } from "./host.js";
-import { findProgram, PROGRAM_INFO, PROGRAMS } from "./programs.js";
+import {
+  accountLabel,
+  addAccount,
+  checkNewAccount,
+  currentAccount,
+  ensureHome,
+  folderText,
+  HARNESSES,
+  harnessName,
+  homePaths,
+  listAccounts,
+  listRecords,
+  loadConfig,
+  loadRecord,
+  loginOf,
+  processAlive,
+  removeAccount,
+  rootRunId,
+  savedState,
+  setupTokenProgram,
+  startWorker,
+  unfinishedRuns,
+  useAccount,
+  type HomePaths,
+  type RunRecord,
+} from "@orchestrator/engine";
 
 export interface AccountCommandOptions {
   json?: boolean;
@@ -15,6 +37,8 @@ export interface AccountCommandOptions {
   /** Runs `claude setup-token`. Default: in this terminal, when stdin is one. */
   setupToken?: (paths: HomePaths) => void;
   out?: (line: string) => void;
+  /** orc's built cli.js, which `orc account use` starts the moved runs with. */
+  cliFile?: () => string;
 }
 
 function atLimit(paths: HomePaths): (record: RunRecord) => boolean {
@@ -61,14 +85,16 @@ async function readStdin(): Promise<string> {
 }
 
 function runSetupToken(paths: HomePaths): void {
-  const found = findProgram("claude", { config: loadConfig(paths) });
+  const found = setupTokenProgram(loadConfig(paths));
   if ("problem" in found) throw new Error(found.problem);
-  // The login it makes is for the browser account, whatever this shell is logged in with.
-  const env = { ...process.env };
-  for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) delete env[name];
-  const ran = spawnSync(found.path, ["setup-token"], { stdio: "inherit", env });
+  const ran = spawnSync(found.path, ["setup-token"], { stdio: "inherit", env: found.env });
   if (ran.error) throw new Error(`claude setup-token did not start: ${ran.error.message}`);
   if (ran.status !== 0) throw new Error(`claude setup-token stopped with exit ${ran.status ?? ran.signal}. Nothing was added.`);
+}
+
+function cliFile(options: AccountCommandOptions): string {
+  if (!options.cliFile) throw new Error("orc account use needs the path of orc's cli.js");
+  return options.cliFile();
 }
 
 export async function cmdAccount(positionals: string[], options: AccountCommandOptions = {}): Promise<number> {
@@ -102,10 +128,10 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
     case "use": {
       const result = useAccount(paths, needName(), {
         atLimit: atLimit(paths),
-        resume: (runId) => startWorker(paths, host, runId, "resume"),
+        resume: (runId) => startWorker(paths, cliFile(options), runId, "resume"),
       });
       const label = accountLabel(result.program, result.name);
-      out(`orc uses ${PROGRAM_INFO[result.program].name} account ${label} for new runs.`);
+      out(`orc uses ${harnessName(result.program)} account ${label} for new runs.`);
       for (const run of result.moved) out(`resumed ${run.runId}  ${run.workflow}  on ${label}, was waiting at the limit of ${run.from}`);
       for (const run of result.same) out(`${run.runId}  ${run.workflow}  waits at the limit of ${label} itself, and goes on after the reset`);
       return 0;
@@ -113,7 +139,7 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
     case "remove":
     case "rm": {
       const { program, name } = removeAccount(paths, needName(), unfinishedRuns(paths));
-      out(`removed ${PROGRAM_INFO[program].name} account ${accountLabel(program, name)}.${currentAccount(paths, program) === "default" ? " orc uses default." : ""}`);
+      out(`removed ${harnessName(program)} account ${accountLabel(program, name)}.${currentAccount(paths, program) === "default" ? " orc uses default." : ""}`);
       return 0;
     }
     default:
@@ -129,11 +155,10 @@ function listCommand(paths: HomePaths, out: (line: string) => void, json: boolea
     return 0;
   }
   const width = Math.max(...rows.map((row) => accountLabel(row.program, row.name).length)) + 2;
-  for (const program of PROGRAMS) {
-    out(PROGRAM_INFO[program].name);
-    const variable = program === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME";
+  for (const program of HARNESSES) {
+    out(harnessName(program));
     for (const row of rows.filter((entry) => entry.program === program)) {
-      const what = row.name === "default" ? `${PROGRAM_INFO[program].name}'s own login, in ${folderText(program, process.env[variable])}` : `login token, added ${row.addedAt?.slice(0, 10)}`;
+      const what = row.name === "default" ? `${harnessName(program)}'s own login, in ${folderText(program, loginOf(program).value)}` : `login token, added ${row.addedAt?.slice(0, 10)}`;
       out(`${row.current ? "*" : " "} ${accountLabel(program, row.name).padEnd(width)}${what}`);
     }
   }

@@ -4,11 +4,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import type {
-  AgentRunner,
-  RunOptions,
-  WorkflowReplayProvenanceField,
-} from "@orchestrator/shared-types";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { RunOptions } from "../src/steps/agent-run.js";
+import type { WorkflowReplayProvenanceField } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";

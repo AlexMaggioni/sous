@@ -1,7 +1,5 @@
 import type {
   AgentSessionRecord,
-  AgentUsage,
-  CheckpointContext,
   JournalEntry,
   ResumePolicy,
   WorkflowCallRecord,
@@ -12,7 +10,9 @@ import type {
   WorkflowResumeFallbackReason,
   WorkflowResumeReport,
   WorkflowResumeSafety,
-} from "@orchestrator/shared-types";
+} from "./workflow-result.js";
+import type { AgentUsage } from "./steps/agent-run.js";
+import type { CheckpointContext } from "./errors.js";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { assertExplicitCheckpointDecision, assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
 import {

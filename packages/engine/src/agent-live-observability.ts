@@ -1,9 +1,5 @@
-import {
-  truncateUtf8,
-  type EngineRunEvent,
-  type RunAgentProgressPayload,
-  type RunEventLogRecord,
-} from "@orchestrator/shared-types";
+import { truncateUtf8 } from "./redact.js";
+import { type EngineRunEvent, type RunAgentProgressPayload, type RunEventLogRecord } from "./run-events.js";
 import {
   MAX_OBSERVABILITY_SCALAR_BYTES,
   projectRunEventForPersistence,

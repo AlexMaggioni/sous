@@ -1,15 +1,17 @@
 #!/usr/bin/env node
-// A fake Codex CLI. `codex app-server` speaks JSON-RPC over stdio as codex-acp drives it:
-// initialize, thread start and resume, model list, a turn with an output schema, token usage,
-// interrupt, and MCP servers given by `-c` or in the thread config. It answers as lib.mjs
-// decides and logs each turn to FAKE_LOG. `codex --version` prints a version like the real one.
+// A fake Codex CLI. `codex app-server` speaks JSON-RPC over stdio as the Codex adapter drives it.
+// It has initialize, thread start and resume, model list, a turn with an output schema, token usage,
+// interrupt, approval requests, and MCP servers from $CODEX_HOME/config.toml, `-c` and the
+// thread config. A thread's servers deep-merge into configured ones of the same name, as the
+// real 0.169.0 does. It answers as lib.mjs decides and logs each turn to FAKE_LOG.
+// `codex --version` prints a version like the real one, or FAKE_VERSION.
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { appendLog, debug, decide, loginPresent, mcpSummary, readJsonLines, waitFor } from "./lib.mjs";
+import { appendLog, debug, decide, limitRule, loginPresent, mcpSummary, readJsonLines, waitFor } from "./lib.mjs";
 
-const VERSION = "0.169.0";
+const VERSION = process.env.FAKE_VERSION ?? "0.169.0";
 const argv = process.argv.slice(2);
 
 if (argv.includes("--version") || argv.includes("-V")) {
@@ -54,6 +56,38 @@ function mcpFromOverrides(given) {
   return servers;
 }
 
+/** The TOML the tests write: [dotted.headers], and key = string, number, boolean or array. */
+function parseToml(text) {
+  const root = {};
+  let table = root;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const header = /^\[([^\]]+)\]$/.exec(line);
+    if (header) {
+      table = root;
+      for (const key of header[1].split(".").map((part) => part.trim().replace(/^"|"$/g, ""))) table = table[key] ??= {};
+      continue;
+    }
+    const eq = line.indexOf("=");
+    if (eq < 0) continue;
+    const key = line.slice(0, eq).trim().replace(/^"|"$/g, "");
+    table[key] = JSON.parse(line.slice(eq + 1).trim().replace(/'([^']*)'/g, '"$1"'));
+  }
+  return root;
+}
+
+const configFile = process.env.CODEX_HOME ? join(process.env.CODEX_HOME, "config.toml") : undefined;
+const userConfig = configFile && existsSync(configFile) ? parseToml(readFileSync(configFile, "utf8")) : {};
+
+/** Codex's merge of config layers: tables merge key by key, other values replace. */
+function deepMerge(base, over) {
+  if (!over || typeof over !== "object" || Array.isArray(over)) return over;
+  const out = { ...(base && typeof base === "object" && !Array.isArray(base) ? base : {}) };
+  for (const [key, value] of Object.entries(over)) out[key] = deepMerge(out[key], value);
+  return out;
+}
+
 const cliOverrides = overrides(argv);
 const threadsDir = join(dirname(process.env.FAKE_LOG ?? join(process.cwd(), "fake.log")), "codex-threads");
 const threads = new Map();
@@ -81,12 +115,37 @@ const MODEL = {
 };
 
 const USAGE = { totalTokens: 150, inputTokens: 120, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 30, reasoningOutputTokens: 0 };
+/** A rule's usage as Codex counts it, with cached tokens inside inputTokens. */
+function codexUsage(spent) {
+  if (!spent) return USAGE;
+  const inputTokens = (spent.input ?? 0) + (spent.cacheRead ?? 0) + (spent.cacheWrite ?? 0);
+  const outputTokens = spent.output ?? 0;
+  return { totalTokens: inputTokens + outputTokens, inputTokens, cachedInputTokens: spent.cacheRead ?? 0, cacheWriteInputTokens: spent.cacheWrite ?? 0, outputTokens, reasoningOutputTokens: 0 };
+}
+
+/** The rate limits account/rateLimits/read reports: the codex limit rule's window, else a fresh one. */
+function rateLimits() {
+  const limit = limitRule("codex");
+  const primary = limit ? { usedPercent: 100, windowDurationMins: 300, resetsAt: limit.resetsAt ?? null } : { usedPercent: 0, windowDurationMins: 300, resetsAt: null };
+  return { limitId: "codex", limitName: null, normalModelSlug: null, primary, secondary: null, credits: null, individualLimit: null, spendControlReached: null, planType: "plus", rateLimitReachedType: limit ? "rate_limit_reached" : null };
+}
 
 const send = (message) => {
   debug("codex", "out", message);
   process.stdout.write(`${JSON.stringify(message)}\n`);
 };
 const notify = (method, params) => send({ method, params });
+
+// Requests the fake sends to the client, waiting on their answers.
+const asked = new Map();
+let askedId = 0;
+function ask(method, params) {
+  const id = `fake-${++askedId}`;
+  return new Promise((resolve) => {
+    asked.set(id, resolve);
+    send({ id, method, params });
+  });
+}
 
 function threadView(thread) {
   return {
@@ -133,6 +192,19 @@ function threadResponse(thread) {
   };
 }
 
+/** The thread's MCP servers, or the error the real config loader gives on a transport clash. */
+function threadServers(config) {
+  const merged = deepMerge(deepMerge(userConfig.mcp_servers ?? {}, mcpFromOverrides(cliOverrides)), config.mcp_servers ?? {});
+  for (const [name, server] of Object.entries(merged)) {
+    if (server?.url !== undefined && server?.command !== undefined) {
+      const base = userConfig.mcp_servers?.[name];
+      const clash = base?.url !== undefined ? "command is not supported for streamable_http" : "url is not supported for stdio";
+      return { error: `failed to load configuration: ${clash}\nin \`mcp_servers.${name}\`\n` };
+    }
+  }
+  return { servers: Object.fromEntries(Object.entries(merged).filter(([, server]) => server?.enabled !== false)) };
+}
+
 function openThread(params, resumed) {
   const config = params.config ?? {};
   const id = resumed ? params.threadId : randomUUID();
@@ -145,7 +217,7 @@ function openThread(params, resumed) {
     effort: config.model_reasoning_effort ?? cliOverrides.model_reasoning_effort ?? null,
     baseInstructions: params.baseInstructions ?? null,
     developerInstructions: params.developerInstructions ?? null,
-    mcpServers: { ...mcpFromOverrides(cliOverrides), ...(config.mcp_servers ?? {}) },
+    mcpServers: threadServers(config).servers,
     turn: undefined,
   };
   threads.set(id, thread);
@@ -159,13 +231,36 @@ function promptText(input) {
     .join("\n");
 }
 
+/** The images a turn's input carries, as { mimeType, data }, from their data URLs. */
+function promptImages(input) {
+  return (input ?? [])
+    .filter((item) => item?.type === "image")
+    .map((item) => {
+      const parts = /^data:([^;]+);base64,(.*)$/.exec(item.url ?? "");
+      return parts ? { mimeType: parts[1], data: parts[2] } : { mimeType: null, data: null, url: item.url ?? null };
+    });
+}
+
 async function runTurn(thread, turnId, params) {
   const prompt = promptText(params.input);
+  const images = promptImages(params.input);
   const schema = params.outputSchema ?? null;
   const decision = decide("codex", prompt, schema);
   const turn = { id: turnId, interrupted: false };
   thread.turn = turn;
   const model = params.model ?? thread.model;
+  const base = { threadId: thread.id, turnId };
+  const disabledTools = Object.fromEntries(
+    Object.entries(thread.mcpServers)
+      .filter(([, server]) => server.disabled_tools?.length)
+      .map(([name, server]) => [name, server.disabled_tools]),
+  );
+  // The approval comes before the log line, so the line can hold the client's decision.
+  let approval;
+  if (decision.approval) {
+    const answer = await ask("item/commandExecution/requestApproval", { kind: "command", ...base, itemId: "call_fake", startedAtMs: 1700000000000, environmentId: null, reason: null, command: decision.approval, cwd: thread.cwd });
+    approval = answer.error ? `error: ${answer.error.message}` : answer.result?.decision;
+  }
   appendLog({
     program: "codex",
     argv,
@@ -177,40 +272,58 @@ async function runTurn(thread, turnId, params) {
     schema,
     mcpServers: mcpSummary(thread.mcpServers),
     approvalPolicy: params.approvalPolicy ?? null,
+    ...(Object.keys(disabledTools).length ? { disabledTools } : {}),
     sandboxPolicy: params.sandboxPolicy?.type ?? null,
     baseInstructions: thread.baseInstructions,
     developerInstructions: thread.developerInstructions,
     login: loginPresent(),
     prompt,
+    ...(images.length ? { images } : {}),
     rule: decision.rule,
     outcome: decision.kind,
+    ...(approval !== undefined ? { approval } : {}),
   });
   mkdirSync(threadsDir, { recursive: true });
   writeFileSync(join(threadsDir, thread.id), "");
   thread.preview ||= prompt.slice(0, 80);
 
-  const base = { threadId: thread.id, turnId };
   const turnView = (status, items = [], error = null) => ({ id: turnId, items, itemsView: "full", status, error, startedAt: 1700000000, completedAt: status === "inProgress" ? null : 1700000001, durationMs: status === "inProgress" ? null : 1000 });
   notify("turn/started", { threadId: thread.id, turn: turnView("inProgress") });
 
   await waitFor(decision, () => turn.interrupted);
+  if (decision.kind === "exit") {
+    process.stderr.write("fake crash\n");
+    process.exit(decision.code);
+  }
   thread.turn = undefined;
 
+  if (approval !== undefined) {
+    const command = { type: "commandExecution", id: "call_fake", pluginId: null, scriptPath: null, command: decision.approval, cwd: thread.cwd, processId: null, source: "agent", commandActions: [], durationMs: null };
+    notify("item/started", { ...base, item: { ...command, status: "inProgress", aggregatedOutput: null, exitCode: null }, startedAtMs: 1700000000000 });
+    const ran = approval === "accept" || approval === "acceptForSession";
+    notify("item/completed", { ...base, item: { ...command, status: ran ? "completed" : "declined", aggregatedOutput: ran ? "" : null, exitCode: ran ? 0 : null }, completedAtMs: 1700000000500 });
+  }
+  // A failed or stopped turn still reports what it spent, as the real one does.
+  const spent = () => notify("thread/tokenUsage/updated", { ...base, tokenUsage: { total: codexUsage(decision.usage), last: codexUsage(decision.usage), modelContextWindow: 272000 } });
   if (turn.interrupted) {
+    spent();
     notify("turn/completed", { threadId: thread.id, turn: turnView("interrupted") });
     return;
   }
-  if (decision.kind === "limit") {
+  if (decision.kind === "limit" && !decision.silent) {
     // The real app-server reports the spent window, with its reset time, before the error.
     const window = { usedPercent: 100, windowDurationMins: 300, resetsAt: decision.resetsAt ?? null };
     const rateLimits = { limitId: "codex", limitName: null, normalModelSlug: null, primary: window, secondary: null, credits: null, individualLimit: null, spendControlReached: null, planType: "plus", rateLimitReachedType: "rate_limit_reached" };
     notify("account/rateLimits/updated", { rateLimits });
   }
-  if (decision.kind === "limit" || decision.kind === "fail") {
-    const error =
-      decision.kind === "limit"
-        ? { message: "You've hit your usage limit. Upgrade to Pro or try again later.", codexErrorInfo: "usageLimitExceeded", additionalDetails: null, misalignment: null }
-        : { message: decision.message, codexErrorInfo: "internalServerError", additionalDetails: null, misalignment: null };
+  if (decision.kind !== "answer") {
+    const errors = {
+      limit: { message: "You've hit your usage limit. Upgrade to Pro or try again later.", codexErrorInfo: "usageLimitExceeded", additionalDetails: null, misalignment: null },
+      auth: { message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header", codexErrorInfo: "unauthorized", additionalDetails: null, misalignment: null },
+      fail: { message: decision.message, codexErrorInfo: decision.errorInfo ?? "internalServerError", additionalDetails: null, misalignment: null },
+    };
+    const error = errors[decision.kind];
+    if (decision.kind === "fail") spent();
     notify("error", { ...base, error, willRetry: false });
     notify("turn/completed", { threadId: thread.id, turn: turnView("failed", [], error) });
     return;
@@ -235,19 +348,25 @@ function onRequest(message) {
       return reply({ userAgent: `codex_cli_rs/${VERSION} (fake)`, codexHome: join(dirname(threadsDir), "codex-home"), platformFamily: "unix", platformOs: "macos" });
     case "account/read":
       return reply({ account: { type: "chatgpt", email: null, planType: "plus" }, requiresOpenaiAuth: true });
-    case "account/rateLimits/read":
-      return reply({ rateLimits: null, rateLimitsByLimitId: null });
+    case "account/rateLimits/read": {
+      const snapshot = rateLimits();
+      return reply({ ordinaryUsageAllowed: true, rateLimits: snapshot, rateLimitsByLimitId: { codex: snapshot }, rateLimitResetCredits: null, accountId: null, rateLimitUpsell: null });
+    }
     case "skills/list":
       return reply({ data: [] });
     case "model/list":
       return reply({ data: [MODEL], nextCursor: null });
-    case "config/read":
-      return reply({ config: { ...cliOverrides }, origins: {}, layers: params.includeLayers ? [] : null });
+    case "config/read": {
+      const layers = configFile && existsSync(configFile) ? [{ name: { type: "user", file: configFile, profile: null }, version: "fake", config: userConfig, disabledReason: null }] : [];
+      return reply({ config: { ...userConfig, ...cliOverrides }, origins: {}, layers: params.includeLayers ? layers : null });
+    }
     case "thread/start":
-      return reply(threadResponse(openThread(params, false)));
     case "thread/resume": {
-      if (!existsSync(join(threadsDir, params.threadId ?? ""))) return fail(-32600, `no rollout found for thread id ${params.threadId}`);
-      return reply(threadResponse(openThread(params, true)));
+      const resumed = method === "thread/resume";
+      if (resumed && !existsSync(join(threadsDir, params.threadId ?? ""))) return fail(-32600, `no rollout found for thread id ${params.threadId}`);
+      const { error } = threadServers(params.config ?? {});
+      if (error) return fail(-32603, error);
+      return reply(threadResponse(openThread(params, resumed)));
     }
     case "thread/read": {
       const thread = threads.get(params.threadId);
@@ -278,6 +397,10 @@ function onRequest(message) {
 readJsonLines(process.stdin, (message) => {
   debug("codex", "in", message);
   if (message.method && message.id !== undefined) onRequest(message);
+  else if (!message.method && asked.has(message.id)) {
+    asked.get(message.id)(message);
+    asked.delete(message.id);
+  }
 });
 process.stdin.on("end", () => process.exit(0));
 process.on("SIGTERM", () => process.exit(143));

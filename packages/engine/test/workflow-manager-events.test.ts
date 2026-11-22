@@ -3,11 +3,8 @@ import { existsSync, mkdtempSync, rmSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type {
-  AgentRunner,
-  EngineRunEventName,
-  EngineRunEventPayloadMap,
-} from "@orchestrator/shared-types";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { EngineRunEventName, EngineRunEventPayloadMap } from "../src/run-events.js";
 import { WorkflowError, WorkflowErrorCode, type AuthErrorContext } from "../src/errors.js";
 import { RunEventLogError } from "../src/runs/persistence/run-event-persistence.js";
 import {

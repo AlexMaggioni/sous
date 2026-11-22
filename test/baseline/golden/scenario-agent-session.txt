@@ -33,7 +33,7 @@ status    completed
 place     none  <tmp>/scenario-agent-session/orc-home/scratch/<run-1>
 started   <time>  by cli
 inputs    {"topic":"a small change"}
-program   Claude Code 2.1.329  <repo>/test/fakes/claude
+program   Claude Code 2.1.330  <repo>/test/fakes/claude
 account   Claude Code: default, Claude Code's own login in ~/.claude
 account   Codex: default, Codex's own login in ~/.codex
 tokens    300  in <n>s
@@ -81,7 +81,7 @@ exit 0
     "programs": {
       "claude": {
         "path": "<repo>/test/fakes/claude",
-        "version": "2.1.329"
+        "version": "2.1.330"
       }
     }
   },
@@ -143,12 +143,6 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
-            "timestamp": "<timestamp>"
-          },
-          {
-            "role": "assistant",
-            "kind": "text",
             "text": "{\"steps\":[\"fake-steps-1\"],\"size\":\"small\",\"done\":true}",
             "timestamp": "<timestamp>"
           }
@@ -167,31 +161,6 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "initializeMeta": {
-            "jetbrains": {
-              "air": {
-                "version": 1,
-                "capabilities": [
-                  "sessionFailure",
-                  "agentFileChangeReport",
-                  "nativeSubagentSessions",
-                  "asyncTasks",
-                  "recommendedValue"
-                ]
-              }
-            },
-            "steering": {
-              "supported": true
-            },
-            "goal": {
-              "version": 1,
-              "controlMethod": "_session/goal",
-              "actions": [
-                "set",
-                "clear"
-              ]
-            }
-          },
           "cwd": "<tmp>/scenario-agent-session/orc-home/scratch/<run-1>",
           "reopen": {
             "load": true,
@@ -215,12 +184,6 @@ exit 0
         "scope": "<run-1>",
         "startedAt": "<startedAt>",
         "history": [
-          {
-            "role": "assistant",
-            "kind": "text",
-            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
-            "timestamp": "<timestamp>"
-          },
           {
             "role": "assistant",
             "kind": "text",
@@ -249,31 +212,6 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "initializeMeta": {
-            "jetbrains": {
-              "air": {
-                "version": 1,
-                "capabilities": [
-                  "sessionFailure",
-                  "agentFileChangeReport",
-                  "nativeSubagentSessions",
-                  "asyncTasks",
-                  "recommendedValue"
-                ]
-              }
-            },
-            "steering": {
-              "supported": true
-            },
-            "goal": {
-              "version": 1,
-              "controlMethod": "_session/goal",
-              "actions": [
-                "set",
-                "clear"
-              ]
-            }
-          },
           "cwd": "<tmp>/scenario-agent-session/orc-home/scratch/<run-1>",
           "reopen": {
             "load": true,
@@ -319,5 +257,5 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema","{\"type\":\"object\",\"properties\":{\"steps\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"size\":{\"type\":\"string\",\"enum\":[\"small\",\"large\"]},\"done\":{\"type\":\"boolean\"}},\"required\":[\"steps\",\"size\",\"done\"],\"additionalProperties\":false}","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-1>","--replay-user-messages",""],"cwd":"<tmp>/scenario-agent-session/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"steps":{"type":"array","items":{"type":"string"}},"size":{"type":"string","enum":["small","large"]},"done":{"type":"boolean"}},"required":["steps","size","done"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: planner\n\nSESSION-1 Plan a small change.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--resume=<id-1>","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--replay-user-messages",""],"cwd":"<tmp>/scenario-agent-session/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: planner again\n\nSESSION-2 Add one more step to: fake-steps-1","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"steps\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"size\":{\"type\":\"string\",\"enum\":[\"small\",\"large\"]},\"done\":{\"type\":\"boolean\"}},\"required\":[\"steps\",\"size\",\"done\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-agent-session/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"steps":{"type":"array","items":{"type":"string"}},"size":{"type":"string","enum":["small","large"]},"done":{"type":"boolean"}},"required":["steps","size","done"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: planner\n\nSESSION-1 Plan a small change.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--resume=<id-1>","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local"],"cwd":"<tmp>/scenario-agent-session/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: planner again\n\nSESSION-2 Add one more step to: fake-steps-1","rule":null,"outcome":"answer"}

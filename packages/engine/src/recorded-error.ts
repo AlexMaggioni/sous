@@ -1,5 +1,5 @@
-import type { WorkflowRecordedError } from "@orchestrator/shared-types";
-import { WorkflowError } from "@orchestrator/shared-types";
+import type { WorkflowRecordedError } from "./errors.js";
+import { WorkflowError } from "./errors.js";
 import { cloneStrictJsonValue, deepFreeze, type StrictJsonValue } from "./strict-json.js";
 
 function guardedRead(object: object, key: PropertyKey): { ok: true; value: unknown } | { ok: false } {

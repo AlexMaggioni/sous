@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
-import type { AgentResult, AgentRunner, JournalEntry, McpServerConfig, RunOptions } from "@orchestrator/shared-types";
+import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { JournalEntry } from "../src/workflow-result.js";
+import type { McpServerConfig } from "../src/steps/mcp-config.js";
 import { runWorkflow } from "../src/workflow.js";
 
 // (#5) agent({ mcpServers }) is an ADDITIVE run input: the engine must thread it through to

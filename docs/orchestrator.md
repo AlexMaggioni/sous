@@ -8,8 +8,7 @@ Build it from the repo root:
 
 ```sh
 pnpm install
-pnpm --filter @orchestrator/shared-types --filter @orchestrator/engine \
-  --filter @orchestrator/acp-agents --filter @orchestrator/orc build
+pnpm build
 node packages/orc/dist/cli.js help
 ```
 

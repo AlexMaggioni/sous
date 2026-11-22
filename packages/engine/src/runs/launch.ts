@@ -10,7 +10,7 @@ import { openWorkflowDir } from "../workflow-dir.js";
 import { checkInputs, workflowExtras, type WorkflowExtras } from "../workflow-inputs.js";
 import { preparePlace } from "../places/places.js";
 import { loadConfig, rememberProject, workflowDirs, type HomePaths, type Place } from "./home.js";
-import type { RunHost } from "./host.js";
+import { accountsForRun } from "../accounts.js";
 import { saveRecord, updateRecord, type RunRecord } from "./records.js";
 import type { Priority } from "./slots.js";
 
@@ -77,7 +77,7 @@ export class InputProblems extends Error {
 }
 
 /** Check the request and write the run's record. Nothing runs yet. */
-export function createRun(paths: HomePaths, host: RunHost, request: CreateRunRequest): RunRecord {
+export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecord {
   const resolved = resolveWorkflow(paths, request.projectDir, request.workflow);
   const checked = checkInputs(resolved.extras, request.inputs);
   const args = checked.args;
@@ -114,7 +114,7 @@ export function createRun(paths: HomePaths, host: RunHost, request: CreateRunReq
     ...(request.rerunOf ? { rerunOf: request.rerunOf } : {}),
     ...(reuse ? { reuseFrom: reuse.runId } : {}),
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
-    accounts: host.accountsForRun(paths, { caller: request.caller, parentRunId: request.startedByRun }),
+    accounts: accountsForRun(paths, process.env, { caller: request.caller, parentRunId: request.startedByRun }),
   };
   saveRecord(paths, record);
   rememberProject(paths, request.projectDir);
@@ -126,10 +126,10 @@ export function logFile(paths: HomePaths, runId: string): string {
 }
 
 /** Start the run's worker in the background. Its output goes to logs/<run id>.log. */
-export function spawnWorker(paths: HomePaths, host: RunHost, runId: string, mode: "start" | "resume"): number {
+export function spawnWorker(paths: HomePaths, cliFile: string, runId: string, mode: "start" | "resume"): number {
   const out = openSync(logFile(paths, runId), "a");
   try {
-    const child = spawn(process.execPath, [host.cliFile(), "_worker", runId, mode], {
+    const child = spawn(process.execPath, [cliFile, "_worker", runId, mode], {
       detached: true,
       stdio: ["ignore", out, out],
       env: { ...process.env, ORC_HOME: paths.home },
@@ -142,6 +142,6 @@ export function spawnWorker(paths: HomePaths, host: RunHost, runId: string, mode
 }
 
 /** Start the run's worker and note its process in the record. */
-export function startWorker(paths: HomePaths, host: RunHost, runId: string, mode: "start" | "resume"): void {
-  updateRecord(paths, runId, { pid: spawnWorker(paths, host, runId, mode) });
+export function startWorker(paths: HomePaths, cliFile: string, runId: string, mode: "start" | "resume"): void {
+  updateRecord(paths, runId, { pid: spawnWorker(paths, cliFile, runId, mode) });
 }

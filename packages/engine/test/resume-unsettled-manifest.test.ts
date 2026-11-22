@@ -3,8 +3,8 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import type { RunOptions } from "@orchestrator/shared-types";
-import { WorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
+import type { RunOptions } from "../src/steps/agent-run.js";
+import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 const ENVIRONMENT_KEY = "resume-unsettled-manifest";

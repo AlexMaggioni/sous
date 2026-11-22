@@ -3,19 +3,26 @@
 // schedule them. `orc help` lists the commands.
 
 import { spawn } from "node:child_process";
-import { closeSync, openSync } from "node:fs";
+import { closeSync, existsSync, openSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { resolve } from "node:path";
-import { answerQuestion, answerValue, breakpointValue, createRun, cronMatches, daemonLog, daemonMain, daemonPid, discardRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, homePaths, InputProblems, isPlace, listQuestions, listRecords, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, saveSchedules, startWorker, stateOf, statusWord, stopRun, stopStep, unfinishedRuns, waitForRun, withLiveSteps, workerMain, workflowDirs, workflowExtras, writeAnswer, type AnswerKind, type HomePaths, type PersistedRunState, type Place, type Question, type RunRecord, type Schedule } from "@orchestrator/engine";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { answerQuestion, answerValue, breakpointValue, createRun, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listQuestions, listRecords, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, saveSchedules, startWorker, stateOf, statusWord, stopRun, stopStep, unfinishedRuns, waitForRun, withLiveSteps, workerMain, workflowDirs, workflowExtras, writeAnswer, type AnswerKind, type HomePaths, type PersistedRunState, type Place, type Question, type RunRecord, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
-import { describeAccount, limitNotice } from "./accounts.js";
 import { checkWorkflow } from "./check.js";
 import { dryRun, readAnswers } from "./dryrun.js";
 import { doctor } from "./doctor.js";
-import { host } from "./host.js";
-import { isProgram, PROGRAM_INFO, PROGRAMS } from "./programs.js";
 
 class Usage extends Error {}
+
+/** The built command-line file, which also runs the worker. */
+export function cliFile(): string {
+  const here = fileURLToPath(new URL(".", import.meta.url));
+  for (const candidate of [join(here, "cli.js"), join(here, "..", "dist", "cli.js")]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error("orc is not built. Run pnpm build in the orchestrator repo.");
+}
 
 interface Parsed {
   positionals: string[];
@@ -260,7 +267,7 @@ async function cmdRun(parsed: Parsed): Promise<number> {
   const place = str(parsed.flags.place);
   if (place !== undefined && !isPlace(place)) throw new Usage(`--place is worktree, folder or none, got "${place}"`);
   const concurrency = str(parsed.flags.concurrency);
-  const record = createRun(paths, host, {
+  const record = createRun(paths, {
     workflow,
     projectDir,
     inputs: parsed.inputs,
@@ -273,7 +280,7 @@ async function cmdRun(parsed: Parsed): Promise<number> {
     // Claude Code marks the shells of its sessions. A run one starts uses its login.
     caller: process.env.CLAUDECODE === "1",
   });
-  startWorker(paths, host, record.runId, "start");
+  startWorker(paths, cliFile(), record.runId, "start");
   return startedOrWait(paths, record, "start", parsed);
 }
 
@@ -322,11 +329,11 @@ function cmdShow(parsed: Parsed): number {
   if (Object.keys(record.args).length) out(`inputs    ${JSON.stringify(record.args)}`);
   if (record.overrides) out(`changes   ${JSON.stringify(record.overrides)}`);
   for (const [program, used] of Object.entries(record.programs ?? {})) {
-    const name = isProgram(program) ? PROGRAM_INFO[program].name : program;
+    const name = isHarness(program) ? harnessName(program) : program;
     out(`program   ${name} ${used.version ?? "(version unknown)"}  ${used.path}`);
   }
-  for (const program of PROGRAMS) {
-    if (record.accounts?.[program]) out(`account   ${PROGRAM_INFO[program].name}: ${describeAccount(program, record.accounts[program])}`);
+  for (const program of HARNESSES) {
+    if (record.accounts?.[program]) out(`account   ${harnessName(program)}: ${describeAccount(program, record.accounts[program])}`);
   }
   if (record.limit && state?.status === "paused" && state.pauseReason === "usage_limit") out(`limit     ${limitNotice(paths, record, state.resetHint)}`);
   if (state?.tokenUsage) out(`tokens    ${state.tokenUsage.total}${state.durationMs ? `  in ${Math.round(state.durationMs / 1000)}s` : ""}`);
@@ -426,7 +433,7 @@ async function cmdResume(parsed: Parsed): Promise<number> {
         `orc resume ${record.runId} --same goes on with the version it started with.`,
     );
   }
-  resumeRun(paths, host, record, parsed.flags.latest === true);
+  resumeRun(paths, cliFile(), record, parsed.flags.latest === true);
   return startedOrWait(paths, record, "resume", parsed);
 }
 
@@ -440,7 +447,7 @@ async function cmdRerun(parsed: Parsed): Promise<number> {
     reuseCheck(paths, old);
     if (parsed.flags.place) throw new Usage("--reuse works where the earlier run worked, so it takes no --place");
   }
-  const record = rerun(paths, host, old, {
+  const record = rerun(paths, cliFile(), old, {
     place,
     reuse,
     inputs: parsed.inputs,
@@ -604,7 +611,7 @@ async function cmdDaemon(parsed: Parsed): Promise<number> {
   const log = daemonLog(paths);
   switch (action) {
     case "run":
-      await daemonMain(paths, host);
+      await daemonMain(paths, cliFile());
       return 0;
     case "start": {
       if (pid) {
@@ -753,15 +760,15 @@ const COMMANDS: Record<string, (parsed: Parsed) => number | Promise<number>> = {
   gc: cmdGc,
   prune: cmdPrune,
   discard: cmdDiscard,
-  account: (parsed) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message) }),
-  accounts: (parsed) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message) }),
+  account: (parsed) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message), cliFile }),
+  accounts: (parsed) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message), cliFile }),
   doctor: (parsed) => doctor({ live: parsed.flags.live === true, model: str(parsed.flags.model), json: parsed.flags.json === true }),
 };
 
 export async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
   try {
-    if (command === "_worker") return await workerMain(rest[0]!, rest[1] === "resume" ? "resume" : "start", host);
+    if (command === "_worker") return await workerMain(rest[0]!, rest[1] === "resume" ? "resume" : "start");
     const parsed = parseArgs(rest);
     if (!command || command === "help" || command === "--help" || command === "-h" || parsed.flags.help || parsed.flags.h) {
       out(HELP);

@@ -2,7 +2,7 @@ packages:
   - "packages/*"
 
 overrides:
-  "@anthropic-ai/claude-agent-sdk": "0.3.281"
+  "@anthropic-ai/claude-agent-sdk": "0.3.330"
 
 # Steps run on the installed Claude Code, so the SDK's own copy of it is never fetched.
 ignoredOptionalDependencies:

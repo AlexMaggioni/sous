@@ -1,6 +1,6 @@
-// @orchestrator/engine — the lifted Pi engine, de-coupled from any agent
-// backend. It NEVER imports @orchestrator/acp-agents; it references the backend ONLY
-// through the injected AgentRunner seam from @orchestrator/shared-types.
+// @orchestrator/engine, the lifted Pi engine. It runs each agent step through the steps
+// module, which uses @orchestrator/harnesses. Tests and the dry run inject an AgentRunner
+// instead.
 
 // ── Engine entry ──
 export {
@@ -155,19 +155,15 @@ export {
   applyToolPolicy,
   agentDefinitionKey,
   listAgentTypes,
-  type AgentDefinition,
-  type AgentRegistry,
 } from "./agent-registry.js";
 
 // ── Orchestrator additions (code steps, questions, breakpoints, choices) ──
 export {
-  EXEC_MODEL,
   EXEC_RESULT_SCHEMA,
   DEFAULT_MAX_NESTING_DEPTH,
   parseDurationSeconds,
   orchestratorRunExtras,
   type ExecKind,
-  type ExecSpec,
 } from "./orchestrator-globals.js";
 
 // ── Workflow directory view (folders of versioned workflow scripts) ──
@@ -211,7 +207,7 @@ export {
   projectWorkflowRunStatus,
   type RunObservabilitySource,
 } from "./run-observability.js";
-export { redactText, truncateUtf8 } from "@orchestrator/shared-types";
+export { redactText, truncateUtf8 } from "./redact.js";
 export {
   AGENT_PROGRESS_HEARTBEAT_MS,
   AGENT_PROGRESS_MIN_INTERVAL_MS,
@@ -285,26 +281,26 @@ export {
   type RunTokenUsageEvent,
   type RunTokenUsagePayload,
   type RunUsageLimitPausedPayload,
-} from "@orchestrator/shared-types";
+} from "./run-events.js";
 
 // ── Convenience re-exports of the shared seam + host-facing result types ──
+export type { AgentRunner } from "./steps/agent-runner.js";
 export type {
-  AgentRunner,
   RunOptions,
-  SystemPromptOptions,
   AgentResult,
   AgentRunOptions,
   AgentRunResult,
   AgentUsage,
   AgentResultProvenance,
-  AgentHistoryEntry,
+} from "./steps/agent-run.js";
+export type { AgentHistoryEntry } from "./steps/agent-history.js";
+export type {
   WorkflowMeta,
   WorkflowMetaPhase,
   JournalEntry,
   JournalCallMetadata,
   WorkflowCallRecord,
   WorkflowLogTail,
-  WorkflowRecordedError,
   WorkflowRunCallStatus,
   WorkflowRunInspectionOptions,
   WorkflowRunLimits,
@@ -332,13 +328,13 @@ export type {
   WorkflowReplayFirstNonReplay,
   WorkflowReplayEligibility,
   TokenUsage,
-} from "@orchestrator/shared-types";
+} from "./workflow-result.js";
+export type { WorkflowRecordedError } from "./errors.js";
 
 export type { WorkflowRoutingSnapshot } from "./workflow-routing.js";
 
 // ── Runs: the orc home, run records, questions, agent slots and schedules ──
-// Only the names orc imports. knownProjects, managerFor and tick are for orc's tests.
-export { type RunHost } from "./runs/host.js";
+// Only the names orc imports. knownProjects, managerFor, tick and updateRecord are for orc's tests.
 export {
   daemonLog,
   ensureHome,
@@ -350,12 +346,10 @@ export {
   rememberProject,
   workflowDirs,
   type HomePaths,
-  type OrcConfig,
   type Place,
 } from "./runs/home.js";
-export { findRecord, listRecords, loadRecord, processAlive, rootRunId, updateRecord, type RunAccount, type RunRecord } from "./runs/records.js";
+export { findRecord, listRecords, loadRecord, processAlive, rootRunId, updateRecord, type RunRecord } from "./runs/records.js";
 export { listQuestions, normalizeAnswer, readQuestion, writeAnswer, type Question } from "./runs/inbox.js";
-export { SlotPool } from "./runs/slots.js";
 export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
 export { createRun, InputProblems, logFile, resolveWorkflow, startWorker } from "./runs/launch.js";
 export { managerFor, runWorker, savedState, workerMain } from "./runs/worker.js";
@@ -364,3 +358,34 @@ export { readLogFrom, stateOf, statusWord, waitForRun, withLiveSteps } from "./r
 export { answerQuestion, answerValue, breakpointValue, discardRun, findQuestion, pauseRun, rerun, resumeCheck, resumeRun, reuseCheck, stopRun, stopStep, type AnswerKind } from "./runs/control.js";
 export { checkInputs, workflowExtras } from "./workflow-inputs.js";
 export { gcWorktrees, isGitRepo, isPlace, removeWorktree, runWorktrees } from "./places/places.js";
+
+// ── Accounts, agents and the installed programs ──
+export {
+  accountLabel,
+  addAccount,
+  checkNewAccount,
+  currentAccount,
+  DEFAULT,
+  describeAccount,
+  folderText,
+  limitNotice,
+  listAccounts,
+  removeAccount,
+  useAccount,
+} from "./accounts.js";
+export {
+  HARNESSES,
+  harnessName,
+  isHarness,
+  loginOf,
+  lookupAgents,
+  lookupMcpServers,
+  lookupSettings,
+  missingServer,
+  planStep,
+  removedHarness,
+  routeHarness,
+  type Harness,
+  type McpLookup,
+} from "./agents.js";
+export { checkPrograms, setupTokenProgram } from "./programs.js";

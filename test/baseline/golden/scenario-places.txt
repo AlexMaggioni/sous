@@ -83,7 +83,7 @@ places  <run-1>
 status    completed
 place     none  <tmp>/scenario-places/orc-home/scratch/<run-1>
 started   <time>  by cli
-program   Claude Code 2.1.329  <repo>/test/fakes/claude
+program   Claude Code 2.1.330  <repo>/test/fakes/claude
 account   Claude Code: default, Claude Code's own login in ~/.claude
 account   Codex: default, Codex's own login in ~/.codex
 tokens    150  in <n>s
@@ -125,7 +125,7 @@ exit 0
     "programs": {
       "claude": {
         "path": "<repo>/test/fakes/claude",
-        "version": "2.1.329"
+        "version": "2.1.330"
       }
     }
   },
@@ -185,12 +185,6 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
-            "timestamp": "<timestamp>"
-          },
-          {
-            "role": "assistant",
-            "kind": "text",
             "text": "Fake claude answer.",
             "timestamp": "<timestamp>"
           }
@@ -209,31 +203,6 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "initializeMeta": {
-            "jetbrains": {
-              "air": {
-                "version": 1,
-                "capabilities": [
-                  "sessionFailure",
-                  "agentFileChangeReport",
-                  "nativeSubagentSessions",
-                  "asyncTasks",
-                  "recommendedValue"
-                ]
-              }
-            },
-            "steering": {
-              "supported": true
-            },
-            "goal": {
-              "version": 1,
-              "controlMethod": "_session/goal",
-              "actions": [
-                "set",
-                "clear"
-              ]
-            }
-          },
           "cwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
           "reopen": {
             "load": true,
@@ -280,7 +249,7 @@ places  <run-2>
 status    completed
 place     folder  <tmp>/scenario-places/project
 started   <time>  by cli
-program   Claude Code 2.1.329  <repo>/test/fakes/claude
+program   Claude Code 2.1.330  <repo>/test/fakes/claude
 account   Claude Code: default, Claude Code's own login in ~/.claude
 account   Codex: default, Codex's own login in ~/.codex
 tokens    150  in <n>s
@@ -325,7 +294,7 @@ exit 0
     "programs": {
       "claude": {
         "path": "<repo>/test/fakes/claude",
-        "version": "2.1.329"
+        "version": "2.1.330"
       }
     }
   },
@@ -397,12 +366,6 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
-            "timestamp": "<timestamp>"
-          },
-          {
-            "role": "assistant",
-            "kind": "text",
             "text": "Fake claude answer.",
             "timestamp": "<timestamp>"
           }
@@ -421,31 +384,6 @@ exit 0
           "sessionId": "<id-2>",
           "backendId": "claude",
           "poolKey": "claude",
-          "initializeMeta": {
-            "jetbrains": {
-              "air": {
-                "version": 1,
-                "capabilities": [
-                  "sessionFailure",
-                  "agentFileChangeReport",
-                  "nativeSubagentSessions",
-                  "asyncTasks",
-                  "recommendedValue"
-                ]
-              }
-            },
-            "steering": {
-              "supported": true
-            },
-            "goal": {
-              "version": 1,
-              "controlMethod": "_session/goal",
-              "actions": [
-                "set",
-                "clear"
-              ]
-            }
-          },
           "cwd": "<tmp>/scenario-places/project",
           "reopen": {
             "load": true,
@@ -495,7 +433,7 @@ places  <run-3>
 status    completed
 place     worktree  <tmp>/scenario-places/orc-home/worktrees/<run-3>  (branch orc/<run-3>)
 started   <time>  by cli
-program   Claude Code 2.1.329  <repo>/test/fakes/claude
+program   Claude Code 2.1.330  <repo>/test/fakes/claude
 account   Claude Code: default, Claude Code's own login in ~/.claude
 account   Codex: default, Codex's own login in ~/.codex
 tokens    150  in <n>s
@@ -542,7 +480,7 @@ exit 0
     "programs": {
       "claude": {
         "path": "<repo>/test/fakes/claude",
-        "version": "2.1.329"
+        "version": "2.1.330"
       }
     }
   },
@@ -614,12 +552,6 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
-            "timestamp": "<timestamp>"
-          },
-          {
-            "role": "assistant",
-            "kind": "text",
             "text": "Fake claude answer.",
             "timestamp": "<timestamp>"
           }
@@ -638,31 +570,6 @@ exit 0
           "sessionId": "<id-3>",
           "backendId": "claude",
           "poolKey": "claude",
-          "initializeMeta": {
-            "jetbrains": {
-              "air": {
-                "version": 1,
-                "capabilities": [
-                  "sessionFailure",
-                  "agentFileChangeReport",
-                  "nativeSubagentSessions",
-                  "asyncTasks",
-                  "recommendedValue"
-                ]
-              }
-            },
-            "steering": {
-              "supported": true
-            },
-            "goal": {
-              "version": 1,
-              "controlMethod": "_session/goal",
-              "actions": [
-                "set",
-                "clear"
-              ]
-            }
-          },
           "cwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
           "reopen": {
             "load": true,
@@ -707,6 +614,6 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-1>","--replay-user-messages",""],"cwd":"<tmp>/scenario-places/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-3>","--replay-user-messages",""],"cwd":"<tmp>/scenario-places/orc-home/worktrees/<run-3>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-2>","--replay-user-messages",""],"cwd":"<tmp>/scenario-places/project","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-places/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-places/orc-home/worktrees/<run-3>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-places/project","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}

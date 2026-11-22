@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import vm from "node:vm";
-import type { JournalEntry, WorkflowCallRecord } from "@orchestrator/shared-types";
+import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { createRunPersistence, type PersistedRunState, type RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";

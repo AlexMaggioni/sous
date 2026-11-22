@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { JournalEntry } from "@orchestrator/shared-types";
+import type { JournalEntry } from "../src/workflow-result.js";
 import { assertExplicitCheckpointProvenance } from "../src/checkpoint-provenance.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { createReplayRunner } from "../src/isolation.js";

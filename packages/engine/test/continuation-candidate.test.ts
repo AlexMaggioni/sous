@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { AgentSessionRecord, WorkflowCallRecord } from "@orchestrator/shared-types";
+import type { AgentSessionRecord, WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowErrorCode } from "../src/errors.js";
 import type { PreparedContinuation } from "../src/resume.js";
 import type { PersistedAgentState, PersistedRunState } from "../src/runs/persistence/run-persistence.js";

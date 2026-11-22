@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
-import type { AgentResult, AgentRunner, JournalEntry, RunOptions } from "@orchestrator/shared-types";
+import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { JournalEntry } from "../src/workflow-result.js";
 import { runWorkflow } from "../src/workflow.js";
 
 // agent({ meta, promptMeta }) are ADDITIVE run inputs (the generic ACP `_meta` passthroughs):

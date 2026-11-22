@@ -6,14 +6,10 @@
  * the pure, theme-optional text renderers are kept so the WorkflowManager can build
  * and project live run state without any Pi/UI dependency.
  */
-import type {
-  AgentHistoryEntry,
-  AgentResultProvenance,
-  AgentSessionRecord,
-  AgentUsage,
-  RunAgentProgressPayload,
-  WorkflowMeta,
-} from "@orchestrator/shared-types";
+import type { AgentHistoryEntry } from "./steps/agent-history.js";
+import type { AgentResultProvenance, AgentUsage } from "./steps/agent-run.js";
+import type { AgentSessionRecord, WorkflowMeta } from "./workflow-result.js";
+import type { RunAgentProgressPayload } from "./run-events.js";
 import type { WorkflowErrorCode } from "./errors.js";
 
 export type WorkflowAgentStatus = "queued" | "running" | "done" | "error" | "skipped";

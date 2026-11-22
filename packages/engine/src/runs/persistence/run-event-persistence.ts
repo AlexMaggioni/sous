@@ -14,7 +14,7 @@ import {
   RUN_EVENT_LOG_VERSION,
   type PersistableEngineRunEvent,
   type RunEventLogRecord,
-} from "@orchestrator/shared-types";
+} from "../../run-events.js";
 import { WorkflowError, WorkflowErrorCode } from "../../errors.js";
 import { MAX_OBSERVABILITY_SCALAR_BYTES, projectRunEventForPersistence } from "../../run-observability.js";
 import type { FsLayer, PersistedRunState, RunLease, RunPersistence } from "./run-persistence.js";

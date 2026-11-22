@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { AgentRunner } from "@orchestrator/shared-types";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 function fixture(runner: AgentRunner) {

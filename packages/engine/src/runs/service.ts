@@ -10,7 +10,7 @@
 
 import { existsSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { RunStatus } from "@orchestrator/shared-types";
+import type { RunStatus } from "../workflow-result.js";
 import { openWorkflowDir } from "../workflow-dir.js";
 import { workflowExtras } from "../workflow-inputs.js";
 import { workflowProjectPaths } from "./persistence/project-paths.js";
@@ -18,7 +18,6 @@ import { gcWorktrees } from "../places/places.js";
 import { changedWorkflows } from "./control.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
-import type { RunHost } from "./host.js";
 import { createRun, logFile, startWorker } from "./launch.js";
 import { notify } from "./notify.js";
 import { listRecords, processAlive, snapshotFile, type RunRecord } from "./records.js";
@@ -130,10 +129,10 @@ export interface TickDeps {
   notify?: (title: string, body: string) => void;
 }
 
-export function tick(paths: HomePaths, host: RunHost, deps: TickDeps = {}): void {
+export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): void {
   const now = deps.now ?? new Date();
   const log = deps.log ?? ((line: string) => process.stdout.write(`${new Date().toISOString()} ${line}\n`));
-  const spawnRun = deps.spawn ?? ((runId: string, mode: "start" | "resume") => startWorker(paths, host, runId, mode));
+  const spawnRun = deps.spawn ?? ((runId: string, mode: "start" | "resume") => startWorker(paths, cliFile, runId, mode));
   const state = readJson<DaemonState>(paths.daemonState, { fired: {}, resumes: {} });
   const config = loadConfig(paths);
   const tell = deps.notify ?? ((title: string, body: string) => notify(title, body, config.notify));
@@ -182,7 +181,7 @@ export function tick(paths: HomePaths, host: RunHost, deps: TickDeps = {}): void
       }
     }
     try {
-      const record = createRun(paths, host, {
+      const record = createRun(paths, {
         workflow: schedule.workflow,
         projectDir: schedule.projectDir,
         inputs: schedule.inputs,
@@ -315,7 +314,7 @@ export function daemonPid(paths: HomePaths): number | undefined {
 }
 
 /** The service loop, run by `orc daemon run`. */
-export async function daemonMain(paths: HomePaths, host: RunHost, everyMs = 20_000): Promise<void> {
+export async function daemonMain(paths: HomePaths, cliFile: string, everyMs = 20_000): Promise<void> {
   ensureHome(paths);
   const existing = daemonPid(paths);
   if (existing && existing !== process.pid) throw new Error(`the service already runs (pid ${existing})`);
@@ -329,7 +328,7 @@ export async function daemonMain(paths: HomePaths, host: RunHost, everyMs = 20_0
   process.stdout.write(`${new Date().toISOString()} service started\n`);
   while (running) {
     try {
-      tick(paths, host);
+      tick(paths, cliFile);
     } catch (error) {
       process.stdout.write(`${new Date().toISOString()} tick failed: ${(error as Error).stack ?? String(error)}\n`);
     }

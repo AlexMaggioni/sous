@@ -1,12 +1,12 @@
 $ orc doctor
 exit 0
-Claude Code 2.1.329
+Claude Code 2.1.330
   program   <repo>/test/fakes/claude, from its variable
   account   default, Claude Code's own login in ~/.claude (orc account lists the others)
-  talks     yes, default model default
-  models    default (Default (recommended)), sonnet (Sonnet), opus (Opus), haiku (Haiku)
+  talks     yes
+  models    default, sonnet, opus, haiku
 Codex 0.169.0
   program   <repo>/test/fakes/codex, from its variable
   account   default, Codex's own login in ~/.codex (set CODEX_HOME where orc starts to use another)
-  talks     yes, default model gpt-fake
-  models    gpt-fake (GPT Fake)
+  talks     yes
+  models    gpt-fake

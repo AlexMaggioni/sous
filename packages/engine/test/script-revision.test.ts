@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { RunOptions } from "@orchestrator/shared-types";
+import type { RunOptions } from "../src/steps/agent-run.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 /** Every run() call gets its own deferred result, resolved by call order. */

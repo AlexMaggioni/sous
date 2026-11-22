@@ -1,14 +1,8 @@
 import { assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
-import type {
-  AgentResult,
-  AgentRunner,
-  AgentUsage,
-  RunOptions,
-  WorkflowBackendConfig,
-  WorkflowCallRecord,
-  WorkflowRecordedError,
-  WorkflowRunResult,
-} from "@orchestrator/shared-types";
+import type { AgentResult, AgentUsage, RunOptions } from "./steps/agent-run.js";
+import type { AgentRunner } from "./steps/agent-runner.js";
+import type { WorkflowBackendConfig, WorkflowCallRecord, WorkflowRunResult } from "./workflow-result.js";
+import type { WorkflowRecordedError } from "./errors.js";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment } from "./run-environment.js";
 import { buildResumeExactIndex, environmentsEqual, resumeExactKey } from "./resume-identity.js";

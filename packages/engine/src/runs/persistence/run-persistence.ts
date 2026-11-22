@@ -20,13 +20,10 @@ import {
   writeSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+import type { AgentHistoryEntry } from "../../steps/agent-history.js";
+import type { AgentResultProvenance, AgentUsage } from "../../steps/agent-run.js";
 import type {
-  AgentHistoryEntry,
-  AgentResultProvenance,
   AgentSessionRecord,
-  AgentUsage,
-  AuthErrorContext,
-  CheckpointContext,
   JournalEntry,
   WorkflowCallRecord,
   WorkflowBackendConfig,
@@ -36,7 +33,8 @@ import type {
   WorkflowResumeReport,
   WorkflowRunFallback,
   WorkflowRunLimits,
-} from "@orchestrator/shared-types";
+} from "../../workflow-result.js";
+import type { AuthErrorContext, CheckpointContext } from "../../errors.js";
 import { WorkflowError, WorkflowErrorCode } from "../../errors.js";
 import type { WorkflowRoutingSnapshot } from "../../workflow-routing.js";
 import type { ReplayReport } from "../../isolation.js";

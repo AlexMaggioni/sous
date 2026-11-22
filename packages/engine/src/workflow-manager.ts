@@ -1,8 +1,8 @@
 /**
  * Workflow manager for background execution, pause/resume, and run management.
  *
- * The injected agent backend is an `AgentRunner` (the frozen seam from
- * @orchestrator/shared-types); the manager never constructs a concrete agent. It
+ * The injected agent backend is an `AgentRunner` (the seam in steps/agent-runner.ts);
+ * the manager never constructs a concrete agent. It
  * COMPOSES the host-facing `WorkflowRunResult` (which carries the terminal status
  * trio) on top of the engine's bare `EngineRunResult` — the engine seam stays
  * unchanged. `runSync` (the path the MCP shell drives) resolves to a TERMINAL
@@ -13,14 +13,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
+import type { AgentRunner } from "./steps/agent-runner.js";
 import type {
-  AgentRunner,
   AgentSessionRecord,
-  EngineRunEvent,
-  EngineRunEventName,
-  EngineRunEventPayloadMap,
   JournalEntry,
-  PersistableEngineRunEvent,
   ResumePolicy,
   TokenUsage,
   WorkflowBackendConfig,
@@ -39,8 +35,14 @@ import type {
   WorkflowReplayProvenanceChange,
   WorkflowResumeCallDecision,
   WorkflowResumeReport,
-} from "@orchestrator/shared-types";
-import type { RunEventLogRecord } from "@orchestrator/shared-types";
+} from "./workflow-result.js";
+import type {
+  EngineRunEvent,
+  EngineRunEventName,
+  EngineRunEventPayloadMap,
+  PersistableEngineRunEvent,
+} from "./run-events.js";
+import type { RunEventLogRecord } from "./run-events.js";
 import { preview, recomputeWorkflowSnapshot, type WorkflowSnapshot } from "./display.js";
 import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";

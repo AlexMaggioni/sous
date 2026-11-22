@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { AgentRunner, WorkflowCallRecord, WorkflowResumeCallDecision } from "@orchestrator/shared-types";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { WorkflowCallRecord, WorkflowResumeCallDecision } from "../src/workflow-result.js";
 import {
   CALL_INPUTS_FORMAT,
   CALL_PATH_FORMAT,

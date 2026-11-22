@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
-import type { AgentResult, AgentRunner, JournalEntry, RunOptions, WorkflowBackendConfig } from "@orchestrator/shared-types";
+import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { JournalEntry, WorkflowBackendConfig } from "../src/workflow-result.js";
 import { parseWorkflowScript, runWorkflow } from "../src/workflow.js";
 
 // meta.backends is a SCRIPT-DECLARED, TRUST-GATED input: the engine PARSES it (structural

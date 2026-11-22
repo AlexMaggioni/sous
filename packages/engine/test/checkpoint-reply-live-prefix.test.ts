@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import type { WorkflowRunResult } from "@orchestrator/shared-types";
+import type { WorkflowRunResult } from "../src/workflow-result.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 const ENVIRONMENT_KEY = "checkpoint-reply-live-prefix-v1";

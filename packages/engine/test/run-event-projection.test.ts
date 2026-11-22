@@ -1,12 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  WorkflowError,
-  WorkflowErrorCode,
-  type PersistableEngineRunEvent,
-  type WorkflowRecordedError,
-  type WorkflowRunResult,
-} from "@orchestrator/shared-types";
+import { WorkflowError, WorkflowErrorCode, type WorkflowRecordedError } from "../src/errors.js";
+import { type PersistableEngineRunEvent } from "../src/run-events.js";
+import { type WorkflowRunResult } from "../src/workflow-result.js";
 import {
   MAX_OBSERVABILITY_SCALAR_BYTES,
   projectRunEventForPersistence,

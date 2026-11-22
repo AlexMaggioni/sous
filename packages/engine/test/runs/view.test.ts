@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { WorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
+import { WorkflowError, WorkflowErrorCode } from "../../src/errors.js";
 import { createRun } from "../../src/runs/launch.js";
 import { findRecord } from "../../src/runs/records.js";
 import { runningSteps } from "../../src/runs/view.js";
 import { runWorker } from "../../src/runs/worker.js";
-import { fakeHost, heldRunner, settle, setup, until } from "./fixture.js";
+import { heldRunner, settle, setup, until } from "./fixture.js";
 
 const quiet = () => {};
 const child = `export const meta = { name: 'child', description: 'child' }\nreturn await agent('build it', { label: 'build' })`;
@@ -18,9 +18,11 @@ function running(paths: Parameters<typeof runningSteps>[0], runId: string): stri
 describe("the steps that run now", () => {
   it("a top-level step goes by its label", async () => {
     const { paths, projectDir } = setup({ top: `export const meta = { name: 'top', description: 'top' }\nreturn await agent('build it', { label: 'build' })` });
-    const { runner, release } = heldRunner(() => "wait");
-    const record = createRun(paths, fakeHost, { workflow: "top", projectDir, inputs: {} });
-    const worker = runWorker(record.runId, "start", { host: fakeHost, paths, inner: runner, pollMs: 20, log: quiet });
+    const { runner, calls, release } = heldRunner(() => "wait");
+    const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    // The step shows as running while it waits for its agent slot, before the runner has it.
+    await until(() => calls.length === 1);
     assert.deepEqual(await settle(() => running(paths, record.runId), ["build"]), ["build"]);
     release("build");
     assert.equal((await worker)?.status, "completed");
@@ -32,9 +34,10 @@ describe("the steps that run now", () => {
       child,
       parent: `export const meta = { name: 'parent', description: 'parent' }\nreturn await workflow('child', {}, { label: 'ticket A' })`,
     });
-    const { runner, release } = heldRunner(() => "wait");
-    const record = createRun(paths, fakeHost, { workflow: "parent", projectDir, inputs: {} });
-    const worker = runWorker(record.runId, "start", { host: fakeHost, paths, inner: runner, pollMs: 20, log: quiet });
+    const { runner, calls, release } = heldRunner(() => "wait");
+    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    await until(() => calls.length === 1);
     assert.deepEqual(await settle(() => running(paths, record.runId), ["ticket A: build"]), ["ticket A: build"]);
     release("build");
     assert.equal((await worker)?.status, "completed");
@@ -47,9 +50,10 @@ describe("the steps that run now", () => {
 return await Promise.all([workflow('child', {}, { label: 'ticket A' }), workflow('child', {}, { label: 'ticket B' })])`,
     });
     const { runner, calls, release } = heldRunner(() => "wait");
-    const record = createRun(paths, fakeHost, { workflow: "parent", projectDir, inputs: {} });
-    const worker = runWorker(record.runId, "start", { host: fakeHost, paths, inner: runner, pollMs: 20, log: quiet });
+    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     const both = ["ticket A: build", "ticket B: build"];
+    await until(() => calls.length === 2);
     assert.deepEqual(await settle(() => running(paths, record.runId), both), both);
     assert.equal(calls.length, 2);
     release("build");
@@ -63,8 +67,8 @@ await agent('first', { label: 'first' })
 return await agent('second', { label: 'second' })`,
     });
     const { runner, calls, release } = heldRunner((call) => (call.label === "first" ? "first done" : "wait"));
-    const record = createRun(paths, fakeHost, { workflow: "two", projectDir, inputs: {} });
-    const worker = runWorker(record.runId, "start", { host: fakeHost, paths, inner: runner, pollMs: 20, log: quiet });
+    const record = createRun(paths, { workflow: "two", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     await until(() => calls.some((call) => call.label === "second"));
     assert.deepEqual(await settle(() => running(paths, record.runId), ["second"]), ["second"]);
     release("second");
@@ -77,8 +81,8 @@ return await agent('second', { label: 'second' })`,
 return await Promise.allSettled([agent('bad', { label: 'bad', retries: 0 }), agent('slow', { label: 'slow' })])`,
     });
     const { runner, calls, release } = heldRunner((call) => (call.label === "bad" ? new Error("the tests fail") : "wait"));
-    const record = createRun(paths, fakeHost, { workflow: "side", projectDir, inputs: {} });
-    const worker = runWorker(record.runId, "start", { host: fakeHost, paths, inner: runner, pollMs: 20, log: quiet });
+    const record = createRun(paths, { workflow: "side", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     await until(() => calls.some((call) => call.label === "bad") && calls.some((call) => call.label === "slow"));
     assert.deepEqual(await settle(() => running(paths, record.runId), ["slow"]), ["slow"]);
     release("slow");
@@ -93,8 +97,8 @@ return await Promise.allSettled([agent('bad', { label: 'bad', retries: 0 }), age
     const { runner, calls, release } = heldRunner((_call, all) =>
       all.length === 1 ? new WorkflowError("the tests fail", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true }) : "wait",
     );
-    const record = createRun(paths, fakeHost, { workflow: "flaky", projectDir, inputs: {} });
-    const worker = runWorker(record.runId, "start", { host: fakeHost, paths, inner: runner, pollMs: 20, log: quiet });
+    const record = createRun(paths, { workflow: "flaky", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     await until(() => calls.length === 2);
     assert.equal(calls.length, 2, "the step ran a second time");
     assert.deepEqual(await settle(() => running(paths, record.runId), ["flaky"]), ["flaky"]);

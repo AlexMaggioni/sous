@@ -2,12 +2,13 @@
 
 The deterministic core that runs a workflow script. It is a **vm-realm script runtime**
 plus a small DSL (`agent()`, `parallel()`, `pipeline()`, …), a resume journal,
-and optional git-worktree isolation. It drives subagents **only** through an
-injected `AgentRunner` seam — it never imports or names a concrete agent backend.
+and optional git-worktree isolation. Each agent step goes through one `AgentRunner` seam.
+The steps module in `src/steps/` is the real runner. It plans the step, then runs it on Claude
+Code or Codex through `@orchestrator/harnesses`. A test or the dry run gives a runner of its own.
 
-> **orc is the host most users want.** It wires this engine to the ACP backend
-> (`@orchestrator/acp-agents`), so `agent()` talks to a real coding agent. Reach for
-> `@orchestrator/engine` directly only to build your own host with your own `AgentRunner`.
+> **orc is the host most users want.** It parses the command line, prints, and calls the engine,
+> so `agent()` talks to a real coding agent. Reach for `@orchestrator/engine` directly only to
+> build your own host.
 
 ## Install
 
@@ -20,14 +21,14 @@ ESM-only, Node 22+.
 ## The one thing you inject: `AgentRunner`
 
 The engine references the backend through a single frozen method. Supply anything that
-matches this shape (re-exported from `@orchestrator/shared-types`):
+matches this shape (from `src/steps/agent-runner.ts`):
 
 ```ts
 import type { AgentRunner, RunOptions, AgentResult } from "@orchestrator/engine";
 import type { TSchema } from "typebox";
 
-// Minimal stand-in. A real runner spawns/streams an agent; the ACP one lives in
-// @orchestrator/acp-agents. With no `schema` the return is the assistant's text;
+// Minimal stand-in. A real runner starts an agent, as the engine's steps module does.
+// With no `schema` the return is the assistant's text;
 // with a typebox `schema` it is the parsed, validated object. Usage is reported
 // out-of-band via options.onUsage — never in the return value.
 const myRunner: AgentRunner = {
@@ -374,8 +375,8 @@ does not auto-close on completion/pause/error because the run may resume. Every 
 pass the prior stream ID so delete/recreate of the same `runId` fails with `STREAM_MISMATCH` instead
 of joining generations.
 
-Lifecycle, call, usage, and authored-log events persist by default; `agentHistory` and the SDK-only
-ACP `agentEvent` stream remain live-only. Records are projected at write time, capped at 65,536
+Lifecycle, call, usage, and authored-log events persist by default; `agentHistory` and the
+`agentEvent` stream remain live-only. Records are projected at write time, capped at 65,536
 UTF-8 bytes including LF, and have no raw-reader bypass. A corrupt, inconsistent, legacy, or marked
 incomplete sidecar raises `RunEventLogError`; snapshot/journal recovery remains independent.
 
@@ -412,7 +413,7 @@ From `@orchestrator/engine` (see `src/index.ts`):
 - **Paths / logger / frontmatter** — `workflowProjectPaths`, `workflowHomeDir`,
   `workflowUserSavedDir`, `workflowProjectKey`, `ORCHESTRATOR_PERSISTENCE_ROOT_ENV`,
   `createWorkflowLogger`, `parseFrontmatter`.
-- **Seam re-exports** (from `@orchestrator/shared-types`) — `AgentRunner`, `RunOptions`,
+- **Seam types** (from `src/steps/` and the run records): `AgentRunner`, `RunOptions`,
   `AgentResult`, `AgentUsage`, `WorkflowMeta`, `WorkflowRunResult`, `WorkflowRunFallback`,
   `WorkflowCheckpointTaken`, `WorkflowCheckpointSource`, `JournalEntry`,
   `TokenUsage`, …

@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { RunOptions, WorkflowCallRecord } from "@orchestrator/shared-types";
+import type { RunOptions } from "../src/steps/agent-run.js";
+import type { WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import {
