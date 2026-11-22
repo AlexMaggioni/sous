@@ -22,7 +22,7 @@ import type {
 } from "@orchestrator/shared-types";
 import { redactText, truncateUtf8 } from "@orchestrator/shared-types";
 import type { WorkflowErrorCode } from "./errors.js";
-import type { RunStatus } from "./run-persistence.js";
+import type { RunStatus } from "./runs/persistence/run-persistence.js";
 
 export const MAX_STRUCTURED_STATUS_BYTES = 24_576;
 export const MAX_OBSERVABILITY_SCALAR_BYTES = 512;

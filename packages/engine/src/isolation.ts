@@ -16,7 +16,7 @@ import {
   createRunPersistence,
   generateRunId,
   type PersistedRunState,
-} from "./run-persistence.js";
+} from "./runs/persistence/run-persistence.js";
 import { deepFreeze } from "./strict-json.js";
 import { WorkflowManager } from "./workflow-manager.js";
 import {

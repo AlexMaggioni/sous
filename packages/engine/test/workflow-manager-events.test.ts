@@ -9,12 +9,12 @@ import type {
   EngineRunEventPayloadMap,
 } from "@orchestrator/shared-types";
 import { WorkflowError, WorkflowErrorCode, type AuthErrorContext } from "../src/errors.js";
-import { RunEventLogError } from "../src/run-event-persistence.js";
+import { RunEventLogError } from "../src/runs/persistence/run-event-persistence.js";
 import {
   createRunPersistence,
   type PersistedRunState,
   type RunPersistence,
-} from "../src/run-persistence.js";
+} from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 const script = (body: string, name = "manager-events") =>

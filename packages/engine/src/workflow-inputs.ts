@@ -15,10 +15,10 @@
 //
 // `orc run ticket --ticket "Add a --json flag"` turns the flags into the run's args.
 
-import type { Place } from "./home.js";
-import { parseDurationSeconds } from "@orchestrator/engine";
-import { parseCron } from "./cron.js";
-import { isPlace } from "./places.js";
+import { parseDurationSeconds } from "./orchestrator-globals.js";
+import { isPlace } from "./places/places.js";
+import type { Place } from "./runs/home.js";
+import { parseCron } from "./runs/cron.js";
 
 export interface InputSpec {
   type?: "string" | "number" | "boolean" | "json";

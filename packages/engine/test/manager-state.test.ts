@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import vm from "node:vm";
 import type { JournalEntry, WorkflowCallRecord } from "@orchestrator/shared-types";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import { createRunPersistence, type PersistedRunState, type RunPersistence } from "../src/run-persistence.js";
+import { createRunPersistence, type PersistedRunState, type RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { CALL_INPUTS_FORMAT, CALL_PATH_FORMAT, CHECKPOINT_INPUTS_FORMAT } from "../src/workflow.js";
 

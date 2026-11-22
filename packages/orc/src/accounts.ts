@@ -8,9 +8,8 @@
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import type { HomePaths } from "./home.js";
+import { listRecords, loadRecord, processAlive, rootRunId, updateRecord, type HomePaths, type RunAccount, type RunRecord } from "@orchestrator/engine";
 import { PROGRAM_INFO, PROGRAMS, isProgram, type Program } from "./programs.js";
-import { listRecords, loadRecord, processAlive, rootRunId, updateRecord, type RunAccount, type RunRecord } from "./records.js";
 
 export type { RunAccount };
 

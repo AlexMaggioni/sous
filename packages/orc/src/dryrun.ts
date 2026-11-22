@@ -8,13 +8,8 @@
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentRunner } from "@orchestrator/shared-types";
-import { fabricateFromSchema } from "@orchestrator/engine";
-import { forgetRun } from "./daemon.js";
-import { loadConfig, type HomePaths } from "./home.js";
-import { createRun, resolveWorkflow } from "./launch.js";
-import { isGitRepo, removeWorktree, runWorktrees } from "./places.js";
-import { loadRecord } from "./records.js";
-import { managerFor, runWorker } from "./worker.js";
+import { createRun, fabricateFromSchema, forgetRun, isGitRepo, loadConfig, loadRecord, removeWorktree, resolveWorkflow, runWorker, runWorktrees, savedState, type HomePaths } from "@orchestrator/engine";
+import { host } from "./host.js";
 
 /** Step label, or a pattern with `*`, to its answer. A list is a series of answers given in turn,
  *  the last one repeating, so an answer that is itself a list goes inside one: `[["a", "b"]]`. */
@@ -82,11 +77,11 @@ export async function dryRun(paths: HomePaths, request: DryRunRequest): Promise<
   // The workflow's own place, except the project folder itself: a worktree stands in for it.
   const own = resolveWorkflow(paths, request.projectDir, request.workflow).extras.place ?? loadConfig(paths).defaultPlace;
   const place = own !== "folder" ? own : isGitRepo(request.projectDir) ? "worktree" : "none";
-  const record = createRun(paths, { workflow: request.workflow, projectDir: request.projectDir, inputs: request.inputs, place, origin: "check" });
+  const record = createRun(paths, host, { workflow: request.workflow, projectDir: request.projectDir, inputs: request.inputs, place, origin: "check" });
   const agents = standInAgents(request.answers);
   try {
-    const result = await runWorker(record.runId, "start", { paths, inner: agents, log: request.log ?? (() => {}), dryRun: true });
-    const state = managerFor(paths, record.projectDir).getPersistence().load(record.runId);
+    const result = await runWorker(record.runId, "start", { host, paths, inner: agents, log: request.log ?? (() => {}), dryRun: true });
+    const state = savedState(paths, record);
     const status = result?.status ?? state?.status ?? "unknown";
     const reason = result?.reason ?? state?.reason ?? state?.pauseReason;
     // The result is plain JSON, made in the workflow's own sandbox; a copy belongs to this side.

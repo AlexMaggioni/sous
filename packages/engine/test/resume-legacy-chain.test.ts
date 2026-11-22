@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { PersistedRunState } from "../src/run-persistence.js";
+import type { PersistedRunState } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 const FIXTURE = new URL("./fixtures/legacy-0.23-chained.json", import.meta.url);

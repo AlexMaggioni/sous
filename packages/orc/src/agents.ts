@@ -8,7 +8,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import type { McpServerConfig } from "@orchestrator/shared-types";
-import type { AgentDefinition, AgentRegistry } from "@orchestrator/engine";
+import { loadConfig, type AgentDefinition, type AgentRegistry, type HomePaths, type OrcConfig } from "@orchestrator/engine";
 import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
 
@@ -63,6 +63,24 @@ export interface LookupSettings {
   defaultModel?: string;
   env?: Record<string, string | undefined>;
   home?: string;
+}
+
+/** The configured default harness, else the default model's harness, else Claude Code. */
+export function defaultHarness(config: OrcConfig): Harness {
+  if (isHarness(config.defaultHarness)) return config.defaultHarness;
+  return config.defaultModel?.includes("/") ? routeHarness(config.defaultModel)! : "claude";
+}
+
+/** What the agent and MCP lookups need for a project. */
+export function lookupSettings(paths: HomePaths, projectDir: string, config: OrcConfig = loadConfig(paths), env: Record<string, string | undefined> = process.env): LookupSettings {
+  const global = config.rulesyncGlobal?.replace(/^~(?=$|\/)/, homedir());
+  return {
+    projectDir,
+    ...(global ? { rulesyncGlobal: resolve(global) } : {}),
+    defaultHarness: defaultHarness(config),
+    ...(config.defaultModel ? { defaultModel: config.defaultModel } : {}),
+    env,
+  };
 }
 
 export interface AgentLookup {

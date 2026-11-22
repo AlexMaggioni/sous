@@ -4,7 +4,7 @@
 
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { workflowProjectPaths } from "./workflow-paths.js";
+import { workflowProjectPaths } from "./project-paths.js";
 
 export interface WorkflowLogger {
   log(message: string): void;

@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { AgentSessionRecord, WorkflowCallRecord } from "@orchestrator/shared-types";
 import { WorkflowErrorCode } from "../src/errors.js";
 import type { PreparedContinuation } from "../src/resume.js";
-import type { PersistedAgentState, PersistedRunState } from "../src/run-persistence.js";
+import type { PersistedAgentState, PersistedRunState } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 const runId = "paused-source";

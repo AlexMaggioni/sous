@@ -37,15 +37,15 @@ import type {
   WorkflowRunFallback,
   WorkflowRunLimits,
 } from "@orchestrator/shared-types";
-import { WorkflowError, WorkflowErrorCode } from "./errors.js";
-import type { WorkflowRoutingSnapshot } from "./workflow-routing.js";
-import type { ReplayReport } from "./isolation.js";
-import type { RunEnvironmentIdentity } from "./run-environment.js";
+import { WorkflowError, WorkflowErrorCode } from "../../errors.js";
+import type { WorkflowRoutingSnapshot } from "../../workflow-routing.js";
+import type { ReplayReport } from "../../isolation.js";
+import type { RunEnvironmentIdentity } from "../../run-environment.js";
 import { withRunEventsUsingFs, type RunEventPersistence } from "./run-event-persistence.js";
-import { workflowProjectPaths } from "./workflow-paths.js";
+import { workflowProjectPaths } from "./project-paths.js";
 import type {
   WorkflowPreparation,
-} from "./workflow-preparation.js";
+} from "../../workflow-preparation.js";
 
 export type RunStatus = "pending" | "running" | "paused" | "completed" | "failed" | "aborted";
 

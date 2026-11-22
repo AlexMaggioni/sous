@@ -34,7 +34,7 @@ import type {
   PersistedResumeCallBlocker,
   PersistedResumeSeed,
   PersistedRunState,
-} from "../src/run-persistence.js";
+} from "../src/runs/persistence/run-persistence.js";
 import { CALL_INPUTS_FORMAT, CALL_PATH_FORMAT, CHECKPOINT_INPUTS_FORMAT } from "../src/workflow.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 

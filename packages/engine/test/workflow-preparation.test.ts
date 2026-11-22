@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { AgentRunner } from "@orchestrator/shared-types";
-import { createRunPersistence } from "../src/run-persistence.js";
+import { createRunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { WorkflowErrorCode } from "../src/errors.js";
 import {

@@ -2,7 +2,8 @@
 //  - starts scheduled runs, and skips one when the schedule's last run has not finished. A
 //    schedule comes from `orc schedule add`, or from `schedule` in a workflow file's meta, in the
 //    home folder or in a project where orc ran;
-//  - resumes runs paused at the subscription limit once the limit resets;
+//  - resumes runs paused at the subscription limit once the limit resets, unless a workflow they
+//    use was edited since they started. Then it tells the user once and waits for `orc resume`;
 //  - tells the user, once, about a run cut off by a crash or a restart. It waits for `orc resume`;
 //  - removes finished runs older than keepDays, when config.json sets it;
 //  - once an hour, removes the worktrees whose branch was merged and that have nothing uncommitted.
@@ -10,14 +11,17 @@
 import { existsSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RunStatus } from "@orchestrator/shared-types";
-import { openWorkflowDir, workflowProjectPaths } from "@orchestrator/engine";
+import { openWorkflowDir } from "../workflow-dir.js";
+import { workflowExtras } from "../workflow-inputs.js";
+import { workflowProjectPaths } from "./persistence/project-paths.js";
+import { gcWorktrees } from "../places/places.js";
+import { changedWorkflows } from "./control.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
-import { workflowExtras } from "./inputs.js";
-import { createRun, logFile, spawnWorker } from "./launch.js";
-import { gcWorktrees } from "./places.js";
+import type { RunHost } from "./host.js";
+import { createRun, logFile, startWorker } from "./launch.js";
 import { notify } from "./notify.js";
-import { listRecords, processAlive, snapshotFile, updateRecord, type RunRecord } from "./records.js";
+import { listRecords, processAlive, snapshotFile, type RunRecord } from "./records.js";
 import { managerFor } from "./worker.js";
 
 export interface Schedule {
@@ -126,13 +130,10 @@ export interface TickDeps {
   notify?: (title: string, body: string) => void;
 }
 
-export function tick(paths: HomePaths, deps: TickDeps = {}): void {
+export function tick(paths: HomePaths, host: RunHost, deps: TickDeps = {}): void {
   const now = deps.now ?? new Date();
   const log = deps.log ?? ((line: string) => process.stdout.write(`${new Date().toISOString()} ${line}\n`));
-  const spawnRun = deps.spawn ?? ((runId: string, mode: "start" | "resume") => {
-    const pid = spawnWorker(paths, runId, mode);
-    updateRecord(paths, runId, { pid });
-  });
+  const spawnRun = deps.spawn ?? ((runId: string, mode: "start" | "resume") => startWorker(paths, host, runId, mode));
   const state = readJson<DaemonState>(paths.daemonState, { fired: {}, resumes: {} });
   const config = loadConfig(paths);
   const tell = deps.notify ?? ((title: string, body: string) => notify(title, body, config.notify));
@@ -181,7 +182,7 @@ export function tick(paths: HomePaths, deps: TickDeps = {}): void {
       }
     }
     try {
-      const record = createRun(paths, {
+      const record = createRun(paths, host, {
         workflow: schedule.workflow,
         projectDir: schedule.projectDir,
         inputs: schedule.inputs,
@@ -222,6 +223,17 @@ export function tick(paths: HomePaths, deps: TickDeps = {}): void {
       due = now.getTime() >= resumeTime(persisted.resetHint, persisted.updatedAt);
     }
     if (!due) continue;
+    // An edit reaches a run only when the user says so, as with `orc resume`.
+    const changed = record.resumeLatest ? [] : changedWorkflows(paths, record, persisted);
+    if (changed.length) {
+      if (!state.told[record.runId]) {
+        state.told[record.runId] = now.toISOString();
+        const text = `${changed.join(", ")} changed since ${record.runId} started. orc resume ${record.runId} --latest takes the new version, orc resume ${record.runId} --same goes on with the old one.`;
+        log(text);
+        tell(`${record.workflow} did not resume`, text);
+      }
+      continue;
+    }
     state.resumes[record.runId] = { count: (tried?.count ?? 0) + 1, lastAt: now.toISOString() };
     spawnRun(record.runId, "resume");
     log(`resumed run ${record.runId} (${persisted.pauseReason})`);
@@ -303,7 +315,7 @@ export function daemonPid(paths: HomePaths): number | undefined {
 }
 
 /** The service loop, run by `orc daemon run`. */
-export async function daemonMain(paths: HomePaths, everyMs = 20_000): Promise<void> {
+export async function daemonMain(paths: HomePaths, host: RunHost, everyMs = 20_000): Promise<void> {
   ensureHome(paths);
   const existing = daemonPid(paths);
   if (existing && existing !== process.pid) throw new Error(`the service already runs (pid ${existing})`);
@@ -317,7 +329,7 @@ export async function daemonMain(paths: HomePaths, everyMs = 20_000): Promise<vo
   process.stdout.write(`${new Date().toISOString()} service started\n`);
   while (running) {
     try {
-      tick(paths);
+      tick(paths, host);
     } catch (error) {
       process.stdout.write(`${new Date().toISOString()} tick failed: ${(error as Error).stack ?? String(error)}\n`);
     }

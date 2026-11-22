@@ -8,7 +8,7 @@ import { describe, it } from "node:test";
 import type { AgentRunner, JournalEntry, WorkflowCallRecord } from "@orchestrator/shared-types";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { validateResumeSafetyMarker, type PreparedResume } from "../src/resume.js";
-import type { PersistedRunState, RunLease, RunPersistence } from "../src/run-persistence.js";
+import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import {
   CALL_INPUTS_FORMAT,

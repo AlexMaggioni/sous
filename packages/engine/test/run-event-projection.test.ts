@@ -11,7 +11,7 @@ import {
   MAX_OBSERVABILITY_SCALAR_BYTES,
   projectRunEventForPersistence,
 } from "../src/run-observability.js";
-import { RUN_EVENT_MAX_RECORD_BYTES } from "../src/run-event-persistence.js";
+import { RUN_EVENT_MAX_RECORD_BYTES } from "../src/runs/persistence/run-event-persistence.js";
 
 const secretForms = {
   assignment: "password=hunter2",

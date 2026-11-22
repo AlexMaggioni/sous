@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AgentRunner, JournalEntry, WorkflowCallRecord } from "@orchestrator/shared-types";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import { createRunPersistence } from "../src/run-persistence.js";
+import { createRunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { projectRecordedError } from "../src/recorded-error.js";
 import { runWorkflow } from "../src/workflow.js";

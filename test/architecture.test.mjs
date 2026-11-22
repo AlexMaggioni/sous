@@ -113,7 +113,6 @@ const BREAKS = {
   ],
   homes: [
     "making a git worktree, in packages/engine/src/worktree.ts",
-    "making a git worktree, in packages/orc/src/places.ts",
     "naming a program's login or folder variable, in packages/acp-agents",
     "naming a program's login or folder variable, in packages/codex-acp",
     "naming a program's login or folder variable, in packages/orc/src/account-cli.ts",
@@ -121,23 +120,11 @@ const BREAKS = {
     "naming a program's login or folder variable, in packages/orc/src/agents.ts",
     "naming a program's login or folder variable, in packages/orc/src/doctor.ts",
     "naming a program's login or folder variable, in packages/orc/src/programs.ts",
-    "naming a program's login or folder variable, in packages/orc/src/records.ts",
     "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/codex-acp",
-    "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/engine/src/logger.ts",
-    "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/engine/src/run-event-persistence.ts",
-    "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/engine/src/run-persistence.ts",
-    "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/engine/src/workflow-paths.ts",
-    "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/orc/src/cli.ts",
-    "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/orc/src/daemon.ts",
-    "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/orc/src/home.ts",
-    "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/orc/src/inbox.ts",
-    "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/orc/src/launch.ts",
-    "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/orc/src/records.ts",
-    "run files: the record, its log, its questions, its snapshot, its events and the agent cap, in packages/orc/src/worker.ts",
     "starting codex, in packages/codex-acp"
   ],
   exports: {
-    "engine exports names orc never imports": 269
+    "engine exports names orc never imports": 263
   },
   contract: [
     "the claude adapter is missing",

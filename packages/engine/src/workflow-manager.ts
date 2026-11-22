@@ -58,7 +58,7 @@ import {
   type RunStatus,
   type WorkflowScriptOrigin,
   type WorkflowScriptRevision,
-} from "./run-persistence.js";
+} from "./runs/persistence/run-persistence.js";
 import {
   admitResumeSource,
   buildResumeReport,
@@ -70,7 +70,7 @@ import type {
   PreparedContinuation,
   PreparedResume,
 } from "./resume.js";
-import { withRunEvents, type RunEventPersistence } from "./run-event-persistence.js";
+import { withRunEvents, type RunEventPersistence } from "./runs/persistence/run-event-persistence.js";
 import { projectRecordedError } from "./recorded-error.js";
 import { workflowHomeDir } from "./workflow-paths.js";
 import { canonicalStrictJson, cloneFrozenStrictJson, cloneStrictJsonValue, deepFreeze } from "./strict-json.js";

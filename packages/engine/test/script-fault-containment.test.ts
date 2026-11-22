@@ -5,7 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
-import { ORCHESTRATOR_PERSISTENCE_ROOT_ENV, workflowProjectPaths } from "../src/workflow-paths.js";
+import { workflowProjectPaths } from "../src/runs/persistence/project-paths.js";
+import { ORCHESTRATOR_PERSISTENCE_ROOT_ENV } from "../src/workflow-paths.js";
 import { withFakeHomeAsync } from "./helpers/fake-home.js";
 
 const noopAgent = {

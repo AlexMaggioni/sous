@@ -5,8 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import type { AgentRunner } from "@orchestrator/shared-types";
 import { WorkflowErrorCode } from "../src/errors.js";
-import { createRunPersistence, inlineScriptFile, type PersistedRunState, type RunPersistence } from "../src/run-persistence.js";
-import { withRunEvents } from "../src/run-event-persistence.js";
+import { createRunPersistence, inlineScriptFile, type PersistedRunState, type RunPersistence } from "../src/runs/persistence/run-persistence.js";
+import { withRunEvents } from "../src/runs/persistence/run-event-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 const runner: AgentRunner = { async run() { return "unused"; } };

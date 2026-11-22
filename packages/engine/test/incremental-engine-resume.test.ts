@@ -20,7 +20,7 @@ import type { PreparedResume } from "../src/resume.js";
 import type {
   PersistedCheckpointInjection,
   PersistedResumeSeed,
-} from "../src/run-persistence.js";
+} from "../src/runs/persistence/run-persistence.js";
 import { runWorkflow } from "../src/workflow.js";
 
 const source = (body: string, name = "incremental-engine-resume") =>

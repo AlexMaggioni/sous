@@ -50,7 +50,7 @@ import {
   WorkflowErrorCode,
   wrapError,
 } from "./errors.js";
-import { createWorkflowLogger } from "./logger.js";
+import { createWorkflowLogger } from "./runs/persistence/logger.js";
 import { parseModelRoutingFromMeta, resolveModelForPhase } from "./model-routing.js";
 import { loadModelTierConfig, resolveTierModel } from "./model-tier-config.js";
 import type { WorkflowRoutingSnapshot } from "./workflow-routing.js";
@@ -69,7 +69,7 @@ import {
   type ResumeCandidateIndexes,
   type ResumeReportPlan,
 } from "./resume-matcher.js";
-import type { PersistedCheckpointInjection, PersistedResumeSeed } from "./run-persistence.js";
+import type { PersistedCheckpointInjection, PersistedResumeSeed } from "./runs/persistence/run-persistence.js";
 import {
   canonicalStrictJson,
   cloneFrozenStrictJson,

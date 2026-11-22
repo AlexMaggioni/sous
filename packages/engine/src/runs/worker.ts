@@ -4,23 +4,26 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { WorkflowManager, openWorkflowDir, parseDurationSeconds, parseWorkflowScript, type WorkflowRunResult } from "@orchestrator/engine";
-import type { AgentRunner } from "@orchestrator/shared-types";
-import { applyAccounts, limitNotice } from "./accounts.js";
-import { lookupAgents, lookupMcpServers, registryOf } from "./agents.js";
-import { ensureHome, homePaths, loadConfig, loadSecrets, lookupSettings, workflowDirs, type HomePaths } from "./home.js";
-import { checkInputs, workflowExtras } from "./inputs.js";
+import type { AgentRunner, WorkflowRunResult } from "@orchestrator/shared-types";
+import { parseDurationSeconds } from "../orchestrator-globals.js";
+import type { PersistedRunState } from "./persistence/run-persistence.js";
+import { parseWorkflowScript } from "../workflow.js";
+import { openWorkflowDir } from "../workflow-dir.js";
+import { checkInputs, workflowExtras } from "../workflow-inputs.js";
+import { WorkflowManager } from "../workflow-manager.js";
+import { dropUnchangedWorktrees, isPlace, preparePlace } from "../places/places.js";
+import { ensureHome, homePaths, loadConfig, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
+import type { RunHost } from "./host.js";
 import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuestion, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
-import { findProgram, PROGRAM_INFO } from "./programs.js";
-import { dropUnchangedWorktrees, isPlace, preparePlace } from "./places.js";
-import { loadRecord, loadSnapshot, noteNested, saveSnapshot, updateRecord, type RunRecord } from "./records.js";
-import { createOrcRunner } from "./runner.js";
+import { loadRecord, loadSnapshot, noteNested, saveSnapshot, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { SlotPool } from "./slots.js";
 
 export interface WorkerOptions {
+  /** What runs the steps and picks the accounts. */
+  host: RunHost;
   paths?: HomePaths;
-  /** The agent runner. Defaults to $ORC_AGENT_MODULE's default export, else the ACP runner from acp-agents. */
+  /** The agent runner. Defaults to $ORC_AGENT_MODULE's default export, else the host's own runner. */
   inner?: AgentRunner;
   /** How often to look for an answer, in ms. */
   pollMs?: number;
@@ -69,14 +72,18 @@ export function currentWorkflows(paths: HomePaths, projectDir: string): Record<s
   return out;
 }
 
-export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<ConstructorParameters<typeof WorkflowManager>[0]> = {}) {
+/**
+ * The engine's manager for a project's runs. Reading and stopping a run needs no host. Starting
+ * or resuming one does, since the host knows the agents.
+ */
+export function managerFor(paths: HomePaths, projectDir: string, host?: RunHost, extra: Partial<ConstructorParameters<typeof WorkflowManager>[0]> = {}) {
   const dirs = openWorkflowDir(workflowDirs(projectDir, paths));
   return new WorkflowManager({
     // Run state is keyed to the manager's folder, so every orc manager uses the home folder.
     cwd: paths.home,
     persistenceRoot: paths.runs,
     // Agents come from rulesync and the harnesses' own folders, looked up from the run's project.
-    loadAgents: () => registryOf(lookupAgents(lookupSettings(paths, projectDir))),
+    ...(host ? { loadAgents: () => host.agents(paths, projectDir) } : {}),
     defaultAgentRetries: loadConfig(paths).retries,
     loadSavedWorkflow: (name) => dirs.resolve(name),
     orchestrator: {
@@ -108,14 +115,19 @@ export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<
   });
 }
 
+/** The run's saved state, as the engine last wrote it. */
+export function savedState(paths: HomePaths, record: RunRecord): PersistedRunState | undefined {
+  return managerFor(paths, record.projectDir).getPersistence().load(record.runId) ?? undefined;
+}
+
 /** Run or resume one run in this process. Resolves with the engine's result. */
-export async function runWorker(runId: string, mode: "start" | "resume", options: WorkerOptions = {}): Promise<WorkflowRunResult | undefined> {
+export async function runWorker(runId: string, mode: "start" | "resume", options: WorkerOptions): Promise<WorkflowRunResult | undefined> {
   const paths = ensureHome(options.paths ?? homePaths());
   const record = loadRecord(paths, runId);
   if (!record) throw new Error(`no run ${runId}`);
   // The steps run on the run's recorded accounts, also when the service resumes it with its own
   // environment. A dry run talks to no agent.
-  const restore = options.dryRun ? () => {} : applyAccounts(paths, record.accounts);
+  const restore = options.dryRun ? () => {} : options.host.applyAccounts(paths, record.accounts);
   try {
     return await runOnAccounts(paths, record, mode, options);
   } finally {
@@ -129,28 +141,23 @@ async function runOnAccounts(paths: HomePaths, record: RunRecord, mode: "start" 
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
   updateRecord(paths, runId, { pid: process.pid, limit: undefined });
 
-  const secrets = loadSecrets(paths);
-  const settings = lookupSettings(paths, record.projectDir, config);
-  const agents = lookupAgents(settings);
-  const mcp = lookupMcpServers(settings, { ...process.env, ...secrets });
   const slots = new SlotPool(paths.slots, paths.queue, () => loadConfig(paths).maxAgents, record.priority);
-  const runner = createOrcRunner({
+  const inner = options.inner ?? (await loadInner());
+  const runner = options.host.runner({
+    paths,
+    projectDir: record.projectDir,
     cwd: record.cwd,
-    inner: options.inner ?? (await loadInner()),
+    config,
+    secrets: loadSecrets(paths),
+    ...(inner ? { inner } : {}),
     ...(options.dryRun ? {} : { slots }),
-    agents,
-    mcp,
-    // Code steps also get the project folder, since a run may work elsewhere (a worktree, a scratch folder).
-    env: { ...secrets, ORC_PROJECT: record.projectDir },
     onSlot: ({ label, state }) => {
       if (state === "waiting" && slots.held().length >= Math.max(1, loadConfig(paths).maxAgents)) {
         log(`${stamp()} queued     ${label ?? "agent"} waits for a free agent slot`);
       }
     },
-    // A runner from $ORC_AGENT_MODULE or the caller brings its own programs.
-    ...(options.inner || process.env.ORC_AGENT_MODULE ? {} : { programs: (program) => findProgram(program, { config }) }),
-    onProgram: ({ program, path, version }) => {
-      log(`${stamp()} program    ${PROGRAM_INFO[program].name} ${version ?? "(version unknown)"} at ${path}`);
+    onProgram: ({ program, name, path, version }) => {
+      log(`${stamp()} program    ${name} ${version ?? "(version unknown)"} at ${path}`);
       const programs = { ...loadRecord(paths, runId)?.programs, [program]: { path, ...(version ? { version } : {}) } };
       updateRecord(paths, runId, { programs });
     },
@@ -166,7 +173,7 @@ async function runOnAccounts(paths: HomePaths, record: RunRecord, mode: "start" 
   if (takeLatest) updateRecord(paths, runId, { resumeLatest: undefined });
   const snapshot = loadSnapshot(paths, runId);
   const live = openWorkflowDir(workflowDirs(record.projectDir, paths));
-  const manager = managerFor(paths, record.projectDir, { loadSavedWorkflow: (name) => snapshot[name] ?? live.resolve(name) });
+  const manager = managerFor(paths, record.projectDir, options.host, { loadSavedWorkflow: (name) => snapshot[name] ?? live.resolve(name) });
 
   const waits = new AbortController();
   const pollMs = options.pollMs ?? 500;
@@ -226,13 +233,7 @@ async function runOnAccounts(paths: HomePaths, record: RunRecord, mode: "start" 
     if (!scope || scope === runId) return "";
     const known = prefixes.get(scope);
     if (known !== undefined) return known;
-    const nested = loadRecord(paths, runId)?.nested ?? {};
-    const parts = scope.slice(runId.length).split(/(?=-nested\d)/).filter(Boolean);
-    const names = parts.map((_, i) => {
-      const id = runId + parts.slice(0, i + 1).join("");
-      return nested[id]?.label ?? nested[id]?.workflow ?? id;
-    });
-    const prefix = `${names.join(" / ")}: `;
+    const prefix = scopePrefix(runId, scope, loadRecord(paths, runId)?.nested);
     prefixes.set(scope, prefix);
     return prefix;
   };
@@ -339,7 +340,7 @@ async function runOnAccounts(paths: HomePaths, record: RunRecord, mode: "start" 
   const error = result?.reason ?? state?.reason;
   log(`${stamp()} ${status.padEnd(10)} ${record.workflow}${reason}${status === "failed" && error ? `: ${oneLine(String(error), 400)}` : ""}`);
   const atLimit = status === "paused" && state?.pauseReason === "usage_limit" && !stopping;
-  const limitText = atLimit ? limitNotice(paths, loadRecord(paths, runId) ?? record, state?.resetHint) : undefined;
+  const limitText = atLimit ? options.host.limitNotice(paths, loadRecord(paths, runId) ?? record, state?.resetHint) : undefined;
   if (limitText) log(`${stamp()} limit      ${limitText}`);
   if (status === "completed" || status === "aborted") {
     for (const dir of dropUnchangedWorktrees(paths, record.projectDir, runId)) log(`${stamp()} removed    ${dir}, which changed no file`);
@@ -357,11 +358,11 @@ async function runOnAccounts(paths: HomePaths, record: RunRecord, mode: "start" 
 }
 
 /** The detached process: `orc _worker <runId> start|resume`. */
-export async function workerMain(runId: string, mode: "start" | "resume"): Promise<number> {
+export async function workerMain(runId: string, mode: "start" | "resume", host: RunHost): Promise<number> {
   // The agents' shells inherit it, so `orc run` knows when an agent starts a workflow.
   process.env.ORC_RUN_ID = runId;
   try {
-    const result = await runWorker(runId, mode, { handleSignals: true });
+    const result = await runWorker(runId, mode, { host, handleSignals: true });
     return result?.status === "failed" ? 1 : 0;
   } catch (error) {
     process.stderr.write(`${stamp()} error      ${(error as Error).stack ?? String(error)}\n`);
@@ -370,5 +371,3 @@ export async function workerMain(runId: string, mode: "start" | "resume"): Promi
     return 1;
   }
 }
-
-export type { RunRecord };

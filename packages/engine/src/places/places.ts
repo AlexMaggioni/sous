@@ -5,7 +5,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { HomePaths, Place } from "./home.js";
+import type { HomePaths, Place } from "../runs/home.js";
 
 export interface PreparedPlace {
   cwd: string;

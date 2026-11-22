@@ -10,7 +10,7 @@ import type {
   WorkflowReplayProvenanceField,
 } from "@orchestrator/shared-types";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import type { PersistedRunState, RunLease, RunPersistence } from "../src/run-persistence.js";
+import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 const ENVIRONMENT_KEY = "incremental-manager-v1";

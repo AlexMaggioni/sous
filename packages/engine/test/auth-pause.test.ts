@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { AuthErrorContext } from "@orchestrator/shared-types";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import type { PersistedRunState, RunPersistence } from "../src/run-persistence.js";
+import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 // PR4 (§2.12/§2.13): the engine generalizes the PROVIDER_USAGE_LIMIT pause branch so an

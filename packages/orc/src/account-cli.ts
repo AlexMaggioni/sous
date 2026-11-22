@@ -2,12 +2,9 @@
 
 import { spawnSync } from "node:child_process";
 import { accountLabel, addAccount, checkNewAccount, currentAccount, folderText, listAccounts, removeAccount, useAccount } from "./accounts.js";
-import { unfinishedRuns } from "./daemon.js";
-import { homePaths, ensureHome, loadConfig, type HomePaths } from "./home.js";
-import { spawnWorker } from "./launch.js";
+import { ensureHome, homePaths, listRecords, loadConfig, loadRecord, processAlive, rootRunId, savedState, startWorker, unfinishedRuns, type HomePaths, type RunRecord } from "@orchestrator/engine";
+import { host } from "./host.js";
 import { findProgram, PROGRAM_INFO, PROGRAMS } from "./programs.js";
-import { listRecords, loadRecord, processAlive, rootRunId, updateRecord, type RunRecord } from "./records.js";
-import { managerFor } from "./worker.js";
 
 export interface AccountCommandOptions {
   json?: boolean;
@@ -22,7 +19,7 @@ export interface AccountCommandOptions {
 
 function atLimit(paths: HomePaths): (record: RunRecord) => boolean {
   return (record) => {
-    const state = managerFor(paths, record.projectDir).getPersistence().load(record.runId);
+    const state = savedState(paths, record);
     return state?.status === "paused" && state.pauseReason === "usage_limit";
   };
 }
@@ -105,7 +102,7 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
     case "use": {
       const result = useAccount(paths, needName(), {
         atLimit: atLimit(paths),
-        resume: (runId) => updateRecord(paths, runId, { pid: spawnWorker(paths, runId, "resume") }),
+        resume: (runId) => startWorker(paths, host, runId, "resume"),
       });
       const label = accountLabel(result.program, result.name);
       out(`orc uses ${PROGRAM_INFO[result.program].name} account ${label} for new runs.`);

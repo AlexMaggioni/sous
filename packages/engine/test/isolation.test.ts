@@ -18,7 +18,7 @@ import {
   runIsolation,
   type IsolationTarget,
 } from "../src/isolation.js";
-import { createRunPersistence, type PersistedRunState } from "../src/run-persistence.js";
+import { createRunPersistence, type PersistedRunState } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { CALL_INPUTS_FORMAT, CALL_PATH_FORMAT, runWorkflow } from "../src/workflow.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";

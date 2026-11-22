@@ -28,13 +28,13 @@ import {
   RunEventLogError,
   withRunEvents,
   type RunEventPersistence,
-} from "../src/run-event-persistence.js";
+} from "../../../src/runs/persistence/run-event-persistence.js";
 import {
   createRunPersistence,
   type FsLayer,
   type PersistedRunState,
   type RunPersistence,
-} from "../src/run-persistence.js";
+} from "../../../src/runs/persistence/run-persistence.js";
 
 const STREAM_A = "a".repeat(32);
 const STREAM_B = "b".repeat(32);

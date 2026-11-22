@@ -5,9 +5,9 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createRunPersistence } from "../src/run-persistence.js";
+import { createRunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
-import { workflowProjectPaths } from "../src/workflow-paths.js";
+import { workflowProjectPaths } from "../src/runs/persistence/project-paths.js";
 
 const SCRIPT = [
   'export const meta = { name: "crash-recovery", description: "crash recovery" };',

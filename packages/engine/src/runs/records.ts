@@ -4,8 +4,10 @@
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { HomePaths, Place } from "./home.js";
-import type { Program } from "./programs.js";
 import type { Priority } from "./slots.js";
+
+/** The programs whose steps a run records: Claude Code and Codex. */
+export type Program = "claude" | "codex";
 
 export interface RunRecord {
   runId: string;
@@ -49,7 +51,7 @@ export interface RunRecord {
   stopSteps?: string[];
   /** The installed Claude Code and Codex the run's steps used, by harness, from its last start. */
   programs?: Record<string, { path: string; version?: string }>;
-  /** The account each program's steps use, kept across pauses and resumes (accounts.ts). */
+  /** The account each program's steps use, kept across pauses and resumes (orc's accounts.ts). */
   accounts?: Partial<Record<Program, RunAccount>>;
   /** Set when a step hit a usage limit: whose limit it was. A start or resume clears it. */
   limit?: { program: Program; account: string; at: string };
@@ -59,7 +61,7 @@ export interface RunAccount {
   /** An account of orc's, "default" for the program's own login, or "caller" for the login of
    *  the agent's session that started the run. */
   name: string;
-  /** CLAUDE_CONFIG_DIR or CODEX_HOME as it was where the run started. Null when it was not set. */
+  /** The program's config folder variable as it was where the run started. Null when it was not set. */
   folder: string | null;
   /** The key of the login token the run started with, when it is no account of orc's. */
   kept?: string;
@@ -78,6 +80,17 @@ export interface NestedRun {
 export function rootRunId(childRunId: string): string {
   const at = childRunId.indexOf("-nested");
   return at === -1 ? childRunId : childRunId.slice(0, at);
+}
+
+/** How the log names a scope: "" for the run itself, else "Nested label / Inner label: ". */
+export function scopePrefix(runId: string, scope: string | undefined, nested: Record<string, NestedRun> = {}): string {
+  if (!scope || scope === runId) return "";
+  const parts = scope.slice(runId.length).split(/(?=-nested\d)/).filter(Boolean);
+  const names = parts.map((_, i) => {
+    const id = runId + parts.slice(0, i + 1).join("");
+    return nested[id]?.label ?? nested[id]?.workflow ?? id;
+  });
+  return `${names.join(" / ")}: `;
 }
 
 /** Note a nested run on its root run's record. */

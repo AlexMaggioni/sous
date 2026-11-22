@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { WorkflowManager } from "../../src/workflow-manager.js";
 import { WorkflowError, WorkflowErrorCode } from "../../src/errors.js";
-import { workflowProjectPaths } from "../../src/workflow-paths.js";
+import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
 
 const scenario = process.argv[2];
 const cwd = process.env.AP_TEST_CWD;

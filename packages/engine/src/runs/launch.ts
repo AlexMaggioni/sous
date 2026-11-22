@@ -4,13 +4,14 @@
 import { spawn } from "node:child_process";
 import { existsSync, openSync, readFileSync, closeSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { generateRunId, openWorkflowDir, parseWorkflowScript } from "@orchestrator/engine";
-import { accountsForRun } from "./accounts.js";
+import { generateRunId } from "./persistence/run-persistence.js";
+import { parseWorkflowScript } from "../workflow.js";
+import { openWorkflowDir } from "../workflow-dir.js";
+import { checkInputs, workflowExtras, type WorkflowExtras } from "../workflow-inputs.js";
+import { preparePlace } from "../places/places.js";
 import { loadConfig, rememberProject, workflowDirs, type HomePaths, type Place } from "./home.js";
-import { checkInputs, workflowExtras, type WorkflowExtras } from "./inputs.js";
-import { preparePlace } from "./places.js";
-import { saveRecord, type RunRecord } from "./records.js";
+import type { RunHost } from "./host.js";
+import { saveRecord, updateRecord, type RunRecord } from "./records.js";
 import type { Priority } from "./slots.js";
 
 export interface ResolvedWorkflow {
@@ -76,7 +77,7 @@ export class InputProblems extends Error {
 }
 
 /** Check the request and write the run's record. Nothing runs yet. */
-export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecord {
+export function createRun(paths: HomePaths, host: RunHost, request: CreateRunRequest): RunRecord {
   const resolved = resolveWorkflow(paths, request.projectDir, request.workflow);
   const checked = checkInputs(resolved.extras, request.inputs);
   const args = checked.args;
@@ -113,20 +114,11 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
     ...(request.rerunOf ? { rerunOf: request.rerunOf } : {}),
     ...(reuse ? { reuseFrom: reuse.runId } : {}),
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
-    accounts: accountsForRun(paths, process.env, { caller: request.caller, parentRunId: request.startedByRun }),
+    accounts: host.accountsForRun(paths, { caller: request.caller, parentRunId: request.startedByRun }),
   };
   saveRecord(paths, record);
   rememberProject(paths, request.projectDir);
   return record;
-}
-
-/** The built command-line file, which also runs the worker. */
-function cliFile(): string {
-  const here = fileURLToPath(new URL(".", import.meta.url));
-  for (const candidate of [join(here, "cli.js"), join(here, "..", "dist", "cli.js")]) {
-    if (existsSync(candidate)) return candidate;
-  }
-  throw new Error("orc is not built. Run pnpm build in the orchestrator repo.");
 }
 
 export function logFile(paths: HomePaths, runId: string): string {
@@ -134,10 +126,10 @@ export function logFile(paths: HomePaths, runId: string): string {
 }
 
 /** Start the run's worker in the background. Its output goes to logs/<run id>.log. */
-export function spawnWorker(paths: HomePaths, runId: string, mode: "start" | "resume"): number {
+export function spawnWorker(paths: HomePaths, host: RunHost, runId: string, mode: "start" | "resume"): number {
   const out = openSync(logFile(paths, runId), "a");
   try {
-    const child = spawn(process.execPath, [cliFile(), "_worker", runId, mode], {
+    const child = spawn(process.execPath, [host.cliFile(), "_worker", runId, mode], {
       detached: true,
       stdio: ["ignore", out, out],
       env: { ...process.env, ORC_HOME: paths.home },
@@ -147,4 +139,9 @@ export function spawnWorker(paths: HomePaths, runId: string, mode: "start" | "re
   } finally {
     closeSync(out);
   }
+}
+
+/** Start the run's worker and note its process in the record. */
+export function startWorker(paths: HomePaths, host: RunHost, runId: string, mode: "start" | "resume"): void {
+  updateRecord(paths, runId, { pid: spawnWorker(paths, host, runId, mode) });
 }

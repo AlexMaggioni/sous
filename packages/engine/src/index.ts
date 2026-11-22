@@ -63,7 +63,7 @@ export {
   type PersistedRunLineageTombstone,
   type FsLayer,
   type RunPersistenceOptions,
-} from "./run-persistence.js";
+} from "./runs/persistence/run-persistence.js";
 export {
   RESUME_FALLBACK_REASONS,
   RESUME_DISABLED_REASONS,
@@ -86,7 +86,7 @@ export {
   type RunEventPersistence,
   type RunEventStream,
   type WatchRunEventsOptions,
-} from "./run-event-persistence.js";
+} from "./runs/persistence/run-event-persistence.js";
 
 // ── Isolation mode ──
 export {
@@ -184,9 +184,6 @@ export { parseFrontmatter } from "./frontmatter.js";
 // ── Stand-in values for a dry run ──
 export { fabricateFromSchema } from "./fabricate.js";
 
-// ── Git worktree isolation ──
-export { createWorktree, removeWorktree, type Worktree } from "./worktree.js";
-
 // ── Snapshot model + headless text rendering ──
 export {
   preview,
@@ -204,18 +201,6 @@ export {
   type ThemeLike,
 } from "./display.js";
 
-// ── Paths / logger ──
-export {
-  workflowProjectPaths,
-  workflowHomeDir,
-  workflowUserSavedDir,
-  workflowProjectKey,
-  ORCHESTRATOR_PERSISTENCE_ROOT_ENV,
-  WORKFLOW_PROJECTS_SUBDIR,
-  type WorkflowProjectPaths,
-  type WorkflowPathOptions,
-} from "./workflow-paths.js";
-export { createWorkflowLogger, type WorkflowLogger, type WorkflowLoggerOptions } from "./logger.js";
 export {
   MAX_OBSERVABILITY_SCALAR_BYTES,
   MAX_STRUCTURED_STATUS_BYTES,
@@ -350,3 +335,32 @@ export type {
 } from "@orchestrator/shared-types";
 
 export type { WorkflowRoutingSnapshot } from "./workflow-routing.js";
+
+// ── Runs: the orc home, run records, questions, agent slots and schedules ──
+// Only the names orc imports. knownProjects, managerFor and tick are for orc's tests.
+export { type RunHost } from "./runs/host.js";
+export {
+  daemonLog,
+  ensureHome,
+  findProjectDir,
+  homePaths,
+  knownProjects,
+  loadConfig,
+  loadSecrets,
+  rememberProject,
+  workflowDirs,
+  type HomePaths,
+  type OrcConfig,
+  type Place,
+} from "./runs/home.js";
+export { findRecord, listRecords, loadRecord, processAlive, rootRunId, updateRecord, type RunAccount, type RunRecord } from "./runs/records.js";
+export { listQuestions, normalizeAnswer, readQuestion, writeAnswer, type Question } from "./runs/inbox.js";
+export { SlotPool } from "./runs/slots.js";
+export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
+export { createRun, InputProblems, logFile, resolveWorkflow, startWorker } from "./runs/launch.js";
+export { managerFor, runWorker, savedState, workerMain } from "./runs/worker.js";
+export { daemonMain, daemonPid, fileSchedules, forgetRun, loadSchedules, prune, saveSchedules, tick, unfinishedRuns, type Schedule } from "./runs/service.js";
+export { readLogFrom, stateOf, statusWord, waitForRun, withLiveSteps } from "./runs/view.js";
+export { answerQuestion, answerValue, breakpointValue, discardRun, findQuestion, pauseRun, rerun, resumeCheck, resumeRun, reuseCheck, stopRun, stopStep, type AnswerKind } from "./runs/control.js";
+export { checkInputs, workflowExtras } from "./workflow-inputs.js";
+export { gcWorktrees, isGitRepo, isPlace, removeWorktree, runWorktrees } from "./places/places.js";

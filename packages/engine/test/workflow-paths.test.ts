@@ -3,15 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { describe, it } from "node:test";
-import {
-  ORCHESTRATOR_PERSISTENCE_ROOT_ENV,
-  WORKFLOW_HOME_RELATIVE_DIR,
-  WORKFLOW_PROJECTS_SUBDIR,
-  workflowHomeDir,
-  workflowProjectKey,
-  workflowProjectPaths,
-  workflowUserSavedDir,
-} from "../src/workflow-paths.js";
+import { WORKFLOW_PROJECTS_SUBDIR, workflowProjectKey, workflowProjectPaths } from "../src/runs/persistence/project-paths.js";
+import { ORCHESTRATOR_PERSISTENCE_ROOT_ENV, WORKFLOW_HOME_RELATIVE_DIR, workflowHomeDir, workflowUserSavedDir } from "../src/workflow-paths.js";
 import { withFakeHome } from "./helpers/fake-home.js";
 
 function withIsolatedHome(fn: (home: string, cwd: string) => void): void {

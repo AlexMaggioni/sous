@@ -9,7 +9,7 @@ import {
   normalizeInspectionOptions,
   projectWorkflowRunStatus,
 } from "../src/run-observability.js";
-import type { PersistedRunState, RunPersistence } from "../src/run-persistence.js";
+import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 function memoryPersistence() {

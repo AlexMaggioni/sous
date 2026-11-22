@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { createAcpRunner } from "@orchestrator/acp-agents";
 import { routeHarness } from "./agents.js";
 import { applyAccounts, currentAccount, DEFAULT, describeAccount, folderText } from "./accounts.js";
-import { homePaths, loadConfig } from "./home.js";
+import { homePaths, loadConfig } from "@orchestrator/engine";
 import { claudeFolder, codexFolder, findProgram, PROGRAM_INFO, PROGRAMS, programVersion, type Program } from "./programs.js";
 
 export interface DoctorOptions {

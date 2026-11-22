@@ -3,25 +3,17 @@
 // schedule them. `orc help` lists the commands.
 
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import { closeSync, openSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
-import { openWorkflowDir, type PersistedRunState } from "@orchestrator/engine";
+import { answerQuestion, answerValue, breakpointValue, createRun, cronMatches, daemonLog, daemonMain, daemonPid, discardRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, homePaths, InputProblems, isPlace, listQuestions, listRecords, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, saveSchedules, startWorker, stateOf, statusWord, stopRun, stopStep, unfinishedRuns, waitForRun, withLiveSteps, workerMain, workflowDirs, workflowExtras, writeAnswer, type AnswerKind, type HomePaths, type PersistedRunState, type Place, type Question, type RunRecord, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { describeAccount, limitNotice } from "./accounts.js";
 import { checkWorkflow } from "./check.js";
-import { cronMatches, nextRun, parseCron } from "./cron.js";
 import { dryRun, readAnswers } from "./dryrun.js";
-import { daemonMain, daemonPid, fileSchedules, loadSchedules, prune, saveSchedules, unfinishedRuns, type Schedule } from "./daemon.js";
-import { ensureHome, findProjectDir, homePaths, loadConfig, rememberProject, workflowDirs, type HomePaths, type Place } from "./home.js";
-import { listQuestions, normalizeAnswer, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
-import { workflowExtras } from "./inputs.js";
-import { createRun, InputProblems, logFile, resolveWorkflow, spawnWorker } from "./launch.js";
 import { doctor } from "./doctor.js";
+import { host } from "./host.js";
 import { isProgram, PROGRAM_INFO, PROGRAMS } from "./programs.js";
-import { gcWorktrees, isPlace, removeWorktree, runWorktrees } from "./places.js";
-import { findRecord, listRecords, loadSnapshot, processAlive, updateRecord, type RunRecord } from "./records.js";
-import { currentWorkflows, managerFor, workerMain } from "./worker.js";
 
 class Usage extends Error {}
 
@@ -139,63 +131,7 @@ function needRecord(paths: HomePaths, id: string | undefined): RunRecord {
   return record;
 }
 
-function stateOf(paths: HomePaths, record: RunRecord): PersistedRunState | undefined {
-  const manager = managerFor(paths, record.projectDir);
-  const state = manager.getPersistence().load(record.runId) ?? undefined;
-  if (state && (state.status === "running" || state.status === "pending") && !processAlive(record.pid)) {
-    return manager.reconcileExternallyDeadRun(record.runId) ?? state;
-  }
-  return state;
-}
-
 type Step = PersistedRunState["agents"][number];
-
-/** The saved state lags a live run: it is saved when a step ends. The event log has every step
- *  that started or ended since, so show and the monitor see what runs now. */
-function withLiveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): PersistedRunState | undefined {
-  if (!state || !processAlive(record.pid)) return state;
-  const persistence = managerFor(paths, record.projectDir).getPersistence();
-  const agents: Step[] = state.agents.map((agent) => ({ ...agent }));
-  const key = (scope: unknown, callIndex: unknown) => `${typeof scope === "string" ? scope : record.runId}#${String(callIndex)}`;
-  const byKey = new Map(agents.map((agent) => [key(agent.scope, agent.callIndex), agent]));
-  try {
-    let after = state.eventSeq ?? 0;
-    for (;;) {
-      const page = persistence.readEvents(record.runId, { after, limit: 1000 });
-      for (const { event, timestamp } of page.events) {
-        const e = event as unknown as Record<string, unknown>;
-        const k = key(e.scope, e.callIndex);
-        if (e.type === "agentStart" && !byKey.has(k)) {
-          const step = {
-            id: agents.length + 1,
-            label: String(e.label ?? "agent"),
-            status: "running",
-            startedAt: timestamp,
-            ...(typeof e.phase === "string" ? { phase: e.phase } : {}),
-            ...(typeof e.model === "string" ? { model: e.model } : {}),
-            ...(typeof e.callIndex === "number" ? { callIndex: e.callIndex } : {}),
-            ...(typeof e.scope === "string" ? { scope: e.scope } : {}),
-          } as Step;
-          agents.push(step);
-          byKey.set(k, step);
-        } else if (e.type === "agentEnd") {
-          const step = byKey.get(k);
-          if (step && step.status === "running") {
-            step.status = e.errorRecord ? "error" : "done";
-            step.endedAt = timestamp;
-            if (typeof e.tokens === "number") step.tokens = e.tokens;
-            if (typeof e.error === "string") step.error = e.error;
-          }
-        }
-      }
-      if (!page.hasMore || page.events.length === 0) break;
-      after = page.events[page.events.length - 1]!.seq;
-    }
-  } catch {
-    return state;
-  }
-  return { ...state, agents };
-}
 
 /** The steps in the order they started. A nested workflow's steps go together under it, indented. */
 function printSteps(record: RunRecord, agents: readonly Step[], ended: boolean): void {
@@ -233,67 +169,11 @@ function printSteps(record: RunRecord, agents: readonly Step[], ended: boolean):
   printScope(record.runId, "  ");
 }
 
-/** One word for the list: what the run is doing, or what it waits for. */
-function statusWord(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): string {
-  const alive = processAlive(record.pid);
-  if (alive && listQuestions(paths, record.runId).length) return "asks";
-  if (!state) return alive ? "starting" : "not started";
-  if (state.status === "running" && !alive) return "interrupted";
-  if (state.status === "paused") {
-    const reason = state.pauseReason;
-    if (reason === "usage_limit") return "paused: limit";
-    if (reason === "step_failed") return "paused: failed step";
-    if (reason === "step_stopped") return "paused: stopped step";
-    if (reason === "time_limit") return "paused: time limit";
-    if (reason === "checkpoint_required") return "paused: asks";
-    if (reason === "requested") return "paused";
-    if (reason === "interrupted") return "interrupted";
-    return `paused: ${reason ?? "?"}`;
-  }
-  if (state.status === "aborted") return "stopped";
-  return state.status;
-}
-
-const EXIT: Record<string, number> = { completed: 0, failed: 1, paused: 2, aborted: 3, asks: 4 };
-
-function summary(paths: HomePaths, record: RunRecord): Record<string, unknown> {
-  const state = stateOf(paths, record);
-  const questions = listQuestions(paths, record.runId);
-  return {
-    runId: record.runId,
-    workflow: record.workflow,
-    status: state?.status ?? (processAlive(record.pid) ? "running" : "pending"),
-    ...(state?.pauseReason ? { pauseReason: state.pauseReason } : {}),
-    ...(state?.resetHint ? { resetHint: state.resetHint } : {}),
-    ...(state?.reason && state.status !== "completed" ? { reason: state.reason } : {}),
-    ...(questions.length ? { questions: questions.map((q) => ({ id: q.id, prompt: q.prompt, kind: q.kind, ...(q.choices ? { choices: q.choices } : {}), breakpoint: q.breakpoint })) } : {}),
-    cwd: record.cwd,
-    ...(record.branch ? { branch: record.branch } : {}),
-    ...(state?.status === "completed" ? { result: state.result } : {}),
-  };
-}
-
 function howToAnswer(question: Question): string {
   if (question.breakpoint) return `orc approve ${question.id}  |  orc send-back ${question.id} "note"  |  orc stop ${question.runId}`;
   if (question.kind === "confirm") return `orc answer ${question.id} yes|no`;
   if (question.kind === "select") return `orc answer ${question.id} <one of: ${(question.choices ?? []).join(", ")}>`;
   return `orc answer ${question.id} "..."`;
-}
-
-/** Print the log from `from`, and return where it ended. */
-function printLogFrom(file: string, from: number, write: (text: string) => void): number {
-  if (!existsSync(file)) return from;
-  const size = statSync(file).size;
-  if (size <= from) return from;
-  const fd = openSync(file, "r");
-  try {
-    const buffer = Buffer.alloc(size - from);
-    readSync(fd, buffer, 0, buffer.length, from);
-    write(buffer.toString("utf8"));
-  } finally {
-    closeSync(fd);
-  }
-  return size;
 }
 
 /**
@@ -302,97 +182,62 @@ function printLogFrom(file: string, from: number, write: (text: string) => void)
  * with exit code 4, so the caller can answer with `orc answer` and wait again.
  */
 async function waitFor(paths: HomePaths, runId: string, options: { json: boolean; quiet?: boolean }): Promise<number> {
-  const file = logFile(paths, runId);
-  let offset = options.json || options.quiet ? Number.MAX_SAFE_INTEGER : 0;
   const interactive = process.stdin.isTTY && process.stdout.isTTY && !options.json;
-  const asked = new Set<string>();
-  for (;;) {
-    if (offset !== Number.MAX_SAFE_INTEGER) offset = printLogFrom(file, offset, (text) => process.stdout.write(text));
-    const record = findRecord(paths, runId);
-    if (!record) throw new Error(`run ${runId} is gone`);
-    const alive = processAlive(record.pid);
-    if (!alive) {
-      await new Promise((r) => setTimeout(r, 150));
-      if (offset !== Number.MAX_SAFE_INTEGER) printLogFrom(file, offset, (text) => process.stdout.write(text));
-      const result = summary(paths, record);
-      if (options.json) printJson(result);
-      else if (result.status === "completed" && result.result !== undefined) {
-        out("result:");
-        out(typeof result.result === "string" ? result.result : JSON.stringify(result.result, null, 2));
-      }
-      return EXIT[String(result.status)] ?? 1;
+  const end = await waitForRun(paths, runId, {
+    ...(options.json || options.quiet ? {} : { log: (text: string) => process.stdout.write(text) }),
+    ...(interactive ? { asks: (questions: Question[], record: RunRecord) => askHere(paths, questions, record) } : {}),
+  });
+  if (end.questions) {
+    if (options.json) printJson(end.summary);
+    else for (const q of end.questions) out(`\nwaiting for an answer to ${q.id}:\n  ${q.prompt}\n  ${howToAnswer(q)}\n  then: orc wait ${runId}`);
+    return end.code;
+  }
+  if (options.json) printJson(end.summary);
+  else if (end.summary.status === "completed" && end.summary.result !== undefined) {
+    out("result:");
+    out(typeof end.summary.result === "string" ? end.summary.result : JSON.stringify(end.summary.result, null, 2));
+  }
+  return end.code;
+}
+
+/** Ask each question in the terminal and write the answer. "stop" at a breakpoint stops the run. */
+async function askHere(paths: HomePaths, questions: Question[], record: RunRecord): Promise<void> {
+  for (const question of questions) {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const hint = question.breakpoint
+      ? "approve, stop, or a note to send back"
+      : question.kind === "confirm"
+        ? "yes or no"
+        : question.kind === "select"
+          ? (question.choices ?? []).join(" / ")
+          : "your answer";
+    const reply = (await rl.question(`\n${question.prompt}\n(${hint}) > `)).trim();
+    rl.close();
+    if (!readQuestion(paths, question.id)) continue;
+    if (question.breakpoint && reply.toLowerCase() === "stop") {
+      stopRun(paths, record);
+      continue;
     }
-    const open = listQuestions(paths, runId).filter((q) => !asked.has(q.id));
-    if (open.length) {
-      if (!interactive) {
-        if (options.json) printJson(summary(paths, record));
-        else for (const q of open) out(`\nwaiting for an answer to ${q.id}:\n  ${q.prompt}\n  ${howToAnswer(q)}\n  then: orc wait ${runId}`);
-        return EXIT.asks!;
-      }
-      for (const question of open) {
-        asked.add(question.id);
-        const rl = createInterface({ input: process.stdin, output: process.stdout });
-        const hint = question.breakpoint
-          ? "approve, stop, or a note to send back"
-          : question.kind === "confirm"
-            ? "yes or no"
-            : question.kind === "select"
-              ? (question.choices ?? []).join(" / ")
-              : "your answer";
-        const reply = (await rl.question(`\n${question.prompt}\n(${hint}) > `)).trim();
-        rl.close();
-        if (!readQuestion(paths, question.id)) continue;
-        if (question.breakpoint && reply.toLowerCase() === "stop") {
-          stopRun(paths, record);
-          continue;
-        }
-        writeAnswer(paths, question, question.breakpoint ? breakpointValue(reply) : normalizeAnswer(question, reply));
-      }
-    }
-    await new Promise((r) => setTimeout(r, 400));
+    writeAnswer(paths, question, question.breakpoint ? breakpointValue(reply) : normalizeAnswer(question, reply));
   }
 }
 
-function breakpointValue(reply: string): unknown {
-  const lower = reply.trim().toLowerCase();
-  if (lower === "" || lower === "approve" || lower === "yes" || lower === "ok") return "approve";
-  if (lower === "stop") return "stop";
-  return { decision: "send back", note: reply.replace(/^send[ -]back\s*:?\s*/i, "").trim() };
-}
-
-function stopRun(paths: HomePaths, record: RunRecord): string {
-  if (processAlive(record.pid)) {
-    process.kill(record.pid!, "SIGTERM");
-    return `stopping ${record.runId}`;
-  }
-  const result = managerFor(paths, record.projectDir).stopPersistedRun(record.runId);
-  removeRunQuestions(paths, record.runId);
-  if (result.outcome === "already-terminal") return `${record.runId} already ended (${result.state?.status ?? "done"})`;
-  if (result.outcome === "missing") return `${record.runId} never started; nothing to stop`;
-  if (result.outcome === "owned-elsewhere") return `${record.runId} is held by another process`;
+/** What `orc stop` prints. */
+function stopText(record: RunRecord, stop: ReturnType<typeof stopRun>): string {
+  if (stop.outcome === "stopping") return `stopping ${record.runId}`;
+  if (stop.outcome === "already-ended") return `${record.runId} already ended (${stop.status ?? "done"})`;
+  if (stop.outcome === "never-started") return `${record.runId} never started; nothing to stop`;
+  if (stop.outcome === "held-elsewhere") return `${record.runId} is held by another process`;
   return `stopped ${record.runId}`;
 }
 
-function findQuestion(paths: HomePaths, id: string | undefined): Question {
+function needQuestion(paths: HomePaths, id: string | undefined): Question {
   if (!id) throw new Usage("give a question id (orc inbox shows them)");
-  const exact = readQuestion(paths, id);
-  if (exact) return exact;
-  const all = listQuestions(paths);
-  const byPrefix = all.filter((q) => q.id.startsWith(id));
-  if (byPrefix.length === 1) return byPrefix[0]!;
-  const record = findRecord(paths, id);
-  if (record) {
-    const forRun = all.filter((q) => q.runId === record.runId);
-    if (forRun.length === 1) return forRun[0]!;
-    if (forRun.length > 1) throw new Error(`run ${record.runId} asks ${forRun.length} questions. Name one: ${forRun.map((q) => q.id).join(", ")}`);
-    throw new Error(`run ${record.runId} asks nothing right now`);
-  }
-  throw new Error(`no open question "${id}". orc inbox lists them.`);
+  return findQuestion(paths, id);
 }
 
-async function startAndMaybeWait(paths: HomePaths, record: RunRecord, mode: "start" | "resume", parsed: Parsed): Promise<number> {
-  const pid = spawnWorker(paths, record.runId, mode);
-  updateRecord(paths, record.runId, { pid });
+/** Say the run started, or wait for it with --wait. */
+async function startedOrWait(paths: HomePaths, record: RunRecord, mode: "start" | "resume", parsed: Parsed): Promise<number> {
   const json = parsed.flags.json === true;
   if (!parsed.flags.wait) {
     if (json) printJson({ runId: record.runId, workflow: record.workflow, cwd: record.cwd, log: logFile(paths, record.runId) });
@@ -415,7 +260,7 @@ async function cmdRun(parsed: Parsed): Promise<number> {
   const place = str(parsed.flags.place);
   if (place !== undefined && !isPlace(place)) throw new Usage(`--place is worktree, folder or none, got "${place}"`);
   const concurrency = str(parsed.flags.concurrency);
-  const record = createRun(paths, {
+  const record = createRun(paths, host, {
     workflow,
     projectDir,
     inputs: parsed.inputs,
@@ -428,7 +273,8 @@ async function cmdRun(parsed: Parsed): Promise<number> {
     // Claude Code marks the shells of its sessions. A run one starts uses its login.
     caller: process.env.CLAUDECODE === "1",
   });
-  return startAndMaybeWait(paths, record, "start", parsed);
+  startWorker(paths, host, record.runId, "start");
+  return startedOrWait(paths, record, "start", parsed);
 }
 
 function cmdList(parsed: Parsed): number {
@@ -500,13 +346,13 @@ async function cmdLog(parsed: Parsed): Promise<number> {
   const paths = ensureHome(homePaths());
   const record = needRecord(paths, parsed.positionals[0]);
   const file = logFile(paths, record.runId);
-  let offset = printLogFrom(file, 0, (text) => process.stdout.write(text));
+  let offset = readLogFrom(file, 0, (text) => process.stdout.write(text));
   if (!parsed.flags.follow) return 0;
   while (processAlive(findRecord(paths, record.runId)?.pid)) {
     await new Promise((r) => setTimeout(r, 400));
-    offset = printLogFrom(file, offset, (text) => process.stdout.write(text));
+    offset = readLogFrom(file, offset, (text) => process.stdout.write(text));
   }
-  printLogFrom(file, offset, (text) => process.stdout.write(text));
+  readLogFrom(file, offset, (text) => process.stdout.write(text));
   return 0;
 }
 
@@ -530,27 +376,13 @@ function cmdInbox(parsed: Parsed): number {
   return 0;
 }
 
-function cmdAnswer(parsed: Parsed, kind: "answer" | "approve" | "send-back"): number {
+function cmdAnswer(parsed: Parsed, kind: AnswerKind): number {
   const paths = ensureHome(homePaths());
-  const question = findQuestion(paths, parsed.positionals[0]);
+  const question = needQuestion(paths, parsed.positionals[0]);
   const text = parsed.positionals.slice(1).join(" ");
-  let value: unknown;
-  if (kind === "approve") {
-    value = question.breakpoint ? "approve" : question.kind === "confirm" ? true : "approve";
-  } else if (kind === "send-back") {
-    if (!question.breakpoint) throw new Usage(`${question.id} is not a breakpoint. Use orc answer ${question.id} "..."`);
-    if (!text) throw new Usage(`orc send-back ${question.id} "what to change"`);
-    value = { decision: "send back", note: text };
-  } else {
-    if (!text && question.kind !== "confirm") throw new Usage(`orc answer ${question.id} "your answer"`);
-    value = question.breakpoint ? breakpointValue(text) : parsed.flags.json ? parseValue(text) : normalizeAnswer(question, text);
-    if (question.kind === "select" && question.choices && !question.choices.includes(value as string)) {
-      throw new Usage(`answer one of: ${question.choices.join(", ")}`);
-    }
-  }
-  writeAnswer(paths, question, value);
-  const record = findRecord(paths, question.runId);
-  const running = processAlive(record?.pid);
+  const answer = answerValue(question, kind, text, parsed.flags.json === true);
+  if ("usage" in answer) throw new Usage(answer.usage);
+  const running = answerQuestion(paths, question, answer.value);
   out(`answered ${question.id}${running ? "" : `. The run is not running: orc resume ${question.runId} uses the answer.`}`);
   return 0;
 }
@@ -558,54 +390,26 @@ function cmdAnswer(parsed: Parsed, kind: "answer" | "approve" | "send-back"): nu
 function cmdStop(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
   const record = needRecord(paths, parsed.positionals[0]);
-  if (typeof parsed.flags.step === "string") return stopStep(paths, record, parsed.flags.step);
-  out(stopRun(paths, record));
-  return 0;
-}
-
-/** The steps the log shows as started and not yet ended, by the name the log gives them. */
-export function runningSteps(logText: string): string[] {
-  const running: string[] = [];
-  for (const line of logText.split("\n")) {
-    const match = /^\S+ (start|done|failed)\s+(.*)$/.exec(line);
-    if (!match) continue;
-    const rest = match[2]!;
-    if (match[1] === "start") {
-      running.push(rest.replace(/ \([^()]*\)$/, ""));
-      continue;
+  if (typeof parsed.flags.step === "string") {
+    const step = parsed.flags.step;
+    if (!stopStep(paths, record, step)) {
+      out(`${record.runId} is not running, so no step runs`);
+      return 1;
     }
-    const ended = running.findIndex((name) => rest === name || rest.startsWith(`${name}:`) || rest.startsWith(`${name},`));
-    if (ended !== -1) running.splice(ended, 1);
+    out(`stopping "${step}" in ${record.runId}. The run pauses on it, and orc resume ${record.runId} runs it again.`);
+    return 0;
   }
-  return running;
-}
-
-/** Stop one running step. The run pauses on it, and resume runs it again. */
-function stopStep(paths: HomePaths, record: RunRecord, step: string): number {
-  if (!processAlive(record.pid)) {
-    out(`${record.runId} is not running, so no step runs`);
-    return 1;
-  }
-  const file = logFile(paths, record.runId);
-  const running = runningSteps(existsSync(file) ? readFileSync(file, "utf8") : "");
-  if (!running.includes(step)) {
-    const now = running.length ? `Running now: ${running.map((name) => `"${name}"`).join(", ")}.` : "No step runs now.";
-    throw new Error(`no step named "${step}" runs in ${record.runId}. ${now}`);
-  }
-  updateRecord(paths, record.runId, { stopSteps: [...(record.stopSteps ?? []), step] });
-  process.kill(record.pid!, "SIGUSR2");
-  out(`stopping "${step}" in ${record.runId}. The run pauses on it, and orc resume ${record.runId} runs it again.`);
+  out(stopText(record, stopRun(paths, record)));
   return 0;
 }
 
 function cmdPause(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
   const record = needRecord(paths, parsed.positionals[0]);
-  if (!processAlive(record.pid)) {
+  if (!pauseRun(record)) {
     out(`${record.runId} is not running`);
     return 1;
   }
-  process.kill(record.pid!, "SIGUSR1");
   out(`pausing ${record.runId}: steps already running finish, nothing new starts. orc resume ${record.runId} goes on.`);
   return 0;
 }
@@ -613,19 +417,7 @@ function cmdPause(parsed: Parsed): number {
 async function cmdResume(parsed: Parsed): Promise<number> {
   const paths = ensureHome(homePaths());
   const record = needRecord(paths, parsed.positionals[0]);
-  if (processAlive(record.pid)) throw new Error(`${record.runId} is running already`);
-  const state = stateOf(paths, record);
-  if (!state) throw new Error(`${record.runId} never started. orc rerun ${record.runId} starts it fresh.`);
-  if (state.status === "completed") throw new Error(`${record.runId} completed. orc rerun ${record.runId} runs it again.`);
-  if (state.status === "aborted") throw new Error(`${record.runId} was stopped. orc rerun ${record.runId} starts it again.`);
-  // An edit reaches a run only when the user says so at resume.
-  const snapshot = loadSnapshot(paths, record.runId);
-  const current = currentWorkflows(paths, record.projectDir);
-  const used = new Set(Object.values(record.nested ?? {}).map((child) => child.workflow));
-  const changed = [
-    ...(existsSync(record.file) && readFileSync(record.file, "utf8") !== state.script ? [record.workflow] : []),
-    ...[...used].filter((name) => name !== record.workflow && snapshot[name] !== undefined && current[name] !== snapshot[name]),
-  ];
+  const changed = resumeCheck(paths, record);
   if (parsed.flags.latest && parsed.flags.same) throw new Usage("--latest or --same, not both");
   if (changed.length && !parsed.flags.latest && !parsed.flags.same) {
     throw new Error(
@@ -634,8 +426,8 @@ async function cmdResume(parsed: Parsed): Promise<number> {
         `orc resume ${record.runId} --same goes on with the version it started with.`,
     );
   }
-  if (parsed.flags.latest) updateRecord(paths, record.runId, { resumeLatest: true });
-  return startAndMaybeWait(paths, record, "resume", parsed);
+  resumeRun(paths, host, record, parsed.flags.latest === true);
+  return startedOrWait(paths, record, "resume", parsed);
 }
 
 async function cmdRerun(parsed: Parsed): Promise<number> {
@@ -645,26 +437,19 @@ async function cmdRerun(parsed: Parsed): Promise<number> {
   if (!isPlace(place)) throw new Usage(`--place is worktree, folder or none, got "${place}"`);
   const reuse = Boolean(parsed.flags.reuse);
   if (reuse) {
-    const state = stateOf(paths, old);
-    if (processAlive(old.pid) || state?.status === "running" || state?.status === "pending") throw new Error(`${old.runId} is still running. orc stop ${old.runId} first.`);
-    if (state?.status === "paused") throw new Error(`${old.runId} is paused. orc resume ${old.runId} takes your edits and keeps the finished steps.`);
+    reuseCheck(paths, old);
     if (parsed.flags.place) throw new Usage("--reuse works where the earlier run worked, so it takes no --place");
   }
-  const record = createRun(paths, {
-    ...(reuse ? { reuseFrom: old } : {}),
-    workflow: old.file,
-    projectDir: old.projectDir,
-    inputs: { ...old.args, ...parsed.inputs },
+  const record = rerun(paths, host, old, {
     place,
-    origin: "rerun",
-    rerunOf: old.runId,
-    ...(old.overrides || parsed.sets.length ? { overrides: { ...old.overrides, ...parseSets(parsed.sets) } } : {}),
-    ...((str(parsed.flags.model) ?? old.defaultModel) ? { defaultModel: str(parsed.flags.model) ?? old.defaultModel! } : {}),
-    ...(old.concurrency ? { concurrency: old.concurrency } : {}),
+    reuse,
+    inputs: parsed.inputs,
+    ...(parsed.sets.length ? { overrides: parseSets(parsed.sets) } : {}),
+    ...(str(parsed.flags.model) !== undefined ? { defaultModel: str(parsed.flags.model)! } : {}),
     ...(process.env.ORC_RUN_ID ? { startedByRun: process.env.ORC_RUN_ID } : {}),
     caller: process.env.CLAUDECODE === "1",
   });
-  return startAndMaybeWait(paths, record, "start", parsed);
+  return startedOrWait(paths, record, "start", parsed);
 }
 
 function cmdWorkflows(parsed: Parsed): number {
@@ -816,10 +601,10 @@ async function cmdDaemon(parsed: Parsed): Promise<number> {
   const paths = ensureHome(homePaths());
   const action = parsed.positionals[0] ?? "status";
   const pid = daemonPid(paths);
-  const log = `${paths.logs}/daemon.log`;
+  const log = daemonLog(paths);
   switch (action) {
     case "run":
-      await daemonMain(paths);
+      await daemonMain(paths, host);
       return 0;
     case "start": {
       if (pid) {
@@ -863,20 +648,16 @@ function cmdGc(parsed: Parsed): number {
 function cmdDiscard(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
   const record = needRecord(paths, parsed.positionals[0]);
-  if (processAlive(record.pid)) throw new Error(`${record.runId} is running. orc stop ${record.runId} first.`);
-  const trees = runWorktrees(paths, record.runId);
+  const yes = parsed.flags.yes === true;
+  const trees = discardRun(paths, record, { remove: yes, deleted: (tree) => out(`deleted ${tree.branch} and ${tree.dir}`) });
   if (!trees.length) {
     out(`${record.runId} has no worktree left`);
     return 0;
   }
-  if (parsed.flags.yes !== true) {
+  if (!yes) {
     for (const tree of trees) out(`would delete ${tree.branch} and ${tree.dir}`);
     out(`the work on these branches is lost. orc discard ${record.runId} --yes deletes them.`);
     return 1;
-  }
-  for (const tree of trees) {
-    removeWorktree(record.projectDir, tree.dir, tree.branch);
-    out(`deleted ${tree.branch} and ${tree.dir}`);
   }
   return 0;
 }
@@ -943,70 +724,52 @@ own folders, such as .claude/agents/ and .codex/agents/. Steps run on the Claude
 installed on this machine, on the account orc account names. A run that a Claude Code session or
 an agent starts uses that session's account.`;
 
+/** Each command by its name, and the other names it answers to. */
+const COMMANDS: Record<string, (parsed: Parsed) => number | Promise<number>> = {
+  run: cmdRun,
+  wait: (parsed) => {
+    const paths = ensureHome(homePaths());
+    return waitFor(paths, needRecord(paths, parsed.positionals[0]).runId, { json: parsed.flags.json === true });
+  },
+  list: cmdList,
+  ls: cmdList,
+  show: cmdShow,
+  log: cmdLog,
+  logs: cmdLog,
+  inbox: cmdInbox,
+  questions: cmdInbox,
+  answer: (parsed) => cmdAnswer(parsed, "answer"),
+  approve: (parsed) => cmdAnswer(parsed, "approve"),
+  "send-back": (parsed) => cmdAnswer(parsed, "send-back"),
+  stop: cmdStop,
+  pause: cmdPause,
+  resume: cmdResume,
+  rerun: cmdRerun,
+  workflows: cmdWorkflows,
+  check: cmdCheck,
+  schedule: cmdSchedule,
+  schedules: cmdSchedule,
+  daemon: cmdDaemon,
+  gc: cmdGc,
+  prune: cmdPrune,
+  discard: cmdDiscard,
+  account: (parsed) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message) }),
+  accounts: (parsed) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message) }),
+  doctor: (parsed) => doctor({ live: parsed.flags.live === true, model: str(parsed.flags.model), json: parsed.flags.json === true }),
+};
+
 export async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
   try {
-    if (command === "_worker") return await workerMain(rest[0]!, rest[1] === "resume" ? "resume" : "start");
+    if (command === "_worker") return await workerMain(rest[0]!, rest[1] === "resume" ? "resume" : "start", host);
     const parsed = parseArgs(rest);
     if (!command || command === "help" || command === "--help" || command === "-h" || parsed.flags.help || parsed.flags.h) {
       out(HELP);
       return 0;
     }
-    switch (command) {
-      case "run":
-        return await cmdRun(parsed);
-      case "wait": {
-        const paths = ensureHome(homePaths());
-        return await waitFor(paths, needRecord(paths, parsed.positionals[0]).runId, { json: parsed.flags.json === true });
-      }
-      case "list":
-      case "ls":
-        return cmdList(parsed);
-      case "show":
-        return cmdShow(parsed);
-      case "log":
-      case "logs":
-        return await cmdLog(parsed);
-      case "inbox":
-      case "questions":
-        return cmdInbox(parsed);
-      case "answer":
-        return cmdAnswer(parsed, "answer");
-      case "approve":
-        return cmdAnswer(parsed, "approve");
-      case "send-back":
-        return cmdAnswer(parsed, "send-back");
-      case "stop":
-        return cmdStop(parsed);
-      case "pause":
-        return cmdPause(parsed);
-      case "resume":
-        return await cmdResume(parsed);
-      case "rerun":
-        return await cmdRerun(parsed);
-      case "workflows":
-        return cmdWorkflows(parsed);
-      case "check":
-        return await cmdCheck(parsed);
-      case "schedule":
-      case "schedules":
-        return cmdSchedule(parsed);
-      case "daemon":
-        return await cmdDaemon(parsed);
-      case "gc":
-        return cmdGc(parsed);
-      case "prune":
-        return cmdPrune(parsed);
-      case "discard":
-        return cmdDiscard(parsed);
-      case "account":
-      case "accounts":
-        return await cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message) });
-      case "doctor":
-        return await doctor({ live: parsed.flags.live === true, model: str(parsed.flags.model), json: parsed.flags.json === true });
-      default:
-        throw new Usage(`unknown command "${command}". orc help lists them.`);
-    }
+    const run = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : undefined;
+    if (!run) throw new Usage(`unknown command "${command}". orc help lists them.`);
+    return await run(parsed);
   } catch (error) {
     if (error instanceof Usage) process.stderr.write(`usage: ${error.message}\n`);
     else if (error instanceof InputProblems) process.stderr.write(`${error.message}\n`);

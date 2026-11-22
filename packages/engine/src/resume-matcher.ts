@@ -21,7 +21,7 @@ import {
   type PersistedResumeCallBlocker,
   type PersistedResumeSeed,
   type PersistedRunState,
-} from "./run-persistence.js";
+} from "./runs/persistence/run-persistence.js";
 import {
   appendIndexValue,
   buildResumeExactIndex,

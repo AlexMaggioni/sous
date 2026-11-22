@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { CheckpointContext } from "@orchestrator/shared-types";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import type { PersistedRunState, RunPersistence } from "../src/run-persistence.js";
+import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { projectRunEventForPersistence } from "../src/run-observability.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import type { JournalEntry } from "../src/workflow.js";

@@ -1,11 +1,9 @@
 // The orc home folder (~/.orchestrator, or $ORC_HOME) and a project's .orchestrator folder.
-// A project's workflows win over the home folder's. Agents and MCP servers come from rulesync
-// and the harnesses' own folders (agents.ts).
+// A project's workflows win over the home folder's.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { isHarness, routeHarness, type Harness, type LookupSettings } from "./agents.js";
 
 export type Place = "worktree" | "folder" | "none";
 
@@ -16,8 +14,8 @@ export interface OrcConfig {
   defaultPlace: Place;
   /** Model for agent steps that name none. */
   defaultModel?: string;
-  /** The harness of a rulesync agent that names none in its orc block. */
-  defaultHarness?: Harness;
+  /** The harness of a rulesync agent that names none in its orc block. orc checks the name. */
+  defaultHarness?: string;
   /** The folder that holds the user's global .rulesync folder, such as ~/.aiglobal. */
   rulesyncGlobal?: string;
   /** Send a macOS notice when a run asks something, pauses or ends. */
@@ -112,26 +110,13 @@ export function rememberProject(paths: HomePaths, projectDir: string): void {
   renameSync(temp, paths.projects);
 }
 
+/** The service's own log. */
+export function daemonLog(paths: HomePaths): string {
+  return join(paths.logs, "daemon.log");
+}
+
 export function workflowDirs(projectDir: string, paths: HomePaths = homePaths()): string[] {
   return [join(projectDir, ".orchestrator", "workflows"), paths.workflows];
-}
-
-/** The configured default harness, else the default model's harness, else Claude Code. */
-export function defaultHarness(config: OrcConfig): Harness {
-  if (isHarness(config.defaultHarness)) return config.defaultHarness;
-  return config.defaultModel?.includes("/") ? routeHarness(config.defaultModel)! : "claude";
-}
-
-/** What the agent and MCP lookups need for a project. */
-export function lookupSettings(paths: HomePaths, projectDir: string, config: OrcConfig = loadConfig(paths), env: Record<string, string | undefined> = process.env): LookupSettings {
-  const global = config.rulesyncGlobal?.replace(/^~(?=$|\/)/, homedir());
-  return {
-    projectDir,
-    ...(global ? { rulesyncGlobal: resolve(global) } : {}),
-    defaultHarness: defaultHarness(config),
-    ...(config.defaultModel ? { defaultModel: config.defaultModel } : {}),
-    env,
-  };
 }
 
 /** KEY=VALUE lines from secrets.env. Lines starting with # are skipped. Quotes are removed. */

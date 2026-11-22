@@ -7,11 +7,10 @@
 
 import { createAcpRunner } from "@orchestrator/acp-agents";
 import { WorkflowError, WorkflowErrorCode, type AgentRunner, type McpServerConfig } from "@orchestrator/shared-types";
-import { EXEC_MODEL, type ExecSpec } from "@orchestrator/engine";
+import { EXEC_MODEL, type ExecSpec, type SlotPool } from "@orchestrator/engine";
 import { isHarness, missingServer, planStep, removedHarness, routeHarness, type AgentLookup, type Harness, type McpLookup, type StepGiven } from "./agents.js";
 import { runExecSpec } from "./exec.js";
 import { findProgram, isProgram, PROGRAM_INFO, programVersion, type FoundProgram, type Program, type ProgramLookup } from "./programs.js";
-import type { SlotPool } from "./slots.js";
 
 export interface OrcRunnerOptions {
   /** The run's folder, for steps that don't name one. */

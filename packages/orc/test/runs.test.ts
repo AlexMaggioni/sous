@@ -7,14 +7,9 @@ import { describe, it } from "node:test";
 import { WorkflowError, WorkflowErrorCode, type AgentRunner } from "@orchestrator/shared-types";
 import { checkWorkflow } from "../src/check.js";
 import { dryRun } from "../src/dryrun.js";
-import { main, runningSteps } from "../src/cli.js";
-import { fileSchedules, saveSchedules, tick, unfinishedRuns } from "../src/daemon.js";
-import { gcWorktrees } from "../src/places.js";
-import { ensureHome, homePaths, knownProjects, rememberProject, type HomePaths } from "../src/home.js";
-import { listQuestions, writeAnswer } from "../src/inbox.js";
-import { createRun, logFile } from "../src/launch.js";
-import { listRecords, loadRecord, updateRecord } from "../src/records.js";
-import { managerFor, runWorker } from "../src/worker.js";
+import { main } from "../src/cli.js";
+import { createRun, ensureHome, fileSchedules, gcWorktrees, homePaths, knownProjects, listQuestions, listRecords, loadRecord, logFile, managerFor, rememberProject, runWorker, saveSchedules, tick, unfinishedRuns, updateRecord, writeAnswer, type HomePaths } from "@orchestrator/engine";
+import { host } from "../src/host.js";
 
 // Whole runs in this process, with a fake agent runner, the way `orc run` drives them.
 
@@ -84,8 +79,8 @@ const out = await agent('Do ' + args.task, { label: 'worker', ask: true })
 return out`,
     });
     const { runner, calls } = fakeRunner((call) => (call.label === "worker" ? "QUESTION: Postgres or SQLite?" : `built with ${/answered: (\w+)/.exec(call.prompt)?.[1]}`));
-    const record = createRun(paths, { workflow: "asking", projectDir, inputs: { task: "the store" } });
-    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const record = createRun(paths, host, { workflow: "asking", projectDir, inputs: { task: "the store" } });
+    const running = runWorker(record.runId, "start", { host, paths, inner: runner, pollMs: 20, log: quiet });
     const asked = await answerWhenAsked(paths, record.runId, () => "SQLite");
     const result = await running;
     assert.equal(result?.status, "completed");
@@ -102,8 +97,8 @@ const draft = await breakpoint('Check the plan', (note) => agent('Plan it' + (no
 return draft`,
     });
     const { runner, calls } = fakeRunner((call) => (call.prompt.includes("Change: shorter") ? "short plan" : "long plan"));
-    const record = createRun(paths, { workflow: "checked", projectDir, inputs: {} });
-    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const record = createRun(paths, host, { workflow: "checked", projectDir, inputs: {} });
+    const running = runWorker(record.runId, "start", { host, paths, inner: runner, pollMs: 20, log: quiet });
     const replies = [{ decision: "send back", note: "shorter" }, "approve"];
     const asked = await answerWhenAsked(paths, record.runId, () => replies.shift(), 2);
     const result = await running;
@@ -129,8 +124,8 @@ return { first, second }`,
       if (call.label === "second" && broken) throw new WorkflowError("the tests fail", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true });
       return `${call.label} done`;
     });
-    const record = createRun(paths, { workflow: "flaky", projectDir, inputs: {} });
-    const paused = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const record = createRun(paths, host, { workflow: "flaky", projectDir, inputs: {} });
+    const paused = await runWorker(record.runId, "start", { host, paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal(paused?.status, "paused");
     const state = managerFor(paths, projectDir).getPersistence().load(record.runId);
     assert.equal(state?.pauseReason, "step_failed");
@@ -138,7 +133,7 @@ return { first, second }`,
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"]);
 
     broken = false;
-    const resumed = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: quiet });
+    const resumed = await runWorker(record.runId, "resume", { host, paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal(resumed?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(resumed?.result)), { first: "first done", second: "second done" });
     assert.deepEqual(calls.slice(3).map((c) => c.label), ["second"], "first is not run again");
@@ -161,8 +156,8 @@ return { first, second }`,
       if (call.label === "build" && broken) throw new WorkflowError("the tests fail", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true });
       return `${call.prompt} done`;
     });
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
-    assert.equal((await runWorker(record.runId, "start", { paths, inner: runner, log: quiet }))?.status, "paused");
+    const record = createRun(paths, host, { workflow: "parent", projectDir, inputs: {} });
+    assert.equal((await runWorker(record.runId, "start", { host, paths, inner: runner, log: quiet }))?.status, "paused");
     assert.deepEqual(calls.filter((c) => c.label === "build").map((c) => c.prompt), ["v1", "v1"], "the edit did not reach the run");
 
     const before = process.env.ORC_HOME;
@@ -179,13 +174,13 @@ return { first, second }`,
     }
     assert.match(errors.join(""), /child changed since .*--latest takes the new version.*--same goes on with the version it started with/);
 
-    await runWorker(record.runId, "resume", { paths, inner: runner, log: quiet });
+    await runWorker(record.runId, "resume", { host, paths, inner: runner, log: quiet });
     assert.equal(managerFor(paths, projectDir).getPersistence().load(record.runId)?.status, "paused");
     assert.equal(calls.at(-1)?.prompt, "v1", "a plain resume keeps the run's version");
 
     updateRecord(paths, record.runId, { resumeLatest: true });
     broken = false;
-    const done = await runWorker(record.runId, "resume", { paths, inner: runner, log: quiet });
+    const done = await runWorker(record.runId, "resume", { host, paths, inner: runner, log: quiet });
     assert.equal(done?.result, "v2 done");
     assert.equal(loadRecord(paths, record.runId)?.resumeLatest, undefined);
     assert.equal(calls.filter((c) => c.label === "look").length, 1, "the finished step is not run again");
@@ -205,10 +200,10 @@ return { first, built }`,
         ? new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted"))))
         : `${call.label} done`,
     );
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const record = createRun(paths, host, { workflow: "parent", projectDir, inputs: {} });
     const file = logFile(paths, record.runId);
     const log = (line: string) => appendFileSync(file, `${line}\n`);
-    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log, handleSignals: true });
+    const running = runWorker(record.runId, "start", { host, paths, inner: runner, pollMs: 20, log, handleSignals: true });
     for (let i = 0; i < 500 && !calls.some((c) => c.label === "build"); i++) await new Promise((r) => setTimeout(r, 10));
 
     const before = process.env.ORC_HOME;
@@ -234,7 +229,7 @@ return { first, built }`,
     assert.equal(loadRecord(paths, record.runId)?.stopSteps, undefined);
 
     hang = false;
-    const done = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: quiet });
+    const done = await runWorker(record.runId, "resume", { host, paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), { first: "first done", built: "build done" });
     assert.deepEqual(calls.map((c) => c.label), ["first", "build", "build"], "first is not run again");
@@ -248,33 +243,22 @@ const second = await agent('second', { label: 'second' })
 return { first, second }`,
       vague: `export const meta = { name: 'vague', description: 'vague', timeout: 'soon' }\nreturn 1`,
     });
-    assert.throws(() => createRun(paths, { workflow: "vague", projectDir, inputs: {} }), /meta.timeout must be a time such as "90s", "10m" or "2h", got "soon"/);
+    assert.throws(() => createRun(paths, host, { workflow: "vague", projectDir, inputs: {} }), /meta.timeout must be a time such as "90s", "10m" or "2h", got "soon"/);
 
     let hang = true;
     const { runner, calls } = fakeRunner((call) => (call.label === "second" && hang ? new Promise(() => {}) : `${call.label} done`));
-    const record = createRun(paths, { workflow: "slow", projectDir, inputs: {} });
+    const record = createRun(paths, host, { workflow: "slow", projectDir, inputs: {} });
     assert.equal(record.timeout, "200ms");
-    await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    await runWorker(record.runId, "start", { host, paths, inner: runner, pollMs: 20, log: quiet });
     const state = managerFor(paths, projectDir).getPersistence().load(record.runId);
     assert.equal(state?.status, "paused");
     assert.equal(state?.pauseReason, "time_limit");
     assert.match(String(state?.reason), /step "second" was stopped: the workflow's time limit of 200ms was reached/);
 
     hang = false;
-    const done = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: quiet });
+    const done = await runWorker(record.runId, "resume", { host, paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal(done?.status, "completed");
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"]);
-  });
-
-  it("the running steps come from the log", () => {
-    const text = [
-      "10:00:00 start      first (claude/haiku)",
-      "10:00:01 done       first, 12 tokens",
-      "10:00:01 start      ticket A: build (exec)",
-      "10:00:01 start      ticket B: build",
-      "10:00:02 failed     ticket B: build: the tests fail",
-    ].join("\n");
-    assert.deepEqual(runningSteps(text), ["ticket A: build"]);
   });
 
   it("per-run step changes and a default model reach the agent", async () => {
@@ -283,8 +267,8 @@ return { first, second }`,
 return await agent('review', { label: 'reviewer' })`,
     });
     const { runner, calls } = fakeRunner(() => "ok");
-    const record = createRun(paths, { workflow: "changes", projectDir, inputs: {}, overrides: { reviewer: { model: "claude/opus" } } });
-    await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const record = createRun(paths, host, { workflow: "changes", projectDir, inputs: {}, overrides: { reviewer: { model: "claude/opus" } } });
+    await runWorker(record.runId, "start", { host, paths, inner: runner, log: quiet });
     assert.equal(calls[0]!.options.model, "claude/opus");
     // Each step keeps its own start and end time.
     const step = managerFor(paths, projectDir).getPersistence().load(record.runId)!.agents[0]!;
@@ -308,8 +292,8 @@ return await agent('second', { label: 'second' })`,
       }
       return "ok";
     });
-    const record = createRun(paths, { workflow: "slow", projectDir, inputs: {} });
-    const running = runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const record = createRun(paths, host, { workflow: "slow", projectDir, inputs: {} });
+    const running = runWorker(record.runId, "start", { host, paths, inner: runner, log: quiet });
     await started;
     const before = process.env.ORC_HOME;
     process.env.ORC_HOME = paths.home;
@@ -336,8 +320,8 @@ const step = await js('return { project: process.env.ORC_PROJECT, cwd: process.c
 return step.result`,
     });
     const { runner } = fakeRunner(() => "ok");
-    const record = createRun(paths, { workflow: "where", projectDir, inputs: {} });
-    const result = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const record = createRun(paths, host, { workflow: "where", projectDir, inputs: {} });
+    const result = await runWorker(record.runId, "start", { host, paths, inner: runner, log: quiet });
     const found = result!.result as { project: string; cwd: string };
     assert.equal(found.project, projectDir);
     assert.notEqual(realpathSync(found.cwd), realpathSync(projectDir));
@@ -355,8 +339,8 @@ try { await workflow('child', { rounds: 1 }) } catch (error) { missing = error.m
 return { given, missing }`,
     });
     const { runner } = fakeRunner(() => "ok");
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
-    const result = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const record = createRun(paths, host, { workflow: "parent", projectDir, inputs: {} });
+    const result = await runWorker(record.runId, "start", { host, paths, inner: runner, log: quiet });
     const out = result!.result as { given: Record<string, unknown>; missing: string };
     assert.deepEqual(out.given, { task: "fix it", rounds: 2, test: "npm test" });
     assert.match(out.missing, /workflow\("child"\): missing input --task/);
@@ -371,8 +355,8 @@ await agent('look', { label: 'triage' })
 return await parallel(['A', 'B'].map((id) => () => workflow('child', { task: id }, { label: 'ticket ' + id })))`,
     });
     const { runner } = fakeRunner(() => "ok");
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
-    await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const record = createRun(paths, host, { workflow: "parent", projectDir, inputs: {} });
+    await runWorker(record.runId, "start", { host, paths, inner: runner, log: quiet });
     const before = process.env.ORC_HOME;
     process.env.ORC_HOME = paths.home;
     const printed: string[] = [];
@@ -405,9 +389,9 @@ await workflow('child', { task: 'A' }, { label: 'ticket A' })
 return await workflow('child', { task: 'B' })`,
     });
     const { runner } = fakeRunner(() => "ok");
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const record = createRun(paths, host, { workflow: "parent", projectDir, inputs: {} });
     const lines: string[] = [];
-    await runWorker(record.runId, "start", { paths, inner: runner, log: (line) => lines.push(line.slice(9)) });
+    await runWorker(record.runId, "start", { host, paths, inner: runner, log: (line) => lines.push(line.slice(9)) });
     const kept = lines.filter((l) => /^(start|done|phase|log) /.test(l) && !l.includes("Logs persisted"));
     assert.deepEqual(kept.map((l) => l.replace(/, \d+ tokens$/, "")), [
       "start      triage",
@@ -444,8 +428,8 @@ await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness 
       (call.options.onModelResolved as ((id: string) => void) | undefined)?.(String(call.options.model).split("/").pop()!);
       return `${call.label} done`;
     });
-    const record = createRun(paths, { workflow: "both", projectDir, inputs: {} });
-    const result = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const record = createRun(paths, host, { workflow: "both", projectDir, inputs: {} });
+    const result = await runWorker(record.runId, "start", { host, paths, inner: runner, log: quiet });
     assert.equal(result?.status, "completed");
     const [claude, codex] = calls;
     assert.deepEqual([claude!.options.model, claude!.options.toolNames], ["claude/haiku", ["Read"]]);
@@ -460,8 +444,8 @@ await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness 
     assert.deepEqual(state?.agents.map((step) => [step.label, step.model]), [["on claude", "claude/haiku"], ["on codex", "codex/gpt-test"]]);
 
     const before = calls.length;
-    const wrong = createRun(paths, { workflow: "wrong", projectDir, inputs: { harness: "claude" } });
-    const stopped = await runWorker(wrong.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const wrong = createRun(paths, host, { workflow: "wrong", projectDir, inputs: { harness: "claude" } });
+    const stopped = await runWorker(wrong.runId, "start", { host, paths, inner: runner, pollMs: 20, log: quiet });
     assert.notEqual(stopped?.status, "completed");
     const wrongState = managerFor(paths, projectDir).getPersistence().load(wrong.runId);
     assert.match(String(wrongState?.reason), /step "fixer": agent "fixer" comes from .*fixer\.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code\. Move it to rulesync/);
@@ -487,18 +471,18 @@ describe("places and reruns", () => {
       if (call.label === "writer") writeFileSync(join(String(call.options.cwd), "new.txt"), "hello\n");
       return "done";
     });
-    const reader = createRun(paths, { workflow: "look", projectDir, inputs: {} });
-    const writer = createRun(paths, { workflow: "write", projectDir, inputs: {} });
+    const reader = createRun(paths, host, { workflow: "look", projectDir, inputs: {} });
+    const writer = createRun(paths, host, { workflow: "write", projectDir, inputs: {} });
     assert.ok(existsSync(reader.worktree!) && existsSync(writer.worktree!));
-    await runWorker(reader.runId, "start", { paths, inner: runner, log: quiet });
-    await runWorker(writer.runId, "start", { paths, inner: runner, log: quiet });
+    await runWorker(reader.runId, "start", { host, paths, inner: runner, log: quiet });
+    await runWorker(writer.runId, "start", { host, paths, inner: runner, log: quiet });
     assert.equal(existsSync(reader.worktree!), false, "nothing changed, so the worktree is gone");
     assert.equal(git(projectDir, "branch", "--list", reader.branch!), "", "and its branch");
     assert.equal(existsSync(join(writer.worktree!, "new.txt")), true, "the writer's work stays for review");
 
     // Cleanup keeps the worktree of a run that has not finished, even with no commit yet, and
     // removes a finished run's worktree once its branch is merged.
-    const waiting = createRun(paths, { workflow: "look", projectDir, inputs: {} });
+    const waiting = createRun(paths, host, { workflow: "look", projectDir, inputs: {} });
     git(writer.worktree!, "add", "new.txt");
     git(writer.worktree!, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "work");
     git(projectDir, "merge", "-q", writer.branch!);
@@ -531,15 +515,15 @@ const build = await agent('build ' + plan, { label: 'builder' })
 return build`,
     });
     const { runner, calls } = fakeRunner((call) => (call.label === "planner" ? "the plan" : `built: ${call.prompt}`));
-    const first = createRun(paths, { workflow: "two", projectDir, inputs: {} });
-    await runWorker(first.runId, "start", { paths, inner: runner, log: quiet });
+    const first = createRun(paths, host, { workflow: "two", projectDir, inputs: {} });
+    await runWorker(first.runId, "start", { host, paths, inner: runner, log: quiet });
     writeFileSync(join(projectDir, ".orchestrator", "workflows", "two.js"), `export const meta = { name: 'two', description: 'two steps' }
 const plan = await agent('plan it', { label: 'planner' })
 const build = await agent('build carefully ' + plan, { label: 'builder' })
 return build`);
-    const again = createRun(paths, { workflow: "two", projectDir, inputs: {}, reuseFrom: first, origin: "rerun", rerunOf: first.runId });
+    const again = createRun(paths, host, { workflow: "two", projectDir, inputs: {}, reuseFrom: first, origin: "rerun", rerunOf: first.runId });
     assert.equal(again.cwd, first.cwd);
-    const result = await runWorker(again.runId, "start", { paths, inner: runner, log: quiet });
+    const result = await runWorker(again.runId, "start", { host, paths, inner: runner, log: quiet });
     assert.equal(result?.result, "built: build carefully the plan");
     assert.deepEqual(calls.map((c) => c.label), ["planner", "builder", "builder"], "the planner ran once");
   });
@@ -550,11 +534,11 @@ return build`);
       open: `export const meta = { name: 'open', description: 'anyone' }\nreturn 2`,
       picker: `export const meta = { name: 'picker', description: 'lets an agent pick' }\nreturn await choose('Pick one', { any: true })`,
     });
-    assert.throws(() => createRun(paths, { workflow: "private", projectDir, inputs: {}, startedByRun: "r1" }), /started by people only/);
-    assert.ok(createRun(paths, { workflow: "private", projectDir, inputs: {} }), "a person can");
+    assert.throws(() => createRun(paths, host, { workflow: "private", projectDir, inputs: {}, startedByRun: "r1" }), /started by people only/);
+    assert.ok(createRun(paths, host, { workflow: "private", projectDir, inputs: {} }), "a person can");
     const { runner, calls } = fakeRunner(() => ({ choice: "open", reason: "it is open" }));
-    const record = createRun(paths, { workflow: "picker", projectDir, inputs: {} });
-    const result = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const record = createRun(paths, host, { workflow: "picker", projectDir, inputs: {} });
+    const result = await runWorker(record.runId, "start", { host, paths, inner: runner, log: quiet });
     assert.match(calls[0]!.prompt, /- open: anyone/);
     assert.doesNotMatch(calls[0]!.prompt, /private/);
     assert.equal((result?.result as { result: unknown }).result, 2);
@@ -618,10 +602,10 @@ describe("service", () => {
     saveSchedules(paths, [{ name: "n", workflow: join(projectDir, ".orchestrator", "workflows", "nightly.js"), projectDir, cron: "0 3 * * *", inputs: {}, enabled: true, createdAt: "" }]);
     const started: string[] = [];
     const spawn = (runId: string) => started.push(runId);
-    tick(paths, { now: new Date(2026, 10, 21, 2, 59), spawn, log: quiet });
+    tick(paths, host, { now: new Date(2026, 10, 21, 2, 59), spawn, log: quiet });
     assert.equal(started.length, 0);
-    tick(paths, { now: new Date(2026, 10, 21, 3, 0, 5), spawn, log: quiet });
-    tick(paths, { now: new Date(2026, 10, 21, 3, 0, 40), spawn, log: quiet });
+    tick(paths, host, { now: new Date(2026, 10, 21, 3, 0, 5), spawn, log: quiet });
+    tick(paths, host, { now: new Date(2026, 10, 21, 3, 0, 40), spawn, log: quiet });
     assert.equal(started.length, 1, "once in that minute");
     const record = loadRecord(paths, started[0]!);
     assert.equal(record?.origin, "schedule");
@@ -633,7 +617,7 @@ describe("service", () => {
     const persistence = manager.getPersistence() as unknown as { save?: (state: unknown) => void };
     if (typeof persistence.save === "function") {
       persistence.save({ runId: started[0], status: "paused", pauseReason: "requested", startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), agents: [], logs: [], phases: [] });
-      tick(paths, { now: new Date(2026, 10, 22, 3, 0), spawn, log: (line) => lines.push(line) });
+      tick(paths, host, { now: new Date(2026, 10, 22, 3, 0), spawn, log: (line) => lines.push(line) });
       assert.equal(started.length, 1);
       assert.match(lines.join("\n"), /skipped, run .* has not finished/);
     }
@@ -645,15 +629,15 @@ describe("service", () => {
     const file = join(projectDir, ".orchestrator", "workflows", "nightly.js");
     const started: string[] = [];
     const spawn = (runId: string) => started.push(runId);
-    tick(paths, { now: new Date(2026, 10, 21, 3, 0), spawn, log: quiet });
+    tick(paths, host, { now: new Date(2026, 10, 21, 3, 0), spawn, log: quiet });
     assert.equal(started.length, 0, "the service does not know the project yet");
 
-    createRun(paths, { workflow: "hand", projectDir, inputs: {} });
+    createRun(paths, host, { workflow: "hand", projectDir, inputs: {} });
     assert.deepEqual(knownProjects(paths), [projectDir]);
     assert.deepEqual(fileSchedules(paths).map((schedule) => [schedule.name, schedule.cron]), [[file, "0 3 * * *"]]);
-    tick(paths, { now: new Date(2026, 10, 22, 2, 59), spawn, log: quiet });
-    tick(paths, { now: new Date(2026, 10, 22, 3, 0, 5), spawn, log: quiet });
-    tick(paths, { now: new Date(2026, 10, 22, 3, 0, 40), spawn, log: quiet });
+    tick(paths, host, { now: new Date(2026, 10, 22, 2, 59), spawn, log: quiet });
+    tick(paths, host, { now: new Date(2026, 10, 22, 3, 0, 5), spawn, log: quiet });
+    tick(paths, host, { now: new Date(2026, 10, 22, 3, 0, 40), spawn, log: quiet });
     assert.equal(started.length, 1, "once in that minute");
     const record = loadRecord(paths, started[0]!);
     assert.equal(record?.origin, "schedule");
@@ -675,7 +659,7 @@ describe("service", () => {
     mkdirSync(paths.workflows, { recursive: true });
     writeFileSync(join(paths.workflows, "digest.js"), `export const meta = { name: 'digest', description: 'd', place: 'worktree', schedule: '@daily' }\nreturn 1`);
     const started: string[] = [];
-    tick(paths, { now: new Date(2026, 10, 22, 0, 0), spawn: (runId: string) => started.push(runId), log: quiet });
+    tick(paths, host, { now: new Date(2026, 10, 22, 0, 0), spawn: (runId: string) => started.push(runId), log: quiet });
     assert.equal(started.length, 1);
     const record = loadRecord(paths, started[0]!);
     assert.equal(record?.place, "none");
@@ -685,18 +669,19 @@ describe("service", () => {
 
   it("tells the user once about a run cut off by a crash and leaves it for them to resume, while a limit pause resumes", () => {
     const { paths, projectDir } = setup({ job: `export const meta = { name: 'job', description: 'j' }\nreturn 1` });
-    const cut = createRun(paths, { workflow: "job", projectDir, inputs: {} });
-    const limited = createRun(paths, { workflow: "job", projectDir, inputs: {} });
+    const cut = createRun(paths, host, { workflow: "job", projectDir, inputs: {} });
+    const limited = createRun(paths, host, { workflow: "job", projectDir, inputs: {} });
     const persistence = managerFor(paths, projectDir).getPersistence() as unknown as { save: (state: unknown) => void };
     const at = new Date(2026, 10, 21, 10, 0).toISOString();
     const base = { startedAt: at, updatedAt: at, agents: [], logs: [], phases: [] };
     persistence.save({ ...base, runId: cut.runId, status: "paused", pauseReason: "interrupted" });
-    persistence.save({ ...base, runId: limited.runId, status: "paused", pauseReason: "usage_limit", resetHint: "Resets at 2026-11-21T10:30:00.000Z" });
+    // A real paused state keeps its script, and the service resumes only when the file still matches it.
+    persistence.save({ ...base, runId: limited.runId, status: "paused", pauseReason: "usage_limit", resetHint: "Resets at 2026-11-21T10:30:00.000Z", script: readFileSync(limited.file, "utf8") });
     const spawned: string[] = [];
     const told: string[] = [];
     const deps = { spawn: (runId: string) => spawned.push(runId), notify: (title: string, body: string) => told.push(`${title}: ${body}`), log: quiet };
-    tick(paths, { ...deps, now: new Date("2026-11-21T11:00:00.000Z") });
-    tick(paths, { ...deps, now: new Date("2026-11-21T11:05:00.000Z") });
+    tick(paths, host, { ...deps, now: new Date("2026-11-21T11:00:00.000Z") });
+    tick(paths, host, { ...deps, now: new Date("2026-11-21T11:05:00.000Z") });
     assert.deepEqual(spawned, [limited.runId]);
     assert.deepEqual(told, [`job was cut off: orc resume ${cut.runId} goes on from where it stopped`]);
   });

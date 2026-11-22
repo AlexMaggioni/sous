@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { AgentSessionRecord, AgentSessionRef } from "@orchestrator/shared-types";
-import { WORKFLOW_RUNS_DIR } from "../src/config.js";
-import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import { createRunPersistence, generateRunId, type PersistedRunState, type RunPersistence } from "../src/run-persistence.js";
-import { WorkflowManager } from "../src/workflow-manager.js";
-import { ORCHESTRATOR_PERSISTENCE_ROOT_ENV, workflowProjectPaths } from "../src/workflow-paths.js";
-import { withFakeHomeAsync } from "./helpers/fake-home.js";
+import { WORKFLOW_RUNS_DIR } from "../../../src/config.js";
+import { WorkflowError, WorkflowErrorCode } from "../../../src/errors.js";
+import { createRunPersistence, generateRunId, type PersistedRunState, type RunPersistence } from "../../../src/runs/persistence/run-persistence.js";
+import { WorkflowManager } from "../../../src/workflow-manager.js";
+import { ORCHESTRATOR_PERSISTENCE_ROOT_ENV } from "../../../src/workflow-paths.js";
+import { workflowProjectPaths } from "../../../src/runs/persistence/project-paths.js";
+import { withFakeHomeAsync } from "../../helpers/fake-home.js";
 
 // Run state now lives under the user's workflow home (~/.orchestrator/engine/projects/<key>/runs),
 // with the project-relative `.agentprism/workflows/runs` (WORKFLOW_RUNS_DIR) read/cleaned as the
@@ -282,7 +283,7 @@ test(
     const persistenceRoot = mkdtempSync(join(tmpdir(), "ap-dw-old-fixture-"));
     try {
       const fixture = JSON.parse(
-        readFileSync(join(import.meta.dirname, "fixtures", "pre-contract-run.json"), "utf8"),
+        readFileSync(join(import.meta.dirname, "..", "..", "fixtures", "pre-contract-run.json"), "utf8"),
       ) as PersistedRunState;
       const persistence = createRunPersistence(cwd, undefined, { persistenceRoot });
       persistence.save(fixture);
