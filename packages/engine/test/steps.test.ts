@@ -171,6 +171,23 @@ describe("steps on the fake programs", () => {
     assert.deepEqual(gauges, [0.0012, 0.0012, 0.0012, 0.0012, 0.0012]);
   });
 
+  it("gives the program the model of an agent file that names its harness, without the harness", async () => {
+    const place = fakePlace();
+    write(join(place.cwd, ".claude", "agents", "nobash.md"), "---\nname: nobash\nmodel: claude/haiku\n---\n");
+    write(join(place.cwd, ".codex", "agents", "fixer.toml"), 'name = "fixer"\ndescription = "Fixes"\ndeveloper_instructions = "Fix."\nmodel = "codex/gpt-6.1-sol"\n');
+    const home = join(place.dir, "home");
+    const env = { CLAUDE_CONFIG_DIR: join(home, ".claude"), CODEX_HOME: join(home, ".codex"), XDG_CONFIG_HOME: join(home, ".config") };
+    const agents = lookupAgents({ projectDir: place.cwd, rulesyncGlobal: join(place.dir, "aiglobal"), env });
+    const steps = createSteps(onFakes(place, { agents }));
+    try {
+      await steps.run("hi", { label: "a", agentType: "nobash" } as never);
+      await steps.run("hi", { label: "b", agentType: "fixer" } as never);
+    } finally {
+      await steps.dispose();
+    }
+    assert.deepEqual(place.lines().map((line) => [line.program, line.model]), [["claude", "haiku"], ["codex", "gpt-6.1-sol"]]);
+  });
+
   it("records the harness alone as the model of an agent that picks none", async () => {
     const place = fakePlace();
     write(join(place.cwd, ".rulesync", "subagents", "reviewer.md"), "---\nname: reviewer\ndescription: reviews\ntargets: [\"*\"]\n---\nAnswer CODEX.\n");

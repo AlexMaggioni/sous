@@ -83,12 +83,17 @@ const ADAPTERS: Record<HarnessId, (lookup: FindOptions) => Adapter> = { claude: 
 /** Schema repair turns when the step sets none. */
 const REPAIRS = 2;
 
-/** The model a harness takes: the spec without its harness. A harness alone gives none. */
+/**
+ * The model a harness takes: the spec without its harness. A harness alone gives none. An agent
+ * file whose model names its harness, such as `model: claude/haiku`, gives the spec
+ * claude/claude/haiku, which the journal and the run record keep, so the harness is dropped twice.
+ */
 export function stepModel(spec: string | undefined): string | undefined {
   if (!spec) return undefined;
   const [first, ...rest] = spec.split("/");
   if (!isHarness(first!.toLowerCase())) return spec;
-  return rest.length ? rest.join("/") : undefined;
+  const model = rest[0]?.toLowerCase() === first!.toLowerCase() ? rest.slice(1) : rest;
+  return model.length ? model.join("/") : undefined;
 }
 
 const isFailure = (error: unknown): error is HarnessFailure => error instanceof Error && "failure" in error;
