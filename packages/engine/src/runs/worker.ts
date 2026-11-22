@@ -287,6 +287,9 @@ async function runOnAccounts(
     : undefined;
 
   let result: WorkflowRunResult | undefined;
+  // Why a resumed run stopped again, so the log can say it. A run paused for a lost login
+  // pauses again at once while the login is still gone, and only this message says so.
+  let why: string | undefined;
   try {
     if (mode === "start") {
       log(`${stamp()} run        ${record.workflow} in ${record.cwd}`);
@@ -305,7 +308,10 @@ async function runOnAccounts(
         const state = manager.getPersistence().load(runId);
         throw new Error(`run ${runId} cannot resume (status ${state?.status ?? "unknown"}${state?.reason ? `: ${state.reason}` : ""})`);
       }
-      result = await resumed.promise.catch(() => undefined);
+      result = await resumed.promise.catch((error: unknown) => {
+        why = error instanceof Error ? error.message : String(error);
+        return undefined;
+      });
     }
   } finally {
     clearTimeout(limitTimer);
@@ -324,8 +330,8 @@ async function runOnAccounts(
   if (status !== "paused" || stopping) removeRunQuestions(paths, runId);
   updateRecord(paths, runId, { pid: undefined });
   const reason = state?.pauseReason ? ` (${state.pauseReason}${state.resetHint ? `, ${state.resetHint}` : ""})` : "";
-  const error = result?.reason ?? state?.reason;
-  log(`${stamp()} ${status.padEnd(10)} ${record.workflow}${reason}${status === "failed" && error ? `: ${oneLine(String(error), 400)}` : ""}`);
+  const error = status === "paused" ? why : status === "failed" ? (result?.reason ?? state?.reason) : undefined;
+  log(`${stamp()} ${status.padEnd(10)} ${record.workflow}${reason}${error ? `: ${oneLine(String(error), 400)}` : ""}`);
   const atLimit = status === "paused" && state?.pauseReason === "usage_limit" && !stopping;
   const limitText = atLimit ? limitNotice(paths, loadRecord(paths, runId) ?? record, state?.resetHint) : undefined;
   if (limitText) log(`${stamp()} limit      ${limitText}`);

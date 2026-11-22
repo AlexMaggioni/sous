@@ -33,7 +33,12 @@ import type { SlotPool } from "../runs/slots.js";
 import { buildPrompt, checkImages, CONTINUATION_INSTRUCTION, extractValidated, REPROMPT_TEXT, toMcpServer, validateValue } from "./answer.js";
 
 /** The runner a test or the dry run gives instead of the programs. */
-export type InnerRunner = AgentRunner & { dispose?: () => Promise<void> | void };
+export type InnerRunner = AgentRunner & { dispose?: () => Promise<void> | void; auth?: LoginCheck };
+
+/** The engine asks it before it resumes a run that paused for a lost login. */
+interface LoginCheck {
+  canResume(harness: string): boolean;
+}
 
 export interface StepsOptions {
   /** The run's folder, for steps that don't name one. */
@@ -113,7 +118,7 @@ const toHistory = (entry: HistoryEntry): AgentHistoryEntry => ({
   timestamp: entry.at,
 });
 
-export function createSteps(options: StepsOptions): AgentRunner & { dispose(): Promise<void> } {
+export function createSteps(options: StepsOptions): AgentRunner & { dispose(): Promise<void>; auth: LoginCheck } {
   const lookup = options.programs ?? (options.inner ? undefined : () => ({}));
   const programs = new Map<HarnessId, Promise<Adapter | { problem: string }>>();
 
@@ -205,6 +210,10 @@ export function createSteps(options: StepsOptions): AgentRunner & { dispose(): P
 
   return {
     run: run as AgentRunner["run"],
+    // A run paused for a lost login may resume: each step starts its program, which reads the
+    // login again. If it is still gone, the step fails the same way and the run pauses again.
+    // A runner that stands in for the programs answers for its own login.
+    auth: { canResume: (harness) => options.inner?.auth?.canResume(harness) ?? true },
     async dispose() {
       for (const pending of programs.values()) {
         const program = await pending;

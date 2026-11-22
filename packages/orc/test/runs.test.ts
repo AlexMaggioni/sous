@@ -162,6 +162,39 @@ return { first, second }`,
     assert.deepEqual(calls.slice(3).map((c) => c.label), ["second"], "first is not run again");
   });
 
+  it("a run paused for a lost login says why a resume cannot start, and resumes once the person logs in again", async () => {
+    const { paths, projectDir } = setup({
+      login: `export const meta = { name: 'login', description: 'loses its login' }
+const first = await agent('first', { label: 'first' })
+const second = await agent('second', { label: 'second' })
+return { first, second }`,
+    });
+    let loggedIn = false;
+    const { runner, calls } = fakeRunner((call) => {
+      if (call.label === "second" && !loggedIn) {
+        throw new WorkflowError("Claude Code is not logged in.", WorkflowErrorCode.AUTH_REQUIRED, { recoverable: false, agentLabel: "second", authContext: { backendId: "claude", methods: [] } });
+      }
+      return `${call.label} done`;
+    });
+    // The stand-in for the programs knows whether its login is back.
+    Object.assign(runner, { auth: { canResume: () => loggedIn } });
+    const record = createRun(paths, { workflow: "login", projectDir, inputs: {} });
+    await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    assert.equal(managerFor(paths, projectDir).getPersistence().load(record.runId)?.pauseReason, "auth_required");
+    assert.deepEqual(calls.map((c) => c.label), ["first", "second"]);
+
+    const lines: string[] = [];
+    await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: (line) => lines.push(line) });
+    assert.equal(calls.length, 2, "no step runs while the login is still gone");
+    assert.match(lines.at(-1)!, /paused +login \(auth_required\): .*claude/, "the log says why the resume did not start");
+
+    loggedIn = true;
+    const done = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: quiet });
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), { first: "first done", second: "second done" });
+    assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"], "first is not run again");
+  });
+
   it("a run keeps the workflows it started with, and resume asks before it takes an edit", async () => {
     const childFile = (projectDir: string) => join(projectDir, ".orchestrator", "workflows", "child.js");
     const child = (version: string) => `export const meta = { name: 'child', description: 'child' }\nreturn await agent('${version}', { label: 'build' })`;
