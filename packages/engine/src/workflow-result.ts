@@ -239,8 +239,6 @@ export interface JournalEntry {
 /** Resume correspondence policy selected for a manager-prepared new execution. */
 export type ResumePolicy = "auto" | "positional";
 
-export type WorkflowResumeStrategy = "identity-v1" | "positional-v1" | "live";
-
 export type WorkflowResumeMatch = "path-hash" | "unique-hash" | "index-hash";
 
 export type WorkflowResumeFallbackReason =
@@ -550,7 +548,6 @@ export interface WorkflowCallRecord {
   /** The emitting engine run's runId. Manager persists root-scope records only. */
   scope?: string;
 }
-
 
 export interface WorkflowRunInspectionOptions {
   /** Latest matching journal entries. Default 20; valid range 1..50. */

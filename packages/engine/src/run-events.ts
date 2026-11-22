@@ -165,22 +165,6 @@ export interface RunErrorPayload extends RunEventOrigin {
 export interface RunStoppedPayload extends RunEventOrigin {}
 export interface RunResumedPayload extends RunEventOrigin {}
 
-/**
- * Dependency-neutral shape of the SDK-only ACP bridge. The shared package types the stable
- * context envelope; a host binds Name/Event to AcpRunnerEventMap.
- * `runId` is optional because backend_error and runner activity outside a workflow have no run.
- */
-export interface RunAgentEventPayload<Name extends string = string, Event = unknown> {
-  name: Name;
-  event: Event;
-  backendId: string;
-  sessionId?: string;
-  label?: string;
-  runId?: string;
-  scope?: string;
-  callIndex?: number;
-}
-
 export type RunLogEvent = { type: "log" } & RunLogPayload;
 export type RunPhaseEvent = { type: "phase" } & RunPhasePayload;
 export type RunAgentStartEvent = { type: "agentStart" } & RunAgentStartPayload;
@@ -196,8 +180,6 @@ export type RunPausedEvent = { type: "paused" } & RunPausedPayload;
 export type RunErrorEvent = { type: "error" } & RunErrorPayload;
 export type RunStoppedEvent = { type: "stopped" } & RunStoppedPayload;
 export type RunResumedEvent = { type: "resumed" } & RunResumedPayload;
-export type RunAgentEventEvent<Name extends string = string, Event = unknown> =
-  { type: "agentEvent" } & RunAgentEventPayload<Name, Event>;
 
 /** Engine-manager events only; the SDK adds the specialized agentEvent branch. */
 export type EngineRunEvent =
@@ -219,13 +201,6 @@ export type EngineRunEvent =
 
 /** Engine events admitted by the frozen persistence policy. */
 export type PersistableEngineRunEvent = Exclude<EngineRunEvent, RunAgentHistoryEvent>;
-
-/** Full stable union. The type parameter lets the SDK bind the ACP event map without a cycle. */
-export type RunEvent<AgentEvent extends RunAgentEventEvent = RunAgentEventEvent> =
-  | EngineRunEvent
-  | AgentEvent;
-
-export type RunEventName = RunEvent["type"];
 
 export type RunEventPayload<Event extends { type: string }> =
   Event extends unknown ? Omit<Event, "type"> : never;

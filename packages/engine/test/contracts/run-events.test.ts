@@ -11,8 +11,6 @@ import type {
   EngineRunEventPayloadMap,
   PersistedRunEvent,
   RunAgentEndPayload,
-  RunAgentEventEvent,
-  RunAgentEventPayload,
   RunAgentHistoryPayload,
   RunAgentProgressPayload,
   RunAgentStartPayload,
@@ -20,9 +18,7 @@ import type {
   RunCallRecordPayload,
   RunCompletePayload,
   RunErrorPayload,
-  RunEvent,
   RunEventLogRecord,
-  RunEventName,
   RunJournalPayload,
   RunLogPayload,
   RunPausedPayload,
@@ -56,7 +52,6 @@ type ExpectedEngineEventName =
   | "stopped"
   | "resumed";
 type _EngineNamesExact = Assert<Equal<EngineRunEventName, ExpectedEngineEventName>>;
-type _FullRunEventNamesExact = Assert<Equal<RunEventName, ExpectedEngineEventName | "agentEvent">>;
 
 type ExpectedPayloadMap = {
   log: RunLogPayload;
@@ -77,12 +72,6 @@ type ExpectedPayloadMap = {
 };
 type _PayloadMapForward = Assert<EngineRunEventPayloadMap extends ExpectedPayloadMap ? true : false>;
 type _PayloadMapBackward = Assert<ExpectedPayloadMap extends EngineRunEventPayloadMap ? true : false>;
-
-type DefaultAgentBranch = Extract<RunEvent, { type: "agentEvent" }>;
-type _DefaultAgentBranch = Assert<DefaultAgentBranch extends RunAgentEventEvent<string, unknown> ? true : false>;
-type ExampleAgentEvent = { type: "agentEvent" } & RunAgentEventPayload<"message", { text: string }>;
-type SpecializedRunEvent = RunEvent<ExampleAgentEvent>;
-type _SpecializedAgentBranch = Assert<Equal<Extract<SpecializedRunEvent, { type: "agentEvent" }>, ExampleAgentEvent>>;
 
 type _PersistedHistoryExcluded = Assert<IsNever<Extract<PersistedRunEvent, { type: "agentHistory" }>>>;
 type _PersistedAgentEventExcluded = Assert<IsNever<Extract<PersistedRunEvent, { type: "agentEvent" }>>>;
@@ -105,30 +94,6 @@ function exhaustiveEngineName(event: EngineRunEvent): EngineRunEventName {
     case "error":
     case "stopped":
     case "resumed":
-      return event.type;
-    default:
-      return assertNever(event);
-  }
-}
-
-function exhaustiveRunEventName(event: RunEvent): RunEventName {
-  switch (event.type) {
-    case "log":
-    case "phase":
-    case "agentStart":
-    case "agentEnd":
-    case "agentHistory":
-    case "agentProgress":
-    case "agentTranscript":
-    case "tokenUsage":
-    case "complete":
-    case "journal":
-    case "callRecord":
-    case "paused":
-    case "error":
-    case "stopped":
-    case "resumed":
-    case "agentEvent":
       return event.type;
     default:
       return assertNever(event);
@@ -196,10 +161,9 @@ function requiredStreamIdFixture(record: Omit<RunEventLogRecord, "streamId">): v
 }
 void requiredStreamIdFixture;
 
-test("run-event public contract exposes all engine and relay branches", () => {
+test("run-event contract exposes all engine branches", () => {
   const event: EngineRunEvent = { type: "log", runId: "run-1", scope: "run-1", message: "hello" };
   assert.equal(exhaustiveEngineName(event), "log");
-  assert.equal(exhaustiveRunEventName(event), "log");
   assert.equal(RUN_EVENT_LOG_VERSION, 1);
 });
 

@@ -265,10 +265,6 @@ function isNonNegativeFinite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
-function isOptional(value: unknown, predicate: (candidate: unknown) => boolean): boolean {
-  return value === undefined || predicate(value);
-}
-
 function hasOwn(value: Record<string, unknown>, key: string): boolean {
   return Object.hasOwn(value, key);
 }

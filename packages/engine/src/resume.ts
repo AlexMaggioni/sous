@@ -2,8 +2,6 @@ import type {
   AgentSessionRecord,
   ResumePolicy,
   WorkflowCallRecord,
-  WorkflowResumeCallFailedReason,
-  WorkflowResumeCallLiveReason,
   WorkflowResumeDisabledReason,
   WorkflowResumeFallbackReason,
 } from "./workflow-result.js";
@@ -24,53 +22,6 @@ export interface ContinuationCandidate {
 export interface PreparedContinuation {
   readonly candidatesByIndex: ReadonlyMap<number, ContinuationCandidate>;
 }
-
-export const RESUME_FALLBACK_REASONS = Object.freeze([
-  "legacy-recording",
-  "crash-residue",
-  "inputs-format-legacy",
-  "forced-positional",
-  "unsafe-recording",
-  "nested-workflows",
-  "legacy-resume",
-] as const satisfies readonly WorkflowResumeFallbackReason[]);
-
-export const RESUME_DISABLED_REASONS = Object.freeze([
-  "unsupported-format",
-  "source-not-terminal",
-  "abort-residue",
-  "isolation-recording",
-  "resume-metadata-missing",
-  "manifest-invalid",
-  "cwd-mismatch",
-  "runtime-mismatch",
-  "environment-missing",
-  "environment-mismatch",
-  "source-environment-drift",
-  "resume-seed-invalid",
-] as const satisfies readonly WorkflowResumeDisabledReason[]);
-
-export const RESUME_CALL_LIVE_REASONS = Object.freeze([
-  "strategy-live",
-  "positional-miss",
-  "positional-suffix",
-  "not-recorded",
-  "path-missing",
-  "inputs-missing",
-  "inputs-changed",
-  "ambiguous-identity",
-  "ambiguous-content",
-  "candidate-consumed",
-  "empty-output",
-  "safety-changed",
-  "unsafe-suffix",
-  "worktree-degraded",
-] as const satisfies readonly WorkflowResumeCallLiveReason[]);
-
-export const RESUME_CALL_FAILED_REASONS = Object.freeze([
-  "seed-persistence-error",
-  "resume-fatal-latch",
-] as const satisfies readonly WorkflowResumeCallFailedReason[]);
 
 /** Validates legacy diagnostic provenance for recording tests and migration tooling.
  * Never use this helper to decide whether a journal result may replay. */

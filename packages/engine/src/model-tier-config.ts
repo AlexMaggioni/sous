@@ -12,9 +12,9 @@
  * concrete harness/model id.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { MODEL_TIERS_FILE } from "./config.js";
 
 // ---------------------------------------------------------------------------
@@ -36,31 +36,6 @@ export interface ModelTierConfig {
 /** Path to the model tiers JSON config file (~/.agentprism/workflows/model-tiers.json). */
 export function getModelTierConfigPath(): string {
   return join(homedir(), MODEL_TIERS_FILE);
-}
-
-// ---------------------------------------------------------------------------
-// Defaults
-// ---------------------------------------------------------------------------
-
-/**
- * Build a default tier config where every tier points at a single model — the
- * caller's currently active model when known, else the first of `availableModels`.
- *
- * The available-model list is now SOURCED FROM THE HOST (which derives it from the
- * ACP backend's configOptions) and passed in, rather than from Pi's
- * `listAvailableModelSpecs()` / ModelRegistry. The engine carries no provider
- * registry, so an empty list simply yields empty tier specs (the session default
- * then applies downstream).
- */
-export function buildDefaultTierConfig(currentModelSpec?: string, availableModels: string[] = []): ModelTierConfig {
-  const model = currentModelSpec ?? availableModels[0] ?? "";
-  return {
-    tiers: {
-      small: model,
-      medium: model,
-      big: model,
-    },
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -88,18 +63,6 @@ export function loadModelTierConfig(configPath?: string): ModelTierConfig | null
   }
 }
 
-/**
- * Save a model tier config to disk. Creates parent directories if needed.
- */
-export function saveModelTierConfig(config: ModelTierConfig, configPath?: string): void {
-  const path = configPath ?? getModelTierConfigPath();
-  const dir = dirname(path);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  writeFileSync(path, JSON.stringify(config, null, 2), "utf-8");
-}
-
 // ---------------------------------------------------------------------------
 // Resolve / helpers
 // ---------------------------------------------------------------------------
@@ -110,11 +73,4 @@ export function saveModelTierConfig(config: ModelTierConfig, configPath?: string
  */
 export function resolveTierModel(tier: string, config: ModelTierConfig): string | undefined {
   return config.tiers[tier];
-}
-
-/** Return all tier names sorted: small < medium < big, then alphabetically. */
-export function sortedTierNames(config: ModelTierConfig): string[] {
-  const names = Object.keys(config.tiers);
-  const rank: Record<string, number> = { small: 0, medium: 1, big: 2 };
-  return names.sort((a, b) => (rank[a] ?? 99) - (rank[b] ?? 99) || a.localeCompare(b));
 }

@@ -211,8 +211,3 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
  *  NO wrapper — usage is separate (onUsage). Must be JSON-round-trippable.
  *  NAME = AgentResult (Phase-1 deliverable name); `AgentRunResult` is the lift-compat alias. */
 export type AgentResult<S extends TSchema | undefined = undefined> = S extends TSchema ? Static<S> : string;
-
-/** Lift-compat aliases over the Phase-1-canonical names (same types). Ported pi
- *  engine/runner code importing the old names still resolves. */
-export type AgentRunOptions<S extends TSchema | undefined = undefined> = RunOptions<S>;
-export type AgentRunResult<S extends TSchema | undefined = undefined> = AgentResult<S>;

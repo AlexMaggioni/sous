@@ -19,7 +19,6 @@ import type {
   JournalEntry,
   ResumePolicy,
   TokenUsage,
-  WorkflowBackendConfig,
   WorkflowCallRecord,
   WorkflowCheckpointTaken,
   WorkflowCheckpointResolution,

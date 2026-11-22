@@ -47,14 +47,3 @@ export function isRunEnvironmentIdentity(value: unknown): value is RunEnvironmen
   const git = environment.git as Record<string, unknown>;
   return typeof git.head === "string" && typeof git.dirtyDigest === "string";
 }
-
-export function environmentsEqual(
-  left: RunEnvironmentIdentity | undefined,
-  right: RunEnvironmentIdentity | undefined,
-): boolean {
-  if (!isRunEnvironmentIdentity(left) || !isRunEnvironmentIdentity(right)) return false;
-  if (left.git && right.git) {
-    return left.git.head === right.git.head && left.git.dirtyDigest === right.git.dirtyDigest;
-  }
-  return left.key !== undefined && right.key !== undefined && left.key === right.key;
-}

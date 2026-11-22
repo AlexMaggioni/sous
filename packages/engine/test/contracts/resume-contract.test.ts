@@ -17,9 +17,11 @@ import type {
   WorkflowResumeMatch,
   WorkflowResumeReport,
   WorkflowResumeSafety,
-  WorkflowResumeStrategy,
   WorkflowRunResult,
 } from "../../src/workflow-result.js";
+
+// The strategies a resume report records.
+type WorkflowResumeStrategy = WorkflowResumeReport["strategy"];
 
 const POLICIES = ["auto", "positional"] as const satisfies readonly ResumePolicy[];
 const STRATEGIES = ["identity-v1", "positional-v1", "live"] as const satisfies readonly WorkflowResumeStrategy[];

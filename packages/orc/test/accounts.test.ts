@@ -14,16 +14,16 @@ import {
   limitNotice,
   listAccounts,
   loadRecord,
-  managerFor,
   removeAccount,
-  runWorker,
   useAccount,
-  WorkflowError,
-  WorkflowErrorCode,
-  type AgentRunner,
   type HomePaths,
   type RunRecord,
 } from "@orchestrator/engine";
+// orc does not import these, so the engine entry does not export them. The tests load the
+// engine's built modules by path. They are the same modules the entry loads.
+import { WorkflowError, WorkflowErrorCode } from "../../engine/dist/errors.js";
+import { managerFor, runWorker } from "../../engine/dist/runs/worker.js";
+import type { AgentRunner } from "../../engine/dist/steps/agent-runner.js";
 import { cmdAccount } from "../src/account-cli.js";
 import { main } from "../src/cli.js";
 

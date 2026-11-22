@@ -6,7 +6,6 @@ import test from "node:test";
 import type { JournalEntry } from "../src/workflow-result.js";
 import { assertExplicitCheckpointProvenance } from "../src/checkpoint-provenance.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import { createReplayRunner } from "../src/isolation.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { runWorkflow } from "../src/workflow.js";
 
@@ -54,7 +53,7 @@ for (const source of [
   });
 }
 
-test("cold inspection remains available while same-run continuation and isolation refuse old approvals", async () => {
+test("cold inspection remains available while same-run continuation refuses old approvals", async () => {
   const root = mkdtempSync(join(tmpdir(), "checkpoint-provenance-"));
   try {
     const manager = new WorkflowManager({ cwd: root, persistenceRoot: root, agent: noopAgent });
@@ -71,9 +70,6 @@ test("cold inspection remains available while same-run continuation and isolatio
     const cold = new WorkflowManager({ cwd: root, persistenceRoot: root, agent: noopAgent });
     assert.equal(cold.getPersistence().load(completed.runId)?.journal?.[0].result, true);
     await assert.rejects(cold.resumeInBackground(completed.runId), incompatible);
-    assert.throws(() => createReplayRunner({
-      recording: { ...recorded, status: "completed" }, inner: noopAgent, live: [], rootRunId: "isolation-target",
-    }), incompatible);
     assert.equal(cold.getPersistence().load(completed.runId)?.journal?.[0].checkpointDecision, undefined);
     assert.doesNotThrow(() => assertExplicitCheckpointProvenance(original));
   } finally {

@@ -180,24 +180,6 @@ export function resolveAgentType(name: string | undefined, registry: AgentRegist
 }
 
 /**
- * Apply a definition's tool policy to a tool list: keep only allowlisted names
- * (when an allowlist is given), then drop any denylisted names. Generic over any
- * object with a `name` so it is unit-testable without real ToolDefinitions.
- */
-export function applyToolPolicy<T extends { name: string }>(tools: T[], allow?: string[], deny?: string[]): T[] {
-  let out = tools;
-  if (allow?.length) {
-    const allowSet = new Set(allow);
-    out = out.filter((t) => allowSet.has(t.name));
-  }
-  if (deny?.length) {
-    const denySet = new Set(deny);
-    out = out.filter((t) => !denySet.has(t.name));
-  }
-  return out;
-}
-
-/**
  * A stable identity string for a resolved definition, folded into the resume
  * call-hash so editing an agent `.md` invalidates that call's cached result.
  */
@@ -213,9 +195,4 @@ export function agentDefinitionKey(def: AgentDefinition | undefined): string | n
     ...(def.effort ? { effort: def.effort } : {}),
     prompt: def.prompt,
   });
-}
-
-/** List registered agent types for discoverability in the tool guideline. */
-export function listAgentTypes(registry: AgentRegistry): Array<{ name: string; description?: string }> {
-  return [...registry.values()].map((d) => ({ name: d.name, description: d.description }));
 }

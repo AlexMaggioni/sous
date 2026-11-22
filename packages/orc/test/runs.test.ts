@@ -12,23 +12,23 @@ import {
   fileSchedules,
   gcWorktrees,
   homePaths,
-  knownProjects,
   listQuestions,
   listRecords,
   loadRecord,
   logFile,
-  managerFor,
   rememberProject,
-  runWorker,
   saveSchedules,
-  tick,
-  updateRecord,
-  WorkflowError,
-  WorkflowErrorCode,
   writeAnswer,
-  type AgentRunner,
   type HomePaths,
 } from "@orchestrator/engine";
+// orc does not import these, so the engine entry does not export them. The tests load the
+// engine's built modules by path. They are the same modules the entry loads.
+import { WorkflowError, WorkflowErrorCode } from "../../engine/dist/errors.js";
+import { knownProjects } from "../../engine/dist/runs/home.js";
+import { updateRecord } from "../../engine/dist/runs/records.js";
+import { tick } from "../../engine/dist/runs/service.js";
+import { managerFor, runWorker } from "../../engine/dist/runs/worker.js";
+import type { AgentRunner } from "../../engine/dist/steps/agent-runner.js";
 import { checkWorkflow } from "../src/check.js";
 import { main } from "../src/cli.js";
 

@@ -8,8 +8,6 @@ import {
   type AgentDefinition,
   type AgentRegistry,
   agentDefinitionKey,
-  applyToolPolicy,
-  listAgentTypes,
   loadAgentRegistry,
   parseAgentDefinition,
   resolveAgentType,
@@ -125,7 +123,7 @@ describe("loadAgentRegistry", () => {
   });
 });
 
-describe("resolveAgentType / listAgentTypes", () => {
+describe("resolveAgentType", () => {
   const reg: AgentRegistry = new Map([
     ["a", { name: "a", description: "A agent", prompt: "be a", source: "project" } as AgentDefinition],
   ]);
@@ -133,39 +131,6 @@ describe("resolveAgentType / listAgentTypes", () => {
     assert.equal(resolveAgentType("a", reg)?.name, "a");
     assert.equal(resolveAgentType("missing", reg), undefined);
     assert.equal(resolveAgentType(undefined, reg), undefined);
-  });
-  it("lists names + descriptions", () => {
-    assert.deepEqual(listAgentTypes(reg), [{ name: "a", description: "A agent" }]);
-  });
-});
-
-// ── applyToolPolicy ────────────────────────────────────────────────────────
-
-describe("applyToolPolicy", () => {
-  const tools = [{ name: "read" }, { name: "write" }, { name: "bash" }, { name: "edit" }];
-  it("returns all tools when no policy", () => {
-    assert.deepEqual(
-      applyToolPolicy(tools).map((t) => t.name),
-      ["read", "write", "bash", "edit"],
-    );
-  });
-  it("keeps only the allowlist", () => {
-    assert.deepEqual(
-      applyToolPolicy(tools, ["read", "grep"]).map((t) => t.name),
-      ["read"],
-    );
-  });
-  it("removes the denylist", () => {
-    assert.deepEqual(
-      applyToolPolicy(tools, undefined, ["write", "bash"]).map((t) => t.name),
-      ["read", "edit"],
-    );
-  });
-  it("applies allowlist then denylist", () => {
-    assert.deepEqual(
-      applyToolPolicy(tools, ["read", "write"], ["write"]).map((t) => t.name),
-      ["read"],
-    );
   });
 });
 

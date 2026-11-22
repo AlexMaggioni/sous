@@ -2,24 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { WorkflowCallRecord, WorkflowResumeCallDecision } from "../src/workflow-result.js";
-import {
-  CALL_INPUTS_FORMAT,
-  CALL_PATH_FORMAT,
-  CHECKPOINT_INPUTS_FORMAT,
-  RESUME_CALL_FAILED_REASONS,
-  RESUME_CALL_LIVE_REASONS,
-  RESUME_DISABLED_REASONS,
-  RESUME_FALLBACK_REASONS,
-} from "../src/index.js";
+import { CALL_INPUTS_FORMAT, CALL_PATH_FORMAT, CHECKPOINT_INPUTS_FORMAT, type WorkflowRunOptions } from "../src/workflow.js";
+import type { PreparedResume } from "../src/resume.js";
 import type {
   PersistedCheckpointInjection,
   PersistedResumeCandidate,
   PersistedResumeFormat,
   PersistedResumeSeed,
   PersistedRunState,
-  PreparedResume,
-  WorkflowRunOptions,
-} from "../src/index.js";
+} from "../src/runs/persistence/run-persistence.js";
 
 const HASH = "a".repeat(64);
 
@@ -146,61 +137,10 @@ const identityState: PersistedRunState = {
   },
 };
 
-test("incremental resume format constants and frozen reason arrays match the contract", () => {
+test("incremental resume format constants match the contract", () => {
   assert.equal(CALL_PATH_FORMAT, 1);
   assert.equal(CALL_INPUTS_FORMAT, 2);
   assert.equal(CHECKPOINT_INPUTS_FORMAT, 2);
-  assert.deepEqual(RESUME_FALLBACK_REASONS, [
-    "legacy-recording",
-    "crash-residue",
-    "inputs-format-legacy",
-    "forced-positional",
-    "unsafe-recording",
-    "nested-workflows",
-    "legacy-resume",
-  ]);
-  assert.deepEqual(RESUME_DISABLED_REASONS, [
-    "unsupported-format",
-    "source-not-terminal",
-    "abort-residue",
-    "isolation-recording",
-    "resume-metadata-missing",
-    "manifest-invalid",
-    "cwd-mismatch",
-    "runtime-mismatch",
-    "environment-missing",
-    "environment-mismatch",
-    "source-environment-drift",
-    "resume-seed-invalid",
-  ]);
-  assert.deepEqual(RESUME_CALL_LIVE_REASONS, [
-    "strategy-live",
-    "positional-miss",
-    "positional-suffix",
-    "not-recorded",
-    "path-missing",
-    "inputs-missing",
-    "inputs-changed",
-    "ambiguous-identity",
-    "ambiguous-content",
-    "candidate-consumed",
-    "empty-output",
-    "safety-changed",
-    "unsafe-suffix",
-    "worktree-degraded",
-  ]);
-  assert.deepEqual(RESUME_CALL_FAILED_REASONS, [
-    "seed-persistence-error",
-    "resume-fatal-latch",
-  ]);
-  for (const reasons of [
-    RESUME_FALLBACK_REASONS,
-    RESUME_DISABLED_REASONS,
-    RESUME_CALL_LIVE_REASONS,
-    RESUME_CALL_FAILED_REASONS,
-  ]) {
-    assert.equal(Object.isFrozen(reasons), true);
-  }
 });
 
 test("persisted and prepared resume declaration fixtures cover every branch", () => {
