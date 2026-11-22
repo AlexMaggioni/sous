@@ -82,7 +82,6 @@ test("projectRunEventForPersistence redacts every retained string surface withou
     callIndex: 4,
     usage: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, total: 10, cost: 0.25 },
     modelResolved: allSecrets,
-    modelFallbacks: Array.from({ length: 22 }, (_, index) => `${allSecrets}-${index}`),
     backendId: allSecrets,
     provenance: {
       source: "live",
@@ -108,7 +107,6 @@ test("projectRunEventForPersistence redacts every retained string surface withou
   assert.equal(projected.event.type, "agentEnd");
   if (projected.event.type === "agentEnd") {
     assert.equal("session" in projected.event, false);
-    assert.equal(projected.event.modelFallbacks?.length, 20);
     assert.equal(projected.event.provenance?.source, "live");
     assert.deepEqual(
       projected.event.provenance?.source === "live"
@@ -375,7 +373,6 @@ test("ordinary maximum-cardinality projections for every persisted variant fit o
       label: text,
       result: { text },
       callIndex: 0,
-      modelFallbacks: Array.from({ length: 20 }, () => text),
       errorRecord,
     },
     { type: "tokenUsage", ...origin, usage: { input: 1, output: 1, total: 2, cost: 0 } },

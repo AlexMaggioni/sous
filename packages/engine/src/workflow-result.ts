@@ -113,8 +113,7 @@ export interface AgentSessionRecord extends AgentSessionRef {
   keptOpen: boolean;
 }
 
-/** One notice observed while serving an agent() call: a model-selection degrade
- *  (kind "model"/"modifier") OR a continuation attempt on resume (kind "continuation"). */
+/** One notice observed while serving an agent() call: a continuation attempt on resume. */
 export interface WorkflowRunFallback {
   /** The owning agent() call's deterministic index. */
   callIndex: number;
@@ -123,11 +122,9 @@ export interface WorkflowRunFallback {
   /** For continuation: the model/tier spec the engine asked the runner to serve on the continued
    *  call (identical to the interrupted call's — the hash proves it). */
   requestedSpec: string;
-  /** Concrete model selected by the runner, when it reported one. */
-  resolvedModel?: string;
   /** Actual backend that opened the session, when the runner reported one. */
   backendId?: string;
-  kind: "model" | "modifier" | "continuation";
+  kind: "continuation";
   /** The human-readable line emitted to the workflow log. */
   message: string;
   /** Present when — and only when — the engine emits `kind: "continuation"`. See the emission
@@ -507,8 +504,6 @@ export interface WorkflowCallRecord {
   modelResolved?: string;
   /** The terminal attempt's runner-reported backendId, when reported. */
   backendId?: string;
-  /** True when any attempt reported a model fallback. */
-  modelFallback?: true;
   /** True when the engine created a git worktree for this call. */
   worktree?: boolean;
   /** The resolved isolation request at call time; absent when none. */

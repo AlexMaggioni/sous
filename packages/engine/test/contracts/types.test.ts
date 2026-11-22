@@ -79,10 +79,10 @@ test("run-result observability entries are exported and remain additive", () => 
     label: "review",
     phase: "Review",
     requestedSpec: "gpt-example[high]",
-    resolvedModel: "gpt-example",
     backendId: "codex",
-    kind: "modifier",
-    message: 'review: model "gpt-example[high]: reasoning_effort "high" not advertised" unavailable — using the session default',
+    kind: "continuation",
+    continuation: { outcome: "reattached", method: "resume" },
+    message: "continuation: reattached via session/resume",
   };
   const checkpoint: WorkflowCheckpointTaken = {
     callIndex: 2,
@@ -106,7 +106,7 @@ test("run-result observability entries are exported and remain additive", () => 
     checkpointsTaken: [checkpoint],
   };
   assert.equal(legacyResult.fallbacks, undefined);
-  assert.equal(observedResult.fallbacks?.[0]?.kind, "modifier");
+  assert.equal(observedResult.fallbacks?.[0]?.kind, "continuation");
   assert.equal(observedResult.checkpointsTaken?.[0]?.source, "journal-replay");
   assert.equal(statusExcludesFallbacks, true);
   assert.equal(statusExcludesCheckpoints, true);

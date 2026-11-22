@@ -356,7 +356,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
     scope: string;
     usage?: AgentUsage;
     modelResolved?: string;
-    modelFallbacks?: string[];
     backendId?: string;
     provenance?: AgentResultProvenance;
     errorRecord?: WorkflowRecordedError;
@@ -1388,7 +1387,6 @@ export async function runWorkflow<T = unknown>(
       let attemptsRan = 0;
       let observedTokens = 0;
       const sealedUsage: AgentUsage[] = [];
-      const modelFallbacks: string[] = [];
       const continuationCandidate = preparedContinuation?.candidatesByIndex.get(callIndex);
 
       interface AttemptSlots {
@@ -1398,7 +1396,6 @@ export async function runWorkflow<T = unknown>(
         /** The session's cumulative cost gauge at release; folded into the recorded ref. */
         sessionCostGauge?: number;
         modelResolved?: string;
-        modelFallbacks: string[];
         provenance?: AgentResultProvenance;
         history?: AgentHistoryEntry[];
       }
@@ -1423,7 +1420,6 @@ export async function runWorkflow<T = unknown>(
         if (slot.sealed) return;
         slot.sealed = true;
         if (slot.usage) sealedUsage.push(slot.usage);
-        modelFallbacks.push(...slot.modelFallbacks);
       };
 
       const sessionRecord = (slot: AttemptSlots, keptOpen: boolean): AgentSessionRecord | undefined =>
@@ -1494,7 +1490,6 @@ export async function runWorkflow<T = unknown>(
           ...(usage ? { usage } : {}),
           ...(slot?.modelResolved ? { modelResolved: slot.modelResolved } : {}),
           ...(slot?.sessionRef?.backendId ? { backendId: slot.sessionRef.backendId } : {}),
-          ...(modelFallbacks.length ? { modelFallback: true as const } : {}),
           ...(worktree?.isolated ? { worktree: true } : {}),
           ...(runCwd !== undefined && origin === "runner" ? { resolvedCwd: runCwd } : {}),
           ...(resumeDeclared && resolvedIsolation === undefined
@@ -1520,7 +1515,6 @@ export async function runWorkflow<T = unknown>(
           session,
           usage,
           modelResolved: slot?.modelResolved,
-          modelFallbacks: modelFallbacks.length ? [...modelFallbacks] : undefined,
           backendId: slot?.sessionRef?.backendId,
           provenance: slot?.provenance,
           errorRecord,
@@ -1578,7 +1572,7 @@ export async function runWorkflow<T = unknown>(
         }
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          const slot: AttemptSlots = { sealed: false, modelFallbacks: [] };
+          const slot: AttemptSlots = { sealed: false };
           const resumingTurn = attempt === 1 && continuationCandidate !== undefined && !continuationSkipReason;
           const continueFromSession = (resumingTurn ? continuationCandidate.sessionRef : undefined)
             ?? sessionForLabel(agentOptions.continue);
@@ -1659,25 +1653,6 @@ export async function runWorkflow<T = unknown>(
                     slot.modelResolved = id;
                     displayModel = id;
                   },
-                  onModelFallback: (spec: string) => {
-                    if (slot.sealed) return;
-                    slot.modelFallbacks.push(spec);
-                    const message = `${label}: model "${spec}" unavailable — using the session default`;
-                    log(message);
-                    const fallback: WorkflowRunFallback = deepFreeze({
-                      callIndex,
-                      label,
-                      ...(assignedPhase === undefined ? {} : { phase: assignedPhase }),
-                      requestedSpec: modelSpec ?? agentOptions.tier ?? spec,
-                      ...(slot.sessionRef?.backendId === undefined ? {} : { backendId: slot.sessionRef.backendId }),
-                      kind: "model",
-                      message,
-                    });
-                    if (!state.fallbacks.some((entry) => sameFallback(entry, fallback))) {
-                      state.fallbacks.push(fallback);
-                      options.onFallback?.(fallback);
-                    }
-                  },
                   onUsage: (reported: AgentUsage) => {
                     if (slot.sealed) return;
                     const copied = copyValidUsage(reported);
@@ -1755,7 +1730,6 @@ export async function runWorkflow<T = unknown>(
               ...(usage ? { usage } : {}),
               ...(slot.modelResolved ? { modelResolved: slot.modelResolved } : {}),
               ...(slot.sessionRef?.backendId ? { backendId: slot.sessionRef.backendId } : {}),
-              ...(modelFallbacks.length ? { modelFallback: true as const } : {}),
               ...(worktree?.isolated ? { worktree: true } : {}),
               resolvedCwd: runCwd,
               ...(resumeDeclared && resolvedIsolation === undefined
@@ -1802,7 +1776,6 @@ export async function runWorkflow<T = unknown>(
               session,
               usage,
               modelResolved: slot.modelResolved,
-              modelFallbacks: modelFallbacks.length ? [...modelFallbacks] : undefined,
               backendId: slot.sessionRef?.backendId,
               provenance: slot.provenance,
             });
@@ -3156,28 +3129,14 @@ export async function runWorkflow<T = unknown>(
 }
 
 function sameFallback(left: WorkflowRunFallback, right: WorkflowRunFallback): boolean {
-  if (left.kind === "continuation" || right.kind === "continuation") {
-    return (
-      left.kind === "continuation" &&
-      right.kind === "continuation" &&
-      left.callIndex === right.callIndex &&
-      ((left.continuation?.outcome === "reattached" &&
-        right.continuation?.outcome === "reattached" &&
-        left.continuation.method === right.continuation.method) ||
-        (left.continuation?.outcome === "skipped" &&
-          right.continuation?.outcome === "skipped" &&
-          left.continuation.reason === right.continuation.reason))
-    );
-  }
   return (
     left.callIndex === right.callIndex &&
-    left.label === right.label &&
-    left.phase === right.phase &&
-    left.requestedSpec === right.requestedSpec &&
-    left.resolvedModel === right.resolvedModel &&
-    left.backendId === right.backendId &&
-    left.kind === right.kind &&
-    left.message === right.message
+    ((left.continuation?.outcome === "reattached" &&
+      right.continuation?.outcome === "reattached" &&
+      left.continuation.method === right.continuation.method) ||
+      (left.continuation?.outcome === "skipped" &&
+        right.continuation?.outcome === "skipped" &&
+        left.continuation.reason === right.continuation.reason))
   );
 }
 

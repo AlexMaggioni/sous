@@ -646,7 +646,6 @@ function projectCallRecord(
       ? {}
       : { modelResolved: projectText(record.modelResolved, state) }),
     ...(record.backendId === undefined ? {} : { backendId: projectText(record.backendId, state) }),
-    ...(record.modelFallback === undefined ? {} : { modelFallback: record.modelFallback }),
     ...(record.worktree === undefined ? {} : { worktree: record.worktree }),
     ...(record.isolation === undefined ? {} : { isolation: record.isolation }),
     ...(record.resolvedCwd === undefined ? {} : { resolvedCwd: projectText(record.resolvedCwd, state) }),
@@ -699,10 +698,6 @@ export function projectRunEventForPersistence(
       };
       break;
     case "agentEnd": {
-      const modelFallbacks = event.modelFallbacks
-        ?.slice(0, MAX_OBJECT_KEYS)
-        .map((fallback) => projectText(fallback, state));
-      state.truncated ||= (event.modelFallbacks?.length ?? 0) > MAX_OBJECT_KEYS;
       projected = {
         type: "agentEnd",
         ...origin(),
@@ -720,7 +715,6 @@ export function projectRunEventForPersistence(
         ...(event.modelResolved === undefined
           ? {}
           : { modelResolved: projectText(event.modelResolved, state) }),
-        ...(modelFallbacks === undefined ? {} : { modelFallbacks }),
         ...(event.backendId === undefined ? {} : { backendId: projectText(event.backendId, state) }),
         ...(event.provenance === undefined ? {} : { provenance: projectProvenance(event.provenance, state) }),
         ...(event.errorRecord === undefined

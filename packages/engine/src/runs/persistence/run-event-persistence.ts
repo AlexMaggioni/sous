@@ -454,7 +454,6 @@ function isCallRecord(value: unknown, projected: boolean): boolean {
     !hasOptional(value, "modelRequested", text) ||
     !hasOptional(value, "modelResolved", text) ||
     !hasOptional(value, "backendId", text) ||
-    !hasOptional(value, "modelFallback", (candidate) => candidate === true) ||
     !hasOptional(value, "worktree", isBoolean) ||
     !hasOptional(value, "isolation", (candidate) => candidate === "worktree") ||
     !hasOptional(value, "resolvedCwd", text) ||
@@ -532,7 +531,6 @@ function isPersistableInputEvent(value: unknown): value is PersistableEngineRunE
         hasRequired(value, "callIndex", isNonNegativeSafeInteger) &&
         hasOptional(value, "usage", isAgentUsage) &&
         hasOptional(value, "modelResolved", isString) &&
-        hasOptional(value, "modelFallbacks", (candidate) => Array.isArray(candidate) && candidate.every(isString)) &&
         hasOptional(value, "backendId", isString) &&
         hasOptional(value, "provenance", (candidate) => isProvenance(candidate, false)) &&
         hasOptional(value, "errorRecord", (candidate) => isRecordedError(candidate, false))
@@ -605,7 +603,6 @@ function isPersistedEvent(value: unknown): boolean {
         hasRequired(value, "callIndex", isNonNegativeSafeInteger) &&
         hasOptional(value, "usage", isAgentUsage) &&
         hasOptional(value, "modelResolved", isProjectedText) &&
-        hasOptional(value, "modelFallbacks", (candidate) => Array.isArray(candidate) && candidate.length <= 20 && candidate.every(isProjectedText)) &&
         hasOptional(value, "backendId", isProjectedText) &&
         hasOptional(value, "provenance", (candidate) => isProvenance(candidate, true)) &&
         hasOptional(value, "errorRecord", (candidate) => isRecordedError(candidate, true)) &&

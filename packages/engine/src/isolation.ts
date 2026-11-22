@@ -51,7 +51,6 @@ export interface ReplayCallReport {
   modelRequested?: string;
   overrideModel?: string;
   resolvedModel?: string;
-  modelFallbacks?: string[];
   backendId?: string;
   error?: string;
   errorCode?: WorkflowErrorCode;

@@ -449,7 +449,7 @@ const EXPECTED_EVENT_KEYS: Record<string, string[]> = {
   phase: ["runId", "scope", "title"],
   agentStart: ["callIndex", "configOptions", "label", "model", "path", "phase", "prompt", "runId", "scope"],
   agentEnd: [
-    "backendId", "callIndex", "label", "model", "modelFallbacks", "modelResolved", "phase",
+    "backendId", "callIndex", "label", "model", "modelResolved", "phase",
     "provenance", "result", "runId", "scope", "session", "tokens", "usage", "worktree",
   ],
   agentHistory: ["callIndex", "history", "label", "phase", "runId", "scope"],

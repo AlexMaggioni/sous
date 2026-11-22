@@ -299,9 +299,8 @@ inspection. Every paused, failed, or aborted `WorkflowRunResult` has a redacted 
 (present even when empty); completed results omit it and preserve the full raw `logs` array.
 
 Two optional terminal audit arrays are persisted alongside that state. `fallbacks` records
-continuation reattach/skip outcomes (and remains compatible with model/modifier entries); model
-selection itself emits no entries because harness errors propagate through the existing
-agent-error path.
+continuation reattach/skip outcomes. Model selection emits no entries because harness errors
+propagate through the existing agent-error path.
 `checkpointsTaken` records each checkpoint
 that resolved in this execution with its journaled decision and source: `live`, `journal-replay`,
 or `injected` from `checkpointReplies`. Pausing checkpoints are omitted. Both

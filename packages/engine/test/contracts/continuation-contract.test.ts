@@ -74,7 +74,7 @@ test("WorkflowRunFallback stays flat and permissive while producer fixtures obey
     callIndex: 0,
     label: "legacy",
     requestedSpec: "codex/default",
-    kind: "model",
+    kind: "continuation",
     message: "using the session default",
   };
   const emittedContinuation: WorkflowRunFallback = {
@@ -97,7 +97,7 @@ test("WorkflowRunFallback stays flat and permissive while producer fixtures obey
     callIndex: 3,
     label: "future-detail",
     requestedSpec: "codex/gpt",
-    kind: "model",
+    kind: "continuation",
     continuation: { outcome: "skipped", reason: "runner-declined" },
     message: "accepted on a non-continuation kind",
   };

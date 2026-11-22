@@ -69,7 +69,7 @@ export interface PromptImage {
  * (orchestratorRunExtras), and the steps module reads fields by name, so a renamed field
  * can stop reaching it without a compile error. Engine-passed core fields: label, schema,
  * signal, instructions, images, model, mode, tier, toolNames, disallowedToolNames, cwd,
- * onModelResolved, onModelFallback, onUsage, and onHistory. Plus run inputs that wire
+ * onModelResolved, onUsage, and onHistory. Plus run inputs that wire
  * infrastructure, so none enters the resume identity hash (hashAgentCall): `mcpServers`,
  * `runId`, and the session hand-off fields `onSessionOpen` / `continueFromSession`. A
  * script's configOptions, meta, promptMeta and keepSession stay in the call's identity and
@@ -122,8 +122,6 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
   onResultProvenance?: (provenance: AgentResultProvenance) => void;
   /** The actually-resolved concrete model id (display/telemetry). */
   onModelResolved?: (modelId: string) => void;
-  /** A requested model/tier/phase spec that wasn't found (fell back to the session default). */
-  onModelFallback?: (requestedSpec: string) => void;
   /** A compact snapshot of this subagent's message/tool history (diagnostic only). */
   onHistory?: (history: AgentHistoryEntry[]) => void;
   /** Client-provided MCP servers for this step. The harness gets each one in place of a

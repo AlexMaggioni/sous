@@ -54,7 +54,6 @@ export interface RunAgentEndPayload extends RunEventOrigin {
   callIndex: number;
   usage?: AgentUsage;
   modelResolved?: string;
-  modelFallbacks?: string[];
   backendId?: string;
   provenance?: AgentResultProvenance;
   errorRecord?: WorkflowRecordedError;
