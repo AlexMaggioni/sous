@@ -845,8 +845,14 @@ export class CodexAcpClient {
         let serversToConfigure = requestedServers;
         if (shouldDeduplicateMcpConflicts()) {
             // Prevents Codex from deep-merging incompatible field types, such as url and stdio schemas.
-            const existingNames = await this.getConfigMcpServerNames(projectPath);
-            serversToConfigure = requestedServers.filter(mcp => !existingNames.has(mcp.name));
+            // orchestrator: a requested server with the same transport as the configured one of that
+            // name replaces it, so the client's definition wins. Only a transport mismatch keeps the
+            // configured server.
+            const existing = await this.getConfigMcpServerTransports(projectPath);
+            serversToConfigure = requestedServers.filter(mcp => {
+                const transports = existing.get(mcp.name);
+                return transports === undefined || [...transports].every(transport => transport === mcpTransport(mcp.server));
+            });
         }
         if (serversToConfigure.length === 0) {
             return configWithWorkspaceRoots;
@@ -858,7 +864,8 @@ export class CodexAcpClient {
         };
     }
 
-    private async getConfigMcpServerNames(projectPath: string): Promise<Set<string>> {
+    /** orchestrator: each configured MCP server name with the transports its config layers give it. */
+    private async getConfigMcpServerTransports(projectPath: string): Promise<Map<string, Set<"stdio" | "http">>> {
         const response = await this.codexClient.configRead({ includeLayers: true, cwd: projectPath });
         const effectiveMcpServers = response?.config?.["mcp_servers"];
         const configLayers = response?.layers ?? [];
@@ -866,10 +873,16 @@ export class CodexAcpClient {
             return isJsonObject(layer.config) ? layer.config["mcp_servers"] : undefined;
         });
         const configuredMcpServers = [effectiveMcpServers, ...layerMcpServers].filter(isJsonObject);
-        if (configuredMcpServers.length === 0) {
-            return new Set();
+        const transports = new Map<string, Set<"stdio" | "http">>();
+        for (const servers of configuredMcpServers) {
+            for (const [name, server] of Object.entries(servers)) {
+                const seen = transports.get(name) ?? new Set<"stdio" | "http">();
+                if (isJsonObject(server) && "url" in server) seen.add("http");
+                if (isJsonObject(server) && "command" in server) seen.add("stdio");
+                transports.set(name, seen);
+            }
         }
-        return new Set(configuredMcpServers.flatMap(server => Object.keys(server)));
+        return transports;
     }
 
     getModelProvider(): string | null {
@@ -1320,6 +1333,12 @@ function formatUriAsLink(name: string | null | undefined, uri: string): string {
         return `[@${fileName}](${uri})`;
     }
     return uri;
+}
+
+/** orchestrator: the transport Codex config gives an ACP MCP server: url for http, command for stdio. */
+function mcpTransport(server: McpServer): "stdio" | "http" | "other" {
+    if (!("type" in server)) return "stdio";
+    return server.type === "http" ? "http" : "other";
 }
 
 function shouldDeduplicateMcpConflicts(): boolean {

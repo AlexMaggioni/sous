@@ -1101,6 +1101,54 @@ describe('ACP server test', { timeout: 40_000 }, () => {
         });
     });
 
+    // orchestrator: the client's server wins over a configured one of the same name and transport.
+    it('replaces a configured MCP server with the requested one of the same name and transport', async () => {
+        const mockFixture = createCodexMockTestFixture();
+        const codexAcpClient = mockFixture.getCodexAcpClient();
+        const codexAppServerClient = mockFixture.getCodexAppServerClient();
+
+        vi.spyOn(codexAppServerClient, "listSkills").mockResolvedValue({data: []});
+        vi.spyOn(codexAppServerClient, "configRead").mockResolvedValue({
+            config: {
+                mcp_servers: {
+                    words: {command: "node", args: ["word-server.mjs", "DECOY"]},
+                    remote: {url: "https://example.com/mcp"},
+                },
+            },
+            layers: [{config: {mcp_servers: {words: {command: "node", args: ["word-server.mjs", "DECOY"]}}}}],
+        } as any);
+        const threadStartSpy = vi.spyOn(codexAppServerClient, "threadStart").mockResolvedValue({
+            thread: {id: "thread-id"} as any,
+            model: "gpt-5",
+            reasoningEffort: "medium",
+            serviceTier: null,
+        } as any);
+        vi.spyOn(codexAppServerClient, "listModels").mockResolvedValue({
+            data: [createTestModel({id: "gpt-5"})],
+            nextCursor: null,
+        });
+
+        await codexAcpClient.newSession({
+            cwd: "/workspace",
+            mcpServers: [{
+                name: "words",
+                command: "node",
+                args: ["word-server.mjs", "ORCHID"],
+                env: [],
+            }, {
+                name: "remote",
+                command: "npx",
+                args: ["remote"],
+                env: [],
+            }],
+        });
+
+        const threadStartRequest = threadStartSpy.mock.calls[0]![0];
+        expect(threadStartRequest.config?.["mcp_servers"]).toEqual({
+            words: {command: "node", args: ["word-server.mjs", "ORCHID"], env: {}},
+        });
+    });
+
     it('waits for typed mcp startup status updates and returns terminal states', async () => {
         const mockFixture = createCodexMockTestFixture();
         const codexAcpClient = mockFixture.getCodexAcpClient();
