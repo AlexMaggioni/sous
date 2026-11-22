@@ -850,13 +850,20 @@ test(
     const persistedJournalSession: AgentSessionRecord | undefined = persisted.journal?.[0]?.session;
     assert.deepEqual(persistedAgentSession, expected, "the agent snapshot preserves every session field");
     assert.deepEqual(persistedJournalSession, expected, "the journal preserves every session field");
-    assert.deepEqual(fresh.getPersistedAgentSessions(original.runId), [expected]);
-    assert.equal(fresh.getPersistedAgentSessions("unknown-run"), undefined);
+    assert.deepEqual(
+      persisted.agents.map((agent) => agent.session).filter((session) => session != null),
+      [expected],
+    );
 
     const noSession = await writer.runSync(noSessionScript);
     assert.equal(noSession.status, "completed");
+    const persistedNoSession = fresh.listRuns().find((run) => run.runId === noSession.runId);
+    assert.ok(persistedNoSession);
     assert.deepEqual(
-      fresh.getPersistedAgentSessions(noSession.runId),
+      [
+        ...persistedNoSession.agents.map((agent) => agent.session),
+        ...(persistedNoSession.journal ?? []).map((entry) => entry.session),
+      ].filter((session) => session != null),
       [],
       "legacy/no-session runs produce an empty hand-off",
     );
@@ -870,59 +877,6 @@ test(
     assert.deepEqual(replayed.agentSessions, [expected], "journal replay restores the persisted session record as-is");
   }),
 );
-
-test("WorkflowManager derives persisted sessions from agents first, then missing journal records", () => {
-  const store = memoryPersistence();
-  const agentSession: AgentSessionRecord = {
-    sessionId: "agent-session",
-    backendId: "claude",
-    cwd: "/work",
-    reopen: { load: true, resume: true, list: true },
-    callIndex: 2,
-    label: "agent-copy",
-    keptOpen: true,
-  };
-  const duplicateJournalSession: AgentSessionRecord = {
-    ...agentSession,
-    sessionId: "journal-duplicate",
-    label: "journal-copy",
-  };
-  const journalOnlySession: AgentSessionRecord = {
-    sessionId: "journal-only",
-    backendId: "codex",
-    cwd: "/work",
-    reopen: { load: true, resume: false, list: true },
-    callIndex: 0,
-    label: "journal-only",
-    keptOpen: false,
-  };
-  store.persistence.save({
-    runId: "session-merge",
-    workflowName: "session-merge",
-    script: "export const meta = { name: 'session-merge', description: 'session merge' }\nreturn null",
-    status: "completed",
-    phases: [],
-    agents: [
-      {
-        id: 1,
-        label: "agent-copy",
-        prompt: "agent",
-        status: "done",
-        session: agentSession,
-      },
-    ],
-    logs: [],
-    journal: [
-      { index: 2, hash: "duplicate", result: "agent", session: duplicateJournalSession },
-      { index: 0, hash: "journal-only", result: "journal", session: journalOnlySession },
-    ],
-    startedAt: "2024-01-01T00:00:00.000Z",
-    updatedAt: "2024-01-01T00:00:00.000Z",
-  });
-
-  const manager = new WorkflowManager({ persistence: store.persistence });
-  assert.deepEqual(manager.getPersistedAgentSessions("session-merge"), [journalOnlySession, agentSession]);
-});
 
 test(
   "createRunPersistence save and load preserves token usage",
@@ -1612,7 +1566,7 @@ test(
     const manager = new WorkflowManager({ cwd, journaling: false });
 
     assert.deepEqual(
-      manager.listAllRuns().map((run) => run.runId),
+      manager.listRuns().map((run) => run.runId),
       [written.runId],
       "journaling:false controls writes for new runs, not enumeration of existing state",
     );
@@ -1656,52 +1610,6 @@ test(
 
     assert.equal(rp.load("legacy-live")?.status, "running");
     assert.equal(existsSync(join(workflowProjectPaths(cwd).runsDir, "legacy-live.json")), false);
-  }),
-);
-
-test(
-  "WorkflowManager.listRuns is scoped to the bound session and switches with setSessionId",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    const run = (runId: string, sessionId: string): PersistedRunState =>
-      ({
-        runId,
-        workflowName: "w",
-        status: "completed",
-        sessionId,
-        phases: [],
-        agents: [],
-        logs: [],
-      }) as PersistedRunState;
-    rp.save(run("a", "s1"));
-    rp.save(run("b", "s2"));
-
-    const m = new WorkflowManager({ cwd, sessionId: "s1" });
-    assert.deepEqual(
-      m.listRuns().map((r) => r.runId),
-      ["a"],
-      "only the bound session's runs are listed",
-    );
-
-    m.setSessionId("s2");
-    assert.deepEqual(
-      m.listRuns().map((r) => r.runId),
-      ["b"],
-      "switching sessions re-shows that session's runs",
-    );
-
-    m.setSessionId(undefined);
-    assert.deepEqual(
-      m
-        .listRuns()
-        .map((r) => r.runId)
-        .sort(),
-      ["a", "b"],
-      "unbound lists all runs (legacy/global)",
-    );
-
-    // listAllRuns ignores the session binding.
-    assert.equal(new WorkflowManager({ cwd, sessionId: "s1" }).listAllRuns().length, 2);
   }),
 );
 

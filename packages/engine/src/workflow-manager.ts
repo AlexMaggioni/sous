@@ -402,8 +402,6 @@ export interface WorkflowManagerOptions {
   agent?: AgentRunner;
   /** The session's main model (provider/id), for auto-tiering explore agents. */
   mainModel?: string;
-  /** The session id to tag runs with (see setSessionId). */
-  sessionId?: string;
   /** Default retry attempts after recoverable agent failures. */
   defaultAgentRetries?: number;
   /** Override the directory scanned for `agentType` definitions (defaults to AGENTS_DIR). */
@@ -663,8 +661,6 @@ export class WorkflowManager extends EventEmitter {
   private agent?: AgentRunner;
   /** The session's main model (provider/id), for auto-tiering explore agents. */
   private mainModel?: string;
-  /** The current session id; runs are stamped with it and listRuns() filters by it. */
-  private sessionId?: string;
   private defaultAgentRetries: number;
   private agentsDir?: string;
   private loadAgents?: (cwd: string) => AgentRegistry;
@@ -681,7 +677,6 @@ export class WorkflowManager extends EventEmitter {
     this.orchestratorOptions = options.orchestrator ?? {};
     this.agent = options.agent;
     this.mainModel = options.mainModel;
-    this.sessionId = options.sessionId;
     this.defaultAgentRetries = options.defaultAgentRetries ?? 0;
     this.agentsDir = options.agentsDir;
     this.loadAgents = options.loadAgents;
@@ -727,18 +722,6 @@ export class WorkflowManager extends EventEmitter {
       }
     }
     return listeners.length > 0;
-  }
-
-  /** Resolve one host-served workflow by name without executing it. Validation uses the
-   * same resolver as live execution so a mocked preflight cannot disagree with admission. */
-  resolveSavedWorkflow(name: string): string | undefined {
-    return this.loadSavedWorkflow?.(name);
-  }
-
-  /** Bind the manager to the current session, so new runs are tagged with it and
-   * the navigator/task-panel show only this session's runs (set on session_start). */
-  setSessionId(id: string | undefined): void {
-    this.sessionId = id;
   }
 
   private reconcileListedRun(candidate: PersistedRunState): PersistedRunState | null {
@@ -816,11 +799,6 @@ export class WorkflowManager extends EventEmitter {
     } catch {
       // Recovery is best-effort; never let it block manager construction.
     }
-  }
-
-  /** Set the session's main model (provider/id). Used to auto-tier explore agents. */
-  setMainModel(spec: string | undefined): void {
-    this.mainModel = spec;
   }
 
   /** Resolve the agent backend for a run: per-run override wins, else the
@@ -2865,7 +2843,6 @@ export class WorkflowManager extends EventEmitter {
       eventLogIncomplete: managed.eventLogIncomplete,
       nestedWorkflows: managed.nestedWorkflows,
       legacyResume: managed.legacyResume,
-      sessionId: this.sessionId,
       journal: managed.journal,
       ...(managed.nestedJournal?.length ? { nestedJournal: managed.nestedJournal } : {}),
       ...(managed.fallbacks.length === 0 ? {} : { fallbacks: managed.fallbacks }),
@@ -3834,48 +3811,8 @@ export class WorkflowManager extends EventEmitter {
     );
   }
 
-  /**
-   * Cold-restart counterpart of WorkflowRunResult.agentSessions: the hand-off a host
-   * feeds to runner.loadSession()/resumeSession(). Derived from persisted state, so it
-   * works on a fresh manager instance with no in-memory run.
-   */
-  getPersistedAgentSessions(runId: string): AgentSessionRecord[] | undefined {
-    const persisted = this.persistence.load(runId);
-    if (!persisted) return undefined;
-
-    const sessions = persisted.agents
-      .map((agent) => agent.session)
-      .filter((session): session is AgentSessionRecord => session != null);
-    const callIndexes = new Set(sessions.map((session) => session.callIndex));
-    for (const entry of persisted.journal ?? []) {
-      if (entry.session && !callIndexes.has(entry.session.callIndex)) {
-        sessions.push(entry.session);
-        callIndexes.add(entry.session.callIndex);
-      }
-    }
-    return sessions.sort((a, b) => a.callIndex - b.callIndex);
-  }
-
-  /**
-   * Runs for the navigator/task panel. Once bound to a session (setSessionId), only
-   * that session's runs are returned — runs from other sessions stay on disk and
-   * reappear when you switch back. Unbound (tests/legacy) returns everything.
-   */
+  /** Every persisted run, newest first, after reconciling runs whose owner exited. */
   listRuns(): PersistedRunState[] {
-    const all = this.reconcileListedRuns(this.persistence.list());
-    return this.sessionId ? all.filter((r) => r.sessionId === this.sessionId) : all;
-  }
-
-  /** Bounded active/recent dashboard projection from one authoritative project store. */
-  listRecentRuns(limit = 12): PersistedRunState[] {
-    const bounded = Math.max(1, Math.min(24, Math.floor(limit)));
-    return this.listRuns()
-      .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
-      .slice(0, bounded);
-  }
-
-  /** All persisted runs regardless of session (used by cross-session recovery). */
-  listAllRuns(): PersistedRunState[] {
     return this.reconcileListedRuns(this.persistence.list());
   }
 

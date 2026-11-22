@@ -411,7 +411,7 @@ From `@orchestrator/engine` (see `src/index.ts`):
 - **Display / snapshots** — `preview`, `renderWorkflowText`, `renderWorkflowLines`,
   `createWorkflowSnapshot`, `recomputeWorkflowSnapshot`, `statusIcon`, `shorten`.
 - **Paths / logger / frontmatter** — `workflowProjectPaths`, `workflowHomeDir`,
-  `workflowUserSavedDir`, `workflowProjectKey`, `ORCHESTRATOR_PERSISTENCE_ROOT_ENV`,
+  `workflowProjectKey`, `ORCHESTRATOR_PERSISTENCE_ROOT_ENV`,
   `createWorkflowLogger`, `parseFrontmatter`.
 - **Seam types** (from `src/steps/` and the run records): `AgentRunner`, `RunOptions`,
   `AgentResult`, `AgentUsage`, `WorkflowMeta`, `WorkflowRunResult`, `WorkflowRunFallback`,

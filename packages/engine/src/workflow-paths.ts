@@ -23,10 +23,6 @@ export function workflowHomeDir(options: WorkflowPathOptions = {}): string {
   return resolveWorkflowHomeDir(options);
 }
 
-export function workflowUserSavedDir(options: WorkflowPathOptions = {}): string {
-  return join(workflowHomeDir(options), "saved");
-}
-
 function resolveWorkflowHomeDir(options: WorkflowPathOptions): string {
   // Precedence is explicit option > env fallback > historical homedir default.
   if (options.persistenceRoot !== undefined) return validatePersistenceRoot(options.persistenceRoot, "persistenceRoot");

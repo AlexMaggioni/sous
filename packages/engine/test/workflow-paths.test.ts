@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { WORKFLOW_PROJECTS_SUBDIR, workflowProjectKey, workflowProjectPaths } from "../src/runs/persistence/project-paths.js";
-import { ORCHESTRATOR_PERSISTENCE_ROOT_ENV, WORKFLOW_HOME_RELATIVE_DIR, workflowHomeDir, workflowUserSavedDir } from "../src/workflow-paths.js";
+import { ORCHESTRATOR_PERSISTENCE_ROOT_ENV, WORKFLOW_HOME_RELATIVE_DIR, workflowHomeDir } from "../src/workflow-paths.js";
 import { withFakeHome } from "./helpers/fake-home.js";
 
 function withIsolatedHome(fn: (home: string, cwd: string) => void): void {
@@ -31,7 +31,6 @@ describe("workflow paths", () => {
   it("resolves workflow home under the user home", () => {
     withIsolatedHome((home) => {
       assert.equal(workflowHomeDir({ env: {} }), join(home, WORKFLOW_HOME_RELATIVE_DIR));
-      assert.equal(workflowUserSavedDir({ env: {} }), join(home, WORKFLOW_HOME_RELATIVE_DIR, "saved"));
     });
   });
 
@@ -69,7 +68,6 @@ describe("workflow paths", () => {
         });
         assert.ok(paths.rootDir.startsWith(join(explicitRoot, WORKFLOW_PROJECTS_SUBDIR)));
         assert.equal(workflowHomeDir({ persistenceRoot: explicitRoot }), explicitRoot);
-        assert.equal(workflowUserSavedDir({ persistenceRoot: explicitRoot }), join(explicitRoot, "saved"));
       } finally {
         rmSync(explicitRoot, { recursive: true, force: true });
         rmSync(envRoot, { recursive: true, force: true });

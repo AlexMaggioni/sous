@@ -201,9 +201,6 @@ export interface PersistedRunState {
   resumeSeed?: PersistedResumeSeed;
   resumeReport?: WorkflowResumeReport;
   replayEligibility?: WorkflowReplayEligibility;
-  /** The session this run belongs to. Runs persist on disk across sessions but
-   * the navigator shows only the current session's runs (undefined = legacy/global). */
-  sessionId?: string;
   status: RunStatus;
   /** Safe run-level terminal explanation retained for cold inspection. */
   reason?: string;
