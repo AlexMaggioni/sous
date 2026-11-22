@@ -3,8 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-// Adapted import: AgentUsage is part of the seam contract, which lives in
-// src/steps/agent-run.ts (pi imported it from "../src/agent.js").
+// AgentUsage is part of the seam contract, which lives in src/steps/agent-run.ts.
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { AgentUsage } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
@@ -549,9 +548,9 @@ test("runWorkflow plumbs opts.tier through to the agent with correct precedence"
 });
 
 test("runWorkflow threads the engine runId into the agent run options (correlation id)", async () => {
-  // The engine stamps its runId onto every subagent run so the runner can ride it onto the ACP
-  // session/new _meta as an end-to-end correlation id. It is additive telemetry — never part of
-  // the resume identity hash — so the same script run twice does not change its journal hash.
+  // The engine passes its runId with every agent call, and the steps module names the run
+  // with it when it takes an agent slot. It is never part of the resume identity hash, so
+  // the same script run twice does not change its journal hash.
   const seen: Array<string | undefined> = [];
   const capturingAgent = {
     async run(_prompt: string, options: { runId?: string }) {

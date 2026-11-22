@@ -1,8 +1,7 @@
 /**
- * Minimal, dependency-free Markdown frontmatter parser.
+ * Minimal, dependency-free Markdown frontmatter parser for agent definition files.
  *
- * Replaces Pi's `parseFrontmatter` (from @earendil-works/pi-coding-agent) so the
- * engine carries no Pi dependency. It supports exactly the YAML subset an agent
+ * It supports exactly the YAML subset an agent
  * definition file uses: a leading `---` … `---` block of `key: value` scalars,
  * flow sequences (`key: [a, b]`), and block sequences (`key:` then `  - item`
  * lines). Values are returned as strings (or string arrays); the caller
@@ -10,8 +9,8 @@
  * about anything else, so richer YAML typing is unnecessary here.
  *
  * When the content has no leading frontmatter block, the whole content is the body
- * and the frontmatter is `{}` — matching how the Pi parser behaved for the agent
- * registry's "treat the whole file as a body" fallback.
+ * and the frontmatter is `{}`. The agent registry relies on this for its "treat the
+ * whole file as a body" fallback.
  */
 export function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
   // A frontmatter block is a leading `---` line, the YAML body, then a closing

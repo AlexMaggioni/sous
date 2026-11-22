@@ -8,7 +8,7 @@ import type { McpServerConfig } from "../src/steps/mcp-config.js";
 import { runWorkflow } from "../src/workflow.js";
 
 // (#5) agent({ mcpServers }) is an ADDITIVE run input: the engine must thread it through to
-// the runner opts (so the runner can attach them at ACP session/new), but it must NOT enter
+// the runner opts (so the harness gets them for the step), but it must NOT enter
 // the resume identity hash (hashAgentCall) — wiring tools changes which tools an agent can
 // reach, not the logical call, and folding it into the hash would needlessly bust every
 // cached result whenever tool wiring changes.

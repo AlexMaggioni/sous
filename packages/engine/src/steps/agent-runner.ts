@@ -1,11 +1,8 @@
-// The seam between the engine and whatever runs a step: the steps module, or a test's
-// fake. The engine references the runner by this one method only: it is the exact shape behind `Pick<WorkflowAgent,"run">` (pi
-// workflow.ts:59). It is BOUND at workflow.ts:283 (`const agentRunner = options.agent`
-// — now REQUIRED; the Pi `?? new WorkflowAgent(options)` default is DROPPED) and
-// CALLED exactly ONCE per agent() at workflow.ts:465, inside the limiter thunk.
-// The call site casts the opts bag
-// `as any` (workflow.ts:488) — so FIELD NAMES are the real contract: renaming a field
-// silently mis-binds at runtime with NO compile error. This file freezes that seam.
+// The seam between the engine and whatever runs an agent step: the steps module, or a
+// test's fake. The engine calls only run(), and it builds no runner of its own
+// (WorkflowRunOptions.agent is required). Code steps never come here. The field names in
+// RunOptions are the real contract: the engine spreads extra fields into the same bag, so a
+// renamed field can stop reaching the runner without a compile error.
 import type { TSchema } from "typebox";
 import type { AgentResult, RunOptions } from "./agent-run.js";
 
@@ -13,14 +10,13 @@ export interface AgentRunner {
   /**
    * Run ONE subagent to completion.
    *
-   * FROZEN CONTRACT (verified against pi agent.ts:332-335 + the call site
-   * workflow.ts:465-488; do not widen without re-cutting the seam):
+   * FROZEN CONTRACT (do not widen it without changing the engine's call site):
    *
    *  - `prompt` is a plain positional string; `options` is one optional bag that
    *    DEFAULTS TO {} (the engine's historical Pick<WorkflowAgent,"run"> seam relies
    *    on options being optional).
    *
-   *  - RETURN is the RAW value, NEVER an envelope (AgentResult, agent.ts:286-288):
+   *  - RETURN is the RAW value, NEVER an envelope (AgentResult):
    *       schema present => Static<schema>   (a parsed + validated object)
    *       no schema       => the assistant's final text (string)
    *    Usage is delivered OUT-OF-BAND via options.onUsage; it is NOT in the return.
@@ -45,8 +41,8 @@ export interface AgentRunner {
    *    (AGENT_CANCELLED + WORKFLOW_ABORTED + SCRIPT_ERROR are added by the ENGINE, not the runner.)
    *
    *  - ABORT is the ENGINE's responsibility: the engine passes options.signal and calls
-   *    throwIfAborted() before/after. The runner SHOULD honor options.signal by wiring it to
-   *    backend session cancellation (ACP session/cancel).
+   *    throwIfAborted() before/after. The steps module passes options.signal to the harness,
+   *    which stops the step.
    *
    *  - There is NO checkpoint method: human-in-the-loop is the engine's options.confirm
    *    callback (workflow.ts:798-829), not a runner concern.

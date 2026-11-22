@@ -60,7 +60,7 @@ export interface PersistedAgentState {
   errorCode?: WorkflowErrorCode;
   recoverable?: boolean;
   history?: AgentHistoryEntry[];
-  /** The ACP re-attach record captured when this agent's call opened a session; absent
+  /** The session record captured when this agent's call opened a session; absent
    *  on pre-session-record persisted runs and agents that opened no session. */
   session?: AgentSessionRecord;
   startedAt?: string;

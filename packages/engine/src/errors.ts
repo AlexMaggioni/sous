@@ -1,6 +1,6 @@
 /**
  * The engine's errors. WorkflowError, its codes and its guards are the contract: the steps
- * module throws them and the engine reads .code and .recoverable. Adapted from pi errors.ts.
+ * module throws them and the engine reads .code and .recoverable.
  *
  * wrapError, errorMessage and isAbortError are the engine's own classification and
  * formatting of the failures it sees when it runs a step or the workflow code.
@@ -26,11 +26,9 @@ export enum WorkflowErrorCode {
    *  the same journal. Catching it inside the script cannot keep the run going. */
   PAUSE_REQUESTED = "PAUSE_REQUESTED",
   SCRIPT_VALIDATION_ERROR = "SCRIPT_VALIDATION_ERROR",
-  /** An SDK call (the `AcpAgent` surface) received invalid options or arguments, or was made in
-   *  an invalid state such as after `close()`. Non-recoverable: the same call fails the same way.
-   *  Distinct from SCRIPT_VALIDATION_ERROR, which stays the code for workflow scripts and for the
-   *  one-shot runner / `InteractiveSession` — the shared validators keep throwing that code, and
-   *  the SDK re-codes it at its boundary. */
+  /** A step asks for something that cannot run: a removed harness, an unknown agent type or
+   *  MCP server, a program that is missing, or an unknown code step kind. Non-recoverable: the
+   *  same step fails the same way. A bad option in the script stays SCRIPT_VALIDATION_ERROR. */
   INVALID_ARGUMENT = "INVALID_ARGUMENT",
   /** The workflow SCRIPT crashed at runtime: an uncaught throw or an unhandled promise
    *  rejection inside the script body. Distinct from WORKFLOW_ABORTED (someone cancelled the
@@ -64,7 +62,8 @@ export enum WorkflowErrorCode {
  */
 export type AuthErrorContext = {
   backendId?: string;
-  /** `type` is the SDK `AuthMethod.type` discriminant (ACP schema 1.21.0: `agent` | `terminal`). */
+  /** The login methods the program named. The steps module names none, so a new run holds an
+   *  empty list. A run file written before may hold some. */
   methods: { id: string; type: "agent" | "terminal"; name?: string }[];
 };
 

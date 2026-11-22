@@ -23,17 +23,15 @@ export interface WorkflowMetaPhase {
 /** One backend a script declares in `meta.backends[name]`. The engine checks its shape and
  *  runs no step on it. Older run files may hold approved ones. */
 export interface WorkflowBackendConfig {
-  /** The ACP server executable (absolute path or on PATH). */
+  /** The command the script names. Nothing runs it. */
   command: string;
-  /** Arguments for the command. Default []. */
+  /** Arguments for the command. */
   args?: string[];
-  /** Extra environment for the subprocess, merged OVER the inherited process.env. */
+  /** Environment for the command. */
   env?: Record<string, string>;
-  /** Static `_meta` sent on every session/new for this backend (defaults; per-call
-   *  RunOptions.meta merges over them). */
+  /** Checked for shape only. */
   sessionMeta?: Record<string, unknown>;
-  /** Enable client-hosted StructuredOutput MCP tool injection when schema runs negotiate HTTP MCP.
-   *  Default true; set false to keep this backend on the prompt/_meta fallback path. */
+  /** Checked for shape only. */
   structuredOutputTool?: boolean;
 }
 
@@ -57,36 +55,20 @@ export interface WorkflowMeta {
 }
 
 /**
- * The re-attach handle for ONE ACP session opened by a run — the identity a host needs to
- * re-open or fork the agent's persisted conversation later via `runner.loadSession()` /
- * `runner.resumeSession()` / `runner.forkSession()`. Delivered OUT-OF-BAND via
- * RunOptions.onSessionOpen (never via run()'s return value — AgentResult is the bare payload
- * by contract). Contains NO secrets
- * and is JSON-round-trippable (it rides journal entries and run results).
- *
- * Re-openability is AGENT-persistence-gated: the `reopen` flags mirror what the connected
- * agent advertised at initialize (loadSession / sessionCapabilities.resume / .list / .fork).
- * An agent that persists nothing advertises none of them — for those, a session is only
- * reachable while held open (InteractiveSession), and this ref is a tombstone once released.
+ * The handle for ONE session a step opened on a harness. The steps module builds it from
+ * the session id the harness reports and hands it out through RunOptions.onSessionOpen,
+ * never through run()'s return value. A later call continues the session when the engine
+ * passes it back as RunOptions.continueFromSession. It holds no secrets and is
+ * JSON-round-trippable, since journal entries and run results keep it.
  */
 export interface AgentSessionRef {
-  /** The ACP session id assigned when this session was created or forked. */
+  /** The session id the harness reported: a Claude Code session or a Codex thread. */
   sessionId: string;
   /** The backend that owns the session (built-in id or registered custom name). */
   backendId: string;
-  /** The effective pool identity of the process that owns this session: the runner's resolved
-   *  Backend.poolKey (`backend.ts:60-66`). For a custom backend that is `name` + a spawn-config hash
-   *  over command/args/env; for a first-class backend it is deliberately the logical agent id
-   *  (backendId), matching the pool's own process-identity model, which keys built-ins by bare id
-   *  (`pool.ts:129`). A first-class backend's spawn config is NOT fixed — `spawnConfig()` varies with
-   *  `AGENTPRISM_*_ACP_CMD/ARGS` env overrides and with installed-bin-vs-npx resolution
-   *  (`backends/claude.ts:44-58`, and codex) and built-ins define no explicit `poolKey` — but
-   *  every such launch of the same first-class agent shares one agent-side session store, so reattach
-   *  stays semantically valid and the logical-agent identity is correct by design; a genuinely
-   *  different program bound behind an env override is caught at the reopen RPC (`reattach-failed` →
-   *  fresh), not by this field. Persisted so a COLD resume can prove the currently-resolved backend
-   *  is the SAME logical process identity that owns the recorded session. ADDITIVE and NOT a hash
-   *  input; absent on legacy pre-poolKey refs. */
+  /** The harness id, the same as backendId. A continuation goes ahead only when both name the
+   *  harness the call routes to. Otherwise the call runs fresh (`backend-mismatch`). ADDITIVE
+   *  and NOT a hash input. Older refs may lack it. */
   poolKey?: string;
   /** Recursively frozen JSON snapshot of initialize-response `_meta`, when the agent sent it. */
   initializeMeta?: Readonly<Record<string, unknown>>;
@@ -219,7 +201,7 @@ export interface JournalEntry {
   /** sha256 of the call identity (prompt + model + tier + phase + agentType + agentDef + schema). */
   hash: string;
   result: unknown;
-  /** The call's ACP session record, when one was opened live. ADDITIVE: absent on
+  /** The call's session record, when one was opened live. ADDITIVE: absent on
    *  pre-session-ref journals and on checkpoint entries; replay restores it as-is. */
   session?: AgentSessionRecord;
   /** Additive diagnostic metadata; it is not part of replay identity. */
@@ -517,9 +499,9 @@ export interface WorkflowCallRecord {
   /** The REQUESTED (script-resolved) model spec the engine passed to the runner.
    *  This is what the hash proves. NOT the served model. */
   modelRequested?: string;
-  /** Effective optional ACP mode included in this actual call's identity. */
+  /** The mode this call set, which is part of its identity. */
   modeRequested?: string;
-  /** Effective optional ACP settings included in this actual call's identity. */
+  /** The configOptions this call set, which are part of its identity. No harness reads them. */
   configOptionsRequested?: Record<string, string | boolean>;
   /** The runner-reported concrete model id from the terminal attempt. */
   modelResolved?: string;
@@ -630,8 +612,8 @@ export type RunStatus = "pending" | "running" | "paused" | "completed" | "failed
 /**
  * The PUBLIC, host-facing result of a workflow run — also the MCP tool's
  * structuredContent shape. It is the engine's `runWorkflow<T>()` return
- * (meta/result/logs/phases/agentCount/durationMs/runId/tokenUsage — pi
- * workflow.ts:122-138, lifted) PLUS the run-manager's terminal status trio
+ * (meta/result/logs/phases/agentCount/durationMs/runId/tokenUsage) PLUS the run-manager's
+ * terminal status trio
  * (status/reason/resetHint).
  *
  * The ENGINE SEAM IS UNCHANGED: bare `runWorkflow()` returns
@@ -654,7 +636,7 @@ export interface WorkflowRunResult<T = unknown> {
   agentCount: number;
   /** Wall-clock duration (ms). */
   durationMs: number;
-  /** Aggregate token/cost usage (omitted if never measured — ACP usage is experimental). */
+  /** Aggregate token/cost usage (omitted if never measured). */
   tokenUsage?: TokenUsage;
   /** Captured log lines. */
   logs: string[];
@@ -673,9 +655,8 @@ export interface WorkflowRunResult<T = unknown> {
   /** Present when status is "paused" with reason "checkpoint_required": the structured,
    *  NON-SECRET pending checkpoint surface a host uses to collect and resume with a reply. */
   checkpointContext?: CheckpointContext;
-  /** Re-attach records for every ACP session the run opened (live + journal-replayed),
-   *  in call order. The host's hand-off to `runner.loadSession()`/`resumeSession()` —
-   *  present even when journaling is off (it rides the result, not the journal). */
+  /** Session records for every session the run opened (live + journal-replayed), in call
+   *  order. Present even when journaling is off, since the result holds them. */
   agentSessions?: AgentSessionRecord[];
   /** Model-selection degrades observed on live agent calls. Absent when none occurred. */
   fallbacks?: WorkflowRunFallback[];

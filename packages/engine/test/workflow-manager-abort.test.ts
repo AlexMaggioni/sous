@@ -8,8 +8,8 @@ import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { withFakeHomeAsync } from "./helpers/fake-home.js";
 
-// AgentUsage now lives in src/steps/agent-run.ts (the seam), not Pi's
-// `../src/agent.js`. runSync is the consolidated path the MCP shell drives: it resolves
+// AgentUsage lives in src/steps/agent-run.ts (the seam). runSync is the consolidated
+// path the MCP shell drives: it resolves
 // to a TERMINAL WorkflowRunResult (status completed|paused|failed|aborted) even on
 // abort/pause/fail, rather than throwing — so these abort tests assert run.status, not a
 // thrown error. The manager still emits the same 'error'/'paused'/'stopped' events.

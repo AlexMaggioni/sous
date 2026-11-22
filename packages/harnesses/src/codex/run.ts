@@ -43,7 +43,7 @@ export async function openServer(path: string, env: Record<string, string | unde
   return server;
 }
 
-// codex-acp's CodexThreadErrors: Codex names a thread it cannot load only in the message text.
+// Codex names a thread it cannot load only in the message text.
 const THREAD_ERRORS = ["no rollout found for thread id", "thread not loaded:", "invalid thread id:", "invalid session id:"];
 const isThreadError = (error: unknown) => error instanceof Error && THREAD_ERRORS.some((text) => error.message.includes(text));
 

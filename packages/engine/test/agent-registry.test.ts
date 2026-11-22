@@ -56,7 +56,7 @@ describe("parseAgentDefinition", () => {
   });
 
   it("drops empty/blank tool entries (minimal frontmatter parser keeps bare scalars as strings)", () => {
-    // The de-Pi'd, dependency-free frontmatter parser does NO YAML type inference:
+    // The dependency-free frontmatter parser does NO YAML type inference:
     // every inline-array scalar is a string (a bare `3` becomes "3", not a number,
     // and a quoted '' / '  ' becomes an empty/blank string). toStringArray then drops
     // only empty / whitespace-only entries; non-empty tokens are kept verbatim.
@@ -145,9 +145,9 @@ describe("agentDefinitionKey", () => {
     );
   });
 
-  it("serializes the EXACT, UNCHANGED key shape (so a Pi-computed resume hash still matches)", () => {
-    // The serialization is deliberately frozen across the de-Pi lift: a resume hash
-    // computed under Pi must still match. Pin the literal key (field order + null
+  it("serializes the EXACT, UNCHANGED key shape (so an old journal's resume hash still matches)", () => {
+    // The serialization is deliberately frozen: it is part of each agent call's resume
+    // hash, so old journals must still match. Pin the literal key (field order + null
     // sentinels for absent tools/disallowedTools/model/isolation; source/name/description
     // are NOT part of identity).
     const def: AgentDefinition = { name: "x", prompt: "p", tools: ["read"], source: "project" };

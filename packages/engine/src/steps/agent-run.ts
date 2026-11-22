@@ -61,27 +61,21 @@ export interface PromptImage {
 }
 
 /**
- * The opts side of the AgentRunner seam — exactly the bag the engine passes at
- * workflow.ts:465 (cast `as any` there; frozen-typed here). Inputs flow IN
- * (prompt/schema/images/model/tier/cwd/signal/instructions/tool policy); telemetry flows
- * OUT via the on* callbacks, NEVER via the return value.
+ * The options side of the AgentRunner seam: the bag the engine passes with each agent
+ * call. Inputs go in (prompt/schema/images/model/tier/cwd/signal/instructions/tool lists);
+ * reports come back through the on* callbacks, NEVER through the return value.
  *
- * NAME = RunOptions (the Phase-1 deliverable name); `AgentRunOptions` is exported as
- * a lift-compat alias so ported pi engine code that imports the old name resolves.
- *
- * FIELD NAMES ARE FROZEN: the engine binds these by name through an `as any` cast
- * (workflow.ts:488), so a renamed field would NOT raise a compile error — it would
- * mis-bind at runtime. Engine-passed core fields: label, schema, signal, instructions,
- * images, model, mode, tier, toolNames, disallowedToolNames, cwd, onModelResolved, onModelFallback,
- * onUsage, and onHistory. Plus run inputs that wire infrastructure, so none enters the resume
- * identity hash (hashAgentCall): `mcpServers`, `runId`, and the session hand-off fields
- * `onSessionOpen` / `continueFromSession`. A script's configOptions, meta, promptMeta and
- * keepSession stay in the call's identity and inputs, but no step reads them, so they are not here.
- * `maxSchemaRetries` is runner-internal (the engine never passes it). Pi's
- * `tools?: ToolDefinition[]` is DROPPED — a pi-coding-agent type with no ACP analog (ACP
- * injects tools via session/new mcpServers, not this field) and never passed by the engine.
- * The additive call identity context (`callIndex`, `callHash`, `callPath`,
- * `callInputsHash`) is scoped to one engine call and does not enter the resume
+ * KEEP THE FIELD NAMES. The engine also spreads per-step extras into the same bag
+ * (orchestratorRunExtras), and the steps module reads fields by name, so a renamed field
+ * can stop reaching it without a compile error. Engine-passed core fields: label, schema,
+ * signal, instructions, images, model, mode, tier, toolNames, disallowedToolNames, cwd,
+ * onModelResolved, onModelFallback, onUsage, and onHistory. Plus run inputs that wire
+ * infrastructure, so none enters the resume identity hash (hashAgentCall): `mcpServers`,
+ * `runId`, and the session hand-off fields `onSessionOpen` / `continueFromSession`. A
+ * script's configOptions, meta, promptMeta and keepSession stay in the call's identity and
+ * inputs, but no step reads them, so they are not here. The engine never passes
+ * `maxSchemaRetries`. The additive call identity context (`callIndex`, `callHash`,
+ * `callPath`, `callInputsHash`) is scoped to one engine call and does not enter the resume
  * identity hash.
  */
 export interface RunOptions<S extends TSchema | undefined = undefined> {
@@ -96,25 +90,22 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
   schema?: S;
   /** Extra system guidance (engine builds it from phase/agentType/isolation). NOT hashed. */
   instructions?: string;
-  /** Engine-owned cancellation. The runner SHOULD wire this to the backend session cancel
-   *  (ACP session/cancel) but MUST NOT implement its own timeout. */
+  /** Engine-owned cancellation. The steps module joins it with the step's time limit and
+   *  passes the result to the harness, which stops the step when it fires. */
   signal?: AbortSignal;
-  /** Model spec (`provider/modelId` or bare `modelId`). Runner interprets: cross-provider =>
-   *  which ACP server to spawn; within-provider => ACP session config selection
-   *  (`session/set_config_option`, surfaced as SessionHandle.selectModel()).
-   *  Omitted => session default. */
+  /** Model spec (`harness/modelId` or a bare `modelId`). The steps module picks the harness
+   *  from it and sends the rest as the model. Omitted => the harness default. */
   model?: string;
-  /** Exact agent-advertised ACP session mode id. When omitted, the runner explicitly applies the
-   *  built-in default (Claude `auto`, Codex `agent`; custom backends retain no host
-   *  default). An authored or built-in default must be advertised or the run fails before prompt.
-   *  A mode does not silently invent a client-side allow/deny policy: live permission requests are
-   *  handled by the host resolver, while explicitly authored tool allow/deny lists remain binding. */
+  /** The harness mode. Claude Code: a permission mode. Codex: read-only, workspace-write,
+   *  agent or agent-full-access. When omitted, Claude Code uses `auto` where the model
+   *  offers it, and Codex uses `agent`. A mode the harness lacks leaves its default and adds
+   *  a note. */
   mode?: string;
   /** Coarse tier ("small" | "medium" | "big"). Consulted only when `model` is unset; `model` wins. */
   tier?: string;
-  /** Working directory (e.g. an isolated git worktree). ABSOLUTE. Maps to ACP session/new {cwd}. NOT hashed. */
+  /** Working directory (e.g. an isolated git worktree). ABSOLUTE. The harness runs the step there. NOT hashed. */
   cwd?: string;
-  /** Tool allow-list (agentType `tools`). Runner maps to ACP permission auto-responses / mode. */
+  /** Tool allow-list (agentType `tools`). The harness gets it as the step's allowed tools. */
   toolNames?: string[];
   /** Tool deny-list (agentType `disallowedTools`), applied after the allow-list. */
   disallowedToolNames?: string[];
@@ -135,27 +126,19 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
   onModelFallback?: (requestedSpec: string) => void;
   /** A compact snapshot of this subagent's message/tool history (diagnostic only). */
   onHistory?: (history: AgentHistoryEntry[]) => void;
-  /** Client-provided MCP servers to attach to this run (ACP `session/new { mcpServers }`).
-   *  ADDITIVE and NOT part of the resume identity hash (hashAgentCall) — it wires tools,
-   *  not the logical call. Omitted/empty => the runner sends `mcpServers: []` (the default). */
+  /** Client-provided MCP servers for this step. The harness gets each one in place of a
+   *  configured server of the same name. ADDITIVE and NOT part of the resume identity hash
+   *  (hashAgentCall): it wires tools, not the logical call. */
   mcpServers?: McpServerConfig[];
-  /** Engine run id, stamped onto the outgoing ACP `session/new` `_meta` under
-   *  META_KEYS.runId as an end-to-end correlation id for tracing/telemetry. ADDITIVE and NOT
-   *  part of the resume identity hash (hashAgentCall) — it correlates, it does not identify the
-   *  logical call. Omitted => no runId `_meta` is stamped. */
+  /** Engine run id. The steps module names the run with it when it takes an agent slot.
+   *  NOT part of the resume identity hash (hashAgentCall): it does not identify the call. */
   runId?: string;
-  /** Base64 image attachments appended to the prompt as ACP image ContentBlocks. When the
-   *  connected agent does not advertise promptCapabilities.image, each attachment DEGRADES to a
-   *  bracketed text note (never an error, never silently dropped) per the ACP rule that the client
-   *  adapts content to the agent's advertised prompt capabilities. */
+  /** Base64 image attachments sent with the prompt. The steps module checks each one's data
+   *  and mimeType, and a bad one fails the step with SCRIPT_VALIDATION_ERROR. */
   images?: readonly PromptImage[];
-  /** The run's ACP session identity, fired EXACTLY ONCE for whichever acquisition wins:
-   *  `session/new`, or `session/resume`/`session/load` on a successful reattach — never
-   *  twice. A failed reattach that falls to a fresh `session/new` fires it exactly once for
-   *  the fresh handle. Fires before the first prompt, once the model selection settled, with the
-   *  re-attach handle — sessionId, backend, cwd, the agent-advertised reopen capabilities, and the
-   *  model selected on the session (a rejected selection still reports the session, without one). Best-effort observer (a
-   *  throwing callback is isolated, never fails the run) and, like every on* callback,
+  /** The step's session handle, fired once, the first time the harness reports a session id
+   *  (a failure that carries one counts). It holds the sessionId, the harness, the cwd, the
+   *  reopen flags and, when the step picked one, the model. Like every on* callback it is
    *  OUT-OF-BAND: run()'s return value stays the bare AgentResult. NOT part of the resume
    *  identity hash. */
   onSessionOpen?: (session: AgentSessionRef) => void;
@@ -166,13 +149,12 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
    *  `continueFromSession` folds this value into the recorded ref. Best-effort and out-of-band
    *  like every on* callback; NOT part of the resume identity hash. */
   onSessionCostGauge?: (amount: number) => void;
-  /** RESUME-ONLY reattach directive. When set, the runner attempts to reopen this exact ACP
-   *  session (via session/resume, else session/load) and CONTINUE the interrupted turn instead of
-   *  opening a fresh session/new. Advisory: a runner that ignores it — or any reattach failure —
-   *  runs the call fresh, which IS the fallback. ADDITIVE and NOT part of the resume identity hash
-   *  (hashAgentCall) or the input fingerprint (hashCallInputs): it changes how a live call reaches
-   *  its result, never the logical call. Omitted => today's fresh session/new + original-prompt
-   *  path. */
+  /** RESUME-ONLY. When set, the steps module resumes this session on its harness and
+   *  continues the interrupted turn instead of starting a fresh session. When the harness
+   *  differs, or the session is gone, the call runs fresh, which IS the fallback. ADDITIVE and
+   *  NOT part of the resume identity hash (hashAgentCall) or the input fingerprint
+   *  (hashCallInputs): it changes how a live call reaches its result, never the logical call.
+   *  Omitted => a fresh session with the original prompt. */
   continueFromSession?: AgentSessionRef;
   /** With `continueFromSession`, send this call's own prompt into the reopened
    *  session instead of the resume instruction. The engine sets it for agent({ continue }). */
@@ -183,8 +165,8 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
    *  The index space is shared with checkpoint() (runner-visible indexes have gaps
    *  at checkpoint positions) and scoped to ONE engine run — `runId` is the scope
    *  discriminator at this seam; (runId, callIndex) is a cross-run key only when
-   *  the caller keeps runIds unique (WorkflowManager and runIsolation do; bare
-   *  runWorkflow callers own that precondition). ADDITIVE, not a hash input.
+   *  the caller keeps runIds unique (WorkflowManager does; bare runWorkflow
+   *  callers own that precondition). ADDITIVE, not a hash input.
    *  Omitted only by callers that are not the engine. */
   callIndex?: number;
   /** The call-identity hash for THIS call — the same value as JournalEntry.hash /
@@ -208,6 +190,5 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
 }
 
 /** The result side of the seam: schema => the validated object, no schema => text.
- *  NO wrapper — usage is separate (onUsage). Must be JSON-round-trippable.
- *  NAME = AgentResult (Phase-1 deliverable name); `AgentRunResult` is the lift-compat alias. */
+ *  NO wrapper. Usage is separate (onUsage). Must be JSON-round-trippable. */
 export type AgentResult<S extends TSchema | undefined = undefined> = S extends TSchema ? Static<S> : string;

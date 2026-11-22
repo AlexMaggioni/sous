@@ -1,5 +1,4 @@
-// A step's tool lists, read the same way by both adapters. These rules took the job of the old
-// ACP permission policy, so the cases follow its tests.
+// A step's tool lists, read the same way by both adapters.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { matches, mcpTool, refusal, toolName } from "../src/tools.js";

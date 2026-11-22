@@ -1,6 +1,5 @@
 // What a step sends Codex: the mode preset, the thread config with its MCP servers and deny
-// list, and how the adapter reads token usage and rate limits back. Rewritten small from
-// codex-acp's AgentMode, CodexAcpClient config builders, McpServerName, TokenCount and RateLimitsMap.
+// list, and how the adapter reads token usage and rate limits back.
 
 import { mcpTool, toolName } from "../tools.js";
 import type { McpServer, Step, Usage } from "../types.js";
@@ -24,7 +23,7 @@ export interface Mode {
 
 const workspaceWrite: SandboxPolicy = { type: "workspaceWrite", writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
 
-/** codex-acp's AgentMode presets. "agent" asks only for actions its reviewer finds unsafe. */
+/** The modes a step can name. "agent" asks only for actions its reviewer finds unsafe. */
 export const MODES: Record<string, Mode> = {
   "read-only": { approvalPolicy: "on-request", approvalsReviewer: "user", sandbox: "read-only", sandboxPolicy: { type: "readOnly", networkAccess: false } },
   "workspace-write": { approvalPolicy: "on-request", approvalsReviewer: "user", sandbox: "workspace-write", sandboxPolicy: workspaceWrite },
@@ -33,7 +32,7 @@ export const MODES: Record<string, Mode> = {
 };
 export const DEFAULT_MODE = "agent";
 
-/** Codex config keys cannot hold whitespace, so codex-acp turns it into underscores. */
+/** Codex config keys cannot hold whitespace, so a server name's whitespace becomes underscores. */
 export const serverName = (name: string) => name.replace(/\p{White_Space}/gu, "_");
 
 /** The MCP server names the user's config files give, from config/read with its layers. */

@@ -24,7 +24,7 @@ function withIsolatedHome(fn: (home: string, cwd: string) => void): void {
 
 describe("workflow paths", () => {
   it("anchors the workflow home under .orchestrator/engine", () => {
-    // Adapted from pi: the home-relative dir is now ".orchestrator/engine" (was ".pi/...").
+    // The home-relative dir is ".orchestrator/engine".
     assert.equal(WORKFLOW_HOME_RELATIVE_DIR, ".orchestrator/engine");
   });
 
@@ -51,8 +51,8 @@ describe("workflow paths", () => {
       assert.equal(paths.runsDir, join(paths.rootDir, "runs"));
       assert.equal(paths.savedDir, join(paths.rootDir, "saved"));
       assert.equal(paths.settingsPath, join(paths.rootDir, "settings.json"));
-      // Adapted: legacy project-relative dirs moved from `.pi/workflows/*` to
-      // `.agentprism/workflows/*` (config.ts WORKFLOW_RUNS_DIR / WORKFLOW_SAVED_DIR).
+      // The legacy project-relative dirs are `.agentprism/workflows/*`
+      // (config.ts WORKFLOW_RUNS_DIR / WORKFLOW_SAVED_DIR).
       assert.equal(paths.legacyRunsDir, resolve(cwd, ".agentprism/workflows/runs"));
       assert.equal(paths.legacySavedDir, resolve(cwd, ".agentprism/workflows/saved"));
     });

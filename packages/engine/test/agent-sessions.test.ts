@@ -1,10 +1,10 @@
 // SESSION RECORDS through the engine — the workflow-level half of the run() session hand-off.
 //
-// The runner surfaces each call's ACP session identity out-of-band (RunOptions.onSessionOpen);
+// The runner reports each call's session out-of-band (RunOptions.onSessionOpen);
 // the engine's job is to make that identity durable and addressable for HOSTS:
 //   - one AgentSessionRecord per live agent() call on result.agentSessions (callIndex/label/
 //     phase context + keptOpen), even with journaling disabled — it rides the result;
-//   - keepSession flows from agent() options to the runner opts bag (additive, not hashed);
+//   - keepSession only marks the record's keptOpen (the runner never gets it, not hashed);
 //   - journal entries carry the record, and resume REPLAYS it verbatim (the session lives in
 //     the agent's store, so the ref stays valid across process restarts exactly like results);
 //   - a failed call still surfaces its record (loading the session is a debugging path);

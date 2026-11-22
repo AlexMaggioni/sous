@@ -1,5 +1,5 @@
 // The words around a step's prompt, and reading a schema step's answer.
-// The prompt texts are the ones the ACP runner sent, kept byte for byte, so a resumed run asks
+// The prompt texts stay byte for byte as earlier versions sent them, so a resumed run asks
 // the same way.
 
 import type { TSchema } from "typebox";

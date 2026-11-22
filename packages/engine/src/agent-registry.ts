@@ -16,9 +16,9 @@
  * a step's own values replace. Other keys, such as `background`, are ignored. Wired: `isolation`
  * ("worktree") → createWorktree().
  *
- * The scanned directory is PARAMETERIZED (loadAgentRegistry's `opts`), replacing
- * Pi's old hardcoded agents directory. The `agentDefinitionKey` serialization is
- * unchanged so a resume hash computed under Pi still matches.
+ * loadAgentRegistry's `opts` names the directories it scans. Keep the
+ * `agentDefinitionKey` serialization as it is: it is part of each agent call's
+ * resume hash, so a change would make every old journal miss.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";

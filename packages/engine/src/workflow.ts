@@ -106,10 +106,8 @@ interface StepWorktree {
 export type EngineRunResult<T = unknown> = Omit<WorkflowRunResult<T>, "status" | "reason" | "resetHint">;
 
 /**
- * Base run options the engine shares with its callers. De-Pi'd from the old
- * `WorkflowAgentOptions` (which carried pi-coding-agent ToolDefinition[]/session
- * types): the engine no longer constructs an agent, so only the plain fields it
- * threads through remain.
+ * Base run options the engine shares with its callers. The engine builds no agent of
+ * its own, so these are plain fields it passes on.
  */
 export interface WorkflowAgentOptions {
   /** Base working directory for the run (e.g. the project root). */
@@ -201,10 +199,8 @@ export interface WorkflowAgentAttemptControl {
 export interface WorkflowRunOptions extends WorkflowAgentOptions {
   args?: unknown;
   /**
-   * REQUIRED injected agent backend. The engine references the runner through this
-   * one method only (it is the frozen AgentRunner seam) and calls agent.run() exactly
-   * once per agent(). The Pi `?? new WorkflowAgent(options)` default is DROPPED — the
-   * engine never constructs an agent and depends on no concrete backend.
+   * REQUIRED. The runner for agent steps: the steps module, or a test's fake. The engine
+   * calls only its run() method and builds no runner of its own.
    */
   agent: AgentRunner;
   /** The session's main model spec, shown in /workflows for default agents. */
@@ -354,7 +350,7 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
     error?: string;
     errorCode?: WorkflowErrorCode;
     recoverable?: boolean;
-    /** The call's ACP session re-attach record (live or journal-replayed), when one exists. */
+    /** The call's session record (live or journal-replayed), when one exists. */
     session?: AgentSessionRecord;
     callIndex: number;
     scope: string;
@@ -423,14 +419,15 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    */
   model?: string;
   /**
-   * ACP session mode id advertised by the selected backend. Strict confinement lever:
-   * unsupported modes fail the agent call instead of falling back to an unconfined session.
+   * The harness mode for this step. Claude Code: a permission mode. Codex: read-only,
+   * workspace-write, agent or agent-full-access. A mode the harness lacks leaves its
+   * default and adds a note. A set mode is part of the journal identity hash.
    */
   mode?: string;
   /**
-   * Agent-advertised ACP session config options. Ids and string/boolean values pass through
-   * verbatim, in ascending option-id order. The reserved `model` id is rejected; use `model`.
-   * Present non-empty maps participate in the journal identity hash.
+   * Accepted for older scripts. No harness reads it. The reserved `model` id is still
+   * rejected (use `model`), and a non-empty map still enters the journal identity hash,
+   * in ascending option-id order, so old journals keep replaying.
    */
   configOptions?: Record<string, string | boolean>;
   /**
@@ -457,7 +454,7 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
   /** Retry attempts after a recoverable failure for this specific agent. */
   retries?: number;
   /**
-   * Working directory for this agent's ACP session. A relative path resolves against the
+   * Working directory for this agent's step. A relative path resolves against the
    * run's base cwd (WorkflowRunOptions.cwd). Worktree isolation overrides it (the worktree
    * IS the agent's cwd). ADDITIVE like mcpServers: it wires the agent's environment, not
    * the logical call, so it is intentionally NOT part of the resume identity hash
@@ -465,39 +462,31 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    */
   cwd?: string;
   /**
-   * Client-provided MCP servers attached to this agent's session (threaded into the runner,
-   * which sends them at ACP `session/new { mcpServers }`). ADDITIVE: it wires tools, not the
-   * logical call, so it is intentionally NOT part of the resume identity hash (hashAgentCall).
+   * Client-provided MCP servers for this agent's step. The harness gets each one in place of
+   * a configured server of the same name. ADDITIVE: it wires tools, not the logical call,
+   * so it is intentionally NOT part of the resume identity hash (hashAgentCall).
    */
   mcpServers?: McpServerConfig[];
   /**
-   * Base64 image attachments appended to the prompt as ACP image ContentBlocks by the runner.
+   * Base64 image attachments sent to the harness with the prompt.
    * ADDITIVE: it shapes the agent input, not the logical call identity, so it is intentionally
    * NOT part of the resume identity hash (hashAgentCall).
    */
   images?: readonly PromptImage[];
   /**
-   * Generic ACP `_meta` passthrough, SESSION-scoped: merged into the outgoing ACP
-   * `session/new` `_meta`, so a script can drive any ACP agent's custom extension surface
-   * (pair with a registered custom backend via `model: "<backend-name>"`). User keys merge
-   * over a custom backend's static `sessionMeta` defaults; the runner's protocol-critical
-   * keys (schema channel, runId stamp) win over both. ADDITIVE: NOT part of the resume
-   * identity hash (hashAgentCall) — it shapes the agent, not the logical call.
+   * Accepted for older scripts. No harness reads it. It stays in the call's input
+   * fingerprint (hashCallInputs), not in the resume identity hash (hashAgentCall).
    */
   meta?: Record<string, unknown>;
   /**
-   * Generic ACP `_meta` passthrough, TURN-scoped: merged into the outgoing ACP
-   * `session/prompt` `_meta`. Backend-computed keys (e.g. the `outputSchema` forward when a
-   * schema is set) win on conflict. ADDITIVE: NOT part of the resume identity hash.
+   * Accepted for older scripts. No harness reads it. It stays in the call's input
+   * fingerprint (hashCallInputs), not in the resume identity hash (hashAgentCall).
    */
   promptMeta?: Record<string, unknown>;
   /**
-   * Keep this agent's ACP session re-openable after the run: the runner skips the
-   * release-time best-effort `session/close`, and the session's re-attach record lands in
-   * `WorkflowRunResult.agentSessions` (and the journal) either way. Re-open later from the
-   * HOST via `runner.loadSession()`/`resumeSession()` — scripts themselves never re-attach.
-   * ADDITIVE: it shapes session disposal, not the logical call, so it is intentionally NOT
-   * part of the resume identity hash (hashAgentCall).
+   * Marks the agent's session record `keptOpen` and changes nothing else. It stays in
+   * the call's input fingerprint (hashCallInputs), not in the resume identity hash
+   * (hashAgentCall).
    */
   keepSession?: boolean;
   /**
@@ -513,8 +502,7 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
   mcp?: string[];
   /**
    * Continue the session of an earlier step with this label instead of a fresh
-   * session. The earlier step should set keepSession: true. Falls back to fresh when the
-   * session cannot be reopened.
+   * session. Falls back to fresh when the session cannot be reopened.
    */
   continue?: string;
 }
@@ -552,7 +540,7 @@ interface RuntimeState {
    * callIndex < firstMiss; once a call misses, it AND everything after run live.
    */
   firstMiss: number;
-  /** Re-attach records for every ACP session the run observed (live via onSessionOpen,
+  /** Session records for every session the run observed (live via onSessionOpen,
    *  replayed via JournalEntry.session), in completion order -> result.agentSessions. */
   agentSessions: AgentSessionRecord[];
   fallbacks: WorkflowRunFallback[];
@@ -3496,7 +3484,7 @@ function sortedConfigOptions(
   if (!configOptions || Object.keys(configOptions).length === 0) return undefined;
   const ids = Object.keys(configOptions).sort();
   const sorted = Object.fromEntries(ids.map((id) => [id, configOptions[id]]));
-  // JSON.stringify normally hoists integer-like object keys into numeric order. ACP option ids
+  // JSON.stringify normally hoists integer-like object keys into numeric order. Option ids
   // are unrestricted strings, so expose the already-sorted key list through [[OwnPropertyKeys]]
   // and keep the contract lexicographic for ids such as "10" and "2" as well.
   return new Proxy(sorted, { ownKeys: () => ids });

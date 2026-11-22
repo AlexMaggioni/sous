@@ -1,5 +1,4 @@
-// Reading a schema step's answer, and checking a step's images before it runs. These moved
-// here from acp-agents' structured-output and runner-images tests, with the code they test.
+// Reading a schema step's answer, and checking a step's images before it runs.
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";

@@ -317,7 +317,7 @@ export interface ExecOptions {
   /**
    * Working directory for THIS run, overriding the manager's constructor `cwd` —
    * the natural fit for hosts that run each workflow inside its own git worktree.
-   * Every subagent ACP session runs here (unless worktree isolation or a per-agent
+   * Every agent step runs here (unless worktree isolation or a per-agent
    * `agent({ cwd })` overrides it further). Persisted with the run so `resume()`
    * re-runs in the SAME directory. Run STATE stays keyed to the manager cwd, so
    * listRuns()/resume() are unaffected by the per-run directory's lifetime.
@@ -1954,7 +1954,8 @@ export class WorkflowManager extends EventEmitter {
     return this.emit(type, payload);
   }
 
-  /** Backend-neutral, best-effort ingress used by the SDK ACP adapter. */
+  /** Feeds one agent's live activity to the run's observability. Nothing in this repo calls
+   *  it now. */
   protected observeAgentActivity(activity: WorkflowAgentActivity): void {
     this.liveAgentObservability.observe(activity);
   }

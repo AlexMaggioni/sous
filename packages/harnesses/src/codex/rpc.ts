@@ -1,5 +1,5 @@
 // JSON-RPC with `codex app-server` over stdio: one JSON message per line, without the
-// "jsonrpc" field, as codex-acp's StdUtils frames it.
+// "jsonrpc" field.
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { InitializeParams } from "./generated/InitializeParams.js";

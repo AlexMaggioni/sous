@@ -1,6 +1,5 @@
-// Lifted from pi agent-history.ts (types only). Delivered diagnostically via
-// RunOptions.onHistory; never gates the result. The steps module builds it from the
-// harness events.
+// A step's message and tool history, for diagnosis only. The steps module builds it from
+// the harness events and delivers it through RunOptions.onHistory. It never gates the result.
 export type AgentHistoryRole = "user" | "assistant" | "tool";
 export type AgentHistoryKind = "text" | "toolCall" | "toolResult" | "error";
 

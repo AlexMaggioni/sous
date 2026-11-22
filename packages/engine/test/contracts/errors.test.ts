@@ -58,7 +58,7 @@ describe("WorkflowError.authContext", () => {
     });
     assert.equal(e.code, WorkflowErrorCode.AUTH_REQUIRED);
     assert.deepEqual(e.authContext, authContext);
-    // The two method type discriminants (ACP schema 1.21.0) are exactly the allowed union values.
+    // The two method types a run file can hold are exactly the allowed union values.
     assert.deepEqual(
       e.authContext?.methods.map((m) => m.type),
       ["agent", "agent", "terminal"],
