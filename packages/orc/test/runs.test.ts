@@ -317,6 +317,44 @@ return { first, second }`,
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"]);
   });
 
+  it("a step's time limit counts from when it starts running, not while it waits for a free slot", async () => {
+    const { paths, projectDir } = setup(
+      {
+        queue: `export const meta = { name: 'queue', description: 'two steps share one slot' }
+return await parallel([
+  () => agent('a', { label: 'a', timeout: '1s' }),
+  () => agent('b', { label: 'b', timeout: '1s' }),
+])`,
+      },
+      { maxAgents: 1 },
+    );
+    // Each step runs 600ms, under its 1s limit. The one that waits for the slot
+    // waits at least 600ms more, so the wait and the run together pass 1s.
+    const stopped: string[] = [];
+    const { runner, calls } = fakeRunner(
+      (call) =>
+        new Promise((resolve, reject) => {
+          const signal = call.options.signal as AbortSignal | undefined;
+          const onAbort = () => {
+            clearTimeout(timer);
+            stopped.push(call.label!);
+            reject(signal!.reason);
+          };
+          const timer = setTimeout(() => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve(`${call.label} done`);
+          }, 600);
+          signal?.addEventListener("abort", onAbort);
+        }),
+    );
+    const record = createRun(paths, { workflow: "queue", projectDir, inputs: {} });
+    const done = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    assert.deepEqual(stopped, [], "no step was stopped by its time limit");
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["a done", "b done"]);
+    assert.equal(calls.length, 2, "each step ran once");
+  });
+
   it("per-run step changes and a default model reach the agent", async () => {
     const { paths, projectDir } = setup({
       changes: `export const meta = { name: 'changes', description: 'step changes' }

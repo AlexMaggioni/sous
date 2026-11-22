@@ -178,16 +178,17 @@ export function createSteps(options: StepsOptions): AgentRunner & { dispose(): P
       if (!servers.some((existing) => existing.name === found.server.name)) servers.push(found.server);
     }
 
-    const timeout = call.timeoutMs ? AbortSignal.timeout(call.timeoutMs) : undefined;
-    const signals = [call.signal, timeout].filter((signal): signal is AbortSignal => signal !== undefined);
-    const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
-
     let release: (() => void) | undefined;
     if (options.slots) {
       options.onSlot?.({ label: call.label, state: "waiting" });
       release = await options.slots.acquire({ runId: call.runId, label: call.label }, call.signal);
       options.onSlot?.({ label: call.label, state: "running" });
     }
+
+    // The step's time limit counts from here, once it holds a slot, not while it waits for one.
+    const timeout = call.timeoutMs ? AbortSignal.timeout(call.timeoutMs) : undefined;
+    const signals = [call.signal, timeout].filter((signal): signal is AbortSignal => signal !== undefined);
+    const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
     try {
       const account = options.accounts?.[step.harness];
       if (options.inner) return await runInner(options.inner, prompt, call, step, { signal, servers, account });
