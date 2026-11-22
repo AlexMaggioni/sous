@@ -46,6 +46,8 @@ export interface RunRecord {
   resumeLatest?: boolean;
   /** Steps `orc stop --step` asked the worker to stop, by the name the log gives them. */
   stopSteps?: string[];
+  /** The installed Claude Code and Codex the run's steps used, by harness, from its last start. */
+  programs?: Record<string, { path: string; version?: string }>;
 }
 
 export interface NestedRun {

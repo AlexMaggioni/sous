@@ -15,6 +15,8 @@ import { ensureHome, findProjectDir, homePaths, loadConfig, rememberProject, wor
 import { listQuestions, normalizeAnswer, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
 import { workflowExtras } from "./inputs.js";
 import { createRun, InputProblems, logFile, resolveWorkflow, spawnWorker } from "./launch.js";
+import { doctor } from "./doctor.js";
+import { isProgram, PROGRAM_INFO } from "./programs.js";
 import { gcWorktrees, isPlace, removeWorktree, runWorktrees } from "./places.js";
 import { findRecord, listRecords, loadSnapshot, processAlive, updateRecord, type RunRecord } from "./records.js";
 import { currentWorkflows, managerFor, workerMain } from "./worker.js";
@@ -30,7 +32,7 @@ interface Parsed {
 
 /** orc's own flags. Any other --name before `--`, and everything after it, is a workflow input. */
 const OWN_FLAGS = new Set(["place", "model", "project", "concurrency", "priority", "cron", "days", "lines", "step", "answers"]);
-const OWN_SWITCHES = new Set(["wait", "json", "all", "follow", "f", "dry-run", "yes", "reuse", "latest", "same", "help", "h"]);
+const OWN_SWITCHES = new Set(["wait", "json", "all", "follow", "f", "dry-run", "yes", "reuse", "latest", "same", "live", "help", "h"]);
 
 export function parseArgs(argv: string[], ownFlags = OWN_FLAGS, ownSwitches = OWN_SWITCHES): Parsed {
   const parsed: Parsed = { positionals: [], flags: {}, sets: [], inputs: {} };
@@ -469,6 +471,10 @@ function cmdShow(parsed: Parsed): number {
   out(`started   ${record.createdAt}  by ${record.origin}${record.schedule ? ` (${record.schedule})` : ""}${record.rerunOf ? `, rerun of ${record.rerunOf}` : ""}${record.reuseFrom ? `, reusing its unchanged steps` : ""}${record.startedByRun ? `, from run ${record.startedByRun}` : ""}`);
   if (Object.keys(record.args).length) out(`inputs    ${JSON.stringify(record.args)}`);
   if (record.overrides) out(`changes   ${JSON.stringify(record.overrides)}`);
+  for (const [program, used] of Object.entries(record.programs ?? {})) {
+    const name = isProgram(program) ? PROGRAM_INFO[program].name : program;
+    out(`program   ${name} ${used.version ?? "(version unknown)"}  ${used.path}`);
+  }
   if (state?.tokenUsage) out(`tokens    ${state.tokenUsage.total}${state.durationMs ? `  in ${Math.round(state.durationMs / 1000)}s` : ""}`);
   if (state?.agents.length) {
     out("steps");
@@ -910,11 +916,15 @@ const HELP = `orc runs saved workflows in the background.
   orc gc [--dry-run]                   remove worktrees whose branch is merged
   orc discard <run> [--yes]            delete the run's branches and worktrees, merged or not
   orc prune --days N                   remove finished runs older than N days
+  orc doctor [--live]                  the installed Claude Code and Codex the steps run on, and
+                                       whether orc talks to them; --live runs one tiny step on each
+        --model <spec>                 with --live, check this model only, such as codex/gpt-6.1-sol
 
 Home: ${homePaths().home} (set ORC_HOME to change). A project's .orchestrator/ folder holds its
 workflows, and wins over the home folder's. Agents and MCP servers come from the project's
 .rulesync/, then the global rulesync folder (rulesyncGlobal in config.json), then the harnesses'
-own folders, such as .claude/agents/ and .codex/agents/.`;
+own folders, such as .claude/agents/ and .codex/agents/. Steps run on the Claude Code and Codex
+installed on this machine.`;
 
 export async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
@@ -972,6 +982,8 @@ export async function main(argv: string[]): Promise<number> {
         return cmdPrune(parsed);
       case "discard":
         return cmdDiscard(parsed);
+      case "doctor":
+        return await doctor({ live: parsed.flags.live === true, model: str(parsed.flags.model), json: parsed.flags.json === true });
       default:
         throw new Usage(`unknown command "${command}". orc help lists them.`);
     }

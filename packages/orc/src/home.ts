@@ -26,6 +26,10 @@ export interface OrcConfig {
   keepDays?: number;
   /** Retries of a failed step before the run pauses on it, when the step sets none. At most 4. */
   retries: number;
+  /** The Claude Code program, when orc should not look for it on PATH. */
+  claudePath?: string;
+  /** The Codex program, when orc should not look for it on PATH. */
+  codexPath?: string;
 }
 
 const DEFAULT_CONFIG: OrcConfig = { maxAgents: 4, defaultPlace: "worktree", notify: true, retries: 2 };

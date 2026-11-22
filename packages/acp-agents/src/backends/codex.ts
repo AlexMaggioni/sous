@@ -2,7 +2,7 @@
 // maintained fork of @agentclientprotocol/codex-acp imported as a non-squashed subtree (#282),
 // which bakes in the outputSchema patch. The patch forwards
 // request._meta["outputSchema"] into the Codex App Server's turn/start.outputSchema,
-// which the shipped @openai/codex binary honors as an OpenAI Responses-API STRICT constraint —
+// which the installed Codex honors as an OpenAI Responses-API STRICT constraint —
 // applied to EVERY sampled assistant message in the turn (field-verified), not only the last:
 // intermediate progress messages between tool calls come back schema-shaped too. So the schema
 // rides per-PROMPT `_meta` (not session/new), normalized to OpenAI strict rules first, and

@@ -1,11 +1,11 @@
-This package uses the bundled `@openai/codex` dependency by default.
-Set `CODEX_PATH` to run a different Codex binary; versions other than the one specified in `package.json` may not be compatible.
+This fork does not bundle Codex. It runs the `codex` installed on PATH, or the one `CODEX_PATH` names.
+The app-server protocol is meant to stay backward compatible, so a newer Codex should work. `orc doctor` checks it.
 
 ### Runtime environment
 
 - `CODEX_API_KEY` - API key used when the API-key auth method is selected. Takes precedence over `OPENAI_API_KEY`.
 - `OPENAI_API_KEY` - fallback API key used when the API-key auth method is selected.
-- `CODEX_PATH` - run a specific Codex executable instead of the bundled package dependency.
+- `CODEX_PATH` - run a specific Codex executable instead of the `codex` on PATH.
 - `CODEX_CONFIG` - JSON object merged into the Codex session config.
 - `MODEL_PROVIDER` - model provider to pass to Codex for new sessions.
 - `DEFAULT_AUTH_REQUEST` - ACP auth request JSON used when Codex requires authentication.
@@ -33,7 +33,7 @@ Run from sources
       "command": "npm",
       "args": ["run", "start", "--prefix", "/path/to/project/"],
       "env": {
-        "CODEX_PATH": "node_modules/.bin/codex",
+        "CODEX_PATH": "/path/to/codex",
         "APP_SERVER_LOGS": "optional/path/to/existing/log/directory"
       }
     }
@@ -81,9 +81,12 @@ npm run package:all
 
 ### Update supported Codex version
 
-1. Update the `@openai/codex` version in `package.json` (under `dependencies`).
+1. Install the Codex version to support, so `codex` on PATH is that version.
 2. Regenerate Codex types in `src/app-server/`: `npm run generate-types`
 3. Ensure there are no type errors or failed tests: `npm run typecheck` and `npm run test`
+
+The tests that talk to a real Codex run the installed one, at `CODEX_PATH` or the first `codex` on PATH,
+each with its own temporary `CODEX_HOME`. Set `CODEX_PATH` when the first `codex` on PATH is a wrapper script.
 
 ### Session notices
 

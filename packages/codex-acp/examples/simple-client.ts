@@ -348,7 +348,7 @@ async function main() {
         sessionId = session.sessionId;
     } catch (err) {
         log(`session/new failed: ${err}`);
-        log("if this is an auth error, log in first: npx @openai/codex auth login");
+        log("if this is an auth error, log in first: codex login");
         await shutdown("session/new failed", 1);
         return;
     }

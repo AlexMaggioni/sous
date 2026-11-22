@@ -6,6 +6,11 @@ in a scratch folder, written `$S` below. `$S/aiglobal` stood in for the global r
 through `{ "rulesyncGlobal": "$S/aiglobal" }` in `~/.orchestrator/config.json`, which was removed
 afterwards. OpenCode stayed out of the runs.
 
+These runs used the Claude Code and Codex that orc bundled then: Claude Code 2.1.281, where haiku
+meant Haiku 4.5 (claude-haiku-4-5-20251001), and Codex 0.156.1. orc now runs the installed
+programs, where haiku means Haiku 5.5. The [installed programs proof](installed.md) reruns these
+cases on them.
+
 ## One agent on two harnesses
 
 One agent in the global folder, `$S/aiglobal/.rulesync/subagents/reviewer.md`:
@@ -60,8 +65,10 @@ result
 Two things came out of this case:
 
 - The first try failed on Codex with "Invalid params". The Codex block then named gpt-6.1-sol, the
-  model in this machine's `~/.codex/config.toml`. codex-acp runs the Codex it bundles, which
-  doesn't offer that model. The last section shows the way around it.
+  model in this machine's `~/.codex/config.toml`. codex-acp ran the Codex it bundled, which
+  doesn't offer that model. orc now runs the installed Codex, and the
+  [installed programs proof](installed.md#gpt-61-sol-in-an-agents-block) reruns this case on
+  gpt-6.1-sol.
 - `orc show` printed a step's model without its harness, such as `haiku`. It now prints both, also
   when the agent's block picked the model.
 
@@ -350,16 +357,7 @@ The commit "wordCount says an empty text has one word" changes `src/textkit.js` 
 
 ## Codex's version
 
-codex-acp runs the Codex it bundles, 0.156.1. This machine's Codex is 0.169.0, at
-`/opt/homebrew/bin/codex`. With the bundled Codex, a step on gpt-6.1-sol fails with "Invalid
-params". `CODEX_PATH` makes codex-acp run another Codex. The same step, once with no effort and
-once with `reasoning_effort: low`:
-
-```sh
-CODEX_PATH=/opt/homebrew/bin/codex node try-codex.mjs
-```
-
-```
-undefined -> "OK"
-{"reasoning_effort":"low"} -> "OK"
-```
+codex-acp ran the Codex it bundled, 0.156.1. This machine's Codex is 0.169.0, at
+`/opt/homebrew/bin/codex`. With the bundled Codex, a step on gpt-6.1-sol failed with "Invalid
+params", and `CODEX_PATH` was the way around it. orc no longer bundles Codex or Claude Code. It
+runs the installed ones, with nothing to set. See the [installed programs proof](installed.md).

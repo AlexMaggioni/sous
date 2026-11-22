@@ -11,6 +11,7 @@ import { ensureHome, homePaths, loadConfig, loadSecrets, lookupSettings, workflo
 import { checkInputs, workflowExtras } from "./inputs.js";
 import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuestion, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
+import { findProgram, PROGRAM_INFO } from "./programs.js";
 import { dropUnchangedWorktrees, isPlace, preparePlace } from "./places.js";
 import { loadRecord, loadSnapshot, noteNested, saveSnapshot, updateRecord, type RunRecord } from "./records.js";
 import { createOrcRunner } from "./runner.js";
@@ -132,6 +133,13 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
       if (state === "waiting" && slots.held().length >= Math.max(1, loadConfig(paths).maxAgents)) {
         log(`${stamp()} queued     ${label ?? "agent"} waits for a free agent slot`);
       }
+    },
+    // A runner from $ORC_AGENT_MODULE or the caller brings its own programs.
+    ...(options.inner || process.env.ORC_AGENT_MODULE ? {} : { programs: (program) => findProgram(program, { config }) }),
+    onProgram: ({ program, path, version }) => {
+      log(`${stamp()} program    ${PROGRAM_INFO[program].name} ${version ?? "(version unknown)"} at ${path}`);
+      const programs = { ...loadRecord(paths, runId)?.programs, [program]: { path, ...(version ? { version } : {}) } };
+      updateRecord(paths, runId, { programs });
     },
   });
   // A run keeps the workflows as they were when it started. A resume takes the edited ones only

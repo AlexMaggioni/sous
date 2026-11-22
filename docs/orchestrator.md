@@ -194,13 +194,40 @@ finds them in its own folders, such as `.claude/skills/`. `npx rulesync generate
 sessions too. orc never writes into those folders. On Claude Code an agent's `skills` list is the
 only skills it sees. Codex has no such list and sees every skill in its folders.
 
-### Codex's version
+### The installed Claude Code and Codex
 
-A Codex step runs through codex-acp, which runs the Codex it bundles, 0.156.1. That version may
-not offer your newest models, such as gpt-6.1-sol. Set `CODEX_PATH` to your own `codex`, such as
-`/opt/homebrew/bin/codex`, to run that one instead. Without it, the bundled Codex also rewrites
-Codex's own skills in `~/.codex/skills/.system/` when your Codex is another version, and your
-Codex writes its set back on its next start.
+A Claude Code or Codex step runs on the program installed on this machine. orc ships no copy of
+its own, so a step gets the same version and models as your own sessions. orc looks for each
+program in this order and takes the first one it finds:
+
+1. the adapter's own variable, `CLAUDE_CODE_EXECUTABLE` or `CODEX_PATH`;
+2. `claudePath` or `codexPath` in `config.json`;
+3. the folders on PATH;
+4. `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`.
+
+On PATH, orc passes over wrapper scripts, such as a launcher that picks an account, since the
+adapter needs the program itself. The npm launcher of Claude Code or Codex counts as the program.
+A path you give in a variable or in `config.json` is taken as is, even a script, but the file must
+exist.
+
+When a step's program is missing, the step stops before its agent starts, and the message says how
+to install it. Each run records the path and version of each program it used, and `orc show`
+prints them.
+
+`orc doctor` shows the program orc found for each harness, how it found it, its version, and the
+other copies it doesn't use. It opens a session on each and lists its models, which sends no
+prompt. `orc doctor --live` also runs one tiny step on each, and `--model codex/gpt-6.1-sol` checks
+one model.
+
+Claude Code keeps its account and settings in `~/.claude`, or in the folder `CLAUDE_CONFIG_DIR`
+names where orc starts. Codex uses `~/.codex`, or `CODEX_HOME`. To run orc's Claude steps on
+another account, start orc with `CLAUDE_CONFIG_DIR` set to that account's folder. The service keeps
+the environment of the shell that ran `orc daemon start`.
+
+orc never updates the programs. Update them as you usually do, such as with `npm install -g` or
+Homebrew, and the next step runs the new version. When a machine has several copies of one
+program, each copy may rewrite its own files, such as Codex's skills in `~/.codex/skills/.system/`.
+`orc doctor` lists the copies.
 
 ## Runs
 
@@ -303,6 +330,13 @@ Proven end to end with real agents, on `claude/haiku` unless a proof says otherw
   work on both harnesses, and the harnesses' agent, skill and MCP files stay as they were.
 - A schedule in a workflow's meta. With `schedule: "* * * * *"`, `orc daemon run` started one run
   a minute, each marked as started by the schedule.
+- [The installed Claude Code and Codex](proof/installed.md), with nothing set by hand. Steps run on
+  Claude Code 2.1.329 and Codex 0.169.0, on Haiku 5.5 and gpt-6.1-sol, each run keeps which
+  program and version it used, `orc doctor` checks both, and neither program changes its own
+  files during the runs.
+
+The proofs before that one ran on the Claude Code and Codex that orc bundled then: Claude Code
+2.1.281, where haiku meant Haiku 4.5, and Codex 0.156.1.
 
 Waiting:
 

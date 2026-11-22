@@ -16,9 +16,12 @@ pnpm test           # pnpm build && pnpm -r test
 pnpm typecheck      # pnpm -r exec tsc --noEmit
 ```
 
-`pnpm install` does one non-obvious thing:
-
-1. **Fetches native binaries.** Both backends pull an os/cpu-gated native binary (`@openai/codex`, `@anthropic-ai/claude-agent-sdk`). Stay on a glibc x64 runner in CI and do **not** pass `--no-optional`.
+`pnpm install` fetches no Claude Code or Codex binary. Steps run on the Claude Code and Codex
+installed on the machine: `pnpm-workspace.yaml` skips the Claude Agent SDK's platform binaries,
+and `codex-acp` has no Codex dependency. `pnpm test` and CI need neither program. They leave out
+codex-acp's tests, which talk to a real Codex: run them with Codex installed, through
+`pnpm --filter @automatalabs/codex-acp test`. Set `CODEX_PATH` when the first `codex` on PATH is a
+wrapper script.
 
 > The Codex backend's turn-level `outputSchema` forward is baked into the workspace `@automatalabs/codex-acp` package (`packages/codex-acp`, consumed by `acp-agents` as `workspace:*`), so there is nothing to patch locally.
 

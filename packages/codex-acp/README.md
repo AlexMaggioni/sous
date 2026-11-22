@@ -44,7 +44,7 @@ npm install -g @automatalabs/codex-acp
 codex-acp --version
 ```
 
-The npm package includes a compatible `@openai/codex` dependency. Set `CODEX_PATH` only when you want the adapter to run a different Codex binary:
+This fork does not bundle Codex. It runs the `codex` installed on PATH. Set `CODEX_PATH` to run a different Codex binary:
 
 ```bash
 CODEX_PATH=/path/to/codex npx -y @automatalabs/codex-acp
@@ -72,7 +72,7 @@ The adapter advertises ACP auth methods during initialization. Clients can authe
 
 - `CODEX_API_KEY` - API key used when the API-key auth method is selected. Takes precedence over `OPENAI_API_KEY`.
 - `OPENAI_API_KEY` - fallback API key used when the API-key auth method is selected.
-- `CODEX_PATH` - run a specific Codex executable instead of the bundled package dependency.
+- `CODEX_PATH` - run a specific Codex executable instead of the `codex` on PATH.
 - `CODEX_CONFIG` - JSON object merged into the Codex session config.
 - `MODEL_PROVIDER` - model provider to pass to Codex for new sessions.
 - `DEFAULT_AUTH_REQUEST` - ACP auth request JSON used when Codex requires authentication.

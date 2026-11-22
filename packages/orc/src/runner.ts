@@ -2,12 +2,15 @@
 // slot from the machine-wide cap, then run through AgentPrism's ACP runner with the step's
 // effort, skills, MCP servers and time limit. A step that names an agent runs on the harness
 // agents.ts picks for it, with that harness's settings, or stops when the agent can't run there.
+// A Claude Code or Codex step runs on the installed program programs.ts finds, or stops when
+// there is none.
 
 import { createAcpRunner } from "@automatalabs/acp-agents";
 import { WorkflowError, WorkflowErrorCode, type AgentRunner, type McpServerConfig } from "@automatalabs/shared-types";
 import { EXEC_MODEL, type ExecSpec } from "@automatalabs/workflow-engine";
 import { isHarness, missingServer, planStep, routeHarness, type AgentLookup, type Harness, type McpLookup, type StepGiven } from "./agents.js";
 import { runExecSpec } from "./exec.js";
+import { findProgram, isProgram, PROGRAM_INFO, programVersion, type FoundProgram, type Program, type ProgramLookup } from "./programs.js";
 import type { SlotPool } from "./slots.js";
 
 export interface OrcRunnerOptions {
@@ -24,6 +27,12 @@ export interface OrcRunnerOptions {
   env?: Record<string, string>;
   /** Called when an agent step waits for a slot and when it gets one. */
   onSlot?: (event: { label?: string; state: "waiting" | "running" }) => void;
+  /** Finds the installed program a Claude Code or Codex step runs on. With AgentPrism's runner
+   *  the default looks as programs.ts says. A runner given as `inner` brings its own programs,
+   *  so no lookup runs unless this is set. */
+  programs?: (program: Program) => ProgramLookup;
+  /** Called once per program, before the first step that runs on it. */
+  onProgram?: (found: FoundProgram & { version?: string }) => void;
 }
 
 interface OrcRunExtras {
@@ -102,6 +111,19 @@ export function claudeMeta(meta: Record<string, unknown> | undefined, given: Cla
 export function createOrcRunner(options: OrcRunnerOptions): AgentRunner & { dispose(): Promise<void> } {
   let inner = options.inner;
   const innerRunner = () => (inner ??= createAcpRunner() as unknown as NonNullable<OrcRunnerOptions["inner"]>);
+  const lookup = options.programs ?? (options.inner ? undefined : (program: Program) => findProgram(program));
+  const ready = new Set<Program>();
+  /** Point the adapter at the installed program. Returns the problem when there is none. */
+  const useProgram = (program: Program): string | undefined => {
+    if (!lookup || ready.has(program)) return undefined;
+    const found = lookup(program);
+    if ("problem" in found) return found.problem;
+    // The adapters read these each time they start, so every later session gets the same program.
+    process.env[PROGRAM_INFO[program].variable] = found.path;
+    ready.add(program);
+    options.onProgram?.({ ...found, version: programVersion(found.path) });
+    return undefined;
+  };
 
   const run = async (prompt: string, runOptions: Record<string, unknown> = {}): Promise<unknown> => {
     const extras = runOptions as OrcRunExtras;
@@ -132,6 +154,11 @@ export function createOrcRunner(options: OrcRunnerOptions): AgentRunner & { disp
       if ("problem" in planned) throw stop(planned.problem);
       const { plan } = planned;
       step = { harness: plan.harness, model: plan.model, effort: plan.effort, skills: plan.skills, mcpNames: plan.mcp, tools: plan.tools, disallowedTools: plan.disallowedTools };
+    }
+
+    if (isProgram(step.harness)) {
+      const problem = useProgram(step.harness);
+      if (problem) throw stop(problem);
     }
 
     const servers = [...(extras.mcpServers ?? [])];

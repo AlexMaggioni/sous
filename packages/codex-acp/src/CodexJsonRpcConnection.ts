@@ -2,7 +2,6 @@ import * as rpc from "vscode-jsonrpc/node";
 import type {MessageConnection} from "vscode-jsonrpc/node";
 import type {ChildProcessWithoutNullStreams} from "node:child_process";
 import {spawn} from "node:child_process";
-import {createRequire} from "node:module";
 
 import {createJSONRPCReader, createJSONRPCWriter} from "./StdUtils";
 import {logger} from "./Logger";
@@ -21,8 +20,8 @@ export function startCodexConnection(codexPath?: string, env?: NodeJS.ProcessEnv
             ? spawn(`"${codexPath}" app-server`, { shell: true, env: spawnEnv })
             : spawn(codexPath, ['app-server'], { env: spawnEnv });
     } else {
-        const bundledCodexPath = createRequire(import.meta.url).resolve("@openai/codex/bin/codex.js");
-        codex = spawn(process.execPath, [bundledCodexPath, 'app-server'], {env: spawnEnv});
+        // orchestrator: no bundled Codex. Without CODEX_PATH, run the codex installed on PATH.
+        codex = spawn("codex", ['app-server'], {env: spawnEnv, shell: process.platform === 'win32'});
     }
 
     attachLogs(codex);
@@ -36,6 +35,12 @@ export function startCodexConnection(codexPath?: string, env?: NodeJS.ProcessEnv
 
     // Terminate all current activities on process termination
     codex.on("exit", _ => {
+        connection.dispose();
+    });
+    // orchestrator: Codex is not bundled, so a missing program is a clear error, not a crash.
+    codex.on("error", error => {
+        logger.log(`[SPAWN ERROR] ${error.message}`);
+        process.stderr.write(`codex-acp: could not start ${codexPath ?? "codex on PATH"}: ${error.message}. Install Codex with \`npm install -g @openai/codex\`, or set CODEX_PATH.\n`);
         connection.dispose();
     });
 

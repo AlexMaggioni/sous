@@ -192,10 +192,7 @@ export function createBaseTestFixture(config: ConnectionConfig): TestFixture {
  * Use for integration tests that need to interact with the actual Codex binary.
  */
 export function createTestFixture(): TestFixture {
-    const pathToCodex = path.resolve(process.cwd(), "node_modules", ".bin", process.platform === 'win32' ? "codex.cmd" : "codex");
-    if (!fs.existsSync(pathToCodex)) {
-        throw new Error(`Codex binary not found at ${pathToCodex}. Did you run 'npm install'?`);
-    }
+    const pathToCodex = installedCodex();
 
     const codexHome = createTestCodexHome();
     const codexConnection = startCodexConnection(pathToCodex, {
@@ -210,6 +207,27 @@ export function createTestFixture(): TestFixture {
         connection: codexConnection.connection,
         getExitCode: () => codexConnection.process.exitCode
     });
+}
+
+// orchestrator: this fork does not bundle Codex, so these tests run the installed one: CODEX_PATH,
+// else the first codex on PATH. Each test still gets its own CODEX_HOME.
+function installedCodex(): string {
+    const fromEnv = process.env["CODEX_PATH"];
+    if (fromEnv) {
+        if (!fs.existsSync(fromEnv)) throw new Error(`CODEX_PATH is ${fromEnv}, which does not exist.`);
+        return fromEnv;
+    }
+    const name = process.platform === 'win32' ? "codex.cmd" : "codex";
+    for (const dir of (process.env["PATH"] ?? "").split(path.delimiter).filter(Boolean)) {
+        const candidate = path.join(dir, name);
+        try {
+            fs.accessSync(candidate, fs.constants.X_OK);
+            if (fs.statSync(candidate).isFile()) return candidate;
+        } catch {
+            // not here
+        }
+    }
+    throw new Error("Codex is not installed: no codex on PATH. Install it with `npm install -g @openai/codex`, or set CODEX_PATH.");
 }
 
 function createTestCodexHome(): string {
