@@ -14,8 +14,8 @@
 // failures extension is negotiated, resolves the turn and reports the failure structurally
 // (see typed-failures.ts). `mapTypedSessionFailure` maps that channel onto the SAME contract, so
 // both channels produce identical seam semantics for the conditions they share.
-import { isWorkflowError, WorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
-import type { AuthErrorContext } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
+import type { AuthErrorContext } from "@orchestrator/shared-types";
 import type { AuthMethod } from "@agentclientprotocol/sdk";
 import type { Backend, ProviderErrorClassification, ProviderErrorMetadata } from "./backend.js";
 import type { TypedSessionFailure } from "./typed-failures.js";

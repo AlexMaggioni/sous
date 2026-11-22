@@ -1,6 +1,4 @@
-# ACP adapter for Codex CLI (`@automatalabs/codex-acp`)
-
-[![npm version](https://img.shields.io/npm/v/%40automatalabs%2Fcodex-acp)](https://www.npmjs.com/package/@automatalabs/codex-acp)
+# ACP adapter for Codex CLI (`@orchestrator/codex-acp`)
 
 Use [OpenAI Codex](https://github.com/openai/codex) from [Agent Client Protocol](https://agentclientprotocol.com/) clients.
 
@@ -18,7 +16,7 @@ This package is a fork of [`agentclientprotocol/codex-acp`](https://github.com/a
 - Per-session base and developer instruction overrides via request `_meta` (fork extension, see below).
 - Strict native session steering via `_session/steering` while the original prompt is active; an accepted instruction returns `{ outcome: "injected" }`, while an idle session or settlement race returns `{ outcome: "promptRequired", reason: "noRunningTurn" }`. Steering never starts or queues a turn, and unexpected failures reject the JSON-RPC request.
 - Loaded-session turn-terminal state via `_session/loaded_turn` (the re-attach arm's authoritative completion evidence): `_session/loaded_turn/query { sessionId }` answers whether the loaded session's founding turn is still running right now — `running` while a turn executes in-process (the `_session/loaded_turn/ended` notification then fires when that turn completes, with its stop reason or its error), `completed` when the loaded thread's last turn completed (the replayed final message is authoritative), and `interrupted` when it ended without a terminal message (nothing is running — re-issue is safe).
-- Fork extensions advertised under `agentCapabilities._meta["@automatalabs/codex-acp"]` for client-side feature detection.
+- Fork extensions advertised under `agentCapabilities._meta["@orchestrator/codex-acp"]` for client-side feature detection.
 - Live `session/fork`: the forked Codex thread stays subscribed — `thread/fork` subscribes the connection to the new thread exactly like `thread/resume` does, and this fork no longer unsubscribes it afterwards — and the new session publishes its available commands and MCP startup status like a resumed one, so the returned session id is promptable at once with no `session/resume` / `session/load` round trip (upstream unsubscribes the forked thread until it is reopened).
 - Shell command, file change, [permission request](docs/permission-extension.md), MCP tool call, terminal output, reasoning, plan, web search, image generation, image view, token usage, and review events.
 - Client `fs.readTextFile` capability: when the client advertises it, file-change diff content is read through `fs/read_text_file` (so diffs reflect unsaved editor buffers), with local file system fallback otherwise. File writes happen inside codex itself — the app-server delegates no file IO to the client.
@@ -34,20 +32,20 @@ This package is a fork of [`agentclientprotocol/codex-acp`](https://github.com/a
 Run the published package directly:
 
 ```bash
-npx -y @automatalabs/codex-acp
+npx -y @orchestrator/codex-acp
 ```
 
 Or install it globally:
 
 ```bash
-npm install -g @automatalabs/codex-acp
+npm install -g @orchestrator/codex-acp
 codex-acp --version
 ```
 
 This fork does not bundle Codex. It runs the `codex` installed on PATH. Set `CODEX_PATH` to run a different Codex binary:
 
 ```bash
-CODEX_PATH=/path/to/codex npx -y @automatalabs/codex-acp
+CODEX_PATH=/path/to/codex npx -y @orchestrator/codex-acp
 ```
 
 To try changes that have landed on `main` but are not released yet, install from the
@@ -141,7 +139,7 @@ extensibility convention):
 ```jsonc
 "agentCapabilities": {
   "_meta": {
-    "@automatalabs/codex-acp": {
+    "@orchestrator/codex-acp": {
       "outputSchema": true,           // session/prompt _meta.outputSchema (see above)
       "baseInstructions": true,       // session-scoped instruction overrides (see above)
       "developerInstructions": true

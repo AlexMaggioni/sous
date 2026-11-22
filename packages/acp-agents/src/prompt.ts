@@ -6,7 +6,7 @@ import {
   WorkflowError,
   WorkflowErrorCode,
   type PromptImage,
-} from "@automatalabs/shared-types";
+} from "@orchestrator/shared-types";
 import type { TSchema } from "typebox";
 import type { Backend } from "./backend.js";
 import { toJsonSchema } from "./schema-strict.js";

@@ -1,7 +1,7 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
-import type { AgentSessionRef } from "@automatalabs/shared-types";
+import type { AgentSessionRef } from "@orchestrator/shared-types";
 import type { AcpEventContext } from "../src/index.js";
 import { createFakeAgentHarness } from "./helpers/fake-agent.js";
 

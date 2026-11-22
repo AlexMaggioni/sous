@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Type } from "typebox";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import {
   extractValidated,
   findJsonBlock,

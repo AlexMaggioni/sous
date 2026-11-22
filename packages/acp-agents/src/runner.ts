@@ -25,7 +25,7 @@ import {
   type ContinuationSkipReason,
   type RunOptions,
   type SystemPromptOptions,
-} from "@automatalabs/shared-types";
+} from "@orchestrator/shared-types";
 import type {
   AuthenticateRequest,
   AuthenticateResponse,
@@ -154,7 +154,7 @@ export interface ProbedConfigOptions {
   /** Effective ACP mode catalog after normalizing the mode config-option fallback; null means unsupported. AcpAgentRunner always returns this field. */
   modes?: SessionModeState | null;
   /** The backend's traits refined by the probe connection's initialize advertisements
-   *  (`describeBackendTraits`): pi and the Codex fork report their system-prompt channel as
+   *  (`describeBackendTraits`): the Codex fork reports its system-prompt channel as
    *  `advertised`, Claude reports the table. AcpAgentRunner and the SDK probe always return it. */
   traits?: AcpAgentTraits;
 }
@@ -692,7 +692,7 @@ export class AcpAgentRunner implements AgentRunner, AuthCapableRunner, ProviderC
   /** Logout through the selected backend. REBUILT (§2.9): first clear the AuthStore machine
    *  (zeroizing `authenticateMeta`/`envValues`, §2.14) and recycle the pool so no pooled process
    *  replays a stale gateway credential, THEN issue the agent `logout` RPC only where advertised
-   *  (gated on `supportsLogout`; opencode advertises none → store-clear + recycle, no RPC, §3.4). */
+   *  (gated on `supportsLogout`; an agent that advertises none gets store-clear + recycle, no RPC, §3.4). */
   async logout(opts: LogoutOptions = {}): Promise<LogoutResponse | void> {
     if (this.disposed) throw new Error("ACP agent runner is disposed");
     opts.signal?.throwIfAborted();
@@ -872,8 +872,8 @@ export class AcpAgentRunner implements AgentRunner, AuthCapableRunner, ProviderC
         let sessionOptions = prepared.sessionOptions;
         if (shouldInjectStructuredOutputTool(schema, prepared.backend, connection.capabilities)) {
           // The pool synchronously reserved this process before any acquisition await. Injecting
-          // backends with instance-global MCP registries (OpenCode) therefore expose at most this
-          // run's registration to an active injected session, while Pi and custom backends receive
+          // backends with instance-global MCP registries therefore expose at most this
+          // run's registration to an active injected session, while custom backends receive
           // the same uniform process-exclusive behavior without a backend-specific scope knob.
           structuredTool = await this.structuredOutputTools.register(schema);
           structuredToolActive = true;

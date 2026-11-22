@@ -2,7 +2,7 @@
 // script errors: deterministic, non-recoverable, and rejected before any ACP process is spawned.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import { AcpAgentRunner } from "../src/index.js";
 
 test("runner: images validation rejects a missing data string and names the bad index", async () => {

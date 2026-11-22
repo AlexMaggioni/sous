@@ -20,7 +20,7 @@ export function startCodexConnection(codexPath?: string, env?: NodeJS.ProcessEnv
             ? spawn(`"${codexPath}" app-server`, { shell: true, env: spawnEnv })
             : spawn(codexPath, ['app-server'], { env: spawnEnv });
     } else {
-        // orchestrator: no bundled Codex. Without CODEX_PATH, run the codex installed on PATH.
+        // No bundled Codex. Without CODEX_PATH, run the codex installed on PATH.
         codex = spawn("codex", ['app-server'], {env: spawnEnv, shell: process.platform === 'win32'});
     }
 
@@ -37,7 +37,7 @@ export function startCodexConnection(codexPath?: string, env?: NodeJS.ProcessEnv
     codex.on("exit", _ => {
         connection.dispose();
     });
-    // orchestrator: Codex is not bundled, so a missing program is a clear error, not a crash.
+    // Codex is not bundled, so a missing program is a clear error, not a crash.
     codex.on("error", error => {
         logger.log(`[SPAWN ERROR] ${error.message}`);
         process.stderr.write(`codex-acp: could not start ${codexPath ?? "codex on PATH"}: ${error.message}. Install Codex with \`npm install -g @openai/codex\`, or set CODEX_PATH.\n`);

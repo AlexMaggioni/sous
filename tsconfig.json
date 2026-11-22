@@ -3,11 +3,6 @@
   "references": [
     { "path": "packages/shared-types" },
     { "path": "packages/acp-agents" },
-    { "path": "packages/acp-server" },
-    { "path": "packages/workflow-engine" },
-    { "path": "packages/mcp-server" },
-    { "path": "packages/pi-acp" },
-    { "path": "packages/workflows" },
-    { "path": "packages/agentprism-otel" }
+    { "path": "packages/engine" }
   ]
 }

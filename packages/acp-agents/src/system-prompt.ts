@@ -4,7 +4,7 @@
 // validated value onto its own `_meta` dialect in `Backend.sessionMeta`; a backend whose
 // `Backend.systemPrompt` row does not carry a field never receives it, and the caller learns why
 // from a SCRIPT_VALIDATION_ERROR naming the backend, the field, and the escape hatch (`meta`).
-import { WorkflowError, WorkflowErrorCode, type SystemPromptOptions } from "@automatalabs/shared-types";
+import { WorkflowError, WorkflowErrorCode, type SystemPromptOptions } from "@orchestrator/shared-types";
 import type { Backend } from "./backend.js";
 import { SYSTEM_PROMPT_UNSUPPORTED, type SystemPromptSupport } from "./protocol-coverage.js";
 

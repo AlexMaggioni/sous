@@ -63,7 +63,7 @@ describe('CodexACPAgent - initialize', () => {
                     sse: false,
                 },
                 _meta: {
-                    "@automatalabs/codex-acp": {
+                    "@orchestrator/codex-acp": {
                         outputSchema: true,
                         baseInstructions: true,
                         developerInstructions: true,

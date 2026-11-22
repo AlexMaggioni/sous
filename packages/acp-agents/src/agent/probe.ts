@@ -46,7 +46,7 @@ export function createAgentProbeRunner(backends: Record<string, CustomBackendCon
           ...(route.backend.defaultModeId === undefined ? {} : { defaultModeId: route.backend.defaultModeId }),
           options: handle.advertisedConfigOptions,
           modes: handle.modes ?? null,
-          // The live refinement: pi and the Codex fork advertise their system-prompt channel and the
+          // The live refinement: the Codex fork advertises its system-prompt channel and the
           // two vendor extensions at initialize; Claude advertises nothing and reports the tables.
           traits: describeBackendTraits(route.backend, registry, connection.capabilities),
         };

@@ -1,4 +1,4 @@
-// CodexBackend — drives the workspace package @automatalabs/codex-acp (packages/codex-acp), our
+// CodexBackend — drives the workspace package @orchestrator/codex-acp (packages/codex-acp), our
 // maintained fork of @agentclientprotocol/codex-acp imported as a non-squashed subtree (#282),
 // which bakes in the outputSchema patch. The patch forwards
 // request._meta["outputSchema"] into the Codex App Server's turn/start.outputSchema,
@@ -10,7 +10,7 @@
 // a whole-turn scan would pick up a progress object instead of the result.
 import { createRequire } from "node:module";
 import type { TSchema } from "typebox";
-import { CODEX_META_KEYS, META_KEYS } from "@automatalabs/shared-types";
+import { CODEX_META_KEYS, META_KEYS } from "@orchestrator/shared-types";
 import type { AuthProfile } from "../auth/auth-profile.js";
 import type {
   Backend,
@@ -89,7 +89,7 @@ export class CodexBackend implements Backend {
     // monorepo checkout (built by `pnpm build`), node_modules for a published install. Works
     // from both src/ and the compiled dist/.
     const bin =
-      env.AGENTPRISM_CODEX_ACP_BIN ?? require.resolve("@automatalabs/codex-acp");
+      env.AGENTPRISM_CODEX_ACP_BIN ?? require.resolve("@orchestrator/codex-acp");
     return { command: process.execPath, args: [bin], env };
   }
 
@@ -102,7 +102,7 @@ export class CodexBackend implements Backend {
   sessionMeta(_schema: TSchema | undefined, inputs?: SessionMetaInputs): Record<string, unknown> | undefined {
     // Codex carries the SCHEMA on the turn (see promptMeta), so nothing schema-related rides
     // session/new. The neutral system-prompt instructions ARE session-scoped: the
-    // @automatalabs/codex-acp fork reads the bare `_meta` keys and threads them into
+    // @orchestrator/codex-acp fork reads the bare `_meta` keys and threads them into
     // thread/{start,resume,fork}.{baseInstructions,developerInstructions}. Emit them only when set so
     // an unconfigured run sends no `_meta` at all (preserving the "Codex default" path).
     const meta: Record<string, unknown> = {};
@@ -133,12 +133,12 @@ export const codexBackendDefinition = defineBuiltinBackend({
   create: (authProfile) => new CodexBackend(authProfile),
   release: {
     engine: { node: ">=22" },
-    server: { kind: "workspace-package", package: "@automatalabs/codex-acp", path: "packages/codex-acp" },
+    server: { kind: "workspace-package", package: "@orchestrator/codex-acp", path: "packages/codex-acp" },
     freshness: {
       npm: ["@agentclientprotocol/sdk"],
       sourceUpstreams: [
         {
-          package: "@automatalabs/codex-acp",
+          package: "@orchestrator/codex-acp",
           path: "packages/codex-acp",
           upstreamUrl: "https://github.com/agentclientprotocol/codex-acp.git",
           upstreamUrlEnv: "AGENTPRISM_CODEX_ACP_UPSTREAM_URL",

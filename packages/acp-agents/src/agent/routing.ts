@@ -5,7 +5,7 @@
 // fails BEFORE a process spawns, and the fresh-Backend-instance rule a fork child needs.
 import { isAbsolute } from "node:path";
 import { statSync } from "node:fs";
-import type { AgentSessionRef } from "@automatalabs/shared-types";
+import type { AgentSessionRef } from "@orchestrator/shared-types";
 import type { Backend } from "../backend.js";
 import { builtinBackend } from "../backends/builtins.js";
 import { CustomAcpBackend } from "../backends/custom.js";

@@ -20,7 +20,7 @@ import type {
   PromptImage,
   SystemPromptOptions,
   WorkflowError,
-} from "@automatalabs/shared-types";
+} from "@orchestrator/shared-types";
 import type { ContentBlock as McpContentBlock } from "@modelcontextprotocol/sdk/types.js";
 import type { Static, TSchema } from "typebox";
 import type { AuthStore } from "../auth/auth-store.js";
@@ -49,7 +49,7 @@ export interface AcpAgentToolContext {
   readonly label?: string;
   /** The ACP `tool_call` id the backend surfaced for this call, when the SDK could correlate it:
    *  the latest not-yet-settled `tool_call` of the turn in flight whose standard `name` (or
-   *  `title`) is the tool's name or ends in `__<name>` (pi's `mcp__agent_tools__<name>` alias).
+   *  `title`) is the tool's name or ends in `__<name>` (the `mcp__agent_tools__<name>` alias).
    *  Best-effort — undefined when the backend surfaced none before calling. */
   readonly toolCallId?: string;
   /** Aborts when the agent's constructor `signal` fires, when the turn in flight is cancelled
@@ -104,14 +104,14 @@ export interface AcpAgentOptions {
   model?: string;
   /** Session mode. Explicit ids are strict (unadvertised → INVALID_ARGUMENT at open).
    *  Omitted = the backend's `defaultModeId` when advertised (claude `auto`, codex `agent`,
-   *  opencode `build`; pi/custom none). */
+   *  custom none). */
   mode?: string;
   /** Applied verbatim via `session/set_config_option` in ascending option-id order after model
    *  selection. `"model"` is reserved (INVALID_ARGUMENT in the constructor). Ids not in the
    *  advertised catalog fail at open with INVALID_ARGUMENT listing the advertised ids. */
   configOptions?: Record<string, string | boolean>;
   /** Session-level structured-output contract (typebox). Claude: `_meta.claudeCode.options.outputFormat`
-   *  at session/new|resume|load|fork; Codex: `_meta.outputSchema` on every turn; OpenCode/pi/custom:
+   *  at session/new|resume|load|fork; Codex: `_meta.outputSchema` on every turn; custom:
    *  the client-hosted `StructuredOutput` HTTP MCP tool injected into `mcpServers` when the agent
    *  advertises `mcpCapabilities.http`, plus the in-prompt contract. Each turn reports
    *  `structured` / `structuredError`; a repair ladder runs only when `schemaRetries` asks for one. */
@@ -153,11 +153,10 @@ export interface AcpAgentOptions {
   /** Backend-neutral system prompt instructions: `replace` swaps the backend's built-in system
    *  prompt, `append` adds to it. Validated in the constructor (and `fork()` / the statics) against
    *  the routed backend's `Backend.systemPrompt` support BEFORE any process spawns — a field the
-   *  backend cannot carry is INVALID_ARGUMENT, never a silent no-op (Codex and Claude and pi
-   *  carry both; OpenCode and custom backends carry neither). Sent on `session/new|resume|load|fork`
+   *  backend cannot carry is INVALID_ARGUMENT, never a silent no-op (Codex and Claude
+   *  carry both; custom backends carry neither). Sent on `session/new|resume|load|fork`
    *  and the reattach of an id-only fork in the backend's dialect: Codex `_meta.baseInstructions`
-   *  / `_meta.developerInstructions`, Claude `_meta.systemPrompt` (string, or `{ append }`), pi
-   *  `_meta.systemPrompt` `{ replace?, append? }`. Wins over the same key in `meta`. Inherited by
+   *  / `_meta.developerInstructions`, Claude `_meta.systemPrompt` (string, or `{ append }`). Wins over the same key in `meta`. Inherited by
    *  forks (overridable). */
   systemPrompt?: SystemPromptOptions;
   /** Human label stamped on every event context and every WorkflowError `agentLabel`; never on

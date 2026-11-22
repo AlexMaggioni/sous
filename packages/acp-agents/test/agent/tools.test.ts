@@ -8,7 +8,7 @@
 import test, { after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import { Type } from "typebox";
 import {
   AGENT_TOOLS_SERVER_NAME,
@@ -18,7 +18,7 @@ import {
   type AcpAgentToolDefinition,
 } from "../../src/index.js";
 import { liveConnectionCount } from "../../src/agent/process-registry.js";
-import { createFakeAgentHarness, trackAgent, waitFor } from "../helpers/fake-agent.js";
+import { FAKE_AGENT_FIXTURE, createFakeAgentHarness, trackAgent, waitFor } from "../helpers/fake-agent.js";
 
 interface McpServerEntry {
   type?: string;
@@ -42,7 +42,9 @@ interface LogEntry {
 const SCHEMA = Type.Object({ answer: Type.Number() });
 const LookupInput = Type.Object({ q: Type.String(), n: Type.Number() });
 
-const harness = createFakeAgentHarness({ prefix: "acp-agent-tools-it-", backends: ["claude", "pi"] });
+const harness = createFakeAgentHarness({ prefix: "acp-agent-tools-it-", backends: ["claude"] });
+// A registered custom backend on the fake agent: it injects the structured_output host for a schema.
+const CUSTOM = { custom: { command: process.execPath, args: [FAKE_AGENT_FIXTURE] } };
 const configure = (scenario: unknown) => harness.configure<LogEntry>(scenario);
 const track = (agent: AcpAgent): AcpAgent => trackAgent(harness, agent);
 const count = (log: LogEntry[], method: string): number => log.filter((entry) => entry.method === method).length;
@@ -133,7 +135,7 @@ test("session/new carries agent_tools after the caller's servers and the structu
   });
   const seen: AcpAgentToolContext[] = [];
   const agent = track(
-    await AcpAgent.open({ cwd, model: "pi", label: "primary", schema: SCHEMA, mcpServers: [userServer], tools: [lookup(seen), add] }),
+    await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, label: "primary", schema: SCHEMA, mcpServers: [userServer], tools: [lookup(seen), add] }),
   );
   const servers = newSessionServers(readLog());
   assert.deepEqual(
@@ -170,7 +172,7 @@ test("session/new carries agent_tools after the caller's servers and the structu
   assert.equal(resultText(call), "lookup:x:number:3", "typebox Convert coerced the string before execute");
   assert.equal(seen.length, 1);
   assert.equal(seen[0]!.sessionId, agent.sessionId);
-  assert.equal(seen[0]!.backendId, "pi");
+  assert.equal(seen[0]!.backendId, "custom");
   assert.equal(seen[0]!.label, "primary");
   assert.equal(seen[0]!.toolCallId, undefined, "no tool_call update was surfaced for this call");
   assert.ok(seen[0]!.signal instanceof AbortSignal);
@@ -183,7 +185,7 @@ test("a caller's server named agent_tools keeps its name; the injected host beco
     mcpHttpSupport: true,
     turns: [{ structuredToolCall: { serverName: "agent_tools_2", toolName: "add", arguments: { a: 2, b: 3 } }, text: "ok" }],
   });
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", mcpServers: [shadow], tools: [add] }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, mcpServers: [shadow], tools: [add] }));
   const servers = newSessionServers(readLog());
   assert.deepEqual(servers[0], shadow);
   assert.equal(servers[1]?.name, "agent_tools_2");
@@ -193,7 +195,7 @@ test("a caller's server named agent_tools keeps its name; the injected host beco
   assert.equal(resultText(call), "5");
 });
 
-test("toolCallId correlates with the tool_call the agent surfaced for the call (pi's mcp__agent_tools__<name> alias)", async () => {
+test("toolCallId correlates with the tool_call the agent surfaced for the call (an mcp__agent_tools__<name> alias)", async () => {
   const { cwd, readLog } = configure({
     mcpHttpSupport: true,
     turns: [
@@ -215,7 +217,7 @@ test("toolCallId correlates with the tool_call the agent surfaced for the call (
     ],
   });
   const seen: AcpAgentToolContext[] = [];
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", tools: [lookup(seen)] }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, tools: [lookup(seen)] }));
   const turn = await agent.prompt("go");
   assert.equal(seen[0]?.toolCallId, "tc-7");
   assert.equal(turn.toolCalls[0]?.toolCallId, "tc-7", "the same call is in the turn's fold");
@@ -245,7 +247,7 @@ test("bad arguments and a thrown execute come back to the agent as isError resul
     ],
   });
   const seen: AcpAgentToolContext[] = [];
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", tools: [lookup(seen), boom] }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, tools: [lookup(seen), boom] }));
   const turn = await agent.prompt("go");
   assert.equal(turn.text, "still here");
   assert.equal(turn.stopReason, "end_turn");
@@ -264,9 +266,9 @@ test("bad arguments and a thrown execute come back to the agent as isError resul
 test("an agent that does not advertise mcpCapabilities.http refuses the open with INVALID_ARGUMENT naming the backend; nothing is opened and no tool is dropped", async () => {
   const { cwd, readLog } = configure({ mcpHttpSupport: false, turns: [{ text: "never" }] });
   await assert.rejects(
-    AcpAgent.open({ cwd, model: "pi", label: "tooled", tools: [lookup(), add] }),
+    AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, label: "tooled", tools: [lookup(), add] }),
     (error: unknown) => {
-      invalidArgument(/function tools need HTTP MCP, but backend "pi" does not advertise mcpCapabilities\.http/)(error);
+      invalidArgument(/function tools need HTTP MCP, but backend "custom" does not advertise mcpCapabilities\.http/)(error);
       assert.match((error as Error).message, /2 tools configured: lookup, add/);
       assert.equal((error as { agentLabel?: string }).agentLabel, "tooled");
       return true;
@@ -281,7 +283,7 @@ test("an agent that does not advertise mcpCapabilities.http refuses the open wit
   // The lazy path: the first prompt() carries the same refusal and the agent is closed.
   await harness.cleanup();
   const lazy = configure({ mcpHttpSupport: false, turns: [{ text: "never" }] });
-  const agent = track(new AcpAgent({ cwd: lazy.cwd, model: "pi", tools: [add] }));
+  const agent = track(new AcpAgent({ cwd: lazy.cwd, model: "custom", backends: CUSTOM, tools: [add] }));
   await assert.rejects(agent.prompt("go"), invalidArgument(/function tools need HTTP MCP/));
   assert.equal(agent.state, "closed");
   log = lazy.readLog();
@@ -292,7 +294,7 @@ test("an agent that does not advertise mcpCapabilities.http refuses the open wit
   // Without tools the same agent opens fine: the gate is about the tools, not the backend.
   await harness.cleanup();
   const plain = configure({ mcpHttpSupport: false, turns: [{ text: "fine" }] });
-  const bare = track(await AcpAgent.open({ cwd: plain.cwd, model: "pi", tools: [] }));
+  const bare = track(await AcpAgent.open({ cwd: plain.cwd, model: "custom", backends: CUSTOM, tools: [] }));
   assert.equal((await bare.prompt("go")).text, "fine");
   assert.equal(agentToolsEntry(newSessionServers(plain.readLog())), undefined, "an empty tools array injects nothing");
 });
@@ -317,7 +319,7 @@ test("tool definitions are validated in the constructor: names, uniqueness, shap
   ];
   for (const { tools, pattern } of cases) {
     assert.throws(
-      () => new AcpAgent({ cwd, model: "pi", label: "guarded", tools: tools as AcpAgentToolDefinition[] }),
+      () => new AcpAgent({ cwd, model: "custom", backends: CUSTOM, label: "guarded", tools: tools as AcpAgentToolDefinition[] }),
       (error: unknown) => {
         invalidArgument(pattern)(error);
         assert.equal((error as { agentLabel?: string }).agentLabel, "guarded");
@@ -328,14 +330,14 @@ test("tool definitions are validated in the constructor: names, uniqueness, shap
   // The statics and fork share the constructor's guard.
   await assert.rejects(
     AcpAgent.resume(
-      { sessionId: "s", backendId: "pi", cwd, reopen: { load: true, resume: true, list: false } },
+      { sessionId: "s", backendId: "codex", cwd, reopen: { load: true, resume: true, list: false } },
       { tools: [{ ...add, name: "bad name" }] },
     ),
     invalidArgument(/tools\[0\]\.name must match/),
   );
   assert.equal(readLog().length, 0, "nothing spawned");
   // Valid names cover the whole grammar.
-  const agent = new AcpAgent({ cwd, model: "pi", tools: [{ ...add, name: "A-z_09" }, { ...add, name: "x".repeat(64) }] });
+  const agent = new AcpAgent({ cwd, model: "custom", backends: CUSTOM, tools: [{ ...add, name: "A-z_09" }, { ...add, name: "x".repeat(64) }] });
   assert.equal(agent.state, "idle");
   assert.equal(readLog().length, 0, "the constructor spawns nothing");
 });
@@ -350,7 +352,7 @@ test("forks inherit the tools on a host of their own; the parent's close leaves 
     turns: [{ structuredToolCall: { serverName: "agent_tools", toolName: "lookup", arguments: { q: "parent", n: 1 } }, text: "parent" }],
   });
   const seen: AcpAgentToolContext[] = [];
-  const parent = track(await AcpAgent.open({ cwd, model: "pi", label: "primary", tools: [lookup(seen)] }));
+  const parent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, label: "primary", tools: [lookup(seen)] }));
   assert.equal((await parent.prompt("p")).text, "parent");
   const parentUrl = agentToolsEntry(newSessionServers(readLog()))!.url!;
 
@@ -426,7 +428,7 @@ test("cancel() aborts a running execute with ctx.signal; the turn settles cancel
       { text: "next" },
     ],
   });
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", tools: [tool] }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, tools: [tool] }));
   const pending = agent.prompt("go");
   const ctx = await started;
   assert.equal(ctx.signal.aborted, false);
@@ -452,7 +454,7 @@ test("a per-call signal aborts the running execute with its reason; the turn rej
       { text: "next" },
     ],
   });
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", tools: [tool] }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, tools: [tool] }));
   const controller = new AbortController();
   const pending = agent.prompt("go", { signal: controller.signal });
   await started;
@@ -472,7 +474,7 @@ test("the agent's constructor signal aborts a running execute and closes the hos
     turns: [{ structuredToolCall: { serverName: "agent_tools", toolName: "wait", arguments: {} }, waitForCancel: true, parkAfterUpdates: true }],
   });
   const controller = new AbortController();
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", tools: [tool], signal: controller.signal }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, tools: [tool], signal: controller.signal }));
   const url = agentToolsEntry(newSessionServers(readLog()))!.url!;
   const pending = agent.prompt("go");
   await started;

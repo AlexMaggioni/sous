@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
-import { WorkflowError, WorkflowErrorCode, type AgentRunner } from "@automatalabs/shared-types";
+import { WorkflowError, WorkflowErrorCode, type AgentRunner } from "@orchestrator/shared-types";
 import { cmdAccount } from "../src/account-cli.js";
 import { accountsForRun, addAccount, currentAccount, limitNotice, listAccounts, removeAccount, useAccount } from "../src/accounts.js";
 import { main } from "../src/cli.js";

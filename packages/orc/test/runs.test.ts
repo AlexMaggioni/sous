@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, mkdtempSync, readFi
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import { WorkflowError, WorkflowErrorCode, type AgentRunner } from "@automatalabs/shared-types";
+import { WorkflowError, WorkflowErrorCode, type AgentRunner } from "@orchestrator/shared-types";
 import { checkWorkflow } from "../src/check.js";
 import { dryRun } from "../src/dryrun.js";
 import { main, runningSteps } from "../src/cli.js";
@@ -439,7 +439,7 @@ await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness 
       "---\nname: reviewer\ndescription: reviews\nclaudecode:\n  model: haiku\n  tools: [Read]\n  effort: high\ncodexcli:\n  model: gpt-test\n  model_reasoning_effort: low\n---\nAnswer REVIEW.\n",
     );
     write(join(projectDir, ".codex", "agents", "fixer.toml"), 'name = "fixer"\ndescription = "fixes"\ndeveloper_instructions = "Fix it."\n');
-    // Like AgentPrism, the stand-in reports the model it ran without its harness.
+    // Like the ACP runner, the stand-in reports the model it ran without its harness.
     const { runner, calls } = fakeRunner((call) => {
       (call.options.onModelResolved as ((id: string) => void) | undefined)?.(String(call.options.model).split("/").pop()!);
       return `${call.label} done`;
@@ -591,6 +591,24 @@ await agent('z', { agentType: 'nobody' })`,
     assert.ok(result.notes.some((n) => /a step with agent "fixer" picks its harness while running\. The agent comes from .*fixer\.toml, so the step stops on any harness but Codex\./.test(n)));
     write(join(projectDir, ".rulesync", "mcp.jsonc"), `{ "mcpServers": { "linear": { "command": "npx", "args": ["linear-mcp"] } } }`);
     assert.equal(checkWorkflow(paths, projectDir, "outer").problems.some((p) => p.includes("linear")), false);
+  });
+
+  it("refuses a step model or a default that names Pi or OpenCode, which orc no longer runs", () => {
+    const { paths, projectDir } = setup({
+      gone: `export const meta = { name: 'gone', description: 'old harnesses' }
+await agent('a', { model: 'pi/gpt-test' })
+await agent('b', { model: "opencode/big" })
+await agent('c', { model: 'claude/haiku' })`,
+    }, { defaultHarness: "opencode", defaultModel: "pi/gpt-test" });
+    const problems = checkWorkflow(paths, projectDir, "gone").problems;
+    const expected = [
+      /^model "pi\/gpt-test" names the harness "pi", which orc no longer runs\. Use one of claude, codex\.$/,
+      /^model "opencode\/big" names the harness "opencode", which orc no longer runs\. Use one of claude, codex\.$/,
+      /^the configured default harness "opencode" is not one orc runs\. Use one of claude, codex\.$/,
+      /^the configured default model "pi\/gpt-test" names the harness "pi"/,
+    ];
+    assert.equal(problems.length, expected.length, problems.join("\n"));
+    for (const pattern of expected) assert.ok(problems.some((p) => pattern.test(p)), `${pattern} in:\n${problems.join("\n")}`);
   });
 });
 

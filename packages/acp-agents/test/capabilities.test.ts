@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
-import type { McpServerConfig } from "@automatalabs/shared-types";
+import type { McpServerConfig } from "@orchestrator/shared-types";
 import {
   isSupportedProtocolVersion,
   negotiateCapabilities,

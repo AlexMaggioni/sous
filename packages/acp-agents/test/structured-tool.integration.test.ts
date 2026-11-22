@@ -8,7 +8,7 @@ import {
   isWorkflowError,
   WorkflowErrorCode,
   type McpServerConfig,
-} from "@automatalabs/shared-types";
+} from "@orchestrator/shared-types";
 import { AcpAgentRunner, type CustomBackendConfig } from "../src/index.js";
 import { createFakeAgentHarness, FAKE_AGENT_FIXTURE, readLog as readLogFile } from "./helpers/fake-agent.js";
 

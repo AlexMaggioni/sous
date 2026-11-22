@@ -1,6 +1,5 @@
 // The select-choice grouping helpers and the `--models` view builders of
-// src/config-catalog.ts (moved here from @automatalabs/workflows; the CLI renderers and the
-// collapse-on-print rules stay with the CLI).
+// src/config-catalog.ts.
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -100,7 +99,7 @@ test("a slash-less id falls into the (ungrouped) bucket", () => {
 const MODELS_REPORT = {
   ok: true,
   exitCode: 0 as const,
-  harnessOptions: [{ backendId: "opencode", probed: true, options: [flatModelOption(["anthropic", "openai"], 20)] }],
+  harnessOptions: [{ backendId: "claude", probed: true, options: [flatModelOption(["anthropic", "openai"], 20)] }],
 };
 
 test("buildHarnessModelsView with no filter returns the group breakdown, never leaf ids", () => {
@@ -135,11 +134,11 @@ test("buildHarnessModelsView reports harnesses that advertise no model option an
     exitCode: 1,
     harnessOptions: [
       { backendId: "codex", probed: true, options: [EFFORT_OPTION] },
-      { backendId: "pi", probed: false, error: "login required" },
+      { backendId: "custom", probed: false, error: "login required" },
     ],
   });
   assert.deepEqual(views[0], { backendId: "codex", probed: true, hasModelOption: false });
-  assert.deepEqual(views[1], { backendId: "pi", probed: false, error: "login required", hasModelOption: false });
+  assert.deepEqual(views[1], { backendId: "custom", probed: false, error: "login required", hasModelOption: false });
 });
 
 // ── programmatic probe stays complete; collapsing is a print-time concern ────
@@ -152,7 +151,7 @@ test("probeHarnessConfig keeps the full catalog in memory", async () => {
     async dispose() {},
   }));
   try {
-    const report = await probeHarnessConfig({ harnesses: ["opencode"] });
+    const report = await probeHarnessConfig({ harnesses: ["claude"] });
     const model = report.harnessOptions[0].options![0];
     assert.ok(model.type === "select" && model.options.length === 60, "in-memory report is not collapsed");
   } finally {

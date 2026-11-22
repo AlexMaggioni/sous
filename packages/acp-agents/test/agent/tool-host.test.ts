@@ -16,7 +16,7 @@ type ToolResult = { content?: Array<{ type: string; text?: string }>; isError?: 
 
 const CONTEXT: AgentToolHostContext = {
   sessionId: "sess-1",
-  backendId: "pi",
+  backendId: "codex",
   label: "primary",
   resolveToolCallId: (name) => (name === "lookup" ? "tc-42" : undefined),
 };
@@ -108,7 +108,7 @@ test("tools/call converts and validates the input, runs execute with the SDK con
     assert.equal(text(ok), "lookup:x:number:3");
     assert.equal(seen.length, 1);
     assert.equal(seen[0]!.sessionId, "sess-1");
-    assert.equal(seen[0]!.backendId, "pi");
+    assert.equal(seen[0]!.backendId, "codex");
     assert.equal(seen[0]!.label, "primary");
     assert.equal(seen[0]!.toolCallId, "tc-42", "the context resolver's correlation rides ctx");
     assert.ok(seen[0]!.signal instanceof AbortSignal);

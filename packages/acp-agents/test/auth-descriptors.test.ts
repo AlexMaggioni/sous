@@ -69,16 +69,16 @@ test("terminal descriptor launch falls back to the agent binary + AuthMethodTerm
   assert.deepEqual(d.launch.env, { FOO: "bar" });
 });
 
-test("a bare agent method carrying a terminal-auth hint becomes a terminal descriptor (opencode-login)", () => {
+test("a bare agent method carrying a terminal-auth hint becomes a terminal descriptor", () => {
   const method: AuthMethod = {
-    id: "opencode-login",
-    name: "Login with opencode",
-    _meta: { "terminal-auth": { command: "opencode", args: ["auth", "login"], label: "OpenCode Login" } },
+    id: "agent-login",
+    name: "Login with agent-cli",
+    _meta: { "terminal-auth": { command: "agent-cli", args: ["auth", "login"], label: "Agent Login" } },
   };
   const d = buildAuthDescriptor(method, SPAWN);
   assert.equal(d.type, "terminal");
   if (d.type !== "terminal") return;
-  assert.equal(d.launch.command, "opencode");
+  assert.equal(d.launch.command, "agent-cli");
   assert.deepEqual(d.launch.args, ["auth", "login"]);
 });
 
@@ -121,15 +121,15 @@ test("buildAuthDescriptors maps a mixed method list in order", () => {
   );
 });
 
-test("Pi's single advertised auth method becomes one ambient agent descriptor (ACP 1.21.0 removed env_var)", () => {
-  const methods: AuthMethod[] = [{ id: "pi-stored-credentials", name: "pi stored credentials" }];
+test("a single bare advertised auth method becomes one ambient agent descriptor (ACP 1.21.0 removed env_var)", () => {
+  const methods: AuthMethod[] = [{ id: "stored-credentials", name: "stored credentials" }];
 
   const descriptors = buildAuthDescriptors(methods, SPAWN);
-  assert.deepEqual(descriptors.map(({ id, type }) => [id, type]), [["pi-stored-credentials", "agent"]]);
+  assert.deepEqual(descriptors.map(({ id, type }) => [id, type]), [["stored-credentials", "agent"]]);
   assert.deepEqual(descriptors[0], {
     type: "agent",
-    id: "pi-stored-credentials",
-    name: "pi stored credentials",
+    id: "stored-credentials",
+    name: "stored credentials",
     expectsMeta: false,
     interactive: true,
   });

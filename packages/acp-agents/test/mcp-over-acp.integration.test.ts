@@ -15,7 +15,7 @@ import {
   WorkflowErrorCode,
   isWorkflowError,
   type McpServerConfig,
-} from "@automatalabs/shared-types";
+} from "@orchestrator/shared-types";
 import { createFakeAgentHarness } from "./helpers/fake-agent.js";
 
 interface LogEntry {

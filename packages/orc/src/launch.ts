@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { existsSync, openSync, readFileSync, closeSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { generateRunId, openWorkflowDir, parseWorkflowScript } from "@automatalabs/workflow-engine";
+import { generateRunId, openWorkflowDir, parseWorkflowScript } from "@orchestrator/engine";
 import { accountsForRun } from "./accounts.js";
 import { loadConfig, rememberProject, workflowDirs, type HomePaths, type Place } from "./home.js";
 import { checkInputs, workflowExtras, type WorkflowExtras } from "./inputs.js";

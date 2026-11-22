@@ -1,5 +1,5 @@
-// @automatalabs/shared-types — the ONLY module BOTH workflow-engine and acp-agents
-// import (they never import each other; mcp-server is the sole composition root).
+// @orchestrator/shared-types, the only module both engine and acp-agents import.
+// They never import each other, and orc is the one place that joins them.
 // Zero Pi / ACP / MCP deps; depends only on `typebox` (type-level for TSchema/Static)
 // + carries the WorkflowError RUNTIME class so `instanceof` holds across packages.
 // Presented as the package's files, each compilable on its own.

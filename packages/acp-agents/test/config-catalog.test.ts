@@ -1,7 +1,7 @@
 // Programmatic tests for probeHarnessConfig (src/config-catalog.ts): default targets, the
 // custom-backend registry, host-owned probe runners, model specs and failure reporting.
 // Every probe goes through the package-internal probe-factory seam or a caller-supplied
-// runner; the CLI-level coverage stays with the CLI in @automatalabs/workflows.
+// runner.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { probeHarnessConfig, setConfigProbeFactoryForTests } from "../src/config-catalog.js";
 import { BUILTIN_BACKEND_IDS, type AcpAgentTraits, type SessionConfigOption } from "../src/index.js";
 
-const HOME = mkdtempSync(join(tmpdir(), "automatalabs-acp-agents-config-catalog-"));
+const HOME = mkdtempSync(join(tmpdir(), "orchestrator-acp-agents-config-catalog-"));
 
 process.on("exit", () => {
   try {

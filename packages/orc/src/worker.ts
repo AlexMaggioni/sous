@@ -4,8 +4,8 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { WorkflowManager, openWorkflowDir, parseDurationSeconds, parseWorkflowScript, type WorkflowRunResult } from "@automatalabs/workflow-engine";
-import type { AgentRunner } from "@automatalabs/shared-types";
+import { WorkflowManager, openWorkflowDir, parseDurationSeconds, parseWorkflowScript, type WorkflowRunResult } from "@orchestrator/engine";
+import type { AgentRunner } from "@orchestrator/shared-types";
 import { applyAccounts, limitNotice } from "./accounts.js";
 import { lookupAgents, lookupMcpServers, registryOf } from "./agents.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, lookupSettings, workflowDirs, type HomePaths } from "./home.js";
@@ -20,7 +20,7 @@ import { SlotPool } from "./slots.js";
 
 export interface WorkerOptions {
   paths?: HomePaths;
-  /** The agent runner. Defaults to $ORC_AGENT_MODULE's default export, else AgentPrism's ACP runner. */
+  /** The agent runner. Defaults to $ORC_AGENT_MODULE's default export, else the ACP runner from acp-agents. */
   inner?: AgentRunner;
   /** How often to look for an answer, in ms. */
   pollMs?: number;

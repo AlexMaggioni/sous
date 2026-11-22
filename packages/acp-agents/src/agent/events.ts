@@ -1,7 +1,7 @@
 // The per-agent emitter. One dedicated PooledConnection feeds `sink`; the bus filters by the
 // agent's single known session id, buffers events for ids it does not know yet while a session is
 // being acquired (session/new's own `session_open` fires inside `register()` before the open
-// resolves; an OpenCode-style fork may stream its replay before the fork response carries the new
+// resolves; a fork may stream its replay before the fork response carries the new
 // id), replays the adopted entries once the id is known, drops the id-only fork hand-off noise
 // (`session_close` from `release({ keepOpen: true })` and the reattach's second `session_open`),
 // and keeps the first `session_open` sticky for late subscribers.

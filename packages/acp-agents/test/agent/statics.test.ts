@@ -7,8 +7,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import type { AgentSessionRef } from "@automatalabs/shared-types";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import type { AgentSessionRef } from "@orchestrator/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import { AcpAgent, ClaudeBackend, PooledConnection, createAcpRunner, type AcpSessionOptions } from "../../src/index.js";
 import { liveConnectionCount } from "../../src/agent/process-registry.js";
 import { sessionRefFor } from "../../src/session-ref.js";
@@ -292,15 +292,18 @@ test("resume(ref, { systemPrompt }) carries the instructions on session/resume; 
   await resumed.close({ keep: true });
 
   const spawns = count(readLog(), "__start");
+  // A custom backend carries no system-prompt channel.
+  const custom = { wrapped: { command: process.execPath, args: [FAKE_AGENT_FIXTURE] } };
+  const { poolKey: _poolKey, ...unpooled } = ref;
   await assert.rejects(
-    () => AcpAgent.resume({ ...ref, backendId: "opencode", poolKey: "opencode" }, { systemPrompt: { replace: "R" } }),
-    validation(/systemPrompt\.replace is not supported by backend "opencode"/),
+    () => AcpAgent.resume({ ...unpooled, backendId: "wrapped" }, { backends: custom, systemPrompt: { replace: "R" } }),
+    validation(/systemPrompt\.replace is not supported by backend "wrapped"/),
   );
   assert.equal(count(readLog(), "__start"), spawns, "refused before any process spawned");
 });
 
 // ---- inherited cost gauge: a reopened session's cumulative `usage_update.cost` carries the ----
-// ---- earlier total (claude-agent-sdk 0.3.277 on resume; OpenCode and pi always)            ----
+// ---- earlier total (claude-agent-sdk 0.3.277 on resume)                                     ----
 
 const costUpdate = (amount: number) => ({ sessionUpdate: "usage_update", used: 10, size: 100, cost: { amount, currency: "USD" } });
 const near = (actual: number, expected: number, message: string) =>

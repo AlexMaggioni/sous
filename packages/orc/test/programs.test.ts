@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import { WorkflowError } from "@automatalabs/shared-types";
+import { WorkflowError } from "@orchestrator/shared-types";
 import { findProgram, programVersion, type FoundProgram, type Program, type ProgramLookup } from "../src/programs.js";
 import { createOrcRunner } from "../src/runner.js";
 
@@ -111,9 +111,14 @@ describe("runner and the installed programs", () => {
       return true;
     });
     assert.equal(calls, 0);
-    // Code steps and harnesses without a program of orc's need none.
+    // Code steps need none. A Claude Code step needs Claude Code.
     await runner.run(JSON.stringify({ kind: "js", source: "return 1" }), { model: "exec" } as never);
-    assert.equal(await runner.run("go", { label: "other", model: "opencode/some-model" } as never), "ok");
+    await assert.rejects(runner.run("go", { label: "other", model: "claude/some-model" } as never), (error: unknown) => {
+      assert.ok(error instanceof WorkflowError);
+      assert.equal(error.message, 'step "other": claude is not installed');
+      return true;
+    });
+    assert.equal(calls, 0);
   });
 
   it("point the adapter at the program once per run, and report it", async () => {

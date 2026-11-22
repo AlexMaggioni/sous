@@ -2,14 +2,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { RequestError } from "@agentclientprotocol/sdk";
-import { WorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { WorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import {
   ACP_AUTH_REQUIRED_ERROR_CODE,
   ClaudeBackend,
   CodexBackend,
   errorText,
   mapThrownError,
-  OpenCodeBackend,
 } from "../src/index.js";
 
 const LIVE_USAGE_CREDITS =
@@ -24,7 +23,7 @@ test("errorText extracts a message from Error, string, {message}, and falls back
 });
 
 test("codex-acp usageLimitExceeded data maps to PROVIDER_USAGE_LIMIT with structured reset metadata", () => {
-  // Exact @automatalabs/codex-acp@1.6.3 shape from createTurnErrorData(): provider text plus the
+  // Exact @orchestrator/codex-acp@1.6.3 shape from createTurnErrorData(): provider text plus the
   // Codex app-server's typed codexErrorInfo discriminant in RequestError.data.
   const wall = RequestError.internalError({
     message: "You've hit your usage limit.",
@@ -82,23 +81,17 @@ test("claude-agent-acp errorKind maps the exact live #149 text and structured re
   assert.equal(mapped.message.includes(LIVE_USAGE_CREDITS), true);
 });
 
-test("legacy Claude and current OpenCode adapter fallbacks cover the live #149 message only at the boundary", () => {
+test("the legacy Claude adapter fallback covers the live #149 message only at the boundary", () => {
   const claude = mapThrownError(new Error(LIVE_USAGE_CREDITS), {
     backendId: "claude",
     backend: new ClaudeBackend(),
   });
-  const opencode = mapThrownError(RequestError.internalError({ errorName: "APIError" }, LIVE_USAGE_CREDITS), {
-    backendId: "opencode",
-    backend: new OpenCodeBackend(),
-  });
   assert.equal(claude.code, WorkflowErrorCode.PROVIDER_USAGE_LIMIT);
   assert.equal(claude.providerUsageLimitContext?.source, "adapter_fallback");
-  assert.equal(opencode.code, WorkflowErrorCode.PROVIDER_USAGE_LIMIT);
-  assert.equal(opencode.providerUsageLimitContext?.source, "adapter_fallback");
 });
 
 test("billing endpoint unavailable is not a provider usage limit", () => {
-  for (const backend of [new ClaudeBackend(), new OpenCodeBackend(), new CodexBackend()]) {
+  for (const backend of [new ClaudeBackend(), new CodexBackend()]) {
     const mapped = mapThrownError(new Error("billing endpoint unavailable"), {
       backendId: backend.id,
       backend,
@@ -178,17 +171,17 @@ test("a DIFFERENT reserved code that merely MENTIONS the auth phrase never mis-r
   }
 });
 
-test("Pi child cleanup is exact, redacted, and non-recoverable while unknown -32603 stays recoverable", () => {
+test("child cleanup is exact, redacted, and non-recoverable while unknown -32603 stays recoverable", () => {
   const original = {
     code: -32603,
     message: "secret-bearing adapter prose",
     data: { errorKind: "child_cleanup_error", details: { remainingChildren: 2 } },
   };
-  const mapped = mapThrownError(original, "pi-agent");
+  const mapped = mapThrownError(original, "cleanup-agent");
   assert.equal(mapped.code, WorkflowErrorCode.AGENT_EXECUTION_ERROR);
   assert.equal(mapped.recoverable, false);
   assert.equal(mapped.message, "child process cleanup failed");
-  assert.equal(mapped.agentLabel, "pi-agent");
+  assert.equal(mapped.agentLabel, "cleanup-agent");
   assert.equal(mapped.details, original);
   assert.doesNotMatch(mapped.message, /secret-bearing/);
 

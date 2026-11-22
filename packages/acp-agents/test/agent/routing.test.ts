@@ -6,8 +6,8 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentSessionRef } from "@automatalabs/shared-types";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import type { AgentSessionRef } from "@orchestrator/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import { AcpAgent, ClaudeBackend, CodexBackend, CustomAcpBackend, resolveBackendRegistry } from "../../src/index.js";
 import {
   freshBackendFor,

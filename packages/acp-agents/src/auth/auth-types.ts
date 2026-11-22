@@ -72,8 +72,8 @@ export interface AuthContext {
 /** The host-facing inline auth resolver hook. Mirrors PermissionResolver / ElicitationResolver. */
 export type AuthResolver = (ctx: AuthContext) => Promise<AuthResolution> | AuthResolution;
 
-/** The conventional launch-hint key (`_meta["terminal-auth"] = {command,args,label}`) both claude
- *  0.57.0 and opencode 1.17.14 attach to a terminal login method. Recognized by literal name; it is
+/** The conventional launch-hint key (`_meta["terminal-auth"] = {command,args,label}`) claude
+ *  0.57.0 attaches to a terminal login method. Recognized by literal name; it is
  *  NOT an SDK schema field. */
 const TERMINAL_AUTH_META_KEY = "terminal-auth";
 /** The conventional in-process gateway key (`_meta.gateway`) claude+codex attach to a gateway
@@ -110,8 +110,8 @@ function terminalAuthHint(
 }
 
 /** true iff a bare `agent` method (`type` absent OR "agent") is semantically a TERMINAL login —
- *  i.e. it carries a `_meta["terminal-auth"]` launch hint. This is why OpenCode's bare-`agent`
- *  `opencode-login` becomes a `terminal` descriptor for us, while codex's `gateway` (which carries
+ *  i.e. it carries a `_meta["terminal-auth"]` launch hint. A bare-`agent` login method with that
+ *  hint becomes a `terminal` descriptor for us, while codex's `gateway` (which carries
  *  `_meta.gateway`, not `terminal-auth`) does not (§3.1 decision). */
 function isTerminalShaped(method: AuthMethod): boolean {
   if (typeOf(method) === "terminal") return true;

@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
-import { openWorkflowDir, type PersistedRunState } from "@automatalabs/workflow-engine";
+import { openWorkflowDir, type PersistedRunState } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { describeAccount, limitNotice } from "./accounts.js";
 import { checkWorkflow } from "./check.js";

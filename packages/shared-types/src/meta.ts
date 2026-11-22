@@ -11,14 +11,13 @@ export const META_KEYS = {
   /** Run correlation passthrough on ACP requests, for tracing/telemetry. */
   runId: "runId",
   /** Session-scoped system prompt instructions (`RunOptions.systemPrompt` /
-   *  `AcpAgentOptions.systemPrompt`) on `session/new|resume|load|fork` `_meta`, in the dialect the
-   *  two `systemPrompt`-keyed servers read: claude-agent-acp takes a string (replaces the prompt)
-   *  or `{ append }` (added to its `claude_code` preset); @automatalabs/pi-acp takes a string or
-   *  `{ replace?, append? }`. Codex carries the same instructions under CODEX_META_KEYS instead. */
+   *  `AcpAgentOptions.systemPrompt`) on `session/new|resume|load|fork` `_meta`, in the dialect
+   *  claude-agent-acp reads: a string (replaces the prompt) or `{ append }` (added to its
+   *  `claude_code` preset). Codex carries the same instructions under CODEX_META_KEYS instead. */
   systemPrompt: "systemPrompt",
 } as const;
 
-/** VENDOR (codex-acp) bare `session/new` `_meta` keys the @automatalabs/codex-acp adapter reads
+/** VENDOR (codex-acp) bare `session/new` `_meta` keys the @orchestrator/codex-acp adapter reads
  *  and threads into the Codex `thread/start` / `thread/resume` / `thread/fork` params of the same
  *  name. Kept here (beside META_KEYS) so the writer (CodexBackend) and its tests never drift from
  *  the wire contract the fork reads. */
@@ -65,7 +64,7 @@ export const CODEX_AIR_META_KEYS = {
  *  this version or below. */
 export const CODEX_AIR_EXTENSION_VERSION = 1;
 
-/** The `agentCapabilities._meta` NAMESPACE under which the @automatalabs/codex-acp fork advertises
+/** The `agentCapabilities._meta` NAMESPACE under which the @orchestrator/codex-acp fork advertises
  *  its custom capabilities (the ACP extensibility convention — custom capabilities are namespaced
  *  `_meta` keys: https://agentclientprotocol.com/protocol/v1/extensibility). Keyed by the fork's
  *  published package identity so it never collides with another extension. Under this key the fork
@@ -75,7 +74,7 @@ export const CODEX_AIR_EXTENSION_VERSION = 1;
  *  An agent that omits this namespace has NOT opted into negotiation: the client keeps sending
  *  every key (the pre-advertisement / non-fork legacy path), because fork releases ≤ 1.2.0 and
  *  arbitrary custom ACP servers honor these inputs without advertising them. */
-export const CODEX_CUSTOM_CAPABILITY_NAMESPACE = "@automatalabs/codex-acp";
+export const CODEX_CUSTOM_CAPABILITY_NAMESPACE = "@orchestrator/codex-acp";
 
 /** VENDOR (claude-agent-acp) — NOT ours; the SDK's. Set at session/new for the Claude
  *  structured-output path: _meta.claudeCode.options.outputFormat = { type:"json_schema", schema }
@@ -96,11 +95,3 @@ export interface ClaudeCodeSessionMeta extends Record<string, unknown> {
   };
   systemPrompt?: ClaudeSystemPromptMeta;
 }
-
-/** The `_meta.systemPrompt` value @automatalabs/pi-acp reads on `session/new|resume|load|fork`:
- *  a string replaces pi's built-in system prompt; the object form carries the backend-neutral
- *  `SystemPromptOptions` verbatim (`replace` => pi's `systemPromptOverride`, `append` => one more
- *  `appendSystemPromptOverride` entry). Pi advertises support at initialize under
- *  `InitializeResponse._meta.systemPrompt` as `{ replace: true, append: true }`. Mirrored, not
- *  imported: pi-acp is a leaf package; `acp-agents/test/pi-backend.test.ts` pins the mirror. */
-export type PiSystemPromptMeta = string | { replace?: string; append?: string };

@@ -5,7 +5,7 @@
 // owns the tool-call fold keyed by toolCallId). `buildTurn` derives text, messages, history
 // slice, usage, and the structured result.
 import type { PromptResponse } from "@agentclientprotocol/sdk";
-import type { AgentHistoryEntry, AgentUsage } from "@automatalabs/shared-types";
+import type { AgentHistoryEntry, AgentUsage } from "@orchestrator/shared-types";
 import type { TSchema } from "typebox";
 import type { Backend } from "../backend.js";
 import type { AcpElicitationEvent, AcpPermissionEvent, AcpSessionUpdate } from "../events.js";
@@ -91,8 +91,8 @@ export class TurnCollector {
 }
 
 /**
- * THIS turn's usage. `response.usage` is PER-TURN on every installed adapter (Claude, Codex and pi
- * all report the turn — `PROMPT_USAGE_SCOPES`), so it maps straight to `AgentUsage`; `cost` is the
+ * THIS turn's usage. `response.usage` is PER-TURN on every installed adapter (Claude and Codex
+ * both report the turn — `PROMPT_USAGE_SCOPES`), so it maps straight to `AgentUsage`; `cost` is the
  * clamped delta of the cumulative `usage_update` cost gauge across the turn (the one channel that
  * IS cumulative), and a response without `usage` falls back to the context-token gauge delta —
  * exactly `UsageAccumulator.delta()`'s two rules. Never a before/after subtraction of accumulator

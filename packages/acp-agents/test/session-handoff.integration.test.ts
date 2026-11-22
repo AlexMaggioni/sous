@@ -12,7 +12,7 @@
 //   - onSessionOpen is a best-effort observer: a throwing host callback never fails the run.
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
-import type { AgentSessionRef } from "@automatalabs/shared-types";
+import type { AgentSessionRef } from "@orchestrator/shared-types";
 import { AcpAgentRunner } from "../src/index.js";
 import { createFakeAgentHarness } from "./helpers/fake-agent.js";
 

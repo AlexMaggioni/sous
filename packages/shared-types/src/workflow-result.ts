@@ -24,9 +24,7 @@ export interface WorkflowMetaPhase {
  *  server the workflow wants to route `agent()` calls to. Structurally identical to the
  *  host-level registry config (acp-agents `CustomBackendConfig`), but declared by the SCRIPT
  *  AUTHOR, so it is a TRUST-GATED input: the engine parses it and otherwise ignores it; only
- *  a composition root that has obtained approval (MCP elicitation, the SDK's
- *  `allowScriptBackends`, or the AGENTPRISM_ALLOW_SCRIPT_BACKENDS env opt-in) threads it
- *  into the run via ExecOptions.scriptBackends. */
+ *  a host that has obtained approval threads it into the run via ExecOptions.scriptBackends. */
 export interface WorkflowBackendConfig {
   /** The ACP server executable (absolute path or on PATH). */
   command: string;
@@ -79,7 +77,7 @@ export interface AgentSessionRef {
    *  (backendId), matching the pool's own process-identity model, which keys built-ins by bare id
    *  (`pool.ts:129`). A first-class backend's spawn config is NOT fixed — `spawnConfig()` varies with
    *  `AGENTPRISM_*_ACP_CMD/ARGS` env overrides and with installed-bin-vs-npx resolution
-   *  (`backends/claude.ts:44-58`, and codex/opencode/pi) and built-ins define no explicit `poolKey` — but
+   *  (`backends/claude.ts:44-58`, and codex) and built-ins define no explicit `poolKey` — but
    *  every such launch of the same first-class agent shares one agent-side session store, so reattach
    *  stays semantically valid and the logical-agent identity is correct by design; a genuinely
    *  different program bound behind an env override is caught at the reopen RPC (`reattach-failed` →
@@ -107,7 +105,7 @@ export interface AgentSessionRef {
    *  to the same backend (`<backendId>/<model id>`, e.g. `"claude/opus[1m]"`). Present only when a
    *  model was SELECTED on the session (`session/set_config_option`); a session left on its
    *  backend's default records none. A reopen by ref selects it again, because what an agent
-   *  restores by itself differs: OpenCode, pi and Codex return to the session's model, while
+   *  restores by itself differs: Codex returns to the session's model, while
    *  Claude lets `ANTHROPIC_MODEL` / `settings.model` outrank it. ADDITIVE and NOT a hash input. */
   model?: string;
   /** The session's latest CUMULATIVE cost gauge (`usage_update.cost.amount`, in the agent's

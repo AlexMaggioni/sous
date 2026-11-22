@@ -16,14 +16,14 @@ import {
   WorkflowErrorCode,
   isWorkflowError,
   type AgentUsage,
-} from "@automatalabs/shared-types";
+} from "@orchestrator/shared-types";
 import {
   CodexBackend,
   PooledConnection,
   TYPED_SESSION_FAILURE_CLIENT_CAPABILITY,
   type TypedSessionFailure,
 } from "../src/index.js";
-import { createFakeAgentHarness } from "./helpers/fake-agent.js";
+import { createFakeAgentHarness, FAKE_AGENT_FIXTURE } from "./helpers/fake-agent.js";
 
 const SCHEMA = Type.Object({ ok: Type.Boolean() });
 
@@ -86,9 +86,10 @@ test("the codex backend advertises the typed-failure capability at initialize", 
 });
 
 test("no other backend advertises it (the handshake stays byte-identical for them)", async () => {
-  for (const model of ["claude", "opencode", "pi"] as const) {
+  const custom = { custom: { command: process.execPath, args: [FAKE_AGENT_FIXTURE] } };
+  for (const model of ["claude", "custom"] as const) {
     const { cwd, readLog } = configure({ turns: [{ text: "ok" }] });
-    await makeRunner().run("hi", { model, cwd });
+    await makeRunner().run("hi", { model, cwd, ...(model === "custom" ? { backends: custom } : {}) });
     assert.equal(initializeMeta(readLog()), undefined, model);
     await harness.cleanup();
   }

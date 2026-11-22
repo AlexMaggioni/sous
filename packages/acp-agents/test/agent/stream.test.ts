@@ -5,7 +5,7 @@
 import test, { after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import { AcpAgent, type AcpAgentStreamEvent, type AcpAgentTurn } from "../../src/index.js";
 import { liveConnectionCount } from "../../src/agent/process-registry.js";
 import { createFakeAgentHarness, trackAgent, waitFor } from "../helpers/fake-agent.js";

@@ -7,7 +7,7 @@ import { mkdtempSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import { AcpAgentRunner, type AcpRunnerOptions, type AuthResolver } from "../src/index.js";
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/fake-auth-agent.mjs", import.meta.url));

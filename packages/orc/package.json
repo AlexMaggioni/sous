@@ -22,13 +22,12 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test \"test/**/*.test.ts\""
+    "test": "HOME=\"$(mktemp -d)\" tsx --test \"test/**/*.test.ts\""
   },
   "dependencies": {
-    "@automatalabs/acp-agents": "workspace:*",
-    "@automatalabs/shared-types": "workspace:*",
-    "@automatalabs/workflow-engine": "workspace:*",
-    "@automatalabs/workflows": "workspace:*",
+    "@orchestrator/acp-agents": "workspace:*",
+    "@orchestrator/shared-types": "workspace:*",
+    "@orchestrator/engine": "workspace:*",
     "smol-toml": "1.9.1",
     "yaml": "2.9.0"
   }

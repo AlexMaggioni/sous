@@ -6,7 +6,7 @@
 // the same `mapThrownError` ladder the runner uses; an abort is never mapped (the affected promise
 // rejects with `signal.reason` untouched); a typed session failure rejects with the runner's
 // mapped error carrying the complete turn.
-import { WorkflowError, WorkflowErrorCode, isWorkflowError } from "@automatalabs/shared-types";
+import { WorkflowError, WorkflowErrorCode, isWorkflowError } from "@orchestrator/shared-types";
 import { mapThrownError, mapTypedSessionFailure, type ErrorMapContext } from "../errors-map.js";
 import type { TypedSessionFailure } from "../typed-failures.js";
 import type { AcpAgentTurn, AcpAgentTurnError } from "./types.js";

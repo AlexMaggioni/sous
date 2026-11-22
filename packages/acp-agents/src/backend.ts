@@ -1,14 +1,14 @@
-// The internal Backend strategy (NOT part of @automatalabs/shared-types). One AcpAgentSession
+// The internal Backend strategy (NOT part of @orchestrator/shared-types). One AcpAgentSession
 // transport drives either backend; the Backend supplies the three things that genuinely
-// differ between Claude, Codex, OpenCode, and pi:
+// differ between Claude and Codex:
 //   1. how to spawn the ACP server subprocess,
 //   2. the vendor `_meta` that carries the schema IN (Claude: session/new
 //      _meta.claudeCode.options.outputFormat + emitRawSDKMessages; Codex: per-turn
-//      _meta["outputSchema"], strict-normalized; OpenCode: generic _meta.outputSchema),
+//      _meta["outputSchema"], strict-normalized),
 //   3. how to read the native structured result OUT (Claude: structured_output off the raw
-//      _claude/sdkMessage; Codex/OpenCode/Pi: JSON.parse the final assistant message off the stream).
+//      _claude/sdkMessage; Codex: JSON.parse the final assistant message off the stream).
 import type { TSchema } from "typebox";
-import type { ProviderUsageLimitContext, SystemPromptOptions } from "@automatalabs/shared-types";
+import type { ProviderUsageLimitContext, SystemPromptOptions } from "@orchestrator/shared-types";
 import type { AuthProfile } from "./auth/auth-profile.js";
 import type { SystemPromptSupport } from "./protocol-coverage.js";
 
@@ -42,7 +42,7 @@ export interface StructuredSource {
 export interface SessionMetaInputs {
   /** Backend-neutral system prompt instructions, already validated against `Backend.systemPrompt`
    *  (`assertSystemPromptSupported`): the backend maps `replace`/`append` onto its own
-   *  `_meta` dialect — Codex `baseInstructions`/`developerInstructions`, Claude and pi
+   *  `_meta` dialect — Codex `baseInstructions`/`developerInstructions`, Claude
    *  `systemPrompt`. A backend that declares no support never sees a defined value. */
   systemPrompt?: SystemPromptOptions;
   /** Engine run correlation id. Backends may use it to suppress autonomous session work. */

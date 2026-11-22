@@ -11,7 +11,7 @@ import {
   type ClaudeCodeSessionMeta,
   type ClaudeSystemPromptMeta,
   type SystemPromptOptions,
-} from "@automatalabs/shared-types";
+} from "@orchestrator/shared-types";
 import type { AuthProfile } from "../auth/auth-profile.js";
 import type {
   Backend,

@@ -11,7 +11,7 @@
 //
 // This module owns the wire shape (parse + supersession rules). The failure -> WorkflowError
 // classification lives with every other ACP failure mapping in errors-map.ts.
-import { CODEX_AIR_EXTENSION_VERSION, CODEX_AIR_META_KEYS } from "@automatalabs/shared-types";
+import { CODEX_AIR_EXTENSION_VERSION, CODEX_AIR_META_KEYS } from "@orchestrator/shared-types";
 
 /** The failure categories codex-acp emits today (`SESSION_FAILURE_POLICY` in its
  *  CodexEventHandler). The vocabulary is coarse — the finer per-error distinctions the server used

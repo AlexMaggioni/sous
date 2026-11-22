@@ -1,14 +1,14 @@
 // The runner orc gives the engine. Code steps (model "exec") run locally. Agent steps take a
-// slot from the machine-wide cap, then run through AgentPrism's ACP runner with the step's
+// slot from the machine-wide cap, then run through the ACP runner from acp-agents with the step's
 // effort, skills, MCP servers and time limit. A step that names an agent runs on the harness
 // agents.ts picks for it, with that harness's settings, or stops when the agent can't run there.
 // A Claude Code or Codex step runs on the installed program programs.ts finds, or stops when
 // there is none.
 
-import { createAcpRunner } from "@automatalabs/acp-agents";
-import { WorkflowError, WorkflowErrorCode, type AgentRunner, type McpServerConfig } from "@automatalabs/shared-types";
-import { EXEC_MODEL, type ExecSpec } from "@automatalabs/workflow-engine";
-import { isHarness, missingServer, planStep, routeHarness, type AgentLookup, type Harness, type McpLookup, type StepGiven } from "./agents.js";
+import { createAcpRunner } from "@orchestrator/acp-agents";
+import { WorkflowError, WorkflowErrorCode, type AgentRunner, type McpServerConfig } from "@orchestrator/shared-types";
+import { EXEC_MODEL, type ExecSpec } from "@orchestrator/engine";
+import { isHarness, missingServer, planStep, removedHarness, routeHarness, type AgentLookup, type Harness, type McpLookup, type StepGiven } from "./agents.js";
 import { runExecSpec } from "./exec.js";
 import { findProgram, isProgram, PROGRAM_INFO, programVersion, type FoundProgram, type Program, type ProgramLookup } from "./programs.js";
 import type { SlotPool } from "./slots.js";
@@ -16,7 +16,7 @@ import type { SlotPool } from "./slots.js";
 export interface OrcRunnerOptions {
   /** The run's folder, for steps that don't name one. */
   cwd: string;
-  /** The agent runner. Defaults to AgentPrism's ACP runner, made on the first agent step. */
+  /** The agent runner. Defaults to the ACP runner from acp-agents, made on the first agent step. */
   inner?: AgentRunner & { dispose?: () => Promise<void> | void };
   slots?: SlotPool;
   /** The agents a step can name with `agentType`, from rulesync and the harnesses' own folders. */
@@ -27,7 +27,7 @@ export interface OrcRunnerOptions {
   env?: Record<string, string>;
   /** Called when an agent step waits for a slot and when it gets one. */
   onSlot?: (event: { label?: string; state: "waiting" | "running" }) => void;
-  /** Finds the installed program a Claude Code or Codex step runs on. With AgentPrism's runner
+  /** Finds the installed program a Claude Code or Codex step runs on. With the ACP runner
    *  the default looks as programs.ts says. A runner given as `inner` brings its own programs,
    *  so no lookup runs unless this is set. */
   programs?: (program: Program) => ProgramLookup;
@@ -141,6 +141,8 @@ export function createOrcRunner(options: OrcRunnerOptions): AgentRunner & { disp
 
     const stop = (message: string) =>
       new WorkflowError(`step "${extras.label ?? "agent"}": ${message}`, WorkflowErrorCode.INVALID_ARGUMENT, { recoverable: false, agentLabel: extras.label });
+    const removed = removedHarness(extras.model);
+    if (removed) throw stop(removed);
     const env = options.agents?.settings.env ?? process.env;
     let step: StepRun = {
       harness: routeHarness(extras.model, env) ?? options.agents?.settings.defaultHarness ?? "claude",
@@ -186,7 +188,7 @@ export function createOrcRunner(options: OrcRunnerOptions): AgentRunner & { disp
       const { timeoutMs: _t, effort: _e, skills: _s, mcpNames: _m, agentType: _a, stepGiven: _g, model: _model, toolNames: _tn, disallowedToolNames: _dn, ...rest } = extras as OrcRunExtras &
         Record<string, unknown>;
       // The step's record shows the harness and model it runs on, such as claude/haiku, also when
-      // the agent's block picked the model. AgentPrism reports the model without its harness.
+      // the agent's block picked the model. The ACP runner reports the model without its harness.
       const resolved = (extras as { onModelResolved?: (id: string) => void }).onModelResolved;
       const withHarness = (id: string) => (isHarness(id.split("/")[0]!.toLowerCase()) ? id : `${step.harness}/${id}`);
       const onModelResolved = resolved && ((id: string) => resolved(withHarness(id)));

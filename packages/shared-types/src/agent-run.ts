@@ -75,11 +75,10 @@ export interface PromptImage {
  * |---------|---------------------------------------------|-------------------------------------------------|
  * | codex   | `_meta.baseInstructions` (base prompt)      | `_meta.developerInstructions` (developer role)  |
  * | claude  | `_meta.systemPrompt` string                 | `_meta.systemPrompt.append` (claude_code preset) |
- * | pi      | `_meta.systemPrompt.replace`                | `_meta.systemPrompt.append`                     |
- * | opencode / custom | not supported — SCRIPT_VALIDATION_ERROR before a session opens        |
+ * | custom  | not supported — SCRIPT_VALIDATION_ERROR before a session opens                                |
  *
  * `replace` + `append` together mean "the built-in prompt becomes `replace`, followed by
- * `append`": Codex and pi carry both natively; Claude receives the two joined by a blank line as
+ * `append`": Codex carries both natively; Claude receives the two joined by a blank line as
  * its single replacement string (its object form cannot carry a custom base). Empty strings are
  * rejected — use `meta` for a backend's own extras (e.g. Claude's `excludeDynamicSections`).
  */
@@ -135,8 +134,8 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
    *  (`session/set_config_option`, surfaced as SessionHandle.selectModel()).
    *  Omitted => session default. */
   model?: string;
-  /** Exact agent-advertised ACP session mode id. When omitted, AgentPrism explicitly applies the
-   *  built-in default (Claude `auto`, Codex `agent`, OpenCode `build`; Pi/custom retain no host
+  /** Exact agent-advertised ACP session mode id. When omitted, the runner explicitly applies the
+   *  built-in default (Claude `auto`, Codex `agent`; custom backends retain no host
    *  default). An authored or built-in default must be advertised or the run fails before prompt.
    *  A mode does not silently invent a client-side allow/deny policy: live permission requests are
    *  handled by the host resolver, while explicitly authored tool allow/deny lists remain binding. */
@@ -209,8 +208,8 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
    *  `replace` swaps the backend's built-in system prompt for the given text, `append` adds text
    *  on top of it. The runner carries them on ACP `session/new|resume|load|fork` `_meta` in each
    *  backend's own dialect — Codex `baseInstructions` / `developerInstructions` (the
-   *  @automatalabs/codex-acp thread params), Claude and pi `systemPrompt`. A backend that supports
-   *  neither field (OpenCode, custom registry backends) rejects with SCRIPT_VALIDATION_ERROR before
+   *  @orchestrator/codex-acp thread params), Claude `systemPrompt`. A backend that supports
+   *  neither field (custom registry backends) rejects with SCRIPT_VALIDATION_ERROR before
    *  a session opens; nothing is ever silently dropped. ADDITIVE and NOT hashed (it shapes the
    *  agent, not the logical call identity). Omitted => the backend's built-in prompt. */
   systemPrompt?: SystemPromptOptions;
@@ -250,7 +249,7 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
    *  its result, never the logical call. Omitted => today's fresh session/new + original-prompt
    *  path. */
   continueFromSession?: AgentSessionRef;
-  /** orchestrator: with `continueFromSession`, send this call's own prompt into the reopened
+  /** With `continueFromSession`, send this call's own prompt into the reopened
    *  session instead of the resume instruction. The engine sets it for agent({ continue }). */
   continueWithPrompt?: boolean;
   /** The engine's deterministic journal index for THIS agent() call — the same

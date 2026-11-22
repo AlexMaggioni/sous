@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
 import { AGENT_METHODS, CLIENT_METHODS } from "@agentclientprotocol/sdk";
 import type { ClientSideConnection, InitializeResponse } from "@agentclientprotocol/sdk";
 import {
@@ -18,7 +17,6 @@ import {
   FORK_SESSION_TRAITS,
   FORK_SESSION_TRAIT_DEFAULT,
   HANDLED_AUTH_METHOD_TYPES,
-  PI_ACP_PROTOCOL_CONTRACT,
   COST_GAUGE_INHERITANCE,
   COST_GAUGE_INHERITANCE_DEFAULT,
   PROMPT_USAGE_SCOPES,
@@ -128,18 +126,14 @@ test("HANDLED_AUTH_METHOD_TYPES is exactly agent/terminal", () => {
 });
 
 // §4.6.4 items 4–5 — the cross-agent `_meta` convention surfaces the base layer keys on must still be
-// present in the INSTALLED agent dists (claude/codex; opencode ships a compiled binary, §3.4), so an
+// present in the INSTALLED agent dists (claude/codex), so an
 // agent bump that moves a `_meta` surface fails the build BEFORE release, never silently.
 const requireAcp = createRequire(new URL("../package.json", import.meta.url));
 function readDist(spec: string): string {
   return readFileSync(requireAcp.resolve(spec), "utf8");
 }
 const CLAUDE_DIST = readDist("@agentclientprotocol/claude-agent-acp/dist/acp-agent.js");
-const CODEX_DIST = readDist("@automatalabs/codex-acp");
-const PI_DIST_DIR = dirname(requireAcp.resolve("@automatalabs/pi-acp"));
-const PI_AGENT_DIST = readFileSync(join(PI_DIST_DIR, "agent.js"), "utf8");
-const PI_AUTH_DIST = readFileSync(join(PI_DIST_DIR, "auth.js"), "utf8");
-const PI_ERRORS_DIST = readFileSync(join(PI_DIST_DIR, "errors.js"), "utf8");
+const CODEX_DIST = readDist("@orchestrator/codex-acp");
 
 test("the cross-agent _meta convention keys are pinned and still present in the agent dists", () => {
   // The literal key names the base layer keys on (§1 intro) — not SDK schema fields.
@@ -167,9 +161,9 @@ test("every dist-probed AUTH_META_MATRIX row's capability literal is present in 
       assert.ok(CODEX_DIST.includes(literal), `codex dist must still carry "${literal}" (§3.6)`);
     }
   }
-  // The matrix covers all four agent buckets and stays non-empty.
-  assert.ok(AUTH_META_MATRIX.length >= 8);
-  assert.ok(AUTH_META_MATRIX.some((r) => r.agent === "opencode"));
+  // The matrix covers both built-ins plus the cross-agent bucket.
+  assert.equal(AUTH_META_MATRIX.length, 7);
+  assert.deepEqual([...new Set(AUTH_META_MATRIX.map((r) => r.agent))], ["claude", "codex", "all"]);
 });
 
 test("the executable ACP extension matrix documents installed advertisements without runtime gating", () => {
@@ -187,16 +181,6 @@ test("the executable ACP extension matrix documents installed advertisements wit
       distProbe: "codex",
     },
     {
-      agent: "opencode",
-      method: "_session/steering",
-      disposition: "not-advertised",
-    },
-    {
-      agent: "pi",
-      method: "_session/steering",
-      disposition: "supported",
-    },
-    {
       agent: "claude",
       method: "_session/loaded_turn/query",
       disposition: "not-advertised",
@@ -207,16 +191,6 @@ test("the executable ACP extension matrix documents installed advertisements wit
       method: "_session/loaded_turn/query",
       disposition: "supported",
       distProbe: "codex",
-    },
-    {
-      agent: "opencode",
-      method: "_session/loaded_turn/query",
-      disposition: "not-advertised",
-    },
-    {
-      agent: "pi",
-      method: "_session/loaded_turn/query",
-      disposition: "supported",
     },
   ]);
 
@@ -259,11 +233,10 @@ test("the executable ACP extension matrix documents installed advertisements wit
 
 // The per-backend `session/fork` trait table. The `id-only` adapter answers the fork with a
 // persisted copy that is not live (claude); `live` adapters hand back the session itself (codex —
-// the workspace fork keeps the forked thread subscribed; pi — constructed on the serving process;
-// opencode by live verification only). The rows are pinned exactly, then grounded in the installed
+// the workspace fork keeps the forked thread subscribed). The rows are pinned exactly, then grounded in the installed
 // adapter dists so an adapter bump that changes what a fork response IS fails the build.
 const CLAUDE_FORK_DIST = readDist("@agentclientprotocol/claude-agent-acp/dist/fork-session.js"); // a DIFFERENT file from acp-agent.js
-const BUILTIN_IDS = ["claude", "codex", "opencode", "pi"] as const;
+const BUILTIN_IDS = ["claude", "codex"] as const;
 
 test("FORK_SESSION_TRAITS pins the exact per-agent fork dispositions", () => {
   assert.deepEqual(
@@ -271,8 +244,6 @@ test("FORK_SESSION_TRAITS pins the exact per-agent fork dispositions", () => {
     [
       { agent: "claude", disposition: "id-only", reattach: "resume-or-load", cwd: "source-only" },
       { agent: "codex", disposition: "live", reattach: "none", cwd: "free" },
-      { agent: "opencode", disposition: "live", reattach: "none", cwd: "free" },
-      { agent: "pi", disposition: "live", reattach: "none", cwd: "free" },
     ],
   );
   assert.ok(Object.isFrozen(FORK_SESSION_TRAITS));
@@ -306,9 +277,7 @@ test("FORK_SESSION_TRAITS pins the exact per-agent fork dispositions", () => {
 
 test("fork traits are grounded in the installed agent dists", () => {
   for (const row of FORK_SESSION_TRAITS) {
-    if (row.distProbe === undefined) {
-      assert.equal(row.agent, "opencode", "only the compiled-binary agent has no fork dist probe");
-    }
+    assert.equal(row.distProbe, row.agent, `${row.agent} fork row is probed in its own dist`);
   }
   // claude: the fork returns only the persisted copy's id, read through the SDK keyed by the source cwd.
   assert.ok(CLAUDE_DIST.includes('import { forkSession } from "./fork-session.js";'));
@@ -324,25 +293,18 @@ test("fork traits are grounded in the installed agent dists", () => {
   assert.equal(CODEX_DIST.split("threadUnsubscribe({ threadId: sessionId })").length - 1, 1, "session/close is the one remaining unsubscribe call");
   assert.ok(!CODEX_DIST.includes("canPublishSessionUpdates"), "no fork publish gate");
   assert.ok(!CODEX_DIST.includes('operation !== "fork"'), "no fork publish gate");
-  // pi: the fork is constructed live on the serving process and refuses a source with a turn in flight.
-  assert.ok(PI_AGENT_DIST.includes("sessionCapabilities: { resume: {}, fork: {}, list: {}, close: {} }"));
-  assert.ok(PI_AGENT_DIST.includes('adapterError("session_busy")'));
 });
 
 // The per-backend `PromptResponse.usage` scope. The SDK's own `Usage` doc says "across session";
 // every installed adapter reports THE TURN, so a client-side session total is the client's own
 // running sum. Pinned in the dists so an adapter that flips to cumulative reporting fails the
 // build instead of silently doubling that sum.
-const PI_SESSION_DIST = readFileSync(join(PI_DIST_DIR, "session.js"), "utf8");
-
 test("prompt usage is per-turn on every source-verified agent", () => {
   assert.deepEqual(
     PROMPT_USAGE_SCOPES.map(({ agent, scope }) => ({ agent, scope })),
     [
       { agent: "claude", scope: "turn" },
       { agent: "codex", scope: "turn" },
-      { agent: "opencode", scope: "turn" },
-      { agent: "pi", scope: "turn" },
     ],
   );
   assert.ok(Object.isFrozen(PROMPT_USAGE_SCOPES));
@@ -362,9 +324,6 @@ test("prompt usage is per-turn on every source-verified agent", () => {
   // codex: the response carries the turn's last token count, nulled at turn start.
   assert.ok(CODEX_DIST.includes("usage: this.buildPromptUsage(sessionState.lastTokenUsage)"));
   assert.ok(CODEX_DIST.includes("sessionState.lastTokenUsage = null;"));
-  // pi: only the assistant messages after the turn's start index are summed.
-  assert.ok(PI_SESSION_DIST.includes("usage: promptUsage(messages)"));
-  assert.ok(PI_SESSION_DIST.includes("agentMessages(this.pi).slice(turn.startMessageIndex)"));
   // the client side: recordPromptUsage replaces (never sums), so a session sum is the caller's own job.
   assert.match(
     readFileSync(new URL("../src/usage.ts", import.meta.url), "utf8"),
@@ -377,34 +336,12 @@ test("the pinned auth-required code is the SDK's exclusively-reserved -32000", (
   assert.equal(ACP_AUTH_REQUIRED_CODE_EXCLUSIVE, -32000);
 });
 
-test("the first-class Pi backend pins the frozen pi-acp capability/auth/error surface", () => {
-  assert.deepEqual(PI_ACP_PROTOCOL_CONTRACT, {
-    mcpCapabilities: { http: true, sse: true },
-    authMethodIds: ["pi-stored-credentials"],
-    providerErrorKinds: ["auth_error", "rate_limit", "billing_error", "provider_error"],
-  });
-  assert.ok(PI_AGENT_DIST.includes("http: true"));
-  assert.ok(PI_AGENT_DIST.includes("sse: true"));
-  assert.ok(!PI_AGENT_DIST.includes("outputSchema: true"));
-  for (const methodId of PI_ACP_PROTOCOL_CONTRACT.authMethodIds) {
-    assert.ok(PI_AUTH_DIST.includes(methodId), `installed pi-acp auth dist must contain ${methodId}`);
-  }
-  for (const errorKind of PI_ACP_PROTOCOL_CONTRACT.providerErrorKinds) {
-    assert.ok(PI_ERRORS_DIST.includes(errorKind), `installed pi-acp errors dist must contain ${errorKind}`);
-  }
-});
-
 // The per-backend system-prompt instruction channel (`SYSTEM_PROMPT_SUPPORT`): each row is read
 // from its adapter's source, so pin the reader in the installed dists — an adapter bump that drops
 // or renames its `_meta` key must fail here, never silently run the agent under its default prompt.
 test("system-prompt support rows are grounded in the installed agent dists", () => {
   for (const row of SYSTEM_PROMPT_SUPPORT) {
-    if (row.distProbe === undefined) {
-      assert.equal(row.agent, "opencode", "only the compiled-binary agent has no system-prompt dist probe");
-      assert.deepEqual({ replace: row.replace, append: row.append }, { replace: false, append: false });
-      assert.deepEqual(row.metaKeys, []);
-      continue;
-    }
+    assert.equal(row.distProbe, row.agent, `${row.agent} system-prompt row is probed in its own dist`);
     assert.ok(row.replace && row.append, `${row.agent} carries both halves`);
   }
   // claude: `_meta.systemPrompt` — a string replaces the prompt, an object is merged into the
@@ -422,11 +359,7 @@ test("system-prompt support rows are grounded in the installed agent dists", () 
     4,
     "thread/start, thread/resume (resume + load), and thread/fork each spread the instruction overrides",
   );
-  // pi: the reader runs on new/resume|load/fork and the loader overrides realize the instructions.
-  assert.equal(PI_AGENT_DIST.split("readSystemPromptMeta(context.params._meta)").length - 1, 3);
-  assert.ok(PI_AGENT_DIST.includes("...systemPromptLoaderOverrides(systemPrompt)"));
-  assert.ok(PI_AGENT_DIST.includes("[SYSTEM_PROMPT_META_KEY]: { ...SYSTEM_PROMPT_ADVERTISEMENT }"));
-  assert.deepEqual(systemPromptSupport("pi"), { replace: true, append: true });
+  assert.deepEqual(systemPromptSupport("claude"), { replace: true, append: true });
   assert.deepEqual(systemPromptSupport("unknown-custom"), { replace: false, append: false });
   assert.ok(Object.isFrozen(SYSTEM_PROMPT_SUPPORT) && SYSTEM_PROMPT_SUPPORT.every((row) => Object.isFrozen(row)));
 });
@@ -440,8 +373,6 @@ test("the cost gauge carries over on reopen everywhere, and on fork everywhere b
     [
       { agent: "claude", reopen: "inherits", fork: "restarts" },
       { agent: "codex", reopen: "inherits", fork: "inherits" },
-      { agent: "opencode", reopen: "inherits", fork: "inherits" },
-      { agent: "pi", reopen: "inherits", fork: "inherits" },
     ],
   );
   assert.ok(Object.isFrozen(COST_GAUGE_INHERITANCE));

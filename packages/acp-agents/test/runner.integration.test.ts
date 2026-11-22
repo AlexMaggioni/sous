@@ -9,7 +9,7 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { Type } from "typebox";
-import { isWorkflowError, WorkflowErrorCode, type AgentUsage, type McpServerConfig } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode, type AgentUsage, type McpServerConfig } from "@orchestrator/shared-types";
 import { AcpAgentRunner, BUILTIN_BACKEND_IDS } from "../src/index.js";
 import { createFakeAgentHarness, FAKE_AGENT_FIXTURE, waitFor } from "./helpers/fake-agent.js";
 
@@ -45,7 +45,7 @@ afterEach(async () => {
   await harness.cleanup();
 });
 
-test("Pi release-time child cleanup failure overrides success, primary error, and caller abort", async () => {
+test("release-time child cleanup failure overrides success, primary error, and caller abort", async () => {
   const close = {
     throw: "child process cleanup failed",
     throwData: { errorKind: "child_cleanup_error", details: { remainingChildren: 1 } },
@@ -58,36 +58,36 @@ test("Pi release-time child cleanup failure overrides success, primary error, an
     return true;
   };
 
-  const success = harness.configure<LogEntry>({ turns: [{ text: "primary success", close }] }, { backends: ["pi"] });
+  const success = harness.configure<LogEntry>({ turns: [{ text: "primary success", close }] }, { backends: ["codex"] });
   await assert.rejects(
-    () => makeRunner().run("hi", { model: "pi", cwd: success.cwd }),
+    () => makeRunner().run("hi", { model: "codex", cwd: success.cwd }),
     expectCleanup,
   );
 
-  const failed = harness.configure<LogEntry>({ turns: [{ throw: "primary failure", close }] }, { backends: ["pi"] });
+  const failed = harness.configure<LogEntry>({ turns: [{ throw: "primary failure", close }] }, { backends: ["codex"] });
   await assert.rejects(
-    () => makeRunner().run("hi", { model: "pi", cwd: failed.cwd }),
+    () => makeRunner().run("hi", { model: "codex", cwd: failed.cwd }),
     expectCleanup,
   );
 
-  const aborted = harness.configure<LogEntry>({ turns: [{ waitForCancel: true, close }] }, { backends: ["pi"] });
+  const aborted = harness.configure<LogEntry>({ turns: [{ waitForCancel: true, close }] }, { backends: ["codex"] });
   const controller = new AbortController();
-  const running = makeRunner().run("hi", { model: "pi", cwd: aborted.cwd, signal: controller.signal });
+  const running = makeRunner().run("hi", { model: "codex", cwd: aborted.cwd, signal: controller.signal });
   await waitFor(() => aborted.readLog().some((entry) => entry.method === "prompt"));
   controller.abort();
   await assert.rejects(() => running, expectCleanup);
 });
 
-test("runner disposal releases every interactive Pi session before reporting the first child cleanup failure", async () => {
+test("runner disposal releases every interactive session before reporting the first child cleanup failure", async () => {
   const configured = harness.configure<LogEntry>({
     close: {
       throw: "child process cleanup failed",
       throwData: { errorKind: "child_cleanup_error", details: { remainingChildren: 1 } },
     },
-  }, { backends: ["pi"] });
+  }, { backends: ["codex"] });
   const runner = makeRunner();
-  await runner.openSession({ model: "pi", cwd: configured.cwd });
-  await runner.openSession({ model: "pi", cwd: configured.cwd });
+  await runner.openSession({ model: "codex", cwd: configured.cwd });
+  await runner.openSession({ model: "codex", cwd: configured.cwd });
 
   await assert.rejects(
     runner.dispose(),
@@ -282,7 +282,7 @@ test("(2c) a single assistant message streamed as small deltas folds byte-identi
   const deltas = ["L", "I", "VE", "_SM", "OKE", "_OK"];
   const { cwd } = configure({ turns: [{ text: deltas }] });
 
-  const out = await makeRunner().run("smoke", { model: "pi", cwd });
+  const out = await makeRunner().run("smoke", { model: "codex", cwd });
 
   assert.equal(out, deltas.join(""));
   assert.equal(out, "LIVE_SMOKE_OK");
@@ -307,7 +307,7 @@ test("(2c) distinct assistant messages separated by non-text updates join with e
       },
     ],
   });
-  const out = await makeRunner().run("check", { model: "pi", cwd });
+  const out = await makeRunner().run("check", { model: "codex", cwd });
   assert.equal(
     out,
     "won't modify any files.\n\nTypeScript files under src stay untouched.",
@@ -328,7 +328,7 @@ test("(2c) a changed ACP messageId delimits adjacent assistant messages without 
     }],
   });
 
-  const out = await makeRunner().run("check", { model: "pi", cwd });
+  const out = await makeRunner().run("check", { model: "codex", cwd });
 
   assert.equal(out, "First message.\n\nSecond message.");
 });
@@ -908,14 +908,14 @@ test("routing preserves every recognized remainder and every unknown full spec b
   const cases = [
     ["claude/anthropic/claude.4[high]", "anthropic/claude.4[high]"],
     ["codex/openai/gpt.5[high]", "openai/gpt.5[high]"],
-    ["opencode/zai/glm.5[max]", "zai/glm.5[max]"],
-    ["pi/openrouter/vendor/model.5[max]", "openrouter/vendor/model.5[max]"],
+    ["opencode/zai/glm.5[max]", "opencode/zai/glm.5[max]"],
+    ["pi/openrouter/vendor/model.5[max]", "pi/openrouter/vendor/model.5[max]"],
     ["anthropic/claude.4[high]", "anthropic/claude.4[high]"],
     ["claude/codex/gpt.5[high]", "codex/gpt.5[high]"],
     ["claude/", ""],
     ["ClAuDe/MiXeD/Case", "MiXeD/Case"],
     ["codex/  spaced ! model  ", "  spaced ! model  "],
-    ["opencode/模型/Ä", "模型/Ä"],
+    ["codex/模型/Ä", "模型/Ä"],
     ["CLÄUDE/model", "CLÄUDE/model"],
   ] as const;
   for (const [model] of cases) {
@@ -1205,7 +1205,7 @@ test("probeConfigOptions can select the routed model and returns its echoed cata
   assert.equal(readLog().filter((entry) => entry.method === "closeSession").length, 1);
 });
 
-test("probeConfigOptions preserves OpenCode's full slash-containing provider/model identity", async () => {
+test("probeConfigOptions preserves a full slash-containing provider/model identity", async () => {
   const innerModel = "openrouter/anthropic/claude-opus-4.6";
   const advertised = [
     {
@@ -1219,12 +1219,12 @@ test("probeConfigOptions preserves OpenCode's full slash-containing provider/mod
   ];
   const { cwd, readLog } = configure({ configOptions: advertised });
 
-  const probed = await makeRunner().probeConfigOptions(`opencode/${innerModel}`, {
+  const probed = await makeRunner().probeConfigOptions(`codex/${innerModel}`, {
     cwd,
     selectModel: true,
   });
 
-  assert.equal(probed.backendId, "opencode");
+  assert.equal(probed.backendId, "codex");
   assert.equal(probed.options[0]?.currentValue, innerModel);
   const selected = readLog().filter((entry) => entry.method === "setSessionConfigOption");
   assert.equal(selected.length, 1);
@@ -1400,23 +1400,15 @@ test("(#instr) Claude carries systemPrompt on `_meta.systemPrompt`: append => pr
   assert.deepEqual(sessions[1]?.params?._meta, { systemPrompt: "BASE\n\nDEV" });
 });
 
-test("(#instr) pi carries systemPrompt VERBATIM under `_meta.systemPrompt`", async () => {
-  const { cwd, readLog } = configure({ turns: [{ text: "ok" }] });
-  await makeRunner().run("hi", { model: "pi", cwd, systemPrompt: { replace: "BASE", append: "DEV" } });
-  assert.deepEqual(readLog().find((e) => e.method === "newSession")?.params?._meta, {
-    systemPrompt: { replace: "BASE", append: "DEV" },
-  });
-});
-
-test("(#instr) OpenCode refuses systemPrompt before anything spawns; a malformed value is refused on every backend", async () => {
+test("(#instr) a custom backend refuses systemPrompt before anything spawns; a malformed value is refused on every backend", async () => {
   const { cwd, readLog } = configure({ turns: [{ text: "ok" }] });
   const runner = makeRunner();
   await assert.rejects(
-    () => runner.run("hi", { model: "opencode", cwd, label: "oc", systemPrompt: { replace: "BASE" } }),
+    () => runner.run("hi", { model: "custom", cwd, label: "oc", backends: { custom: { command: process.execPath, args: [FAKE_AGENT_FIXTURE] } }, systemPrompt: { replace: "BASE" } }),
     (error: unknown) =>
       isWorkflowError(error) &&
       error.code === WorkflowErrorCode.SCRIPT_VALIDATION_ERROR &&
-      /systemPrompt\.replace is not supported by backend "opencode"/.test(error.message) &&
+      /systemPrompt\.replace is not supported by backend "custom"/.test(error.message) &&
       error.agentLabel === "oc",
   );
   await assert.rejects(

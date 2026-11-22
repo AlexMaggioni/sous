@@ -34,17 +34,17 @@ test("probe() returns the report plus models, targets every built-in by default,
   assert.deepEqual(catalog.harnessOptions.map((harnessEntry) => harnessEntry.backendId), [...BUILTIN_BACKEND_IDS]);
   assert.equal(catalog.ok, true);
   assert.equal(catalog.exitCode, 0);
-  assert.equal(catalog.models.length, 4);
+  assert.equal(catalog.models.length, 2);
   assert.equal(catalog.models[0]!.hasModelOption, true);
   assert.ok(catalog.models[0]!.groups && catalog.models[0]!.groups.length > 0, "grouped model choices");
   assert.ok(catalog.harnessOptions.every((harnessEntry) => harnessEntry.probed && (harnessEntry.options?.length ?? 0) > 0));
   assert.equal(catalog.harnessOptions.find((entry) => entry.backendId === "claude")?.defaultModeId, "auto");
-  assert.equal(catalog.harnessOptions.find((entry) => entry.backendId === "pi")?.defaultModeId, undefined);
-  await waitFor(() => count(readLog(), "__exit") === 4);
+  assert.equal(catalog.harnessOptions.find((entry) => entry.backendId === "codex")?.defaultModeId, "agent");
+  await waitFor(() => count(readLog(), "__exit") === 2);
   assert.equal(count(readLog(), "prompt"), 0, "no prompt ever");
-  assert.equal(count(readLog(), "__start"), 4);
-  assert.equal(count(readLog(), "__exit"), 4);
-  assert.equal(count(readLog(), "newSession"), 4);
+  assert.equal(count(readLog(), "__start"), 2);
+  assert.equal(count(readLog(), "__exit"), 2);
+  assert.equal(count(readLog(), "newSession"), 2);
   await waitFor(() => liveConnectionCount() === 0);
   assert.equal(liveConnectionCount(), 0);
 });
@@ -65,11 +65,10 @@ test("probe() carries per-harness traits refined by the live probe connection", 
   }
   assert.equal(catalog.harnessOptions.find((entry) => entry.backendId === "claude")?.traits?.structuredOutput, "session-meta");
   assert.equal(catalog.harnessOptions.find((entry) => entry.backendId === "codex")?.traits?.structuredOutput, "turn-meta");
-  assert.equal(catalog.harnessOptions.find((entry) => entry.backendId === "pi")?.traits?.structuredOutput, "client-tool");
   await waitFor(() => liveConnectionCount() === 0);
 
-  // An agent that advertises its system-prompt channel and the extensions at initialize (pi-acp's
-  // shape) reports them as advertised — the live answer, not the table.
+  // An agent that advertises its system-prompt channel and the extensions at initialize (the bare
+  // `_meta` blocks) reports them as advertised — the live answer, not the table.
   await harness.cleanup();
   const advertised = configure({
     initialize: {
@@ -78,10 +77,10 @@ test("probe() carries per-harness traits refined by the live probe connection", 
       _meta: { steering: { supported: true }, loadedTurn: { supported: true }, systemPrompt: { replace: true, append: true } },
     },
   });
-  const pi = await AcpAgent.probe({ cwd: advertised.cwd, harnesses: ["pi"] });
-  assert.deepEqual(pi.harnessOptions[0]!.traits?.systemPrompt, { replace: true, append: true, source: "advertised" });
-  assert.equal(pi.harnessOptions[0]!.traits?.steering, "supported");
-  assert.equal(pi.harnessOptions[0]!.traits?.loadedTurn, "supported");
+  const claude = await AcpAgent.probe({ cwd: advertised.cwd, harnesses: ["claude"] });
+  assert.deepEqual(claude.harnessOptions[0]!.traits?.systemPrompt, { replace: true, append: true, source: "advertised" });
+  assert.equal(claude.harnessOptions[0]!.traits?.steering, "supported");
+  assert.equal(claude.harnessOptions[0]!.traits?.loadedTurn, "supported");
   await waitFor(() => liveConnectionCount() === 0);
 
   // A failed probe has no traits: nothing was negotiated.

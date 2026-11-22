@@ -1,5 +1,5 @@
 // Per-first-class-backend LIVE auth e2e (§4.6.3) — env-GATED, skip-by-default. Every OTHER auth suite
-// drives the profile-less fake agent; this one drives the REAL claude / codex / opencode / pi ACP servers
+// drives the profile-less fake agent; this one drives the REAL claude / codex ACP servers
 // with REAL credentials so each first-class integration's auth path has a re-runnable guard with
 // EQUAL structural depth (Principle 1 — no backend is privileged).
 //
@@ -70,56 +70,6 @@ test(
     assert.equal(outcome.recycled, true);
 
     assertPong(await runner.run(PING_PROMPT, { model: "codex" }));
-  },
-);
-
-// ---- opencode — a provider key from the models.dev registry (disk; opencode-login is a no-op ack) ----
-test(
-  "opencode: single opencode-login method, authenticate no-op, real prompt completes with a provider key",
-  { skip: gate("set OPENAI_API_KEY or ANTHROPIC_API_KEY to run the opencode auth e2e", Boolean(process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY)) },
-  async () => {
-    const runner = makeRunner();
-    const model = process.env.AGENTPRISM_OPENCODE_E2E_MODEL; // e.g. "opencode/anthropic/claude-..."
-
-    const methods = await runner.describeAuthMethods({ model: model ?? "opencode" });
-    // Exactly one method, `opencode-login` (service.ts:49,92-137).
-    assert.equal(methods.length, 1, "opencode advertises exactly one auth method");
-    assert.equal(methods[0].id, "opencode-login");
-
-    // authenticate is a pure no-op ack (service.ts:139-144): the one-shot agent-login RPC provisions
-    // nothing and must NOT throw — the real credential comes from the provider env key.
-    await runner.authenticate({ model: model ?? "opencode", methodId: "opencode-login" });
-
-    // With the provider key present the ProviderAuthError→-32000 path (service.ts:856-858) must NOT fire.
-    assertPong(await runner.run(PING_PROMPT, { model: model ?? "opencode" }));
-  },
-);
-
-// ---- pi — one of five ambient provider env keys (the single `pi-stored-credentials` method is
-// advertised unconditionally; ACP schema 1.21.0 removed the `env_var` variant the per-provider
-// methods used, so the key is read from the spawn environment, never advertised) ----
-const PI_PROVIDER_KEY = [
-  "ANTHROPIC_API_KEY",
-  "OPENAI_API_KEY",
-  "GEMINI_API_KEY",
-  "XAI_API_KEY",
-  "OPENROUTER_API_KEY",
-].find((name) => Boolean(process.env[name]));
-
-test(
-  "pi: single unconditional method, inherited provider credential, real prompt completes",
-  { skip: gate("set a supported Pi provider API key to run the pi auth e2e", Boolean(PI_PROVIDER_KEY)) },
-  async () => {
-    const runner = makeRunner();
-    const configuredModel = process.env.AGENTPRISM_PI_E2E_MODEL;
-    const model = configuredModel === undefined || configuredModel.startsWith("pi/")
-      ? configuredModel ?? "pi"
-      : `pi/${configuredModel}`;
-    const methods = await runner.describeAuthMethods({ model });
-    assert.deepEqual(methods.map(({ id }) => id), ["pi-stored-credentials"]);
-
-    await runner.authenticate({ model, methodId: "pi-stored-credentials" });
-    assertPong(await runner.run(PING_PROMPT, { model }));
   },
 );
 

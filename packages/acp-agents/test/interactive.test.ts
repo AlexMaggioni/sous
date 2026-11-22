@@ -2,7 +2,7 @@
 // prompt-time image validation, and the one-turn-at-a-time host contract.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import type { Backend } from "../src/backend.js";
 import type {
   PooledConnection,

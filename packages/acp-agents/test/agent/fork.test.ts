@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContentBlock, SessionConfigOption, SessionModeState } from "@agentclientprotocol/sdk";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import { Type } from "typebox";
 import {
   AcpAgent,
@@ -63,7 +63,7 @@ const EFFORT: SessionConfigOption = {
   ],
 };
 
-const harness = createFakeAgentHarness({ prefix: "acp-agent-fork-it-", backends: ["claude", "pi", "opencode"] });
+const harness = createFakeAgentHarness({ prefix: "acp-agent-fork-it-", backends: ["claude", "codex"] });
 const configure = (scenario: unknown, options?: Parameters<typeof harness.configure>[1]) =>
   harness.configure<LogEntry>(scenario, options);
 const track = (agent: AcpAgent): AcpAgent => trackAgent(harness, agent);
@@ -181,12 +181,12 @@ test("id-only fork falls back to session/load when resume is not advertised; rep
   assert.deepEqual(child.replay.map((record) => record.update.sessionUpdate), ["user_message_chunk", "agent_message_chunk"]);
 });
 
-test("live fork (pi): the fork handle is the session and the parent's history seeds the child", async () => {
+test("live fork (codex): the fork handle is the session and the parent's history seeds the child", async () => {
   const { cwd, readLog } = configure(
     { lifecycleSupport: true, forkSession: { turns: [{ text: "child" }] }, turns: [{ text: "parent" }] },
-    { backends: ["pi"] },
+    { backends: ["codex"] },
   );
-  const parent = track(await AcpAgent.open({ cwd, model: "pi" }));
+  const parent = track(await AcpAgent.open({ cwd, model: "codex" }));
   await parent.prompt("p");
   const child = track(await parent.fork());
   const wire = methods(readLog());
@@ -228,9 +228,9 @@ test("pre-response fork replay is buffered and adopted for the new id", async ()
       },
       turns: [{ text: "parent" }],
     },
-    { backends: ["opencode"] },
+    { backends: ["codex"] },
   );
-  const parent = track(await AcpAgent.open({ cwd, model: "opencode" }));
+  const parent = track(await AcpAgent.open({ cwd, model: "codex" }));
   const child = track(await parent.fork());
   assert.deepEqual(
     child.replay.map((record) => record.update.sessionUpdate),
@@ -348,9 +348,9 @@ test("fork guards: model routing to another backend and a cwd override on a sour
   {
     const { cwd, readLog } = configure(
       { lifecycleSupport: true, forkSession: { turns: [{ text: "child" }] }, turns: [{ text: "parent" }] },
-      { backends: ["pi"] },
+      { backends: ["codex"] },
     );
-    const parent = track(await AcpAgent.open({ cwd, model: "pi" }));
+    const parent = track(await AcpAgent.open({ cwd, model: "codex" }));
     const child = track(await parent.fork({ cwd: OTHER_DIR }));
     assert.equal(child.cwd, OTHER_DIR);
     assert.equal(readLog().find((entry) => entry.method === "forkSession")?.params?.cwd, OTHER_DIR);
@@ -533,7 +533,7 @@ test("live fork (codex): systemPrompt rides session/fork _meta in the Codex dial
 
 const forkCostUpdate = (amount: number) => ({ sessionUpdate: "usage_update", used: 10, size: 100, cost: { amount, currency: "USD" } });
 
-test("a fork baselines the parent's gauge only where the agent's fork carries it (pi/opencode), never on claude", async () => {
+test("a fork baselines the parent's gauge only where the agent's fork carries it (codex), never on claude", async () => {
   // The child's first reading is 0.05 on every backend; the parent's gauge was 0.03.
   const scenario = (fork: Record<string, unknown>) => ({
     lifecycleSupport: true,
@@ -543,7 +543,7 @@ test("a fork baselines the parent's gauge only where the agent's fork carries it
     turns: [{ text: "parent", updates: [forkCostUpdate(0.03)] }],
   });
 
-  for (const backend of ["pi", "opencode"] as const) {
+  for (const backend of ["codex"] as const) {
     const { cwd } = configure(scenario({}), { backends: [backend] });
     const parent = track(await AcpAgent.open({ cwd, model: backend }));
     await parent.prompt("p");

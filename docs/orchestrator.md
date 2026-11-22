@@ -8,8 +8,8 @@ Build it from the repo root:
 
 ```sh
 pnpm install
-pnpm --filter @automatalabs/shared-types --filter @automatalabs/workflow-engine \
-  --filter @automatalabs/acp-agents --filter @automatalabs/workflows --filter @orchestrator/orc build
+pnpm --filter @orchestrator/shared-types --filter @orchestrator/engine \
+  --filter @orchestrator/acp-agents --filter @orchestrator/orc build
 node packages/orc/dist/cli.js help
 ```
 
@@ -116,10 +116,8 @@ order, and takes the first one it finds:
 
 1. `.rulesync/subagents/<name>.md` in the project;
 2. the same in the global rulesync folder, the folder `rulesyncGlobal` names in `config.json`;
-3. the harnesses' own folders in the project: `.claude/agents/`, `.codex/agents/`,
-   `.opencode/agents/`;
-4. the same folders in the home folder: `~/.claude/agents/`, `~/.codex/agents/`,
-   `~/.config/opencode/agents/`.
+3. the harnesses' own folders in the project: `.claude/agents/` and `.codex/agents/`;
+4. the same folders in the home folder: `~/.claude/agents/` and `~/.codex/agents/`.
 
 A rulesync agent is one file for every harness. Its frontmatter has a block per harness, and orc
 reads the block of the harness the step runs on:
@@ -158,9 +156,9 @@ You review one change. Report what blocks it, then what could be better.
 
 An agent in a harness's own folder runs only on that harness. A step that sends it to another
 harness makes the workflow invalid, and the message says to move the agent to rulesync. An agent
-in two harnesses' folders and not in rulesync gives the default harness's copy. When the default
-harness has no copy, the workflow is invalid. A step that picks its harness while running, such as
-`model: args.harness`, stops with the same message when the agent can't run there.
+in both harnesses' folders and not in rulesync gives the default harness's copy. A step that picks
+its harness while running, such as `model: args.harness`, stops with the same message when the
+agent can't run there.
 
 An agent in a run never stops to ask for permission. `tools` is its allow list: the built-in tools
 it does not name don't exist for it. `disallowedTools` is its deny list. On Claude Code both apply
@@ -172,10 +170,9 @@ An allow list names whole tools: `Bash(npm test)` allows all of Bash.
 
 A step or an agent names its MCP servers. orc looks each name up in `.rulesync/mcp.jsonc` in the
 project, then in the global rulesync folder's, then in the config of the harness the step runs on:
-`.mcp.json` and `~/.claude.json` for Claude Code, `config.toml` for Codex, `opencode.json` for
-OpenCode. A server in rulesync wins over one with the same name in a harness's config. On Codex
-that holds when both use the same transport, both a command or both a url. When they differ,
-Codex keeps its own server.
+`.mcp.json` and `~/.claude.json` for Claude Code, `config.toml` for Codex. A server in rulesync
+wins over one with the same name in a harness's config. On Codex that holds when both use the
+same transport, both a command or both a url. When they differ, Codex keeps its own server.
 
 ```jsonc
 {

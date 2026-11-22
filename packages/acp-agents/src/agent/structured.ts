@@ -5,7 +5,7 @@
 // final-message extraction → structuredError). The opt-in repair ladder that re-prompts on a miss
 // lives in acp-agent.ts (`#promptTurn`) and sends the runner's `repairPromptText`.
 import type { TSchema } from "typebox";
-import type { McpServerConfig } from "@automatalabs/shared-types";
+import type { McpServerConfig } from "@orchestrator/shared-types";
 import type { PooledConnection } from "../acp-client.js";
 import type { Backend, StructuredSource } from "../backend.js";
 import { extractValidated, validateValue } from "../structured-output.js";

@@ -209,7 +209,7 @@ export function createTestFixture(): TestFixture {
     });
 }
 
-// orchestrator: this fork does not bundle Codex, so these tests run the installed one: CODEX_PATH,
+// This fork does not bundle Codex, so these tests run the installed one: CODEX_PATH,
 // else the first codex on PATH. Each test still gets its own CODEX_HOME.
 function installedCodex(): string {
     const fromEnv = process.env["CODEX_PATH"];

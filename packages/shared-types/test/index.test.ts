@@ -18,12 +18,12 @@ import type {
   WorkflowRunStatus,
 } from "../src/index.js";
 
-test("@automatalabs/shared-types public entry is reachable via ../src", () => {
+test("@orchestrator/shared-types public entry is reachable via ../src", () => {
   assert.equal(typeof META_KEYS, "object");
   // Keys are bare (un-namespaced), mirroring the target Codex param names.
   assert.equal(META_KEYS.outputSchema, "outputSchema");
   assert.equal(META_KEYS.runId, "runId");
-  // The bare session system-prompt key claude-agent-acp and pi-acp both read.
+  // The bare session system-prompt key claude-agent-acp reads.
   assert.equal(META_KEYS.systemPrompt, "systemPrompt");
 });
 
@@ -136,11 +136,11 @@ test("run-result observability entries are exported and remain additive", () => 
 });
 
 test("cross-repo wire literals: the fork namespace and Codex `_meta` keys never drift", () => {
-  // These exact strings are the wire contract with the @automatalabs/codex-acp fork (it
+  // These exact strings are the wire contract with the @orchestrator/codex-acp fork (it
   // advertises agentCapabilities._meta[NAMESPACE] = { outputSchema, baseInstructions,
   // developerInstructions } and reads the same-named bare `_meta` keys). Pin the literals so a
   // rename here fails THIS suite instead of silently breaking interop with the published fork.
-  assert.equal(CODEX_CUSTOM_CAPABILITY_NAMESPACE, "@automatalabs/codex-acp");
+  assert.equal(CODEX_CUSTOM_CAPABILITY_NAMESPACE, "@orchestrator/codex-acp");
   assert.equal(CODEX_META_KEYS.baseInstructions, "baseInstructions");
   assert.equal(CODEX_META_KEYS.developerInstructions, "developerInstructions");
 });

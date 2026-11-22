@@ -11,7 +11,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Type } from "typebox";
-import { META_KEYS } from "@automatalabs/shared-types";
+import { META_KEYS } from "@orchestrator/shared-types";
 import { AcpAgentRunner, BACKENDS_ENV, type CustomBackendConfig } from "../src/index.js";
 import { createFakeAgentHarness, FAKE_AGENT_FIXTURE, readLog as readLogFile } from "./helpers/fake-agent.js";
 
@@ -145,7 +145,7 @@ test("custom backend: 'name/inner' selects the inner model; promptMeta + outputS
 
 test("custom backend: schema runs EMBED the JSON Schema in the prompt text (agent may ignore the meta)", async () => {
   // A custom agent that ignores _meta.outputSchema can only satisfy the contract if the
-  // schema is STATED in the prompt — the opencode e2e found exactly this failure (valid JSON,
+  // schema is STATED in the prompt. A live e2e once found exactly this failure (valid JSON,
   // invented keys, ladder never converges). Pin the belt-and-braces behavior.
   const { config, cwd, readLog } = fakeBackend({ turns: [{ text: '{"city":"Oslo","hot":false}' }] });
   await makeRunner({ fake: config }).run("classify", { model: "fake", cwd, schema: SCHEMA });

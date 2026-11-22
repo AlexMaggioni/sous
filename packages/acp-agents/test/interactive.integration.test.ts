@@ -7,7 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PROTOCOL_VERSION, type ContentBlock, type RequestPermissionResponse } from "@agentclientprotocol/sdk";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import { AcpAgentRunner, type AcpRunnerOptions, type CustomBackendConfig } from "../src/index.js";
 import {
   createFakeAgentHarness,
@@ -568,7 +568,7 @@ test("awaitCurrentTurn on a loaded session: the _session/loaded_turn extension m
 
     // 5) THE OBSERVATION PATH — a backend WITHOUT the extension (no
     //    `_meta.loadedTurn.supported` advertisement; the built-in claude
-    //    and opencode backends today). The seam classifies the founding
+    //    backend today). The seam classifies the founding
     //    turn's terminal state authoritatively instead of rejecting: the
     //    post-load continuation watch (any CONTENT update after the load
     //    boundary is live continuation — the still-running signal), then

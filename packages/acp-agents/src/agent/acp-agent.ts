@@ -1,4 +1,4 @@
-// AcpAgent — the SDK-style front door of @automatalabs/acp-agents: one dedicated ACP process per
+// AcpAgent — the SDK-style front door of @orchestrator/acp-agents: one dedicated ACP process per
 // agent (and per fork), a per-agent FIFO for turns and lifecycle ops, verbatim per-turn results
 // (the wire `PromptResponse` with its `_meta`, every update, every raw vendor notification), live
 // forks that see everything the parent committed so far, cold reopen from an `AgentSessionRef`,
@@ -7,11 +7,10 @@
 // tool host) plus its own per-agent function-tool host (`agent_tools`, src/agent/tool-host.ts),
 // and never touches the runner, the pool, or `InteractiveSession`.
 //
-// Semantics that are not negotiable (docs/api.md "AcpAgent SDK"):
+// Semantics that are not negotiable:
 //   - FIFO: prompt / stream / fork / setModel / setMode / setConfigOptions / close serialize
 //     behind the in-flight turn; steer and cancel overlap it. A fork therefore always sees a
-//     quiescent, fully persisted parent transcript (pi rejects busy forks; Claude would copy a
-//     partial turn).
+//     quiescent, fully persisted parent transcript (Claude would copy a partial turn).
 //   - The model is a session setting, not an identity: `setModel(spec)` and a per-turn `model`
 //     re-route through the fork rule (same backend, same poolKey) and send the routed remainder
 //     verbatim as `session/set_config_option { configId: "model" }` — exactly how open selects —
@@ -33,7 +32,7 @@
 //   - Abort (constructor or per-call signal) rejects the affected promise with `signal.reason`
 //     untouched — never a WorkflowError, never a resolved `cancelled` turn.
 import type { ContentBlock, SessionConfigOption, SessionModeState } from "@agentclientprotocol/sdk";
-import type { AgentHistoryEntry, AgentSessionRef, AgentUsage } from "@automatalabs/shared-types";
+import type { AgentHistoryEntry, AgentSessionRef, AgentUsage } from "@orchestrator/shared-types";
 import type { TSchema } from "typebox";
 import {
   CANCEL_NOT_HONORED_GRACE_MS,
@@ -1119,7 +1118,7 @@ export class AcpAgent {
   }
 
   /** Best-effort: the latest unsettled `tool_call` of the turn in flight whose standard `name`
-   *  (or `title`) is the tool's name or ends in `__<name>` (pi's `mcp__agent_tools__<name>`). */
+   *  (or `title`) is the tool's name or ends in `__<name>` (`mcp__agent_tools__<name>`). */
   #resolveToolCallId(toolName: string): string | undefined {
     const calls = this.#activeCollector?.toolCalls ?? [];
     for (let index = calls.length - 1; index >= 0; index -= 1) {

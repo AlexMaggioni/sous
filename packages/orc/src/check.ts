@@ -5,9 +5,9 @@
 
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { openWorkflowDir, parseWorkflowScript } from "@automatalabs/workflow-engine";
-import { harnessName, lookupAgents, lookupMcpServers, missingServer, planStep, routeHarness, type Harness, type McpLookup } from "./agents.js";
-import { loadSecrets, lookupSettings, workflowDirs, type HomePaths } from "./home.js";
+import { openWorkflowDir, parseWorkflowScript } from "@orchestrator/engine";
+import { HARNESSES, harnessName, isHarness, lookupAgents, lookupMcpServers, missingServer, planStep, removedHarness, routeHarness, type Harness, type McpLookup } from "./agents.js";
+import { loadConfig, loadSecrets, lookupSettings, workflowDirs, type HomePaths } from "./home.js";
 import { nextRun, parseCron } from "./cron.js";
 import { checkInputs } from "./inputs.js";
 import { resolveWorkflow } from "./launch.js";
@@ -78,6 +78,13 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
     for (const name of names) if (mcp && !mcp.find(name, harness)) problems.push(`${within}${missingServer(name, harness, mcp)}`);
   };
 
+  // A default harness or model orc no longer runs would send steps to Claude Code without a word.
+  const config = loadConfig(paths);
+  if (config.defaultHarness !== undefined && !isHarness(config.defaultHarness)) {
+    problems.push(`the configured default harness "${config.defaultHarness}" is not one orc runs. Use one of ${HARNESSES.join(", ")}.`);
+  }
+  const defaultModel = removedHarness(config.defaultModel);
+  if (defaultModel) problems.push(`the configured default ${defaultModel}`);
   problems.push(...(resolved.extras.metaProblems ?? []));
   if (given) {
     problems.push(...checkInputs(resolved.extras, given).problems);
@@ -106,6 +113,10 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
         continue;
       }
       visit(child, text, depth + 1);
+    }
+    for (const model of literals(script, /\bmodel\s*:\s*(['"])([^'"]+)\1/g)) {
+      const removed = removedHarness(model);
+      if (removed) problems.push(`${within}${removed}`);
     }
     // Each step's options: the agent it names, the model or harness, and its MCP servers.
     const steps = new Map<number, string>();

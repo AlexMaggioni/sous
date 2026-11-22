@@ -232,10 +232,10 @@ export class AuthStore {
  *  the machine-readable channel — a defensive scrub so a spawned agent that echoes an injected env
  *  var to stderr cannot leak it into an error suffix. */
 const SECRET_LINE_PATTERNS: RegExp[] = [
-  /^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN|AWS_[A-Za-z0-9_]+|CODEX_API_KEY|CODEX_ACCESS_TOKEN|CODEX_AUTH|OPENCODE_AUTH_CONTENT|DEFAULT_AUTH_REQUEST)(\s*[:=]\s*)(\S.*)$/,
+  /^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN|AWS_[A-Za-z0-9_]+|CODEX_API_KEY|CODEX_ACCESS_TOKEN|CODEX_AUTH|DEFAULT_AUTH_REQUEST)(\s*[:=]\s*)(\S.*)$/,
 ];
 const SECRET_INLINE_PATTERNS: Array<{ re: RegExp; replace: string }> = [
-  { re: /\b([A-Za-z_][A-Za-z0-9_]*_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN|CODEX_API_KEY|CODEX_ACCESS_TOKEN|OPENCODE_AUTH_CONTENT)(=)(\S+)/g, replace: "$1=[redacted]" },
+  { re: /\b([A-Za-z_][A-Za-z0-9_]*_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN|CODEX_API_KEY|CODEX_ACCESS_TOKEN)(=)(\S+)/g, replace: "$1=[redacted]" },
   // Bearer tokens / Authorization header values.
   { re: /\b(Bearer|Authorization:?\s*Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, replace: "$1 [redacted]" },
 ];

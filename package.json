@@ -4,31 +4,20 @@
   "type": "module",
   "packageManager": "pnpm@10.34.4",
   "scripts": {
-    "postinstall": "node scripts/ensure-run-monitor-html.mjs --soft",
     "build": "pnpm -r run build",
-    "typecheck": "node scripts/ensure-run-monitor-html.mjs && pnpm -r exec tsc --noEmit",
-    "test": "pnpm build && pnpm test:architecture && pnpm -r --filter '!@automatalabs/codex-acp' test && pnpm test:scripts && pnpm test:baseline",
-    "test:scripts": "node --test scripts/test/*.test.mjs",
+    "typecheck": "pnpm -r exec tsc --noEmit",
+    "test": "pnpm build && pnpm test:architecture && pnpm -r --filter '!@orchestrator/codex-acp' test && pnpm test:baseline",
     "test:architecture": "node --test test/architecture.test.mjs",
-    "test:baseline": "node --test test/baseline.test.mjs",
-    "generate:acp-backends-manifest": "tsx scripts/generate-acp-backends-manifest.ts",
-    "check:acp-backends-manifest": "tsx scripts/generate-acp-backends-manifest.ts --check",
-    "generate:authoring-skills": "node scripts/generate-authoring-skills.mjs",
-    "sync:codex-acp": "node scripts/sync-codex-acp.mjs",
-    "changeset": "changeset",
-    "version": "changeset version",
-    "release": "pnpm build && changeset publish"
+    "test:baseline": "node --test test/baseline.test.mjs"
   },
   "engines": {
     "node": ">=22",
     "pnpm": ">=10"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.0",
     "@types/node": "^22.10.0",
     "tsx": "^4.22.4",
-    "typescript": "^5.7.0",
-    "yaml": "^2.9.0"
+    "typescript": "^5.7.0"
   },
   "pnpm": {
     "overrides": {

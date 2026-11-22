@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import * as barrel from "../src/index.js";
 import { CustomAcpBackend, resolveBackendRegistry, resolveModelRoute, selectBackend } from "../src/index.js";
 import { asciiLowercase, assertNoModelConfigOption } from "../src/routing.js";
@@ -33,20 +33,20 @@ test("resolveModelRoute strips only a routed first segment and keeps the rest ve
       { id: "codex", modelSpec: "gpt-5.6-sol" },
     );
     assert.deepEqual(
-      pick(resolveModelRoute("opencode/zai/glm-5.2")),
-      { id: "opencode", modelSpec: "zai/glm-5.2" },
+      pick(resolveModelRoute("codex/zai/glm-5.2")),
+      { id: "codex", modelSpec: "zai/glm-5.2" },
       "only the FIRST slash separates the backend; nested provider paths survive untouched",
     );
     assert.deepEqual(pick(resolveModelRoute("claude/opus[1m]")), { id: "claude", modelSpec: "opus[1m]" });
     assert.deepEqual(pick(resolveModelRoute("CoDeX/x")), { id: "codex", modelSpec: "x" });
     assert.deepEqual(
-      pick(resolveModelRoute("pi")),
-      { id: "pi", modelSpec: undefined },
+      pick(resolveModelRoute("codex")),
+      { id: "codex", modelSpec: undefined },
       "a backend-only spec selects no model",
     );
     assert.deepEqual(
-      pick(resolveModelRoute("pi/")),
-      { id: "pi", modelSpec: "" },
+      pick(resolveModelRoute("codex/")),
+      { id: "codex", modelSpec: "" },
       "a trailing slash is an empty model value, not an absent one",
     );
     assert.deepEqual(
@@ -87,8 +87,8 @@ test("resolveModelRoute: a registered custom name wins over a built-in and over 
     // Without the registry the same env value is unknown and falls back to claude.
     assert.equal(resolveModelRoute(undefined).backend.id, "claude");
   });
-  withDefaultBackend("PI", () => {
-    assert.equal(resolveModelRoute("anthropic/claude-opus", registry).backend.id, "pi");
+  withDefaultBackend("CODEX", () => {
+    assert.equal(resolveModelRoute("anthropic/claude-opus", registry).backend.id, "codex");
   });
 });
 
@@ -96,9 +96,9 @@ test("selectBackend is exactly the backend half of resolveModelRoute (model wins
   withDefaultBackend(undefined, () => {
     for (const opts of [
       { model: "codex/x" },
-      { tier: "pi/y" },
+      { tier: "claude/y" },
       { model: "mystery", tier: "codex/x" },
-      { model: "OpenCode/zai/glm" },
+      { model: "CoDeX/zai/glm" },
       {},
     ] as const) {
       assert.equal(

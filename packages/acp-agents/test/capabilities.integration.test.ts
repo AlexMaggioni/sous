@@ -12,7 +12,7 @@ import {
   isWorkflowError,
   WorkflowErrorCode,
   type McpServerConfig,
-} from "@automatalabs/shared-types";
+} from "@orchestrator/shared-types";
 import { createFakeAgentHarness } from "./helpers/fake-agent.js";
 
 const SCHEMA = Type.Object({ city: Type.String(), hot: Type.Boolean() });
@@ -189,14 +189,14 @@ test("MCP gate: legacy agent (no mcpCapabilities) passes an sse server through u
 
 // ---- published fork 1.2.0: the REAL initialize response (verbatim) -------------------
 
-/** The exact initialize response the published @automatalabs/codex-acp 1.2.0 returns (verified
+/** The exact initialize response the published @orchestrator/codex-acp 1.2.0 returns (verified
  *  against the installed dist and a live stdio handshake): standard capabilities advertised
  *  (mcpCapabilities http-only), NO custom `_meta` namespace. The two gates are independent — the
  *  custom-meta gate must stay on its legacy passthrough while the MCP gate is simultaneously
  *  ACTIVE. */
 const FORK_1_2_0_INITIALIZE = {
   protocolVersion: 1,
-  agentInfo: { name: "@automatalabs/codex-acp", title: "Codex", version: "1.2.0" },
+  agentInfo: { name: "@orchestrator/codex-acp", title: "Codex", version: "1.2.0" },
   agentCapabilities: {
     auth: { logout: {} },
     loadSession: true,

@@ -9,8 +9,8 @@
 
 import { existsSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { RunStatus } from "@automatalabs/shared-types";
-import { openWorkflowDir, workflowProjectPaths } from "@automatalabs/workflow-engine";
+import type { RunStatus } from "@orchestrator/shared-types";
+import { openWorkflowDir, workflowProjectPaths } from "@orchestrator/engine";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
 import { workflowExtras } from "./inputs.js";

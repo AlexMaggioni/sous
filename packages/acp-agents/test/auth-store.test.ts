@@ -32,7 +32,7 @@ test("classifyCredential is type-driven and agent-agnostic (§2.1)", () => {
   assert.deepEqual(classifyCredential("agent", { gateway: { protocol: "x" } }), { klass: "in-process", diskBacked: false });
   // agent + non-gateway _meta (codex api-key) -> disk.
   assert.deepEqual(classifyCredential("agent", { "api-key": { provider: "openai" } }), { klass: "disk", diskBacked: true });
-  // agent + no _meta (codex chat-gpt / opencode-login) -> disk.
+  // agent + no _meta (codex chat-gpt) -> disk.
   assert.deepEqual(classifyCredential("agent", undefined), { klass: "disk", diskBacked: true });
 });
 
@@ -172,7 +172,7 @@ test("AuthStore.machineFor is idempotent per key; poolKeys enumerates touched ba
   assert.equal(a, b);
   store.machineFor("codex");
   assert.deepEqual([...store.poolKeys()].sort(), ["claude", "codex"]);
-  assert.equal(store.existing("opencode"), undefined);
+  assert.equal(store.existing("never-touched"), undefined);
 });
 
 test("redactSecrets strips known credential patterns from diagnostic text (§2.14)", () => {

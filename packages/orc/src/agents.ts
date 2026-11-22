@@ -1,23 +1,23 @@
 // Where orc finds an agent, and the MCP servers an agent names. Each agent is looked up on its
 // own. rulesync comes first: the project's .rulesync folder, then the user's global rulesync
-// folder. Then each harness's own folders: Claude Code, Codex and OpenCode, the project's before
-// the home folder's. orc only reads these folders. `rulesync generate` writes the harnesses'
+// folder. Then each harness's own folders: Claude Code and Codex, the project's before the home
+// folder's. orc only reads these folders. `rulesync generate` writes the harnesses'
 // files for the user's own sessions.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
-import type { McpServerConfig } from "@automatalabs/shared-types";
-import type { AgentDefinition, AgentRegistry } from "@automatalabs/workflow-engine";
+import type { McpServerConfig } from "@orchestrator/shared-types";
+import type { AgentDefinition, AgentRegistry } from "@orchestrator/engine";
 import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
 
-export const HARNESSES = ["claude", "codex", "opencode", "pi"] as const;
+export const HARNESSES = ["claude", "codex"] as const;
 export type Harness = (typeof HARNESSES)[number];
 
 /** The block of a rulesync agent that holds one harness's settings. */
-const RULESYNC_BLOCK: Record<Harness, string> = { claude: "claudecode", codex: "codexcli", opencode: "opencode", pi: "pi" };
-const HARNESS_NAME: Record<Harness, string> = { claude: "Claude Code", codex: "Codex", opencode: "OpenCode", pi: "Pi" };
+const RULESYNC_BLOCK: Record<Harness, string> = { claude: "claudecode", codex: "codexcli" };
+const HARNESS_NAME: Record<Harness, string> = { claude: "Claude Code", codex: "Codex" };
 
 export const isHarness = (value: unknown): value is Harness => typeof value === "string" && (HARNESSES as readonly string[]).includes(value);
 export const harnessName = (harness: Harness) => HARNESS_NAME[harness];
@@ -78,7 +78,6 @@ export function harnessHomes(env: Record<string, string | undefined> = process.e
     claude: resolve(env.CLAUDE_CONFIG_DIR ?? join(home, ".claude")),
     claudeJson: env.CLAUDE_CONFIG_DIR ? join(env.CLAUDE_CONFIG_DIR, ".claude.json") : join(home, ".claude.json"),
     codex: resolve(env.CODEX_HOME ?? join(home, ".codex")),
-    opencode: resolve(env.XDG_CONFIG_HOME ? join(env.XDG_CONFIG_HOME, "opencode") : join(home, ".config", "opencode")),
   };
 }
 
@@ -163,10 +162,6 @@ function codexSettings(data: Record<string, unknown>): HarnessSettings {
   });
 }
 
-function otherSettings(data: Record<string, unknown>): HarnessSettings {
-  return compact({ model: text(data.model), effort: text(data.effort), skills: strings(data.skills), mcp: serverNames(data.mcpServers) });
-}
-
 function files(dir: string, ext: string): string[] {
   if (!existsSync(dir)) return [];
   try {
@@ -192,7 +187,7 @@ function readRulesyncAgent(file: string, defaultHarness: Harness): Parsed {
     const block = data[RULESYNC_BLOCK[harness]];
     if (block === undefined) continue;
     const fields = record(block);
-    blocks[harness] = harness === "claude" ? claudeSettings(fields) : harness === "codex" ? codexSettings(fields) : otherSettings(fields);
+    blocks[harness] = harness === "claude" ? claudeSettings(fields) : codexSettings(fields);
   }
   const claude = record(data.claudecode);
   return {
@@ -249,20 +244,6 @@ function readCodexAgent(file: string): Parsed {
   };
 }
 
-function readOpenCodeAgent(file: string): Parsed {
-  const { data, body } = splitFrontmatter(readFileSync(file, "utf8"), file, true);
-  return {
-    name: basename(file, ".md"),
-    file,
-    from: "opencode",
-    harness: "opencode",
-    ...(text(data.description) ? { description: text(data.description) } : {}),
-    prompt: body,
-    common: {},
-    blocks: { opencode: compact({ model: text(data.model) }) },
-  };
-}
-
 /** The agents in one folder, by name. A file that doesn't parse is a problem for its name. */
 function readFolder(paths: string[], read: (file: string) => Parsed, problems: Map<string, AgentProblem>): Map<string, Parsed> {
   const out = new Map<string, Parsed>();
@@ -305,19 +286,17 @@ export function lookupAgents(settings: LookupSettings): AgentLookup {
     for (const [name, agent] of found) if (!agents.has(name) && !problems.has(name)) agents.set(name, { ...agent, scope });
   }
 
-  // The harnesses' own folders. The project's folders come first. When an agent is in two
-  // harness folders of the same level, the default harness's copy wins, else the name is a problem.
+  // The harnesses' own folders. The project's folders come first. When an agent is in both
+  // harnesses' folders of the same level, the default harness's copy wins.
   const p = settings.projectDir;
   const levels: Array<[FoundAgent["scope"], Array<[Harness, string[], (file: string) => Parsed]>]> = [
     ["project", [
       ["claude", files(join(p, ".claude", "agents"), ".md"), readClaudeAgent],
       ["codex", files(join(p, ".codex", "agents"), ".toml"), readCodexAgent],
-      ["opencode", [...files(join(p, ".opencode", "agents"), ".md"), ...files(join(p, ".opencode", "agent"), ".md")], readOpenCodeAgent],
     ]],
     ["global", [
       ["claude", files(join(homes.claude, "agents"), ".md"), readClaudeAgent],
       ["codex", files(join(homes.codex, "agents"), ".toml"), readCodexAgent],
-      ["opencode", [...files(join(homes.opencode, "agents"), ".md"), ...files(join(homes.opencode, "agent"), ".md")], readOpenCodeAgent],
     ]],
   ];
   const settled = new Set([...agents.keys(), ...problems.keys()]);
@@ -331,17 +310,8 @@ export function lookupAgents(settings: LookupSettings): AgentLookup {
     }
     for (const [name, copies] of byName) {
       if (problems.has(name)) continue;
-      const chosen = copies.length === 1 ? copies[0] : copies.find((copy) => copy.harness === settings.defaultHarness);
-      if (chosen) {
-        agents.set(name, { ...chosen, scope });
-      } else {
-        const list = copies.map((copy) => copy.file);
-        problems.set(name, {
-          name,
-          files: list,
-          message: `agent "${name}" is in ${list.join(" and ")}, not in rulesync, and ${HARNESS_NAME[settings.defaultHarness]}, the default harness, has no copy. ${moveHint(name)}`,
-        });
-      }
+      const chosen = copies.find((copy) => copy.harness === settings.defaultHarness) ?? copies[0]!;
+      agents.set(name, { ...chosen, scope });
     }
     for (const name of byName.keys()) settled.add(name);
   }
@@ -350,7 +320,17 @@ export function lookupAgents(settings: LookupSettings): AgentLookup {
 
 // ---- harness choice ----
 
-/** The harness a model spec routes to, as AgentPrism's runner routes it. */
+/** The harness a model spec routes to, as the ACP runner routes it. */
+/** Harnesses orc ran before. A model that names one is refused, so it never runs elsewhere. */
+const REMOVED_HARNESSES = ["pi", "opencode"];
+
+/** Why a model spec can't run, when it names a harness orc no longer runs. */
+export function removedHarness(spec: string | undefined): string | undefined {
+  const first = spec?.split("/")[0]?.toLowerCase();
+  if (!first || !REMOVED_HARNESSES.includes(first)) return undefined;
+  return `model "${spec}" names the harness "${first}", which orc no longer runs. Use one of ${HARNESSES.join(", ")}.`;
+}
+
 export function routeHarness(spec: string | undefined, env: Record<string, string | undefined> = process.env): Harness | undefined {
   if (spec === undefined) return undefined;
   const first = spec.split("/")[0]!.toLowerCase();
@@ -402,7 +382,7 @@ export function missingAgent(lookup: AgentLookup, name: string): string {
   const global = lookup.settings.rulesyncGlobal
     ? `the global rulesync folder (${lookup.settings.rulesyncGlobal}/.rulesync/subagents/)`
     : "the global rulesync folder (none is set: rulesyncGlobal in ~/.orchestrator/config.json)";
-  return `no agent "${name}". orc looks in .rulesync/subagents/, then ${global}, then .claude/agents/, .codex/agents/ and .opencode/agents/ in the project and in the home folder.`;
+  return `no agent "${name}". orc looks in .rulesync/subagents/, then ${global}, then .claude/agents/ and .codex/agents/ in the project and in the home folder.`;
 }
 
 export function wrongHarness(agent: FoundAgent, harness: Harness): string {
@@ -458,7 +438,7 @@ export function planStep(lookup: AgentLookup, name: string, given: StepGiven = {
 
 // ---- MCP servers ----
 
-/** JSON with comments and trailing commas, as rulesync's mcp.jsonc and OpenCode's config allow. */
+/** JSON with comments and trailing commas, as rulesync's mcp.jsonc allows. */
 export function parseJsonc(source: string): unknown {
   let out = "";
   let i = 0;
@@ -506,7 +486,7 @@ function serverOf(name: string, entry: Record<string, unknown>, vars: Record<str
     return { type: type === "sse" ? "sse" : "http", name, url: expand(url, vars), headers: pairs(entry.headers ?? entry.http_headers, vars) };
   }
   if (Array.isArray(entry.command)) {
-    // OpenCode: command is the program and its arguments in one list.
+    // The command may be the program and its arguments in one list.
     const [command, ...args] = entry.command.map(String);
     if (!command) throw new Error(`${file}: MCP server "${name}" has an empty command`);
     return { name, command: expand(command, vars), args: args.map((arg) => expand(arg, vars)), env: pairs(entry.environment ?? entry.env, vars) };
@@ -574,13 +554,6 @@ export function lookupMcpServers(settings: LookupSettings, vars: Record<string, 
   }
   own.set("codex", codex);
 
-  const opencode: ServerSource[] = [];
-  for (const file of [join(p, "opencode.jsonc"), join(p, "opencode.json"), join(homes.opencode, "opencode.jsonc"), join(homes.opencode, "opencode.json")]) {
-    const config = readConfig(file, parseJsonc);
-    if (config) opencode.push({ file, servers: record(config.mcp) });
-  }
-  own.set("opencode", opencode);
-
   const search = (harness: Harness) => [...rulesyncSources, ...(own.get(harness) ?? [])];
   return {
     find(name, harness) {
@@ -595,7 +568,6 @@ export function lookupMcpServers(settings: LookupSettings, vars: Record<string, 
       if (rulesync.global) where.push(join(rulesync.global, "mcp.jsonc"));
       if (harness === "claude") where.push(join(p, ".mcp.json"), homes.claudeJson);
       if (harness === "codex") where.push(join(p, ".codex", "config.toml"), join(homes.codex, "config.toml"));
-      if (harness === "opencode") where.push(join(p, "opencode.json"), join(homes.opencode, "opencode.json"));
       return where;
     },
   };

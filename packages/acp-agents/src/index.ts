@@ -1,9 +1,9 @@
-// @automatalabs/acp-agents — implements the AgentRunner seam from @automatalabs/shared-types over
-// the Agent Client Protocol. It spawns claude-agent-acp / the installed npm dep @automatalabs/codex-acp
+// @orchestrator/acp-agents — implements the AgentRunner seam from @orchestrator/shared-types over
+// the Agent Client Protocol. It spawns claude-agent-acp / the installed npm dep @orchestrator/codex-acp
 // (a published fork of @agentclientprotocol/codex-acp with the outputSchema forward baked into its
-// dist) / OpenCode's `opencode acp` as child processes and drives one subagent run to completion. It NEVER imports
-// @automatalabs/workflow-engine; the two siblings meet ONLY at AgentRunner, injected by the
-// @automatalabs/workflows facade (which mcp-server builds on) via createAcpRunner().
+// dist) as child processes and drives one subagent run to completion. It NEVER imports
+// @orchestrator/engine; the two siblings meet ONLY at AgentRunner, which orc injects via
+// createAcpRunner().
 export { AcpAgentRunner, createAcpRunner, selectBackend } from "./runner.js";
 // The full route (backend + stripped model value) behind selectBackend; `asciiLowercase`,
 // `assertNoModelConfigOption` (routing.ts) and `sessionRefFor` (session-ref.ts) stay module-internal.
@@ -54,7 +54,7 @@ export { ProviderStore } from "./provider-store.js";
 export type { ProviderIntent } from "./provider-store.js";
 // Per-agent auth profiles (§3): the pure-data adapters wired onto the built-in backends. Custom
 // backends supply none (conformance-by-absence, §3.5).
-export { claudeAuthProfile, codexAuthProfile, opencodeAuthProfile, piAuthProfile } from "./auth/auth-profiles.js";
+export { claudeAuthProfile, codexAuthProfile } from "./auth/auth-profiles.js";
 export type { AuthProfile, TerminalLaunch } from "./auth/auth-profile.js";
 export { InteractiveSession } from "./interactive.js";
 export {
@@ -181,7 +181,7 @@ export type {
 export { BACKENDS_ENV, registryWithRunBackends, resolveBackendRegistry } from "./registry.js";
 export type { BackendRegistry, CustomBackendConfig, CustomBackendForkConfig, RegisteredBackend } from "./registry.js";
 
-// Harness config catalog discovery (moved here from @automatalabs/workflows; the facade re-exports it).
+// Harness config catalog discovery.
 export {
   probeHarnessConfig,
   buildHarnessModelsView,
@@ -208,12 +208,6 @@ export type {
 
 export {
   CANCEL_NOT_HONORED_GRACE_MS,
-  PI_CHILD_CLEANUP_DEADLINE_MS,
-  PI_CLOSE_DELIVERY_MARGIN_MS,
-  PI_CLOSE_SESSION_TIMEOUT_MS,
-  PI_DISPOSE_SIGKILL_GRACE_MS,
-  PI_PROCESS_EXIT_MARGIN_MS,
-  PI_PROCESS_SHUTDOWN_ENVELOPE_MS,
   PooledConnection,
   SESSION_STEERING_METHOD,
   LOADED_TURN_QUERY_METHOD,
@@ -242,7 +236,6 @@ export {
   CLIENT_METHOD_COVERAGE,
   CODEX_SPAWN_AUTH_ENV,
   HANDLED_AUTH_METHOD_TYPES,
-  PI_ACP_PROTOCOL_CONTRACT,
   BUILTIN_PROTOCOL_COVERAGE,
   COST_GAUGE_INHERITANCE,
   COST_GAUGE_INHERITANCE_DEFAULT,
@@ -346,8 +339,6 @@ export type {
 } from "./backends/define.js";
 export { ClaudeBackend } from "./backends/claude.js";
 export { CodexBackend } from "./backends/codex.js";
-export { OpenCodeBackend } from "./backends/opencode.js";
-export { PiBackend } from "./backends/pi.js";
 export { CustomAcpBackend } from "./backends/custom.js";
 
 export {
@@ -368,7 +359,7 @@ export type {
 
 export { UsageAccumulator } from "./usage.js";
 
-export type { AgentSessionRef, McpAcpServerConfig, McpServerConfig } from "@automatalabs/shared-types";
+export type { AgentSessionRef, McpAcpServerConfig, McpServerConfig } from "@orchestrator/shared-types";
 
 export { toAnthropicJsonSchema, toJsonSchema, toStrictJsonSchema } from "./schema-strict.js";
 

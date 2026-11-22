@@ -5,7 +5,7 @@
 // keep reading the tables, so a refused option is refused before a process exists; the traits
 // tell the caller what the table says and, after open, what the agent actually advertised.
 import { Type } from "typebox";
-import { CODEX_CUSTOM_CAPABILITY_NAMESPACE, CODEX_META_KEYS, META_KEYS } from "@automatalabs/shared-types";
+import { CODEX_CUSTOM_CAPABILITY_NAMESPACE, CODEX_META_KEYS, META_KEYS } from "@orchestrator/shared-types";
 import { LOADED_TURN_QUERY_METHOD, SESSION_STEERING_METHOD } from "./acp-client.js";
 import { forkTraitFor } from "./agent/fork.js";
 import type { Backend } from "./backend.js";
@@ -36,11 +36,11 @@ export interface AcpAgentTraits {
   readonly fork: ForkSessionTraitRow;
   /** Which halves of `systemPrompt` the backend carries and where the answer came from: `table`
    *  (a built-in's `SYSTEM_PROMPT_SUPPORT` row), `advertised` (the live agent's initialize
-   *  advertisement — pi under `_meta.systemPrompt`, the Codex fork under
-   *  `agentCapabilities._meta["@automatalabs/codex-acp"]` — which wins over the table once the
+   *  advertisement — the Codex fork under
+   *  `agentCapabilities._meta["@orchestrator/codex-acp"]` — which wins over the table once the
    *  connection is open), or `none` (no channel — every custom backend before open, since
    *  `CustomAcpBackend` never carries the neutral instructions; a built-in that supports neither
-   *  half, OpenCode, still reports its all-false row as `table`). */
+   *  half still reports its all-false row as `table`). */
   readonly systemPrompt: SystemPromptSupport & { readonly source: "table" | "advertised" | "none" };
   /** `_session/steering`: the built-in `ACP_EXTENSION_SUPPORT_MATRIX` row before open (`unknown`
    *  for a custom backend); after open, whether `initializeMeta.steering.supported === true`. */
@@ -48,7 +48,7 @@ export interface AcpAgentTraits {
   /** `_session/loaded_turn/query`, derived exactly like `steering` (`initializeMeta.loadedTurn`). */
   readonly loadedTurn: "supported" | "not-advertised" | "unknown";
   /** How a `schema` reaches this backend, from the Backend object's behavior: `client-tool` (the
-   *  injected StructuredOutput MCP tool plus the in-prompt contract — pi, OpenCode, custom),
+   *  injected StructuredOutput MCP tool plus the in-prompt contract — custom),
    *  `turn-meta` (the schema rides every turn's `_meta` — Codex), or `session-meta` (bound at
    *  session open — Claude). */
   readonly structuredOutput: "session-meta" | "turn-meta" | "client-tool";
@@ -101,7 +101,7 @@ function systemPromptTrait(backend: Backend, live: NegotiatedCapabilities | unde
 }
 
 /** The live system-prompt advertisement, when the agent made one: the bare `_meta.systemPrompt`
- *  block (`{ replace, append }` booleans — pi), else the Codex fork's namespaced capability block
+ *  block (`{ replace, append }` booleans), else the Codex fork's namespaced capability block
  *  (`baseInstructions` => replace, `developerInstructions` => append). An agent that advertises
  *  neither (Claude) returns undefined and the table stands. */
 function advertisedSystemPrompt(live: NegotiatedCapabilities): SystemPromptSupport | undefined {

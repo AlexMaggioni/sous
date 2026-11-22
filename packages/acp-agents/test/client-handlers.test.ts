@@ -93,7 +93,7 @@ test("clientCapabilitiesFor: auth is omitted by default and when no gate is requ
 
 test("clientCapabilitiesFor: terminal gate lights auth.terminal AND the top-level _meta channel", () => {
   // Lighting auth.terminal also sets top-level _meta["terminal-auth"] — the channel claude reads at
-  // dist/acp-agent.js:339 and opencode at service.ts:100.
+  // dist/acp-agent.js:339.
   assert.deepEqual(clientCapabilitiesFor(undefined, { auth: { terminal: true } }), {
     ...BASE_CAPABILITIES,
     auth: { terminal: true },

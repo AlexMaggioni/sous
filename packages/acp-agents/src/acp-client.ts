@@ -108,7 +108,7 @@ import {
   type AgentHistoryEntry,
   type McpServerConfig,
   type SystemPromptOptions,
-} from "@automatalabs/shared-types";
+} from "@orchestrator/shared-types";
 import type {
   Backend,
   BackendId,
@@ -210,14 +210,8 @@ export type SteeringResponse = unknown;
 const CLOSE_SESSION_TIMEOUT_MS = 5_000;
 /** Grace for a cancelled prompt/config lifecycle to settle before close + process quarantine. */
 export const CANCEL_NOT_HONORED_GRACE_MS = 5_000;
-export const PI_CHILD_CLEANUP_DEADLINE_MS = 5_000;
-export const PI_CLOSE_DELIVERY_MARGIN_MS = 1_000;
-export const PI_CLOSE_SESSION_TIMEOUT_MS = PI_CHILD_CLEANUP_DEADLINE_MS + PI_CLOSE_DELIVERY_MARGIN_MS;
 /** Bound the graceful SIGTERM shutdown before escalating to SIGKILL. */
 const DISPOSE_SIGKILL_GRACE_MS = 2_000;
-export const PI_PROCESS_SHUTDOWN_ENVELOPE_MS = 66_000;
-export const PI_PROCESS_EXIT_MARGIN_MS = 1_000;
-export const PI_DISPOSE_SIGKILL_GRACE_MS = PI_PROCESS_SHUTDOWN_ENVELOPE_MS + PI_PROCESS_EXIT_MARGIN_MS;
 const TOMBSTONE_SESSION_CAP = 64;
 const GUARDED_STATEFUL_REQUESTS = new Map<string, string>([
   [AGENT_METHODS.session_new, "use openSession()"],
@@ -251,9 +245,9 @@ const parseMessageMcpNotification = (params: unknown): MessageMcpNotification =>
 const parseDisconnectMcpRequest = (params: unknown): DisconnectMcpRequest => params as DisconnectMcpRequest;
 
 /**
- * Snapshot an ACP server's descendants before terminating its group. Pi's terminal commands
- * deliberately run in their own process groups, so group-killing the ACP server alone would not
- * reach a command that has not yet been cleaned up by the graceful shutdown path. Linux reads
+ * Snapshot an ACP server's descendants before terminating its group. A command that runs in its
+ * own process group is out of reach of a group kill of the ACP server, unless the graceful
+ * shutdown path has already cleaned it up. Linux reads
  * procfs directly; other POSIX hosts use the portable `ps` parent map.
  */
 function processDescendantPids(rootPid: number): number[] {
@@ -1484,7 +1478,7 @@ function initializeTimeoutMs(): number {
 function layerMeta(...layers: Array<Record<string, unknown> | undefined>): Record<string, unknown> | undefined {
   const present = layers.filter((l): l is Record<string, unknown> => Boolean(l && Object.keys(l).length > 0));
   if (present.length === 0) return undefined;
-  // orchestrator: merge nested objects, so a caller's `claudeCode.options.effort` survives
+  // Merge nested objects, so a caller's `claudeCode.options.effort` survives
   // the backend's `claudeCode.options.outputFormat`. A later layer wins on a plain value.
   return present.reduce<Record<string, unknown>>((merged, layer) => deepMergeMeta(merged, layer), {});
 }
@@ -1937,7 +1931,7 @@ export class PooledConnection {
    *  key is omitted verbatim — no profile is consulted, so behavior stays byte-identical. When the
    *  host opted in, the backend's profile maps the host affordances (`onAuth` ⇐ gateway desired,
    *  `terminal` ⇐ host TTY) onto the method TYPES this backend can actually service (e.g. codex never
-   *  advertises terminal; opencode never advertises gateway). A custom backend has NO profile → the
+   *  advertises terminal). A custom backend has NO profile → the
    *  host's advertisement passes through unchanged (conformance-by-absence, §3.5). */
   private effectiveAuthCapabilities(): { terminal?: boolean; gateway?: boolean } | undefined {
     const base = this.authCapabilities;
@@ -2592,7 +2586,7 @@ export class PooledConnection {
       try {
         await this.race(withTimeout(
           this.connection.agent.request(AGENT_METHODS.session_close, { sessionId }),
-          this.backendId === "pi" ? PI_CLOSE_SESSION_TIMEOUT_MS : CLOSE_SESSION_TIMEOUT_MS,
+          CLOSE_SESSION_TIMEOUT_MS,
         ));
       } catch (error) {
         if (isChildCleanupError(error)) {
@@ -2702,7 +2696,7 @@ export class PooledConnection {
     }
     const sigkill = this.disposeTimer.set(() => {
       this.killNow();
-    }, this.backendId === "pi" ? PI_DISPOSE_SIGKILL_GRACE_MS : DISPOSE_SIGKILL_GRACE_MS);
+    }, DISPOSE_SIGKILL_GRACE_MS);
     sigkill.unref?.();
     try {
       await exited;

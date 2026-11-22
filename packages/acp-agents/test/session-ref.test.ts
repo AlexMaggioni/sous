@@ -1,6 +1,6 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
-import type { AgentSessionRef } from "@automatalabs/shared-types";
+import type { AgentSessionRef } from "@orchestrator/shared-types";
 import {
   ClaudeBackend,
   CustomAcpBackend,

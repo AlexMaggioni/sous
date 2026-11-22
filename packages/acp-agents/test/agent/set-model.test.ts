@@ -7,7 +7,7 @@
 import test, { after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { ContentBlock, SessionConfigOption, SessionModeState } from "@agentclientprotocol/sdk";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import { AcpAgent } from "../../src/index.js";
 import { liveConnectionCount } from "../../src/agent/process-registry.js";
 import { FAKE_AGENT_FIXTURE, createFakeAgentHarness, trackAgent, waitFor } from "../helpers/fake-agent.js";
@@ -54,7 +54,7 @@ const EFFORT: SessionConfigOption = {
   ],
 };
 
-const harness = createFakeAgentHarness({ prefix: "acp-agent-set-model-it-", backends: ["claude", "pi"] });
+const harness = createFakeAgentHarness({ prefix: "acp-agent-set-model-it-", backends: ["claude", "codex"] });
 const configure = (scenario: unknown, options?: Parameters<typeof harness.configure>[1]) =>
   harness.configure<LogEntry>(scenario, options);
 const track = (agent: AcpAgent): AcpAgent => trackAgent(harness, agent);
@@ -210,10 +210,6 @@ test("a spec routing to another backend, a backend-only spec, and a blank spec a
     validation(/^AcpAgent\.setModel\(\): model "codex\/gpt-5\.6-sol" routes to backend "codex" but must stay on backend "claude"$/, "primary"),
   );
   await assert.rejects(
-    () => agent.setModel("pi/openrouter/some-model"),
-    validation(/routes to backend "pi" but must stay on backend "claude"/, "primary"),
-  );
-  await assert.rejects(
     () => agent.setModel("claude"),
     validation(/^AcpAgent\.setModel\(\): model "claude" names backend "claude" but no model id; use "claude\/<model id>"$/, "primary"),
   );
@@ -229,14 +225,14 @@ test("a spec routing to another backend, a backend-only spec, and a blank spec a
 
   // The flip side of the unrouted rule: on a non-default backend a bare id routes to the default
   // backend (claude) and is refused — the spec has to name this backend.
-  const pi = track(await AcpAgent.open({ cwd, model: "pi", label: "pi-agent" }));
+  const codex = track(await AcpAgent.open({ cwd, model: "codex", label: "codex-agent" }));
   await assert.rejects(
-    () => pi.setModel("sonnet"),
-    validation(/^AcpAgent\.setModel\(\): model "sonnet" routes to backend "claude" but must stay on backend "pi"$/, "pi-agent"),
+    () => codex.setModel("sonnet"),
+    validation(/^AcpAgent\.setModel\(\): model "sonnet" routes to backend "claude" but must stay on backend "codex"$/, "codex-agent"),
   );
-  await pi.setModel("pi/openrouter/some-model");
-  assert.equal(pi.model, "pi/openrouter/some-model");
-  assert.equal(modelValue(pi), "openrouter/some-model", "the remainder after the backend segment, verbatim");
+  await codex.setModel("codex/openrouter/some-model");
+  assert.equal(codex.model, "codex/openrouter/some-model");
+  assert.equal(modelValue(codex), "openrouter/some-model", "the remainder after the backend segment, verbatim");
 
   // A registered custom backend routes by its name; a built-in name is another backend.
   const backends = { fake: { command: process.execPath, args: [FAKE_AGENT_FIXTURE] } };

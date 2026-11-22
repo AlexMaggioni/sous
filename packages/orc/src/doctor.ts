@@ -5,7 +5,7 @@
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { createAcpRunner } from "@automatalabs/acp-agents";
+import { createAcpRunner } from "@orchestrator/acp-agents";
 import { routeHarness } from "./agents.js";
 import { applyAccounts, currentAccount, DEFAULT, describeAccount, folderText } from "./accounts.js";
 import { homePaths, loadConfig } from "./home.js";

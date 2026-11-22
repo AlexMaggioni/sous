@@ -1,8 +1,7 @@
-# @automatalabs/shared-types
+# @orchestrator/shared-types
 
-> Internal package. The shared type contract every other `@automatalabs/*` package imports.
-> You normally consume these **transitively** via [`@automatalabs/workflows`](../workflows) —
-> you only depend on this package directly if you're **implementing a custom agent backend**.
+> Internal package. The shared type contract every other `@orchestrator/*` package imports.
+> orc pulls it in. Depend on it directly only to **implement a custom agent backend**.
 
 This is the one module both the workflow engine and the agent backend import (they never
 import each other). It has zero ACP/MCP/engine deps — only `typebox` (type-level) plus the
@@ -14,7 +13,7 @@ runtime `WorkflowError` class, so `instanceof` checks hold across package bounda
 The engine calls exactly **one** method — `run(prompt, options)` — once per subagent:
 
 ```ts
-import type { AgentRunner, RunOptions, AgentResult } from "@automatalabs/shared-types";
+import type { AgentRunner, RunOptions, AgentResult } from "@orchestrator/shared-types";
 import type { TSchema } from "typebox";
 
 interface AgentRunner {
@@ -44,8 +43,8 @@ The manager has two intentional exceptions to ordinary non-recoverable failure: 
 A minimal custom backend:
 
 ```ts
-import { WorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
-import type { AgentRunner, RunOptions, AgentResult } from "@automatalabs/shared-types";
+import { WorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
+import type { AgentRunner, RunOptions, AgentResult } from "@orchestrator/shared-types";
 import type { TSchema } from "typebox";
 
 export const myRunner: AgentRunner = {
@@ -123,8 +122,7 @@ From [`src/index.ts`](./src/index.ts):
   `WorkflowReplayProvenanceField`, `WorkflowReplayProvenanceChange`,
   `WorkflowReplayFirstNonReplay`, and `WorkflowReplayEligibility` — the
   additive content-addressed new-run replay contract. Runtime reason arrays live in
-  `@automatalabs/workflow-engine` and are re-exported by `@automatalabs/workflows`; see the
-  [incremental resume API](../../docs/api.md#content-addressed-incremental-resume). The
+  `@orchestrator/engine`.
   Historical safety/world reason literals such as `crash-residue` remain in the wire unions so old
   journals and consumers continue to parse. Current-format crash snapshots use identity matching
   even without a terminal-environment capture. `inputs-format-legacy` identifies a source below
@@ -164,7 +162,7 @@ From [`src/index.ts`](./src/index.ts):
   opaque tokens) with `[REDACTED]` and reports whether anything changed.
 - `truncateUtf8(value, maxBytes, suffix?)` shortens text to a UTF-8 byte budget without
   splitting a code point, appending `...[truncated]` (or a custom suffix). Both are re-exported by
-  `@automatalabs/workflow-engine` and `@automatalabs/workflows`.
+  `@orchestrator/engine`.
 
 ## License
 

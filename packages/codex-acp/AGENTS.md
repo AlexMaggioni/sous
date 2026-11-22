@@ -12,9 +12,9 @@ This file supplements the repository-wide [`../../AGENTS.md`](../../AGENTS.md). 
 - `src/permissions/` and `src/subagents/` — permission and child-session integration.
 - `dist/` — generated package output. Do not hand-edit it.
 - `docs/` and `readme-dev.md` — package-specific protocol and development documentation.
-- `scripts/` — upstream release tooling (`release-preflight.sh`, `next-preview-version.mjs` and its `*.test.mjs`), kept outside `src/`; not used by this monorepo, whose releases run through root Changesets.
+- `scripts/` — upstream release tooling (`release-preflight.sh`, `next-preview-version.mjs` and its `*.test.mjs`), kept outside `src/`; not used by this monorepo.
 
-Fork-owned integration surfaces include turn-level `outputSchema` forwarding and AgentPrism ACP extensions. Review the dependency surface map and Codex sync runbook in root `CONTRIBUTING.md` before changing or merging upstream code in `CodexAcpServer`, `CodexEventHandler`, approvals, steering, goals, or loaded-turn handling.
+Fork-owned integration surfaces include turn-level `outputSchema` forwarding and AgentPrism ACP extensions. Take care when changing or merging upstream code in `CodexAcpServer`, `CodexEventHandler`, approvals, steering, goals, or loaded-turn handling.
 
 ## Coding conventions
 
@@ -29,9 +29,9 @@ Fork-owned integration surfaces include turn-level `outputSchema` forwarding and
 The root deterministic suite deliberately excludes this vendored package's upstream Vitest suite. Run it explicitly whenever changing this package and during every upstream sync:
 
 ```bash
-pnpm --filter @automatalabs/codex-acp build
-pnpm --filter @automatalabs/codex-acp typecheck
-pnpm --filter @automatalabs/codex-acp test
+pnpm --filter @orchestrator/codex-acp build
+pnpm --filter @orchestrator/codex-acp typecheck
+pnpm --filter @orchestrator/codex-acp test
 ```
 
 - Favor event-driven behavioral assertions under `src/__tests__/CodexACPAgent/`.
@@ -41,18 +41,10 @@ pnpm --filter @automatalabs/codex-acp test
 
 ## Upstream synchronization and releases
 
-Do **not** use this subtree's inherited release-please configuration, `release:preflight`, or standalone squash-release instructions. This monorepo releases `@automatalabs/codex-acp` through root Changesets automation.
+Do **not** use this subtree's inherited release-please configuration, `release:preflight`, or standalone squash-release instructions. This package is not released on its own.
 
-When synchronizing upstream, use the root scripted workflow exactly:
+The monorepo has no sync script. Merge upstream by hand:
 
-```bash
-pnpm sync:codex-acp
-# resolve reviewed conflicts
-pnpm sync:codex-acp --finish
-pnpm sync:codex-acp --pr
-```
-
-- Never use `git subtree --squash`, squash-merge, rebase, or rewrite imported commits. The dependency gate verifies that the true upstream tip remains an ancestor.
-- Preserve both upstream behavior and fork-owned integration surfaces when resolving conflicts. Constructor parameters owned by the fork remain last where the runbook requires it.
-- Finish the scaffolded Changeset by hand after reviewing the actual API and behavior changes; automation must not guess SemVer impact.
-- Upstream-sync PRs merge with a **merge commit**. Ordinary non-sync PRs follow the root PR policy.
+- Never use `git subtree --squash`, squash-merge, rebase, or rewrite imported commits. The true upstream tip must stay an ancestor.
+- Preserve both upstream behavior and fork-owned integration surfaces when resolving conflicts. Constructor parameters owned by the fork stay last.
+- Upstream-sync PRs merge with a **merge commit**.

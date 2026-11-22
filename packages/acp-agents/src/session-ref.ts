@@ -1,7 +1,7 @@
 // The runner-side AgentSessionRef builder, extracted from runner.ts as a pure move so the
 // SDK-style AcpAgent (src/agent/) reports the same ref shape the runner's onSessionOpen does.
 // Module export only — deliberately NOT re-exported from the package barrel.
-import type { AgentSessionRef } from "@automatalabs/shared-types";
+import type { AgentSessionRef } from "@orchestrator/shared-types";
 import type { SessionHandle } from "./acp-client.js";
 import type { Backend } from "./backend.js";
 import { costGaugeInheritance } from "./protocol-coverage.js";

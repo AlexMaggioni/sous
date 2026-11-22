@@ -4,7 +4,7 @@ import type * as acp from "@agentclientprotocol/sdk";
  *  capabilities. Keyed by the fork's published package identity so callers can detect the
  *  fork's non-standard `_meta` inputs before sending them, without colliding with other
  *  extensions (ACP extensibility convention). */
-export const CUSTOM_CAPABILITY_NAMESPACE = "@automatalabs/codex-acp";
+export const CUSTOM_CAPABILITY_NAMESPACE = "@orchestrator/codex-acp";
 
 /** Custom agent capabilities this fork adds on top of upstream, advertised in
  *  `agentCapabilities._meta` so callers can check availability before sending the fork's

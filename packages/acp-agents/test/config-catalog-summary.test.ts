@@ -1,5 +1,4 @@
-// The bounded authoring summary and the probe scheduler of src/config-catalog.ts
-// (moved here from @automatalabs/workflows together with the code).
+// The bounded authoring summary and the probe scheduler of src/config-catalog.ts.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
@@ -174,113 +173,32 @@ test("a synchronously throwing probe releases its slot and cancels its timeout",
 test("small Claude/Codex catalogs preserve exact routes and failed providers remain visible", () => {
   const report = { harnessOptions: [
     catalog("claude", ["sonnet", "opus[1m]"]), catalog("codex", ["gpt-5.6-sol", "gpt-5.6-sol[high]"]),
-    { backendId: "pi", probed: false, error: "login required" },
+    { backendId: "custom", probed: false, error: "login required" },
   ] };
   const summary = buildHarnessConfigSummary(report);
   assert.deepEqual(summary.harnesses[0].models.map(({ route }) => route), ["claude/sonnet", "claude/opus[1m]"]);
   assert.equal(summary.harnesses[1].total, 2);
   const text = formatHarnessConfigSummary(summary);
-  assert.match(text, /"pi": unavailable.*login required/);
+  assert.match(text, /"custom": unavailable.*login required/);
   assert.match(text, /modelSpecs/);
   assert.match(text, /Default-model options do not describe every model/);
 });
 
-test("Pi enabledModels preserves preference order, intersects supported leaves, and reports unmatched patterns", () => {
-  const harness = catalog("pi", ["openai/a", "anthropic/b", "openai/c"], {
-    "@automatalabs/agentprism.modelDiscovery": {
-      source: "enabledModels", preferred: ["anthropic/b", "missing/id", "openai/a", "anthropic/b"], unmatched: ["unknown/*"],
-    },
-  });
-  const original = structuredClone(harness);
-  const report = { ok: true, exitCode: 0 as const, harnessOptions: [harness] };
-  const summary = buildHarnessConfigSummary(report);
-  const entry = summary.harnesses[0];
-  assert.equal(entry.total, 3);
-  assert.equal(entry.preferredTotal, 2);
-  assert.equal(entry.preferenceSource, "enabledModels");
-  assert.deepEqual(entry.models.map(({ route }) => route), ["pi/anthropic/b", "pi/openai/a"]);
-  assert.deepEqual(entry.unmatched, ["unknown/*"]);
-  assert.equal(entry.omittedModels, 1);
-  assert.deepEqual(harness, original);
-  assert.deepEqual(buildHarnessModelsView(report, "openai/c")[0].matches, ["openai/c"]);
-  assert.match(formatHarnessConfigSummary(summary), /presentation shortlist, not an execution allowlist/);
-});
-
-test("Pi without preferences uses actual provider groups; empty configured preferences stay explicit", () => {
-  const plain = catalog("pi", ["openai/a", "openai/b", "vendor/c"]);
-  const empty = catalog("pi", ["openai/a"], {
-    "@automatalabs/agentprism.modelDiscovery": { source: "enabledModels", preferred: [], unmatched: ["missing/*"] },
-  });
-  const summary = buildHarnessConfigSummary({ harnessOptions: [plain, empty] });
-  assert.deepEqual(summary.harnesses[0].models, []);
-  assert.deepEqual(summary.harnesses[0].groups.map(({ provider, count }) => [provider, count]), [["openai", 2], ["vendor", 1]]);
-  assert.equal(summary.harnesses[1].preferredTotal, 0);
-  assert.match(formatHarnessConfigSummary(summary), /No enabledModels preference metadata/);
-  assert.match(formatHarnessConfigSummary(summary), /missing\/\*/);
-});
-
-test("OpenCode lists direct models first and exact known aggregators as browse-only entries", () => {
-  const harness = catalog("opencode", [
-    "openrouter/openai/a", "opencode/b", "anthropic/c", "my-openrouter/d", "openrouter/google/e", "vendor.with+regex/f",
-  ]);
-  const report = { ok: true, exitCode: 0 as const, harnessOptions: [harness] };
-  const entry = buildHarnessConfigSummary(report).harnesses[0];
-  assert.equal(entry.total, 6);
-  assert.deepEqual(entry.models.map(({ route }) => route), ["opencode/anthropic/c", "opencode/my-openrouter/d", "opencode/vendor.with+regex/f"]);
-  assert.deepEqual(entry.groups.map(({ provider }) => provider), ["anthropic", "my-openrouter", "vendor.with+regex", "openrouter", "opencode"]);
-  const browse = entry.groups.filter(({ kind }) => kind === "aggregator");
-  assert.deepEqual(browse.map(({ selector, count }) => [selector, count]), [["openrouter/*", 2], ["opencode/*", 1]]);
-  assert.ok(entry.models.every(({ route }) => !route.includes("*")));
-  assert.deepEqual(buildHarnessModelsView(report, browse[0].modelFilter)[0].matches, ["openrouter/openai/a", "openrouter/google/e"]);
-  assert.deepEqual(buildHarnessModelsView(report, entry.groups[2].modelFilter)[0].matches, ["vendor.with+regex/f"]);
-  assert.match(formatHarnessConfigSummary({ harnesses: [entry] }), /browse only \(not executable\)/);
-});
-
-test("all explicitly classified OpenCode aggregators are browsable and current models remain separate", () => {
-  const ids = ["huggingface/vendor/a", "amazon-bedrock/vendor.b", "opencode-go/c", "github-copilot/d", "openrouter/vendor/e", "opencode/f", "deepseek/g"];
-  const entry = buildHarnessConfigSummary({ harnessOptions: [catalog("opencode", ids)] }).harnesses[0];
-  assert.deepEqual(entry.models.map(({ route }) => route), ["opencode/deepseek/g"]);
-  assert.equal(entry.currentRoute, "opencode/huggingface/vendor/a");
-  assert.deepEqual(entry.groups.filter(({ kind }) => kind === "aggregator").map(({ selector }) => selector), [
-    "huggingface/*", "amazon-bedrock/*", "opencode-go/*", "github-copilot/*", "openrouter/*", "opencode/*",
-  ]);
-  const pi = buildHarnessConfigSummary({ harnessOptions: [catalog("pi", ["provider/current", "provider/preferred"], {
-    "@automatalabs/agentprism.modelDiscovery": { source: "enabledModels", preferred: ["provider/preferred"], unmatched: [] },
-  })] }).harnesses[0];
-  assert.equal(pi.currentRoute, "pi/provider/current");
-  assert.deepEqual(pi.models.map(({ route }) => route), ["pi/provider/preferred"]);
-});
-
 test("catalog route identifiers remain verbatim even when they resemble credential strings", () => {
   const id = "vendor/model-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const route = `pi/${id}`;
-  const entry = buildHarnessConfigSummary({ harnessOptions: [{ ...catalog("pi", [id]), model: route }] }).harnesses[0];
+  const route = `custom/${id}`;
+  const entry = buildHarnessConfigSummary({ harnessOptions: [{ ...catalog("custom", [id]), model: route }] }).harnesses[0];
   assert.equal(entry.model, route);
   assert.equal(entry.currentRoute, route);
   assert.ok(formatHarnessConfigSummary({ harnesses: [entry] }).includes(route));
 });
 
-test("bounded OpenCode direct models represent every configured direct provider", () => {
-  const entry = buildHarnessConfigSummary({ harnessOptions: [catalog("opencode", [
-    ...Array.from({ length: 40 }, (_, index) => `google/model-${index}`),
-    "deepseek/model-a", "zai/model-b", "openrouter/vendor/model-c",
-  ])] }).harnesses[0];
-  assert.equal(entry.models.length, 24);
-  assert.deepEqual(entry.models.slice(0, 3).map(({ modelId }) => modelId), ["google/model-0", "deepseek/model-a", "zai/model-b"]);
-  assert.equal(entry.omittedModels, 19);
-});
-
-test("summary bounds are explicit and do not hide catalog/provider/pattern counts", () => {
+test("summary bounds are explicit and do not hide catalog/provider counts", () => {
   const ids = Array.from({ length: 80 }, (_, i) => `provider${i}/model`);
   ids.push(`provider80/${"x".repeat(300)}`, "provider81/*");
   const summary = buildHarnessConfigSummary({ harnessOptions: [
     catalog("claude", ids),
-    catalog("pi", ids, {
-      "@automatalabs/agentprism.modelDiscovery": {
-        source: "enabledModels", preferred: ids,
-        unmatched: Array.from({ length: 80 }, (_, i) => `missing${i}/${"x".repeat(300)}`),
-      },
-    }),
+    catalog("codex", ids),
     { backendId: "failed", probed: false, error: "x".repeat(10_000) },
   ] });
   for (const entry of summary.harnesses.slice(0, 2)) {
@@ -292,11 +210,8 @@ test("summary bounds are explicit and do not hide catalog/provider/pattern count
     assert.equal(entry.omittedGroupModels, 58);
     assert.ok(entry.models.every(({ route }) => route.length <= 240 && !route.includes("*")));
   }
-  assert.equal(summary.harnesses[1].omittedUnmatched, 56);
-  assert.equal(summary.harnesses[1].unmatched.length, 24);
   assert.ok(summary.harnesses[2].error!.length < 300);
   assert.match(formatHarnessConfigSummary(summary), /58 provider group\(s\), 58 models omitted/);
-  assert.match(formatHarnessConfigSummary(summary), /56 additional unmatched/);
 });
 
 test("exact-model scopes and absent model options are represented without fabricated models", () => {

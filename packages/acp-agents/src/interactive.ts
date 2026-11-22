@@ -1,6 +1,6 @@
 // Public held-open ACP session API. This is intentionally NOT the AgentRunner seam: it exposes
 // a multi-turn session for hosts that want to drive an ACP agent directly while run() remains the
-// one-shot workflow-engine contract.
+// one-shot engine contract.
 import type {
   AgentNotificationMethod,
   AgentNotificationParamsByMethod,
@@ -13,9 +13,9 @@ import type {
   SessionModeState,
   StopReason,
 } from "@agentclientprotocol/sdk";
-import type { AgentHistoryEntry, AgentSessionRef, McpServerConfig, PromptImage, SystemPromptOptions } from "@automatalabs/shared-types";
-import type { RunOptions } from "@automatalabs/shared-types";
-import { WorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import type { AgentHistoryEntry, AgentSessionRef, McpServerConfig, PromptImage, SystemPromptOptions } from "@orchestrator/shared-types";
+import type { RunOptions } from "@orchestrator/shared-types";
+import { WorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import type { TSchema } from "typebox";
 import type { Backend, BackendId } from "./backend.js";
 import { CustomAcpBackend } from "./backends/custom.js";
@@ -422,7 +422,7 @@ export class InteractiveSession {
    * 1. **The `_session/loaded_turn` vendor extension** (the steering-
    *    extension precedent; advertised at initialize
    *    (`_meta.loadedTurn.supported === true`), served by the in-repo
-   *    `@automatalabs/pi-acp` and `@automatalabs/codex-acp`):
+   *    `@orchestrator/codex-acp`):
    *    `session/load` obliges the agent to replay the entire persisted
    *    conversation before resolving (the runner marks the LOAD BOUNDARY
    *    synchronously after the response), and the seam then asks the
@@ -471,15 +471,15 @@ export class InteractiveSession {
    *    possibly-running call is never released-and-re-issued).
    *
    * 2. **The observation path — backends WITHOUT the extension (the
-   *    built-in claude and opencode backends today), and extension
+   *    built-in claude backend today), and extension
    *    backends whose query failed.** The authoritative observation is
    *    the loaded session's OWN stream plus its replay, under the
    *    CONNECTION-DEATH CONTRACT (live-verified against the current
    *    built-in servers): every built-in ACP server terminates its
    *    sessions' in-flight turns when the client connection closes —
-   *    claude-agent-acp and pi-acp exit on connection close and cancel
+   *    claude-agent-acp exits on connection close and cancels
    *    their turns (`connection.closed.then(shutdown)` → teardown →
-   *    cancel + kill), `opencode acp` exits on stdin EOF, and codex-acp
+   *    cancel + kill), and codex-acp
    *    ends/kills the codex process — and their persisted transcripts
    *    contain only COMPLETED messages. So after a daemon crash the
    *    founding turn is NEVER still running at the backend, and the
@@ -606,7 +606,7 @@ export class InteractiveSession {
     // accumulated transcript at the notification, the turn's REAL outcome).
     return this.waitForRunningLoadedTurn(loadedTurnMaxWaitMs(), `the query classified the loaded session's founding turn running`);
   }
-    // No extension (the built-in claude and opencode backends today) — or
+    // No extension (the built-in claude backend today) — or
     // the query failed and the catch already fell through: the
     // observation path classifies the founding turn's terminal state
     // (see `observeLoadedTurn`).
@@ -615,7 +615,7 @@ export class InteractiveSession {
 
   /**
    * The observation path — backends WITHOUT the `_session/loaded_turn`
-   * extension (the built-in claude and opencode backends today), and
+   * extension (the built-in claude backend today), and
    * extension backends whose query failed (see `awaitCurrentTurn`'s
    * doc for the full semantics — the connection-death contract, the
    * post-load continuation watch, and the replay probe). Never settles
@@ -696,7 +696,7 @@ export class InteractiveSession {
 
   /** Is this session's backend one of the four built-ins whose ACP
    *  servers' connection-death behavior is LIVE-VERIFIED (claude,
-   *  codex, opencode, pi — every built-in server terminates its
+   *  codex — every built-in server terminates its
    *  sessions' in-flight turns when the client connection closes, so a
    *  restored session's replay holds only completed messages)? The
    *  observation path's quiet-window-plus-replay classification is

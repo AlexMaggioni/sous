@@ -10,7 +10,7 @@ import {
   type Implementation,
   type InitializeResponse,
 } from "@agentclientprotocol/sdk";
-import type { McpServerConfig } from "@automatalabs/shared-types";
+import type { McpServerConfig } from "@orchestrator/shared-types";
 
 const PROMPT_CAPABILITY_BY_BLOCK_KIND = {
   image: "image",

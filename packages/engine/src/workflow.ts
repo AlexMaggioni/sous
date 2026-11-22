@@ -1,0 +1,3908 @@
+import { createHash } from "node:crypto";
+import { assertExplicitCheckpointProvenance, assertExplicitCheckpointDecision } from "./checkpoint-provenance.js";
+import { existsSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
+import vm from "node:vm";
+import type { Node } from "acorn";
+import { parse } from "acorn";
+import type { TSchema } from "typebox";
+import type {
+  AgentHistoryEntry,
+  AgentResultProvenance,
+  ContinuationSkipReason,
+  AgentRunner,
+  AgentSessionRecord,
+  AgentSessionRef,
+  AgentUsage,
+  JournalEntry,
+  McpServerConfig,
+  PromptImage,
+  WorkflowBackendConfig,
+  WorkflowCallRecord,
+  WorkflowCheckpointTaken,
+  WorkflowMeta,
+  WorkflowMetaPhase,
+  WorkflowRecordedError,
+  WorkflowResumeCallDecision,
+  WorkflowResumeSafety,
+  WorkflowRunFallback,
+  WorkflowRunLimits,
+  WorkflowRunResult,
+} from "@orchestrator/shared-types";
+import {
+  type AgentDefinition,
+  type AgentRegistry,
+  agentDefinitionKey,
+  agentDirsFromOption,
+  loadAgentRegistry,
+  resolveAgentType,
+} from "./agent-registry.js";
+import {
+  MAX_AGENT_RETRIES,
+  MAX_AGENTS_PER_RUN,
+  MAX_CONCURRENCY,
+} from "./config.js";
+import {
+  errorMessage,
+  isAuthRequired,
+  isProviderUsageLimit,
+  WorkflowError,
+  WorkflowErrorCode,
+  wrapError,
+} from "./errors.js";
+import { createWorkflowLogger } from "./logger.js";
+import { parseModelRoutingFromMeta, resolveModelForPhase } from "./model-routing.js";
+import { loadModelTierConfig, resolveTierModel } from "./model-tier-config.js";
+import type { WorkflowRoutingSnapshot } from "./workflow-routing.js";
+import { projectRecordedError } from "./recorded-error.js";
+import { registerRunTripwire } from "./rejection-tripwire.js";
+import type { PreparedContinuation, PreparedResume } from "./resume.js";
+import {
+  buildResumeCandidateIndexes,
+  buildResumeReport,
+  checkpointReplyNotApplied,
+  indexedSourceOccurrence,
+  initialPositionalFirstMiss,
+  selectPositionalResume,
+  selectResumeCandidate,
+  type IndexedResumeSource,
+  type ResumeCandidateIndexes,
+  type ResumeReportPlan,
+} from "./resume-matcher.js";
+import type { PersistedCheckpointInjection, PersistedResumeSeed } from "./run-persistence.js";
+import {
+  canonicalStrictJson,
+  cloneFrozenStrictJson,
+  cloneTelemetry,
+  deepFreeze,
+} from "./strict-json.js";
+import { createWorktree, removeWorktree, type Worktree } from "./worktree.js";
+import {
+  createOrchestratorGlobals,
+  DEFAULT_MAX_NESTING_DEPTH,
+  EXEC_MODEL,
+  orchestratorRunExtras,
+} from "./orchestrator-globals.js";
+
+// WorkflowMeta / WorkflowMetaPhase / JournalEntry / WorkflowRunResult are the shared,
+// host-facing types (defined once in @orchestrator/shared-types). The bare engine
+// returns the result MINUS the run-manager's terminal status trio; the manager stamps
+// status/reason/resetHint on top (the engine seam is never widened).
+export type { WorkflowMeta, WorkflowMetaPhase, JournalEntry } from "@orchestrator/shared-types";
+
+/** Bare engine return: the host-facing WorkflowRunResult MINUS the manager's terminal
+ *  status trio (status/reason/resetHint). The WorkflowManager composes those on top. */
+export type EngineRunResult<T = unknown> = Omit<WorkflowRunResult<T>, "status" | "reason" | "resetHint">;
+
+/**
+ * Base run options the engine shares with its callers. De-Pi'd from the old
+ * `WorkflowAgentOptions` (which carried pi-coding-agent ToolDefinition[]/session
+ * types): the engine no longer constructs an agent, so only the plain fields it
+ * threads through remain.
+ */
+export interface WorkflowAgentOptions {
+  /** Base working directory for the run (e.g. the project root). */
+  cwd?: string;
+  /** Extra system guidance prepended to every subagent task. */
+  instructions?: string;
+  /**
+   * The session's main model spec. A registered first segment routes and is stripped once;
+   * the remaining id is sent verbatim. A backend name alone uses that harness's default.
+   * Used as the fallback for an unresolved authored tier.
+   */
+  mainModel?: string;
+  /**
+   * Host-pinned model/backend for calls that author no model, agentType model, tier, or
+   * phase/meta route. Unlike a runner's ambient default, this participates in the call
+   * identity hash and therefore stays deterministic throughout the run and its nested workflows.
+   */
+  defaultModel?: string;
+}
+
+/** Codes the host already turns into a pause, a stop or a reply. pauseOnFailedStep leaves them alone. */
+const HOST_HANDLED_CODES: ReadonlySet<WorkflowErrorCode> = new Set([
+  WorkflowErrorCode.PROVIDER_USAGE_LIMIT,
+  WorkflowErrorCode.AUTH_REQUIRED,
+  WorkflowErrorCode.CHECKPOINT_REQUIRED,
+  WorkflowErrorCode.PAUSE_REQUESTED,
+  WorkflowErrorCode.WORKFLOW_ABORTED,
+]);
+
+/** True for the pause a failed step causes under pauseOnFailedStep. */
+export function isStepFailedPause(error: { code?: unknown; details?: unknown } | undefined): boolean {
+  return (
+    error?.code === WorkflowErrorCode.PAUSE_REQUESTED &&
+    typeof error.details === "object" &&
+    error.details !== null &&
+    (error.details as { stepFailed?: unknown }).stepFailed === true
+  );
+}
+
+/**
+ * Global resources shared across a run and any workflow() nested inside it, so
+ * the 16-concurrent / 1000-total caps hold across nesting instead of each
+ * level getting its own limiter and counters.
+ */
+export interface SharedRuntime {
+  /** Host selections address agent() occurrences only; checkpoints still consume the run call limit. */
+  agentOccurrenceCount?: number;
+  /** An unanswered checkpoint cannot be converted into approval by catching its signal. */
+  pendingCheckpoint?: WorkflowError;
+  /** The root run's host pause request, visible to every nested workflow() engine. */
+  pauseSignal?: AbortSignal;
+  /** Set once a pause request refused an admission; catching it cannot keep the run going. */
+  pendingPause?: WorkflowError;
+  /** Root-wide count of allocated calls that have not settled, so a pause can drain them. */
+  liveCalls?: { count: number; waiters: Set<() => void> };
+  limiter: <T>(fn: () => Promise<T>) => Promise<T>;
+  agentCount: number;
+  tokenUsage: { input: number; output: number; total: number; cost: number; cacheRead: number; cacheWrite: number };
+  depth: number;
+  /** Root-run-wide workflow() invocation ordinal. Monotonic and never decremented. */
+  nestedSeq: number;
+  /** The root run's id, so a nested run's journal key is relative to it. */
+  rootRunId?: string;
+  /** Root-execution activity shared by nested workflow engines. */
+  resumeActivity?: {
+    active: number;
+    invalid: boolean;
+    retired?: boolean;
+    onChange?: (active: number) => void;
+  };
+}
+
+export interface WorkflowCallbackContext {
+  /** The runWorkflow invocation that produced this callback. */
+  scope: string;
+}
+
+/** Narrow host-control seam for one live runner attempt. */
+export interface WorkflowAgentAttemptControl {
+  callIndex: number;
+  label: string;
+  scope: string;
+  controller: AbortController;
+}
+
+export interface WorkflowRunOptions extends WorkflowAgentOptions {
+  args?: unknown;
+  /**
+   * REQUIRED injected agent backend. The engine references the runner through this
+   * one method only (it is the frozen AgentRunner seam) and calls agent.run() exactly
+   * once per agent(). The Pi `?? new WorkflowAgent(options)` default is DROPPED — the
+   * engine never constructs an agent and depends on no concrete backend.
+   */
+  agent: AgentRunner;
+  /** The session's main model spec, shown in /workflows for default agents. */
+  mainModel?: string;
+  /**
+   * Named subagent definitions for `agent({ agentType })`. Snapshotted once per
+   * run for determinism. Defaults to scanning `<cwd>/<AGENTS_DIR>` + `~/<AGENTS_DIR>`.
+   * Injectable for tests.
+   */
+  agentRegistry?: AgentRegistry;
+  /**
+   * Override the directory scanned for `agentType` definitions (`*.md`). When set,
+   * it replaces BOTH the project and user defaults — the parameterization of the old
+   * hardcoded agents directory. Ignored when `agentRegistry` is supplied directly.
+   */
+  agentsDir?: string;
+  concurrency?: number;
+  /** Retry attempts after a recoverable agent failure. Default 0. */
+  agentRetries?: number;
+  signal?: AbortSignal;
+  /**
+   * Host pause request. Once it fires, agent calls already executing finish and journal, no new
+   * agent()/checkpoint() is admitted (queued calls settle as interrupted rows), and the run
+   * settles with PAUSE_REQUESTED instead of a result. Ignored while `signal` is aborted.
+   */
+  pauseSignal?: AbortSignal;
+  /** Maximum number of agents allowed in this run. Default: 1000 */
+  maxAgents?: number;
+  /** Whether to persist logs to disk. Default: true */
+  persistLogs?: boolean;
+  /** Absolute workflow persistence root for log persistence; explicit value wins over ORCHESTRATOR_PERSISTENCE_ROOT. */
+  persistenceRoot?: string;
+  /** Run ID for persistence. Auto-generated if not provided. */
+  runId?: string;
+  /**
+   * Whether this run participates in journal replay/write callbacks. Default true.
+   * When false, resume inputs are rejected instead of being silently ignored.
+   */
+  journaling?: boolean;
+  /** Resume: cached agent results keyed by deterministic call index. */
+  resumeJournal?: Map<number, JournalEntry>;
+  /** Resume: the run being resumed (informational; enables resume mode). */
+  resumeFromRunId?: string;
+  /** Manager-prepared resume state. Mutually exclusive with a caller-authored
+   *  resumeJournal except for strategy "positional-v1", where that map is the cache. */
+  preparedResume?: PreparedResume;
+  /** Manager-prepared interrupted calls, consulted only at the live boundary. */
+  preparedContinuation?: PreparedContinuation;
+  /** Legacy diagnostic latch used only to decide whether a non-git terminal environment
+   *  snapshot is meaningful. It never affects journal admission or call matching. */
+  onResumeFilesystemTainted?: () => void;
+  /** Manager-owned absolute root-execution activity count. The engine reports
+   *  every transition; it includes logical primitives and raw runner promises. */
+  onResumeActivity?: (active: number) => void;
+  /** Manager-owned absolute root agent/checkpoint allocation count. */
+  onResumeCallAllocated?: (allocated: number) => void;
+  /** Manager-owned incremental report sink. Invoked once per terminal root call
+   *  decision so paused/failed executions do not need an EngineRunResult. */
+  onResumeDecision?: (decision: WorkflowResumeCallDecision) => void;
+  /** Called after each live agent/checkpoint completes so the caller can persist the journal. */
+  onAgentJournal?: (entry: JournalEntry) => void;
+  /** Checkpoint reply indexes injected for this execution, used only for result attribution. */
+  injectedCheckpointReplies?: ReadonlySet<number>;
+  /** Observability callbacks; neither participates in journal identity. */
+  onFallback?: (entry: WorkflowRunFallback) => void;
+  onCheckpointTaken?: (entry: WorkflowCheckpointTaken) => void;
+  /** Called at each call's terminal transition after the authoritative manifest append. */
+  onCallRecord?: (record: WorkflowCallRecord) => void;
+  /**
+   * Registers one live runner attempt for host-directed per-call cancellation. The optional
+   * cleanup returned by the host is called exactly once when that attempt settles.
+   */
+  onAgentAttempt?: (attempt: WorkflowAgentAttemptControl) => void | (() => void);
+  /** Called synchronously when workflow() allocates a unique child-run ordinal. */
+  onNestedWorkflow?: (ordinal: number, childRunId: string) => void;
+  /** Internal: shared runtime inherited by a nested workflow() call. */
+  sharedRuntime?: SharedRuntime;
+  /** Internal (orchestrator): how many workflow() levels sit above this run. The root is 0. */
+  nestingDepth?: number;
+  /** Resolve a saved-workflow name to its script, enabling `workflow('name', args)`. */
+  loadSavedWorkflow?: (name: string) => string | undefined;
+  /**
+   * Journals of nested runs to replay on resume, keyed by the child's run id
+   * without the root run's id, such as "-nested2-nested1". A child numbers its own workflow()
+   * calls in call order, so the key is the same on every replay.
+   */
+  nestedResumeJournals?: ReadonlyMap<string, Map<number, JournalEntry>>;
+  /** Per-run changes to steps, by label, such as { reviewer: { model: "haiku" } }. */
+  stepOverrides?: Record<string, Record<string, unknown>>;
+  /** How deep workflow() may nest. Default 5. */
+  maxNestingDepth?: number;
+  /**
+   * A step that fails on its last try, or fails in a way a retry cannot fix,
+   * pauses the whole run instead of returning null or failing it. Steps already running finish
+   * and journal, nothing new starts, and the run's pauseReason is "step_failed". The user fixes
+   * the cause and resumes: the finished steps replay and the failed step runs again.
+   */
+  pauseOnFailedStep?: boolean;
+  /** Names of the saved workflows an agent may pick with choose({ any: true }). */
+  listSavedWorkflows?: () => Array<{ name: string; description?: string }>;
+  /**
+   * Prepare the place a nested workflow() runs in ("worktree", "folder" or
+   * "none"). Returns the cwd for the child run. Nothing is cleaned up: worktrees are kept
+   * until their branch is merged.
+   */
+  prepareNestedPlace?: (request: { place: string; childRunId: string; name: string; cwd: string }) =>
+    Promise<{ cwd: string } | undefined> | { cwd: string } | undefined;
+  /**
+   * Check a nested workflow()'s args against the child's declared inputs and
+   * return the args it runs with, defaults filled in. Throws when an input is wrong or missing.
+   * The request also names the child run and the label the script gave it, for display.
+   */
+  prepareNestedArgs?: (request: { name: string; script: string; args: unknown; childRunId: string; label?: string }) => unknown;
+  /**
+   * APPROVED script-declared custom ACP backends (from `meta.backends`), threaded to every
+   * agent() call as RunOptions.backends. The engine NEVER reads meta.backends itself — a
+   * composition root must obtain approval (MCP elicitation / SDK allowScriptBackends / env
+   * opt-in) and pass the result here, so script backends are inert by default at every
+   * layer. ADDITIVE: not part of the resume identity hash.
+   */
+  scriptBackends?: Record<string, WorkflowBackendConfig>;
+  /**
+   * Ask the human a checkpoint() question and resolve to their explicit reply.
+   * Missing, rejected, timed-out, or unanswered interactions durably pause the run.
+   */
+  confirm?: (
+    promptText: string,
+    options: CheckpointOptions,
+    context?: CheckpointCallContext,
+  ) => Promise<unknown>;
+  /** Fail before dispatch when an actual call has no effective authored model route. */
+  requireAgentConfiguration?: boolean;
+  /** Optional host diagnostic enrichment; cannot select a route or authorize dispatch. */
+  onMissingAgentConfiguration?: (context: { label: string; phase?: string }) => string | Promise<string>;
+
+  /** Immutable named-agent and tier inputs captured for strict durable execution. */
+  routingSnapshot?: WorkflowRoutingSnapshot;
+  /** Internal same-run continuation latch. Replays every exact index/hash journal hit. */
+  sameRunContinuation?: boolean;
+  /** Internal cumulative usage seed restored before a same-run continuation executes. */
+  tokenUsageBaseline?: Readonly<SharedRuntime["tokenUsage"]>;
+  onLog?: (message: string, context?: WorkflowCallbackContext) => void;
+  onPhase?: (title: string, context?: WorkflowCallbackContext) => void;
+  onAgentStart?: (event: {
+    label: string;
+    phase?: string;
+    prompt: string;
+    model?: string;
+    configOptions?: Record<string, string | boolean>;
+    callIndex: number;
+    /** The structural call-path key (same value as WorkflowCallRecord.path), when captured. */
+    path?: string;
+    scope: string;
+  }) => void;
+  onAgentEnd?: (event: {
+    label: string;
+    phase?: string;
+    result: unknown;
+    tokens?: number;
+    worktree?: string;
+    model?: string;
+    error?: string;
+    errorCode?: WorkflowErrorCode;
+    recoverable?: boolean;
+    /** The call's ACP session re-attach record (live or journal-replayed), when one exists. */
+    session?: AgentSessionRecord;
+    callIndex: number;
+    scope: string;
+    usage?: AgentUsage;
+    modelResolved?: string;
+    modelFallbacks?: string[];
+    backendId?: string;
+    provenance?: AgentResultProvenance;
+    errorRecord?: WorkflowRecordedError;
+  }) => void;
+  onAgentHistory?: (event: {
+    label: string;
+    phase?: string;
+    history: AgentHistoryEntry[];
+    callIndex: number;
+    scope: string;
+  }) => void;
+  onTokenUsage?: (
+    usage: {
+      input: number;
+      output: number;
+      total: number;
+      cost: number;
+      cacheRead?: number;
+      cacheWrite?: number;
+    },
+    context?: WorkflowCallbackContext,
+  ) => void;
+}
+
+const AGENT_OPTION_KEYS = [
+  "label",
+  "phase",
+  "schema",
+  "model",
+  "mode",
+  "configOptions",
+  "tier",
+  "isolation",
+  "resume",
+  "agentType",
+  "retries",
+  "cwd",
+  "mcpServers",
+  "images",
+  "meta",
+  "promptMeta",
+  "keepSession",
+  // orchestrator additions
+  "timeout",
+  "effort",
+  "skills",
+  "mcp",
+  "continue",
+] as const;
+const AGENT_OPTION_KEY_SET = new Set<string>(AGENT_OPTION_KEYS);
+
+export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema | undefined> {
+  label?: string;
+  phase?: string;
+  schema?: TSchemaDef;
+  /**
+   * Run this agent with a model spec. `claude`, `codex`, or a registered custom
+   * name may prefix an id and is stripped once; the remainder is sent byte-for-byte. A backend
+   * name alone preserves its harness default. Unregistered prefixes go intact to the default.
+   */
+  model?: string;
+  /**
+   * ACP session mode id advertised by the selected backend. Strict confinement lever:
+   * unsupported modes fail the agent call instead of falling back to an unconfined session.
+   */
+  mode?: string;
+  /**
+   * Agent-advertised ACP session config options. Ids and string/boolean values pass through
+   * verbatim, in ascending option-id order. The reserved `model` id is rejected; use `model`.
+   * Present non-empty maps participate in the journal identity hash.
+   */
+  configOptions?: Record<string, string | boolean>;
+  /**
+   * Coarse model tier ("small" | "medium" | "big"), resolved from the user's
+   * model-tiers config. An explicit `model` takes precedence; a tier takes
+   * precedence over the phase model. When the tier has no configured entry it
+   * falls back to the session's main model.
+   */
+  tier?: string;
+  isolation?: "worktree";
+  /** Legacy replay-safety assertion retained for source and journal compatibility.
+   *  It is recorded as diagnostic provenance but does not enable, disable, or otherwise
+   *  affect journal replay. New workflows should omit it.
+   *  @deprecated Replay is determined by recorded call correspondence, not world state. */
+  resume?: { filesystem: "read-only" };
+  /**
+   * Name of a registered subagent definition (`<AGENTS_DIR>/<name>.md`, project >
+   * user). Binds that definition's tool allow/denylist, model, and body prompt
+   * to this agent. An explicit `model` overrides the definition's model; the
+   * definition's model overrides `tier`/phase. An unknown name logs a warning
+   * and falls back to default tools/model (with the name as a prose hint).
+   */
+  agentType?: string;
+  /** Retry attempts after a recoverable failure for this specific agent. */
+  retries?: number;
+  /**
+   * Working directory for this agent's ACP session. A relative path resolves against the
+   * run's base cwd (WorkflowRunOptions.cwd). Worktree isolation overrides it (the worktree
+   * IS the agent's cwd). ADDITIVE like mcpServers: it wires the agent's environment, not
+   * the logical call, so it is intentionally NOT part of the resume identity hash
+   * (hashAgentCall).
+   */
+  cwd?: string;
+  /**
+   * Client-provided MCP servers attached to this agent's session (threaded into the runner,
+   * which sends them at ACP `session/new { mcpServers }`). ADDITIVE: it wires tools, not the
+   * logical call, so it is intentionally NOT part of the resume identity hash (hashAgentCall).
+   */
+  mcpServers?: McpServerConfig[];
+  /**
+   * Base64 image attachments appended to the prompt as ACP image ContentBlocks by the runner.
+   * ADDITIVE: it shapes the agent input, not the logical call identity, so it is intentionally
+   * NOT part of the resume identity hash (hashAgentCall).
+   */
+  images?: readonly PromptImage[];
+  /**
+   * Generic ACP `_meta` passthrough, SESSION-scoped: merged into the outgoing ACP
+   * `session/new` `_meta`, so a script can drive any ACP agent's custom extension surface
+   * (pair with a registered custom backend via `model: "<backend-name>"`). User keys merge
+   * over a custom backend's static `sessionMeta` defaults; the runner's protocol-critical
+   * keys (schema channel, runId stamp) win over both. ADDITIVE: NOT part of the resume
+   * identity hash (hashAgentCall) — it shapes the agent, not the logical call.
+   */
+  meta?: Record<string, unknown>;
+  /**
+   * Generic ACP `_meta` passthrough, TURN-scoped: merged into the outgoing ACP
+   * `session/prompt` `_meta`. Backend-computed keys (e.g. the `outputSchema` forward when a
+   * schema is set) win on conflict. ADDITIVE: NOT part of the resume identity hash.
+   */
+  promptMeta?: Record<string, unknown>;
+  /**
+   * Keep this agent's ACP session re-openable after the run: the runner skips the
+   * release-time best-effort `session/close`, and the session's re-attach record lands in
+   * `WorkflowRunResult.agentSessions` (and the journal) either way. Re-open later from the
+   * HOST via `runner.loadSession()`/`resumeSession()` — scripts themselves never re-attach.
+   * ADDITIVE: it shapes session disposal, not the logical call, so it is intentionally NOT
+   * part of the resume identity hash (hashAgentCall).
+   */
+  keepSession?: boolean;
+  /**
+   * Time limit for one attempt, in seconds or as "90s", "10m", "1h". When it
+   * runs out the attempt fails with a recoverable error, so the step's retries apply.
+   */
+  timeout?: number | string;
+  /** Reasoning effort for this step ("low" | "medium" | "high" | "xhigh" | "max"). Replaces the agent definition's. */
+  effort?: string;
+  /** Skill names for this step. Replaces the agent definition's list. */
+  skills?: string[];
+  /** MCP server names (from the host's servers file). Replaces the agent definition's list. */
+  mcp?: string[];
+  /**
+   * Continue the session of an earlier step with this label instead of a fresh
+   * session. The earlier step should set keepSession: true. Falls back to fresh when the
+   * session cannot be reopened.
+   */
+  continue?: string;
+}
+
+/** Options for a human checkpoint() — a deterministic, journaled, replayable gate. */
+export interface CheckpointOptions {
+  /** Confirm | free-text input | pick-one. Affects the hash and the UI widget. */
+  kind?: "confirm" | "input" | "select";
+  /** For kind "select". */
+  choices?: string[];
+  /** Per-checkpoint timeout in ms for the interactive prompt. */
+  timeoutMs?: number;
+}
+
+/** The engine-computed identity of one checkpoint() call, handed to the confirm
+ *  callback as its additive third argument. */
+export interface CheckpointCallContext {
+  callIndex: number;
+  hash: string;
+  /** The emitting engine run's runId (root, or `${root}-nested<ordinal>`). */
+  scope: string;
+  /** The structural call-path key, when captured. */
+  path?: string;
+}
+
+interface RuntimeState {
+  currentPhase?: string;
+  logs: string[];
+  phases: string[];
+  /** Monotonic, assigned at lexical agent() call time — the stable resume key. */
+  callSeq: number;
+  /**
+   * Index of the first call that missed the resume journal (changed or new).
+   * Longest-unchanged-prefix resume: a cached result is replayed only while
+   * callIndex < firstMiss; once a call misses, it AND everything after run live.
+   */
+  firstMiss: number;
+  /** Re-attach records for every ACP session the run observed (live via onSessionOpen,
+   *  replayed via JournalEntry.session), in completion order -> result.agentSessions. */
+  agentSessions: AgentSessionRecord[];
+  fallbacks: WorkflowRunFallback[];
+  checkpointsTaken: WorkflowCheckpointTaken[];
+  /** Engine-owned terminal-call manifest for this run's local index space. */
+  calls: WorkflowCallRecord[];
+  /** Run-local terminal transition ordinal. */
+  settlementSeq: number;
+}
+
+interface ResumeDecisionGate {
+  predecessor: Promise<void>;
+  release: () => void;
+}
+
+interface ResumeSeedController {
+  seed: PersistedResumeSeed;
+  indexes: ResumeCandidateIndexes;
+  consumed: Set<string>;
+  commitSeed: (remaining: PersistedResumeSeed) => void;
+}
+
+type AnyNode = Node & { [key: string]: any; start: number; end: number };
+
+/**
+ * Runtime determinism hardening, run inside the vm realm BEFORE the user script.
+ * It neuters the nondeterministic builtins that would break resume (they'd make a
+ * re-run produce different values than the cached journal):
+ *   - Math.random()        -> throws
+ *   - Date.now()           -> throws
+ *   - Date() / new Date()  -> throws (no-arg); new Date(arg) still works
+ * Using the vm realm's own Math/Date/Reflect (not host objects) means this adds
+ * no host-`Function` escape. Note: vm is not a security sandbox — an injected
+ * bridge function's `.constructor` is still the host Function, so a determined
+ * script could bypass this. The guard is best-effort against ACCIDENTAL
+ * nondeterminism from trusted (user / guided-LLM) scripts, not a security wall.
+ */
+const DETERMINISM_PRELUDE = [
+  '"use strict";',
+  'Math.random = () => { throw new Error("Math.random() is unavailable in a workflow (it breaks resume); pass randomness via args or vary by index"); };',
+  "{",
+  "  const RealDate = Date;",
+  '  const fail = (w) => { throw new Error(w + " is unavailable in a workflow (it breaks resume); pass a timestamp via args"); };',
+  "  const SafeDate = function (...a) {",
+  '    if (!new.target) fail("Date()");',
+  '    if (a.length === 0) fail("new Date()");',
+  "    return Reflect.construct(RealDate, a, SafeDate);",
+  "  };",
+  "  SafeDate.UTC = RealDate.UTC;",
+  "  SafeDate.parse = RealDate.parse;",
+  '  SafeDate.now = () => fail("Date.now()");',
+  "  SafeDate.prototype = RealDate.prototype;",
+  "  globalThis.Date = SafeDate;",
+  "}",
+].join("\n");
+
+/** Observable call-path capture format. Bump when capture semantics change. */
+export const CALL_PATH_FORMAT = 1;
+/** Maximum unambiguous raw stack depth retained for call-path capture. */
+export const CALL_PATH_RAW_FRAMES = 64;
+/** Observable call-input fingerprint format. Bump when its inputs or encoding change. */
+export const CALL_INPUTS_FORMAT = 2;
+/** Observable checkpoint-input fingerprint format. Bump when its inputs or encoding change. */
+export const CHECKPOINT_INPUTS_FORMAT = 2;
+
+export interface WorkflowRunLimitOptions {
+  maxAgents?: number;
+  concurrency?: number;
+  agentRetries?: number;
+}
+
+/** Resolve the run limits once so admission, persistence, and execution report the same values. */
+export function resolveWorkflowRunLimits(options: WorkflowRunLimitOptions): WorkflowRunLimits {
+  return {
+    maxAgents: options.maxAgents ?? MAX_AGENTS_PER_RUN,
+    concurrency: normalizeConcurrency(
+      options.concurrency ?? Math.max(1, (globalThis.navigator?.hardwareConcurrency ?? 8) - 2),
+    ),
+    agentRetries: normalizeAgentRetries(options.agentRetries ?? 0),
+  };
+}
+
+/** Convert a workflow name into the path-free base used for its vm filename. */
+export function sanitizeVmName(name: string): string {
+  const sanitized = name.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 64);
+  return sanitized || "workflow";
+}
+
+export async function runWorkflow<T = unknown>(
+  script: string,
+  options: WorkflowRunOptions,
+): Promise<EngineRunResult<T>> {
+  const started = Date.now();
+  const { meta, body } = parseWorkflowScript(script);
+  const journaling = options.journaling ?? true;
+  const resumeSeed = options.preparedResume?.strategy === "identity-v1"
+    ? options.preparedResume.seed
+    : options.preparedResume?.strategy === "positional-v1" ? options.preparedResume.checkpoint?.seed : undefined;
+  assertExplicitCheckpointProvenance({
+    journal: options.resumeJournal ? [...options.resumeJournal.values()] : undefined,
+    resumeSeed,
+  });
+  if (!journaling && (options.resumeJournal || options.resumeFromRunId || options.preparedResume)) {
+    throw new WorkflowError("journaling disabled for this run", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
+      recoverable: false,
+    });
+  }
+  if (options.resumeJournal && options.preparedResume && options.preparedResume.strategy !== "positional-v1") {
+    throw new WorkflowError(
+      "resumeJournal is compatible only with a prepared positional resume",
+      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+      { recoverable: false },
+    );
+  }
+  // Per-phase model routing from meta.phases[].model, with meta.model as the default.
+  const routingConfig = parseModelRoutingFromMeta(meta.phases, meta.model);
+  // Snapshot tier routing once per run. A missing/unparseable file preserves the
+  // historical runner-default behavior unless a tier falls through to mainModel.
+  const modelTierConfig = options.routingSnapshot ? options.routingSnapshot.modelTiers : loadModelTierConfig();
+  const effectiveLimits = resolveWorkflowRunLimits(options);
+  const {
+    maxAgents,
+    concurrency,
+    agentRetries: runAgentRetries,
+  } = effectiveLimits;
+  const runId = options.runId ?? `run-${started.toString(36)}`;
+  const callbackContext: WorkflowCallbackContext = { scope: runId };
+  const baseCwd = options.cwd ?? process.cwd();
+  const vmFilename = `${sanitizeVmName(meta.name)}.js`;
+  const preludeLines = DETERMINISM_PRELUDE.split("\n").length;
+  const backendsDigest = options.scriptBackends ? hashCanonicalStrictJson(options.scriptBackends) : null;
+  // Snapshot the agentType registry ONCE per run so two agent() calls can't
+  // observe a mid-run edit (determinism); a later resume re-reads it. The agents
+  // directory is parameterized via options.agentsDir (defaults to AGENTS_DIR).
+  const agentRegistry =
+    (options.routingSnapshot ? new Map(options.routingSnapshot.agentDefinitions.map((definition) => [definition.name, definition])) : options.agentRegistry) ??
+    loadAgentRegistry(
+      baseCwd,
+      agentDirsFromOption(options.agentsDir),
+    );
+
+  // Initialize logger
+  const logger = createWorkflowLogger({
+    runId,
+    cwd: options.cwd ?? process.cwd(),
+    persistenceRoot: options.persistenceRoot,
+    persist: journaling ? (options.persistLogs ?? true) : false,
+    onLog: (message) => options.onLog?.(message, callbackContext),
+  });
+
+  const state: RuntimeState = {
+    logs: [],
+    // When the script declares meta.phases, default the current phase to the
+    // first one so agents created before any explicit phase() call still group
+    // under a declared phase instead of an orphan "(no phase)" bucket. An
+    // explicit phase() (or agent({ phase })) overrides this.
+    phases: meta.phases?.[0]?.title ? [meta.phases[0].title] : [],
+    currentPhase: meta.phases?.[0]?.title,
+    callSeq: 0,
+    firstMiss: options.preparedResume?.strategy === "positional-v1"
+      ? initialPositionalFirstMiss(options.preparedResume.eligibility)
+      : Number.POSITIVE_INFINITY,
+    agentSessions: [],
+    fallbacks: [],
+    checkpointsTaken: [],
+    calls: [],
+    settlementSeq: 0,
+  };
+
+  // The latest session of the step with this label, for agent({ continue }).
+  const sessionForLabel = (label: string | undefined): AgentSessionRef | undefined => {
+    if (typeof label !== "string" || label === "") return undefined;
+    for (let i = state.agentSessions.length - 1; i >= 0; i--) {
+      const record = state.agentSessions[i]!;
+      if (record.label !== label) continue;
+      const { callIndex: _callIndex, label: _label, phase: _phase, keptOpen: _keptOpen, ...ref } = record;
+      return ref as AgentSessionRef;
+    }
+    return undefined;
+  };
+
+  const agentRunner = options.agent;
+  // Global caps are shared with any nested workflow() so they hold across nesting.
+  const shared: SharedRuntime = options.sharedRuntime ?? {
+    limiter: createLimiter(concurrency),
+    agentCount: 0,
+    tokenUsage: copyTokenUsageBaseline(options.tokenUsageBaseline),
+    depth: 0,
+    nestedSeq: 0,
+    rootRunId: runId,
+    ...(options.pauseSignal ? { pauseSignal: options.pauseSignal } : {}),
+  };
+  const pauseSignal = shared.pauseSignal;
+  const liveCalls = (shared.liveCalls ??= { count: 0, waiters: new Set() });
+  const resumeActivity = shared.resumeActivity ?? {
+    active: 0,
+    invalid: false,
+    onChange: options.onResumeActivity,
+  };
+  shared.resumeActivity = resumeActivity;
+  const limiter = shared.limiter;
+  let nestedWorkflows = false;
+  // This run's own workflow() count, taken in call order.
+  let nestedLocalSeq = 0;
+  let abortSignaled = false;
+  let rootCallsAllocated = 0;
+  let realmObjectPrototype: object | undefined;
+
+  const transitionResumeActivity = (delta: 1 | -1) => {
+    const next = resumeActivity.active + delta;
+    if (!Number.isSafeInteger(next) || next < 0) {
+      resumeActivity.invalid = true;
+      return;
+    }
+    resumeActivity.active = next;
+    try {
+      resumeActivity.onChange?.(next);
+    } catch {
+      resumeActivity.invalid = true;
+    }
+  };
+
+  const beginResumeActivity = () => transitionResumeActivity(1);
+  const observeResumeActivity = <T>(promise: Promise<T>): Promise<T> => {
+    let observed = false;
+    const settleActivity = () => {
+      if (observed) return;
+      observed = true;
+      if (resumeActivity.retired) return;
+      transitionResumeActivity(-1);
+    };
+    void promise.then(settleActivity, settleActivity);
+    return promise;
+  };
+
+  const reportRootCallAllocated = (callIndex: number) => {
+    if (options.sharedRuntime) return;
+    const allocated = callIndex + 1;
+    if (allocated !== rootCallsAllocated + 1) {
+      resumeActivity.invalid = true;
+      return;
+    }
+    rootCallsAllocated = allocated;
+    try {
+      options.onResumeCallAllocated?.(allocated);
+    } catch {
+      resumeActivity.invalid = true;
+    }
+  };
+
+  const log = (message: string) => {
+    const text = String(message);
+    state.logs.push(text);
+    logger.log(text);
+  };
+
+  const phase = (title: string, ...deletedOptions: unknown[]) => {
+    if (deletedOptions.length > 0) {
+      // §7: the per-phase budget option is deleted — phase takes NO
+      // options. An unknown second argument (the budget surface's
+      // `{ budget }` included) is a script error naming the deleted
+      // surface, exactly like an unknown agent option key.
+      throw new WorkflowError(
+        "phase() takes no options — the per-phase budget option was deleted with the budget surface (§7); call phase(title) with only the title",
+        WorkflowErrorCode.SCRIPT_ERROR,
+        { recoverable: false },
+      );
+    }
+    state.currentPhase = title;
+    if (!state.phases.includes(title)) state.phases.push(title);
+    options.onPhase?.(title, callbackContext);
+  };
+
+  // Run-scoped fault channel: when the rejection tripwire fires (a promise the SCRIPT
+  // floated rejected with nobody listening), the run is already failing with SCRIPT_ERROR —
+  // this controller cancels the run's in-flight agents so the zombie script stops spending
+  // tokens. Combined with the caller's signal so both channels cancel the same work.
+  const faults = new AbortController();
+  const signal = options.signal ? AbortSignal.any([options.signal, faults.signal]) : faults.signal;
+  if (signal.aborted) abortSignaled = true;
+  signal.addEventListener(
+    "abort",
+    () => {
+      abortSignaled = true;
+    },
+    { once: true },
+  );
+
+  // A pause request is a gate, not a cancellation: nothing already executing is interrupted, but
+  // every later admission (and every queued attempt) refuses with PAUSE_REQUESTED. Like a pending
+  // checkpoint, the refusal is remembered so a script that catches it cannot keep the run going.
+  // A step that failed with pauseOnFailedStep sets pendingPause, which gates
+  // admissions the same way.
+  const pauseRequested = () => (pauseSignal?.aborted === true || shared.pendingPause !== undefined) && !signal.aborted;
+  const pauseError = () =>
+    (shared.pendingPause ??= new WorkflowError(
+      "workflow paused by host request: executing agent calls finished, nothing new was admitted",
+      WorkflowErrorCode.PAUSE_REQUESTED,
+      { recoverable: false },
+    ));
+  // Resolves once every allocated call in the root run and its nested engines has settled.
+  const drainLiveCalls = (): Promise<void> =>
+    liveCalls.count === 0 ? Promise.resolve() : new Promise((resolve) => liveCalls.waiters.add(resolve));
+  const noteCallUnsettled = () => {
+    liveCalls.count += 1;
+  };
+  const noteCallSettled = () => {
+    liveCalls.count -= 1;
+    if (liveCalls.count > 0) return;
+    const waiters = [...liveCalls.waiters];
+    liveCalls.waiters.clear();
+    for (const resolve of waiters) resolve();
+  };
+
+  // Halt gate for work that already produced a value: a stop or a pending checkpoint discards
+  // it, a pause request does not (the finished call is exactly what a pause preserves).
+  const throwIfHalted = () => {
+    if (signal.aborted) {
+      abortSignaled = true;
+      throw new WorkflowError("workflow aborted", WorkflowErrorCode.WORKFLOW_ABORTED, { recoverable: true });
+    }
+    if (shared.pendingCheckpoint) throw shared.pendingCheckpoint;
+  };
+  // Admission gate: additionally refuses to start anything new once a pause is requested.
+  const throwIfAborted = () => {
+    throwIfHalted();
+    if (pauseRequested()) throw pauseError();
+  };
+
+  const reportTerminalObserverError = (observer: string, error: unknown) => {
+    try {
+      logger.error(`${observer} terminal observer failed: ${errorMessage(error)}`);
+    } catch {
+      // Terminal observer reporting is itself best-effort.
+    }
+  };
+
+  const guardTerminal = (observer: string, callback: (() => void) | undefined) => {
+    if (!callback) return;
+    try {
+      callback();
+    } catch (error) {
+      reportTerminalObserverError(observer, error);
+    }
+  };
+
+  const preparedResume = options.preparedResume;
+  const preparedContinuation = options.preparedContinuation;
+  const resumeReportPlan: ResumeReportPlan | undefined = preparedResume
+    ? preparedResume.strategy === "identity-v1"
+      ? {
+          strategy: preparedResume.strategy,
+          sourceRunId: preparedResume.sourceRunId,
+          requestedPolicy: preparedResume.requestedPolicy,
+          ...(preparedResume.checkpointReplyIndex === undefined
+            ? {}
+            : { checkpointReplyIndex: preparedResume.checkpointReplyIndex }),
+        }
+      : preparedResume.strategy === "positional-v1"
+        ? {
+            strategy: preparedResume.strategy,
+            sourceRunId: preparedResume.sourceRunId,
+            requestedPolicy: preparedResume.requestedPolicy,
+            ...(preparedResume.checkpointReplyIndex === undefined
+              ? {}
+              : { checkpointReplyIndex: preparedResume.checkpointReplyIndex }),
+            fallbackReason: preparedResume.fallbackReason,
+            eligibility: preparedResume.eligibility,
+          }
+        : {
+            strategy: preparedResume.strategy,
+            sourceRunId: preparedResume.sourceRunId,
+            requestedPolicy: preparedResume.requestedPolicy,
+            ...(preparedResume.checkpointReplyIndex === undefined
+              ? {}
+              : { checkpointReplyIndex: preparedResume.checkpointReplyIndex }),
+            disabledReason: preparedResume.disabledReason,
+          }
+    : undefined;
+  const resumeDecisions = new Map<number, WorkflowResumeCallDecision>();
+  let resumeDecisionTail = Promise.resolve();
+  let resumeFatalError: WorkflowError | undefined;
+
+  const createResumeSeedController = (
+    seed: PersistedResumeSeed,
+    commitSeed: (remaining: PersistedResumeSeed) => void,
+  ): ResumeSeedController => {
+    const indexes = buildResumeCandidateIndexes(seed);
+    return { seed, indexes, consumed: new Set(), commitSeed };
+  };
+
+  const identitySeed = preparedResume?.strategy === "identity-v1"
+    ? createResumeSeedController(preparedResume.seed, preparedResume.commitSeed)
+    : undefined;
+  const positionalCheckpointSeed = preparedResume?.strategy === "positional-v1" && preparedResume.checkpoint
+    ? createResumeSeedController(preparedResume.checkpoint.seed, preparedResume.checkpoint.commitSeed)
+    : undefined;
+  let checkpointReplyApplied = false;
+
+  const appendResumeDecisionGate = (): ResumeDecisionGate | undefined => {
+    if (!preparedResume) return undefined;
+    const predecessor = resumeDecisionTail;
+    let resolveGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      resolveGate = resolve;
+    });
+    resumeDecisionTail = predecessor.then(() => gate, () => gate);
+    let released = false;
+    return {
+      predecessor,
+      release: () => {
+        if (released) return;
+        released = true;
+        resolveGate();
+      },
+    };
+  };
+
+  const emitResumeDecision = (decision: WorkflowResumeCallDecision) => {
+    if (resumeDecisions.has(decision.index)) return;
+    const frozen = deepFreeze({ ...decision }) as WorkflowResumeCallDecision;
+    resumeDecisions.set(frozen.index, frozen);
+    guardTerminal("onResumeDecision", () => options.onResumeDecision?.(frozen));
+  };
+
+  const resumePersistenceError = (error: unknown): WorkflowError =>
+    error instanceof WorkflowError && error.code === WorkflowErrorCode.PERSISTENCE_ERROR
+      ? error
+      : new WorkflowError(
+          `failed to persist resume seed: ${errorMessage(error)}`,
+          WorkflowErrorCode.PERSISTENCE_ERROR,
+          { recoverable: false, details: error },
+        );
+
+  const failResumePersistence = (
+    error: unknown,
+    call?: { index: number; kind: "agent" | "checkpoint" },
+  ): WorkflowError => {
+    const failure = resumePersistenceError(error);
+    if (call) {
+      emitResumeDecision({
+        index: call.index,
+        kind: call.kind,
+        action: "failed",
+        reason: "seed-persistence-error",
+      });
+    }
+    resumeFatalError = failure;
+    return failure;
+  };
+
+  const remainingResumeSeed = (controller: ResumeSeedController): PersistedResumeSeed => {
+    const callBlockers = (controller.seed.callBlockers ?? []).filter((blocker) =>
+      !controller.consumed.has(indexedSourceOccurrence({ type: "blocker", blocker })),
+    );
+    const checkpointInjections = (controller.seed.checkpointInjections ?? []).filter((injection) =>
+      !controller.consumed.has(indexedSourceOccurrence({ type: "injection", injection })),
+    );
+    const next = {
+      format: "identity-v1" as const,
+      sourceRunId: controller.seed.sourceRunId,
+      candidates: controller.seed.candidates.filter((candidate) =>
+        !controller.consumed.has(indexedSourceOccurrence({ type: "candidate", candidate })),
+      ),
+      ...(callBlockers.length === 0 ? {} : { callBlockers }),
+      ...(checkpointInjections.length === 0 ? {} : { checkpointInjections }),
+    };
+    const captured = cloneFrozenStrictJson(next);
+    if (!captured.ok) throw new TypeError(`remaining resume seed is not strict JSON at ${captured.path}`);
+    return captured.clone as unknown as PersistedResumeSeed;
+  };
+
+  const commitResumeRemoval = (
+    controller: ResumeSeedController,
+    occurrences: readonly string[],
+    call?: { index: number; kind: "agent" | "checkpoint" },
+  ) => {
+    let changed = false;
+    for (const occurrence of occurrences) {
+      if (controller.consumed.has(occurrence)) continue;
+      controller.consumed.add(occurrence);
+      changed = true;
+    }
+    if (!changed) return;
+    try {
+      controller.commitSeed(remainingResumeSeed(controller));
+    } catch (error) {
+      throw failResumePersistence(error, call);
+    }
+  };
+
+  const sourcePrefixReplayed = (
+    controller: ResumeSeedController,
+    injection: PersistedCheckpointInjection,
+  ): boolean => {
+    const priorCandidates = controller.seed.candidates.filter((candidate) =>
+      candidate.sourceRunId === injection.sourceRunId &&
+      candidate.recordedIndex < injection.recordedIndex
+    );
+    const hasPriorNonResult = (controller.seed.callBlockers ?? []).some((blocker) =>
+      blocker.sourceRunId === injection.sourceRunId &&
+      blocker.recordedIndex < injection.recordedIndex
+    );
+    const hasPriorPendingReply = (controller.seed.checkpointInjections ?? []).some((candidate) =>
+      candidate.sourceRunId === injection.sourceRunId &&
+      candidate.recordedIndex < injection.recordedIndex
+    );
+    if (hasPriorNonResult || hasPriorPendingReply) return false;
+    return priorCandidates.every((candidate) =>
+      [...resumeDecisions.values()].some((decision) =>
+        decision.action === "replayed" &&
+        decision.sourceRunId === candidate.sourceRunId &&
+        decision.recordedIndex === candidate.recordedIndex
+      )
+    );
+  };
+
+  const enterResumeDecision = async (
+    gate: ResumeDecisionGate,
+    call: { index: number; kind: "agent" | "checkpoint" },
+  ) => {
+    await gate.predecessor;
+    if (!resumeFatalError) return;
+    emitResumeDecision({
+      index: call.index,
+      kind: call.kind,
+      action: "failed",
+      reason: "resume-fatal-latch",
+    });
+    throw resumeFatalError;
+  };
+
+  const appendCallRecord = (
+    input: Omit<WorkflowCallRecord, "settlementOrdinal" | "scope">,
+  ): WorkflowCallRecord => {
+    const record = deepFreeze({
+      ...input,
+      settlementOrdinal: ++state.settlementSeq,
+      scope: runId,
+    } satisfies WorkflowCallRecord);
+    state.calls.push(record);
+    guardTerminal("onCallRecord", () => options.onCallRecord?.(record));
+    return record;
+  };
+
+  // Allocation happens before limiter admission, so a run can halt while calls are
+  // either executing or still queued. Keep the engine-owned identity closures alive
+  // until settlement and synchronously turn every remaining allocation into an
+  // aborted engine row when the run stops. This preserves the dense manifest without
+  // waiting for a backend that may ignore cancellation during wind-down. Only a root
+  // set made entirely of declared-read-only agents can retire that pending activity;
+  // unsafe, nested, and checkpoint work keeps the existing quiescence barrier.
+  const unsettledCallInterruptions = new Map<() => void, boolean>();
+  const interruptUnsettledCalls = () => {
+    const terminalSafe = [...unsettledCallInterruptions.values()].every(Boolean);
+    for (const interrupt of [...unsettledCallInterruptions.keys()]) interrupt();
+    if (options.sharedRuntime === undefined && terminalSafe && !nestedWorkflows && !resumeActivity.retired) {
+      resumeActivity.retired = true;
+      while (resumeActivity.active > 0) transitionResumeActivity(-1);
+    }
+  };
+  signal.addEventListener("abort", interruptUnsettledCalls, { once: true });
+
+  const strictSnapshot = (value: unknown, description: string, agentLabel?: string): unknown => {
+    const captured = cloneFrozenStrictJson(value);
+    if (!captured.ok) {
+      throw new WorkflowError(
+        `${description} is not strict JSON at ${captured.path}`,
+        WorkflowErrorCode.AGENT_EXECUTION_ERROR,
+        { recoverable: false, agentLabel },
+      );
+    }
+    return captured.clone;
+  };
+
+  const agentImplementation = (
+    prompt: string,
+    agentOptions: AgentOptions,
+    onAllocated: (callIndex: number) => void,
+  ): Promise<unknown> => {
+    validateAgentOptions(agentOptions, realmObjectPrototype);
+    const resumeDeclared = validateResumeDeclaration(agentOptions, realmObjectPrototype);
+    throwIfAborted();
+
+    // Check agent limit
+    if (shared.agentCount >= maxAgents) {
+      throw new WorkflowError(
+        `Agent limit exceeded (${maxAgents}). Use maxAgents option to increase the limit.`,
+        WorkflowErrorCode.AGENT_LIMIT_EXCEEDED,
+        { recoverable: false },
+      );
+    }
+
+    const assignedPhase = agentOptions.phase ?? state.currentPhase;
+    const agentOrdinal = shared.agentOccurrenceCount ?? 0;
+
+    const requestedLabel = agentOptions.label?.trim();
+    const pendingLabel = requestedLabel || defaultAgentLabel(assignedPhase, shared.agentCount + 1);
+
+    // Resolve a named agentType to its bound definition (tools/model/prompt).
+    const agentDef = resolveAgentType(agentOptions.agentType, agentRegistry);
+    if (agentOptions.agentType && !agentDef) {
+      log(`unknown agentType "${agentOptions.agentType}"; using default tools/model`);
+    }
+
+    // Model precedence: explicit agentOptions.model > agentType.model > resolved tier >
+    // mainModel tier fallback > phase/meta route > host-pinned defaultModel > historical
+    // runner default. A tier suppresses phase/default routing; when it has no configured
+    // model and no mainModel fallback, leave model undefined and pass the raw tier through
+    // for the runner to route under the same deterministic rules.
+    const explicitModel = agentOptions.model ?? agentDef?.model;
+    const tierModel =
+      !explicitModel && agentOptions.tier && modelTierConfig
+        ? resolveTierModel(agentOptions.tier, modelTierConfig)
+        : undefined;
+    const phaseModel = agentOptions.tier ? undefined : resolveModelForPhase(assignedPhase, routingConfig);
+    const authoredModel =
+      explicitModel ??
+      (agentOptions.tier ? tierModel || (options.routingSnapshot ? options.routingSnapshot.mainModel : options.mainModel) : phaseModel ?? options.defaultModel);
+    const modelSpec = authoredModel;
+    if (options.requireAgentConfiguration && (typeof modelSpec !== "string" || modelSpec.trim() === "")) {
+      const failure = new WorkflowError(
+        `agent ${JSON.stringify(pendingLabel)}${assignedPhase === undefined ? "" : ` in phase ${JSON.stringify(assignedPhase)}`} has no configured model route. ` +
+          'Set agent(..., { model: "codex" }) or configure a model in its agent definition, resolved tier, phase, or workflow meta.model. ' +
+          'A backend name alone intentionally uses its configured default model; mode and configOptions are optional. Use workflow action:"config" to discover available backends and exact model options.',
+        WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+        { recoverable: false, agentLabel: pendingLabel, details: {
+          missingAgentConfiguration: { label: pendingLabel, ...(assignedPhase === undefined ? {} : { phase: assignedPhase }) },
+        } },
+      );
+      if (!options.onMissingAgentConfiguration) throw failure;
+      return (async () => {
+        let diagnostic: string | undefined;
+        try {
+          diagnostic = await options.onMissingAgentConfiguration!({ label: pendingLabel, ...(assignedPhase === undefined ? {} : { phase: assignedPhase }) });
+        } catch { /* Discovery failure never masks the actionable configuration error. */ }
+        throwIfAborted();
+        if (!diagnostic) throw failure;
+        throw new WorkflowError(`${failure.message}\n${diagnostic}`, failure.code, {
+          recoverable: false, agentLabel: pendingLabel, details: failure.details,
+        });
+      })();
+    }
+    if (modelSpec?.endsWith("/*")) {
+      throw new WorkflowError(
+        `agent ${JSON.stringify(pendingLabel)} model ${JSON.stringify(modelSpec)} is a discovery selector. Expand that provider with workflow action:"config" and modelFilter, then use an exact model route.`,
+        WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+        { recoverable: false, agentLabel: pendingLabel },
+      );
+    }
+    const effectiveMode = agentOptions.mode;
+    const effectiveConfigOptions = agentOptions.configOptions === undefined ? undefined : { ...agentOptions.configOptions };
+    const effectiveAgentOptions = { ...agentOptions, configOptions: effectiveConfigOptions };
+    // For display in /workflows: the model this agent runs on — its explicit/phase/default
+    // spec, else the session's main model. The real resolved id overrides this via
+    // onModelResolved once the subagent session is created.
+    let displayModel = modelSpec ?? options.mainModel;
+    if (hasModelConfigOption(effectiveConfigOptions)) {
+      // Surface the rejected effective call to validation/observability without invoking the
+      // AgentRunner. The following assertion is the pre-session authority.
+      options.onAgentStart?.({
+        label: pendingLabel,
+        phase: assignedPhase,
+        prompt,
+        model: displayModel,
+        configOptions: effectiveConfigOptions,
+        callIndex: state.callSeq,
+        scope: runId,
+      });
+    }
+    assertNoModelConfigOption(effectiveConfigOptions, pendingLabel);
+
+    const resolvedIsolation = agentOptions.isolation ?? agentDef?.isolation;
+    const retryAttempts =
+      agentOptions.retries !== undefined ? normalizeAgentRetries(agentOptions.retries) : runAgentRetries;
+    const label = requestedLabel || defaultAgentLabel(assignedPhase, shared.agentCount + 1);
+
+    // Every identity component is computed before the index is allocated. A hash
+    // serialization failure therefore consumes no index and leaves no journal gap.
+    const callHash = hashAgentCall(
+      prompt,
+      modelSpec,
+      effectiveMode,
+      assignedPhase,
+      effectiveAgentOptions,
+      agentDefinitionKey(agentDef),
+    );
+    const callPath = captureCallPath(vmFilename, preludeLines);
+    const callInputs = {
+      cwd: agentOptions.cwd ?? null,
+      isolation: resolvedIsolation ?? null,
+      keepSession: agentOptions.keepSession === true,
+      images: agentOptions.images ?? null,
+      mcpServers: agentOptions.mcpServers ?? null,
+      meta: agentOptions.meta ?? null,
+      promptMeta: agentOptions.promptMeta ?? null,
+      label,
+      backends: backendsDigest,
+    };
+    const callInputsHash = hashCallInputs(callInputs);
+    const legacyCallInputsHash = hashCallInputsV1({
+      ...callInputs,
+      retries: retryAttempts,
+      timeoutMs: null,
+    });
+
+    // Deterministic resume key: assigned at lexical call time, before the limiter,
+    // so parallel()/pipeline() fan-out is reproducible for a fixed script.
+    const callIndex = state.callSeq++;
+    const resumeDecisionGate = appendResumeDecisionGate();
+    onAllocated(callIndex);
+    reportRootCallAllocated(callIndex);
+
+    let settled: WorkflowCallRecord | undefined;
+    let interrupt: (() => void) | undefined;
+    const settle = (
+      terminal: Omit<
+        WorkflowCallRecord,
+        "index" | "kind" | "hash" | "path" | "inputsHash" | "label" | "modelRequested" | "isolation" | "scope" | "settlementOrdinal"
+      >,
+    ): WorkflowCallRecord => {
+      if (settled) return settled;
+      if (interrupt) {
+        unsettledCallInterruptions.delete(interrupt);
+        noteCallSettled();
+      }
+      settled = appendCallRecord({
+        index: callIndex,
+        kind: "agent",
+        hash: callHash,
+        ...(callPath !== undefined ? { path: callPath } : {}),
+        ...(callInputsHash !== undefined ? { inputsHash: callInputsHash } : {}),
+        label,
+        ...(modelSpec !== undefined ? { modelRequested: modelSpec } : {}),
+        ...(effectiveMode === undefined ? {} : { modeRequested: effectiveMode }),
+        ...(effectiveConfigOptions === undefined ? {} : { configOptionsRequested: { ...effectiveConfigOptions } }),
+        ...(resolvedIsolation !== undefined ? { isolation: resolvedIsolation } : {}),
+        ...terminal,
+      });
+      return settled;
+    };
+
+    const emitAgentEnd = (
+      event: Omit<NonNullable<WorkflowRunOptions["onAgentEnd"]> extends (event: infer E) => void ? E : never, "callIndex" | "scope">,
+    ) => {
+      const terminalEvent = deepFreeze({ ...event, callIndex, scope: runId });
+      guardTerminal("onAgentEnd", () => options.onAgentEnd?.(terminalEvent));
+    };
+
+    // Reserve the agent slot synchronously — atomic with the limit gate above
+    // (no await in between) — so a parallel() fan-out can't all observe the
+    // same agentCount and overshoot maxAgents.
+    shared.agentCount++;
+    shared.agentOccurrenceCount = agentOrdinal + 1;
+
+    let precreatedWorktree: Worktree | undefined;
+    let preparedRunCwd: string | undefined;
+    let worktreePrepared = false;
+    let agentStartEmitted = false;
+
+    const emitAgentStart = () => {
+      if (agentStartEmitted) return;
+      agentStartEmitted = true;
+      options.onAgentStart?.(deepFreeze({
+        label,
+        phase: assignedPhase,
+        prompt,
+        model: displayModel,
+        configOptions: effectiveConfigOptions,
+        callIndex,
+        path: callPath,
+        scope: runId,
+      }));
+    };
+
+    const legacyResumeSafety: WorkflowResumeSafety | undefined = resumeDeclared
+      ? resolvedIsolation === "worktree" && agentOptions.cwd === undefined
+        ? "isolated-worktree"
+        : resolvedIsolation === undefined
+          ? "declared-read-only"
+          : undefined
+      : undefined;
+
+    interrupt = () => {
+      if (settled) return;
+      const error = pauseRequested()
+        ? new WorkflowError(
+            `agent "${label}" was not started because the workflow paused by host request`,
+            WorkflowErrorCode.PAUSE_REQUESTED,
+            { recoverable: false, agentLabel: label },
+          )
+        : new WorkflowError(
+            `agent "${label}" interrupted because workflow execution halted`,
+            WorkflowErrorCode.WORKFLOW_ABORTED,
+            { recoverable: true, agentLabel: label },
+          );
+      const errorRecord = projectRecordedError(error);
+      settle({
+        outcome: "error",
+        origin: "engine",
+        error: errorRecord,
+        aborted: true,
+        ...(legacyResumeSafety === "declared-read-only"
+          ? { resumeSafety: legacyResumeSafety }
+          : {}),
+      });
+      if (agentStartEmitted) {
+        emitAgentEnd({
+          label,
+          phase: assignedPhase,
+          result: null,
+          tokens: 0,
+          model: displayModel,
+          error: error.message,
+          errorCode: error.code,
+          recoverable: error.recoverable,
+          errorRecord,
+        });
+      }
+    };
+    unsettledCallInterruptions.set(interrupt, legacyResumeSafety === "declared-read-only");
+    noteCallUnsettled();
+    if (signal.aborted || pauseRequested()) {
+      interrupt();
+      throwIfAborted();
+    }
+
+    const runLive = () => limiter(async () => {
+      const maxAttempts = retryAttempts + 1;
+      let worktree = precreatedWorktree;
+      let runCwd = preparedRunCwd;
+      let attemptsRan = 0;
+      let observedTokens = 0;
+      const sealedUsage: AgentUsage[] = [];
+      const modelFallbacks: string[] = [];
+      const continuationCandidate = preparedContinuation?.candidatesByIndex.get(callIndex);
+
+      interface AttemptSlots {
+        sealed: boolean;
+        usage?: AgentUsage;
+        sessionRef?: AgentSessionRef;
+        /** The session's cumulative cost gauge at release; folded into the recorded ref. */
+        sessionCostGauge?: number;
+        modelResolved?: string;
+        modelFallbacks: string[];
+        provenance?: AgentResultProvenance;
+        history?: AgentHistoryEntry[];
+      }
+
+      const recordTokens = (value: unknown, usage: AgentUsage | undefined): number => {
+        // A code step uses no model, so it counts no tokens.
+        const tokens = modelSpec === EXEC_MODEL ? 0 : usage && usage.total > 0 ? usage.total : estimateTokens(value) + estimateTokens(prompt);
+        if (usage) {
+          shared.tokenUsage.input += usage.input;
+          shared.tokenUsage.output += usage.output;
+          shared.tokenUsage.cost += usage.cost;
+          shared.tokenUsage.cacheRead += usage.cacheRead;
+          shared.tokenUsage.cacheWrite += usage.cacheWrite;
+        }
+        shared.tokenUsage.total += tokens;
+        observedTokens += tokens;
+        options.onTokenUsage?.({ ...shared.tokenUsage }, callbackContext);
+        return tokens;
+      };
+
+      const sealAttempt = (slot: AttemptSlots) => {
+        if (slot.sealed) return;
+        slot.sealed = true;
+        if (slot.usage) sealedUsage.push(slot.usage);
+        modelFallbacks.push(...slot.modelFallbacks);
+      };
+
+      const sessionRecord = (slot: AttemptSlots, keptOpen: boolean): AgentSessionRecord | undefined =>
+        slot.sessionRef
+          ? deepFreeze({
+              ...slot.sessionRef,
+              // `onSessionOpen` fires before the first prompt; the release-time gauge is what a
+              // later continuation must baseline.
+              ...(slot.sessionCostGauge === undefined ? {} : { costGauge: slot.sessionCostGauge }),
+              callIndex,
+              label,
+              phase: assignedPhase,
+              keptOpen,
+            })
+          : undefined;
+
+      const emitContinuationNotice = (
+        continuation: NonNullable<WorkflowRunFallback["continuation"]>,
+      ) => {
+        const message = continuation.outcome === "reattached"
+          ? `continuation: reattached via session/${continuation.method}`
+          : `continuation skipped (${continuation.reason}) — running fresh`;
+        const fallback: WorkflowRunFallback = deepFreeze({
+          callIndex,
+          label,
+          ...(assignedPhase === undefined ? {} : { phase: assignedPhase }),
+          requestedSpec: modelSpec ?? agentOptions.tier ?? "(default)",
+          ...(continuationCandidate?.sessionRef.backendId === undefined
+            ? {}
+            : { backendId: continuationCandidate.sessionRef.backendId }),
+          kind: "continuation",
+          continuation,
+          message,
+        });
+        if (state.fallbacks.some((entry) => sameFallback(entry, fallback))) return;
+        state.fallbacks.push(fallback);
+        guardTerminal("onFallback", () => options.onFallback?.(fallback));
+      };
+
+      const terminalUsage = (): AgentUsage | undefined => sumUsage(sealedUsage);
+
+      const emitFailure = (
+        thrown: unknown,
+        origin: "runner" | "engine",
+        outcome: "null" | "error",
+        slot: AttemptSlots | undefined,
+        aborted: boolean,
+      ) => {
+        if (settled) return;
+        const errorRecord = projectRecordedError(thrown);
+        const workflowError = wrapError(thrown, { agentLabel: label });
+        const usage = terminalUsage();
+        const session = slot
+          ? sessionRecord(
+              slot,
+              agentOptions.keepSession === true ||
+                isProviderUsageLimit(workflowError) ||
+                isAuthRequired(workflowError),
+            )
+          : undefined;
+        if (session) state.agentSessions.push(session);
+        settle({
+          outcome,
+          origin,
+          error: errorRecord,
+          ...(aborted ? { aborted: true as const } : {}),
+          ...(origin === "runner" ? { attempts: attemptsRan } : {}),
+          ...(usage ? { usage } : {}),
+          ...(slot?.modelResolved ? { modelResolved: slot.modelResolved } : {}),
+          ...(slot?.sessionRef?.backendId ? { backendId: slot.sessionRef.backendId } : {}),
+          ...(modelFallbacks.length ? { modelFallback: true as const } : {}),
+          ...(worktree?.isolated ? { worktree: true } : {}),
+          ...(runCwd !== undefined && origin === "runner" ? { resolvedCwd: runCwd } : {}),
+          ...(resumeDeclared && resolvedIsolation === undefined
+            ? { resumeSafety: "declared-read-only" as const }
+            : resumeDeclared &&
+                resolvedIsolation === "worktree" &&
+                worktree?.isolated &&
+                agentOptions.cwd === undefined
+              ? { resumeSafety: "isolated-worktree" as const }
+              : {}),
+          ...(slot?.provenance ? { provenance: slot.provenance } : {}),
+        });
+        emitAgentEnd({
+          label,
+          phase: assignedPhase,
+          result: null,
+          tokens: observedTokens,
+          worktree: runCwd,
+          model: slot?.modelResolved ?? displayModel,
+          error: workflowError.message,
+          errorCode: workflowError.code,
+          recoverable: workflowError.recoverable,
+          session,
+          usage,
+          modelResolved: slot?.modelResolved,
+          modelFallbacks: modelFallbacks.length ? [...modelFallbacks] : undefined,
+          backendId: slot?.sessionRef?.backendId,
+          provenance: slot?.provenance,
+          errorRecord,
+        });
+      };
+
+      try {
+        emitAgentStart();
+
+        if (agentOptions.cwd !== undefined && typeof agentOptions.cwd !== "string") {
+          throw new WorkflowError(
+            `agent "${label}": options.cwd must be a string`,
+            WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+            { recoverable: false, agentLabel: label },
+          );
+        }
+        if (resolvedIsolation === "worktree" && !worktreePrepared) {
+          try {
+            worktree = await createWorktree(baseCwd, `${runId}-${callIndex}-${label}`);
+          } catch (error) {
+            if (resumeDeclared) options.onResumeFilesystemTainted?.();
+            throw error;
+          }
+          if (!worktree.isolated) log(`isolation ignored for "${label}" (${worktree.reason})`);
+          if (resumeDeclared && !worktree.isolated) options.onResumeFilesystemTainted?.();
+        }
+        runCwd = worktree?.isolated ? worktree.cwd : resolvePath(baseCwd, agentOptions.cwd ?? ".");
+
+        let continuationSkipReason: ContinuationSkipReason | undefined;
+        if (continuationCandidate) {
+          const comparableInputsHash = continuationCandidate.inputsFormat === undefined ||
+              continuationCandidate.inputsFormat === CALL_INPUTS_FORMAT
+            ? callInputsHash
+            : continuationCandidate.inputsFormat === 1
+              ? legacyCallInputsHash
+              : undefined;
+          if (continuationCandidate.hash !== callHash) {
+            continuationSkipReason = "hash-mismatch";
+          } else if (
+            continuationCandidate.inputsHash === undefined ||
+            comparableInputsHash === undefined ||
+            continuationCandidate.inputsHash !== comparableInputsHash
+          ) {
+            continuationSkipReason = "inputs-mismatch";
+          } else if (resolvedIsolation === "worktree") {
+            continuationSkipReason = "worktree-isolated";
+          } else if (continuationCandidate.recordedCwd !== runCwd) {
+            continuationSkipReason = "cwd-mismatch";
+          } else if (!existsSync(runCwd)) {
+            continuationSkipReason = "cwd-missing";
+          }
+          if (continuationSkipReason) {
+            emitContinuationNotice({ outcome: "skipped", reason: continuationSkipReason });
+          }
+        }
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          const slot: AttemptSlots = { sealed: false, modelFallbacks: [] };
+          const resumingTurn = attempt === 1 && continuationCandidate !== undefined && !continuationSkipReason;
+          const continueFromSession = (resumingTurn ? continuationCandidate.sessionRef : undefined)
+            ?? sessionForLabel(agentOptions.continue);
+          let attemptController: AbortController | undefined;
+          let unregisterAttempt: (() => void) | undefined;
+          let hostAttemptRegistered = false;
+          try {
+            throwIfAborted();
+            attemptController = new AbortController();
+            const attemptSignal = AbortSignal.any([signal, attemptController.signal]);
+            attemptsRan++;
+            const registerAttempt = options.onAgentAttempt;
+            if (registerAttempt) {
+              hostAttemptRegistered = true;
+              try {
+                const cleanup = registerAttempt({
+                  callIndex,
+                  label,
+                  scope: runId,
+                  controller: attemptController,
+                });
+                if (typeof cleanup === "function") unregisterAttempt = cleanup;
+              } catch (error) {
+                bestEffortDebug(`agent ${label}: host attempt registration failed: ${errorMessage(error)}`);
+              }
+            }
+            let result: unknown;
+            try {
+              let rawRunnerPromise: Promise<unknown>;
+              beginResumeActivity();
+              try {
+                rawRunnerPromise = agentRunner.run(prompt, {
+                  label,
+                  schema: agentOptions.schema,
+                  signal: attemptSignal,
+                  instructions: buildAgentInstructions(
+                    options.instructions,
+                    assignedPhase,
+                    agentOptions,
+                    agentDef,
+                    resolvedIsolation,
+                  ),
+                  model: modelSpec,
+                  mode: effectiveMode,
+                  configOptions: effectiveConfigOptions,
+                  tier: agentOptions.tier,
+                  toolNames: agentDef?.tools,
+                  disallowedToolNames: agentDef?.disallowedTools,
+                  cwd: runCwd,
+                  mcpServers: agentOptions.mcpServers,
+                  images: agentOptions.images,
+                  meta: agentOptions.meta,
+                  promptMeta: agentOptions.promptMeta,
+                  backends: options.scriptBackends,
+                  runId,
+                  keepSession: agentOptions.keepSession,
+                  ...(continueFromSession === undefined ? {} : { continueFromSession }),
+                  // Agent({ continue }) sends this step's prompt into the earlier
+                  // session. Only a resumed, interrupted turn gets the runner's resume instruction.
+                  ...(continueFromSession !== undefined && !resumingTurn ? { continueWithPrompt: true } : {}),
+                  // Per-step extras the orc runner reads.
+                  ...orchestratorRunExtras(agentOptions, agentDef),
+                  callIndex,
+                  callHash,
+                  callPath,
+                  callInputsHash,
+                  onSessionOpen: (ref: AgentSessionRef) => {
+                    if (slot.sealed) return;
+                    const copied = cloneTelemetry(ref);
+                    if (copied) slot.sessionRef = copied;
+                  },
+                  onSessionCostGauge: (amount: number) => {
+                    if (slot.sealed) return;
+                    if (Number.isFinite(amount) && amount >= 0) slot.sessionCostGauge = amount;
+                  },
+                  onModelResolved: (id: string) => {
+                    if (slot.sealed) return;
+                    slot.modelResolved = id;
+                    displayModel = id;
+                  },
+                  onModelFallback: (spec: string) => {
+                    if (slot.sealed) return;
+                    slot.modelFallbacks.push(spec);
+                    const message = `${label}: model "${spec}" unavailable — using the session default`;
+                    log(message);
+                    const fallback: WorkflowRunFallback = deepFreeze({
+                      callIndex,
+                      label,
+                      ...(assignedPhase === undefined ? {} : { phase: assignedPhase }),
+                      requestedSpec: modelSpec ?? agentOptions.tier ?? spec,
+                      ...(slot.sessionRef?.backendId === undefined ? {} : { backendId: slot.sessionRef.backendId }),
+                      kind: "model",
+                      message,
+                    });
+                    if (!state.fallbacks.some((entry) => sameFallback(entry, fallback))) {
+                      state.fallbacks.push(fallback);
+                      options.onFallback?.(fallback);
+                    }
+                  },
+                  onUsage: (reported: AgentUsage) => {
+                    if (slot.sealed) return;
+                    const copied = copyValidUsage(reported);
+                    if (copied) slot.usage = copied;
+                    else bestEffortDebug(`agent ${label}: dropped invalid usage report`);
+                  },
+                  onResultProvenance: (reported: AgentResultProvenance) => {
+                    if (slot.sealed) return;
+                    const copied = cloneTelemetry(reported);
+                    if (copied) slot.provenance = copied;
+                  },
+                  onHistory: (history: AgentHistoryEntry[]) => {
+                    if (slot.sealed) return;
+                    const copied = cloneTelemetry(history);
+                    if (!copied) {
+                      bestEffortDebug(`agent ${label}: dropped uncopyable history report`);
+                      return;
+                    }
+                    slot.history = copied;
+                    options.onAgentHistory?.(deepFreeze({
+                      label,
+                      phase: assignedPhase,
+                      history: copied,
+                      callIndex,
+                      scope: runId,
+                    }));
+                  },
+                } as any);
+              } catch (error) {
+                transitionResumeActivity(-1);
+                throw error;
+              }
+              observeResumeActivity(rawRunnerPromise);
+              result = hostAttemptRegistered
+                ? await withAgentCancellation(rawRunnerPromise, attemptController.signal)
+                : await rawRunnerPromise;
+            } finally {
+              sealAttempt(slot);
+              if (continueFromSession !== undefined && !signal.aborted) {
+                const continuation = slot.provenance?.source === "live"
+                  ? slot.provenance.continuation
+                  : undefined;
+                if (continuation?.reattached === true) {
+                  emitContinuationNotice({
+                    outcome: "reattached",
+                    method: continuation.method,
+                  });
+                } else {
+                  emitContinuationNotice({
+                    outcome: "skipped",
+                    reason: continuation?.reattached === false
+                      ? continuation.reason
+                      : "runner-declined",
+                  });
+                }
+              }
+            }
+
+            throwIfHalted();
+            if (isEmptyTextAgentResult(result, agentOptions.schema)) {
+              throw new WorkflowError("Subagent produced no assistant output", WorkflowErrorCode.AGENT_EMPTY_OUTPUT, {
+                recoverable: true,
+                agentLabel: label,
+              });
+            }
+            const resultSnapshot = strictSnapshot(result, `agent "${label}" result`, label);
+            recordTokens(result, slot.usage);
+            const usage = terminalUsage();
+            const session = sessionRecord(slot, agentOptions.keepSession === true);
+            if (session) state.agentSessions.push(session);
+            const terminalRecord = settle({
+              outcome: "result",
+              origin: "runner",
+              attempts: attemptsRan,
+              ...(usage ? { usage } : {}),
+              ...(slot.modelResolved ? { modelResolved: slot.modelResolved } : {}),
+              ...(slot.sessionRef?.backendId ? { backendId: slot.sessionRef.backendId } : {}),
+              ...(modelFallbacks.length ? { modelFallback: true as const } : {}),
+              ...(worktree?.isolated ? { worktree: true } : {}),
+              resolvedCwd: runCwd,
+              ...(resumeDeclared && resolvedIsolation === undefined
+                ? { resumeSafety: "declared-read-only" as const }
+                : resumeDeclared &&
+                    resolvedIsolation === "worktree" &&
+                    worktree?.isolated &&
+                    agentOptions.cwd === undefined
+                  ? { resumeSafety: "isolated-worktree" as const }
+                  : {}),
+              ...(slot.provenance ? { provenance: slot.provenance } : {}),
+            });
+            if (terminalRecord.outcome !== "result") return result;
+            if (journaling) {
+              const entry = deepFreeze({
+                index: callIndex,
+                hash: callHash,
+                result: resultSnapshot,
+                kind: "agent" as const,
+                scope: runId,
+                ...(session ? { session } : {}),
+                ...(usage ? { usage } : {}),
+                call: {
+                  kind: "agent" as const,
+                  label,
+                  phase: assignedPhase,
+                  model: slot.modelResolved ?? displayModel,
+                  backendId: session?.backendId,
+                  ...(slot.provenance?.source === "live" &&
+                    slot.provenance.continuation?.reattached === true
+                    ? { continuation: { method: slot.provenance.continuation.method } }
+                    : {}),
+                },
+              });
+              guardTerminal("onAgentJournal", () => options.onAgentJournal?.(entry));
+            }
+            emitAgentEnd({
+              label,
+              phase: assignedPhase,
+              result: resultSnapshot,
+              tokens: observedTokens,
+              worktree: runCwd,
+              model: slot.modelResolved ?? displayModel,
+              session,
+              usage,
+              modelResolved: slot.modelResolved,
+              modelFallbacks: modelFallbacks.length ? [...modelFallbacks] : undefined,
+              backendId: slot.sessionRef?.backendId,
+              provenance: slot.provenance,
+            });
+            return result;
+          } catch (error) {
+            if (!slot.sealed) sealAttempt(slot);
+            const cancellationReason = attemptController
+              ? agentCancellationReason(attemptController.signal)
+              : undefined;
+            if (cancellationReason) {
+              logger.error(
+                `agent ${label} attempt ${attempt}/${maxAttempts} cancelled by host: ${cancellationReason.message}`,
+              );
+              recordTokens(null, slot.usage);
+              if (options.pauseOnFailedStep) {
+                // A step the user stopped pauses the run on it, like a failed step.
+                const why = (cancellationReason.details as { pauseReason?: unknown } | undefined)?.pauseReason;
+                const message = `step "${label}" was stopped${typeof why === "string" ? `: ${cancellationReason.message}` : ""}`;
+                log(`${message}. The run pauses: resume it to run the step again.`);
+                emitFailure(cancellationReason, "engine", "error", slot, false);
+                throw (shared.pendingPause ??= new WorkflowError(message, WorkflowErrorCode.PAUSE_REQUESTED, {
+                  recoverable: false,
+                  agentLabel: label,
+                  details: { stepFailed: true, code: WorkflowErrorCode.AGENT_CANCELLED, ...(typeof why === "string" ? { pauseReason: why } : {}) },
+                }));
+              }
+              log(`agent "${label}" cancelled by host; retries skipped`);
+              emitFailure(cancellationReason, "engine", "null", slot, false);
+              return null;
+            }
+            if (signal.aborted) {
+              emitFailure(error, attemptsRan > 0 ? "runner" : "engine", "error", slot, true);
+              throw error;
+            }
+            if (pauseRequested()) {
+              // Either the attempt was refused at its start, or it failed while a pause was
+              // pending and must not retry now. Both are interrupted rows that run again on resume.
+              emitFailure(error, attemptsRan > 0 ? "runner" : "engine", "error", slot, true);
+              throw pauseError();
+            }
+
+            const workflowError = wrapError(error, { agentLabel: label });
+            logger.error(`agent ${label} attempt ${attempt}/${maxAttempts} failed: ${workflowError.message}`);
+            recordTokens(null, slot.usage);
+
+            if (workflowError.recoverable && attempt < maxAttempts) {
+              log(
+                `agent "${label}" attempt ${attempt}/${maxAttempts} failed: ${workflowError.code} ${workflowError.message}; retrying`,
+              );
+              continue;
+            }
+
+            if (options.pauseOnFailedStep && !HOST_HANDLED_CODES.has(workflowError.code)) {
+              const tries = workflowError.recoverable ? `after ${maxAttempts} tr${maxAttempts === 1 ? "y" : "ies"}` : "and a retry cannot fix it";
+              const message = `step "${label}" failed ${tries}: ${workflowError.message}`;
+              log(`${message}. The run pauses: fix the cause and resume it.`);
+              emitFailure(workflowError, "runner", "error", slot, false);
+              throw (shared.pendingPause ??= new WorkflowError(message, WorkflowErrorCode.PAUSE_REQUESTED, {
+                recoverable: false,
+                agentLabel: label,
+                details: { stepFailed: true, code: workflowError.code, ...(workflowError.details !== undefined ? { details: workflowError.details } : {}) },
+              }));
+            }
+            if (workflowError.recoverable) {
+              log(
+                `agent "${label}" exhausted ${maxAttempts} attempt${maxAttempts === 1 ? "" : "s"}: ${workflowError.code} ${workflowError.message}`,
+              );
+              emitFailure(workflowError, "runner", "null", slot, false);
+              return null;
+            }
+            emitFailure(workflowError, "runner", "error", slot, false);
+            throw workflowError;
+          } finally {
+            if (unregisterAttempt) {
+              try {
+                unregisterAttempt();
+              } catch (error) {
+                bestEffortDebug(`agent ${label}: host attempt cleanup failed: ${errorMessage(error)}`);
+              }
+            }
+          }
+        }
+        return null;
+      } catch (error) {
+        if (!settled) {
+          emitFailure(error, attemptsRan > 0 ? "runner" : "engine", "error", undefined, signal.aborted || pauseRequested());
+        }
+        throw error;
+      } finally {
+        if (worktree?.isolated) await removeWorktree(worktree);
+      }
+    });
+
+    const replayPreparedAgent = async (input: {
+      entry: JournalEntry;
+      resultSnapshot: unknown;
+      sourceRunId: string;
+      recordedIndex: number;
+      match: "path-hash" | "unique-hash" | "index-hash";
+      sourceResumeSafety?: WorkflowResumeSafety;
+      rebindSession: boolean;
+      manifestProvenance: boolean;
+      reportJournal?: boolean;
+    }): Promise<unknown> => {
+      await Promise.resolve();
+      // A halt that lands here must still settle this allocation: nothing downstream will.
+      if (signal.aborted || pauseRequested()) interrupt?.();
+      throwIfAborted();
+      emitAgentStart();
+      const recordedSession = input.entry.session ? cloneTelemetry(input.entry.session) : undefined;
+      let cachedSession: AgentSessionRecord | undefined;
+      if (recordedSession && input.rebindSession) {
+        const { phase: _recordedPhase, ...session } = recordedSession;
+        cachedSession = deepFreeze({
+          ...session,
+          callIndex,
+          label,
+          ...(assignedPhase === undefined ? {} : { phase: assignedPhase }),
+        });
+      } else {
+        cachedSession = recordedSession;
+      }
+      const cachedUsage = input.entry.usage ? copyValidUsage(input.entry.usage) : undefined;
+      if (cachedSession) state.agentSessions.push(cachedSession);
+      const terminalRecord = settle({
+        outcome: "result",
+        origin: "journal-replay",
+        ...(cachedUsage ? { usage: cachedUsage } : {}),
+        ...(input.sourceResumeSafety ? { resumeSafety: input.sourceResumeSafety } : {}),
+        ...(input.manifestProvenance
+          ? {
+              replay: {
+                sourceRunId: input.sourceRunId,
+                recordedIndex: input.recordedIndex,
+                match: input.match,
+                ...(input.sourceResumeSafety
+                  ? { sourceResumeSafety: input.sourceResumeSafety }
+                  : {}),
+              },
+            }
+          : {}),
+      });
+      if (terminalRecord.outcome !== "result") return input.resultSnapshot;
+      const entry = deepFreeze({
+        index: callIndex,
+        hash: callHash,
+        result: input.resultSnapshot,
+        kind: "agent" as const,
+        scope: runId,
+        ...(cachedSession ? { session: cachedSession } : {}),
+        ...(cachedUsage ? { usage: cachedUsage } : {}),
+        call: {
+          kind: "agent" as const,
+          label,
+          phase: assignedPhase,
+          model: displayModel,
+          backendId: cachedSession?.backendId,
+          ...(input.entry.call?.kind === "agent" && input.entry.call.continuation
+            ? { continuation: input.entry.call.continuation }
+            : {}),
+        },
+      });
+      if (input.reportJournal !== false) {
+        guardTerminal("onAgentJournal", () => options.onAgentJournal?.(entry));
+      }
+      emitAgentEnd({
+        label,
+        phase: assignedPhase,
+        result: input.resultSnapshot,
+        tokens: 0,
+        model: displayModel,
+        session: cachedSession,
+        usage: cachedUsage,
+      });
+      return input.resultSnapshot;
+    };
+
+    const runPreparedAgent = async (): Promise<unknown> => {
+      const gate = resumeDecisionGate as ResumeDecisionGate;
+      const decisionCall = { index: callIndex, kind: "agent" as const };
+      let delegated = false;
+      try {
+        await enterResumeDecision(gate, decisionCall);
+        let liveReason: Extract<WorkflowResumeCallDecision, { action: "live" }>;
+
+        if (preparedResume?.strategy === "identity-v1") {
+          const match = selectResumeCandidate((identitySeed as ResumeSeedController).indexes, {
+            kind: "agent",
+            hash: callHash,
+            path: callPath,
+            inputsHash: callInputsHash,
+            consumed: (identitySeed as ResumeSeedController).consumed,
+            hasSchema: agentOptions.schema !== undefined,
+          });
+          if (match.action === "replay") {
+            const source = match.source as Extract<IndexedResumeSource, { type: "candidate" }>;
+            const resultSnapshot = strictSnapshot(
+              source.candidate.entry.result,
+              `agent "${label}" replayed result`,
+              label,
+            );
+            commitResumeRemoval(
+              identitySeed as ResumeSeedController,
+              [indexedSourceOccurrence(source)],
+              decisionCall,
+            );
+            emitResumeDecision({
+              index: callIndex,
+              kind: "agent",
+              action: "replayed",
+              sourceRunId: source.candidate.sourceRunId,
+              recordedIndex: source.candidate.recordedIndex,
+              match: match.match,
+            });
+            gate.release();
+            return replayPreparedAgent({
+              entry: source.candidate.entry,
+              resultSnapshot,
+              sourceRunId: source.candidate.sourceRunId,
+              recordedIndex: source.candidate.recordedIndex,
+              match: match.match,
+              sourceResumeSafety: source.candidate.call.resumeSafety,
+              rebindSession: true,
+              manifestProvenance: true,
+            });
+          }
+          if (match.remove) {
+            commitResumeRemoval(
+              identitySeed as ResumeSeedController,
+              [indexedSourceOccurrence(match.remove)],
+              decisionCall,
+            );
+          }
+          liveReason = {
+            index: callIndex,
+            kind: "agent",
+            action: "live",
+            reason: match.reason,
+          };
+        } else if (preparedResume?.strategy === "positional-v1") {
+          const sourceCall = positionalSourceCall(preparedResume, callIndex, "agent", callHash);
+          const match = selectPositionalResume({
+            index: callIndex,
+            kind: "agent",
+            hash: callHash,
+            inputsHash: callInputsHash,
+            eligibility: preparedResume.eligibility,
+            firstMiss: state.firstMiss,
+            cached: journaling ? options.resumeJournal?.get(callIndex) : undefined,
+            sourceCall,
+            hasSchema: agentOptions.schema !== undefined,
+          });
+          state.firstMiss = match.nextFirstMiss;
+          if (match.action === "replay") {
+            const resultSnapshot = strictSnapshot(match.entry.result, `agent "${label}" replayed result`, label);
+            const sourceResumeSafety = sourceCall && sourceCall.resumeSafety === legacyResumeSafety
+              ? sourceCall.resumeSafety
+              : undefined;
+            emitResumeDecision({
+              index: callIndex,
+              kind: "agent",
+              action: "replayed",
+              sourceRunId: preparedResume.sourceRunId,
+              recordedIndex: callIndex,
+              match: match.match,
+            });
+            gate.release();
+            return replayPreparedAgent({
+              entry: match.entry,
+              resultSnapshot,
+              sourceRunId: preparedResume.sourceRunId,
+              recordedIndex: callIndex,
+              match: match.match,
+              sourceResumeSafety,
+              rebindSession: false,
+              manifestProvenance: sourceCall !== undefined,
+            });
+          }
+          liveReason = {
+            index: callIndex,
+            kind: "agent",
+            action: "live",
+            reason: match.reason,
+          };
+        } else {
+          liveReason = {
+            index: callIndex,
+            kind: "agent",
+            action: "live",
+            reason: "strategy-live",
+          };
+        }
+
+        if (legacyResumeSafety === undefined) options.onResumeFilesystemTainted?.();
+
+        if (resolvedIsolation === "worktree") {
+          emitAgentStart();
+          if (agentOptions.cwd !== undefined && typeof agentOptions.cwd !== "string") {
+            emitResumeDecision(liveReason);
+            gate.release();
+            throw new WorkflowError(
+              `agent "${label}": options.cwd must be a string`,
+              WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+              { recoverable: false, agentLabel: label },
+            );
+          }
+          worktreePrepared = true;
+          try {
+            precreatedWorktree = await createWorktree(baseCwd, `${runId}-${callIndex}-${label}`);
+          } catch (error) {
+            if (resumeDeclared) options.onResumeFilesystemTainted?.();
+            liveReason = { ...liveReason, reason: "worktree-degraded" };
+            emitResumeDecision(liveReason);
+            gate.release();
+            throw error;
+          }
+          if (!precreatedWorktree.isolated) {
+            log(`isolation ignored for "${label}" (${precreatedWorktree.reason})`);
+          }
+          const worktreeDegraded = !precreatedWorktree.isolated ||
+            (resumeDeclared && agentOptions.cwd !== undefined);
+          if (worktreeDegraded) {
+            if (resumeDeclared) options.onResumeFilesystemTainted?.();
+            liveReason = { ...liveReason, reason: "worktree-degraded" };
+          }
+          preparedRunCwd = precreatedWorktree.isolated
+            ? precreatedWorktree.cwd
+            : resolvePath(baseCwd, agentOptions.cwd ?? ".");
+        }
+
+        emitResumeDecision(liveReason);
+        gate.release();
+        delegated = true;
+        return runLive();
+      } catch (error) {
+        gate.release();
+        if (!delegated && precreatedWorktree?.isolated) await removeWorktree(precreatedWorktree);
+        if (!settled) {
+          const errorRecord = projectRecordedError(error);
+          const workflowError = wrapError(error, { agentLabel: label });
+          settle({ outcome: "error", origin: "engine", error: errorRecord });
+          if (agentStartEmitted) {
+            emitAgentEnd({
+              label,
+              phase: assignedPhase,
+              result: null,
+              tokens: 0,
+              model: displayModel,
+              error: workflowError.message,
+              errorCode: workflowError.code,
+              recoverable: workflowError.recoverable,
+              errorRecord,
+            });
+          }
+        }
+        throw error;
+      }
+    };
+
+    const runManualAgent = (): Promise<unknown> => {
+      const cached = journaling ? options.resumeJournal?.get(callIndex) : undefined;
+      const hashMatches = cached != null && cached.hash === callHash;
+      const cachedEmptyOutput = hashMatches && isEmptyTextAgentResult(cached.result, agentOptions.schema);
+      if (hashMatches && !cachedEmptyOutput && (options.sameRunContinuation || callIndex < state.firstMiss)) {
+        try {
+          const resultSnapshot = strictSnapshot(cached.result, `agent "${label}" replayed result`, label);
+          return replayPreparedAgent({
+            entry: cached,
+            resultSnapshot,
+            sourceRunId: runId,
+            recordedIndex: callIndex,
+            match: "index-hash",
+            rebindSession: true,
+            manifestProvenance: true,
+            reportJournal: false,
+          });
+        } catch (error) {
+          const errorRecord = projectRecordedError(error);
+          const workflowError = wrapError(error, { agentLabel: label });
+          settle({ outcome: "error", origin: "engine", error: errorRecord });
+          emitAgentEnd({
+            label,
+            phase: assignedPhase,
+            result: null,
+            tokens: 0,
+            model: displayModel,
+            error: workflowError.message,
+            errorCode: workflowError.code,
+            recoverable: workflowError.recoverable,
+            errorRecord,
+          });
+          throw error;
+        }
+      }
+      if (!hashMatches || cachedEmptyOutput) state.firstMiss = Math.min(state.firstMiss, callIndex);
+      if (!resumeDeclared || (resolvedIsolation === "worktree" && agentOptions.cwd !== undefined)) {
+        options.onResumeFilesystemTainted?.();
+      }
+      return runLive();
+    };
+
+    return preparedResume ? runPreparedAgent() : runManualAgent();
+  };
+
+  const agent = (prompt: string, agentOptions: AgentOptions = {}): Promise<unknown> => {
+    let allocated = false;
+    let promise: Promise<unknown>;
+    try {
+      promise = agentImplementation(prompt, agentOptions, () => {
+        allocated = true;
+        beginResumeActivity();
+      });
+    } catch (error) {
+      promise = Promise.reject(error);
+    }
+    return allocated ? observeResumeActivity(promise) : promise;
+  };
+
+  const parallel = async (thunks: Array<() => Promise<unknown>>) => {
+    throwIfAborted();
+    if (!Array.isArray(thunks)) throw new TypeError("parallel() expects an array of functions");
+    if (thunks.some((thunk) => typeof thunk !== "function")) {
+      throw new TypeError("parallel() expects an array of functions, not promises. Wrap each call: () => agent(...)");
+    }
+    return Promise.all(
+      thunks.map(async (thunk, index) => {
+        try {
+          return await thunk();
+        } catch (error) {
+          if (signal.aborted) throw error;
+          const workflowError = wrapError(error);
+          // Non-recoverable failures (agent limit exhausted) must halt the whole
+          // run, exactly like a directly-awaited agent() — not be swallowed into a
+          // null in the result array.
+          if (!workflowError.recoverable) throw workflowError;
+          log(`parallel[${index}] failed: ${workflowError.message}`);
+          return null;
+        }
+      }),
+    );
+  };
+
+  const pipeline = async (
+    items: unknown[],
+    ...stages: Array<(prev: unknown, original: unknown, index: number) => unknown>
+  ) => {
+    throwIfAborted();
+    if (!Array.isArray(items)) throw new TypeError("pipeline() expects an array as the first argument");
+    if (stages.some((stage) => typeof stage !== "function")) {
+      throw new TypeError("pipeline() stages must be functions: pipeline(items, item => ..., result => ...)");
+    }
+    return Promise.all(
+      items.map(async (item, index) => {
+        let value: unknown = item;
+        for (const stage of stages) {
+          try {
+            throwIfAborted();
+            value = await stage(value, item, index);
+            throwIfAborted();
+          } catch (error) {
+            if (signal.aborted) throw error;
+            const workflowError = wrapError(error);
+            // Non-recoverable failures halt the whole run (see parallel()).
+            if (!workflowError.recoverable) throw workflowError;
+            log(`pipeline[${index}] failed: ${workflowError.message}`);
+            return null;
+          }
+        }
+        return value;
+      }),
+    );
+  };
+
+  // Nested workflow(): run a saved workflow (or a raw script) inline, sharing this
+  // run's limiter/counters so the global caps hold. Five levels deep by default.
+  const workflowImplementation = async (
+    nameOrScript: string,
+    childArgs: unknown,
+    resumeGate: ResumeDecisionGate | undefined,
+    nestedOptions: { place?: string; label?: string } | undefined,
+    localOrdinal: number,
+  ) => {
+    if (resumeGate) {
+      try {
+        await resumeGate.predecessor;
+        if (resumeFatalError) throw resumeFatalError;
+      } finally {
+        resumeGate.release();
+      }
+    }
+    throwIfAborted();
+    const maxNestingDepth = options.maxNestingDepth ?? DEFAULT_MAX_NESTING_DEPTH;
+    // Depth is this run's own level, so parallel siblings don't add up.
+    const ownDepth = options.nestingDepth ?? 0;
+    if (ownDepth >= maxNestingDepth) {
+      throw new WorkflowError(
+        `workflow() can nest at most ${maxNestingDepth} levels deep`,
+        WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+        { recoverable: false },
+      );
+    }
+    options.onResumeFilesystemTainted?.();
+    const ordinal = ++shared.nestedSeq;
+    const childRunId = `${runId}-nested${localOrdinal}`;
+    const childJournalKey = childRunId.slice((shared.rootRunId ?? runId).length);
+    nestedWorkflows = true;
+    options.onNestedWorkflow?.(ordinal, childRunId);
+    const resolved = options.loadSavedWorkflow?.(String(nameOrScript));
+    const childScript = resolved ?? String(nameOrScript);
+    const childName = resolved ? String(nameOrScript) : "inline";
+    // The child gets its declared defaults, as it would started on its own.
+    const args = options.prepareNestedArgs
+      ? options.prepareNestedArgs({
+          name: childName,
+          script: childScript,
+          args: childArgs,
+          childRunId,
+          ...(typeof nestedOptions?.label === "string" ? { label: nestedOptions.label } : {}),
+        })
+      : childArgs;
+    // A nested workflow can ask for its own place (a worktree, a folder, none).
+    let childCwd = options.cwd;
+    const place = nestedOptions?.place;
+    if (place !== undefined && options.prepareNestedPlace) {
+      const prepared = await options.prepareNestedPlace({
+        place: String(place),
+        childRunId,
+        name: childName,
+        cwd: options.cwd ?? process.cwd(),
+      });
+      if (prepared?.cwd) childCwd = prepared.cwd;
+    }
+    shared.depth++;
+    try {
+      const child = await runWorkflow(childScript, {
+        // Spread inherits the PARENT's approved scriptBackends (same trust context — the
+        // parent chose to nest); the child's own meta.backends stays inert (nothing here
+        // approves it, and only the composition root can).
+        ...options,
+        args,
+        cwd: childCwd,
+        // The COMBINED signal, so a parent-side fault/abort cancels the child's agents too
+        // (the child layers its own fault controller on top of this).
+        signal,
+        sharedRuntime: shared,
+        nestingDepth: ownDepth + 1,
+        // A nested run is its own script; never reuse the parent's resume journal.
+        // It replays its own journal, recorded under its run id.
+        resumeJournal: options.nestedResumeJournals?.get(childJournalKey),
+        injectedCheckpointReplies: undefined,
+        resumeFromRunId: undefined,
+        preparedResume: undefined,
+        preparedContinuation: undefined,
+        onResumeCallAllocated: undefined,
+        onResumeDecision: undefined,
+        runId: childRunId,
+        persistLogs: false,
+      });
+      state.fallbacks.push(...(child.fallbacks ?? []));
+      state.checkpointsTaken.push(...(child.checkpointsTaken ?? []));
+      return child.result;
+    } finally {
+      shared.depth--;
+    }
+  };
+
+  const workflowFn = (nameOrScript: string, childArgs?: unknown, nestedOptions?: { place?: string; label?: string }): Promise<unknown> => {
+    const resumeGate = appendResumeDecisionGate();
+    beginResumeActivity();
+    let promise: Promise<unknown>;
+    try {
+      promise = workflowImplementation(nameOrScript, childArgs, resumeGate, nestedOptions, ++nestedLocalSeq);
+    } catch (error) {
+      promise = Promise.reject(error);
+    }
+    return observeResumeActivity(promise);
+  };
+
+  // ── Quality-pattern stdlib: reusable, deterministic helpers built purely on
+  // agent()/parallel() (so callSeq ordering stays stable and resume keeps working).
+  // Injected as globals so workflow scripts compose them directly. ──
+
+  const VERIFY_SCHEMA = {
+    type: "object",
+    properties: { real: { type: "boolean" }, reason: { type: "string" } },
+    required: ["real"],
+  };
+  const verify = async (
+    item: unknown,
+    opts: { reviewers?: number; threshold?: number; lens?: string | string[] } = {},
+  ) => {
+    const reviewers = Math.max(1, opts.reviewers ?? 2);
+    const threshold = opts.threshold ?? 0.5;
+    const lenses = opts.lens ? (Array.isArray(opts.lens) ? opts.lens : [opts.lens]) : [];
+    const claim = typeof item === "string" ? item : JSON.stringify(item);
+    const votes = (
+      await parallel(
+        Array.from(
+          { length: reviewers },
+          (_v, i) => () =>
+            agent(
+              `Adversarially review whether the following is REAL/correct. Try to refute it; default to real=false if unsure.${lenses.length ? ` Focus lens: ${lenses[i % lenses.length]}.` : ""}\n\n${claim}`,
+              { label: `verify ${i + 1}`, schema: VERIFY_SCHEMA },
+            ),
+        ),
+      )
+    ).filter(Boolean) as Array<{ real?: boolean; reason?: string }>;
+    const realCount = votes.filter((v) => v?.real).length;
+    return { real: votes.length > 0 && realCount / votes.length >= threshold, realCount, total: votes.length, votes };
+  };
+
+  const JUDGE_SCHEMA = {
+    type: "object",
+    properties: { score: { type: "number" }, reason: { type: "string" } },
+    required: ["score"],
+  };
+  const judgePanel = async (attempts: unknown[], opts: { judges?: number; rubric?: string } = {}) => {
+    const judges = Math.max(1, opts.judges ?? 3);
+    const rubric = opts.rubric ?? "overall quality and correctness";
+    const scored = (
+      await parallel(
+        (Array.isArray(attempts) ? attempts : []).map((att, idx) => async () => {
+          const text = typeof att === "string" ? att : JSON.stringify(att);
+          const js = (
+            await parallel(
+              Array.from(
+                { length: judges },
+                (_v, j) => () =>
+                  agent(
+                    `Score this candidate from 0 to 1 on: ${rubric}. Reply with the score.\n\nCandidate:\n${text}`,
+                    {
+                      label: `judge ${idx + 1}.${j + 1}`,
+                      schema: JUDGE_SCHEMA,
+                    },
+                  ),
+              ),
+            )
+          ).filter(Boolean) as Array<{ score?: number }>;
+          const score = js.length ? js.reduce((s, v) => s + (Number(v?.score) || 0), 0) / js.length : 0;
+          return { index: idx, attempt: att, score, judgments: js };
+        }),
+      )
+    ).filter(Boolean) as Array<{ index: number; attempt: unknown; score: number; judgments: unknown[] }>;
+    // Highest mean score; stable tie-break by input index.
+    let best = scored[0];
+    for (const s of scored) if (s.score > best.score || (s.score === best.score && s.index < best.index)) best = s;
+    return best;
+  };
+
+  const loopUntilDry = async (opts: {
+    round: (roundIndex: number) => Promise<unknown[]> | unknown[];
+    key?: (item: unknown) => string;
+    consecutiveEmpty?: number;
+    maxRounds?: number;
+  }) => {
+    if (!opts || typeof opts.round !== "function")
+      throw new TypeError("loopUntilDry requires { round: (i) => items[] }");
+    const key = opts.key ?? ((x: unknown) => JSON.stringify(x));
+    const consecutiveEmpty = Math.max(1, opts.consecutiveEmpty ?? 2);
+    const maxRounds = opts.maxRounds ?? 50;
+    const seen = new Set<string>();
+    const all: unknown[] = [];
+    let dry = 0;
+    for (let r = 0; r < maxRounds && dry < consecutiveEmpty; r++) {
+      let items: unknown[];
+      try {
+        items = (await opts.round(r)) ?? [];
+      } catch (error) {
+        // Agent-limit exhaustion: return the partial result, don't abort.
+        const code = (error as { code?: string })?.code;
+        if (code === WorkflowErrorCode.AGENT_LIMIT_EXCEEDED) break;
+        throw error;
+      }
+      const fresh = (Array.isArray(items) ? items : []).filter((x) => x != null && !seen.has(key(x)));
+      if (!fresh.length) {
+        dry++;
+        continue;
+      }
+      dry = 0;
+      for (const x of fresh) {
+        seen.add(key(x));
+        all.push(x);
+      }
+    }
+    return all;
+  };
+
+  const COMPLETENESS_SCHEMA = {
+    type: "object",
+    properties: { complete: { type: "boolean" }, missing: { type: "array", items: { type: "string" } } },
+    required: ["complete"],
+  };
+  const completenessCheck = (taskArgs: unknown, results: unknown) =>
+    agent(
+      `Given the task and the results gathered so far, list what is still MISSING (modalities not covered, claims unverified, gaps). Be specific and concise.\n\nTask:\n${JSON.stringify(taskArgs)}\n\nResults so far:\n${JSON.stringify(results).slice(0, 4000)}`,
+      { label: "completeness critic", schema: COMPLETENESS_SCHEMA },
+    );
+
+  // Thin bounded-retry / validation-gate combinators. Sugar over the for-loop +
+  // agent() pattern, but each attempt is a real agent() call so it auto-journals
+  // under a stable callSeq (resume-safe). No backoff: there is no timer in the vm
+  // and a delay has no resume value. NOTE: attempt N+1's call hash depends on N's
+  // live result, so a retry/gate chain cache-miss-cascades on resume (correct).
+  const retry = async (
+    thunk: (attempt: number) => Promise<unknown> | unknown,
+    opts: { attempts?: number; until?: (r: unknown) => boolean } = {},
+  ) => {
+    const attempts = Math.max(1, opts.attempts ?? 3);
+    let last: unknown;
+    for (let i = 0; i < attempts; i++) {
+      last = await thunk(i);
+      if (!opts.until || opts.until(last)) return last;
+    }
+    return last; // attempts exhausted — return the last result (caller inspects it)
+  };
+  const gate = async (
+    thunk: (feedback: string | undefined, attempt: number) => Promise<unknown> | unknown,
+    validator: (r: unknown) => Promise<unknown> | unknown,
+    opts: { attempts?: number } = {},
+  ) => {
+    const attempts = Math.max(1, opts.attempts ?? 3);
+    let feedback: string | undefined;
+    let last: unknown;
+    let lastVerdict: unknown = null;
+    for (let i = 0; i < attempts; i++) {
+      last = await thunk(feedback, i);
+      lastVerdict = await validator(last);
+      const accepted =
+        typeof lastVerdict === "boolean"
+          ? lastVerdict
+          : Boolean((lastVerdict as { ok?: unknown } | null)?.ok);
+      if (accepted) return { ok: true, value: last, verdict: lastVerdict ?? null, attempts: i + 1 };
+      feedback =
+        typeof lastVerdict === "boolean"
+          ? undefined
+          : (lastVerdict as { feedback?: string } | null)?.feedback; // fed into the next attempt
+    }
+    return { ok: false, value: last, verdict: lastVerdict ?? null, attempts };
+  };
+
+  // Only explicit decisions may cross a human checkpoint. Missing answers pause;
+  // journal replay retains the original answer and its versioned provenance.
+  const checkpointImplementation = async (
+    promptText: string,
+    checkpointOptions: CheckpointOptions,
+    onAllocated: (callIndex: number) => void,
+  ) => {
+    throwIfAborted();
+    if (typeof promptText !== "string") throw new TypeError("checkpoint(promptText, options?) needs a prompt string");
+    if (shared.agentCount >= maxAgents) {
+      throw new WorkflowError(
+        `Agent limit exceeded (${maxAgents}). Use maxAgents option to increase the limit.`,
+        WorkflowErrorCode.AGENT_LIMIT_EXCEEDED,
+        { recoverable: false },
+      );
+    }
+    validateCheckpointOptionKeys(checkpointOptions, realmObjectPrototype);
+    const checkpointTimeoutMs = checkpointOptions.timeoutMs;
+    const checkpointKind = checkpointOptions.kind;
+    const checkpointChoices = checkpointOptions.choices;
+    const capturedCheckpointOptions: CheckpointOptions = {
+      ...(checkpointKind !== undefined ? { kind: checkpointKind } : {}),
+      ...(checkpointChoices !== undefined ? { choices: checkpointChoices } : {}),
+      ...(checkpointTimeoutMs !== undefined ? { timeoutMs: checkpointTimeoutMs } : {}),
+    };
+    validateCheckpointOptions(capturedCheckpointOptions);
+    const callHash = hashCheckpoint(promptText, capturedCheckpointOptions);
+    const callInputsHash = hashCheckpointInputs(capturedCheckpointOptions);
+    const callPath = captureCallPath(vmFilename, preludeLines);
+    const callIndex = state.callSeq++;
+    const resumeDecisionGate = appendResumeDecisionGate();
+    onAllocated(callIndex);
+    reportRootCallAllocated(callIndex);
+    let settled: WorkflowCallRecord | undefined;
+    let interrupt: (() => void) | undefined;
+    const settle = (
+      terminal: Omit<
+        WorkflowCallRecord,
+        "index" | "kind" | "hash" | "path" | "inputsHash" | "scope" | "settlementOrdinal"
+      >,
+    ): WorkflowCallRecord => {
+      if (settled) return settled;
+      if (interrupt) {
+        unsettledCallInterruptions.delete(interrupt);
+        noteCallSettled();
+      }
+      settled = appendCallRecord({
+        index: callIndex,
+        kind: "checkpoint",
+        hash: callHash,
+        ...(callPath !== undefined ? { path: callPath } : {}),
+        ...(callInputsHash !== undefined ? { inputsHash: callInputsHash } : {}),
+        ...terminal,
+      });
+      return settled;
+    };
+    interrupt = () => {
+      if (settled) return;
+      const error = pauseRequested()
+        ? new WorkflowError(
+            `checkpoint "${promptText}" was not asked because the workflow paused by host request`,
+            WorkflowErrorCode.PAUSE_REQUESTED,
+            { recoverable: false },
+          )
+        : new WorkflowError(
+            `checkpoint "${promptText}" interrupted because workflow execution halted`,
+            WorkflowErrorCode.WORKFLOW_ABORTED,
+            { recoverable: true },
+          );
+      settle({
+        outcome: "error",
+        origin: "engine",
+        error: projectRecordedError(error),
+        aborted: true,
+      });
+    };
+    unsettledCallInterruptions.set(interrupt, false);
+    noteCallUnsettled();
+    if (signal.aborted || pauseRequested()) {
+      interrupt();
+      throwIfAborted();
+    }
+    shared.agentCount++;
+
+    const replayCheckpoint = (input: {
+      resultSnapshot: unknown;
+      sourceRunId: string;
+      recordedIndex: number;
+      match: "path-hash" | "unique-hash" | "index-hash";
+      checkpointInjected?: true;
+      checkpointHostDecision: boolean;
+      manifestProvenance: boolean;
+      reportJournal?: boolean;
+    }): unknown => {
+      const terminalRecord = settle({
+        outcome: "result",
+        origin: "journal-replay",
+        checkpointDecision: "explicit-v1",
+        ...(input.manifestProvenance
+          ? {
+              replay: {
+                sourceRunId: input.sourceRunId,
+                recordedIndex: input.recordedIndex,
+                match: input.match,
+                ...(input.checkpointHostDecision ? { checkpointHostDecision: true as const } : {}),
+                ...(input.checkpointInjected ? { checkpointInjected: true as const } : {}),
+              },
+            }
+          : {}),
+      });
+      if (terminalRecord.outcome !== "result") return input.resultSnapshot;
+      const journalEntry = deepFreeze({
+        index: callIndex,
+        hash: callHash,
+        result: input.resultSnapshot,
+        kind: "checkpoint" as const,
+        checkpointDecision: "explicit-v1" as const,
+        scope: runId,
+        call: { kind: "checkpoint" as const, label: "checkpoint" as const, phase: state.currentPhase },
+      });
+      if (input.reportJournal !== false) {
+        guardTerminal("onAgentJournal", () => options.onAgentJournal?.(journalEntry));
+      }
+      const checkpointTaken: WorkflowCheckpointTaken = deepFreeze({
+        callIndex,
+        kind: checkpointKind ?? "confirm",
+        decision: input.resultSnapshot,
+        source: input.checkpointInjected ? "injected" : "journal-replay",
+      });
+      state.checkpointsTaken.push(checkpointTaken);
+      guardTerminal("onCheckpointTaken", () => options.onCheckpointTaken?.(checkpointTaken));
+      return input.resultSnapshot;
+    };
+
+    if (preparedResume) {
+      const gate = resumeDecisionGate as ResumeDecisionGate;
+      const decisionCall = { index: callIndex, kind: "checkpoint" as const };
+      try {
+        await enterResumeDecision(gate, decisionCall);
+        let liveReason: Extract<WorkflowResumeCallDecision, { action: "live" }>;
+        let checkpointReplyInputsChanged = false;
+
+        if (preparedResume.strategy === "identity-v1") {
+          const match = selectResumeCandidate((identitySeed as ResumeSeedController).indexes, {
+            kind: "checkpoint",
+            hash: callHash,
+            path: callPath,
+            inputsHash: callInputsHash,
+            consumed: (identitySeed as ResumeSeedController).consumed,
+          });
+          const movedInjectionWithoutSourcePrefix =
+            match.action === "replay" &&
+            match.source.type === "injection" &&
+            match.match === "unique-hash" &&
+            !sourcePrefixReplayed(
+              identitySeed as ResumeSeedController,
+              match.source.injection,
+            );
+          if (match.action === "replay" && !movedInjectionWithoutSourcePrefix) {
+            assertExplicitCheckpointDecision(match.source.type === "candidate"
+              ? match.source.candidate.entry : match.source.injection);
+            const result = match.source.type === "candidate"
+              ? match.source.candidate.entry.result
+              : match.source.injection.decision;
+            const resultSnapshot = strictSnapshot(result, `checkpoint "${promptText}" replayed reply`);
+            commitResumeRemoval(
+              identitySeed as ResumeSeedController,
+              [indexedSourceOccurrence(match.source)],
+              decisionCall,
+            );
+            const source = match.source.type === "candidate"
+              ? match.source.candidate
+              : match.source.injection;
+            const checkpointInjected = match.source.type === "injection" ? true as const : undefined;
+            const checkpointHostDecision = checkpointInjected === true || (
+              match.source.type === "candidate" && (
+                match.source.candidate.call.origin === "confirm" ||
+                (match.source.candidate.call.origin === "journal-replay" &&
+                  match.source.candidate.call.replay?.checkpointHostDecision === true)
+              )
+            );
+            if (checkpointInjected) checkpointReplyApplied = true;
+            emitResumeDecision({
+              index: callIndex,
+              kind: "checkpoint",
+              action: "replayed",
+              sourceRunId: source.sourceRunId,
+              recordedIndex: source.recordedIndex,
+              match: match.match,
+              ...(checkpointInjected ? { checkpointInjected } : {}),
+            });
+            gate.release();
+            return replayCheckpoint({
+              resultSnapshot,
+              sourceRunId: source.sourceRunId,
+              recordedIndex: source.recordedIndex,
+              match: match.match,
+              ...(checkpointInjected ? { checkpointInjected } : {}),
+              checkpointHostDecision,
+              manifestProvenance: true,
+            });
+          }
+          if (match.action === "live" && match.remove) {
+            commitResumeRemoval(
+              identitySeed as ResumeSeedController,
+              [indexedSourceOccurrence(match.remove)],
+              decisionCall,
+            );
+          }
+          liveReason = {
+            index: callIndex,
+            kind: "checkpoint",
+            action: "live",
+            reason: match.action === "live" ? match.reason : "not-recorded",
+          };
+          checkpointReplyInputsChanged = match.action === "live" && match.reason === "inputs-changed";
+        } else if (preparedResume.strategy === "positional-v1") {
+          if (positionalCheckpointSeed) {
+            const injectionMatch = selectResumeCandidate(positionalCheckpointSeed.indexes, {
+              kind: "checkpoint",
+              hash: callHash,
+              path: callPath,
+              inputsHash: callInputsHash,
+              consumed: positionalCheckpointSeed.consumed,
+            });
+            if (
+              injectionMatch.action === "replay" &&
+              injectionMatch.source.type === "injection" &&
+              (injectionMatch.match === "path-hash" || callIndex < state.firstMiss)
+            ) {
+              const injection = injectionMatch.source.injection;
+              assertExplicitCheckpointDecision(injection);
+              const resultSnapshot = strictSnapshot(
+                injection.decision,
+                `checkpoint "${promptText}" injected reply`,
+              );
+              commitResumeRemoval(
+                positionalCheckpointSeed,
+                [indexedSourceOccurrence(injectionMatch.source)],
+                decisionCall,
+              );
+              if (callIndex !== injection.recordedIndex) {
+                state.firstMiss = Math.min(state.firstMiss, callIndex + 1);
+              }
+              checkpointReplyApplied = true;
+              emitResumeDecision({
+                index: callIndex,
+                kind: "checkpoint",
+                action: "replayed",
+                sourceRunId: injection.sourceRunId,
+                recordedIndex: injection.recordedIndex,
+                match: injectionMatch.match,
+                checkpointInjected: true,
+              });
+              gate.release();
+              return replayCheckpoint({
+                resultSnapshot,
+                sourceRunId: injection.sourceRunId,
+                recordedIndex: injection.recordedIndex,
+                match: injectionMatch.match,
+                checkpointInjected: true,
+                checkpointHostDecision: true,
+                manifestProvenance: true,
+              });
+            }
+            checkpointReplyInputsChanged =
+              injectionMatch.action === "live" && injectionMatch.reason === "inputs-changed";
+          }
+
+          const sourceCall = positionalSourceCall(preparedResume, callIndex, "checkpoint", callHash);
+          const match = selectPositionalResume({
+            index: callIndex,
+            kind: "checkpoint",
+            hash: callHash,
+            inputsHash: callInputsHash,
+            eligibility: preparedResume.eligibility,
+            firstMiss: state.firstMiss,
+            cached: journaling ? options.resumeJournal?.get(callIndex) : undefined,
+            sourceCall,
+          });
+          state.firstMiss = match.nextFirstMiss;
+          if (match.action === "replay") {
+            assertExplicitCheckpointDecision(match.entry);
+            const resultSnapshot = strictSnapshot(
+              match.entry.result,
+              `checkpoint "${promptText}" replayed reply`,
+            );
+            const checkpointHostDecision = sourceCall?.origin === "confirm" ||
+              (sourceCall?.origin === "journal-replay" &&
+                sourceCall.replay?.checkpointHostDecision === true);
+            const checkpointInjected = options.injectedCheckpointReplies?.has(callIndex)
+              ? true as const
+              : undefined;
+            if (checkpointInjected) checkpointReplyApplied = true;
+            emitResumeDecision({
+              index: callIndex,
+              kind: "checkpoint",
+              action: "replayed",
+              sourceRunId: preparedResume.sourceRunId,
+              recordedIndex: callIndex,
+              match: match.match,
+              ...(checkpointInjected ? { checkpointInjected } : {}),
+            });
+            gate.release();
+            return replayCheckpoint({
+              resultSnapshot,
+              sourceRunId: preparedResume.sourceRunId,
+              recordedIndex: callIndex,
+              match: match.match,
+              ...(checkpointInjected ? { checkpointInjected } : {}),
+              checkpointHostDecision,
+              manifestProvenance: sourceCall !== undefined,
+            });
+          }
+          liveReason = {
+            index: callIndex,
+            kind: "checkpoint",
+            action: "live",
+            reason: match.reason,
+          };
+        } else {
+          liveReason = {
+            index: callIndex,
+            kind: "checkpoint",
+            action: "live",
+            reason: "strategy-live",
+          };
+        }
+
+        if (options.confirm) options.onResumeFilesystemTainted?.();
+        if (preparedResume.checkpointReplyIndex !== undefined && !checkpointReplyApplied) {
+          liveReason = {
+            ...liveReason,
+            checkpointReply: checkpointReplyNotApplied(
+              preparedResume.checkpointReplyIndex,
+              callIndex,
+              checkpointReplyInputsChanged,
+            ),
+          };
+        }
+        emitResumeDecision(liveReason);
+        gate.release();
+      } catch (error) {
+        gate.release();
+        settle({ outcome: "error", origin: "engine", error: projectRecordedError(error) });
+        throw error;
+      }
+    } else {
+      const cached = journaling ? options.resumeJournal?.get(callIndex) : undefined;
+      if (
+        cached != null &&
+        cached.hash === callHash &&
+        (options.sameRunContinuation || callIndex < state.firstMiss)
+      ) {
+        try {
+          assertExplicitCheckpointDecision(cached);
+          const resultSnapshot = strictSnapshot(cached.result, `checkpoint "${promptText}" replayed reply`);
+          return replayCheckpoint({
+            resultSnapshot,
+            sourceRunId: runId,
+            recordedIndex: callIndex,
+            match: "index-hash",
+            ...(options.injectedCheckpointReplies?.has(callIndex)
+              ? { checkpointInjected: true as const }
+              : {}),
+            checkpointHostDecision: true,
+            manifestProvenance: true,
+            reportJournal: false,
+          });
+        } catch (error) {
+          settle({ outcome: "error", origin: "journal-replay", error: projectRecordedError(error) });
+          throw error;
+        }
+      }
+      if (cached == null || cached.hash !== callHash) state.firstMiss = Math.min(state.firstMiss, callIndex);
+    }
+
+    const origin = options.confirm ? "confirm" as const : "engine" as const;
+    const waiting = () => shared.pendingCheckpoint ??= new WorkflowError(
+      `checkpoint "${promptText}" awaits an explicit human decision`,
+      WorkflowErrorCode.CHECKPOINT_REQUIRED,
+      {
+        recoverable: false,
+        checkpointContext: {
+          callIndex,
+          hash: callHash,
+          prompt: promptText,
+          kind: checkpointKind ?? "confirm",
+          ...(checkpointChoices === undefined ? {} : { choices: checkpointChoices }),
+          ...(checkpointTimeoutMs === undefined ? {} : { timeoutMs: checkpointTimeoutMs }),
+        },
+      },
+    );
+    try {
+      if (!options.confirm) throw waiting();
+      if (!preparedResume) options.onResumeFilesystemTainted?.();
+      let reply: unknown;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      let onAbort: (() => void) | undefined;
+      let onPause: (() => void) | undefined;
+      try {
+        const answer = options.confirm(promptText, capturedCheckpointOptions, {
+          callIndex,
+          hash: callHash,
+          scope: runId,
+          path: callPath,
+        });
+        const interruption = new Promise<never>((_, reject) => {
+          onAbort = () => reject(new WorkflowError("workflow aborted", WorkflowErrorCode.WORKFLOW_ABORTED, { recoverable: true }));
+          signal.addEventListener("abort", onAbort, { once: true });
+          if (signal.aborted) onAbort();
+          // A pause request unwinds a waiting question the same way a stop does; the pending
+          // checkpoint keeps its durable context and is asked again on resume.
+          onPause = () => reject(pauseError());
+          pauseSignal?.addEventListener("abort", onPause, { once: true });
+          if (pauseRequested()) onPause();
+          if (checkpointTimeoutMs !== undefined) timeout = setTimeout(() => reject(waiting()), checkpointTimeoutMs);
+        });
+        reply = await Promise.race([answer, interruption]);
+      } catch (error) {
+        throwIfAborted();
+        // Isolation failures describe invalid replay, not an unavailable human channel.
+        if (error instanceof WorkflowError && error.code === WorkflowErrorCode.REPLAY_DIVERGENCE) throw error;
+        throw waiting();
+      } finally {
+        if (timeout !== undefined) clearTimeout(timeout);
+        if (onAbort) signal.removeEventListener("abort", onAbort);
+        if (onPause) pauseSignal?.removeEventListener("abort", onPause);
+      }
+      if (reply === undefined) throw waiting();
+      throwIfHalted();
+      let replySnapshot: unknown;
+      try {
+        replySnapshot = strictSnapshot(reply, `checkpoint "${promptText}" reply`);
+      } catch {
+        // A value that cannot become a durable decision is still unanswered. Latch the
+        // checkpoint so the script cannot catch serialization failure and cross its gate.
+        throw waiting();
+      }
+      const terminalRecord = settle({ outcome: "result", origin, ...(journaling ? { checkpointDecision: "explicit-v1" as const } : {}) });
+      if (terminalRecord.outcome !== "result") return reply;
+      if (journaling) {
+        const entry = deepFreeze({
+          index: callIndex,
+          hash: callHash,
+          result: replySnapshot,
+          kind: "checkpoint" as const,
+          checkpointDecision: "explicit-v1" as const,
+          scope: runId,
+          call: { kind: "checkpoint" as const, label: "checkpoint" as const, phase: state.currentPhase },
+        });
+        guardTerminal("onAgentJournal", () => options.onAgentJournal?.(entry));
+      }
+      const checkpointTaken: WorkflowCheckpointTaken = deepFreeze({
+        callIndex,
+        kind: checkpointKind ?? "confirm",
+        decision: replySnapshot,
+        source: "live",
+      });
+      state.checkpointsTaken.push(checkpointTaken);
+      guardTerminal("onCheckpointTaken", () => options.onCheckpointTaken?.(checkpointTaken));
+      return reply;
+    } catch (error) {
+      const aborted = signal.aborted || pauseRequested();
+      settle({
+        outcome: "error",
+        origin: aborted ? "engine" : origin,
+        error: projectRecordedError(error),
+        ...(aborted ? { aborted: true as const } : {}),
+      });
+      throw error;
+    }
+  };
+
+  const checkpoint = (promptText: string, checkpointOptions: CheckpointOptions = {}): Promise<unknown> => {
+    let allocated = false;
+    let promise: Promise<unknown>;
+    try {
+      promise = checkpointImplementation(promptText, checkpointOptions, () => {
+        allocated = true;
+        beginResumeActivity();
+      });
+    } catch (error) {
+      promise = Promise.reject(error);
+    }
+    return allocated ? observeResumeActivity(promise) : promise;
+  };
+
+  // Adopt every engine-returned promise into the SCRIPT's realm at the context boundary.
+  // This is what makes the rejection tripwire's realm-identity attribution complete: the
+  // script can only float (a) promises it created itself — natively realm-owned — or
+  // (b) promises these globals returned, plus .then() chains off either — realm-owned via
+  // this adoption (species lookup follows the receiver's realm constructor). Bonus: inside
+  // the script, `agent(...) instanceof Promise` is now true (host promises weren't).
+  // `realmPromiseCtor` is assigned right after createContext(), before any script runs.
+  let realmPromiseCtor: PromiseConstructor | undefined;
+  const tracked = <F extends (...args: never[]) => unknown>(fn: F): F =>
+    ((...args: never[]) => {
+      const out = fn(...args);
+      return out instanceof Promise && realmPromiseCtor ? realmPromiseCtor.resolve(out) : out;
+    }) as F;
+
+  // Code steps, questions, breakpoints and choose(), built on agent() and checkpoint().
+  const orchestrator = createOrchestratorGlobals({
+    agent: agent as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
+    checkpoint: checkpoint as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
+    workflow: workflowFn,
+    log,
+    listSavedWorkflows: options.listSavedWorkflows,
+    stepOverrides: options.stepOverrides,
+  });
+
+  const context = vm.createContext({
+    agent: tracked(orchestrator.agent),
+    sh: tracked(orchestrator.sh),
+    js: tracked(orchestrator.js),
+    py: tracked(orchestrator.py),
+    run: tracked(orchestrator.run),
+    waitUntil: tracked(orchestrator.waitUntil),
+    ask: tracked(orchestrator.ask),
+    breakpoint: tracked(orchestrator.breakpoint),
+    choose: tracked(orchestrator.choose),
+    parallel: tracked(parallel),
+    pipeline: tracked(pipeline),
+    workflow: tracked(workflowFn),
+    verify: tracked(verify),
+    judgePanel: tracked(judgePanel),
+    loopUntilDry: tracked(loopUntilDry),
+    completenessCheck: tracked(completenessCheck),
+    retry: tracked(retry),
+    gate: tracked(gate),
+    checkpoint: tracked(checkpoint),
+    log,
+    phase,
+    args: options.args,
+    cwd: options.cwd ?? process.cwd(),
+    process: Object.freeze({ cwd: () => options.cwd ?? process.cwd() }),
+    console: {
+      log,
+      info: log,
+      warn: (m: unknown) => log(`[warn] ${String(m)}`),
+      error: (m: unknown) => log(`[error] ${String(m)}`),
+    },
+    // Object/Array/JSON/Math/Date/Promise/Set/Map/etc. come from the vm realm
+    // itself — we deliberately do NOT inject host built-ins, whose .constructor
+    // would be the host Function (a determinism-guard bypass). Math/Date are
+    // neutered in-realm by DETERMINISM_PRELUDE below.
+  });
+
+  realmPromiseCtor = new vm.Script("Promise").runInContext(context) as PromiseConstructor;
+  realmObjectPrototype = new vm.Script("Object.prototype").runInContext(context) as object;
+  const tripwire = registerRunTripwire({
+    realmPromise: realmPromiseCtor,
+    // Cancel in-flight agents so a zombie script (still unwinding after the run already
+    // failed with SCRIPT_ERROR) stops spending tokens. This is the FAULT channel, not the
+    // caller's abort — the manager still classifies the run by the error it receives.
+    onTrip: () => faults.abort(),
+  });
+
+  const wrapped = `${DETERMINISM_PRELUDE}\n(async () => {\n${body}\n})()`;
+  let result: unknown;
+  let scriptFailed = false;
+  try {
+    const scriptPromise = new vm.Script(wrapped, { filename: vmFilename }).runInContext(context) as Promise<unknown>;
+    // If the tripwire fires while the script is still running, the run fails NOW with
+    // SCRIPT_ERROR; the losing scriptPromise keeps its race handlers, so its own eventual
+    // rejection (e.g. WORKFLOW_ABORTED from the fault-channel cancel) never floats.
+    result = await Promise.race([scriptPromise, tripwire.tripped]);
+    await tripwire.drain();
+    if (shared.pendingCheckpoint) throw shared.pendingCheckpoint;
+    if (shared.pendingPause) throw shared.pendingPause;
+  } catch (error) {
+    scriptFailed = true;
+    if (shared.pendingPause && !signal.aborted) {
+      // A pause unwind: let every executing call finish and journal before settling. Late floats
+      // from the already-unwound script are swallowed rather than tripping a second failure.
+      tripwire.retire();
+      await drainLiveCalls();
+      throw shared.pendingPause;
+    }
+    // A WorkflowError crossing the script boundary keeps its classification (abort,
+    // usage limit, tripwire). Anything else IS the script crashing — label it SCRIPT_ERROR,
+    // never WORKFLOW_ABORTED (nobody cancelled anything).
+    if (error instanceof WorkflowError) throw error;
+    throw new WorkflowError(errorMessage(error), WorkflowErrorCode.SCRIPT_ERROR, { recoverable: false });
+  } finally {
+    if (unsettledCallInterruptions.size > 0 && !signal.aborted) {
+      if (scriptFailed) faults.abort();
+      else interruptUnsettledCalls();
+    }
+    tripwire.retire();
+  }
+
+  // Persist logs
+  const logFile = logger.persist();
+  if (logFile) {
+    log(`Logs persisted to ${logFile}`);
+  }
+
+  // Emit final token usage
+  options.onTokenUsage?.(shared.tokenUsage, callbackContext);
+
+  return {
+    meta,
+    result: result as T,
+    logs: state.logs,
+    phases: state.phases,
+    agentCount: shared.agentOccurrenceCount ?? 0,
+    durationMs: Date.now() - started,
+    runId,
+    tokenUsage: shared.tokenUsage,
+    agentSessions: state.agentSessions,
+    ...(state.fallbacks.length === 0 ? {} : { fallbacks: state.fallbacks }),
+    ...(state.checkpointsTaken.length === 0 ? {} : { checkpointsTaken: state.checkpointsTaken }),
+    calls: Object.freeze([...state.calls]) as WorkflowCallRecord[],
+    callsAllocated: state.callSeq,
+    ...(resumeReportPlan
+      ? { resumeReport: buildResumeReport(resumeReportPlan, [...resumeDecisions.values()], true) }
+      : {}),
+    effectiveLimits,
+    ...(abortSignaled ? { abortSignaled: true as const } : {}),
+    ...(nestedWorkflows ? { nestedWorkflows: true as const } : {}),
+  };
+}
+
+function sameFallback(left: WorkflowRunFallback, right: WorkflowRunFallback): boolean {
+  if (left.kind === "continuation" || right.kind === "continuation") {
+    return (
+      left.kind === "continuation" &&
+      right.kind === "continuation" &&
+      left.callIndex === right.callIndex &&
+      ((left.continuation?.outcome === "reattached" &&
+        right.continuation?.outcome === "reattached" &&
+        left.continuation.method === right.continuation.method) ||
+        (left.continuation?.outcome === "skipped" &&
+          right.continuation?.outcome === "skipped" &&
+          left.continuation.reason === right.continuation.reason))
+    );
+  }
+  return (
+    left.callIndex === right.callIndex &&
+    left.label === right.label &&
+    left.phase === right.phase &&
+    left.requestedSpec === right.requestedSpec &&
+    left.resolvedModel === right.resolvedModel &&
+    left.backendId === right.backendId &&
+    left.kind === right.kind &&
+    left.message === right.message
+  );
+}
+
+function parseWorkflowAst(script: string): AnyNode {
+  return parse(script, {
+    ecmaVersion: "latest",
+    sourceType: "module",
+    allowAwaitOutsideFunction: true,
+    allowReturnOutsideFunction: true,
+    locations: true,
+    ranges: false,
+  }) as AnyNode;
+}
+
+export function parseWorkflowScript(script: string): { meta: WorkflowMeta; body: string } {
+  const ast = parseWorkflowAst(script);
+
+  // This direct-syntax check provides fast author feedback without chasing aliases.
+  // DETERMINISM_PRELUDE remains the authoritative runtime enforcement for aliases,
+  // computed access, and other forms that intentionally stay outside this AST check.
+  const violation = findDeterminismViolation(ast);
+  if (violation) {
+    const start = violation.node.loc?.start;
+    const location = start ? ` at line ${start.line}, column ${start.column + 1}` : "";
+    throw new WorkflowError(
+      `Workflow scripts must be deterministic: ${violation.api} is unavailable${location}`,
+      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+      { recoverable: false },
+    );
+  }
+
+  const first = ast.body?.[0] as AnyNode | undefined;
+  if (first?.type !== "ExportNamedDeclaration") {
+    throw new WorkflowError(
+      "`export const meta = { name, description, phases }` must be the first statement in the script",
+      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+      { recoverable: false },
+    );
+  }
+
+  const declaration = first.declaration as AnyNode | null;
+  if (declaration?.type !== "VariableDeclaration" || declaration.kind !== "const") {
+    throw new WorkflowError(
+      "meta export must be `export const meta = ...`",
+      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+      {
+        recoverable: false,
+      },
+    );
+  }
+  if (declaration.declarations.length !== 1) {
+    throw new WorkflowError("meta export must declare only `meta`", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
+      recoverable: false,
+    });
+  }
+
+  const declarator = declaration.declarations[0] as AnyNode;
+  if (declarator.id?.type !== "Identifier" || declarator.id.name !== "meta") {
+    throw new WorkflowError("meta export must declare `meta`", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
+      recoverable: false,
+    });
+  }
+  if (!declarator.init)
+    throw new WorkflowError("meta must have a literal value", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
+      recoverable: false,
+    });
+
+  const meta = evaluateLiteral(declarator.init, "meta");
+  validateMeta(meta);
+
+  return {
+    meta,
+    body: script.slice(0, first.start) + script.slice(first.end),
+  };
+}
+
+/**
+ * Conservative static companion to the validator's reached-path mock report. It catches direct
+ * model-less calls hidden behind branches the fabricated dry-run result did not take, plus stdlib
+ * helpers/nested workflows that can allocate default-model agents. Aliased/computed calls are left
+ * to the reached-path report; a prior direct agent that controls such a branch is already enough to
+ * make this return true.
+ */
+export function workflowMayUseDefaultModel(script: string): boolean {
+  const parsed = parseWorkflowScript(script);
+  const ast = parseWorkflowAst(script);
+  const metaDefault = typeof parsed.meta.model === "string" && parsed.meta.model.trim() !== "";
+  const pending = [ast];
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    if (node.type === "CallExpression" && node.callee?.type === "Identifier") {
+      const name = node.callee.name;
+      if (name === "workflow") return true;
+      if (["verify", "judgePanel", "completenessCheck"].includes(name) && !metaDefault) return true;
+      if (name === "agent" && !metaDefault && !hasStaticModelOrTier(node.arguments?.[1])) return true;
+    }
+    pushAstChildren(node, pending);
+  }
+  return false;
+}
+
+function hasStaticModelOrTier(options: AnyNode | undefined): boolean {
+  if (options?.type !== "ObjectExpression") return false;
+  let modelPinned = false;
+  let tierPinned = false;
+  for (const property of options.properties as AnyNode[]) {
+    // A spread/computed key can replace either field. Later literal properties may pin it again.
+    if (property.type !== "Property" || property.computed || property.kind !== "init") {
+      modelPinned = false;
+      tierPinned = false;
+      continue;
+    }
+    const key = property.key?.type === "Identifier" ? property.key.name : property.key?.value;
+    if (key !== "model" && key !== "tier") continue;
+    const value = property.value?.type === "Literal" ? property.value.value : undefined;
+    if (key === "model") modelPinned = typeof value === "string";
+    else tierPinned = typeof value === "string" && value.trim() !== "";
+  }
+  return modelPinned || tierPinned;
+}
+
+function pushAstChildren(node: AnyNode, pending: AnyNode[]): void {
+  const children: AnyNode[] = [];
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item && typeof item === "object" && typeof (item as AnyNode).type === "string") children.push(item as AnyNode);
+      }
+    } else if (value && typeof value === "object" && typeof (value as AnyNode).type === "string") {
+      children.push(value as AnyNode);
+    }
+  }
+  for (let index = children.length - 1; index >= 0; index--) pending.push(children[index]);
+}
+
+function findDeterminismViolation(ast: AnyNode): { api: string; node: AnyNode } | undefined {
+  const pending = [ast];
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    const api = nondeterministicApi(node);
+    if (api) return { api, node };
+
+    pushAstChildren(node, pending);
+  }
+  return undefined;
+}
+
+function nondeterministicApi(node: AnyNode): string | undefined {
+  if (
+    (node.type === "CallExpression" || node.type === "NewExpression") &&
+    node.arguments.length === 0 &&
+    node.callee?.type === "Identifier" &&
+    node.callee.name === "Date"
+  ) {
+    return node.type === "NewExpression" ? "new Date()" : "Date()";
+  }
+  if (node.type !== "CallExpression" || node.callee?.type !== "MemberExpression" || node.callee.computed) {
+    return undefined;
+  }
+  const object = node.callee.object as AnyNode;
+  const property = node.callee.property as AnyNode;
+  if (object.type === "Identifier" && object.name === "Date" && property.type === "Identifier" && property.name === "now") {
+    return "Date.now()";
+  }
+  if (
+    object.type === "Identifier" &&
+    object.name === "Math" &&
+    property.type === "Identifier" &&
+    property.name === "random"
+  ) {
+    return "Math.random()";
+  }
+  return undefined;
+}
+
+function evaluateLiteral(node: AnyNode, path: string): unknown {
+  switch (node.type) {
+    case "ObjectExpression": {
+      const out: Record<string, unknown> = {};
+      for (const prop of node.properties as AnyNode[]) {
+        if (prop.type === "SpreadElement") throw new Error(`spread not allowed in ${path}`);
+        if (prop.type !== "Property") throw new Error(`only plain properties allowed in ${path}`);
+        if (prop.computed) throw new Error(`computed keys not allowed in ${path}`);
+        if (prop.kind !== "init" || prop.method) throw new Error(`methods/accessors not allowed in ${path}`);
+        const key = propertyKey(prop.key as AnyNode, path);
+        if (key === "__proto__" || key === "constructor" || key === "prototype") {
+          throw new Error(`reserved key name not allowed in ${path}: ${key}`);
+        }
+        out[key] = evaluateLiteral(prop.value as AnyNode, `${path}.${key}`);
+      }
+      return out;
+    }
+    case "ArrayExpression":
+      return (node.elements as Array<AnyNode | null>).map((element, index) => {
+        if (!element) throw new Error(`sparse arrays not allowed in ${path}`);
+        if (element.type === "SpreadElement") throw new Error(`spread not allowed in ${path}`);
+        return evaluateLiteral(element, `${path}[${index}]`);
+      });
+    case "Literal":
+      return node.value;
+    case "TemplateLiteral":
+      if (node.expressions.length > 0) throw new Error(`template interpolation not allowed in ${path}`);
+      return node.quasis.map((quasi: AnyNode) => quasi.value.cooked ?? quasi.value.raw).join("");
+    case "UnaryExpression":
+      if (node.operator === "-" && node.argument?.type === "Literal" && typeof node.argument.value === "number") {
+        return -node.argument.value;
+      }
+      throw new Error(`only negative-number unary allowed in ${path}`);
+    default:
+      throw new Error(`non-literal node type in ${path}: ${node.type}`);
+  }
+}
+
+function propertyKey(node: AnyNode, path: string): string {
+  if (node.type === "Identifier") return node.name;
+  if (node.type === "Literal" && (typeof node.value === "string" || typeof node.value === "number"))
+    return String(node.value);
+  throw new Error(`unsupported key type in ${path}: ${node.type}`);
+}
+
+function validateMeta(meta: unknown): asserts meta is WorkflowMeta {
+  if (!meta || typeof meta !== "object") throw new Error("meta must be an object");
+  const value = meta as WorkflowMeta;
+  if (typeof value.name !== "string" || !value.name.trim()) throw new Error("meta.name must be a non-empty string");
+  if (typeof value.description !== "string" || !value.description.trim())
+    throw new Error("meta.description must be a non-empty string");
+  if (value.model !== undefined && typeof value.model !== "string") throw new Error("meta.model must be a string");
+  if (value.phases !== undefined) {
+    if (!Array.isArray(value.phases)) throw new Error("meta.phases must be an array");
+    for (const [index, phase] of value.phases.entries()) {
+      if (!phase || typeof phase !== "object" || typeof (phase as WorkflowMetaPhase).title !== "string") {
+        throw new Error(
+          `meta.phases[${index}] must be an object shaped { title: string, detail?: string, model?: string }; phase entries cannot be strings`,
+        );
+      }
+      if ((phase as WorkflowMetaPhase).detail !== undefined && typeof (phase as WorkflowMetaPhase).detail !== "string") {
+        throw new Error(`meta.phases[${index}].detail must be a string`);
+      }
+      if ((phase as WorkflowMetaPhase).model !== undefined && typeof (phase as WorkflowMetaPhase).model !== "string") {
+        throw new Error(`meta.phases[${index}].model must be a string`);
+      }
+    }
+  }
+  if (value.backends !== undefined) validateMetaBackends(value.backends);
+}
+
+/** Structural validation of script-declared `meta.backends`. The engine only PARSES these —
+ *  it never spawns them; the composition root decides whether to approve and thread them
+ *  (ExecOptions.scriptBackends). Deep policy checks (reserved names, etc.) live in the
+ *  runner, which re-validates whatever it is handed. */
+function validateMetaBackends(backends: unknown): void {
+  if (!backends || typeof backends !== "object" || Array.isArray(backends)) {
+    throw new Error("meta.backends must be an object of { <name>: { command, args?, env?, sessionMeta?, structuredOutputTool? } }");
+  }
+  for (const [name, config] of Object.entries(backends as Record<string, unknown>)) {
+    if (!config || typeof config !== "object" || Array.isArray(config)) {
+      throw new Error(`meta.backends.${name} must be an object with at least { command }`);
+    }
+    const c = config as Record<string, unknown>;
+    if (typeof c.command !== "string" || !c.command.trim()) {
+      throw new Error(`meta.backends.${name}.command must be a non-empty string`);
+    }
+    if (c.args !== undefined && !(Array.isArray(c.args) && c.args.every((a) => typeof a === "string"))) {
+      throw new Error(`meta.backends.${name}.args must be an array of strings`);
+    }
+    if (
+      c.env !== undefined &&
+      (!c.env || typeof c.env !== "object" || Array.isArray(c.env) || Object.values(c.env).some((v) => typeof v !== "string"))
+    ) {
+      throw new Error(`meta.backends.${name}.env must be an object of string values`);
+    }
+    if (c.sessionMeta !== undefined && (!c.sessionMeta || typeof c.sessionMeta !== "object" || Array.isArray(c.sessionMeta))) {
+      throw new Error(`meta.backends.${name}.sessionMeta must be an object`);
+    }
+    if (c.structuredOutputTool !== undefined && typeof c.structuredOutputTool !== "boolean") {
+      throw new Error(`meta.backends.${name}.structuredOutputTool must be a boolean`);
+    }
+  }
+}
+
+function createLimiter(limit: number) {
+  let active = 0;
+  const queue: Array<() => void> = [];
+  const next = () => {
+    active--;
+    queue.shift()?.();
+  };
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    if (active >= limit) await new Promise<void>((resolve) => queue.push(resolve));
+    active++;
+    try {
+      return await fn();
+    } finally {
+      next();
+    }
+  };
+}
+
+function defaultAgentLabel(phase: string | undefined, index: number): string {
+  return phase ? `${phase} agent ${index}` : `agent ${index}`;
+}
+
+function captureCallPath(vmFilename: string, preludeLines: number): string | undefined {
+  const originalPrepareStackTrace = Error.prepareStackTrace;
+  const originalStackTraceLimit = Error.stackTraceLimit;
+  try {
+    Error.stackTraceLimit = CALL_PATH_RAW_FRAMES + 1;
+    Error.prepareStackTrace = (_error, stack) => stack;
+    const raw = new Error().stack as unknown as NodeJS.CallSite[];
+    if (!Array.isArray(raw) || raw.length === CALL_PATH_RAW_FRAMES + 1) return undefined;
+
+    const selected: NodeJS.CallSite[] = [];
+    let selecting = false;
+    for (const frame of raw) {
+      const selectable = frame.getFileName() === vmFilename && !frame.isAsync();
+      if (!selecting) {
+        if (!selectable) continue;
+        selecting = true;
+      } else if (!selectable) {
+        break;
+      }
+      selected.push(frame);
+    }
+    if (selected.length === 0) return undefined;
+
+    const normalized: string[] = [];
+    for (const frame of selected) {
+      const frameLine = frame.getLineNumber();
+      const column = frame.getColumnNumber();
+      if (frameLine === null || column === null) return undefined;
+      normalized.push(`${frameLine - (preludeLines + 1)}:${column}`);
+    }
+    return normalized.join("<");
+  } catch {
+    return undefined;
+  } finally {
+    Error.prepareStackTrace = originalPrepareStackTrace;
+    Error.stackTraceLimit = originalStackTraceLimit;
+  }
+}
+
+function hashCanonicalStrictJson(value: unknown): string | undefined {
+  const canonical = canonicalStrictJson(value);
+  return canonical === undefined ? undefined : createHash("sha256").update(canonical).digest("hex");
+}
+
+/** Stable binding for immutable routing inputs admitted before live execution. */
+export function hashWorkflowAdmissionRouting(input: {
+  format: 3;
+  routingSnapshot: WorkflowRoutingSnapshot;
+  defaultModel?: string;
+  scriptBackends?: Record<string, WorkflowBackendConfig>;
+}): string {
+  const hash = hashCanonicalStrictJson(input);
+  if (hash === undefined) {
+    throw new WorkflowError("workflow admission routing must be strict JSON", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, { recoverable: false });
+  }
+  return hash;
+}
+
+function copyTokenUsageBaseline(
+  value: Readonly<SharedRuntime["tokenUsage"]> | undefined,
+): SharedRuntime["tokenUsage"] {
+  if (value === undefined) {
+    return { input: 0, output: 0, total: 0, cost: 0, cacheRead: 0, cacheWrite: 0 };
+  }
+  const fields = ["input", "output", "total", "cost", "cacheRead", "cacheWrite"] as const;
+  for (const field of fields) {
+    if (!Number.isFinite(value[field]) || value[field] < 0) {
+      throw new WorkflowError(
+        `tokenUsageBaseline.${field} must be a finite non-negative number`,
+        WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+        { recoverable: false },
+      );
+    }
+  }
+  return { ...value };
+}
+
+function hashCallInputs(inputs: {
+  cwd: unknown;
+  isolation: unknown;
+  keepSession: unknown;
+  images: unknown;
+  mcpServers: unknown;
+  meta: unknown;
+  promptMeta: unknown;
+  label: unknown;
+  backends: unknown;
+}): string | undefined {
+  return hashCanonicalStrictJson(inputs);
+}
+
+/** Compatibility fingerprint for interrupted sessions recorded before format 2 removed
+ * retry and timeout controls from call identity. This is never written by a current run. */
+function hashCallInputsV1(inputs: {
+  cwd: unknown;
+  isolation: unknown;
+  keepSession: unknown;
+  images: unknown;
+  mcpServers: unknown;
+  meta: unknown;
+  promptMeta: unknown;
+  label: unknown;
+  backends: unknown;
+  retries: unknown;
+  timeoutMs: unknown;
+}): string | undefined {
+  return hashCanonicalStrictJson(inputs);
+}
+
+export function hashCheckpointInputs(options: CheckpointOptions): string | undefined {
+  const timeoutMs = options.timeoutMs;
+  return hashCanonicalStrictJson({
+    checkpointDecision: "explicit-v1",
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  });
+}
+
+function validateCheckpointOptionKeys(options: CheckpointOptions, realmObjectPrototype: object | undefined): void {
+  const invalid = (detail: string): never => {
+    throw new WorkflowError(`checkpoint() ${detail}`, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, { recoverable: false });
+  };
+  if (!options || typeof options !== "object" || Array.isArray(options)) invalid("options must be a plain object");
+  const prototype = Reflect.getPrototypeOf(options);
+  if (prototype !== null && prototype !== Object.prototype && prototype !== realmObjectPrototype) {
+    invalid("options must be a plain object");
+  }
+  const allowed = new Set(["kind", "choices", "timeoutMs"]);
+  for (const key of Reflect.ownKeys(options)) {
+    if (typeof key !== "string" || !allowed.has(key)) {
+      invalid(`unsupported option ${String(key)}; checkpoints require an explicit answer (headless and default are retired)`);
+    }
+  }
+}
+
+function validateCheckpointOptions(options: CheckpointOptions): void {
+  const invalid = (detail: string): never => {
+    throw new WorkflowError(`checkpoint() ${detail}`, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, { recoverable: false });
+  };
+  if (options.kind !== undefined && !["confirm", "input", "select"].includes(options.kind)) invalid("kind must be confirm, input, or select");
+  if (options.choices !== undefined && (!Array.isArray(options.choices) || options.choices.some(choice => typeof choice !== "string"))) {
+    invalid("choices must be an array of strings");
+  }
+  if (options.timeoutMs !== undefined && (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)) {
+    invalid("timeoutMs must be a positive finite number");
+  }
+}
+
+function validateAgentOptions(
+  options: AgentOptions,
+  realmObjectPrototype: object | undefined,
+): void {
+  try {
+    // The public bridge supplies script-realm objects while engine-owned helpers and
+    // the omitted-options default use host-realm objects. Accept exactly those plain
+    // prototypes (plus null), so inherited foreign option dialects cannot be ignored.
+    if (options === null || typeof options !== "object" || Array.isArray(options)) {
+      throw new Error("not an object");
+    }
+    const prototype = Reflect.getPrototypeOf(options);
+    if (prototype !== null && prototype !== Object.prototype && prototype !== realmObjectPrototype) {
+      throw new Error("wrong prototype");
+    }
+    const unknown = Reflect.ownKeys(options).filter(
+      (key): boolean => typeof key !== "string" || !AGENT_OPTION_KEY_SET.has(key),
+    );
+    if (unknown.length === 0) return;
+    const labelDescriptor = Reflect.getOwnPropertyDescriptor(options, "label");
+    const label = labelDescriptor && "value" in labelDescriptor && typeof labelDescriptor.value === "string"
+      ? labelDescriptor.value.trim()
+      : "";
+    const rendered = unknown.map((key) => typeof key === "symbol" ? key.toString() : JSON.stringify(key)).join(", ");
+    throw new WorkflowError(
+      `agent${label ? ` ${JSON.stringify(label)}` : ""} options contain unknown ${unknown.length === 1 ? "key" : "keys"} ${rendered}; ` +
+        `valid keys: ${AGENT_OPTION_KEYS.join(", ")}`,
+      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+      { recoverable: false, ...(label ? { agentLabel: label } : {}) },
+    );
+  } catch (error) {
+    if (error instanceof WorkflowError) throw error;
+    throw new WorkflowError(
+      "agent options must be a plain object with only documented keys",
+      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+      { recoverable: false },
+    );
+  }
+}
+
+function validateResumeDeclaration(
+  options: AgentOptions,
+  realmObjectPrototype: object | undefined,
+): boolean {
+  let present: boolean;
+  let resume: unknown;
+  try {
+    present = Reflect.has(options, "resume");
+    if (!present) return false;
+    resume = Reflect.get(options, "resume");
+    if (resume === null || typeof resume !== "object") throw new Error("not an object");
+    const prototype = Reflect.getPrototypeOf(resume);
+    if (prototype !== null && prototype !== realmObjectPrototype) throw new Error("wrong prototype");
+    const keys = Reflect.ownKeys(resume);
+    if (keys.length !== 1 || keys[0] !== "filesystem") throw new Error("invalid keys");
+    const descriptor = Reflect.getOwnPropertyDescriptor(resume, "filesystem");
+    if (
+      descriptor === undefined ||
+      descriptor.enumerable !== true ||
+      !("value" in descriptor) ||
+      descriptor.value !== "read-only"
+    ) {
+      throw new Error("invalid filesystem declaration");
+    }
+    return true;
+  } catch {
+    throw new WorkflowError(
+      'agent options.resume must be exactly { filesystem: "read-only" }',
+      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+      { recoverable: false },
+    );
+  }
+}
+
+function positionalSourceCall(
+  prepared: PreparedResume | undefined,
+  index: number,
+  kind: "agent" | "checkpoint",
+  hash: string,
+): WorkflowCallRecord | undefined {
+  if (prepared?.strategy !== "positional-v1") return undefined;
+  const source = prepared.sourceCalls.get(index);
+  return source?.index === index && source.kind === kind && source.hash === hash && source.outcome === "result"
+    ? source
+    : undefined;
+}
+
+/** Stable identity hash for a checkpoint() call — a cache miss on resume when anything changes. */
+function hashCheckpoint(promptText: string, options: CheckpointOptions): string {
+  const identity = JSON.stringify({
+    promptText,
+    kind: options.kind ?? "confirm",
+    choices: options.choices ?? null,
+  });
+  return createHash("sha256").update(identity).digest("hex");
+}
+
+function hashAgentCall(
+  prompt: string,
+  model: string | undefined,
+  mode: string | undefined,
+  phase: string | undefined,
+  options: AgentOptions,
+  agentDefKey: string | null,
+): string {
+  const configOptions = sortedConfigOptions(options.configOptions);
+  const identity = JSON.stringify({
+    prompt,
+    model: model ?? null,
+    // Included only when SET: a mode changes agent behavior (must invalidate resume),
+    // but journals written before modes existed must keep replaying for mode-less
+    // calls — an unconditional `mode: null` key would cache-miss every old journal.
+    ...(mode !== undefined ? { mode } : {}),
+    ...(configOptions ? { configOptions } : {}),
+    tier: options.tier ?? null,
+    phase: phase ?? null,
+    agentType: options.agentType ?? null,
+    // Resolved definition (tools/model/prompt) so editing an agent .md invalidates
+    // this call's cached result on a later resume.
+    agentDef: agentDefKey,
+    schema: options.schema ?? null,
+    // Included only when set, so older journals keep replaying.
+    ...(options.effort !== undefined ? { effort: options.effort } : {}),
+    ...(options.skills !== undefined ? { skills: options.skills } : {}),
+  });
+  return createHash("sha256").update(identity).digest("hex");
+}
+
+function sortedConfigOptions(
+  configOptions: Record<string, string | boolean> | undefined,
+): Record<string, string | boolean> | undefined {
+  if (!configOptions || Object.keys(configOptions).length === 0) return undefined;
+  const ids = Object.keys(configOptions).sort();
+  const sorted = Object.fromEntries(ids.map((id) => [id, configOptions[id]]));
+  // JSON.stringify normally hoists integer-like object keys into numeric order. ACP option ids
+  // are unrestricted strings, so expose the already-sorted key list through [[OwnPropertyKeys]]
+  // and keep the contract lexicographic for ids such as "10" and "2" as well.
+  return new Proxy(sorted, { ownKeys: () => ids });
+}
+
+function assertNoModelConfigOption(
+  configOptions: Record<string, string | boolean> | undefined,
+  label: string,
+): void {
+  if (!configOptions || !("model" in configOptions)) return;
+  throw new WorkflowError(
+    `agent "${label}": configOptions option "model" with authored value ${JSON.stringify(configOptions.model)} is reserved; use the model field instead`,
+    WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+    { recoverable: false, agentLabel: label },
+  );
+}
+
+function hasModelConfigOption(configOptions: Record<string, string | boolean> | undefined): boolean {
+  return Boolean(configOptions && "model" in configOptions);
+}
+
+function buildAgentInstructions(
+  runInstructions: string | undefined,
+  phase: string | undefined,
+  options: AgentOptions,
+  def: AgentDefinition | undefined,
+  resolvedIsolation?: "worktree",
+): string | undefined {
+  const lines: string[] = [];
+  if (runInstructions) lines.push(runInstructions);
+  // A resolved agentType binds a real role prompt (the definition body). Only
+  // fall back to the prose hint when the agentType named no known definition.
+  if (def?.prompt) lines.push(def.prompt);
+  else if (options.agentType) lines.push(`Act as workflow subagent type: ${options.agentType}`);
+  if (phase) lines.push(`Workflow phase: ${phase}`);
+  // Use resolvedIsolation so the annotation fires whether isolation came from
+  // the call site or from the agentDef's isolation field.
+  if (resolvedIsolation) lines.push(`Requested isolation: ${resolvedIsolation}`);
+  // Note: options.model is applied for real via the session, not injected as prose.
+  return lines.length ? lines.join("\n\n") : undefined;
+}
+
+function isEmptyTextAgentResult(result: unknown, schema: TSchema | undefined): boolean {
+  return schema === undefined && typeof result === "string" && result.trim().length === 0;
+}
+
+function estimateTokens(value: unknown): number {
+  return Math.ceil(JSON.stringify(value ?? "").length / 4);
+}
+
+function normalizeConcurrency(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 1) return 1;
+  return Math.min(MAX_CONCURRENCY, Math.floor(value));
+}
+
+function normalizeAgentRetries(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return 0;
+  return Math.min(MAX_AGENT_RETRIES, Math.floor(value));
+}
+
+function copyValidUsage(value: AgentUsage): AgentUsage | undefined {
+  try {
+    const copy: AgentUsage = {
+      input: value.input,
+      output: value.output,
+      cacheRead: value.cacheRead,
+      cacheWrite: value.cacheWrite,
+      total: value.total,
+      cost: value.cost,
+    };
+    return Object.values(copy).every((field) => Number.isFinite(field) && field >= 0)
+      ? deepFreeze(copy)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function sumUsage(values: AgentUsage[]): AgentUsage | undefined {
+  if (values.length === 0) return undefined;
+  return deepFreeze(
+    values.reduce<AgentUsage>(
+      (sum, usage) => ({
+        input: sum.input + usage.input,
+        output: sum.output + usage.output,
+        cacheRead: sum.cacheRead + usage.cacheRead,
+        cacheWrite: sum.cacheWrite + usage.cacheWrite,
+        total: sum.total + usage.total,
+        cost: sum.cost + usage.cost,
+      }),
+      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0 },
+    ),
+  );
+}
+
+function bestEffortDebug(message: string): void {
+  try {
+    console.debug(`[engine] ${message}`);
+  } catch {
+    // Debug reporting never changes execution.
+  }
+}
+
+function agentCancellationReason(signal: AbortSignal): WorkflowError | undefined {
+  if (!signal.aborted) return undefined;
+  const reason = signal.reason;
+  return reason instanceof WorkflowError && reason.code === WorkflowErrorCode.AGENT_CANCELLED
+    ? reason
+    : undefined;
+}
+
+/** Settle a selected attempt even when its runner ignores the abort signal. */
+async function withAgentCancellation<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  const alreadyCancelled = agentCancellationReason(signal);
+  if (alreadyCancelled) throw alreadyCancelled;
+
+  let onAbort: (() => void) | undefined;
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    onAbort = () => {
+      const reason = agentCancellationReason(signal);
+      if (reason) reject(reason);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+
+  try {
+    return await Promise.race([promise, cancelled]);
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
+}

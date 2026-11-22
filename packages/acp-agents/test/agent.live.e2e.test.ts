@@ -2,7 +2,7 @@
 // every choreography; this leg proves the SDK's BEHAVIOR on the installed agents — a fork sees
 // what the parent committed before it, two parallel forks are independent, a later fork sees the
 // parent's later turns, and `close({ keep: true })` + `AcpAgent.resume(ref)` reattaches the same
-// session with its memory intact — against real Claude, Codex, OpenCode, and pi.
+// session with its memory intact — against real Claude and Codex.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -24,20 +24,17 @@ const SKIP_CODEX: string | false = CODEX_LIVE
     ? "Codex live leg is opt-in — set AGENTPRISM_LIVE_E2E_CODEX=1 with Codex credits to run"
     : SKIP;
 
-type LiveBackend = "claude" | "codex" | "opencode" | "pi";
+type LiveBackend = "claude" | "codex";
 
 // The Claude adapter validates `model` against the SESSION's selectable option list — the CLI's
 // model picker for the working directory. Each leg runs in a fresh temp cwd, so the picker is
 // whatever the environment says: ANTHROPIC_DEFAULT_OPUS_MODEL (exported by .githooks/pre-push) is
 // what makes this model selectable there. Naming it explicitly keeps the gate honest — if it ever
 // stops being selectable the leg fails with "Invalid value for config option model" instead of
-// quietly forking a different model than the one we intend to gate on. The OpenCode and pi
-// defaults mirror packages/mcp-server/test/live-backend.e2e.test.ts.
+// quietly forking a different model than the one we intend to gate on.
 const BACKEND_MODEL: Record<LiveBackend, string> = {
   claude: process.env.AGENTPRISM_CLAUDE_E2E_MODEL ?? "claude/claude-opus-4-8",
   codex: "codex",
-  opencode: process.env.AGENTPRISM_OPENCODE_E2E_MODEL ?? "opencode/openrouter/deepseek/deepseek-v4-flash",
-  pi: `pi/${process.env.AGENTPRISM_PI_E2E_MODEL ?? "openrouter/google/gemini-2.5-flash"}`,
 };
 
 const CODEWORD_QUESTION = "What is the codeword you were asked to remember? Reply with only the codeword.";
@@ -172,8 +169,3 @@ test("live AcpAgent e2e: Claude fork/resume", { skip: SKIP, timeout: 240_000 }, 
 test("live AcpAgent e2e: Codex fork/resume", { skip: SKIP_CODEX, timeout: 240_000 }, () =>
   forkAndResumeLiveBackend("codex"));
 
-test("live AcpAgent e2e: OpenCode fork/resume", { skip: SKIP, timeout: 240_000 }, () =>
-  forkAndResumeLiveBackend("opencode"));
-
-test("live AcpAgent e2e: pi fork/resume", { skip: SKIP, timeout: 240_000 }, () =>
-  forkAndResumeLiveBackend("pi"));

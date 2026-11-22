@@ -7,8 +7,8 @@
 
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentRunner } from "@automatalabs/shared-types";
-import { fabricateFromSchema } from "@automatalabs/workflows";
+import type { AgentRunner } from "@orchestrator/shared-types";
+import { fabricateFromSchema } from "@orchestrator/engine";
 import { forgetRun } from "./daemon.js";
 import { loadConfig, type HomePaths } from "./home.js";
 import { createRun, resolveWorkflow } from "./launch.js";

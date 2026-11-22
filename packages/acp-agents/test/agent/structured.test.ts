@@ -1,6 +1,6 @@
 // Schema plumbing of the SDK (src/agent/structured.ts) per backend channel: Claude's session
 // _meta + native result, Codex's per-turn _meta.outputSchema (+ the per-turn override), the
-// injected StructuredOutput HTTP tool on http-MCP agents (pi here), the no-injection embed +
+// injected StructuredOutput HTTP tool on http-MCP agents (a custom backend here), the no-injection embed +
 // final-text fallback, the per-turn result resolution and its structuredError, the opt-in
 // `schemaRetries` repair ladder (default 0 = one turn; the runner's repair prompt with the
 // validation error; attempts counted; per-turn override; exhausted; never after a non-end_turn),
@@ -8,7 +8,7 @@
 import test, { after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import { isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import { Type } from "typebox";
 import {
   AcpAgent,
@@ -39,7 +39,9 @@ interface LogEntry {
 
 const SCHEMA = Type.Object({ answer: Type.Number() });
 
-const harness = createFakeAgentHarness({ prefix: "acp-agent-structured-it-", backends: ["claude", "codex", "opencode", "pi"] });
+const harness = createFakeAgentHarness({ prefix: "acp-agent-structured-it-", backends: ["claude", "codex"] });
+// A registered custom backend on the fake agent: the injected-tool channel.
+const CUSTOM = { custom: { command: process.execPath, args: [FAKE_AGENT_FIXTURE] } };
 const configure = (scenario: unknown, options?: Parameters<typeof harness.configure>[1]) =>
   harness.configure<LogEntry>(scenario, options);
 const track = (agent: AcpAgent): AcpAgent => trackAgent(harness, agent);
@@ -106,13 +108,13 @@ test("Codex: the session schema rides every turn's _meta.outputSchema, a per-tur
   assert.match(third.structuredError!, /native result rejected/);
 });
 
-test("pi/opencode/custom: the StructuredOutput tool is injected when http MCP is advertised and the capture wins over prose", async () => {
+test("custom: the StructuredOutput tool is injected when http MCP is advertised and the capture wins over prose", async () => {
   const userServer = { type: "http" as const, name: "structured_output", url: "http://127.0.0.1:1/x", headers: [] };
   const { cwd, readLog } = configure({
     mcpHttpSupport: true,
     turns: [{ structuredToolCall: { arguments: { answer: 7 } }, text: "prose" }],
   });
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", schema: SCHEMA, mcpServers: [userServer] }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA, mcpServers: [userServer] }));
   const servers = newSessionServers(readLog());
   assert.equal(servers.length, 2);
   assert.deepEqual(servers[0], userServer);
@@ -132,7 +134,7 @@ test("pi/opencode/custom: the StructuredOutput tool is injected when http MCP is
 
 test("no http MCP → no injection; the schema is embedded and the final-text fallback validates", async () => {
   const { cwd, readLog } = configure({ mcpHttpSupport: false, turns: [{ text: '{"answer":"3"}' }] });
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", schema: SCHEMA }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA }));
   assert.equal(newSessionServers(readLog()).some((server) => server.name?.startsWith("structured_output")), false);
   const turn = await agent.prompt("q");
   assert.deepEqual(turn.structured, { answer: 3 }, "typebox Convert coerces the string");
@@ -145,7 +147,7 @@ test("no http MCP → no injection; the schema is embedded and the final-text fa
 test("the default schemaRetries of 0 keeps prompt() one turn: a miss sets structuredError and structuredAttempts 1, nothing is re-prompted", async () => {
   {
     const { cwd, readLog } = configure({ mcpHttpSupport: false, turns: [{ text: "no json here" }] });
-    const agent = track(await AcpAgent.open({ cwd, model: "pi", schema: SCHEMA }));
+    const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA }));
     const turn = await agent.prompt("q");
     assert.equal(count(readLog(), "prompt"), 1, "exactly one prompt: the default budget buys no repair");
     assert.equal(turn.structured, undefined);
@@ -185,7 +187,7 @@ test("schemaRetries: an invalid turn is repaired inside the same prompt() — th
       { text: '{"answer":5}', usage: { inputTokens: 20, outputTokens: 2, totalTokens: 22 } },
     ],
   });
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", schema: SCHEMA, schemaRetries: 1 }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA, schemaRetries: 1 }));
   const events: AcpAgentStreamEvent[] = [];
   let turn: AcpAgentTurn | undefined;
   for await (const event of agent.stream("classify")) {
@@ -252,13 +254,13 @@ test("schemaRetries exhausted: structuredAttempts is 1 + n, structured stays abs
 
 test("a per-turn schemaRetries wins over the constructor's in both directions", async () => {
   const { cwd, readLog } = configure({ mcpHttpSupport: false, turns: [{ text: "nope" }, { text: '{"answer":1}' }] });
-  const conservative = track(await AcpAgent.open({ cwd, model: "pi", schema: SCHEMA }));
+  const conservative = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA }));
   const repaired = await conservative.prompt("a", { schemaRetries: 1 });
   assert.deepEqual(repaired.structured, { answer: 1 });
   assert.equal(repaired.structuredAttempts, 2);
   assert.equal(count(readLog(), "prompt"), 2);
 
-  const generous = track(await AcpAgent.open({ cwd, model: "pi", schema: SCHEMA, schemaRetries: 3 }));
+  const generous = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA, schemaRetries: 3 }));
   const single = await generous.prompt("b", { schemaRetries: 0 });
   assert.equal(single.structured, undefined);
   assert.equal(single.structuredAttempts, 1);
@@ -274,7 +276,7 @@ test("injected tool active: a turn that skipped StructuredOutput is re-prompted 
     mcpHttpSupport: true,
     turns: [{ text: "prose only" }, { structuredToolCall: { arguments: { answer: 7 } }, text: "called it" }],
   });
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", schema: SCHEMA, schemaRetries: 1 }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA, schemaRetries: 1 }));
   const turn = await agent.prompt("classify");
   assert.deepEqual(turn.structured, { answer: 7 });
   assert.equal(turn.structuredAttempts, 2);
@@ -307,7 +309,7 @@ test("Codex: the repair turn carries the same per-turn _meta.outputSchema, with 
 test("an attempt that did not end with end_turn is never repaired: refusal and cancelled end the ladder with structuredAttempts 1", async () => {
   for (const stopReason of ["refusal", "cancelled"] as const) {
     const { cwd, readLog } = configure({ mcpHttpSupport: false, turns: [{ text: "nope", stopReason }, { text: '{"answer":1}' }] });
-    const agent = track(await AcpAgent.open({ cwd, model: "pi", schema: SCHEMA, schemaRetries: 2 }));
+    const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA, schemaRetries: 2 }));
     const turn = await agent.prompt("q");
     assert.equal(turn.stopReason, stopReason);
     assert.equal(count(readLog(), "prompt"), 1, `${stopReason}: no repair turn was sent`);
@@ -333,7 +335,7 @@ test("schemaRetries is validated: the constructor refuses before any spawn, a pe
   ];
   for (const [bad, rendered] of rejected) {
     assert.throws(
-      () => new AcpAgent({ cwd, model: "pi", schema: SCHEMA, schemaRetries: bad as number }),
+      () => new AcpAgent({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA, schemaRetries: bad as number }),
       (error: unknown) => {
         invalidArgument(/^AcpAgent: schemaRetries must be an integer >= 0 \(the number of extra repair turns\), got /)(error);
         assert.ok((error as Error).message.endsWith(`, got ${rendered}`), `renders ${String(bad)} as ${rendered}: ${(error as Error).message}`);
@@ -343,7 +345,7 @@ test("schemaRetries is validated: the constructor refuses before any spawn, a pe
     );
   }
   assert.equal(count(readLog(), "__start"), 0, "nothing spawned");
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", schema: SCHEMA }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA }));
   await assert.rejects(
     () => agent.prompt("q", { schemaRetries: 2.5 }),
     invalidArgument(/AcpAgent\.prompt\(\{ schemaRetries \}\): schemaRetries must be an integer >= 0/),
@@ -360,9 +362,8 @@ test("forks inherit schemaRetries", async () => {
       forkSession: { turns: [{ text: "nope" }, { text: '{"answer":2}' }] },
       turns: [{ text: '{"answer":1}' }],
     },
-    { backends: ["pi"] },
   );
-  const parent = track(await AcpAgent.open({ cwd, model: "pi", schema: SCHEMA, schemaRetries: 1 }));
+  const parent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA, schemaRetries: 1 }));
   assert.deepEqual((await parent.prompt("p")).structured, { answer: 1 });
   const child = track(await parent.fork());
   const turn = await child.prompt("c");
@@ -380,7 +381,7 @@ test("an injected-tool capture belongs to one turn only", async () => {
       { structuredToolCall: { arguments: { answer: 9 } }, text: "prose again" },
     ],
   });
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", schema: SCHEMA }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA }));
   const one = await agent.prompt("1");
   assert.deepEqual(one.structured, { answer: 7 });
   const two = await agent.prompt("2");
@@ -392,11 +393,9 @@ test("an injected-tool capture belongs to one turn only", async () => {
   assert.equal(count(readLog(), "prompt"), 3);
 });
 
-test("per-turn schema is rejected on claude, pi, opencode, and custom with a pointer at the constructor option", async () => {
+test("per-turn schema is rejected on claude and custom with a pointer at the constructor option", async () => {
   const targets: Array<{ model: string; id: string; backends?: Record<string, { command: string; args: string[] }> }> = [
     { model: "claude", id: "claude" },
-    { model: "pi", id: "pi" },
-    { model: "opencode", id: "opencode" },
     { model: "fake", id: "fake", backends: { fake: { command: process.execPath, args: [FAKE_AGENT_FIXTURE] } } },
   ];
   for (const target of targets) {
@@ -419,7 +418,7 @@ test("per-turn schema is rejected on claude, pi, opencode, and custom with a poi
 
 test("close() releases the tool registration and disposes the host", async () => {
   const { cwd, readLog } = configure({ mcpHttpSupport: true, turns: [{ structuredToolCall: { arguments: { answer: 1 } } }] });
-  const agent = track(await AcpAgent.open({ cwd, model: "pi", schema: SCHEMA }));
+  const agent = track(await AcpAgent.open({ cwd, model: "custom", backends: CUSTOM, schema: SCHEMA }));
   const url = newSessionServers(readLog()).find((server) => server.name === "structured_output")?.url;
   assert.ok(url, "the injected server URL");
   assert.deepEqual((await agent.prompt("q")).structured, { answer: 1 }, "the host answered while the agent was live");

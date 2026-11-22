@@ -7,7 +7,7 @@ import {
   type AgentResultProvenance,
   type AgentSessionRef,
   type AgentUsage,
-} from "@automatalabs/shared-types";
+} from "@orchestrator/shared-types";
 import {
   AcpAgentRunner,
   CustomAcpBackend,

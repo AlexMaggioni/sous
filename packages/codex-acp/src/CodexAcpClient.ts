@@ -845,7 +845,7 @@ export class CodexAcpClient {
         let serversToConfigure = requestedServers;
         if (shouldDeduplicateMcpConflicts()) {
             // Prevents Codex from deep-merging incompatible field types, such as url and stdio schemas.
-            // orchestrator: a requested server with the same transport as the configured one of that
+            // A requested server with the same transport as the configured one of that
             // name replaces it, so the client's definition wins. Only a transport mismatch keeps the
             // configured server.
             const existing = await this.getConfigMcpServerTransports(projectPath);
@@ -864,7 +864,7 @@ export class CodexAcpClient {
         };
     }
 
-    /** orchestrator: each configured MCP server name with the transports its config layers give it. */
+    /** Each configured MCP server name with the transports its config layers give it. */
     private async getConfigMcpServerTransports(projectPath: string): Promise<Map<string, Set<"stdio" | "http">>> {
         const response = await this.codexClient.configRead({ includeLayers: true, cwd: projectPath });
         const effectiveMcpServers = response?.config?.["mcp_servers"];
@@ -1072,7 +1072,7 @@ export class CodexAcpClient {
             serviceTier: serviceTier,
             // agentprism patch: forward a turn-level JSON Schema so the Codex App Server
             // constrains the FINAL assistant message (turn/start.outputSchema -> Responses
-            // API strict mode). Supplied by @automatalabs/acp-agents via the prompt's
+            // API strict mode). Supplied by @orchestrator/acp-agents via the prompt's
             // _meta["outputSchema"] (bare key, mirroring the target param name); null when unset.
             outputSchema: (request._meta as any)?.["outputSchema"] ?? null,
         }, onTurnStarted);
@@ -1335,7 +1335,7 @@ function formatUriAsLink(name: string | null | undefined, uri: string): string {
     return uri;
 }
 
-/** orchestrator: the transport Codex config gives an ACP MCP server: url for http, command for stdio. */
+/** The transport Codex config gives an ACP MCP server: url for http, command for stdio. */
 function mcpTransport(server: McpServer): "stdio" | "http" | "other" {
     if (!("type" in server)) return "stdio";
     return server.type === "http" ? "http" : "other";

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import { WorkflowError } from "@automatalabs/shared-types";
+import { WorkflowError } from "@orchestrator/shared-types";
 import { lookupAgents, lookupMcpServers, planStep, registryOf, type LookupSettings } from "../src/agents.js";
 import { parseArgs, parseSets } from "../src/cli.js";
 import { cronMatches, nextRun, parseCron } from "../src/cron.js";
@@ -199,7 +199,7 @@ describe("agents", () => {
     );
   });
 
-  it("gives the default harness's copy of an agent in two harness folders, else refuses it", () => {
+  it("gives the default harness's copy of an agent in both harnesses' folders", () => {
     const place = lookupPlace();
     const claude = join(place.projectDir, ".claude", "agents", "reviewer.md");
     const codex = join(place.projectDir, ".codex", "agents", "reviewer.toml");
@@ -207,9 +207,6 @@ describe("agents", () => {
     write(codex, 'name = "reviewer"\ndescription = "reviews"\ndeveloper_instructions = "Answer CODEX."\n');
     assert.equal(lookupAgents(place).agents.get("reviewer")?.prompt, "Answer CLAUDE.");
     assert.equal(lookupAgents({ ...place, defaultHarness: "codex" }).agents.get("reviewer")?.prompt, "Answer CODEX.");
-    const none = planStep(lookupAgents({ ...place, defaultHarness: "opencode" }), "reviewer");
-    assert.ok("problem" in none);
-    assert.match(none.problem, new RegExp(`is in ${claude} and ${codex}, not in rulesync, and OpenCode, the default harness, has no copy\\. Move it to rulesync`));
     const missing = planStep(lookupAgents(place), "nobody");
     assert.ok("problem" in missing);
     assert.match(missing.problem, /^no agent "nobody"\. orc looks in \.rulesync\/subagents\/, then the global rulesync folder/);
@@ -221,7 +218,7 @@ describe("agents", () => {
     write(join(place.projectDir, ".claude", "agents", "reviewer.md"), "---\nname: reviewer\n---\nAnswer FOLDER.\n");
     const planned = planStep(lookupAgents(place), "reviewer");
     assert.ok("problem" in planned);
-    assert.match(planned.problem, /orc\.harness is "gemini"\. Use one of claude, codex, opencode, pi\./);
+    assert.match(planned.problem, /orc\.harness is "gemini"\. Use one of claude, codex\./);
   });
 
   it("finds an MCP server in rulesync before the harness's own config", () => {
@@ -273,6 +270,20 @@ describe("runner", () => {
       assert.equal(error.recoverable, true);
       return true;
     });
+  });
+
+  it("refuses a step whose model names Pi or OpenCode instead of running it on Claude Code", async () => {
+    let calls = 0;
+    const runner = createOrcRunner({ cwd: temp("runner-removed"), inner: { run: async () => { calls += 1; return "ok"; } } as never });
+    for (const model of ["pi/gpt-test", "opencode/big", "OpenCode"]) {
+      await assert.rejects(runner.run("go", { label: "old", model } as never), (error: unknown) => {
+        assert.ok(error instanceof WorkflowError);
+        assert.match(error.message, /^step "old": model "[^"]+" names the harness "(pi|opencode)", which orc no longer runs\. Use one of claude, codex\.$/);
+        assert.equal(error.recoverable, false);
+        return true;
+      });
+    }
+    assert.equal(calls, 0, "no agent session starts");
   });
 
   it("keeps the meta it was given when there is no effort or skill", () => {

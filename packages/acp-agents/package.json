@@ -1,5 +1,5 @@
 {
-  "name": "@automatalabs/acp-agents",
+  "name": "@orchestrator/acp-agents",
   "version": "3.3.1",
   "license": "Apache-2.0",
   "engines": {
@@ -44,9 +44,8 @@
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.81.2",
     "@agentclientprotocol/sdk": "^1.5.0",
-    "@automatalabs/codex-acp": "workspace:*",
-    "@automatalabs/pi-acp": "workspace:*",
-    "@automatalabs/shared-types": "workspace:*",
+    "@orchestrator/codex-acp": "workspace:*",
+    "@orchestrator/shared-types": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30",
     "typebox": "1.3.2"
   }

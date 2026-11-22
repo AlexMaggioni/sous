@@ -1,27 +1,27 @@
 # Repository agent instructions
 
-This repository is orchestrator: a way for one person to define, run and follow workflows of agents and scripts on their own machine. It starts from AgentPrism Workflows (Apache-2.0). The `upstream` remote points to it, to pull fixes from. `NOTICE` names the source.
+This repository is orchestrator: a way for one person to define, run and follow workflows of agents and scripts on their own machine. It started from AgentPrism Workflows (Apache-2.0), and `NOTICE` names the source.
 
 ## What to read first
 
-- `README.md`: what orchestrator adds and how to run it.
+- `README.md`: what orc is and how to build it.
 - `docs/orchestrator.md`: the features, the commands and the file formats.
-- `docs/api.md`: the SDK as AgentPrism ships it.
+- `docs/refactor-plan.md`: the refactor under way, step by step.
 
 The code and its tests are the current state. When prose and code disagree, fix the prose.
 
 ## Rules
 
-- Change AgentPrism's code freely when it gives a better result. Keep each change easy to find, so a later merge from `upstream` stays possible.
-- Keep `workflow-engine` backend-agnostic and `acp-agents` engine-agnostic. They meet through `shared-types`. The direction is `mcp-server -> workflows -> {workflow-engine, acp-agents} -> shared-types`.
-- Keep the default test suite deterministic and free of credentials. Live tests stay behind their environment variables.
+- The repository ends with three packages: `orc`, `engine` and `harnesses`. `docs/refactor-plan.md` says how it gets there.
+- The architecture test lives in `test/architecture.test.mjs`. Change its tables only in a commit of their own, and never to turn a red test green.
+- Keep the default tests deterministic and free of credentials. Live tests stay behind their environment variables.
+- Tests never write into the real home folder. The engine and orc test scripts give each run a temporary HOME. A test that needs a folder makes its own.
 - Never weaken a test to make a change pass.
-- Plain, short sentences in docs. No emojis.
+- Keep docs plain and short. No emojis.
 
 ## Development
 
 - Node.js 22 or newer and pnpm 10. Run commands from the repository root.
 - `pnpm install`, then `pnpm build`.
-- While iterating, run one package's tests, for example `pnpm --filter @automatalabs/workflow-engine test`.
-- Before pushing, run `pnpm build`, `pnpm typecheck` and the tests of each package you changed.
-- `docs/authoring/**` holds the authoring skills served over MCP. `pnpm build` regenerates `packages/mcp-server/src/generated/authoring-skills-content.ts`; commit it with the source change.
+- While iterating, run one package's tests, for example `pnpm --filter @orchestrator/engine test`.
+- Before pushing, run `pnpm build`, `pnpm typecheck` and `pnpm test`.

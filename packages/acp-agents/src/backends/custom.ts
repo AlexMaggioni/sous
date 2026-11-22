@@ -1,6 +1,6 @@
 // CustomAcpBackend — drives ANY registered ACP agent (registry.ts), not just the built-in
 // Claude/Codex pair. The generic dialect it speaks is the one this repo already publishes:
-//   - schema IN:   the bare turn-level `_meta.outputSchema` (same key the @automatalabs/codex-acp
+//   - schema IN:   the bare turn-level `_meta.outputSchema` (same key the @orchestrator/codex-acp
 //                  fork reads), as a plain JSON Schema. An agent that honors it constrains its
 //                  final message natively. When the negotiated agent advertises HTTP MCP support,
 //                  the runner also injects a client-hosted StructuredOutput tool whose inputSchema
@@ -16,7 +16,7 @@
 // and a custom agent's own knobs travel through the generic meta channels instead.
 import { createHash } from "node:crypto";
 import type { TSchema } from "typebox";
-import { META_KEYS } from "@automatalabs/shared-types";
+import { META_KEYS } from "@orchestrator/shared-types";
 import type { Backend, SpawnConfig, StructuredSource } from "../backend.js";
 import type { RegisteredBackend } from "../registry.js";
 import { toJsonSchema } from "../schema-strict.js";

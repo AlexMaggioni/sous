@@ -3,13 +3,11 @@
 // SCRIPT_VALIDATION_ERROR naming the backend, never a silent drop).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isWorkflowError, WorkflowErrorCode, type SystemPromptOptions } from "@automatalabs/shared-types";
+import { isWorkflowError, WorkflowErrorCode, type SystemPromptOptions } from "@orchestrator/shared-types";
 import {
   ClaudeBackend,
   CodexBackend,
   CustomAcpBackend,
-  OpenCodeBackend,
-  PiBackend,
   assertSystemPromptSupported,
   describeSystemPromptSupport,
 } from "../src/index.js";
@@ -26,7 +24,7 @@ function validation(pattern: RegExp, label?: string) {
 }
 
 test("undefined and empty instructions normalize to undefined on every backend", () => {
-  for (const backend of [new ClaudeBackend(), new CodexBackend(), new PiBackend(), new OpenCodeBackend()]) {
+  for (const backend of [new ClaudeBackend(), new CodexBackend(), new CustomAcpBackend({ name: "mine", command: "mine-acp" })]) {
     assert.equal(assertSystemPromptSupported(backend, undefined, undefined), undefined);
     assert.equal(assertSystemPromptSupported(backend, {}, undefined), undefined);
     assert.equal(assertSystemPromptSupported(backend, { replace: undefined, append: undefined }, undefined), undefined);
@@ -36,7 +34,7 @@ test("undefined and empty instructions normalize to undefined on every backend",
 test("a supported request is returned with only its defined fields", () => {
   assert.deepEqual(assertSystemPromptSupported(new CodexBackend(), { replace: "R", append: undefined }, "x"), { replace: "R" });
   assert.deepEqual(assertSystemPromptSupported(new ClaudeBackend(), { append: "A" }, "x"), { append: "A" });
-  assert.deepEqual(assertSystemPromptSupported(new PiBackend(), { replace: "R", append: "A" }, "x"), { replace: "R", append: "A" });
+  assert.deepEqual(assertSystemPromptSupported(new ClaudeBackend(), { replace: "R", append: "A" }, "x"), { replace: "R", append: "A" });
 });
 
 test("shape errors: non-object, unknown field, non-string or blank field", () => {
@@ -64,14 +62,14 @@ test("shape errors: non-object, unknown field, non-string or blank field", () =>
 });
 
 test("a backend without the channel refuses both fields and points at its own configuration / meta", () => {
-  const opencode = new OpenCodeBackend();
+  const noChannel = { id: "no-channel", systemPrompt: { replace: false, append: false } };
   assert.throws(
-    () => assertSystemPromptSupported(opencode, { replace: "R" }, "oc"),
-    validation(/systemPrompt\.replace is not supported by backend "opencode" \(supported: none\); this backend exposes no ACP system-prompt channel/, "oc"),
+    () => assertSystemPromptSupported(noChannel, { replace: "R" }, "oc"),
+    validation(/systemPrompt\.replace is not supported by backend "no-channel" \(supported: none\); this backend exposes no ACP system-prompt channel/, "oc"),
   );
   assert.throws(
-    () => assertSystemPromptSupported(opencode, { replace: "R", append: "A" }, undefined),
-    validation(/systemPrompt\.replace \/ append is not supported by backend "opencode"/),
+    () => assertSystemPromptSupported(noChannel, { replace: "R", append: "A" }, undefined),
+    validation(/systemPrompt\.replace \/ append is not supported by backend "no-channel"/),
   );
   const custom = new CustomAcpBackend({ name: "mine", command: "mine-acp" });
   assert.throws(

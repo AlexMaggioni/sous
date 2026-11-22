@@ -1,13 +1,13 @@
 // Per-agent traits (src/traits.ts, `AcpAgent#traits`, `AcpAgent.traits()`): the table-based
 // answer for every built-in checked field by field against the executable protocol-coverage
 // tables, a custom registry backend's answer (its own declarations, never a shadowed built-in's
-// rows), the live refinement through the fake agent's scripted initialize `_meta` (pi's bare
+// rows), the live refinement through the fake agent's scripted initialize `_meta` (the bare
 // `systemPrompt` block, the Codex fork's namespaced capability block, steering / loadedTurn), and
 // the static never spawning anything.
 import test, { after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
-import { CODEX_CUSTOM_CAPABILITY_NAMESPACE, isWorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { CODEX_CUSTOM_CAPABILITY_NAMESPACE, isWorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import { Type } from "typebox";
 import {
   ACP_EXTENSION_SUPPORT_MATRIX,
@@ -34,7 +34,7 @@ interface LogEntry {
   method: string;
 }
 
-const harness = createFakeAgentHarness({ prefix: "acp-agent-traits-it-", backends: ["claude", "codex", "pi"] });
+const harness = createFakeAgentHarness({ prefix: "acp-agent-traits-it-", backends: ["claude", "codex"] });
 const configure = (scenario: unknown) => harness.configure<LogEntry>(scenario);
 const track = (agent: AcpAgent): AcpAgent => trackAgent(harness, agent);
 
@@ -56,21 +56,6 @@ const EXPECTED: Record<BuiltinBackendId, Omit<AcpAgentTraits, "backendId" | "cus
     steering: "supported",
     loadedTurn: "supported",
     structuredOutput: "turn-meta",
-  },
-  opencode: {
-    defaultModeId: "build",
-    fork: { agent: "opencode", disposition: "live", reattach: "none", cwd: "free" },
-    systemPrompt: { replace: false, append: false, source: "table" },
-    steering: "not-advertised",
-    loadedTurn: "not-advertised",
-    structuredOutput: "client-tool",
-  },
-  pi: {
-    fork: { agent: "pi", disposition: "live", reattach: "none", cwd: "free", distProbe: "pi" },
-    systemPrompt: { replace: true, append: true, source: "table" },
-    steering: "supported",
-    loadedTurn: "supported",
-    structuredOutput: "client-tool",
   },
 };
 
@@ -141,7 +126,6 @@ test("AcpAgent.traits() answers every built-in from the tables, field by field, 
   // The routing grammar is the constructor's: a model spec routes by its first segment, and an
   // unrouted spec goes to the default backend (claude unless AGENTPRISM_DEFAULT_BACKEND says otherwise).
   assert.equal(AcpAgent.traits("codex/gpt-5.6-sol").backendId, "codex");
-  assert.equal(AcpAgent.traits("pi/anthropic/claude-opus-4-1").backendId, "pi");
   assert.equal(AcpAgent.traits("Claude/opus[1m]").backendId, "claude");
   assert.equal(AcpAgent.traits().backendId, "claude");
   assert.equal(AcpAgent.traits("not-a-backend").backendId, "claude");
@@ -197,7 +181,7 @@ test("a custom registry backend reports its own declarations, never a shadowed b
   assert.deepEqual(readLog(), [], "nothing spawned");
 });
 
-test("the instance getter refines the tables with the live initialize advertisements (pi's bare systemPrompt block)", async () => {
+test("the instance getter refines the tables with the live initialize advertisements (the bare systemPrompt block)", async () => {
   const { cwd } = configure({
     initialize: initializeWith({
       topLevel: {
@@ -208,9 +192,9 @@ test("the instance getter refines the tables with the live initialize advertisem
     }),
     turns: [{ text: "ok" }],
   });
-  const agent = track(new AcpAgent({ cwd, model: "pi" }));
+  const agent = track(new AcpAgent({ cwd, model: "claude" }));
   // Before open: the tables.
-  assert.deepEqual(agent.traits, AcpAgent.traits("pi"));
+  assert.deepEqual(agent.traits, AcpAgent.traits("claude"));
   assert.equal(agent.traits.systemPrompt.source, "table");
   await agent.ready();
   const live = agent.traits;
@@ -218,8 +202,8 @@ test("the instance getter refines the tables with the live initialize advertisem
   assert.equal(live.steering, "supported");
   assert.equal(live.loadedTurn, "supported");
   // Everything the wire cannot change stays the table's / the Backend object's.
-  assert.strictEqual(live.fork, AcpAgent.traits("pi").fork);
-  assert.equal(live.structuredOutput, "client-tool");
+  assert.strictEqual(live.fork, AcpAgent.traits("claude").fork);
+  assert.equal(live.structuredOutput, "session-meta");
   assert.equal(live.custom, false);
   assert.ok(Object.isFrozen(live) && Object.isFrozen(live.systemPrompt));
   await agent.close();

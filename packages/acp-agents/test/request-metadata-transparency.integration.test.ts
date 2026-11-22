@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import { Type } from "typebox";
-import { META_KEYS, type AgentSessionRef } from "@automatalabs/shared-types";
+import { META_KEYS, type AgentSessionRef } from "@orchestrator/shared-types";
 import { AcpAgentRunner, type CustomBackendConfig } from "../src/index.js";
 import { createFakeAgentHarness, FAKE_AGENT_FIXTURE, readLog as readLogFile } from "./helpers/fake-agent.js";
 

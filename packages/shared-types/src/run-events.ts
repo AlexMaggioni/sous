@@ -167,7 +167,7 @@ export interface RunResumedPayload extends RunEventOrigin {}
 
 /**
  * Dependency-neutral shape of the SDK-only ACP bridge. The shared package types the stable
- * context envelope; @automatalabs/workflows binds Name/Event to AcpRunnerEventMap.
+ * context envelope; a host binds Name/Event to AcpRunnerEventMap.
  * `runId` is optional because backend_error and runner activity outside a workflow have no run.
  */
 export interface RunAgentEventPayload<Name extends string = string, Event = unknown> {

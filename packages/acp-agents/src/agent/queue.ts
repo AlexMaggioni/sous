@@ -1,7 +1,7 @@
 // The per-agent FIFO. `prompt`, `fork`, `setModel`, `setMode`, `setConfigOptions`, `close` and the
 // implicit open all run through one SerialQueue so no two of them ever overlap (a second concurrent
-// `SessionHandle.prompt` would clobber the handle's active turn; pi rejects a fork while the
-// source has a turn in flight; Claude would copy a partial transcript). Pure: no ACP imports.
+// `SessionHandle.prompt` would clobber the handle's active turn; Claude would copy a partial
+// transcript of a source with a turn in flight). Pure: no ACP imports.
 
 interface Entry {
   readonly op: () => Promise<unknown>;

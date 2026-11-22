@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { PromptResponse } from "@agentclientprotocol/sdk";
-import type { AgentHistoryEntry } from "@automatalabs/shared-types";
+import type { AgentHistoryEntry } from "@orchestrator/shared-types";
 import { ClaudeBackend } from "../../src/index.js";
 import type { UsageBaseline } from "../../src/usage.js";
 import { AgentEventBus } from "../../src/agent/events.js";

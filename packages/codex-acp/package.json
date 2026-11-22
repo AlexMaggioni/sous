@@ -1,5 +1,5 @@
 {
-  "name": "@automatalabs/codex-acp",
+  "name": "@orchestrator/codex-acp",
   "publishConfig": {
     "access": "public"
   },

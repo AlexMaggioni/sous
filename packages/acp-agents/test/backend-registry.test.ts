@@ -9,14 +9,10 @@ import {
   BUILTIN_PROTOCOL_COVERAGE,
   ClaudeBackend,
   CodexBackend,
-  OpenCodeBackend,
-  PiBackend,
   builtinBackend,
   builtinThoughtLevelDomainSemantics,
   claudeAuthProfile,
   codexAuthProfile,
-  opencodeAuthProfile,
-  piAuthProfile,
   type AuthProfile,
   type Backend,
   type BuiltinBackendDefinition,
@@ -60,33 +56,25 @@ const rootTypeLocks: [
 void rootTypeLocks;
 
 test("registry order, ids, profiles, factories, and central coverage are exactly aligned", () => {
-  assert.deepEqual(BUILTIN_BACKEND_IDS, ["claude", "codex", "opencode", "pi"]);
+  assert.deepEqual(BUILTIN_BACKEND_IDS, ["claude", "codex"]);
   assert.deepEqual(Object.keys(BUILTIN_BACKENDS), BUILTIN_BACKEND_IDS);
   assert.deepEqual(Object.keys(BUILTIN_PROTOCOL_COVERAGE), BUILTIN_BACKEND_IDS);
 
   const profiles = {
     claude: claudeAuthProfile,
     codex: codexAuthProfile,
-    opencode: opencodeAuthProfile,
-    pi: piAuthProfile,
   } as const;
   const classes = {
     claude: ClaudeBackend,
     codex: CodexBackend,
-    opencode: OpenCodeBackend,
-    pi: PiBackend,
   } as const;
   const defaultModes = {
     claude: "auto",
     codex: "agent",
-    opencode: "build",
-    pi: undefined,
   } as const;
   const thoughtLevelDomains = {
     claude: "ordered",
     codex: "ordered",
-    opencode: "exact-set",
-    pi: "ordered",
   } as const;
 
   for (const id of BUILTIN_BACKEND_IDS) {
@@ -110,8 +98,6 @@ test("registry order, ids, profiles, factories, and central coverage are exactly
 
   assert.strictEqual(new ClaudeBackend().authProfile, claudeAuthProfile);
   assert.strictEqual(new CodexBackend().authProfile, codexAuthProfile);
-  assert.strictEqual(new OpenCodeBackend().authProfile, opencodeAuthProfile);
-  assert.strictEqual(new PiBackend().authProfile, piAuthProfile);
   assert.strictEqual(ShimClaudeProfile, claudeAuthProfile);
   assert.strictEqual(PathClaudeBackend, ClaudeBackend);
   assert.equal(builtinThoughtLevelDomainSemantics("custom"), undefined);

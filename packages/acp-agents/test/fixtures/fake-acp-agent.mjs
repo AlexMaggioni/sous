@@ -117,17 +117,17 @@ process.stdin.on("end", () => {
   process.exit(0);
 });
 
-// Lifecycle teardown regressions use this intentionally detached Pi-like command process. It
+// Lifecycle teardown regressions use this intentionally detached command process. It
 // ignores SIGTERM and sits in a separate process group, so killing only the ACP server would
 // orphan it unless the parent snapshots and force-kills the whole descendant tree.
-if (scenario.stubbornPiChild === true) {
+if (scenario.stubbornChild === true) {
   const stubbornChild = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1 << 30);"], {
     detached: process.platform !== "win32",
     stdio: "ignore",
     windowsHide: true,
   });
   stubbornChild.unref();
-  record({ method: "__stubborn_pi_child", childPid: stubbornChild.pid });
+  record({ method: "__stubborn_child", childPid: stubbornChild.pid });
 }
 
 const defaultConfigOptions = [
@@ -309,7 +309,7 @@ class FakeAgent {
     }
     // Scenario-driven initialize response (protocolVersion + agentCapabilities + agentInfo), so a
     // capability-negotiation test can drive a mismatched protocol version, advertise mcpCapabilities,
-    // or advertise the @automatalabs/codex-acp custom-capability namespace. Defaults to a capable
+    // or advertise the @orchestrator/codex-acp custom-capability namespace. Defaults to a capable
     // backend that advertises session/close (so the runner releases sessions without killing the
     // pooled process) — the shape every other test relies on.
     if (scenario.initialize) {
@@ -945,7 +945,7 @@ class FakeAgent {
     }
 
     // `toolCallUpdate`: surface the call as a `tool_call` session update first, the way a real
-    // agent announces an MCP tool call before it goes out (pi: `mcp__<server>__<tool>`).
+    // agent announces an MCP tool call before it goes out (such as `mcp__<server>__<tool>`).
     if (flow?.toolCallUpdate) {
       await this.conn.sessionUpdate({
         sessionId,

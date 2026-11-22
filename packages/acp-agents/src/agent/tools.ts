@@ -3,7 +3,7 @@
 // helper, and the per-session injection decision: the agent's `agent_tools` HTTP MCP entry is
 // appended to `mcpServers` only when the initialized agent strictly advertises HTTP MCP, and an
 // agent that does not fails the open with INVALID_ARGUMENT — function tools are never dropped.
-import type { McpServerConfig } from "@automatalabs/shared-types";
+import type { McpServerConfig } from "@orchestrator/shared-types";
 import type { TSchema } from "typebox";
 import type { PooledConnection } from "../acp-client.js";
 import { agentValidationError } from "./errors.js";

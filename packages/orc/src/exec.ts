@@ -5,8 +5,8 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, resolve } from "node:path";
-import { WorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
-import type { ExecSpec } from "@automatalabs/workflow-engine";
+import { WorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
+import type { ExecSpec } from "@orchestrator/engine";
 
 export interface ExecResult {
   code: number;

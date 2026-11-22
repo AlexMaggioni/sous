@@ -1,5 +1,5 @@
 // CodexBackend.spawnConfig() — proves Codex ships on a clean `git clone && pnpm install` from the
-// installed npm dep @automatalabs/codex-acp (a published fork that bakes in the outputSchema
+// installed npm dep @orchestrator/codex-acp (a published fork that bakes in the outputSchema
 // patch), NOT a gitignored vendored build. The default path resolves the package's main from
 // node_modules and runs it under the current node; the env overrides still win.
 import test from "node:test";
@@ -35,7 +35,7 @@ test("CodexBackend.spawnConfig: default resolves the workspace package dist unde
     const bin = cfg.args[0];
     // In this monorepo require.resolve follows the workspace symlink to packages/codex-acp;
     // a published install resolves the same package under node_modules.
-    assert.match(bin, /(packages|node_modules[/\\].*@automatalabs)[/\\]codex-acp[/\\]dist[/\\]index\.js$/);
+    assert.match(bin, /(packages|node_modules[/\\].*@orchestrator)[/\\]codex-acp[/\\]dist[/\\]index\.js$/);
     assert.equal(bin.includes("vendor"), false);
     assert.equal(cfg.env, process.env);
   });
@@ -44,7 +44,7 @@ test("CodexBackend.spawnConfig: default resolves the workspace package dist unde
 test("CodexBackend.spawnConfig: the resolved bin carries the outputSchema patch (baked into the published fork)", () => {
   withEnv({}, () => {
     const bin = new CodexBackend().spawnConfig().args[0];
-    // The @automatalabs/codex-acp fork bakes in the forward of
+    // The @orchestrator/codex-acp fork bakes in the forward of
     // request._meta["outputSchema"] -> turn/start.outputSchema. The bracket-read of the bare
     // key off `_meta` is unique to the patch (native Codex code never brackets outputSchema off
     // _meta), so its presence in the installed file is the end-to-end proof the fork ships it.

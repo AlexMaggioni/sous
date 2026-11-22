@@ -3,14 +3,10 @@ import { claudeBackendDefinition } from "./claude.js";
 import { codexBackendDefinition } from "./codex.js";
 import type { BuiltinBackendDefinition } from "./define.js";
 import type { ThoughtLevelDomainSemantics } from "./define.js";
-import { opencodeBackendDefinition } from "./opencode.js";
-import { piBackendDefinition } from "./pi.js";
 
 export const BUILTIN_BACKENDS = {
   claude: claudeBackendDefinition,
   codex: codexBackendDefinition,
-  opencode: opencodeBackendDefinition,
-  pi: piBackendDefinition,
 } as const satisfies Readonly<Record<string, BuiltinBackendDefinition<string>>>;
 
 export type BuiltinBackendId = keyof typeof BUILTIN_BACKENDS;

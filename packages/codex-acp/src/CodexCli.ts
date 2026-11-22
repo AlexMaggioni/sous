@@ -22,6 +22,6 @@ function spawnCodexCli(codexPath: string | undefined, args: Array<string>): Chil
         stdio: "inherit",
     };
 
-    // orchestrator: no bundled Codex. Without CODEX_PATH, run the codex installed on PATH.
+    // No bundled Codex. Without CODEX_PATH, run the codex installed on PATH.
     return spawn(codexPath ?? "codex", args, {...options, shell: process.platform === "win32"});
 }

@@ -18,7 +18,7 @@ import {
   CODEX_AIR_EXTENSION_VERSION,
   CODEX_AIR_META_KEYS,
   WorkflowErrorCode,
-} from "@automatalabs/shared-types";
+} from "@orchestrator/shared-types";
 import {
   CodexBackend,
   TYPED_SESSION_FAILURE_CLIENT_CAPABILITY,
@@ -104,12 +104,10 @@ test("the advertised capability block is exactly what the codex-acp gate accepts
   );
 });
 
-test("the codex backend declares the advertisement; the other built-ins declare none", async () => {
-  const { ClaudeBackend, OpenCodeBackend, PiBackend } = await import("../src/index.js");
+test("the codex backend declares the advertisement; claude declares none", async () => {
+  const { ClaudeBackend } = await import("../src/index.js");
   assert.equal(new CodexBackend().clientCapabilityMeta, TYPED_SESSION_FAILURE_CLIENT_CAPABILITY);
   assert.equal(new ClaudeBackend().clientCapabilityMeta, undefined);
-  assert.equal(new OpenCodeBackend().clientCapabilityMeta, undefined);
-  assert.equal(new PiBackend().clientCapabilityMeta, undefined);
 });
 
 test("clientCapabilitiesFor folds the backend advertisement into _meta beside terminal-auth", () => {

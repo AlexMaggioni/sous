@@ -4,13 +4,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Type } from "typebox";
-import { CODEX_META_KEYS, META_KEYS } from "@automatalabs/shared-types";
+import { CODEX_META_KEYS, META_KEYS } from "@orchestrator/shared-types";
 import {
   ClaudeBackend,
   CodexBackend,
   CustomAcpBackend,
-  OpenCodeBackend,
-  PiBackend,
   SYSTEM_PROMPT_SUPPORT,
   SYSTEM_PROMPT_UNSUPPORTED,
   selectBackend,
@@ -51,11 +49,11 @@ test("ClaudeBackend: no schema => no critical session _meta; never carries schem
   assert.equal(backend.id, "claude");
 });
 
-test("rawMessagesMeta: Claude switches its vendor stream on; the other built-ins have no such stream", () => {
+test("rawMessagesMeta: Claude switches its vendor stream on; Codex has no such stream", () => {
   // The AcpAgent SDK layers this UNDER the caller's meta when `raw` is on (the default), so a
   // schema-less Claude session still emits `_claude/sdkMessage` for `raw_message` / `turn.raw`.
   assert.deepEqual(new ClaudeBackend().rawMessagesMeta(), { claudeCode: { emitRawSDKMessages: true } });
-  for (const backend of [new CodexBackend(), new OpenCodeBackend(), new PiBackend()] as Backend[]) {
+  for (const backend of [new CodexBackend()] as Backend[]) {
     assert.equal(backend.rawMessagesMeta?.(), undefined, `${backend.id} advertises no vendor notification stream`);
   }
 });
@@ -105,14 +103,12 @@ test("CodexBackend: no schema => no prompt _meta; never carries schema at sessio
   assert.equal(backend.id, "codex");
 });
 
-// ---- system prompt instructions: one neutral shape, four dialects ----------------------
+// ---- system prompt instructions: one neutral shape, two dialects ----------------------
 
 test("every built-in declares its SYSTEM_PROMPT_SUPPORT row; a custom backend declares none", () => {
   assert.deepEqual(new ClaudeBackend().systemPrompt, { replace: true, append: true });
   assert.deepEqual(new CodexBackend().systemPrompt, { replace: true, append: true });
-  assert.deepEqual(new PiBackend().systemPrompt, { replace: true, append: true });
-  assert.deepEqual(new OpenCodeBackend().systemPrompt, { replace: false, append: false });
-  for (const backend of [new ClaudeBackend(), new CodexBackend(), new PiBackend(), new OpenCodeBackend()] as Backend[]) {
+  for (const backend of [new ClaudeBackend(), new CodexBackend()] as Backend[]) {
     assert.deepEqual(backend.systemPrompt, systemPromptSupport(backend.id), `${backend.id} reads its own row`);
   }
   const custom = new CustomAcpBackend({ name: "mine", command: "mine-acp" });
@@ -123,8 +119,6 @@ test("every built-in declares its SYSTEM_PROMPT_SUPPORT row; a custom backend de
     [
       { agent: "claude", replace: true, append: true, metaKeys: ["systemPrompt"] },
       { agent: "codex", replace: true, append: true, metaKeys: ["baseInstructions", "developerInstructions"] },
-      { agent: "opencode", replace: false, append: false, metaKeys: [] },
-      { agent: "pi", replace: true, append: true, metaKeys: ["systemPrompt"] },
     ],
   );
 });
@@ -161,17 +155,6 @@ test("ClaudeBackend.sessionMeta drives claude-agent-acp's `_meta.systemPrompt` s
   assert.equal("baseInstructions" in meta, false);
 });
 
-test("PiBackend.sessionMeta forwards the neutral object VERBATIM under `_meta.systemPrompt`", () => {
-  const backend: Backend = new PiBackend();
-  assert.equal(backend.sessionMeta(SCHEMA), undefined);
-  assert.equal(backend.sessionMeta(undefined, { systemPrompt: {} }), undefined);
-  assert.deepEqual(backend.sessionMeta(SCHEMA, { systemPrompt: { replace: "R", append: "A" } }), {
-    [META_KEYS.systemPrompt]: { replace: "R", append: "A" },
-  });
-  assert.deepEqual(backend.sessionMeta(undefined, { systemPrompt: { append: "A" } }), { systemPrompt: { append: "A" } });
-  assert.deepEqual(backend.sessionMeta(undefined, { systemPrompt: { replace: "R" } }), { systemPrompt: { replace: "R" } });
-});
-
 test("CodexBackend.nativeStructured parses the constrained final message (pure JSON, then block)", () => {
   const backend = new CodexBackend();
   // pure JSON final message
@@ -204,27 +187,14 @@ test("CodexBackend.nativeStructured reads ONLY the final message — a schema-sh
   assert.equal(backend.nativeStructured(source(progress, undefined, "")), undefined);
 });
 
-// ---- OpenCode backend ---------------------------------------------------------------
-
-test("OpenCodeBackend is the third built-in backend", () => {
-  const backend: Backend = new OpenCodeBackend();
-  assert.equal(backend.id, "opencode");
-  assert.equal(backend.embedSchemaInPrompt, true);
-  assert.equal(backend.injectStructuredOutputTool, true);
-});
-
 // ---- selectBackend cross-provider routing -------------------------------------------
-
-test("PiBackend is the fourth built-in backend", () => {
-  const backend: Backend = new PiBackend();
-  assert.equal(backend.id, "pi");
-});
 
 test("selectBackend routes only by a registered first segment", () => {
   assert.equal(selectBackend({ model: "codex/whatever" }).id, "codex");
-  assert.equal(selectBackend({ model: "opencode" }).id, "opencode");
-  assert.equal(selectBackend({ model: "opencode/zai/glm-5.2" }).id, "opencode");
-  assert.equal(selectBackend({ model: "pi/openrouter/anthropic/claude-sonnet" }).id, "pi");
+  // OpenCode and Pi are no longer built-ins, so their names fall to the default too.
+  assert.equal(selectBackend({ model: "opencode" }).id, "claude");
+  assert.equal(selectBackend({ model: "opencode/zai/glm-5.2" }).id, "claude");
+  assert.equal(selectBackend({ model: "pi/openrouter/anthropic/claude-sonnet" }).id, "claude");
   assert.equal(selectBackend({ model: "claude/sonnet" }).id, "claude");
   assert.equal(selectBackend({ model: "CoDeX/gpt-5.6-luna" }).id, "codex");
   // Aliases and bare family names are unregistered, so they use the default (Claude here).
@@ -249,14 +219,10 @@ test("selectBackend honors AGENTPRISM_DEFAULT_BACKEND when nothing else matches"
     process.env.AGENTPRISM_DEFAULT_BACKEND = "codex";
     assert.equal(selectBackend({}).id, "codex");
     assert.equal(selectBackend({ model: "unknownish" }).id, "codex");
-    process.env.AGENTPRISM_DEFAULT_BACKEND = "opencode";
-    assert.equal(selectBackend({}).id, "opencode");
-    assert.equal(selectBackend({ model: "unknownish" }).id, "opencode");
-    assert.equal(selectBackend({ model: "anthropic/claude-opus" }).id, "opencode");
+    assert.equal(selectBackend({ model: "anthropic/claude-opus" }).id, "codex");
     assert.equal(selectBackend({ model: "claude/claude-opus" }).id, "claude");
     process.env.AGENTPRISM_DEFAULT_BACKEND = "pi";
-    assert.equal(selectBackend({}).id, "pi");
-    assert.equal(selectBackend({ model: "openrouter/vendor/model" }).id, "pi");
+    assert.equal(selectBackend({}).id, "claude");
     process.env.AGENTPRISM_DEFAULT_BACKEND = "CoDeX";
     assert.equal(selectBackend({}).id, "codex");
     process.env.AGENTPRISM_DEFAULT_BACKEND = "";

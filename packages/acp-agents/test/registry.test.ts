@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Type } from "typebox";
-import { META_KEYS } from "@automatalabs/shared-types";
+import { META_KEYS } from "@orchestrator/shared-types";
 import {
   BACKENDS_ENV,
   CustomAcpBackend,
@@ -66,13 +66,9 @@ test("registry: validates names and config field types while allowing built-in-n
   const collisions = resolveBackendRegistry({
     claude: { command: "custom-claude" },
     CODEX: { command: "custom-codex" },
-    opencode: { command: "custom-opencode" },
-    PI: { command: "custom-pi" },
   });
   assert.equal(collisions.get("claude")?.command, "custom-claude");
   assert.equal(collisions.get("codex")?.command, "custom-codex");
-  assert.equal(collisions.get("opencode")?.command, "custom-opencode");
-  assert.equal(collisions.get("pi")?.command, "custom-pi");
   assert.throws(() => resolveBackendRegistry({ b: { command: "" } }), /non-empty string "command"/);
   assert.throws(
     () => resolveBackendRegistry({ b: { command: "x", args: [1] } as never }),
@@ -220,8 +216,7 @@ test("run backends: empty/absent run declarations return the host registry uncha
 test("run backends: validated with the same config rules and may shadow built-ins", () => {
   const host = resolveBackendRegistry();
   assert.equal(registryWithRunBackends(host, { claude: { command: "x" } }).get("claude")?.command, "x");
-  assert.equal(registryWithRunBackends(host, { opencode: { command: "y" } }).get("opencode")?.command, "y");
-  assert.equal(registryWithRunBackends(host, { pi: { command: "z" } }).get("pi")?.command, "z");
+  assert.equal(registryWithRunBackends(host, { codex: { command: "y" } }).get("codex")?.command, "y");
   assert.throws(() => registryWithRunBackends(host, { b: { command: "" } }), /non-empty string "command"/);
   assert.throws(
     () => registryWithRunBackends(host, { b: { command: "x", structuredOutputTool: "no" } as never }),
@@ -269,11 +264,11 @@ test("selectBackend: registered names win over built-in names on collision", () 
   const registry = resolveBackendRegistry({
     "gpt-runner": { command: "custom" },
     codex: { command: "shadow-codex" },
-    pi: { command: "shadow-pi" },
+    claude: { command: "shadow-claude" },
   });
   assert.equal(selectBackend({ model: "gpt-runner" }, registry).id, "gpt-runner");
   assert.equal(selectBackend({ model: "CoDeX/gpt-5.6-luna" }, registry).spawnConfig().command, "shadow-codex");
-  assert.equal(selectBackend({ model: "PI/openrouter/vendor/model" }, registry).spawnConfig().command, "shadow-pi");
+  assert.equal(selectBackend({ model: "CLAUDE/opus" }, registry).spawnConfig().command, "shadow-claude");
   // Unregistered family-like ids are not interpreted and therefore use the default.
   assert.equal(selectBackend({ model: "gpt-5.6-luna" }, registry).id, "claude");
   assert.equal(selectBackend({ model: "opus" }, registry).id, "claude");

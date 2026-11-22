@@ -1,7 +1,7 @@
 // ===== packages/shared-types/src/redact.ts =====
 // Credential redaction and code-point-safe UTF-8 truncation shared by every layer that projects
-// text toward a host (workflow-engine observability, the workflows CLI, mcp-server, acp-agents).
-// This module must stay free of Node globals: shared-types is imported by the browser UI.
+// text toward a host (engine observability, acp-agents).
+// This module stays free of Node globals.
 
 const TRUNCATED_SUFFIX = "…[truncated]";
 

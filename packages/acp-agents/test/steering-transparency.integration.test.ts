@@ -4,7 +4,7 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { PROTOCOL_VERSION, type ContentBlock } from "@agentclientprotocol/sdk";
-import { META_KEYS } from "@automatalabs/shared-types";
+import { META_KEYS } from "@orchestrator/shared-types";
 import {
   CodexBackend,
   PooledConnection,
@@ -27,7 +27,7 @@ interface LogEntry {
 
 const harness = createFakeAgentHarness({
   prefix: "acp-steering-transparency-",
-  backends: ["codex", "opencode"],
+  backends: ["codex", "claude"],
 });
 const configure = (scenario: unknown) => harness.configure<LogEntry>(scenario);
 
@@ -204,7 +204,7 @@ test("InteractiveSession keeps the idle precondition but sends active steering w
     turns: [{ waitForCancel: true }],
   });
   const runner = harness.makeRunner();
-  const session = await runner.openSession({ model: "opencode", cwd });
+  const session = await runner.openSession({ model: "claude", cwd });
 
   await assert.rejects(() => session.steer("idle"), /use prompt\(\) when the session is idle/);
   assert.equal(readLog().some((entry) => entry.method === "extensionRequest"), false);

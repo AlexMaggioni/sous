@@ -1101,7 +1101,7 @@ describe('ACP server test', { timeout: 40_000 }, () => {
         });
     });
 
-    // orchestrator: the client's server wins over a configured one of the same name and transport.
+    // The client's server wins over a configured one of the same name and transport.
     it('replaces a configured MCP server with the requested one of the same name and transport', async () => {
         const mockFixture = createCodexMockTestFixture();
         const codexAcpClient = mockFixture.getCodexAcpClient();

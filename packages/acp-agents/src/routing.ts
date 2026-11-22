@@ -5,7 +5,7 @@
 // `asciiLowercase` and `assertNoModelConfigOption` are module exports for runner.ts and
 // src/agent only — deliberately NOT re-exported from the package barrel. `defaultBackend` stays
 // module-private: it reads AGENTPRISM_DEFAULT_BACKEND and nothing outside resolveModelRoute needs it.
-import { WorkflowError, WorkflowErrorCode } from "@automatalabs/shared-types";
+import { WorkflowError, WorkflowErrorCode } from "@orchestrator/shared-types";
 import type { Backend } from "./backend.js";
 import { BUILTIN_BACKENDS, builtinBackend } from "./backends/builtins.js";
 import { CustomAcpBackend } from "./backends/custom.js";

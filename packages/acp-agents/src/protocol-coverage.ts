@@ -158,16 +158,6 @@ export const CODEX_SPAWN_AUTH_ENV = "DEFAULT_AUTH_REQUEST" as const;
  *  guarantee the code-only §1.5 matcher relies on (§4.6.4 item 5). */
 export const ACP_AUTH_REQUIRED_CODE_EXCLUSIVE = -32000 as const;
 
-/** Frozen pi-acp wire surface consumed by the first-class backend. Keeping these literals in the
- *  executable protocol-coverage module makes capability/auth/error drift visible in tests instead
- *  of leaving the built-in coupled only through prose. */
-export const PI_ACP_PROTOCOL_CONTRACT = {
-  mcpCapabilities: { http: true, sse: true },
-  // The five provider API-key methods were `env_var`-typed and left with that variant (ACP 1.21.0).
-  authMethodIds: ["pi-stored-credentials"],
-  providerErrorKinds: ["auth_error", "rate_limit", "billing_error", "provider_error"],
-} as const;
-
 /** One row of the §3.6 full `_meta` support matrix, landed as executable data (not prose) so an
  *  SDK/agent bump that changes a `_meta` surface trips the drift suite (§4.6.4 item 4). */
 export interface AuthMetaMatrixRow {
@@ -178,18 +168,17 @@ export interface AuthMetaMatrixRow {
   readonly direction: "A→C" | "C→A" | "C↔A" | "—" | "agent-internal";
   /** Every published row describes behavior delivered and verified by the current implementation. */
   readonly status: "supported-today";
-  /** When set, the literal is asserted present in this backend's INSTALLED dist (claude/codex only;
-   *  opencode ships a compiled binary with no consumable source — §3.4, grounded by live-e2e). */
+  /** When set, the literal is asserted present in this backend's INSTALLED dist. */
   readonly distProbe?: "claude" | "codex";
   /** Exact compiled-source tripwire when the human capability label is too broad. */
   readonly distProbeLiteral?: string;
 }
 
 /** The §3.6 auth `_meta` matrix as executable rows — the exact surfaces §4.6.4 item 4 enumerates
- *  (claude gateway/terminal-auth, codex api-key/gateway/DEFAULT_AUTH_REQUEST, opencode terminal-auth),
+ *  (claude gateway/terminal-auth, codex api-key/gateway/DEFAULT_AUTH_REQUEST),
  *  plus Codex permission-presentation metadata and the cross-agent provider-env passthrough. The
  *  loaded-turn extension rows (turn-terminal state for loaded sessions) record which servers
- *  SERVE the extension: claude and opencode do not advertise it, and the re-attach seam's
+ *  SERVE the extension: claude does not advertise it, and the re-attach seam's
  *  observation path classifies their loaded turns authoritatively instead (see
  *  `InteractiveSession.awaitCurrentTurn` — the connection-death contract makes the replay
  *  probe authoritative for the VERIFIED BUILT-INS; phase-F review round 2, restricted to the
@@ -197,8 +186,7 @@ export interface AuthMetaMatrixRow {
  *  `capability` is a literal that MUST appear in spec §3.6; `docs-drift.test.ts` asserts that lockstep,
  *  and (where `distProbe` is set) `protocol-coverage.test.ts` asserts `distProbeLiteral ?? capability`
  *  is still present in the installed agent dist — so neither the spec nor an agent bump can silently drift a `_meta`
- *  surface. OpenCode ships a compiled binary with no consumable source (§3.4), so its row has no dist
- *  probe (grounded instead by the §4.6.3 live-e2e). */
+ *  surface. */
 const AUTH_META_MATRIX_ROWS = [
   { agent: "claude", capability: "gateway", direction: "C↔A", status: "supported-today", distProbe: "claude" },
   { agent: "claude", capability: "terminal-auth", direction: "C↔A", status: "supported-today", distProbe: "claude" },
@@ -213,7 +201,6 @@ const AUTH_META_MATRIX_ROWS = [
     distProbe: "codex",
     distProbeLiteral: "permission:",
   },
-  { agent: "opencode", capability: "terminal-auth", direction: "C↔A", status: "supported-today" },
   { agent: "all", capability: "provider env keys", direction: "C→A", status: "supported-today" },
 ] satisfies readonly AuthMetaMatrixRow[];
 
@@ -224,8 +211,8 @@ export const AUTH_META_MATRIX: readonly AuthMetaMatrixRow[] = Object.freeze(
 /** One executable advertisement record for a vendor extension that is intentionally absent from
  *  the standard SDK AGENT_METHODS table. This matrix documents installed/built-in behavior only;
  *  it never gates or routes runtime extension calls. The loaded-turn
- *  extension (turn-terminal state for loaded sessions) is only served by the two in-repo
- *  servers (pi-acp, codex-acp); claude and opencode do not advertise it — the seam then
+ *  extension (turn-terminal state for loaded sessions) is only served by the in-repo
+ *  server (codex-acp); claude does not advertise it — the seam then
  *  classifies the loaded session's founding turn through the OBSERVATION path instead (the
  *  post-load continuation watch plus the replay probe under the connection-death contract —
  *  see `InteractiveSession.awaitCurrentTurn`; phase-F review round 2: the old degradation
@@ -239,7 +226,7 @@ export interface AcpExtensionSupportMatrixRow {
   readonly method: typeof SESSION_STEERING_METHOD | typeof LOADED_TURN_QUERY_METHOD;
   readonly disposition: "supported" | "not-advertised";
   /** Installed distributions whose method + initialize advertisement are probed by the protocol
-   *  coverage suite. Pi is workspace-owned and covered in its package tests instead. */
+   *  coverage suite. */
   readonly distProbe?: "claude" | "codex";
 }
 
@@ -257,16 +244,6 @@ const ACP_EXTENSION_SUPPORT_MATRIX_ROWS = [
     distProbe: "codex",
   },
   {
-    agent: "opencode",
-    method: SESSION_STEERING_METHOD,
-    disposition: "not-advertised",
-  },
-  {
-    agent: "pi",
-    method: SESSION_STEERING_METHOD,
-    disposition: "supported",
-  },
-  {
     agent: "claude",
     method: LOADED_TURN_QUERY_METHOD,
     disposition: "not-advertised",
@@ -277,16 +254,6 @@ const ACP_EXTENSION_SUPPORT_MATRIX_ROWS = [
     method: LOADED_TURN_QUERY_METHOD,
     disposition: "supported",
     distProbe: "codex",
-  },
-  {
-    agent: "opencode",
-    method: LOADED_TURN_QUERY_METHOD,
-    disposition: "not-advertised",
-  },
-  {
-    agent: "pi",
-    method: LOADED_TURN_QUERY_METHOD,
-    disposition: "supported",
   },
 ] satisfies readonly AcpExtensionSupportMatrixRow[];
 
@@ -299,11 +266,11 @@ export const ACP_EXTENSION_SUPPORT_MATRIX: readonly AcpExtensionSupportMatrixRow
 /** How each installed agent answers `session/fork`, read from its adapter source, and what the
  *  AcpAgent SDK must do with the response. `id-only`: the response names a persisted copy that
  *  is not live — claude-agent-acp returns `{ sessionId }` from `dist/fork-session.js` and `prompt`
- *  on it throws "Session not found". `live`: the fork handle is the session — @automatalabs/codex-acp
+ *  on it throws "Session not found". `live`: the fork handle is the session — @orchestrator/codex-acp
  *  forks the thread through `thread/fork`, which subscribes the connection to the new thread
  *  exactly like `thread/resume` does, keeps that subscription (no `threadUnsubscribe`), and
- *  publishes the forked session's available commands and MCP startup status like a resumed one;
- *  pi constructs the fork in-process; OpenCode by live verification only. `reattach` names the
+ *  publishes the forked session's available commands and MCP startup status like a resumed one.
+ *  `reattach` names the
  *  reopen an `id-only` fork needs before its first turn. `cwd`: whether the fork may re-home —
  *  claude's transcript store is keyed by the source cwd. Data for the SDK's fork choreography;
  *  the runner's `forkSession()` returns the raw fork handle and never consults it. */
@@ -313,15 +280,13 @@ export interface ForkSessionTraitRow {
   readonly reattach: "resume-or-load" | "none";
   readonly cwd: "source-only" | "free";
   /** Installed distributions whose fork implementation is probed by the protocol coverage
-   *  suite (opencode ships a compiled binary; grounded by live-e2e only). */
-  readonly distProbe?: "claude" | "codex" | "pi";
+   *  suite. */
+  readonly distProbe?: "claude" | "codex";
 }
 
 const FORK_SESSION_TRAIT_ROWS = [
   { agent: "claude", disposition: "id-only", reattach: "resume-or-load", cwd: "source-only", distProbe: "claude" },
   { agent: "codex", disposition: "live", reattach: "none", cwd: "free", distProbe: "codex" },
-  { agent: "opencode", disposition: "live", reattach: "none", cwd: "free" },
-  { agent: "pi", disposition: "live", reattach: "none", cwd: "free", distProbe: "pi" },
 ] satisfies readonly ForkSessionTraitRow[];
 
 /** Per-built-in `session/fork` dispositions. Pinned against the installed adapter dists by the
@@ -359,10 +324,9 @@ export function forkSessionTrait(
 
 /** Which halves of the backend-neutral `SystemPromptOptions` (`replace` / `append`) each built-in
  *  can carry, and on which `session/new|resume|load|fork` `_meta` key — read from each adapter's
- *  source and pinned by the protocol coverage suite (claude/codex/pi dists) and the docs-drift
+ *  source and pinned by the protocol coverage suite (claude/codex dists) and the docs-drift
  *  suite. `replace` swaps the agent's built-in system prompt; `append` adds to it. A backend with
- *  both `false` (opencode: `opencode acp` reads no session `_meta`; system prompts live in its
- *  config and agent definitions) rejects any `systemPrompt` before a session opens. */
+ *  both `false` rejects any `systemPrompt` before a session opens. */
 export interface SystemPromptSupport {
   readonly replace: boolean;
   readonly append: boolean;
@@ -373,21 +337,17 @@ export interface SystemPromptSupportRow extends SystemPromptSupport {
   /** The bare `_meta` key(s) the instructions ride on; empty when unsupported. */
   readonly metaKeys: readonly string[];
   /** Installed distributions whose `_meta` reader is probed by the protocol coverage suite. */
-  readonly distProbe?: "claude" | "codex" | "pi";
+  readonly distProbe?: "claude" | "codex";
 }
 
 const SYSTEM_PROMPT_SUPPORT_ROWS = [
   // claude-agent-acp `createSession`: `_meta.systemPrompt` string => replaces the prompt; object =>
   // merged into the `claude_code` preset with type/preset locked (`{ append }` extends it).
   { agent: "claude", replace: true, append: true, metaKeys: ["systemPrompt"], distProbe: "claude" },
-  // @automatalabs/codex-acp: bare `_meta.baseInstructions` (base prompt replacement) and
+  // @orchestrator/codex-acp: bare `_meta.baseInstructions` (base prompt replacement) and
   // `_meta.developerInstructions` (developer-role instructions) => thread/{start,resume,fork} params
   // (a Codex fork is live, so session/fork's own `_meta` is where a fork's instructions travel).
   { agent: "codex", replace: true, append: true, metaKeys: ["baseInstructions", "developerInstructions"], distProbe: "codex" },
-  { agent: "opencode", replace: false, append: false, metaKeys: [] },
-  // @automatalabs/pi-acp: `_meta.systemPrompt` `{ replace?, append? }` (or a string = replace) =>
-  // pi's `DefaultResourceLoader` system-prompt overrides.
-  { agent: "pi", replace: true, append: true, metaKeys: ["systemPrompt"], distProbe: "pi" },
 ] satisfies readonly SystemPromptSupportRow[];
 
 /** Per-built-in system-prompt instruction support. Executable data: the backends read their own
@@ -410,24 +370,19 @@ export function systemPromptSupport(agent: string): SystemPromptSupport {
 /** What `PromptResponse.usage` covers on each installed agent, read from its adapter source.
  *  Every source-verified agent reports THE TURN (the SDK's own type doc says "across session";
  *  the adapters do not follow it): claude-agent-acp resets its accumulator at every turn
- *  activation, codex-acp reports the turn's last token count, pi sums the assistant messages
- *  after the turn's start index. A session total is therefore the client's own running sum of
- *  per-turn reports. OpenCode ships a compiled binary: `turn` by live verification and by the
- *  client's existing per-turn accumulator contract (`usage.ts` `recordPromptUsage` replaces,
- *  never sums) only. The `scope` union has one member on purpose: exactly one arithmetic is
+ *  activation, codex-acp reports the turn's last token count. A session total is therefore the
+ *  client's own running sum of per-turn reports. The `scope` union has one member on purpose: exactly one arithmetic is
  *  implemented, and a second member needs a live proof before it exists. */
 export interface PromptUsageScopeRow {
   readonly agent: string;
   readonly scope: "turn";
   /** Installed distributions whose usage reporting is probed by the protocol coverage suite. */
-  readonly distProbe?: "claude" | "codex" | "pi";
+  readonly distProbe?: "claude" | "codex";
 }
 
 const PROMPT_USAGE_SCOPE_ROWS = [
   { agent: "claude", scope: "turn", distProbe: "claude" },
   { agent: "codex", scope: "turn", distProbe: "codex" },
-  { agent: "opencode", scope: "turn" },
-  { agent: "pi", scope: "turn", distProbe: "pi" },
 ] satisfies readonly PromptUsageScopeRow[];
 
 /** Per-built-in `PromptResponse.usage` scope. Pinned against the installed adapter dists so an
@@ -455,8 +410,7 @@ export function promptUsageScope(agent: string): PromptUsageScopeRow["scope"] {
  *  earlier spend, so the client baselines it (`UsageAccumulator.settleInheritedCost`) and reports
  *  only what follows. `restarts`: the gauge starts again at zero. Claude Code persists a session's
  *  totals and restores them on resume (claude-agent-sdk 0.3.277), but `session/fork` writes a new
- *  transcript without them; OpenCode and pi derive the gauge from the stored transcript, which a
- *  fork copies. Codex reports no dollar cost, so its row is inert. */
+ *  transcript without them. Codex reports no dollar cost, so its row is inert. */
 export interface CostGaugeInheritanceRow {
   readonly agent: string;
   readonly reopen: "inherits" | "restarts";
@@ -466,8 +420,6 @@ export interface CostGaugeInheritanceRow {
 const COST_GAUGE_INHERITANCE_ROWS = [
   { agent: "claude", reopen: "inherits", fork: "restarts" },
   { agent: "codex", reopen: "inherits", fork: "inherits" },
-  { agent: "opencode", reopen: "inherits", fork: "inherits" },
-  { agent: "pi", reopen: "inherits", fork: "inherits" },
 ] satisfies readonly CostGaugeInheritanceRow[];
 
 /** Per-built-in cost-gauge carry-over. Grounded by the live cost-accounting e2e. */
@@ -528,6 +480,4 @@ function coverageRow(
 export const BUILTIN_PROTOCOL_COVERAGE = Object.freeze({
   claude: coverageRow("claude", ["claude"]),
   codex: coverageRow("codex", ["codex"]),
-  opencode: coverageRow("opencode", []),
-  pi: coverageRow("pi", []),
 });

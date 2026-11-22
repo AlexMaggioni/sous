@@ -143,9 +143,9 @@ export function clientCapabilitiesFor(
     if (options.auth.gateway) auth._meta = { gateway: true }; // claude+codex gateway gate
     capabilities.auth = auth;
     if (options.auth.terminal) {
-      // claude 0.57.0 (acp-agent.js:339) and opencode 1.17.14 (service.ts:100-101) ALSO read the
+      // claude 0.57.0 (acp-agent.js:339) ALSO reads the
       // top-level `_meta["terminal-auth"]` channel, which additionally carries the spawnable
-      // {command,args,label} launch hint. Light both so all three agents reveal terminal methods.
+      // {command,args,label} launch hint. Light both so every agent reveals its terminal methods.
       capabilities._meta = { ...(capabilities._meta ?? {}), "terminal-auth": true };
     }
   }

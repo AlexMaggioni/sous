@@ -16,7 +16,7 @@
 // `orc run ticket --ticket "Add a --json flag"` turns the flags into the run's args.
 
 import type { Place } from "./home.js";
-import { parseDurationSeconds } from "@automatalabs/workflow-engine";
+import { parseDurationSeconds } from "@orchestrator/engine";
 import { parseCron } from "./cron.js";
 import { isPlace } from "./places.js";
 

@@ -18,7 +18,7 @@ import {
   CODEX_AIR_META_KEYS,
   isWorkflowError,
   WorkflowErrorCode,
-} from "@automatalabs/shared-types";
+} from "@orchestrator/shared-types";
 import {
   AcpAgent,
   isAcpAgentTurnError,
@@ -1012,11 +1012,11 @@ test("permission and elicitation events of the turn are captured with the decisi
 
 test("systemPrompt is validated in the constructor against the routed backend, before any spawn", async () => {
   const { cwd, readLog } = configure({ turns: [{ text: "ok" }] });
-  // OpenCode carries no channel: refused synchronously with the backend named.
+  // A custom backend carries no channel: refused synchronously with the backend named.
   assert.throws(
-    () => new AcpAgent({ cwd, model: "opencode", label: "oc", systemPrompt: { replace: "R" } }),
+    () => new AcpAgent({ cwd, model: "custom", backends: { custom: { command: "node x" } }, label: "oc", systemPrompt: { replace: "R" } }),
     isCode(WorkflowErrorCode.INVALID_ARGUMENT, (error) => {
-      assert.match(error.message, /systemPrompt\.replace is not supported by backend "opencode"/);
+      assert.match(error.message, /systemPrompt\.replace is not supported by backend "custom"/);
       assert.equal(error.agentLabel, "oc");
     }),
   );
@@ -1072,18 +1072,12 @@ test("Claude: systemPrompt rides session/new `_meta.systemPrompt` next to the ra
   });
 });
 
-test("Codex and pi: systemPrompt rides session/new in each backend's own dialect", async () => {
-  const { cwd, readLog } = configure({ turns: [{ text: "ok" }, { text: "ok" }] }, { backends: ["codex", "pi"] });
+test("Codex: systemPrompt rides session/new in Codex's own dialect", async () => {
+  const { cwd, readLog } = configure({ turns: [{ text: "ok" }] }, { backends: ["codex"] });
   const codex = track(new AcpAgent({ cwd, model: "codex", systemPrompt: { replace: "BASE", append: "DEV" } }));
   await codex.ready();
   assert.deepEqual(find(readLog(), "newSession")?.params?._meta, { baseInstructions: "BASE", developerInstructions: "DEV" });
   await codex.close();
-
-  const pi = track(new AcpAgent({ cwd, model: "pi", systemPrompt: { append: "DEV" } }));
-  await pi.ready();
-  assert.deepEqual(readLog().filter((entry) => entry.method === "newSession")[1]?.params?._meta, {
-    systemPrompt: { append: "DEV" },
-  });
 });
 
 // ---- permissions (the headless allow/deny auto-policy) -------------------------------------------
