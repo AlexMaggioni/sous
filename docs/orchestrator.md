@@ -210,6 +210,12 @@ When a step's program is missing, the step stops before its agent starts, and th
 to install it. Each run records the path and version of each program it used, and `orc show`
 prints them.
 
+Each program must be a version its adapter works with. Claude Code must be at least the version
+the Claude Agent SDK asks for, 2.1.330 today. Codex must be on a release line the adapter was
+checked against, 0.169.x today, since its app-server protocol changes between minor releases. On
+another version a step stops before its agent starts, and the message names the version it needs.
+`orc doctor` shows the same message.
+
 `orc doctor` shows the program orc found for each harness, how it found it, its version, and the
 other copies it doesn't use. It opens a session on each and lists its models, which sends no
 prompt. `orc doctor --live` also runs one tiny step on each, and `--model codex/gpt-6.1-sol` checks
@@ -293,6 +299,12 @@ something, pauses or fails.
   keep one whose run has not finished.
 - `folder`: the project folder itself.
 - `none`: an empty scratch folder, for work that touches no repo, such as email.
+
+A step can work apart from the run, with `isolation: "worktree"` in its options or in its agent's
+frontmatter. It gets a new branch from the run's place, `orc/<run>-<n>-<label>`, in
+`~/.orchestrator/worktrees/<run>-<n>-<label>`, where n counts the run's steps. orc removes that
+worktree and its branch when the step ends, so the step hands its work back in its answer. Outside
+a git repository the step works in the run's place, and the log says so.
 
 ## Schedules and the service
 
