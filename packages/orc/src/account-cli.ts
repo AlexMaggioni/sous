@@ -1,0 +1,158 @@
+// `orc account`: list the accounts, add a Claude Code login, switch, and remove one.
+
+import { spawnSync } from "node:child_process";
+import { accountLabel, addAccount, checkNewAccount, currentAccount, folderText, listAccounts, removeAccount, useAccount } from "./accounts.js";
+import { unfinishedRuns } from "./daemon.js";
+import { homePaths, ensureHome, loadConfig, type HomePaths } from "./home.js";
+import { spawnWorker } from "./launch.js";
+import { findProgram, PROGRAM_INFO, PROGRAMS } from "./programs.js";
+import { listRecords, loadRecord, processAlive, rootRunId, updateRecord, type RunRecord } from "./records.js";
+import { managerFor } from "./worker.js";
+
+export interface AccountCommandOptions {
+  json?: boolean;
+  /** Makes the error for a wrong command line, which exits with 64. */
+  usage?: (message: string) => Error;
+  /** Reads the token. Default: hidden input in a terminal, else all of stdin. */
+  readToken?: () => Promise<string>;
+  /** Runs `claude setup-token`. Default: in this terminal, when stdin is one. */
+  setupToken?: (paths: HomePaths) => void;
+  out?: (line: string) => void;
+}
+
+function atLimit(paths: HomePaths): (record: RunRecord) => boolean {
+  return (record) => {
+    const state = managerFor(paths, record.projectDir).getPersistence().load(record.runId);
+    return state?.status === "paused" && state.pauseReason === "usage_limit";
+  };
+}
+
+/** Read a line without showing it. Pasted text works. */
+async function readHidden(prompt: string): Promise<string> {
+  const input = process.stdin;
+  process.stderr.write(prompt);
+  input.setRawMode(true);
+  input.setEncoding("utf8");
+  input.resume();
+  return new Promise((resolve, reject) => {
+    let value = "";
+    const done = (error?: Error) => {
+      input.off("data", onData);
+      input.setRawMode(false);
+      input.pause();
+      process.stderr.write("\n");
+      if (error) reject(error);
+      // A terminal may wrap pasted text in bracketed paste marks.
+      else resolve(value.replace(/\[20[01]~/g, ""));
+    };
+    const onData = (chunk: string) => {
+      for (const char of chunk) {
+        if (char === "\r" || char === "\n") return done();
+        if (char === "\u0003" || char === "\u0004") return done(new Error("cancelled, nothing added"));
+        if (char === "\u007f" || char === "\b") value = value.slice(0, -1);
+        else if (char >= " ") value += char;
+      }
+    };
+    input.on("data", onData);
+  });
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk as Buffer));
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function runSetupToken(paths: HomePaths): void {
+  const found = findProgram("claude", { config: loadConfig(paths) });
+  if ("problem" in found) throw new Error(found.problem);
+  // The login it makes is for the browser account, whatever this shell is logged in with.
+  const env = { ...process.env };
+  for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) delete env[name];
+  const ran = spawnSync(found.path, ["setup-token"], { stdio: "inherit", env });
+  if (ran.error) throw new Error(`claude setup-token did not start: ${ran.error.message}`);
+  if (ran.status !== 0) throw new Error(`claude setup-token stopped with exit ${ran.status ?? ran.signal}. Nothing was added.`);
+}
+
+export async function cmdAccount(positionals: string[], options: AccountCommandOptions = {}): Promise<number> {
+  const paths = ensureHome(homePaths());
+  const out = options.out ?? ((line: string) => process.stdout.write(`${line}\n`));
+  const usage = options.usage ?? ((message: string) => new Error(message));
+  const [action, spec, ...extra] = positionals;
+  if (extra.length) throw usage(`orc account ${action} takes one name. Extra words: ${extra.join(" ")}`);
+  const needName = () => {
+    if (!spec) throw usage(`orc account ${action} <name>`);
+    return spec;
+  };
+
+  switch (action) {
+    case undefined:
+    case "list":
+      return listCommand(paths, out, options.json === true);
+    case "add": {
+      // Check the name before the browser login, so a wrong one costs nothing.
+      const { name } = checkNewAccount(paths, needName());
+      const terminal = process.stdin.isTTY === true;
+      if (options.setupToken ?? terminal) {
+        out("Claude Code opens a login in the browser. Log in with the account to add.");
+        (options.setupToken ?? runSetupToken)(paths);
+      }
+      const token = await (options.readToken ?? (terminal ? () => readHidden("Paste the token it printed (it stays hidden): ") : readStdin))();
+      addAccount(paths, needName(), token);
+      out(`added Claude Code account ${name}. orc account use ${name} makes orc use it.`);
+      return 0;
+    }
+    case "use": {
+      const result = useAccount(paths, needName(), {
+        atLimit: atLimit(paths),
+        resume: (runId) => updateRecord(paths, runId, { pid: spawnWorker(paths, runId, "resume") }),
+      });
+      const label = accountLabel(result.program, result.name);
+      out(`orc uses ${PROGRAM_INFO[result.program].name} account ${label} for new runs.`);
+      for (const run of result.moved) out(`resumed ${run.runId}  ${run.workflow}  on ${label}, was waiting at the limit of ${run.from}`);
+      for (const run of result.same) out(`${run.runId}  ${run.workflow}  waits at the limit of ${label} itself, and goes on after the reset`);
+      return 0;
+    }
+    case "remove":
+    case "rm": {
+      const { program, name } = removeAccount(paths, needName(), unfinishedRuns(paths));
+      out(`removed ${PROGRAM_INFO[program].name} account ${accountLabel(program, name)}.${currentAccount(paths, program) === "default" ? " orc uses default." : ""}`);
+      return 0;
+    }
+    default:
+      throw usage(`orc account [add|use|remove <name>], got "${action}"`);
+  }
+}
+
+function listCommand(paths: HomePaths, out: (line: string) => void, json: boolean): number {
+  const rows = listAccounts(paths);
+  const waiting = listRecords(paths).filter((record) => !processAlive(record.pid) && atLimit(paths)(record));
+  if (json) {
+    out(JSON.stringify({ accounts: rows, waiting: waiting.map((record) => ({ runId: record.runId, workflow: record.workflow, limit: record.limit })) }, null, 2));
+    return 0;
+  }
+  const width = Math.max(...rows.map((row) => accountLabel(row.program, row.name).length)) + 2;
+  for (const program of PROGRAMS) {
+    out(PROGRAM_INFO[program].name);
+    const variable = program === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME";
+    for (const row of rows.filter((entry) => entry.program === program)) {
+      const what = row.name === "default" ? `${PROGRAM_INFO[program].name}'s own login, in ${folderText(program, process.env[variable])}` : `login token, added ${row.addedAt?.slice(0, 10)}`;
+      out(`${row.current ? "*" : " "} ${accountLabel(program, row.name).padEnd(width)}${what}`);
+    }
+  }
+  if (process.env.ORC_RUN_ID) {
+    const parent = loadRecord(paths, rootRunId(process.env.ORC_RUN_ID));
+    out(`\nThis shell is in run ${process.env.ORC_RUN_ID}${parent?.accounts?.claude ? `, on ${parent.accounts.claude.name}` : ""}. A run started here uses that run's accounts.`);
+  } else if (process.env.CLAUDECODE === "1") {
+    out("\nThis shell is a Claude Code session. A run started here uses that session's login for its Claude Code steps.");
+  }
+  if (waiting.length) {
+    out("\nWaiting at the usage limit:");
+    for (const record of waiting) {
+      const program = record.limit?.program ?? "claude";
+      out(`  ${record.runId}  ${record.workflow}  on ${accountLabel(program, record.limit?.account ?? record.accounts?.[program]?.name ?? "default")}`);
+    }
+    out("orc account use <name> moves them to another account and resumes them now.");
+  }
+  return 0;
+}

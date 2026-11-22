@@ -1,11 +1,13 @@
 // `orc doctor`: the installed Claude Code and Codex that the steps run on, how orc found them, and
 // whether orc talks to them. The talk check opens a session on each and lists its models, which
-// sends no prompt. `--live` runs one tiny step on each, which uses the account a little.
+// sends no prompt. `--live` runs one tiny step on each, which uses the account a little. Both run
+// on the account orc uses for new runs.
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createAcpRunner } from "@automatalabs/acp-agents";
 import { routeHarness } from "./agents.js";
+import { applyAccounts, currentAccount, DEFAULT, describeAccount, folderText } from "./accounts.js";
 import { homePaths, loadConfig } from "./home.js";
 import { claudeFolder, codexFolder, findProgram, PROGRAM_INFO, PROGRAMS, programVersion, type Program } from "./programs.js";
 
@@ -30,8 +32,10 @@ export interface ProgramReport {
   source?: string;
   skipped: string[];
   others: Array<{ path: string; version?: string }>;
-  /** Where the program keeps its account and settings for orc's steps. */
+  /** Where the program keeps its settings, and its own login, for orc's steps. */
   folder: string;
+  /** The account orc uses for new runs. default is the program's own login. */
+  account: string;
   problem?: string;
   talks?: boolean;
   models?: Choice[];
@@ -66,13 +70,16 @@ export async function doctor(options: DoctorOptions = {}): Promise<number> {
   const config = loadConfig(paths);
   const asked = options.model ? routeHarness(options.model) : undefined;
   const reports: ProgramReport[] = [];
+  // orc keeps no Codex accounts yet, so Codex always runs on its own login.
+  const account = (program: Program) => (program === "claude" ? currentAccount(paths, program) : DEFAULT);
+  const restore = applyAccounts(paths, account("claude") === DEFAULT ? undefined : { claude: { name: account("claude"), folder: process.env.CLAUDE_CONFIG_DIR ?? null } });
 
   for (const program of PROGRAMS) {
     const info = PROGRAM_INFO[program];
     const found = findProgram(program, { config });
     const folder = program === "claude" ? claudeFolder() : codexFolder();
     if ("problem" in found) {
-      reports.push({ program, name: info.name, skipped: found.skipped, others: [], folder, problem: found.problem });
+      reports.push({ program, name: info.name, skipped: found.skipped, others: [], folder, account: account(program), problem: found.problem });
       continue;
     }
     // The adapters read these when they start.
@@ -86,6 +93,7 @@ export async function doctor(options: DoctorOptions = {}): Promise<number> {
       skipped: found.skipped,
       others: found.others.map((path) => ({ path, version: programVersion(path) })),
       folder,
+      account: account(program),
     });
   }
 
@@ -120,6 +128,7 @@ export async function doctor(options: DoctorOptions = {}): Promise<number> {
     }
   } finally {
     await (runner as { dispose?: () => Promise<void> | void }).dispose?.();
+    restore();
   }
 
   const failed = reports.some((report) => report.problem || report.talks === false || report.live?.error);
@@ -136,8 +145,9 @@ export async function doctor(options: DoctorOptions = {}): Promise<number> {
     out(`  program   ${report.path}, ${SOURCE[report.source!] ?? report.source}`);
     for (const path of report.skipped) out(`  skipped   ${path}, a wrapper script`);
     for (const other of report.others) out(`  also      ${other.path}${other.version ? ` ${other.version}` : ""}, not used`);
-    const variable = report.program === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME";
-    out(`  account   ${report.folder} (set ${variable} where orc starts to use another)`);
+    const named = report.account !== DEFAULT;
+    const account = `${describeAccount(report.program, { name: report.account, folder: report.folder })}${named ? `, settings in ${folderText(report.program, report.folder)}` : ""}`;
+    out(`  account   ${account} (${report.program === "claude" ? "orc account lists the others" : "set CODEX_HOME where orc starts to use another"})`);
     if (report.talks) {
       const models = (report.models ?? []).map((choice) => (choice.name && choice.name !== choice.value ? `${choice.value} (${choice.name})` : choice.value));
       out(`  talks     yes${report.defaultModel ? `, default model ${report.defaultModel}` : ""}`);

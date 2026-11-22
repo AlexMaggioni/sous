@@ -4,6 +4,7 @@
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { HomePaths, Place } from "./home.js";
+import type { Program } from "./programs.js";
 import type { Priority } from "./slots.js";
 
 export interface RunRecord {
@@ -48,6 +49,20 @@ export interface RunRecord {
   stopSteps?: string[];
   /** The installed Claude Code and Codex the run's steps used, by harness, from its last start. */
   programs?: Record<string, { path: string; version?: string }>;
+  /** The account each program's steps use, kept across pauses and resumes (accounts.ts). */
+  accounts?: Partial<Record<Program, RunAccount>>;
+  /** Set when a step hit a usage limit: whose limit it was. A start or resume clears it. */
+  limit?: { program: Program; account: string; at: string };
+}
+
+export interface RunAccount {
+  /** An account of orc's, "default" for the program's own login, or "caller" for the login of
+   *  the agent's session that started the run. */
+  name: string;
+  /** CLAUDE_CONFIG_DIR or CODEX_HOME as it was where the run started. Null when it was not set. */
+  folder: string | null;
+  /** The key of the login token the run started with, when it is no account of orc's. */
+  kept?: string;
 }
 
 export interface NestedRun {

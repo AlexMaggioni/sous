@@ -7,6 +7,8 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { openWorkflowDir, type PersistedRunState } from "@automatalabs/workflow-engine";
+import { cmdAccount } from "./account-cli.js";
+import { describeAccount, limitNotice } from "./accounts.js";
 import { checkWorkflow } from "./check.js";
 import { cronMatches, nextRun, parseCron } from "./cron.js";
 import { dryRun, readAnswers } from "./dryrun.js";
@@ -16,7 +18,7 @@ import { listQuestions, normalizeAnswer, readQuestion, removeRunQuestions, write
 import { workflowExtras } from "./inputs.js";
 import { createRun, InputProblems, logFile, resolveWorkflow, spawnWorker } from "./launch.js";
 import { doctor } from "./doctor.js";
-import { isProgram, PROGRAM_INFO } from "./programs.js";
+import { isProgram, PROGRAM_INFO, PROGRAMS } from "./programs.js";
 import { gcWorktrees, isPlace, removeWorktree, runWorktrees } from "./places.js";
 import { findRecord, listRecords, loadSnapshot, processAlive, updateRecord, type RunRecord } from "./records.js";
 import { currentWorkflows, managerFor, workerMain } from "./worker.js";
@@ -423,6 +425,8 @@ async function cmdRun(parsed: Parsed): Promise<number> {
     ...(concurrency ? { concurrency: Number(concurrency) } : {}),
     // An agent in a run starts workflows through this command too. Its shell carries the run's id.
     ...(process.env.ORC_RUN_ID ? { startedByRun: process.env.ORC_RUN_ID, origin: "agent" as const } : {}),
+    // Claude Code marks the shells of its sessions. A run one starts uses its login.
+    caller: process.env.CLAUDECODE === "1",
   });
   return startAndMaybeWait(paths, record, "start", parsed);
 }
@@ -475,6 +479,10 @@ function cmdShow(parsed: Parsed): number {
     const name = isProgram(program) ? PROGRAM_INFO[program].name : program;
     out(`program   ${name} ${used.version ?? "(version unknown)"}  ${used.path}`);
   }
+  for (const program of PROGRAMS) {
+    if (record.accounts?.[program]) out(`account   ${PROGRAM_INFO[program].name}: ${describeAccount(program, record.accounts[program])}`);
+  }
+  if (record.limit && state?.status === "paused" && state.pauseReason === "usage_limit") out(`limit     ${limitNotice(paths, record, state.resetHint)}`);
   if (state?.tokenUsage) out(`tokens    ${state.tokenUsage.total}${state.durationMs ? `  in ${Math.round(state.durationMs / 1000)}s` : ""}`);
   if (state?.agents.length) {
     out("steps");
@@ -653,6 +661,8 @@ async function cmdRerun(parsed: Parsed): Promise<number> {
     ...(old.overrides || parsed.sets.length ? { overrides: { ...old.overrides, ...parseSets(parsed.sets) } } : {}),
     ...((str(parsed.flags.model) ?? old.defaultModel) ? { defaultModel: str(parsed.flags.model) ?? old.defaultModel! } : {}),
     ...(old.concurrency ? { concurrency: old.concurrency } : {}),
+    ...(process.env.ORC_RUN_ID ? { startedByRun: process.env.ORC_RUN_ID } : {}),
+    caller: process.env.CLAUDECODE === "1",
   });
   return startAndMaybeWait(paths, record, "start", parsed);
 }
@@ -916,6 +926,12 @@ const HELP = `orc runs saved workflows in the background.
   orc gc [--dry-run]                   remove worktrees whose branch is merged
   orc discard <run> [--yes]            delete the run's branches and worktrees, merged or not
   orc prune --days N                   remove finished runs older than N days
+  orc account                          the accounts orc's steps can use, and the one they use now
+  orc account add <name>               add a Claude Code login: runs claude setup-token, then asks
+                                       for the token it prints (or reads it from stdin)
+  orc account use <name>               use it for new runs, and move the runs waiting at the usage
+                                       limit to it; default is Claude Code's own login
+  orc account remove <name>            forget a login
   orc doctor [--live]                  the installed Claude Code and Codex the steps run on, and
                                        whether orc talks to them; --live runs one tiny step on each
         --model <spec>                 with --live, check this model only, such as codex/gpt-6.1-sol
@@ -924,7 +940,8 @@ Home: ${homePaths().home} (set ORC_HOME to change). A project's .orchestrator/ f
 workflows, and wins over the home folder's. Agents and MCP servers come from the project's
 .rulesync/, then the global rulesync folder (rulesyncGlobal in config.json), then the harnesses'
 own folders, such as .claude/agents/ and .codex/agents/. Steps run on the Claude Code and Codex
-installed on this machine.`;
+installed on this machine, on the account orc account names. A run that a Claude Code session or
+an agent starts uses that session's account.`;
 
 export async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
@@ -982,6 +999,9 @@ export async function main(argv: string[]): Promise<number> {
         return cmdPrune(parsed);
       case "discard":
         return cmdDiscard(parsed);
+      case "account":
+      case "accounts":
+        return await cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message) });
       case "doctor":
         return await doctor({ live: parsed.flags.live === true, model: str(parsed.flags.model), json: parsed.flags.json === true });
       default:

@@ -6,6 +6,7 @@ import { existsSync, openSync, readFileSync, closeSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateRunId, openWorkflowDir, parseWorkflowScript } from "@automatalabs/workflow-engine";
+import { accountsForRun } from "./accounts.js";
 import { loadConfig, rememberProject, workflowDirs, type HomePaths, type Place } from "./home.js";
 import { checkInputs, workflowExtras, type WorkflowExtras } from "./inputs.js";
 import { preparePlace } from "./places.js";
@@ -64,6 +65,8 @@ export interface CreateRunRequest {
   reuseFrom?: RunRecord;
   /** The run whose agent asks for this one, when an agent starts it. */
   startedByRun?: string;
+  /** Set when a Claude Code session starts the run. Its Claude Code steps then use that session's login. */
+  caller?: boolean;
 }
 
 export class InputProblems extends Error {
@@ -110,6 +113,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
     ...(request.rerunOf ? { rerunOf: request.rerunOf } : {}),
     ...(reuse ? { reuseFrom: reuse.runId } : {}),
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
+    accounts: accountsForRun(paths, process.env, { caller: request.caller, parentRunId: request.startedByRun }),
   };
   saveRecord(paths, record);
   rememberProject(paths, request.projectDir);

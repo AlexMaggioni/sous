@@ -1,0 +1,311 @@
+// The account orc's steps use. orc is logged in on one account per program, and `default` is the
+// program's own login. `orc account add` keeps a Claude Code login token, made with
+// `claude setup-token`, in accounts.json, which only the user can read. Each run records its
+// account and keeps it when it pauses and resumes, also when the service resumes it. A run that an
+// agent starts uses that agent's account. `orc account use` moves the runs waiting at a usage limit
+// to the new account and resumes them. Codex steps use Codex's own login for now.
+
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import type { HomePaths } from "./home.js";
+import { PROGRAM_INFO, PROGRAMS, isProgram, type Program } from "./programs.js";
+import { listRecords, loadRecord, processAlive, rootRunId, updateRecord, type RunAccount, type RunRecord } from "./records.js";
+
+export type { RunAccount };
+
+/** The program's own login. */
+export const DEFAULT = "default";
+/** The account of the agent's session that started the run. */
+export const CALLER = "caller";
+
+export interface Login {
+  token: string;
+  addedAt: string;
+}
+
+interface AccountsFile {
+  /** The account orc uses for new runs, by program. Missing means default. */
+  current?: Partial<Record<Program, string>>;
+  logins?: Partial<Record<Program, Record<string, Login>>>;
+  /** Tokens that runs started with and that are no account of orc's, such as an agent's own, by key. */
+  kept?: Record<string, string>;
+}
+
+/** The variable that names each program's folder, where its login and settings live. */
+const FOLDER: Record<Program, string> = { claude: "CLAUDE_CONFIG_DIR", codex: "CODEX_HOME" };
+const TOKEN = "CLAUDE_CODE_OAUTH_TOKEN";
+/** Claude Code takes these over a login token, so a named account removes them. */
+const WINS_OVER_TOKEN = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
+
+const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+export interface AccountName {
+  program: Program;
+  name: string;
+}
+
+/** "work" is a Claude Code account, "codex/work" a Codex one. "claude/work" works too. */
+export function parseAccountName(text: string | undefined): AccountName {
+  if (!text) throw new Error("give an account name, such as work");
+  const slash = text.indexOf("/");
+  const program = slash === -1 ? "claude" : text.slice(0, slash);
+  const name = slash === -1 ? text : text.slice(slash + 1);
+  if (!isProgram(program)) throw new Error(`"${program}" is no program. Use a bare name for Claude Code, or codex/<name>.`);
+  if (!NAME.test(name)) throw new Error(`"${name}" is not a usable name. Use letters, digits, dots, dashes and underscores.`);
+  return { program, name };
+}
+
+/** How the account reads in orc's output: a bare name for Claude Code, codex/<name> for Codex. */
+export function accountLabel(program: Program, name: string): string {
+  return program === "claude" ? name : `${program}/${name}`;
+}
+
+function readFile(paths: HomePaths): AccountsFile {
+  if (!existsSync(paths.accounts)) return {};
+  try {
+    return JSON.parse(readFileSync(paths.accounts, "utf8")) as AccountsFile;
+  } catch (error) {
+    throw new Error(`${paths.accounts} is not valid JSON: ${(error as Error).message}`);
+  }
+}
+
+function writeFile(paths: HomePaths, file: AccountsFile): void {
+  mkdirSync(paths.home, { recursive: true });
+  const temp = `${paths.accounts}.${process.pid}.tmp`;
+  writeFileSync(temp, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(temp, 0o600);
+  renameSync(temp, paths.accounts);
+}
+
+const keyOf = (token: string) => createHash("sha256").update(token).digest("hex").slice(0, 16);
+
+export interface AccountRow {
+  program: Program;
+  name: string;
+  current: boolean;
+  addedAt?: string;
+}
+
+/** Each program's accounts, default first. Tokens stay out. */
+export function listAccounts(paths: HomePaths): AccountRow[] {
+  const file = readFile(paths);
+  const rows: AccountRow[] = [];
+  for (const program of PROGRAMS) {
+    const current = currentAccount(paths, program, file);
+    rows.push({ program, name: DEFAULT, current: current === DEFAULT });
+    for (const [name, login] of Object.entries(file.logins?.[program] ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+      rows.push({ program, name, current: current === name, addedAt: login.addedAt });
+    }
+  }
+  return rows;
+}
+
+/** The account orc uses for the program's new runs. */
+export function currentAccount(paths: HomePaths, program: Program, file = readFile(paths)): string {
+  const name = file.current?.[program];
+  return name && file.logins?.[program]?.[name] ? name : DEFAULT;
+}
+
+/** Check a name for a new account, before the login is made. */
+export function checkNewAccount(paths: HomePaths, spec: string, file = readFile(paths)): AccountName {
+  const { program, name } = parseAccountName(spec);
+  if (program !== "claude") {
+    throw new Error(`Codex accounts come later. Codex steps use Codex's own login, from CODEX_HOME where orc starts.`);
+  }
+  if (name === DEFAULT || name === CALLER) throw new Error(`"${name}" is taken by orc. Pick another name.`);
+  if (file.logins?.[program]?.[name]) throw new Error(`there is an account ${name} already. orc account remove ${name} first.`);
+  return { program, name };
+}
+
+export function addAccount(paths: HomePaths, spec: string, token: string): AccountName {
+  const file = readFile(paths);
+  const { program, name } = checkNewAccount(paths, spec, file);
+  const value = token.trim();
+  if (!/^sk-ant-oat[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error("that is not a Claude Code login token. claude setup-token prints one that starts with sk-ant-oat.");
+  }
+  const same = Object.entries(file.logins?.[program] ?? {}).find(([, login]) => login.token === value);
+  if (same) throw new Error(`account ${same[0]} has this token already.`);
+  file.logins = { ...file.logins, [program]: { ...file.logins?.[program], [name]: { token: value, addedAt: new Date().toISOString() } } };
+  writeFile(paths, file);
+  return { program, name };
+}
+
+/** Forget a login. Refused while an unfinished run uses it. */
+export function removeAccount(paths: HomePaths, spec: string, unfinished: Set<string>): AccountName {
+  const { program, name } = parseAccountName(spec);
+  const file = readFile(paths);
+  if (!file.logins?.[program]?.[name]) throw new Error(`no account ${accountLabel(program, name)}. orc account lists them.`);
+  const using = listRecords(paths).filter((record) => unfinished.has(record.runId) && record.accounts?.[program]?.name === name);
+  if (using.length) {
+    throw new Error(
+      `${using.map((record) => record.runId).join(", ")} ${using.length === 1 ? "uses" : "use"} account ${accountLabel(program, name)}. ` +
+        `orc account use <name> moves the runs waiting at the limit to another account. Stop or finish the others first.`,
+    );
+  }
+  const { [name]: _gone, ...rest } = file.logins[program]!;
+  file.logins = { ...file.logins, [program]: rest };
+  if (file.current?.[program] === name) delete file.current[program];
+  writeFile(paths, file);
+  return { program, name };
+}
+
+export interface Moved {
+  runId: string;
+  workflow: string;
+  from: string;
+}
+
+export interface UseResult extends AccountName {
+  /** The runs moved to the account and resumed. */
+  moved: Moved[];
+  /** Runs waiting at the limit of this same account. They go on after the reset. */
+  same: Moved[];
+}
+
+/**
+ * Make the account orc's current one for its program. Then each run waiting at that program's
+ * usage limit moves to it and resumes now, also the runs that agents started.
+ */
+export function useAccount(
+  paths: HomePaths,
+  spec: string,
+  deps: { atLimit: (record: RunRecord) => boolean; resume: (runId: string) => void },
+): UseResult {
+  const { program, name } = parseAccountName(spec);
+  const file = readFile(paths);
+  if (name !== DEFAULT && !file.logins?.[program]?.[name]) {
+    throw new Error(`no account ${accountLabel(program, name)}. orc account lists them, and orc account add ${accountLabel(program, name)} adds it.`);
+  }
+  file.current = { ...file.current, [program]: name };
+  if (name === DEFAULT) delete file.current[program];
+  writeFile(paths, file);
+
+  const moved: Moved[] = [];
+  const same: Moved[] = [];
+  for (const record of listRecords(paths)) {
+    if (processAlive(record.pid) || !deps.atLimit(record)) continue;
+    // A run from before accounts, or one whose program is unknown, counts as waiting on Claude Code.
+    if ((record.limit?.program ?? "claude") !== program) continue;
+    const before = record.accounts?.[program];
+    const entry = { runId: record.runId, workflow: record.workflow, from: before?.name ?? DEFAULT };
+    if (before?.name === name) {
+      same.push(entry);
+      continue;
+    }
+    // The run keeps its settings folder. Only the login changes.
+    const folder = before?.folder !== undefined ? before.folder : (process.env[FOLDER[program]] ?? null);
+    updateRecord(paths, record.runId, { accounts: { ...record.accounts, [program]: { name, folder } } });
+    deps.resume(record.runId);
+    moved.push(entry);
+  }
+  return { program, name, moved, same };
+}
+
+/**
+ * The accounts a new run records. A run an agent of another run starts takes that run's accounts.
+ * A run a Claude Code session starts uses that session's login for its Claude Code steps. Any
+ * other run uses orc's current account. A login token in the environment that is no account of
+ * orc's is kept, so a resume by the service uses it too.
+ */
+export function accountsForRun(
+  paths: HomePaths,
+  env: Record<string, string | undefined>,
+  options: { caller?: boolean; parentRunId?: string } = {},
+): Record<Program, RunAccount> {
+  const parent = options.parentRunId ? loadRecord(paths, rootRunId(options.parentRunId)) : undefined;
+  if (parent?.accounts?.claude && parent.accounts.codex) return { claude: parent.accounts.claude, codex: parent.accounts.codex };
+  const file = readFile(paths);
+  const folder = (program: Program) => env[FOLDER[program]] ?? null;
+  const fromEnv = (name: string): RunAccount => {
+    const token = env[TOKEN];
+    if (!token) return { name, folder: folder("claude") };
+    const named = Object.entries(file.logins?.claude ?? {}).find(([, login]) => login.token === token)?.[0];
+    if (named) return { name: named, folder: folder("claude") };
+    const key = keyOf(token);
+    if (file.kept?.[key] !== token) {
+      file.kept = { ...file.kept, [key]: token };
+      writeFile(paths, file);
+    }
+    return { name, folder: folder("claude"), kept: key };
+  };
+  const current = currentAccount(paths, "claude", file);
+  const claude = options.caller ? fromEnv(CALLER) : current === DEFAULT ? fromEnv(DEFAULT) : { name: current, folder: folder("claude") };
+  return { claude, codex: { name: DEFAULT, folder: folder("codex") } };
+}
+
+/** The environment changes that put a step on the account. Undefined removes the variable. */
+export function accountEnv(paths: HomePaths, program: Program, account: RunAccount): Record<string, string | undefined> {
+  const change: Record<string, string | undefined> = { [FOLDER[program]]: account.folder ?? undefined };
+  if (program !== "claude") return change;
+  const file = readFile(paths);
+  if (account.name !== DEFAULT && account.name !== CALLER) {
+    const login = file.logins?.claude?.[account.name];
+    if (!login) throw new Error(`the run uses Claude Code account ${account.name}, which orc no longer has. orc account add ${account.name} adds it again.`);
+    change[TOKEN] = login.token;
+    for (const name of WINS_OVER_TOKEN) change[name] = undefined;
+    return change;
+  }
+  const kept = account.kept ? file.kept?.[account.kept] : undefined;
+  if (account.kept && !kept) throw new Error(`the login token this run started with is gone from ${paths.accounts}.`);
+  change[TOKEN] = kept;
+  return change;
+}
+
+/** Put this process on the run's accounts. Returns what puts the environment back. */
+export function applyAccounts(paths: HomePaths, accounts: RunRecord["accounts"], env: NodeJS.ProcessEnv = process.env): () => void {
+  if (!accounts) return () => {};
+  const change: Record<string, string | undefined> = {};
+  for (const program of PROGRAMS) {
+    const account = accounts[program];
+    if (account) Object.assign(change, accountEnv(paths, program, account));
+  }
+  const before = Object.fromEntries(Object.keys(change).map((name) => [name, env[name]]));
+  const set = (values: Record<string, string | undefined>) => {
+    for (const [name, value] of Object.entries(values)) {
+      if (value === undefined) delete env[name];
+      else env[name] = value;
+    }
+  };
+  set(change);
+  return () => set(before);
+}
+
+const tilde = (path: string) => (path.startsWith(homedir()) ? `~${path.slice(homedir().length)}` : path);
+
+/** The folder a program uses for a run: the recorded one, else its usual folder. */
+export function folderText(program: Program, folder: string | null | undefined): string {
+  if (folder) return tilde(folder.replace(/^~(?=$|\/)/, homedir()));
+  return program === "claude" ? "~/.claude" : "~/.codex";
+}
+
+/** One account in a sentence, such as "work" or "default, Claude Code's own login in ~/.claude". */
+export function describeAccount(program: Program, account: RunAccount | undefined): string {
+  const name = account?.name ?? DEFAULT;
+  const where = folderText(program, account?.folder);
+  if (name === DEFAULT) return `default, ${PROGRAM_INFO[program].name}'s own login in ${where}`;
+  if (name === CALLER) return `the login of the agent that started it, in ${where}`;
+  return name;
+}
+
+/** When the limit resets, from the engine's hint, such as "14:00" or "Sat 09:30". */
+export function resetText(resetHint: string | undefined, now = new Date()): string | undefined {
+  const match = resetHint ? /Resets at (\S+)/.exec(resetHint) : null;
+  const at = match ? new Date(match[1]!) : undefined;
+  if (!at || Number.isNaN(at.getTime())) return resetHint;
+  const time = at.toTimeString().slice(0, 5);
+  return at.getTime() - now.getTime() > 20 * 3600_000 ? `${at.toLocaleDateString("en", { weekday: "short" })} ${time}` : time;
+}
+
+/** What the user reads when a run waits at the limit: whose limit, when it resets, how to go on now. */
+export function limitNotice(paths: HomePaths, record: RunRecord, resetHint: string | undefined): string {
+  const program = record.limit?.program ?? "claude";
+  const name = record.limit?.account ?? record.accounts?.[program]?.name ?? DEFAULT;
+  const what = PROGRAM_INFO[program].name;
+  const who = name === CALLER ? `The agent's ${what} login` : name === DEFAULT ? `${what}'s own login (default)` : `${what} account ${name}`;
+  const reset = resetText(resetHint);
+  const current = currentAccount(paths, program);
+  const now = current !== name ? `orc account use ${accountLabel(program, current)} moves it to the account orc uses now.` : `orc account use <name> goes on now on another account.`;
+  return `${who} hit its usage limit.${reset ? ` It resets at ${reset}.` : ""} ${now}`;
+}

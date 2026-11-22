@@ -128,6 +128,7 @@ The deterministic engine (sandboxed `vm` realm, `parallel`/`pipeline`, journal/r
   - **Claude** — via the bundled `@agentclientprotocol/claude-agent-acp`, which runs your installed Claude Code (`npm install -g @anthropic-ai/claude-code`, or the native installer). `orc` finds it on PATH; other entry points read `CLAUDE_CODE_EXECUTABLE`. Auth from `~/.claude/.credentials.json` or `ANTHROPIC_API_KEY` (the orchestrator inherits your environment).
   - **Codex** — via `@automatalabs/codex-acp`, which runs your installed `codex` (`npm install -g @openai/codex`), found on PATH or at `CODEX_PATH`. Auth from `~/.codex/auth.json`.
   - Neither program is bundled, so steps run on the same version and models as your own sessions. `orc doctor` checks both.
+  - `orc account add <name>` keeps another Claude Code login, made with `claude setup-token`, and `orc account use <name>` makes orc's steps run on it. A run that a Claude Code session starts uses that session's login.
   - **OpenCode** — supported but **not bundled**. Install the `opencode` CLI on PATH or add `opencode-ai` to your own project (its platform binaries are large), then authenticate with `opencode auth login`.
   - **pi** — via the bundled `@automatalabs/pi-acp`; auth from the selected provider's API key or pi's `~/.pi/agent/auth.json`.
 

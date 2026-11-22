@@ -52,6 +52,7 @@ export function homePaths(home = orcHome()) {
     logs: join(home, "logs"),
     config: join(home, "config.json"),
     secrets: join(home, "secrets.env"),
+    accounts: join(home, "accounts.json"),
     schedules: join(home, "schedules.json"),
     projects: join(home, "projects.json"),
     daemonPid: join(home, "daemon.pid"),

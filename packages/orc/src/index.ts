@@ -49,6 +49,20 @@ export {
   type Answer,
   type Question,
 } from "./inbox.js";
+export {
+  accountsForRun,
+  addAccount,
+  applyAccounts,
+  currentAccount,
+  limitNotice,
+  listAccounts,
+  parseAccountName,
+  removeAccount,
+  useAccount,
+  type AccountRow,
+  type RunAccount,
+  type UseResult,
+} from "./accounts.js";
 export { checkInputs, workflowExtras, type InputSpec, type WorkflowExtras } from "./inputs.js";
 export { createRun, InputProblems, logFile, resolveWorkflow, spawnWorker, type CreateRunRequest, type ResolvedWorkflow } from "./launch.js";
 export { notify } from "./notify.js";

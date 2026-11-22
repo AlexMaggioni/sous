@@ -6,6 +6,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { WorkflowManager, openWorkflowDir, parseDurationSeconds, parseWorkflowScript, type WorkflowRunResult } from "@automatalabs/workflow-engine";
 import type { AgentRunner } from "@automatalabs/shared-types";
+import { applyAccounts, limitNotice } from "./accounts.js";
 import { lookupAgents, lookupMcpServers, registryOf } from "./agents.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, lookupSettings, workflowDirs, type HomePaths } from "./home.js";
 import { checkInputs, workflowExtras } from "./inputs.js";
@@ -110,11 +111,23 @@ export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<
 /** Run or resume one run in this process. Resolves with the engine's result. */
 export async function runWorker(runId: string, mode: "start" | "resume", options: WorkerOptions = {}): Promise<WorkflowRunResult | undefined> {
   const paths = ensureHome(options.paths ?? homePaths());
-  const config = loadConfig(paths);
-  const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
   const record = loadRecord(paths, runId);
   if (!record) throw new Error(`no run ${runId}`);
-  updateRecord(paths, runId, { pid: process.pid });
+  // The steps run on the run's recorded accounts, also when the service resumes it with its own
+  // environment. A dry run talks to no agent.
+  const restore = options.dryRun ? () => {} : applyAccounts(paths, record.accounts);
+  try {
+    return await runOnAccounts(paths, record, mode, options);
+  } finally {
+    restore();
+  }
+}
+
+async function runOnAccounts(paths: HomePaths, record: RunRecord, mode: "start" | "resume", options: WorkerOptions): Promise<WorkflowRunResult | undefined> {
+  const runId = record.runId;
+  const config = loadConfig(paths);
+  const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
+  updateRecord(paths, runId, { pid: process.pid, limit: undefined });
 
   const secrets = loadSecrets(paths);
   const settings = lookupSettings(paths, record.projectDir, config);
@@ -140,6 +153,10 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
       log(`${stamp()} program    ${PROGRAM_INFO[program].name} ${version ?? "(version unknown)"} at ${path}`);
       const programs = { ...loadRecord(paths, runId)?.programs, [program]: { path, ...(version ? { version } : {}) } };
       updateRecord(paths, runId, { programs });
+    },
+    onLimit: ({ program }) => {
+      const account = loadRecord(paths, runId)?.accounts?.[program]?.name ?? "default";
+      updateRecord(paths, runId, { limit: { program, account, at: new Date().toISOString() } });
     },
   });
   // A run keeps the workflows as they were when it started. A resume takes the edited ones only
@@ -321,6 +338,9 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
   const reason = state?.pauseReason ? ` (${state.pauseReason}${state.resetHint ? `, ${state.resetHint}` : ""})` : "";
   const error = result?.reason ?? state?.reason;
   log(`${stamp()} ${status.padEnd(10)} ${record.workflow}${reason}${status === "failed" && error ? `: ${oneLine(String(error), 400)}` : ""}`);
+  const atLimit = status === "paused" && state?.pauseReason === "usage_limit" && !stopping;
+  const limitText = atLimit ? limitNotice(paths, loadRecord(paths, runId) ?? record, state?.resetHint) : undefined;
+  if (limitText) log(`${stamp()} limit      ${limitText}`);
   if (status === "completed" || status === "aborted") {
     for (const dir of dropUnchangedWorktrees(paths, record.projectDir, runId)) log(`${stamp()} removed    ${dir}, which changed no file`);
   }
@@ -329,7 +349,7 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
   if (!quiet) {
     notify(
       `${record.workflow} ${status}`,
-      status === "paused" ? `paused${reason}. orc resume ${runId}` : status === "failed" ? oneLine(String(error ?? "failed"), 200) : `run ${runId}`,
+      limitText ?? (status === "paused" ? `paused${reason}. orc resume ${runId}` : status === "failed" ? oneLine(String(error ?? "failed"), 200) : `run ${runId}`),
       config.notify,
     );
   }

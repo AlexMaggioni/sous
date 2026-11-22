@@ -33,6 +33,8 @@ export interface OrcRunnerOptions {
   programs?: (program: Program) => ProgramLookup;
   /** Called once per program, before the first step that runs on it. */
   onProgram?: (found: FoundProgram & { version?: string }) => void;
+  /** Called when a step hits its program's usage limit, before the run pauses. */
+  onLimit?: (event: { program: Program; label?: string }) => void;
 }
 
 interface OrcRunExtras {
@@ -203,6 +205,9 @@ export function createOrcRunner(options: OrcRunnerOptions): AgentRunner & { disp
         meta: claudeMeta(extras.meta, { effort: step.effort, skills: step.skills, tools: step.tools, disallowedTools: step.disallowedTools }),
       } as never);
     } catch (error) {
+      if ((error as { code?: unknown } | undefined)?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT && isProgram(step.harness)) {
+        options.onLimit?.({ program: step.harness, label: extras.label });
+      }
       if (timeout?.aborted && !extras.signal?.aborted) {
         throw new WorkflowError(`timed out after ${Math.round(extras.timeoutMs! / 1000)}s`, WorkflowErrorCode.AGENT_EXECUTION_ERROR, {
           recoverable: true,

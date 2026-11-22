@@ -219,15 +219,37 @@ other copies it doesn't use. It opens a session on each and lists its models, wh
 prompt. `orc doctor --live` also runs one tiny step on each, and `--model codex/gpt-6.1-sol` checks
 one model.
 
-Claude Code keeps its account and settings in `~/.claude`, or in the folder `CLAUDE_CONFIG_DIR`
-names where orc starts. Codex uses `~/.codex`, or `CODEX_HOME`. To run orc's Claude steps on
-another account, start orc with `CLAUDE_CONFIG_DIR` set to that account's folder. The service keeps
-the environment of the shell that ran `orc daemon start`.
-
 orc never updates the programs. Update them as you usually do, such as with `npm install -g` or
 Homebrew, and the next step runs the new version. When a machine has several copies of one
 program, each copy may rewrite its own files, such as Codex's skills in `~/.codex/skills/.system/`.
 `orc doctor` lists the copies.
+
+### Accounts
+
+orc is logged in on one account per program. `default` is the program's own login: Claude Code's
+in `~/.claude`, or in the folder `CLAUDE_CONFIG_DIR` names where orc starts, and Codex's in
+`~/.codex`, or `CODEX_HOME`.
+
+| Command | What it does |
+| --- | --- |
+| `orc account` | the accounts, with `*` on the one orc uses for new runs, and the runs waiting at the usage limit |
+| `orc account add <name>` | runs `claude setup-token`, which logs in through the browser, then asks for the token it prints. Off a terminal, it reads the token from stdin. |
+| `orc account use <name>` | use it for new runs. The runs waiting at the usage limit move to it and resume now. `default` goes back to Claude Code's own login. |
+| `orc account remove <name>` | forget a login. Refused while an unfinished run uses it. |
+
+orc keeps the tokens in `~/.orchestrator/accounts.json`, which only you can read. A named account
+also keeps Claude Code from using `ANTHROPIC_API_KEY`, which would win over the token. Settings,
+agents and skills still come from Claude Code's folder.
+
+Each run records its account when it starts, and keeps it when it pauses and resumes, also when
+the service resumes it. `orc show` prints it, and `orc doctor` checks the account orc uses now.
+
+- A run that a Claude Code session starts uses that session's login for its Claude Code steps.
+  When the session runs on a token, orc keeps that token for the run, so the service resumes it on
+  the same login.
+- A run that an agent of another run starts uses that run's accounts.
+- A Codex step uses Codex's own login. Codex has a login token only on Business and Enterprise
+  plans, so a Codex account will be a folder of its own. That comes later.
 
 ## Runs
 
@@ -257,8 +279,9 @@ something, pauses or fails.
 - A run keeps the workflows as they were when it started, nested ones included. After an edit,
   `orc resume` asks first: `--latest` takes the new version and keeps the finished steps that
   match, and `--same` goes on with the run's own version.
-- At the subscription limit the run pauses. The service resumes it after the reset time, or 30
-  minutes later when no time is known.
+- At the subscription limit the run pauses, and the notice names the account and the reset time.
+  The service resumes it after the reset time, or 30 minutes later when no time is known.
+  `orc account use <name>` moves it to another account and resumes it now.
 - `maxAgents` caps the agents running at once across all runs. Others wait in a queue, and a
   person's run goes before a scheduled one.
 - A loop's rounds are the workflow's to cap, usually with an input such as `rounds`.
@@ -309,7 +332,8 @@ orc run ticket --ticket "Fix the empty count" --wait --json
 ```
 
 Agents inside a run get `ORC_RUN_ID` in their environment. A run they start records the run that
-started it, and `orc` refuses a workflow with `startedBy: "people"`.
+started it, and `orc` refuses a workflow with `startedBy: "people"`. A run uses the account of the
+session or the run that started it, as in [Accounts](#accounts).
 
 ## Status
 
@@ -335,8 +359,12 @@ Proven end to end with real agents, on `claude/haiku` unless a proof says otherw
   program and version it used, `orc doctor` checks both, and neither program changes its own
   files during the runs.
 
-The proofs before that one ran on the Claude Code and Codex that orc bundled then: Claude Code
-2.1.281, where haiku meant Haiku 4.5, and Codex 0.156.1.
+- [Accounts](proof/accounts.md). A run from a Claude Code session records that session's login, a
+  run from a plain shell records orc's account, and the tests cover the usage limit, the switch
+  and the resume.
+
+The proofs before the installed one ran on the Claude Code and Codex that orc bundled then:
+Claude Code 2.1.281, where haiku meant Haiku 4.5, and Codex 0.156.1.
 
 Waiting:
 
