@@ -18,7 +18,6 @@ import {
   loginOf,
   processAlive,
   removeAccount,
-  rootRunId,
   savedState,
   setupTokenProgram,
   startWorker,
@@ -163,7 +162,7 @@ function listCommand(paths: HomePaths, out: (line: string) => void, json: boolea
     }
   }
   if (process.env.ORC_RUN_ID) {
-    const parent = loadRecord(paths, rootRunId(process.env.ORC_RUN_ID));
+    const parent = loadRecord(paths, process.env.ORC_RUN_ID);
     out(`\nThis shell is in run ${process.env.ORC_RUN_ID}${parent?.accounts?.claude ? `, on ${parent.accounts.claude.name}` : ""}. A run started here uses that run's accounts.`);
   } else if (process.env.CLAUDECODE === "1") {
     out("\nThis shell is a Claude Code session. A run started here uses that session's login for its Claude Code steps.");

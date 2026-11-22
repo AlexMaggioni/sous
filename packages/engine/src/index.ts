@@ -348,12 +348,12 @@ export {
   type HomePaths,
   type Place,
 } from "./runs/home.js";
-export { findRecord, listRecords, loadRecord, processAlive, rootRunId, updateRecord, type RunRecord } from "./runs/records.js";
+export { findRecord, listRecords, loadRecord, processAlive, scopePath, updateRecord, type RunRecord } from "./runs/records.js";
 export { listQuestions, normalizeAnswer, readQuestion, writeAnswer, type Question } from "./runs/inbox.js";
 export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
 export { createRun, InputProblems, logFile, resolveWorkflow, startWorker } from "./runs/launch.js";
 export { managerFor, runWorker, savedState, workerMain } from "./runs/worker.js";
-export { daemonMain, daemonPid, fileSchedules, forgetRun, loadSchedules, prune, saveSchedules, tick, unfinishedRuns, type Schedule } from "./runs/service.js";
+export { busyWorktrees, daemonMain, daemonPid, fileSchedules, forgetRun, loadSchedules, prune, saveSchedules, tick, unfinishedRuns, type Schedule } from "./runs/service.js";
 export { readLogFrom, stateOf, statusWord, waitForRun, withLiveSteps } from "./runs/view.js";
 export { answerQuestion, answerValue, breakpointValue, discardRun, findQuestion, pauseRun, rerun, resumeCheck, resumeRun, reuseCheck, stopRun, stopStep, type AnswerKind } from "./runs/control.js";
 export { checkInputs, workflowExtras } from "./workflow-inputs.js";

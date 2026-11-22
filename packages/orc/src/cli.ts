@@ -7,7 +7,7 @@ import { closeSync, existsSync, openSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { answerQuestion, answerValue, breakpointValue, createRun, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listQuestions, listRecords, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, saveSchedules, startWorker, stateOf, statusWord, stopRun, stopStep, unfinishedRuns, waitForRun, withLiveSteps, workerMain, workflowDirs, workflowExtras, writeAnswer, type AnswerKind, type HomePaths, type PersistedRunState, type Place, type Question, type RunRecord, type Schedule } from "@orchestrator/engine";
+import { answerQuestion, answerValue, breakpointValue, busyWorktrees, createRun, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listQuestions, listRecords, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, saveSchedules, scopePath, startWorker, stateOf, statusWord, stopRun, stopStep, waitForRun, withLiveSteps, workerMain, workflowDirs, workflowExtras, writeAnswer, type AnswerKind, type HomePaths, type PersistedRunState, type Place, type Question, type RunRecord, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { checkWorkflow } from "./check.js";
 import { dryRun, readAnswers } from "./dryrun.js";
@@ -160,10 +160,11 @@ function printSteps(record: RunRecord, agents: readonly Step[], ended: boolean):
         line(agent, indent);
         continue;
       }
-      if (!own.startsWith(`${scope}-nested`)) continue;
       // The child of this scope that holds the step, which may itself hold deeper ones.
-      const next = own.indexOf("-nested", scope.length + 1);
-      const child = next === -1 ? own : own.slice(0, next);
+      const path = own === record.runId ? [own] : [record.runId, ...scopePath(record.nested, own)];
+      const at = path.indexOf(scope);
+      if (at === -1 || at === path.length - 1) continue;
+      const child = path[at + 1]!;
       if (opened.has(child)) continue;
       opened.add(child);
       const nested = record.nested?.[child];
@@ -645,7 +646,7 @@ function cmdGc(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
   const records = listRecords(paths);
   const projects = [...new Set(records.map((record) => record.projectDir))];
-  const result = gcWorktrees(paths, projects, { dryRun: parsed.flags["dry-run"] === true, unfinished: unfinishedRuns(paths, records) });
+  const result = gcWorktrees(paths, projects, { dryRun: parsed.flags["dry-run"] === true, busy: busyWorktrees(paths, records) });
   for (const item of result.removed) out(`${parsed.flags["dry-run"] ? "would remove" : "removed"} ${item.dir} (${item.branch}): ${item.reason}`);
   for (const item of result.kept) out(`kept ${item.dir} (${item.branch}): ${item.reason}`);
   if (!result.removed.length && !result.kept.length) out("no worktrees");

@@ -78,7 +78,10 @@ import {
   cloneTelemetry,
   deepFreeze,
 } from "./strict-json.js";
-import { createWorktree, removeWorktree, type Worktree } from "./worktree.js";
+import { makeStepWorktree, nestedPlace, removeStepWorktree, type Worktree } from "./places/places.js";
+import { homePaths, type HomePaths } from "./runs/home.js";
+import { noteNested } from "./runs/records.js";
+import { nestedArgs } from "./workflow-inputs.js";
 import {
   createOrchestratorGlobals,
   DEFAULT_MAX_NESTING_DEPTH,
@@ -91,6 +94,14 @@ import {
 // returns the result MINUS the run-manager's terminal status trio; the manager stamps
 // status/reason/resetHint on top (the engine seam is never widened).
 export type { WorkflowMeta, WorkflowMetaPhase, JournalEntry } from "./workflow-result.js";
+
+/** A step's worktree, or why the step works without one. */
+interface StepWorktree {
+  isolated: boolean;
+  cwd: string;
+  tree?: Worktree;
+  reason?: string;
+}
 
 /** Bare engine return: the host-facing WorkflowRunResult MINUS the manager's terminal
  *  status trio (status/reason/resetHint). The WorkflowManager composes those on top. */
@@ -165,7 +176,7 @@ export interface SharedRuntime {
   depth: number;
   /** Root-run-wide workflow() invocation ordinal. Monotonic and never decremented. */
   nestedSeq: number;
-  /** The root run's id, so a nested run's journal key is relative to it. */
+  /** The root run's id. Its record holds the run tree and the step worktrees. */
   rootRunId?: string;
   /** Root-execution activity shared by nested workflow engines. */
   resumeActivity?: {
@@ -278,9 +289,8 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   /** Resolve a saved-workflow name to its script, enabling `workflow('name', args)`. */
   loadSavedWorkflow?: (name: string) => string | undefined;
   /**
-   * Journals of nested runs to replay on resume, keyed by the child's run id
-   * without the root run's id, such as "-nested2-nested1". A child numbers its own workflow()
-   * calls in call order, so the key is the same on every replay.
+   * Journals of nested runs to replay on resume, keyed by the child's run id. A child numbers its
+   * own workflow() calls in call order, so its id is the same on every replay.
    */
   nestedResumeJournals?: ReadonlyMap<string, Map<number, JournalEntry>>;
   /** Per-run changes to steps, by label, such as { reviewer: { model: "haiku" } }. */
@@ -297,18 +307,10 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   /** Names of the saved workflows an agent may pick with choose({ any: true }). */
   listSavedWorkflows?: () => Array<{ name: string; description?: string }>;
   /**
-   * Prepare the place a nested workflow() runs in ("worktree", "folder" or
-   * "none"). Returns the cwd for the child run. Nothing is cleaned up: worktrees are kept
-   * until their branch is merged.
+   * The orc home. Its worktrees folder holds the worktrees of nested runs and of steps, and the
+   * root run's record there notes them. Default: $ORC_HOME, else ~/.orchestrator.
    */
-  prepareNestedPlace?: (request: { place: string; childRunId: string; name: string; cwd: string }) =>
-    Promise<{ cwd: string } | undefined> | { cwd: string } | undefined;
-  /**
-   * Check a nested workflow()'s args against the child's declared inputs and
-   * return the args it runs with, defaults filled in. Throws when an input is wrong or missing.
-   * The request also names the child run and the label the script gave it, for display.
-   */
-  prepareNestedArgs?: (request: { name: string; script: string; args: unknown; childRunId: string; label?: string }) => unknown;
+  home?: HomePaths;
   /**
    * APPROVED script-declared custom ACP backends (from `meta.backends`), threaded to every
    * agent() call as RunOptions.backends. The engine NEVER reads meta.backends itself — a
@@ -687,6 +689,7 @@ export async function runWorkflow<T = unknown>(
   const runId = options.runId ?? `run-${started.toString(36)}`;
   const callbackContext: WorkflowCallbackContext = { scope: runId };
   const baseCwd = options.cwd ?? process.cwd();
+  const home = options.home ?? homePaths();
   const vmFilename = `${sanitizeVmName(meta.name)}.js`;
   const preludeLines = DETERMINISM_PRELUDE.split("\n").length;
   const backendsDigest = options.scriptBackends ? hashCanonicalStrictJson(options.scriptBackends) : null;
@@ -760,6 +763,16 @@ export async function runWorkflow<T = unknown>(
   };
   shared.resumeActivity = resumeActivity;
   const limiter = shared.limiter;
+  // The root run's record holds the run tree and the step worktrees.
+  const rootRunId = shared.rootRunId ?? runId;
+  // A step with isolation "worktree" works in a worktree of its own, which places makes and removes.
+  const openStepWorktree = (callIndex: number, label: string): StepWorktree => {
+    const made = makeStepWorktree(home, rootRunId, baseCwd, { runId, index: callIndex, label });
+    return "tree" in made ? { isolated: true, cwd: made.tree.dir, tree: made.tree } : { isolated: false, cwd: baseCwd, reason: made.reason };
+  };
+  const closeStepWorktree = (worktree: StepWorktree | undefined): void => {
+    if (worktree?.tree) removeStepWorktree(home, rootRunId, baseCwd, worktree.tree);
+  };
   let nestedWorkflows = false;
   // This run's own workflow() count, taken in call order.
   let nestedLocalSeq = 0;
@@ -1314,7 +1327,7 @@ export async function runWorkflow<T = unknown>(
     shared.agentCount++;
     shared.agentOccurrenceCount = agentOrdinal + 1;
 
-    let precreatedWorktree: Worktree | undefined;
+    let precreatedWorktree: StepWorktree | undefined;
     let preparedRunCwd: string | undefined;
     let worktreePrepared = false;
     let agentStartEmitted = false;
@@ -1544,7 +1557,7 @@ export async function runWorkflow<T = unknown>(
         }
         if (resolvedIsolation === "worktree" && !worktreePrepared) {
           try {
-            worktree = await createWorktree(baseCwd, `${runId}-${callIndex}-${label}`);
+            worktree = openStepWorktree(callIndex, label);
           } catch (error) {
             if (resumeDeclared) options.onResumeFilesystemTainted?.();
             throw error;
@@ -1897,7 +1910,7 @@ export async function runWorkflow<T = unknown>(
         }
         throw error;
       } finally {
-        if (worktree?.isolated) await removeWorktree(worktree);
+        closeStepWorktree(worktree);
       }
     });
 
@@ -2116,7 +2129,7 @@ export async function runWorkflow<T = unknown>(
           }
           worktreePrepared = true;
           try {
-            precreatedWorktree = await createWorktree(baseCwd, `${runId}-${callIndex}-${label}`);
+            precreatedWorktree = openStepWorktree(callIndex, label);
           } catch (error) {
             if (resumeDeclared) options.onResumeFilesystemTainted?.();
             liveReason = { ...liveReason, reason: "worktree-degraded" };
@@ -2144,7 +2157,7 @@ export async function runWorkflow<T = unknown>(
         return runLive();
       } catch (error) {
         gate.release();
-        if (!delegated && precreatedWorktree?.isolated) await removeWorktree(precreatedWorktree);
+        if (!delegated) closeStepWorktree(precreatedWorktree);
         if (!settled) {
           const errorRecord = projectRecordedError(error);
           const workflowError = wrapError(error, { agentLabel: label });
@@ -2311,35 +2324,20 @@ export async function runWorkflow<T = unknown>(
     }
     options.onResumeFilesystemTainted?.();
     const ordinal = ++shared.nestedSeq;
+    // The one place a child run id is made. Nothing reads it apart: the record names the parent.
     const childRunId = `${runId}-nested${localOrdinal}`;
-    const childJournalKey = childRunId.slice((shared.rootRunId ?? runId).length);
     nestedWorkflows = true;
     options.onNestedWorkflow?.(ordinal, childRunId);
     const resolved = options.loadSavedWorkflow?.(String(nameOrScript));
     const childScript = resolved ?? String(nameOrScript);
     const childName = resolved ? String(nameOrScript) : "inline";
+    const label = typeof nestedOptions?.label === "string" ? nestedOptions.label : undefined;
+    noteNested(home, rootRunId, childRunId, { parent: runId, workflow: childName, ...(label ? { label } : {}) });
     // The child gets its declared defaults, as it would started on its own.
-    const args = options.prepareNestedArgs
-      ? options.prepareNestedArgs({
-          name: childName,
-          script: childScript,
-          args: childArgs,
-          childRunId,
-          ...(typeof nestedOptions?.label === "string" ? { label: nestedOptions.label } : {}),
-        })
-      : childArgs;
+    const args = nestedArgs(childName, parseWorkflowScript(childScript).meta as unknown as Record<string, unknown>, childArgs);
     // A nested workflow can ask for its own place (a worktree, a folder, none).
-    let childCwd = options.cwd;
     const place = nestedOptions?.place;
-    if (place !== undefined && options.prepareNestedPlace) {
-      const prepared = await options.prepareNestedPlace({
-        place: String(place),
-        childRunId,
-        name: childName,
-        cwd: options.cwd ?? process.cwd(),
-      });
-      if (prepared?.cwd) childCwd = prepared.cwd;
-    }
+    const childCwd = place !== undefined ? nestedPlace(home, rootRunId, childRunId, place, baseCwd) : options.cwd;
     shared.depth++;
     try {
       const child = await runWorkflow(childScript, {
@@ -2356,7 +2354,7 @@ export async function runWorkflow<T = unknown>(
         nestingDepth: ownDepth + 1,
         // A nested run is its own script; never reuse the parent's resume journal.
         // It replays its own journal, recorded under its run id.
-        resumeJournal: options.nestedResumeJournals?.get(childJournalKey),
+        resumeJournal: options.nestedResumeJournals?.get(childRunId),
         injectedCheckpointReplies: undefined,
         resumeFromRunId: undefined,
         preparedResume: undefined,

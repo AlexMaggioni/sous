@@ -351,7 +351,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       assert.equal(result.resumeReport?.live, 2);
       assert.deepEqual(orderedDecisions, Array.from({ length: 40 }, (_value, index) => index));
 
-      execFileSync("git", ["-C", repository.cwd, "branch", "agentprism/wf/degrade-0-item-0"]);
+      execFileSync("git", ["-C", repository.cwd, "branch", "orc/degrade-0-item-0"]);
       const degraded = [...original];
       degraded[0] = "worktree-0-changed";
       const degradedCommits: PersistedResumeSeed[] = [];

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  busyWorktrees,
   createRun,
   ensureHome,
   fileSchedules,
@@ -20,7 +21,6 @@ import {
   runWorker,
   saveSchedules,
   tick,
-  unfinishedRuns,
   updateRecord,
   WorkflowError,
   WorkflowErrorCode,
@@ -508,7 +508,7 @@ describe("places and reruns", () => {
     git(writer.worktree!, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "work");
     git(projectDir, "merge", "-q", writer.branch!);
     const records = [loadRecord(paths, waiting.runId)!, loadRecord(paths, writer.runId)!];
-    const result = gcWorktrees(paths, [projectDir], { unfinished: unfinishedRuns(paths, records) });
+    const result = gcWorktrees(paths, [projectDir], { busy: busyWorktrees(paths, records) });
     assert.deepEqual(result.removed.map((r) => r.reason), ["merged"]);
     assert.equal(existsSync(writer.worktree!), false);
     assert.equal(existsSync(waiting.worktree!), true);
@@ -563,6 +563,218 @@ return build`);
     assert.match(calls[0]!.prompt, /- open: anyone/);
     assert.doesNotMatch(calls[0]!.prompt, /private/);
     assert.equal((result?.result as { result: unknown }).result, 2);
+  });
+});
+
+describe("the run tree", () => {
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const commit = (cwd: string, ...args: string[]) => git(cwd, "-c", "user.email=t@example.com", "-c", "user.name=t", ...args);
+
+  /** Run one orc command on this home, and keep what it prints. */
+  async function orc(paths: HomePaths, ...args: string[]): Promise<{ code: number; out: string; err: string }> {
+    const before = process.env.ORC_HOME;
+    process.env.ORC_HOME = paths.home;
+    const out: string[] = [];
+    const err: string[] = [];
+    const stdout = process.stdout.write.bind(process.stdout);
+    const stderr = process.stderr.write.bind(process.stderr);
+    process.stdout.write = ((chunk: string) => (out.push(String(chunk)), true)) as typeof process.stdout.write;
+    process.stderr.write = ((chunk: string) => (err.push(String(chunk)), true)) as typeof process.stderr.write;
+    try {
+      return { code: await main(args), out: out.join(""), err: err.join("") };
+    } finally {
+      process.stdout.write = stdout;
+      process.stderr.write = stderr;
+      if (before === undefined) delete process.env.ORC_HOME;
+      else process.env.ORC_HOME = before;
+    }
+  }
+
+  /** The step lines `orc show` prints, without their times and tokens. */
+  const shownSteps = (text: string) =>
+    text
+      .slice(text.indexOf("steps\n") + 6)
+      .split("\n")
+      .filter((line, i, all) => line.startsWith("  ") && all.slice(0, i).every((l) => l.startsWith("  ")))
+      .map((line) => line.replace(/\s+\(\d+s(, \d+ tokens)?\)$|\s+\(\d+ tokens\)$/, ""));
+
+  const waitFor = async (ready: () => boolean) => {
+    for (let i = 0; i < 500 && !ready(); i++) await new Promise((r) => setTimeout(r, 10));
+    assert.ok(ready(), "timed out");
+  };
+
+  const hangUntilAborted = (call: Call) =>
+    new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted"))));
+
+  it("two levels of nesting with two nested runs at once: show, the log and stop --step name each step by its path", async () => {
+    const { paths, projectDir } = setup({
+      check: `export const meta = { name: 'check', description: 'checks', inputs: { what: 'What to check' } }
+return await agent('check ' + args.what, { label: 'checker' })`,
+      ticket: `export const meta = { name: 'ticket', description: 'one ticket', inputs: { id: 'The ticket' } }
+const built = await agent('build ' + args.id, { label: 'builder' })
+const checked = await workflow('check', { what: args.id }, { label: 'check ' + args.id })
+return { built, checked }`,
+      parent: `export const meta = { name: 'parent', description: 'two tickets at once' }
+await agent('look', { label: 'triage' })
+return await parallel(['A', 'B'].map((id) => () => workflow('ticket', { id }, { label: 'ticket ' + id })))`,
+    });
+    let hang = true;
+    const { runner, calls } = fakeRunner((call) => (call.prompt === "check A" && hang ? hangUntilAborted(call) : `${call.label} done`));
+    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const file = logFile(paths, record.runId);
+    const log = (line: string) => appendFileSync(file, `${line}\n`);
+    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log, handleSignals: true });
+    await waitFor(() => calls.some((c) => c.prompt === "check A") && calls.some((c) => c.prompt === "check B"));
+    await waitFor(() => readFileSync(file, "utf8").includes("done       ticket B / check B: checker"));
+
+    // The tree comes from the record: each nested run names its parent.
+    const nested = loadRecord(paths, record.runId)!.nested!;
+    assert.deepEqual(
+      Object.entries(nested).map(([id, child]) => [id, child.parent, child.label, child.workflow]).sort(),
+      [
+        [`${record.runId}-nested1`, record.runId, "ticket A", "ticket"],
+        [`${record.runId}-nested1-nested1`, `${record.runId}-nested1`, "check A", "check"],
+        [`${record.runId}-nested2`, record.runId, "ticket B", "ticket"],
+        [`${record.runId}-nested2-nested1`, `${record.runId}-nested2`, "check B", "check"],
+      ],
+    );
+
+    const wrong = await orc(paths, "stop", record.runId, "--step", "checker");
+    assert.equal(wrong.code, 1);
+    assert.match(wrong.err, /no step named "checker" runs .*Running now: "ticket A \/ check A: checker"/);
+    assert.equal((await orc(paths, "stop", record.runId, "--step", "ticket A / check A: checker")).code, 0);
+    await running;
+    const state = managerFor(paths, projectDir).getPersistence().load(record.runId);
+    assert.equal(state?.status, "paused");
+    assert.equal(state?.pauseReason, "step_stopped");
+
+    hang = false;
+    const done = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log });
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), [
+      { built: "builder done", checked: "checker done" },
+      { built: "builder done", checked: "checker done" },
+    ]);
+    assert.equal(calls.filter((c) => c.prompt === "check A").length, 2, "only the stopped step runs again");
+    assert.equal(calls.length, 6);
+
+    const lines = readFileSync(file, "utf8").split("\n").map((l) => l.slice(9));
+    for (const expected of [
+      "start      triage",
+      "start      ticket A: builder",
+      "start      ticket B: builder",
+      "start      ticket A / check A: checker",
+      "done       ticket B / check B: checker",
+      "stopping   ticket A / check A: checker",
+    ]) {
+      assert.ok(lines.includes(expected), `the log has "${expected}"`);
+    }
+    assert.ok(lines.some((l) => /^done +ticket A \/ check A: checker/.test(l)), "the stopped step ends on resume");
+
+    const shown = await orc(paths, "show", record.runId);
+    assert.equal(shown.code, 0);
+    assert.deepEqual(shownSteps(shown.out), [
+      "  done  triage",
+      "  ticket A  (workflow ticket)",
+      "    done  builder",
+      "    check A  (workflow check)",
+      "      done  checker",
+      "  ticket B  (workflow ticket)",
+      "    done  builder",
+      "    check B  (workflow check)",
+      "      done  checker",
+    ]);
+  });
+
+  it("an old record, whose nested runs name no parent, shows, stops, resumes and gcs as before", async () => {
+    const { paths, projectDir } = setup(
+      {
+        child: `export const meta = { name: 'child', description: 'builds', inputs: { id: 'The ticket' } }
+return await agent('build ' + args.id, { label: 'builder' })`,
+        parent: `export const meta = { name: 'parent', description: 'two tickets in their own worktrees' }
+await agent('look', { label: 'triage' })
+return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { label: 'ticket ' + id, place: 'worktree' })))`,
+      },
+      { defaultPlace: "worktree" },
+    );
+    git(projectDir, "init", "-q", "-b", "main");
+    commit(projectDir, "commit", "-q", "--allow-empty", "-m", "start");
+    let hang = true;
+    const { runner, calls } = fakeRunner((call) => {
+      if (call.label !== "builder") return `${call.label} done`;
+      if (call.prompt === "build A" && hang) return hangUntilAborted(call);
+      const cwd = String(call.options.cwd);
+      writeFileSync(join(cwd, `${call.prompt}.txt`), "work\n");
+      git(cwd, "add", ".");
+      commit(cwd, "commit", "-q", "-m", call.prompt);
+      return "built";
+    });
+    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const runId = record.runId;
+    const file = logFile(paths, runId);
+    const log = (line: string) => appendFileSync(file, `${line}\n`);
+    const running = runWorker(runId, "start", { paths, inner: runner, pollMs: 20, log, handleSignals: true });
+    await waitFor(() => calls.some((c) => c.prompt === "build A") && readFileSync(file, "utf8").includes("done       ticket B: builder"));
+
+    // The code at 7e0547ab wrote nested entries with no parent, and no step worktrees.
+    const recordJson = join(paths.records, `${runId}.json`);
+    const toOldShape = () => {
+      const json = JSON.parse(readFileSync(recordJson, "utf8")) as { nested: Record<string, Record<string, unknown>>; stepWorktrees?: unknown };
+      for (const child of Object.values(json.nested)) delete child.parent;
+      delete json.stepWorktrees;
+      writeFileSync(recordJson, `${JSON.stringify(json, null, 2)}\n`);
+    };
+    const trees = ["nested1", "nested2"].map((n) => ({ dir: join(paths.worktrees, `${runId}-${n}`), branch: `orc/${runId}-${n}` }));
+    assert.deepEqual(
+      Object.entries(loadRecord(paths, runId)!.nested!).map(([id, child]) => [id, child.cwd, child.branch]).sort(),
+      trees.map((tree) => [tree.branch.slice(4), tree.dir, tree.branch]),
+      "the nested worktrees keep the names <run>-nested<n>",
+    );
+    const newShape = await orc(paths, "show", runId);
+    toOldShape();
+    assert.equal(loadRecord(paths, runId)!.nested![`${runId}-nested1`]!.parent, runId, "the old reader finds the parent");
+    const oldShape = await orc(paths, "show", runId);
+    assert.equal(oldShape.out, newShape.out);
+    assert.deepEqual(shownSteps(oldShape.out), [
+      "  done  triage",
+      `  ticket A  (workflow child, branch ${trees[0]!.branch})`,
+      "    running builder",
+      `  ticket B  (workflow child, branch ${trees[1]!.branch})`,
+      "    done  builder",
+    ]);
+
+    toOldShape();
+    assert.equal((await orc(paths, "stop", runId, "--step", "ticket A: builder")).code, 0);
+    await running;
+    assert.equal(managerFor(paths, projectDir).getPersistence().load(runId)?.pauseReason, "step_stopped");
+    assert.match(readFileSync(file, "utf8"), /stopping   ticket A: builder/);
+
+    // A paused run keeps its nested worktrees, merged or not.
+    git(projectDir, "merge", "-q", trees[1]!.branch);
+    toOldShape();
+    const paused = gcWorktrees(paths, [projectDir], { busy: busyWorktrees(paths, listRecords(paths)) });
+    assert.deepEqual(paused.removed, []);
+    assert.deepEqual(
+      paused.kept.filter((k) => k.branch.startsWith(`orc/${runId}-nested`)).map((k) => [k.branch, k.reason]),
+      trees.map((tree) => [tree.branch, "its run has not finished"]),
+    );
+
+    toOldShape();
+    hang = false;
+    const done = await runWorker(runId, "resume", { paths, inner: runner, pollMs: 20, log });
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(calls.map((c) => c.prompt).sort(), ["build A", "build A", "build B", "look"]);
+    assert.ok(trees.every((tree) => existsSync(join(tree.dir, `build ${tree === trees[0] ? "A" : "B"}.txt`))), "each ticket worked in its own worktree");
+
+    // Once the run ended, gc removes each merged nested worktree.
+    commit(projectDir, "merge", "-q", "--no-edit", trees[0]!.branch);
+    toOldShape();
+    const ended = gcWorktrees(paths, [projectDir], { busy: busyWorktrees(paths, listRecords(paths)) });
+    assert.deepEqual(
+      ended.removed.filter((r) => r.branch.startsWith(`orc/${runId}-nested`)).map((r) => [r.branch, r.reason]),
+      trees.map((tree) => [tree.branch, "merged"]),
+    );
+    assert.ok(trees.every((tree) => !existsSync(tree.dir)));
   });
 });
 

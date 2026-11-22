@@ -5,8 +5,8 @@
 // Each question gets a stand-in answer. At the end the run, its worktrees and its scratch folders
 // are deleted.
 
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, rmSync } from "node:fs";
+import { dirname } from "node:path";
 import { createRun, fabricateFromSchema, forgetRun, isGitRepo, loadConfig, loadRecord, removeWorktree, resolveWorkflow, runWorker, runWorktrees, savedState, type AgentRunner, type HomePaths } from "@orchestrator/engine";
 
 /** Step label, or a pattern with `*`, to its answer. A list is a series of answers given in turn,
@@ -86,18 +86,18 @@ export async function dryRun(paths: HomePaths, request: DryRunRequest): Promise<
     const value = status === "completed" && result?.result !== undefined ? { result: JSON.parse(JSON.stringify(result.result)) as unknown } : {};
     return { runId: record.runId, status, ...value, ...(reason ? { reason: String(reason) } : {}), agents: agents.calls };
   } finally {
-    for (const tree of runWorktrees(paths, record.runId)) {
+    const latest = loadRecord(paths, record.runId) ?? record;
+    for (const tree of runWorktrees(latest)) {
       try {
         removeWorktree(record.projectDir, tree.dir, tree.branch);
       } catch {
         // already gone
       }
     }
-    if (existsSync(paths.scratch)) {
-      for (const name of readdirSync(paths.scratch)) {
-        if (name === record.runId || name.startsWith(`${record.runId}-nested`)) rmSync(join(paths.scratch, name), { recursive: true, force: true });
-      }
+    // The scratch folders of the run and its nested runs.
+    for (const dir of [latest.cwd, ...Object.values(latest.nested ?? {}).map((child) => child.cwd)]) {
+      if (dir && dirname(dir) === paths.scratch) rmSync(dir, { recursive: true, force: true });
     }
-    forgetRun(paths, loadRecord(paths, record.runId) ?? record);
+    forgetRun(paths, latest);
   }
 }

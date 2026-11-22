@@ -179,7 +179,7 @@ export function answerQuestion(paths: HomePaths, question: Question, value: unkn
  *  after each. */
 export function discardRun(paths: HomePaths, record: RunRecord, options: { remove?: boolean; deleted?: (tree: { dir: string; branch: string }) => void } = {}): Array<{ dir: string; branch: string }> {
   if (processAlive(record.pid)) throw new Error(`${record.runId} is running. orc stop ${record.runId} first.`);
-  const trees = runWorktrees(paths, record.runId);
+  const trees = runWorktrees(record);
   if (options.remove) {
     for (const tree of trees) {
       removeWorktree(record.projectDir, tree.dir, tree.branch);

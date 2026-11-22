@@ -93,9 +93,7 @@ const CALLERS = { engine: "orc", harnesses: "engine" };
 const BREAKS = {
   packages: [],
   imports: [],
-  homes: [
-    "making a git worktree, in packages/engine/src/worktree.ts"
-  ],
+  homes: [],
   exports: {
     "engine exports names orc never imports": 262
   },

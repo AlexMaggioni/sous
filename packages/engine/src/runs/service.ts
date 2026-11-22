@@ -14,7 +14,7 @@ import type { RunStatus } from "../workflow-result.js";
 import { openWorkflowDir } from "../workflow-dir.js";
 import { workflowExtras } from "../workflow-inputs.js";
 import { workflowProjectPaths } from "./persistence/project-paths.js";
-import { gcWorktrees } from "../places/places.js";
+import { gcWorktrees, runWorktrees } from "../places/places.js";
 import { changedWorkflows } from "./control.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
@@ -250,7 +250,7 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
     state.lastGc = now.toISOString();
     try {
       const projects = [...new Set(records.map((record) => record.projectDir))];
-      const { removed } = gcWorktrees(paths, projects, { unfinished: unfinishedRuns(paths, records) });
+      const { removed } = gcWorktrees(paths, projects, { busy: busyWorktrees(paths, records) });
       for (const entry of removed) log(`removed worktree ${entry.dir} (${entry.reason})`);
     } catch (error) {
       log(`worktree cleanup failed: ${(error as Error).message}`);
@@ -269,6 +269,18 @@ export function unfinishedRuns(paths: HomePaths, records = listRecords(paths)): 
     if (processAlive(record.pid) || !status || UNFINISHED.includes(status)) ids.add(record.runId);
   }
   return ids;
+}
+
+/** The worktrees of the runs that have not finished, borrowed ones included. gc keeps these. */
+export function busyWorktrees(paths: HomePaths, records = listRecords(paths)): Set<string> {
+  const unfinished = unfinishedRuns(paths, records);
+  const dirs = new Set<string>();
+  for (const record of records) {
+    if (!unfinished.has(record.runId)) continue;
+    if (record.worktree) dirs.add(record.worktree);
+    for (const tree of runWorktrees(record)) dirs.add(tree.dir);
+  }
+  return dirs;
 }
 
 /** Delete a run's saved state, record, workflow snapshot and logs. Its worktrees stay. */

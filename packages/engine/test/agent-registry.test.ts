@@ -16,6 +16,7 @@ import {
 } from "../src/agent-registry.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
+import { homePaths } from "../src/runs/home.js";
 
 // ── parseAgentDefinition ───────────────────────────────────────────────────
 
@@ -299,6 +300,7 @@ return {}`;
 
   it("agentType isolation: worktree runs the agent in an isolated cwd", async () => {
     const repo = mkdtempSync(join(tmpdir(), "ap-agent-isolation-"));
+    const home = homePaths(mkdtempSync(join(tmpdir(), "ap-agent-isolation-home-")));
     const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
     try {
       git("init", "-q");
@@ -330,16 +332,18 @@ return {}`;
         agent: runner,
         persistLogs: false,
         agentRegistry: isolatedRegistry,
+        home,
       });
 
       assert.equal(seen.length, 1);
       assert.ok(seen[0].cwd, "isolated agent should receive a cwd");
       assert.notEqual(seen[0].cwd, repo, "agent cwd should not be the base repo");
-      assert.ok(seen[0].cwd?.includes(join(".agentprism", "worktrees")), "isolated cwd is under .agentprism/worktrees");
+      assert.equal(seen[0].cwd, join(home.worktrees, "iso-test-0-a"), "isolated cwd is under the home's worktrees folder");
       assert.equal(seen[0].cwdExists, true, "worktree cwd should exist while the agent runs");
       assert.ok(seen[0].instructions?.includes("Requested isolation: worktree"));
     } finally {
       rmSync(repo, { recursive: true, force: true });
+      rmSync(home.home, { recursive: true, force: true });
     }
   });
 

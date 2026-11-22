@@ -8,15 +8,13 @@ import { limitNotice, runAccounts } from "../accounts.js";
 import { envFor, lookupAgents, lookupMcpServers, lookupSettings, registryOf } from "../agents.js";
 import { parseDurationSeconds } from "../orchestrator-globals.js";
 import type { PersistedRunState } from "./persistence/run-persistence.js";
-import { parseWorkflowScript } from "../workflow.js";
 import { openWorkflowDir } from "../workflow-dir.js";
-import { checkInputs, workflowExtras } from "../workflow-inputs.js";
 import { WorkflowManager } from "../workflow-manager.js";
-import { dropUnchangedWorktrees, isPlace, preparePlace } from "../places/places.js";
+import { dropUnchangedWorktrees, runWorktrees } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
 import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuestion, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
-import { loadRecord, loadSnapshot, noteNested, saveSnapshot, scopePrefix, updateRecord, type RunRecord } from "./records.js";
+import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { SlotPool } from "./slots.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
 import { programLookup } from "../programs.js";
@@ -84,21 +82,8 @@ export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<
           .list()
           .filter((entry) => entry.meta && (entry.meta as { startedBy?: unknown }).startedBy !== "people")
           .map((entry) => ({ name: entry.name, ...(entry.meta?.description ? { description: entry.meta.description } : {}) })),
-      prepareNestedPlace: ({ place, childRunId, cwd }) => {
-        if (!isPlace(place)) throw new Error(`place must be worktree, folder or none, got "${place}"`);
-        const prepared = preparePlace(paths, place, childRunId, cwd);
-        noteNested(paths, childRunId, { cwd: prepared.cwd, ...(prepared.branch ? { branch: prepared.branch } : {}) });
-        return { cwd: prepared.cwd };
-      },
-      // A nested run gets the same inputs check and defaults as one started from the command line.
-      prepareNestedArgs: ({ name, script, args, childRunId, label }) => {
-        noteNested(paths, childRunId, { workflow: name, ...(label ? { label } : {}) });
-        if (args !== undefined && (args === null || typeof args !== "object" || Array.isArray(args))) return args;
-        const extras = workflowExtras(parseWorkflowScript(script).meta as unknown as Record<string, unknown>);
-        const checked = checkInputs(extras, (args ?? {}) as Record<string, unknown>);
-        if (checked.problems.length) throw new Error(`workflow("${name}"): ${checked.problems.join("; ")}`);
-        return checked.args;
-      },
+      // Nested runs and step worktrees go on this home's records and under its worktrees folder.
+      home: paths,
     },
     ...extra,
   });
@@ -346,7 +331,8 @@ async function runOnAccounts(
   const limitText = atLimit ? limitNotice(paths, loadRecord(paths, runId) ?? record, state?.resetHint) : undefined;
   if (limitText) log(`${stamp()} limit      ${limitText}`);
   if (status === "completed" || status === "aborted") {
-    for (const dir of dropUnchangedWorktrees(paths, record.projectDir, runId)) log(`${stamp()} removed    ${dir}, which changed no file`);
+    const trees = runWorktrees(loadRecord(paths, runId) ?? record);
+    for (const dir of dropUnchangedWorktrees(record.projectDir, trees)) log(`${stamp()} removed    ${dir}, which changed no file`);
   }
   // A scheduled run speaks up only when it needs the user or fails.
   const quiet = options.dryRun || (record.origin === "schedule" && (status === "completed" || status === "aborted"));

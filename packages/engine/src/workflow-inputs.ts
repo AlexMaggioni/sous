@@ -152,3 +152,16 @@ export function checkInputs(extras: WorkflowExtras, given: Record<string, unknow
   }
   return { args, problems };
 }
+
+/**
+ * The args a nested workflow() runs with: the same check and defaults as a run started from the
+ * command line. Args that are no object pass as they are. Throws when an input is wrong or missing.
+ */
+export function nestedArgs(name: string, meta: Record<string, unknown>, args: unknown): unknown {
+  if (args !== undefined && (args === null || typeof args !== "object" || Array.isArray(args))) return args;
+  // A promise passes as it is, and the child awaits it.
+  if (typeof (args as { then?: unknown } | undefined)?.then === "function") return args;
+  const checked = checkInputs(workflowExtras(meta), (args ?? {}) as Record<string, unknown>);
+  if (checked.problems.length) throw new Error(`workflow("${name}"): ${checked.problems.join("; ")}`);
+  return checked.args;
+}

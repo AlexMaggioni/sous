@@ -45,6 +45,8 @@ export interface RunRecord {
   startedByRun?: string;
   /** Workflows this run started inside itself, by child run id. */
   nested?: Record<string, NestedRun>;
+  /** Worktrees of steps with `isolation: "worktree"` that exist now. A step removes its own when it ends. */
+  stepWorktrees?: Array<{ dir: string; branch: string }>;
   /** Set by `orc resume --latest`: the next resume takes the edited workflows. */
   resumeLatest?: boolean;
   /** Steps `orc stop --step` asked the worker to stop, by the name the log gives them. */
@@ -68,6 +70,8 @@ export interface RunAccount {
 }
 
 export interface NestedRun {
+  /** The run that started it: the root run or another nested run. */
+  parent: string;
   workflow: string;
   /** What the script called it, such as the ticket it builds. */
   label?: string;
@@ -76,30 +80,36 @@ export interface NestedRun {
   branch?: string;
 }
 
-/** The run a nested run belongs to: its child run id starts with the root run's id. */
-export function rootRunId(childRunId: string): string {
-  const at = childRunId.indexOf("-nested");
-  return at === -1 ? childRunId : childRunId.slice(0, at);
+/** The nested runs from the root's first child down to this scope. A scope the record does not
+ *  know counts as a child of the root. */
+export function scopePath(nested: Record<string, NestedRun> = {}, scope: string): string[] {
+  const path = [scope];
+  for (let id = nested[scope]?.parent; id && nested[id] && !path.includes(id); id = nested[id]!.parent) path.unshift(id);
+  return path;
 }
 
 /** How the log names a scope: "" for the run itself, else "Nested label / Inner label: ". */
 export function scopePrefix(runId: string, scope: string | undefined, nested: Record<string, NestedRun> = {}): string {
   if (!scope || scope === runId) return "";
-  const parts = scope.slice(runId.length).split(/(?=-nested\d)/).filter(Boolean);
-  const names = parts.map((_, i) => {
-    const id = runId + parts.slice(0, i + 1).join("");
-    return nested[id]?.label ?? nested[id]?.workflow ?? id;
-  });
+  const names = scopePath(nested, scope).map((id) => nested[id]?.label ?? nested[id]?.workflow ?? id);
   return `${names.join(" / ")}: `;
 }
 
 /** Note a nested run on its root run's record. */
-export function noteNested(paths: HomePaths, childRunId: string, change: Partial<NestedRun> & { workflow?: string }): void {
-  const record = loadRecord(paths, rootRunId(childRunId));
+export function noteNested(paths: HomePaths, rootRunId: string, childRunId: string, change: Partial<NestedRun>): void {
+  const record = loadRecord(paths, rootRunId);
   if (!record) return;
-  const before = record.nested?.[childRunId];
-  const next = { ...before, ...change } as NestedRun;
+  const next = { ...record.nested?.[childRunId], ...change } as NestedRun;
   saveRecord(paths, { ...record, nested: { ...record.nested, [childRunId]: next } });
+}
+
+/** Note a step's worktree on the root run's record when it is made, and drop it when it is gone. */
+export function noteStepWorktree(paths: HomePaths, rootRunId: string, tree: { dir: string; branch: string }, exists: boolean): void {
+  const record = loadRecord(paths, rootRunId);
+  if (!record) return;
+  const others = (record.stepWorktrees ?? []).filter((known) => known.dir !== tree.dir);
+  const stepWorktrees = exists ? [...others, tree] : others;
+  saveRecord(paths, { ...record, stepWorktrees });
 }
 
 /** The saved workflows as they were when the run started, by name. Nested workflows come from it,
@@ -133,10 +143,23 @@ export function saveRecord(paths: HomePaths, record: RunRecord): void {
   renameSync(temp, file);
 }
 
+/**
+ * Read a record file. Older records have nested entries with no parent. This is the one place
+ * that reads that old shape, and the only code that knows a child's id is `<parent>-nested<n>`.
+ */
+function readRecord(file: string): RunRecord {
+  const record = JSON.parse(readFileSync(file, "utf8")) as RunRecord;
+  for (const [id, child] of Object.entries(record.nested ?? {})) {
+    const at = id.lastIndexOf("-nested");
+    if (child.parent === undefined && at > 0) child.parent = id.slice(0, at);
+  }
+  return record;
+}
+
 export function loadRecord(paths: HomePaths, runId: string): RunRecord | undefined {
   const file = recordFile(paths, runId);
   if (!existsSync(file)) return undefined;
-  return JSON.parse(readFileSync(file, "utf8")) as RunRecord;
+  return readRecord(file);
 }
 
 export function updateRecord(paths: HomePaths, runId: string, change: Partial<RunRecord>): RunRecord | undefined {
@@ -155,7 +178,7 @@ export function listRecords(paths: HomePaths): RunRecord[] {
   for (const name of readdirSync(paths.records)) {
     if (!name.endsWith(".json")) continue;
     try {
-      out.push(JSON.parse(readFileSync(join(paths.records, name), "utf8")) as RunRecord);
+      out.push(readRecord(join(paths.records, name)));
     } catch {
       // a record being written
     }

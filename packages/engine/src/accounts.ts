@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import type { Account } from "@orchestrator/harnesses";
 import { HARNESSES, harnessName, isHarness, loginOf, type Harness as Program } from "./agents.js";
 import type { HomePaths } from "./runs/home.js";
-import { listRecords, loadRecord, processAlive, rootRunId, updateRecord, type RunAccount, type RunRecord } from "./runs/records.js";
+import { listRecords, loadRecord, processAlive, updateRecord, type RunAccount, type RunRecord } from "./runs/records.js";
 
 /** The program's own login. */
 export const DEFAULT = "default";
@@ -207,7 +207,7 @@ export function accountsForRun(
   env: Record<string, string | undefined>,
   options: { caller?: boolean; parentRunId?: string } = {},
 ): Record<Program, RunAccount> {
-  const parent = options.parentRunId ? loadRecord(paths, rootRunId(options.parentRunId)) : undefined;
+  const parent = options.parentRunId ? loadRecord(paths, options.parentRunId) : undefined;
   if (parent?.accounts?.claude && parent.accounts.codex) return { claude: parent.accounts.claude, codex: parent.accounts.codex };
   const file = readFile(paths);
   const folder = (program: Program) => loginOf(program, env).value ?? null;

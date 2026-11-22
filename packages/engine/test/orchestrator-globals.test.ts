@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +11,7 @@ import type { JournalEntry } from "../src/workflow-result.js";
 import { parseAgentDefinition, type AgentRegistry } from "../src/agent-registry.js";
 import { parseDurationSeconds } from "../src/orchestrator-globals.js";
 import { runWorkflow } from "../src/workflow.js";
+import { homePaths } from "../src/runs/home.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 // Code steps, questions, breakpoints, choose(), and the per-step options.
@@ -302,20 +304,69 @@ await agent('work', { label: 'w' })
 return cwd`;
     const script = `export const meta = { name: 'parent', description: 'p' }
 return await workflow('child', {}, { place: 'worktree' })`;
-    const requests: unknown[] = [];
-    const result = await runWorkflow<string>(script, {
+    const repo = mkdtempSync(join(tmpdir(), "orc-nested-place-"));
+    const home = homePaths(mkdtempSync(join(tmpdir(), "orc-nested-place-home-")));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: repo });
+      execFileSync("git", ["-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], { cwd: repo });
+      const result = await runWorkflow<string>(script, {
+        agent: runner,
+        persistLogs: false,
+        cwd: repo,
+        runId: "parent-run",
+        home,
+        loadSavedWorkflow: (name) => (name === "child" ? child : undefined),
+      });
+      // The places module makes the worktree, named after the child run.
+      const dir = join(home.worktrees, "parent-run-nested1");
+      assert.equal(result.result, dir);
+      assert.equal(calls[0]!.options.cwd, dir);
+      assert.equal(execFileSync("git", ["branch", "--show-current"], { cwd: dir, encoding: "utf8" }).trim(), "orc/parent-run-nested1");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(home.home, { recursive: true, force: true });
+    }
+  });
+
+  it("a nested workflow with a place that is none of the three fails", async () => {
+    const { runner } = recordingRunner(() => "ok");
+    const child = `export const meta = { name: 'child', description: 'c' }
+return 1`;
+    const script = `export const meta = { name: 'parent', description: 'p' }
+return await workflow('child', {}, { place: 'cloud' })`;
+    await assert.rejects(
+      runWorkflow(script, { agent: runner, persistLogs: false, loadSavedWorkflow: (name) => (name === "child" ? child : undefined) }),
+      /place must be worktree, folder or none, got "cloud"/,
+    );
+  });
+});
+
+describe("nested args", () => {
+  it("a nested workflow's args get the inputs check and defaults without orc, and a wrong input fails the call", async () => {
+    const { runner } = recordingRunner(() => "ok");
+    const child = `export const meta = { name: 'child', description: 'c', inputs: {
+  task: { type: 'string', required: true }, rounds: { type: 'number', default: 3 }, test: { type: 'string', default: 'npm test' } } }
+return args`;
+    const script = `export const meta = { name: 'parent', description: 'p' }
+const given = await workflow('child', { task: 'fix it', rounds: '2' })
+const problem = async (args) => { try { await workflow('child', args) } catch (error) { return error.message } }
+const missing = await problem({ rounds: 1 })
+const wrong = await problem({ task: 'x', rounds: 'many' })
+const unknown = await problem({ task: 'x', colour: 'red' })
+const plain = await workflow('child', 'as is')
+return { given, missing, wrong, unknown, plain }`;
+    const result = await runWorkflow<Record<string, unknown>>(script, {
       agent: runner,
       persistLogs: false,
-      cwd: "/repo",
       loadSavedWorkflow: (name) => (name === "child" ? child : undefined),
-      prepareNestedPlace: (request) => {
-        requests.push(request);
-        return { cwd: "/worktrees/child-1" };
-      },
     });
-    assert.equal(result.result, "/worktrees/child-1");
-    assert.equal(calls[0]!.options.cwd, "/worktrees/child-1");
-    assert.equal((requests[0] as { place: string }).place, "worktree");
+    assert.deepEqual(JSON.parse(JSON.stringify(result.result)), {
+      given: { task: "fix it", rounds: 2, test: "npm test" },
+      missing: 'workflow("child"): missing input --task',
+      wrong: 'workflow("child"): --rounds must be a number, got "many"',
+      unknown: 'workflow("child"): unknown input --colour. This workflow takes: --task, --rounds, --test',
+      plain: "as is",
+    });
   });
 });
 

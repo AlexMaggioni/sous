@@ -400,7 +400,7 @@ export interface WorkflowManagerOptions {
   /** Resolve a saved-workflow name to its script, enabling nested `workflow('name')`. */
   loadSavedWorkflow?: (name: string) => string | undefined;
   /** Options every run gets, such as the nesting limit and nested places. */
-  orchestrator?: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "prepareNestedPlace" | "prepareNestedArgs" | "pauseOnFailedStep">;
+  orchestrator?: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "home" | "pauseOnFailedStep">;
   /**
    * The injected agent backend (the frozen AgentRunner seam). May be overridden
    * per-run via ExecOptions.agent. The engine depends on this injection and never
@@ -663,17 +663,16 @@ export interface WorkflowManager {
  * best-effort observers, isolated from sibling listeners and from run execution. A
  * throwing host observer never fails, pauses, aborts, or masks cleanup for the run.
  */
-/** Group nested journal rows by the child run id without the root run id. */
-function nestedJournalsByKey(rows: readonly JournalEntry[], rootRunId: string): Map<string, Map<number, JournalEntry>> {
-  const byKey = new Map<string, Map<number, JournalEntry>>();
+/** Group nested journal rows by their scope, the child run's id. */
+function nestedJournalsByScope(rows: readonly JournalEntry[]): Map<string, Map<number, JournalEntry>> {
+  const byScope = new Map<string, Map<number, JournalEntry>>();
   for (const row of rows) {
-    if (typeof row.scope !== "string" || !row.scope.startsWith(rootRunId)) continue;
-    const key = row.scope.slice(rootRunId.length);
-    let entries = byKey.get(key);
-    if (!entries) byKey.set(key, (entries = new Map()));
+    if (typeof row.scope !== "string") continue;
+    let entries = byScope.get(row.scope);
+    if (!entries) byScope.set(row.scope, (entries = new Map()));
     entries.set(row.index, row);
   }
-  return byKey;
+  return byScope;
 }
 
 export class WorkflowManager extends EventEmitter {
@@ -684,7 +683,7 @@ export class WorkflowManager extends EventEmitter {
   readonly cwd: string;
   private concurrency: number;
   private loadSavedWorkflow?: (name: string) => string | undefined;
-  private orchestratorOptions: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "prepareNestedPlace" | "prepareNestedArgs" | "pauseOnFailedStep">;
+  private orchestratorOptions: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "home" | "pauseOnFailedStep">;
   private agent?: AgentRunner;
   /** The session's main model (provider/id), for auto-tiering explore agents. */
   private mainModel?: string;
@@ -2194,7 +2193,7 @@ export class WorkflowManager extends EventEmitter {
         ...this.orchestratorOptions,
         ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
         ...(managed.nestedJournal?.length
-          ? { nestedResumeJournals: nestedJournalsByKey(managed.nestedJournal, managed.runId) }
+          ? { nestedResumeJournals: nestedJournalsByScope(managed.nestedJournal) }
           : {}),
         // Manager-level `journal` events are observation, not persistence. Keep the engine's
         // deterministic journal callback active even when file journaling is disabled; the
@@ -2572,14 +2571,14 @@ export class WorkflowManager extends EventEmitter {
       managed.journal = managed.journal.filter((e) => e.index !== entry.index);
       managed.journal.push(entry);
       if (entry.kind === "checkpoint") this.persistRunOrThrow(managed);
-    } else if (entry.scope!.startsWith(`${managed.runId}-nested`)) {
-      // Keep nested results too, so a resumed run replays finished child steps.
+    } else {
+      // Any other scope is a nested run's. Keep its results too, so a resumed run replays
+      // finished child steps.
       managed.nestedJournal = (managed.nestedJournal ?? []).filter(
         (e) => !(e.scope === entry.scope && e.index === entry.index),
       );
       managed.nestedJournal.push(entry);
     }
-    const nested = !rootScope && entry.scope!.startsWith(`${managed.runId}-nested`);
     this.publishRunEvent(
       managed,
       this.createRunEvent("journal", {
@@ -2588,7 +2587,7 @@ export class WorkflowManager extends EventEmitter {
         entry,
       }),
       () => this.persistRun(managed),
-      rootScope || nested ? { beforeLive: () => this.persistRun(managed) } : undefined,
+      { beforeLive: () => this.persistRun(managed) },
     );
   }
 
