@@ -30,7 +30,7 @@ const SCOPE = "@orchestrator";
 const PACKAGES = ["orc", "engine", "harnesses"];
 
 /** Old folder names of the table's packages, while the refactor moves them. Empty at the end. */
-const OLD_NAMES = { "workflow-engine": "engine" };
+const OLD_NAMES = {};
 
 /**
  * What each package may import besides node's own modules and its own files. Ours are named
