@@ -1,0 +1,468 @@
+{
+  "proof": "shared",
+  "checks": {
+    "wrong-harness": {
+      "exit": 1,
+      "workflow": "wrong-harness",
+      "file": "$S/shared/g4/.orchestrator/workflows/wrong-harness.js",
+      "description": "wrong-harness",
+      "inputs": {},
+      "problems": [
+        "agent \"fixer\" comes from $S/shared/g4/.codex/agents/fixer.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code. Move it to rulesync, as .rulesync/subagents/fixer.md in the project or in the global rulesync folder, so one file serves every harness."
+      ],
+      "notes": [
+        "declares no inputs, so it takes any"
+      ]
+    },
+    "two-folders": {
+      "exit": 1,
+      "workflow": "two-folders",
+      "file": "$S/shared/g4/.orchestrator/workflows/two-folders.js",
+      "description": "two-folders",
+      "inputs": {},
+      "problems": [
+        "agent \"dual\" is in $S/shared/g4/.codex/agents/dual.toml and $S/shared/g4/.opencode/agents/dual.md, not in rulesync, and Claude Code, the default harness, has no copy. Move it to rulesync, as .rulesync/subagents/dual.md in the project or in the global rulesync folder, so one file serves every harness."
+      ],
+      "notes": [
+        "declares no inputs, so it takes any"
+      ]
+    },
+    "pick-later": {
+      "exit": 0,
+      "workflow": "pick-later",
+      "file": "$S/shared/g4/.orchestrator/workflows/pick-later.js",
+      "description": "pick-later",
+      "inputs": {
+        "harness": {
+          "type": "string",
+          "description": "the harness",
+          "default": "codex"
+        }
+      },
+      "problems": [],
+      "notes": [
+        "a step with agent \"fixer\" picks its harness while running. The agent comes from $S/shared/g4/.codex/agents/fixer.toml, so the step stops on any harness but Codex."
+      ]
+    },
+    "ghost": {
+      "exit": 1,
+      "workflow": "ghost",
+      "file": "$S/shared/g4/.orchestrator/workflows/ghost.js",
+      "description": "ghost",
+      "inputs": {},
+      "problems": [
+        "no agent \"ghost\". orc looks in .rulesync/subagents/, then the global rulesync folder ($S/shared/aiglobal/.rulesync/subagents/), then .claude/agents/, .codex/agents/ and .opencode/agents/ in the project and in the home folder."
+      ],
+      "notes": [
+        "declares no inputs, so it takes any"
+      ]
+    },
+    "old-home": {
+      "exit": 1,
+      "workflow": "old-home",
+      "file": "$S/shared/g4/.orchestrator/workflows/old-home.js",
+      "description": "old-home",
+      "inputs": {},
+      "problems": [
+        "no agent \"oldie\". orc looks in .rulesync/subagents/, then the global rulesync folder ($S/shared/aiglobal/.rulesync/subagents/), then .claude/agents/, .codex/agents/ and .opencode/agents/ in the project and in the home folder."
+      ],
+      "notes": [
+        "declares no inputs, so it takes any"
+      ]
+    }
+  },
+  "pickLaterOnClaude": {
+    "wait": {
+      "exit": 2,
+      "status": "paused",
+      "pauseReason": "step_failed",
+      "reason": "step \"fixer\" failed and a retry cannot fix it: step \"fixer\": agent \"fixer\" comes from $S/shared/g4/.codex/agents/fixer.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code. Move it to rulesync, as .rulesync/subagents/fixer.md in the project or in the global rulesync folder, so one file serves every harness.",
+      "questions": 0
+    },
+    "run": {
+      "workflow": "pick-later",
+      "origin": "cli",
+      "place": "folder",
+      "cwd": "$S/shared/g4",
+      "inputs": {
+        "harness": "claude"
+      },
+      "status": "paused",
+      "pauseReason": "step_failed",
+      "reason": "step \"fixer\" failed and a retry cannot fix it: step \"fixer\": agent \"fixer\" comes from $S/shared/g4/.codex/agents/fixer.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code. Move it to rulesync, as .rulesync/subagents/fixer.md in the project or in the global rulesync folder, so one file serves every harness.",
+      "phases": [],
+      "accounts": {
+        "claude": {
+          "name": "default",
+          "folder": "~/.claude"
+        },
+        "codex": {
+          "name": "default",
+          "folder": "~/.codex"
+        }
+      },
+      "logs": [
+        "agent fixer attempt 1/3 failed: step \"fixer\": agent \"fixer\" comes from $S/shared/g4/.codex/agents/fixer.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code. Move it to rulesync, as .rulesync/subagents/fixer.md in the project or in the global rulesync folder, so one file serves every harness.",
+        "step \"fixer\" failed and a retry cannot fix it: step \"fixer\": agent \"fixer\" comes from $S/shared/g4/.codex/agents/fixer.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code. Move it to rulesync, as .rulesync/subagents/fixer.md in the project or in the global rulesync folder, so one file serves every harness.. The run pauses: fix the cause and resume it."
+      ],
+      "steps": [
+        {
+          "label": "fixer",
+          "program": "claude",
+          "model": "claude",
+          "place": "$S/shared/g4",
+          "status": "error",
+          "continuedSession": false,
+          "errorCode": "INVALID_ARGUMENT",
+          "error": "step \"fixer\": agent \"fixer\" comes from $S/shared/g4/.codex/agents/fixer.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code. Move it to rulesync, as .rulesync/subagents/fixer.md in the project or in the global rulesync folder, so one file serves every harness."
+        }
+      ],
+      "openQuestions": 0
+    }
+  },
+  "reviewBothCheck": {
+    "exit": 0,
+    "workflow": "review-both",
+    "file": "$S/shared/g1/.orchestrator/workflows/review-both.js",
+    "description": "review-both",
+    "inputs": {},
+    "problems": [],
+    "notes": [
+      "declares no inputs, so it takes any"
+    ]
+  },
+  "reviewBoth": {
+    "wait": {
+      "exit": 0,
+      "status": "completed",
+      "questions": 0
+    },
+    "run": {
+      "workflow": "review-both",
+      "origin": "cli",
+      "place": "folder",
+      "cwd": "$S/shared/g1",
+      "inputs": {},
+      "status": "completed",
+      "phases": [],
+      "programs": {
+        "claude": {
+          "path": "~/.local/bin/claude",
+          "version": "2.1.330"
+        },
+        "codex": {
+          "path": "/opt/homebrew/bin/codex",
+          "version": "0.169.0"
+        }
+      },
+      "accounts": {
+        "claude": {
+          "name": "default",
+          "folder": "~/.claude"
+        },
+        "codex": {
+          "name": "default",
+          "folder": "~/.codex"
+        }
+      },
+      "logs": [
+        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run2.log"
+      ],
+      "steps": [
+        {
+          "label": "diff",
+          "program": "code",
+          "model": "exec",
+          "place": "$S/shared/g1",
+          "status": "done",
+          "exit": 0
+        },
+        {
+          "label": "review on claude code",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$S/shared/g1",
+          "status": "done",
+          "continuedSession": false,
+          "words": [
+            "APPROVED"
+          ]
+        },
+        {
+          "label": "review on codex",
+          "program": "codex",
+          "model": "codex/gpt-6.1-sol",
+          "requested": "codex",
+          "place": "$S/shared/g1",
+          "status": "done",
+          "continuedSession": false,
+          "words": [
+            "APPROVED"
+          ]
+        }
+      ],
+      "openQuestions": 0,
+      "result": {
+        "claude": "<text: APPROVED>",
+        "codex": "<text: APPROVED>"
+      }
+    }
+  },
+  "foldersCheck": {
+    "exit": 0,
+    "workflow": "folders",
+    "file": "$S/shared/folders/.orchestrator/workflows/folders.js",
+    "description": "folders",
+    "inputs": {},
+    "problems": [],
+    "notes": [
+      "declares no inputs, so it takes any"
+    ]
+  },
+  "foldersClaudeDefault": {
+    "wait": {
+      "exit": 0,
+      "status": "completed",
+      "questions": 0
+    },
+    "run": {
+      "workflow": "folders",
+      "origin": "cli",
+      "place": "folder",
+      "cwd": "$S/shared/folders",
+      "inputs": {},
+      "status": "completed",
+      "phases": [],
+      "programs": {
+        "codex": {
+          "path": "/opt/homebrew/bin/codex",
+          "version": "0.169.0"
+        },
+        "claude": {
+          "path": "~/.local/bin/claude",
+          "version": "2.1.330"
+        }
+      },
+      "accounts": {
+        "claude": {
+          "name": "default",
+          "folder": "~/.claude"
+        },
+        "codex": {
+          "name": "default",
+          "folder": "$S/shared/codex-home"
+        }
+      },
+      "logs": [
+        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run3.log"
+      ],
+      "steps": [
+        {
+          "label": "stylist",
+          "program": "codex",
+          "model": "codex/gpt-6.1-sol",
+          "place": "$S/shared/folders",
+          "status": "done",
+          "continuedSession": false,
+          "words": [
+            "CODEX-HOME"
+          ]
+        },
+        {
+          "label": "pair-reviewer",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$S/shared/folders",
+          "status": "done",
+          "continuedSession": false,
+          "words": [
+            "CLAUDE-COPY"
+          ]
+        }
+      ],
+      "openQuestions": 0,
+      "result": {
+        "stylist": "<text: CODEX-HOME>",
+        "pair": "<text: CLAUDE-COPY>"
+      }
+    }
+  },
+  "foldersCodexDefault": {
+    "wait": {
+      "exit": 0,
+      "status": "completed",
+      "questions": 0
+    },
+    "run": {
+      "workflow": "folders",
+      "origin": "cli",
+      "place": "folder",
+      "cwd": "$S/shared/folders",
+      "inputs": {},
+      "status": "completed",
+      "phases": [],
+      "programs": {
+        "codex": {
+          "path": "/opt/homebrew/bin/codex",
+          "version": "0.169.0"
+        }
+      },
+      "accounts": {
+        "claude": {
+          "name": "default",
+          "folder": "~/.claude"
+        },
+        "codex": {
+          "name": "default",
+          "folder": "$S/shared/codex-home"
+        }
+      },
+      "logs": [
+        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run4.log"
+      ],
+      "steps": [
+        {
+          "label": "stylist",
+          "program": "codex",
+          "model": "codex/gpt-6.1-sol",
+          "place": "$S/shared/folders",
+          "status": "done",
+          "continuedSession": false,
+          "words": [
+            "CODEX-HOME"
+          ]
+        },
+        {
+          "label": "pair-reviewer",
+          "program": "codex",
+          "model": "codex/gpt-6.1-sol",
+          "place": "$S/shared/folders",
+          "status": "done",
+          "continuedSession": false,
+          "words": [
+            "CODEX-COPY"
+          ]
+        }
+      ],
+      "openQuestions": 0,
+      "result": {
+        "stylist": "<text: CODEX-HOME>",
+        "pair": "<text: CODEX-COPY>"
+      }
+    }
+  },
+  "wordCheck": {
+    "exit": 0,
+    "workflow": "word",
+    "file": "$S/shared/textkit/.orchestrator/workflows/word.js",
+    "description": "word",
+    "inputs": {},
+    "problems": [],
+    "notes": [
+      "declares no inputs, so it takes any"
+    ]
+  },
+  "word": {
+    "wait": {
+      "exit": 0,
+      "status": "completed",
+      "questions": 0
+    },
+    "run": {
+      "workflow": "word",
+      "origin": "cli",
+      "place": "folder",
+      "cwd": "$S/shared/textkit",
+      "inputs": {},
+      "status": "completed",
+      "phases": [],
+      "programs": {
+        "claude": {
+          "path": "~/.local/bin/claude",
+          "version": "2.1.330"
+        },
+        "codex": {
+          "path": "/opt/homebrew/bin/codex",
+          "version": "0.169.0"
+        }
+      },
+      "accounts": {
+        "claude": {
+          "name": "default",
+          "folder": "~/.claude"
+        },
+        "codex": {
+          "name": "default",
+          "folder": "$S/shared/codex-home"
+        }
+      },
+      "logs": [
+        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run5.log"
+      ],
+      "steps": [
+        {
+          "label": "word-teller on claude code",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$S/shared/textkit",
+          "status": "done",
+          "continuedSession": false,
+          "words": [
+            "ORCHID",
+            "PLUM-HARBOR"
+          ]
+        },
+        {
+          "label": "word-teller on codex",
+          "program": "codex",
+          "model": "codex/gpt-6.1-sol",
+          "requested": "codex",
+          "place": "$S/shared/textkit",
+          "status": "done",
+          "continuedSession": false,
+          "words": [
+            "ORCHID",
+            "PLUM-HARBOR"
+          ]
+        },
+        {
+          "label": "own server on claude code",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$S/shared/textkit",
+          "status": "done",
+          "continuedSession": false,
+          "words": [
+            "DECOY"
+          ]
+        },
+        {
+          "label": "own server on codex",
+          "program": "codex",
+          "model": "codex",
+          "place": "$S/shared/textkit",
+          "status": "done",
+          "continuedSession": false,
+          "words": [
+            "DECOY"
+          ]
+        }
+      ],
+      "openQuestions": 0,
+      "result": {
+        "claude": "<text: ORCHID, PLUM-HARBOR>",
+        "codex": "<text: ORCHID, PLUM-HARBOR>",
+        "claudeOwn": "<text: DECOY>",
+        "codexOwn": "<text: DECOY>"
+      }
+    }
+  },
+  "models": {
+    "claude": "claude/haiku",
+    "codex": "gpt-6.1-sol, low effort where a step or agent sets it"
+  },
+  "gaps": [
+    "no agent step records its agent",
+    "no agent step records its effort"
+  ]
+}

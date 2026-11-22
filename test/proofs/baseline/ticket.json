@@ -1,0 +1,308 @@
+{
+  "proof": "ticket",
+  "tk1": {
+    "wait": {
+      "exit": 0,
+      "status": "completed",
+      "questions": 0
+    },
+    "run": {
+      "workflow": "ticket",
+      "origin": "cli",
+      "place": "worktree",
+      "cwd": "$ORC_HOME/worktrees/run1",
+      "worktree": "$ORC_HOME/worktrees/run1",
+      "branch": "orc/run1",
+      "inputs": {
+        "ticket": "<text>",
+        "rounds": 3,
+        "test": "npm test",
+        "reviewer": "reviewer"
+      },
+      "status": "completed",
+      "phases": [
+        "implement",
+        "review",
+        "verify"
+      ],
+      "programs": {
+        "claude": {
+          "path": "~/.local/bin/claude",
+          "version": "2.1.330"
+        }
+      },
+      "accounts": {
+        "claude": {
+          "name": "default",
+          "folder": "~/.claude"
+        },
+        "codex": {
+          "name": "default",
+          "folder": "~/.codex"
+        }
+      },
+      "logs": [
+        "review 1: approved",
+        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+      ],
+      "steps": [
+        {
+          "label": "implementer",
+          "phase": "implement",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$ORC_HOME/worktrees/run1",
+          "status": "done",
+          "continuedSession": false,
+          "keptOpen": true
+        },
+        {
+          "label": "diff 1",
+          "phase": "review",
+          "program": "code",
+          "model": "exec",
+          "place": "$ORC_HOME/worktrees/run1",
+          "status": "done",
+          "exit": 0
+        },
+        {
+          "label": "reviewer 1",
+          "phase": "review",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$ORC_HOME/worktrees/run1",
+          "status": "done",
+          "continuedSession": false,
+          "schema": "matched"
+        },
+        {
+          "label": "tests",
+          "phase": "verify",
+          "program": "code",
+          "model": "exec",
+          "place": "$ORC_HOME/worktrees/run1",
+          "status": "done",
+          "exit": 0
+        },
+        {
+          "label": "verifier",
+          "phase": "verify",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$ORC_HOME/worktrees/run1",
+          "status": "done",
+          "continuedSession": false,
+          "schema": "matched"
+        },
+        {
+          "label": "commit",
+          "phase": "verify",
+          "program": "code",
+          "model": "exec",
+          "place": "$ORC_HOME/worktrees/run1",
+          "status": "done",
+          "exit": 0
+        }
+      ],
+      "openQuestions": 0,
+      "result": {
+        "approved": true,
+        "verified": true,
+        "rounds": 1,
+        "commit": "<commit>",
+        "evidence": "<text>"
+      }
+    }
+  },
+  "tk2": {
+    "wait": {
+      "exit": 0,
+      "status": "completed",
+      "questions": 0
+    },
+    "run": {
+      "workflow": "ticket",
+      "origin": "cli",
+      "place": "worktree",
+      "cwd": "$ORC_HOME/worktrees/run2",
+      "worktree": "$ORC_HOME/worktrees/run2",
+      "branch": "orc/run2",
+      "inputs": {
+        "ticket": "<text>",
+        "rounds": 3,
+        "reviewer": "strict-reviewer",
+        "test": "npm test"
+      },
+      "status": "completed",
+      "phases": [
+        "implement",
+        "review",
+        "verify"
+      ],
+      "programs": {
+        "claude": {
+          "path": "~/.local/bin/claude",
+          "version": "2.1.330"
+        }
+      },
+      "accounts": {
+        "claude": {
+          "name": "default",
+          "folder": "~/.claude"
+        },
+        "codex": {
+          "name": "default",
+          "folder": "~/.codex"
+        }
+      },
+      "logs": [
+        "review 1: changes asked",
+        "review 2: approved",
+        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run2.log"
+      ],
+      "steps": [
+        {
+          "label": "implementer",
+          "phase": "implement",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$ORC_HOME/worktrees/run2",
+          "status": "done",
+          "continuedSession": false,
+          "keptOpen": true
+        },
+        {
+          "label": "diff 1",
+          "phase": "review",
+          "program": "code",
+          "model": "exec",
+          "place": "$ORC_HOME/worktrees/run2",
+          "status": "done",
+          "exit": 0
+        },
+        {
+          "label": "reviewer 1",
+          "phase": "review",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$ORC_HOME/worktrees/run2",
+          "status": "done",
+          "continuedSession": false,
+          "schema": "matched"
+        },
+        {
+          "label": "implementer 2",
+          "phase": "review",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$ORC_HOME/worktrees/run2",
+          "status": "done",
+          "continuedSession": true,
+          "keptOpen": true
+        },
+        {
+          "label": "diff 2",
+          "phase": "review",
+          "program": "code",
+          "model": "exec",
+          "place": "$ORC_HOME/worktrees/run2",
+          "status": "done",
+          "exit": 0
+        },
+        {
+          "label": "reviewer 2",
+          "phase": "review",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$ORC_HOME/worktrees/run2",
+          "status": "done",
+          "continuedSession": false,
+          "schema": "matched"
+        },
+        {
+          "label": "tests",
+          "phase": "verify",
+          "program": "code",
+          "model": "exec",
+          "place": "$ORC_HOME/worktrees/run2",
+          "status": "done",
+          "exit": 0
+        },
+        {
+          "label": "verifier",
+          "phase": "verify",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$ORC_HOME/worktrees/run2",
+          "status": "done",
+          "continuedSession": false,
+          "schema": "matched"
+        },
+        {
+          "label": "commit",
+          "phase": "verify",
+          "program": "code",
+          "model": "exec",
+          "place": "$ORC_HOME/worktrees/run2",
+          "status": "done",
+          "exit": 0
+        }
+      ],
+      "openQuestions": 0,
+      "result": {
+        "approved": true,
+        "verified": true,
+        "rounds": 2,
+        "commit": "<commit>",
+        "evidence": "<text>"
+      }
+    }
+  },
+  "git": {
+    "branches": [
+      {
+        "name": "main",
+        "commits": 1
+      },
+      {
+        "name": "orc/run1",
+        "commits": 1,
+        "files": [
+          "src/textkit.js",
+          "test/textkit.test.js"
+        ]
+      },
+      {
+        "name": "orc/run2",
+        "commits": 1,
+        "files": [
+          "src/textkit.js",
+          "test/textkit.test.js"
+        ]
+      }
+    ],
+    "worktrees": [
+      {
+        "path": "$ORC_HOME/worktrees/run1",
+        "branch": "orc/run1"
+      },
+      {
+        "path": "$ORC_HOME/worktrees/run2",
+        "branch": "orc/run2"
+      },
+      {
+        "path": "$S/ticket/tk",
+        "branch": "main"
+      }
+    ],
+    "projectChanges": []
+  },
+  "models": {
+    "claude": "claude/haiku",
+    "codex": "gpt-6.1-sol, low effort where a step or agent sets it"
+  },
+  "gaps": [
+    "no agent step records its agent",
+    "no agent step records its effort"
+  ]
+}

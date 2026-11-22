@@ -1,0 +1,328 @@
+{
+  "proof": "installed",
+  "check": {
+    "exit": 0,
+    "workflow": "installed",
+    "file": "$S/installed/p1/.orchestrator/workflows/installed.js",
+    "description": "One step on each installed program",
+    "inputs": {},
+    "problems": [],
+    "notes": [
+      "declares no inputs, so it takes any"
+    ]
+  },
+  "wait": {
+    "exit": 0,
+    "status": "completed",
+    "questions": 0
+  },
+  "run": {
+    "workflow": "installed",
+    "origin": "cli",
+    "place": "folder",
+    "cwd": "$S/installed/p1",
+    "inputs": {},
+    "status": "completed",
+    "phases": [],
+    "programs": {
+      "claude": {
+        "path": "~/.local/bin/claude",
+        "version": "2.1.330"
+      },
+      "codex": {
+        "path": "/opt/homebrew/bin/codex",
+        "version": "0.169.0"
+      }
+    },
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": "~/.claude"
+      },
+      "codex": {
+        "name": "default",
+        "folder": "~/.codex"
+      }
+    },
+    "logs": [
+      "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+    ],
+    "steps": [
+      {
+        "label": "claude code on haiku",
+        "program": "claude",
+        "model": "claude/haiku",
+        "place": "$S/installed/p1",
+        "status": "done",
+        "continuedSession": false,
+        "words": [
+          "OK"
+        ]
+      },
+      {
+        "label": "codex on gpt-6.1-sol",
+        "program": "codex",
+        "model": "codex/gpt-6.1-sol",
+        "place": "$S/installed/p1",
+        "status": "done",
+        "continuedSession": false,
+        "words": [
+          "OK"
+        ]
+      },
+      {
+        "label": "codex on gpt-6.1-sol, low effort",
+        "program": "codex",
+        "model": "codex/gpt-6.1-sol",
+        "place": "$S/installed/p1",
+        "status": "done",
+        "continuedSession": false,
+        "words": [
+          "OK"
+        ]
+      }
+    ],
+    "openQuestions": 0,
+    "result": {
+      "claude": "<text: OK>",
+      "codex": "<text: OK>",
+      "codexLow": "<text: OK>"
+    }
+  },
+  "doctor": {
+    "exit": 0,
+    "programs": [
+      {
+        "program": "claude",
+        "name": "Claude Code",
+        "path": "~/.local/bin/claude",
+        "version": "2.1.330",
+        "source": "path",
+        "skipped": [
+          "~/.paradev/bin/claude"
+        ],
+        "others": [],
+        "folder": "~/.claude",
+        "account": "default",
+        "talks": true,
+        "defaultModel": "opus",
+        "models": true
+      },
+      {
+        "program": "codex",
+        "name": "Codex",
+        "path": "/opt/homebrew/bin/codex",
+        "version": "0.169.0",
+        "source": "path",
+        "skipped": [
+          "~/.paradev/bin/codex"
+        ],
+        "others": [],
+        "folder": "~/.codex",
+        "account": "default",
+        "talks": true,
+        "defaultModel": "gpt-6.1-sol",
+        "models": true
+      }
+    ]
+  },
+  "doctorWithWrongCodexPath": {
+    "exit": 1,
+    "programs": [
+      {
+        "program": "claude",
+        "name": "Claude Code",
+        "path": "~/.local/bin/claude",
+        "version": "2.1.330",
+        "source": "path",
+        "skipped": [
+          "~/.paradev/bin/claude"
+        ],
+        "others": [],
+        "folder": "~/.claude",
+        "account": "default",
+        "talks": true,
+        "defaultModel": "opus",
+        "models": true
+      },
+      {
+        "program": "codex",
+        "name": "Codex",
+        "skipped": [],
+        "others": [],
+        "folder": "~/.codex",
+        "account": "default",
+        "problem": "CODEX_PATH is /nope/codex, which is not a program file. Point it at Codex, or remove it."
+      }
+    ]
+  },
+  "dryRuns": {
+    "ticket": {
+      "exit": 0,
+      "workflow": "ticket",
+      "file": "$S/installed/tk/.orchestrator/workflows/ticket.js",
+      "description": "Implement a ticket, loop with a reviewer until it approves, verify it, and commit",
+      "inputs": {
+        "ticket": {
+          "type": "string",
+          "description": "What to build or fix",
+          "required": true
+        },
+        "rounds": {
+          "type": "number",
+          "description": "Most review rounds",
+          "default": 3
+        },
+        "test": {
+          "type": "string",
+          "description": "The command that runs the tests",
+          "default": "npm test"
+        },
+        "reviewer": {
+          "type": "string",
+          "description": "The agent that reviews",
+          "default": "reviewer"
+        }
+      },
+      "problems": [],
+      "notes": [],
+      "dryRun": {
+        "status": "completed",
+        "agentSteps": 3,
+        "labels": [
+          "implementer",
+          "reviewer 1",
+          "verifier"
+        ],
+        "result": {
+          "approved": true,
+          "verified": false,
+          "rounds": 1,
+          "evidence": "mock-evidence"
+        }
+      }
+    },
+    "factory": {
+      "exit": 0,
+      "workflow": "factory",
+      "file": "$S/installed/tk/.orchestrator/workflows/factory.js",
+      "description": "Take open bug tickets from Linear, or from tickets/ without a key, and run the ticket workflow on each clear one",
+      "inputs": {
+        "team": {
+          "type": "string",
+          "description": "Linear team key, such as ENG. Empty takes every team.",
+          "default": ""
+        },
+        "label": {
+          "type": "string",
+          "description": "Linear label of the tickets to take",
+          "default": "Bug"
+        },
+        "limit": {
+          "type": "number",
+          "description": "Most tickets in one run",
+          "default": 5
+        },
+        "rounds": {
+          "type": "number",
+          "description": "Most review rounds per ticket",
+          "default": 2
+        }
+      },
+      "problems": [],
+      "notes": [],
+      "dryRun": {
+        "status": "completed",
+        "agentSteps": 12,
+        "labels": [
+          "triage TK-1",
+          "triage TK-2",
+          "triage TK-3",
+          "implementer",
+          "implementer",
+          "implementer",
+          "reviewer 1",
+          "reviewer 1",
+          "reviewer 1",
+          "verifier",
+          "verifier",
+          "verifier"
+        ],
+        "result": {
+          "tickets": [
+            {
+              "id": "TK-1",
+              "title": "<text>",
+              "choice": "build",
+              "reason": "mock-reason",
+              "result": {
+                "approved": true,
+                "verified": false,
+                "rounds": 1,
+                "evidence": "mock-evidence"
+              }
+            },
+            {
+              "id": "TK-2",
+              "title": "<text>",
+              "choice": "build",
+              "reason": "mock-reason",
+              "result": {
+                "approved": true,
+                "verified": false,
+                "rounds": 1,
+                "evidence": "mock-evidence"
+              }
+            },
+            {
+              "id": "TK-3",
+              "title": "<text>",
+              "choice": "build",
+              "reason": "mock-reason",
+              "result": {
+                "approved": true,
+                "verified": false,
+                "rounds": 1,
+                "evidence": "mock-evidence"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "emails": {
+      "exit": 0,
+      "workflow": "emails",
+      "file": "$S/installed/tk/.orchestrator/workflows/emails.js",
+      "description": "Sort an inbox, draft replies to the emails that need one, and wait for your approval",
+      "inputs": {
+        "mailbox": {
+          "type": "string",
+          "description": "JSON file of emails, [{ id, from, subject, body }], relative to the project folder",
+          "default": "mail/inbox.json"
+        }
+      },
+      "problems": [],
+      "notes": [],
+      "dryRun": {
+        "status": "completed",
+        "agentSteps": 1,
+        "labels": [
+          "sort"
+        ],
+        "result": {
+          "drafts": [],
+          "skipped": []
+        }
+      }
+    }
+  },
+  "models": {
+    "claude": "claude/haiku",
+    "codex": "gpt-6.1-sol, low effort where a step or agent sets it"
+  },
+  "gaps": [
+    "no agent step records its agent",
+    "no agent step records its effort"
+  ]
+}

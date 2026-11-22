@@ -1,0 +1,174 @@
+{
+  "proof": "schedule",
+  "check": {
+    "exit": 0,
+    "workflow": "tick",
+    "file": "$ORC_HOME/workflows/tick.js",
+    "description": "One code step every minute",
+    "inputs": {},
+    "problems": [],
+    "notes": [
+      "declares no inputs, so it takes any",
+      "the service starts it at \"* * * * *\", next <time>, when it runs (orc daemon start)"
+    ]
+  },
+  "schedules": {
+    "exit": 0,
+    "value": [
+      {
+        "name": "$ORC_HOME/workflows/tick.js",
+        "workflow": "$ORC_HOME/workflows/tick.js",
+        "projectDir": "$ORC_HOME",
+        "cron": "* * * * *",
+        "inputs": {},
+        "place": "none",
+        "enabled": true,
+        "fromFile": true
+      }
+    ]
+  },
+  "daemon": {
+    "exit": 0,
+    "signal": null,
+    "pidFileLeft": false,
+    "log": [
+      "service started",
+      "schedule $ORC_HOME/workflows/tick.js: started run run1",
+      "schedule $ORC_HOME/workflows/tick.js: started run run2",
+      "schedule $ORC_HOME/workflows/tick.js: started run run3",
+      "service stopped"
+    ]
+  },
+  "runs": [
+    {
+      "wait": {
+        "exit": 0,
+        "status": "completed",
+        "questions": 0
+      },
+      "run": {
+        "workflow": "tick",
+        "origin": "schedule",
+        "schedule": "$ORC_HOME/workflows/tick.js",
+        "place": "none",
+        "cwd": "$ORC_HOME/scratch/run1",
+        "inputs": {},
+        "status": "completed",
+        "phases": [],
+        "accounts": {
+          "claude": {
+            "name": "default",
+            "folder": "~/.claude"
+          },
+          "codex": {
+            "name": "default",
+            "folder": "~/.codex"
+          }
+        },
+        "logs": [
+          "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+        ],
+        "steps": [
+          {
+            "label": "tick",
+            "program": "code",
+            "model": "exec",
+            "place": "$ORC_HOME/scratch/run1",
+            "status": "done",
+            "exit": 0
+          }
+        ],
+        "openQuestions": 0,
+        "result": "tick"
+      }
+    },
+    {
+      "wait": {
+        "exit": 0,
+        "status": "completed",
+        "questions": 0
+      },
+      "run": {
+        "workflow": "tick",
+        "origin": "schedule",
+        "schedule": "$ORC_HOME/workflows/tick.js",
+        "place": "none",
+        "cwd": "$ORC_HOME/scratch/run2",
+        "inputs": {},
+        "status": "completed",
+        "phases": [],
+        "accounts": {
+          "claude": {
+            "name": "default",
+            "folder": "~/.claude"
+          },
+          "codex": {
+            "name": "default",
+            "folder": "~/.codex"
+          }
+        },
+        "logs": [
+          "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run2.log"
+        ],
+        "steps": [
+          {
+            "label": "tick",
+            "program": "code",
+            "model": "exec",
+            "place": "$ORC_HOME/scratch/run2",
+            "status": "done",
+            "exit": 0
+          }
+        ],
+        "openQuestions": 0,
+        "result": "tick"
+      }
+    },
+    {
+      "wait": {
+        "exit": 0,
+        "status": "completed",
+        "questions": 0
+      },
+      "run": {
+        "workflow": "tick",
+        "origin": "schedule",
+        "schedule": "$ORC_HOME/workflows/tick.js",
+        "place": "none",
+        "cwd": "$ORC_HOME/scratch/run3",
+        "inputs": {},
+        "status": "completed",
+        "phases": [],
+        "accounts": {
+          "claude": {
+            "name": "default",
+            "folder": "~/.claude"
+          },
+          "codex": {
+            "name": "default",
+            "folder": "~/.codex"
+          }
+        },
+        "logs": [
+          "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run3.log"
+        ],
+        "steps": [
+          {
+            "label": "tick",
+            "program": "code",
+            "model": "exec",
+            "place": "$ORC_HOME/scratch/run3",
+            "status": "done",
+            "exit": 0
+          }
+        ],
+        "openQuestions": 0,
+        "result": "tick"
+      }
+    }
+  ],
+  "models": {
+    "claude": "claude/haiku",
+    "codex": "gpt-6.1-sol, low effort where a step or agent sets it"
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "proof": "tools",
+  "check": {
+    "exit": 0,
+    "workflow": "refusal",
+    "file": "$S/tools/p1/.orchestrator/workflows/refusal.js",
+    "description": "Two agents with tool lists try to run Bash",
+    "inputs": {},
+    "problems": [],
+    "notes": [
+      "declares no inputs, so it takes any"
+    ]
+  },
+  "wait": {
+    "exit": 0,
+    "status": "completed",
+    "questions": 0
+  },
+  "run": {
+    "workflow": "refusal",
+    "origin": "cli",
+    "place": "none",
+    "cwd": "$ORC_HOME/scratch/run1",
+    "inputs": {},
+    "status": "completed",
+    "phases": [],
+    "programs": {
+      "claude": {
+        "path": "~/.local/bin/claude",
+        "version": "2.1.330"
+      }
+    },
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": "~/.claude"
+      },
+      "codex": {
+        "name": "default",
+        "folder": "~/.codex"
+      }
+    },
+    "logs": [
+      "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+    ],
+    "steps": [
+      {
+        "label": "deny list",
+        "program": "claude",
+        "model": "claude/haiku",
+        "requested": "claude/claude/haiku",
+        "place": "$ORC_HOME/scratch/run1",
+        "status": "done",
+        "continuedSession": false,
+        "words": []
+      },
+      {
+        "label": "allow list",
+        "program": "claude",
+        "model": "claude/haiku",
+        "requested": "claude/claude/haiku",
+        "place": "$ORC_HOME/scratch/run1",
+        "status": "done",
+        "continuedSession": false,
+        "schema": "matched",
+        "words": []
+      }
+    ],
+    "openQuestions": 0,
+    "result": {
+      "denied": "<text>",
+      "allowed": {
+        "ranBash": false,
+        "note": "<text>"
+      }
+    }
+  },
+  "models": {
+    "claude": "claude/haiku",
+    "codex": "gpt-6.1-sol, low effort where a step or agent sets it"
+  },
+  "gaps": [
+    "no agent step records its agent",
+    "no agent step records its effort"
+  ]
+}

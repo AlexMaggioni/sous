@@ -1,0 +1,217 @@
+{
+  "proof": "emails",
+  "answers": [
+    {
+      "question": {
+        "id": "run1--5",
+        "kind": "input",
+        "breakpoint": true,
+        "callIndex": 5,
+        "prompt": "Breakpoint: Approve these replies",
+        "draftsShown": 3
+      },
+      "openQuestions": 1,
+      "answer": "send-back",
+      "note": "Shorter, two sentences at most",
+      "exit": 0
+    },
+    {
+      "question": {
+        "id": "run1--9",
+        "kind": "input",
+        "breakpoint": true,
+        "callIndex": 9,
+        "prompt": "Breakpoint: Approve these replies",
+        "draftsShown": 3
+      },
+      "openQuestions": 1,
+      "answer": "approve",
+      "exit": 0
+    }
+  ],
+  "stops": [
+    {
+      "exit": 4,
+      "status": "running",
+      "questions": 1
+    },
+    {
+      "exit": 4,
+      "status": "running",
+      "questions": 1
+    },
+    {
+      "exit": 0,
+      "status": "completed",
+      "questions": 0
+    }
+  ],
+  "run": {
+    "workflow": "emails",
+    "origin": "cli",
+    "place": "none",
+    "cwd": "$ORC_HOME/scratch/run1",
+    "inputs": {
+      "mailbox": "mail/inbox.json"
+    },
+    "status": "completed",
+    "phases": [],
+    "programs": {
+      "claude": {
+        "path": "~/.local/bin/claude",
+        "version": "2.1.330"
+      }
+    },
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": "~/.claude"
+      },
+      "codex": {
+        "name": "default",
+        "folder": "~/.codex"
+      }
+    },
+    "logs": [
+      "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+    ],
+    "steps": [
+      {
+        "label": "read mailbox",
+        "program": "code",
+        "model": "exec",
+        "place": "$ORC_HOME/scratch/run1",
+        "status": "done",
+        "exit": 0
+      },
+      {
+        "label": "sort",
+        "program": "claude",
+        "model": "claude/haiku",
+        "place": "$ORC_HOME/scratch/run1",
+        "status": "done",
+        "continuedSession": false,
+        "schema": "matched"
+      },
+      {
+        "label": "draft m1",
+        "program": "claude",
+        "model": "claude/haiku",
+        "place": "$ORC_HOME/scratch/run1",
+        "status": "done",
+        "continuedSession": false
+      },
+      {
+        "label": "draft m3",
+        "program": "claude",
+        "model": "claude/haiku",
+        "place": "$ORC_HOME/scratch/run1",
+        "status": "done",
+        "continuedSession": false
+      },
+      {
+        "label": "draft m5",
+        "program": "claude",
+        "model": "claude/haiku",
+        "place": "$ORC_HOME/scratch/run1",
+        "status": "done",
+        "continuedSession": false
+      },
+      {
+        "label": "checkpoint",
+        "program": "question",
+        "kind": "checkpoint",
+        "origin": "confirm",
+        "answer": {
+          "decision": "send back",
+          "note": "Shorter, two sentences at most"
+        }
+      },
+      {
+        "label": "draft m1 again",
+        "program": "claude",
+        "model": "claude/haiku",
+        "place": "$ORC_HOME/scratch/run1",
+        "status": "done",
+        "continuedSession": false
+      },
+      {
+        "label": "draft m3 again",
+        "program": "claude",
+        "model": "claude/haiku",
+        "place": "$ORC_HOME/scratch/run1",
+        "status": "done",
+        "continuedSession": false
+      },
+      {
+        "label": "draft m5 again",
+        "program": "claude",
+        "model": "claude/haiku",
+        "place": "$ORC_HOME/scratch/run1",
+        "status": "done",
+        "continuedSession": false
+      },
+      {
+        "label": "checkpoint",
+        "program": "question",
+        "kind": "checkpoint",
+        "origin": "confirm",
+        "answer": "approve"
+      },
+      {
+        "label": "save drafts",
+        "program": "code",
+        "model": "exec",
+        "place": "$ORC_HOME/scratch/run1",
+        "status": "done",
+        "exit": 0
+      }
+    ],
+    "openQuestions": 0,
+    "result": {
+      "drafts": [
+        {
+          "id": "m1",
+          "to": "<text>",
+          "subject": "<text>",
+          "reply": "<text>"
+        },
+        {
+          "id": "m3",
+          "to": "<text>",
+          "subject": "<text>",
+          "reply": "<text>"
+        },
+        {
+          "id": "m5",
+          "to": "<text>",
+          "subject": "<text>",
+          "reply": "<text>"
+        }
+      ],
+      "skipped": [
+        {
+          "id": "m2",
+          "reply": false,
+          "why": "<text>"
+        },
+        {
+          "id": "m4",
+          "reply": false,
+          "why": "<text>"
+        }
+      ]
+    }
+  },
+  "draftsFile": {
+    "replies": 3
+  },
+  "models": {
+    "claude": "claude/haiku",
+    "codex": "gpt-6.1-sol, low effort where a step or agent sets it"
+  },
+  "gaps": [
+    "no agent step records its agent",
+    "no agent step records its effort"
+  ]
+}

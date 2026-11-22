@@ -1,0 +1,155 @@
+{
+  "proof": "accounts",
+  "list": {
+    "fromSession": {
+      "exit": 0,
+      "value": {
+        "accounts": [
+          {
+            "program": "claude",
+            "name": "default",
+            "current": true
+          },
+          {
+            "program": "codex",
+            "name": "default",
+            "current": true
+          }
+        ],
+        "waiting": []
+      }
+    },
+    "fromPlainShell": {
+      "exit": 0,
+      "value": {
+        "accounts": [
+          {
+            "program": "claude",
+            "name": "default",
+            "current": true
+          },
+          {
+            "program": "codex",
+            "name": "default",
+            "current": true
+          }
+        ],
+        "waiting": []
+      }
+    }
+  },
+  "useNobody": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "orc: no account nobody. orc account lists them, and orc account add nobody adds it."
+  },
+  "fromSession": {
+    "wait": {
+      "exit": 0,
+      "status": "completed",
+      "questions": 0
+    },
+    "run": {
+      "workflow": "hello",
+      "origin": "cli",
+      "place": "none",
+      "cwd": "$ORC_HOME/scratch/run1",
+      "inputs": {},
+      "status": "completed",
+      "phases": [],
+      "programs": {
+        "claude": {
+          "path": "~/.local/bin/claude",
+          "version": "2.1.330"
+        }
+      },
+      "accounts": {
+        "claude": {
+          "name": "caller",
+          "folder": "~/.claude"
+        },
+        "codex": {
+          "name": "default",
+          "folder": "~/.codex"
+        }
+      },
+      "logs": [
+        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+      ],
+      "steps": [
+        {
+          "label": "claude code on haiku",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$ORC_HOME/scratch/run1",
+          "status": "done",
+          "continuedSession": false,
+          "words": [
+            "OK"
+          ]
+        }
+      ],
+      "openQuestions": 0,
+      "result": "<text: OK>"
+    }
+  },
+  "fromPlainShell": {
+    "wait": {
+      "exit": 0,
+      "status": "completed",
+      "questions": 0
+    },
+    "run": {
+      "workflow": "hello",
+      "origin": "cli",
+      "place": "none",
+      "cwd": "$ORC_HOME/scratch/run2",
+      "inputs": {},
+      "status": "completed",
+      "phases": [],
+      "programs": {
+        "claude": {
+          "path": "~/.local/bin/claude",
+          "version": "2.1.330"
+        }
+      },
+      "accounts": {
+        "claude": {
+          "name": "default",
+          "folder": "~/.claude"
+        },
+        "codex": {
+          "name": "default",
+          "folder": "~/.codex"
+        }
+      },
+      "logs": [
+        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run2.log"
+      ],
+      "steps": [
+        {
+          "label": "claude code on haiku",
+          "program": "claude",
+          "model": "claude/haiku",
+          "place": "$ORC_HOME/scratch/run2",
+          "status": "done",
+          "continuedSession": false,
+          "words": [
+            "OK"
+          ]
+        }
+      ],
+      "openQuestions": 0,
+      "result": "<text: OK>"
+    }
+  },
+  "accountsFileMade": false,
+  "models": {
+    "claude": "claude/haiku",
+    "codex": "gpt-6.1-sol, low effort where a step or agent sets it"
+  },
+  "gaps": [
+    "no agent step records its agent",
+    "no agent step records its effort"
+  ]
+}
