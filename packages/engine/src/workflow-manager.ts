@@ -94,10 +94,6 @@ import { captureWorkflowRouting, isWorkflowRoutingSnapshot } from "./workflow-ro
 import type { AgentRegistry } from "./agent-registry.js";
 import { createWorkflowLogTail, projectWorkflowRunStatus } from "./run-observability.js";
 import {
-  LiveAgentObservability,
-  type WorkflowAgentActivity,
-} from "./agent-live-observability.js";
-import {
   captureWorkflowPreparation,
   mergeWorkflowSetupResponses,
   MAX_WORKFLOW_PREPARATION_BYTES,
@@ -197,8 +193,6 @@ export interface ManagedRun {
   eventStreamId?: string;
   eventSeq?: number;
   eventLogIncomplete?: true;
-  /** Request-owned progress callback used by live activity appends; never persisted. */
-  liveProgress?: () => void;
   /**
    * True when the run was started in the background (or resumed) and the caller is
    * not awaiting its result inline. Only background runs deliver their result back
@@ -218,7 +212,6 @@ interface EventPublicationState {
 }
 
 interface RunEventPublicationActions {
-  afterAppend?: (record: RunEventLogRecord) => void;
   beforeLive?: () => void;
   afterLive?: () => void;
 }
@@ -667,7 +660,6 @@ export class WorkflowManager extends EventEmitter {
   private persistenceRoot: string;
   private journaling: boolean;
   private environmentKey?: string;
-  private readonly liveAgentObservability: LiveAgentObservability<ManagedRun>;
 
   constructor(options: WorkflowManagerOptions = {}) {
     super();
@@ -689,21 +681,6 @@ export class WorkflowManager extends EventEmitter {
           persistenceRoot: this.persistenceRoot,
           leaseOwnerId: options.leaseOwnerId,
         });
-    this.liveAgentObservability = new LiveAgentObservability<ManagedRun>({
-      eligible: (run) => Boolean(run.journaling && run.lease && !run.eventLogIncomplete),
-      publish: (run, event, afterAppend) => {
-        this.publishRunEvent(run, event, () => this.persistRun(run), { afterAppend });
-      },
-      progress: (run, record) => {
-        if (record.event.type !== "agentProgress") return;
-        const { type: _type, ...progress } = record.event;
-        run.snapshot.latestActivity = {
-          seq: record.seq,
-          progress,
-        };
-        run.liveProgress?.();
-      },
-    });
     // Stale-run recovery mutates the PERSISTED run store, so it is gated on this manager's
     // journaling default: a `journaling: false` manager (host keeps its own transcript/audit
     // store) must never rewrite run state that belongs to journaling processes.
@@ -1932,12 +1909,6 @@ export class WorkflowManager extends EventEmitter {
     return this.emit(type, payload);
   }
 
-  /** Feeds one agent's live activity to the run's observability. Nothing in this repo calls
-   *  it now. */
-  protected observeAgentActivity(activity: WorkflowAgentActivity): void {
-    this.liveAgentObservability.observe(activity);
-  }
-
   private publishRunEvent(
     state: EventPublicationState,
     event: EngineRunEvent,
@@ -1970,8 +1941,6 @@ export class WorkflowManager extends EventEmitter {
         state.eventLogIncomplete = true;
         this.reportPersistenceFailure(error);
         saveIncompleteMarker();
-        const managed = this.runs.get(state.runId);
-        if (managed === state) this.liveAgentObservability.clearRun(managed);
       }
     }
 
@@ -1979,11 +1948,6 @@ export class WorkflowManager extends EventEmitter {
       // Stable host seam for protocol-native resource update publication. Emitted only after
       // the append is durable; consumers may safely direct readers to the new watermark.
       this.emit("runEventPersisted", appendedRecord);
-      try {
-        actions.afterAppend?.(appendedRecord);
-      } catch (error) {
-        this.reportPersistenceFailure(error);
-      }
     }
 
     actions.beforeLive?.();
@@ -2094,7 +2058,6 @@ export class WorkflowManager extends EventEmitter {
       Object.assign(managed.snapshot, recomputeWorkflowSnapshot(managed.snapshot));
       onProgress?.(managed.snapshot);
     };
-    managed.liveProgress = progress;
     const publish = (event: EngineRunEvent, actions?: RunEventPublicationActions) =>
       this.publishRunEvent(managed, event, () => this.persistRun(managed), actions);
     // Let a host abort (e.g. Esc during a blocking tool call) cancel this run.
@@ -2243,28 +2206,15 @@ export class WorkflowManager extends EventEmitter {
             scope: event.scope,
             startedAt: new Date().toISOString(),
           });
-          const scope = event.scope ?? managed.runId;
           publish(this.createRunEvent("agentStart", {
             runId: managed.runId,
             ...event,
-            scope,
-          }), {
-            afterAppend: (record) => {
-              this.liveAgentObservability.register(managed, {
-                rootRunId: managed.runId,
-                scope,
-                callIndex: event.callIndex,
-                label: event.label,
-                ...(event.phase === undefined ? {} : { phase: event.phase }),
-                executionStartSeq: record.seq,
-              });
-            },
-          });
+            scope: event.scope ?? managed.runId,
+          }));
           progress();
         },
         onAgentEnd: (event) => {
           if (this.dropPostTerminal(managed, "agentEnd")) return;
-          this.liveAgentObservability.finish(event.scope ?? managed.runId, event.callIndex, managed);
           const agentSnapshot = event.callIndex === undefined
             ? [...managed.snapshot.agents]
                 .reverse()
@@ -2356,8 +2306,6 @@ export class WorkflowManager extends EventEmitter {
       managed.limits = engineResult.effectiveLimits;
       if (engineResult.abortSignaled) managed.abortSignaled = true;
       if (engineResult.nestedWorkflows) managed.nestedWorkflows = true;
-      this.liveAgentObservability.finishRun(managed);
-      managed.liveProgress = undefined;
       managed.status = "completed";
       const result = this.composeResult(managed, undefined, engineResult);
       managed.result = result;
@@ -2378,8 +2326,6 @@ export class WorkflowManager extends EventEmitter {
       return result;
     } catch (error) {
       managed.executionSettled = true;
-      this.liveAgentObservability.finishRun(managed);
-      managed.liveProgress = undefined;
       // The engine wraps every fault that crosses the script boundary as a WorkflowError
       // (script crashes are SCRIPT_ERROR), so a bare error HERE is manager/host-level
       // (persistence, fs). Label it UNKNOWN — never WORKFLOW_ABORTED, which is reserved
@@ -3626,7 +3572,6 @@ export class WorkflowManager extends EventEmitter {
     }
 
     managed.controller.abort();
-    this.liveAgentObservability.finishRun(managed);
     managed.status = "aborted";
     if (pausedSnapshot) {
       pausedSnapshot.status = "aborted";
@@ -3828,7 +3773,6 @@ export class WorkflowManager extends EventEmitter {
    */
   deleteRun(runId: string): boolean {
     const managed = this.runs.get(runId);
-    if (managed) this.liveAgentObservability.clearRun(managed);
     const lease = managed?.lease ?? this.persistence.acquireRunLease(runId);
     if (!lease) return false;
     let deleted = false;

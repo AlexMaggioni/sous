@@ -2,7 +2,6 @@
 import type { AgentHistoryEntry } from "./steps/agent-history.js";
 import type { AgentResultProvenance, AgentUsage } from "./steps/agent-run.js";
 import type { AgentSessionRecord } from "./workflow-result.js";
-import type { RunAgentProgressPayload } from "./run-events.js";
 import type { WorkflowErrorCode } from "./errors.js";
 
 export type WorkflowAgentStatus = "queued" | "running" | "done" | "error" | "skipped";
@@ -55,11 +54,6 @@ export interface WorkflowSnapshot {
     cacheWrite?: number;
   };
   runId?: string;
-  /** Latest successfully persisted progress sample; intentionally never serialized to run JSON. */
-  latestActivity?: {
-    seq: number;
-    progress: RunAgentProgressPayload;
-  };
 }
 
 export function recomputeWorkflowSnapshot(snapshot: WorkflowSnapshot): WorkflowSnapshot {

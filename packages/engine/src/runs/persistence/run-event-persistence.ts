@@ -30,8 +30,6 @@ const EVENT_TYPES = new Set([
   "log",
   "phase",
   "agentStart",
-  "agentProgress",
-  "agentTranscript",
   "agentEnd",
   "tokenUsage",
   "complete",
@@ -201,8 +199,6 @@ interface RunEventCache {
   completeBytes: number;
   /** FNV fingerprint of bytes `[0, completeBytes)`; folded on append, recomputed on read to verify. */
   prefixHash: PrefixHash;
-  /** Stateful semantic validator, resumed across incremental suffix parses. */
-  validate: (record: RunEventLogRecord) => string | undefined;
   /** This process has repaired the torn tail and owns the writer epoch for this run. */
   writerRepaired: boolean;
 }
@@ -247,11 +243,6 @@ function hasNone(value: Record<string, unknown>, keys: readonly string[]): boole
   return keys.every((key) => !hasOwn(value, key));
 }
 
-function hasOnly(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  const allowed = new Set(keys);
-  return Object.keys(value).every((key) => allowed.has(key));
-}
-
 function isCanonicalTimestamp(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const parsed = Date.parse(value);
@@ -260,59 +251,6 @@ function isCanonicalTimestamp(value: unknown): value is string {
 
 function isProjectedText(value: unknown): value is string {
   return typeof value === "string" && Buffer.byteLength(value, "utf8") <= MAX_OBSERVABILITY_SCALAR_BYTES;
-}
-
-function isNonEmptyText(value: unknown, projected: boolean): value is string {
-  return (projected ? isProjectedText(value) : isString(value)) && (value as string).trim().length > 0;
-}
-
-function hasProgressContent(value: Record<string, unknown>, projected: boolean): boolean {
-  const latest = hasOwn(value, "latestText");
-  const tool = hasOwn(value, "lastToolName");
-  if (latest === tool) return false;
-  return isNonEmptyText(latest ? value.latestText : value.lastToolName, projected);
-}
-
-function isTranscriptEntry(value: unknown, projected: boolean): boolean {
-  if (!isObject(value) || !hasRequired(value, "text", (candidate) => isNonEmptyText(candidate, projected)) ||
-      !hasRequired(value, "timestamp", isNonNegativeSafeInteger) ||
-      !hasOnly(value, ["role", "kind", "text", "toolName", "isError", "timestamp"])) return false;
-  if (value.role === "assistant" && value.kind === "text") {
-    return !hasOwn(value, "toolName") && !hasOwn(value, "isError");
-  }
-  if (value.role === "tool" && value.kind === "toolCall") {
-    return hasRequired(value, "toolName", (candidate) => isNonEmptyText(candidate, projected)) &&
-      !hasOwn(value, "isError");
-  }
-  return value.role === "tool" && value.kind === "toolResult" &&
-    hasOptional(value, "toolName", (candidate) => isNonEmptyText(candidate, projected)) &&
-    (!hasOwn(value, "isError") || value.isError === true);
-}
-
-function isAgentProgress(value: Record<string, unknown>, projected: boolean): boolean {
-  const text = projected ? isProjectedText : isString;
-  return hasOnly(value, ["type", "runId", "scope", "label", "phase", "callIndex", "executionStartSeq",
-    "turnCount", "observedEvents", "coalescedEvents", "cause", "latestText", "lastToolName", "tokensObserved"]) &&
-    hasRequired(value, "label", text) && hasOptional(value, "phase", text) &&
-    hasRequired(value, "callIndex", isNonNegativeSafeInteger) &&
-    hasRequired(value, "executionStartSeq", isPositiveSafeInteger) &&
-    hasRequired(value, "turnCount", isNonNegativeSafeInteger) &&
-    hasRequired(value, "observedEvents", isNonNegativeSafeInteger) &&
-    hasRequired(value, "coalescedEvents", isNonNegativeSafeInteger) &&
-    (value.cause === "activity" || value.cause === "heartbeat") &&
-    hasOptional(value, "tokensObserved", isNonNegativeSafeInteger) && hasProgressContent(value, projected);
-}
-
-function isAgentTranscript(value: Record<string, unknown>, projected: boolean): boolean {
-  const text = projected ? isProjectedText : isString;
-  return hasOnly(value, ["type", "runId", "scope", "label", "phase", "callIndex", "executionStartSeq",
-    "entryIndex", "revision", "operation", "entry"]) &&
-    hasRequired(value, "label", text) && hasOptional(value, "phase", text) &&
-    hasRequired(value, "callIndex", isNonNegativeSafeInteger) &&
-    hasRequired(value, "executionStartSeq", isPositiveSafeInteger) &&
-    hasRequired(value, "entryIndex", isNonNegativeSafeInteger) &&
-    hasRequired(value, "revision", isNonNegativeSafeInteger) && value.operation === "upsert" &&
-    hasRequired(value, "entry", (candidate) => isTranscriptEntry(candidate, projected));
 }
 
 function isProjectionValue(value: unknown): boolean {
@@ -579,10 +517,6 @@ function isPersistableInputEvent(value: unknown): value is PersistableEngineRunE
         hasRequired(value, "callIndex", isNonNegativeSafeInteger) &&
         hasOptional(value, "path", isString)
       );
-    case "agentProgress":
-      return isAgentProgress(value, false);
-    case "agentTranscript":
-      return isAgentTranscript(value, false);
     case "agentEnd":
       return (
         hasRequired(value, "label", isString) &&
@@ -657,10 +591,6 @@ function isPersistedEvent(value: unknown): boolean {
         hasRequired(value, "callIndex", isNonNegativeSafeInteger) &&
         hasOptional(value, "path", isProjectedText)
       );
-    case "agentProgress":
-      return isAgentProgress(value, true);
-    case "agentTranscript":
-      return isAgentTranscript(value, true);
     case "agentEnd":
       return (
         hasRequired(value, "label", isProjectedText) &&
@@ -779,122 +709,11 @@ function eventError(
   });
 }
 
-interface ActiveExecutionValidation {
-  startSeq: number;
-  label: string;
-  phase?: string;
-  nextEntryIndex: number;
-  entries: Map<number, { revision: number; timestamp: number; tool: boolean }>;
-  lastActivityObserved: number;
-  lastActivityTurnCount: number;
-  lastProgress?: Extract<RunEventLogRecord["event"], { type: "agentProgress" }>;
-}
-
-function executionKey(scope: string, callIndex: number): string {
-  return JSON.stringify([scope, callIndex]);
-}
-
-function sameOptionalText(left: string | undefined, right: string | undefined): boolean {
-  return left === right;
-}
-
-function progressPayloadMatches(
-  left: Extract<RunEventLogRecord["event"], { type: "agentProgress" }>,
-  right: Extract<RunEventLogRecord["event"], { type: "agentProgress" }>,
-): boolean {
-  return left.runId === right.runId && left.scope === right.scope && left.label === right.label &&
-    sameOptionalText(left.phase, right.phase) && left.callIndex === right.callIndex &&
-    left.executionStartSeq === right.executionStartSeq && left.turnCount === right.turnCount &&
-    left.observedEvents === right.observedEvents &&
-    sameOptionalText(left.latestText, right.latestText) && sameOptionalText(left.lastToolName, right.lastToolName) &&
-    left.tokensObserved === right.tokensObserved;
-}
-
-function createSemanticValidator(): (record: RunEventLogRecord) => string | undefined {
-  const active = new Map<string, ActiveExecutionValidation>();
-  return (record) => {
-    const event = record.event;
-    if (event.type === "agentStart") {
-      const key = executionKey(event.scope, event.callIndex);
-      // A process can die after agentStart without ever appending agentEnd. Same-ID
-      // recovery re-executes that logical call in the same stream, so the new start
-      // supersedes the abandoned execution and opens a fresh validation partition.
-      active.set(key, {
-        startSeq: record.seq,
-        label: event.label,
-        ...(event.phase === undefined ? {} : { phase: event.phase }),
-        nextEntryIndex: 0,
-        entries: new Map(),
-        lastActivityObserved: 0,
-        lastActivityTurnCount: 0,
-      });
-      return undefined;
-    }
-    if (event.type === "agentEnd") {
-      active.delete(executionKey(event.scope, event.callIndex));
-      return undefined;
-    }
-    if (event.type === "complete" || event.type === "paused" || event.type === "error" || event.type === "stopped") {
-      active.clear();
-      return undefined;
-    }
-    if (event.type !== "agentProgress" && event.type !== "agentTranscript") return undefined;
-
-    const state = active.get(executionKey(event.scope, event.callIndex));
-    if (state === undefined) return `${event.type} has no active agent execution`;
-    if (event.executionStartSeq !== state.startSeq || event.label !== state.label ||
-        !sameOptionalText(event.phase, state.phase)) {
-      return `${event.type} does not match its active agentStart`;
-    }
-
-    if (event.type === "agentTranscript") {
-      const prior = state.entries.get(event.entryIndex);
-      const tool = event.entry.role === "tool";
-      if (prior === undefined) {
-        if (event.entryIndex !== state.nextEntryIndex || event.revision !== 0) {
-          return "agentTranscript indexes and initial revisions must be dense";
-        }
-        state.entries.set(event.entryIndex, {
-          revision: 0,
-          timestamp: event.entry.timestamp!,
-          tool,
-        });
-        state.nextEntryIndex += 1;
-        return undefined;
-      }
-      if (prior.tool || tool || event.revision !== prior.revision + 1 ||
-          event.entry.timestamp !== prior.timestamp) {
-        return "agentTranscript replacement revision is invalid";
-      }
-      prior.revision = event.revision;
-      return undefined;
-    }
-
-    if (event.cause === "heartbeat") {
-      if (state.lastProgress === undefined || event.coalescedEvents !== 0 ||
-          !progressPayloadMatches(event, state.lastProgress)) {
-        return "agentProgress heartbeat does not repeat the preceding progress payload";
-      }
-      state.lastProgress = event;
-      return undefined;
-    }
-    if (event.observedEvents <= state.lastActivityObserved || event.turnCount < state.lastActivityTurnCount ||
-        event.coalescedEvents !== event.observedEvents - state.lastActivityObserved - 1) {
-      return "agentProgress activity counters are not monotonic and dense";
-    }
-    state.lastActivityObserved = event.observedEvents;
-    state.lastActivityTurnCount = event.turnCount;
-    state.lastProgress = event;
-    return undefined;
-  };
-}
-
 /**
  * Parse and fully validate the complete records in `buffer` starting at byte `startOffset`,
- * whose first record must have sequence `startSeq + 1`, threading the caller's stateful
- * `validate` closure so semantic checks resume across incremental suffix parses. A trailing
+ * whose first record must have sequence `startSeq + 1`. A trailing
  * partial line (no terminating LF) is left unparsed — the torn-tail contract. Every record it
- * returns has passed the identical UTF-8 / canonical-JSON / shape / density / stream / semantic
+ * returns has passed the identical UTF-8 / canonical-JSON / shape / density / stream
  * checks the whole-file parser applied, so the caller may cache and trust them without re-parsing.
  */
 function parseLogFrom(
@@ -904,7 +723,6 @@ function parseLogFrom(
   expectedStreamId: string,
   startOffset: number,
   startSeq: number,
-  validate: (record: RunEventLogRecord) => string | undefined,
 ): ParsedSuffix {
   const records: RunEventLogRecord[] = [];
   let offset = startOffset;
@@ -946,10 +764,6 @@ function parseLogFrom(
     }
     if (value.streamId !== expectedStreamId) {
       throw eventError(`Event record ${expectedSeq} belongs to a different stream`, "STREAM_MISMATCH", runId, path, value.seq);
-    }
-    const semanticError = validate(value);
-    if (semanticError !== undefined) {
-      throw eventError(`Event record ${expectedSeq} ${semanticError}`, "CORRUPT_LOG", runId, path, value.seq);
     }
     records.push(stripLegacyBudgetFields(value));
     offset = lf + 1;
@@ -1088,19 +902,17 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
    * Whole-file validated parse: the cold, authoritative path a run this process never wrote must
    * take at least once before any cached fast path is trusted. Runs every durability check on
    * every record (torn-tail stop, canonical form, shape, sequence density, stream identity,
-   * semantic ordering, snapshot watermark) and hands back the live validator so the cache it
-   * seeds can resume incrementally.
+   * snapshot watermark).
    */
   const validatedParse = (runId: string, suppliedStreamId?: string) => {
     const snapshot = loadSnapshot(runId);
     const sidecar = readSidecar(runId);
     const classified = classify(runId, snapshot, sidecar, suppliedStreamId);
-    const validate = createSemanticValidator();
-    const parsed = parseLogFrom(sidecar.buffer, runId, sidecar.path, classified.streamId, 0, 0, validate);
+    const parsed = parseLogFrom(sidecar.buffer, runId, sidecar.path, classified.streamId, 0, 0);
     if (classified.snapshot.eventSeq! > parsed.records.length) {
       throw snapshotAheadError(runId, sidecar.path, classified.snapshot.eventSeq!);
     }
-    return { ...classified, ...sidecar, ...parsed, validate };
+    return { ...classified, ...sidecar, ...parsed };
   };
 
   const cacheFromParse = (
@@ -1111,7 +923,6 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
     records: parsed.records,
     completeBytes: parsed.completeBytes,
     prefixHash: prefixHashOf(parsed.buffer, parsed.completeBytes),
-    validate: parsed.validate,
     writerRepaired,
   });
 
@@ -1154,8 +965,8 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
       cache !== undefined &&
       cache.streamId === streamId &&
       sidecar.buffer.length >= cache.completeBytes &&
-      // A writer-owned cache never advances the resumable validator on append, so a foreign
-      // extension of its file must fall back to a cold re-validation rather than a suffix parse.
+      // appendEvent extends a writer-owned cache itself, so a foreign extension of its file
+      // falls back to a cold re-validation rather than a suffix parse.
       !(cache.writerRepaired && sidecar.buffer.length > cache.completeBytes) &&
       prefixHashEquals(prefixHashOf(sidecar.buffer, cache.completeBytes), cache.prefixHash);
     if (canWarm && cache !== undefined) {
@@ -1167,7 +978,6 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
           streamId,
           cache.completeBytes,
           cache.records.length,
-          cache.validate,
         );
         if (suffix.records.length > 0) {
           for (const record of suffix.records) cache.records.push(record);
@@ -1177,14 +987,12 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
       }
       touchReadCache(runId, cache);
     } else {
-      const validate = createSemanticValidator();
-      const parsed = parseLogFrom(sidecar.buffer, runId, sidecar.path, streamId, 0, 0, validate);
+      const parsed = parseLogFrom(sidecar.buffer, runId, sidecar.path, streamId, 0, 0);
       cache = {
         streamId,
         records: parsed.records,
         completeBytes: parsed.completeBytes,
         prefixHash: prefixHashOf(sidecar.buffer, parsed.completeBytes),
-        validate,
         writerRepaired: false,
       };
       runCaches.set(runId, cache);
