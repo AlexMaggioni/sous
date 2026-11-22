@@ -92,7 +92,7 @@ describe("the reset time", () => {
     assert.equal(parseResetHint(undefined, pausedAt), undefined);
   });
 
-  it("resumes a run at the limit 30 seconds after the reset, or 30 minutes after the pause", () => {
+  it("gives a run at the limit its reset time and its resume time, and a typed resetAt wins", () => {
     const limit = (fields: Partial<Saved>) => judge({ state: { ...saved("paused", "usage_limit"), ...fields }, ...gone }).pause;
     assert.deepEqual(limit({ resetHint: "Resets at 2026-11-21T12:00:00.000Z" }), {
       reason: "usage_limit",
@@ -112,5 +112,18 @@ describe("the reset time", () => {
     for (const reason of ["auth_required", "checkpoint_required", "requested", "step_failed", "step_stopped", "time_limit", "interrupted"]) {
       assert.equal(judge({ state: { ...saved("paused", reason), resetHint: "Resets at 2026-11-21T12:00:00.000Z" }, ...gone }).pause?.resumeAt, undefined, reason);
     }
+  });
+});
+
+describe("usage limit", () => {
+  /** The time the service resumes a run paused at the limit. service.ts's resumeTime gave it before the rule. */
+  const resumeTime = (resetHint: string | undefined, pausedAt: string) =>
+    judge({ state: { status: "paused", pauseReason: "usage_limit", ...(resetHint === undefined ? {} : { resetHint }), updatedAt: pausedAt }, ...gone }).pause?.resumeAt?.getTime();
+
+  it("resumes after the reset time, or 30 minutes after the pause when no time is known", () => {
+    const pausedAt = "2026-11-21T10:00:00.000Z";
+    assert.equal(resumeTime("Resets at 2026-11-21T12:00:00.000Z", pausedAt), Date.parse("2026-11-21T12:00:30.000Z"));
+    assert.equal(resumeTime("Resets in ~2h", pausedAt), Date.parse("2026-11-21T12:00:30.000Z"));
+    assert.equal(resumeTime(undefined, pausedAt), Date.parse("2026-11-21T10:30:00.000Z"));
   });
 });

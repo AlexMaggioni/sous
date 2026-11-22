@@ -15,6 +15,7 @@ import { ensureHome, homePaths, loadConfig, loadSecrets, workflowDirs, type Home
 import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuestion, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
 import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, updateRecord, type RunRecord } from "./records.js";
+import { judge } from "./rule.js";
 import { SlotPool } from "./slots.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
 import { programLookup } from "../programs.js";
@@ -327,12 +328,14 @@ async function runOnAccounts(
 
   const state = manager.getPersistence().load(runId);
   const status = result?.status ?? state?.status ?? "unknown";
-  if (status !== "paused" || stopping) removeRunQuestions(paths, runId);
+  // The worker ends, so it judges its run as gone. The run's result wins over the saved status.
+  const { pause } = judge({ state: status === "unknown" ? undefined : { updatedAt: "", ...state, status }, alive: false, openQuestions: 0 });
+  if (!pause || stopping) removeRunQuestions(paths, runId);
   updateRecord(paths, runId, { pid: undefined });
   const reason = state?.pauseReason ? ` (${state.pauseReason}${state.resetHint ? `, ${state.resetHint}` : ""})` : "";
   const error = status === "paused" ? why : status === "failed" ? (result?.reason ?? state?.reason) : undefined;
   log(`${stamp()} ${status.padEnd(10)} ${record.workflow}${reason}${error ? `: ${oneLine(String(error), 400)}` : ""}`);
-  const atLimit = status === "paused" && state?.pauseReason === "usage_limit" && !stopping;
+  const atLimit = pause?.reason === "usage_limit" && !stopping;
   const limitText = atLimit ? limitNotice(paths, loadRecord(paths, runId) ?? record, state?.resetHint) : undefined;
   if (limitText) log(`${stamp()} limit      ${limitText}`);
   if (status === "completed" || status === "aborted") {

@@ -10,7 +10,6 @@
 
 import { existsSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { RunStatus } from "../workflow-result.js";
 import { openWorkflowDir } from "../workflows/dir.js";
 import { workflowProjectPaths } from "./persistence/project-paths.js";
 import { gcWorktrees, runWorktrees } from "../places/places.js";
@@ -20,6 +19,7 @@ import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } fro
 import { createRun, logFile, startWorker } from "./launch.js";
 import { notify } from "./notify.js";
 import { listRecords, processAlive, snapshotFile, type RunRecord } from "./records.js";
+import { judge, type Verdict } from "./rule.js";
 import { managerFor } from "./worker.js";
 
 export interface Schedule {
@@ -106,18 +106,12 @@ function minuteKey(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-const UNFINISHED: RunStatus[] = ["pending", "running", "paused"];
 const RETRY_LIMIT_MS = 15 * 60 * 1000;
-const NO_HINT_WAIT_MS = 30 * 60 * 1000;
 
-/** When a usage-limit pause can resume. "Resets at <time>" gives it; otherwise 30 minutes after the pause. */
-export function resumeTime(resetHint: string | undefined, pausedAt: string): number {
-  const match = resetHint ? /Resets at (\S+)/.exec(resetHint) : null;
-  const at = match ? Date.parse(match[1]!) : Number.NaN;
-  if (Number.isFinite(at)) return at + 30_000;
-  const hours = resetHint ? /in ~?(\d+(?:\.\d+)?)\s*h/i.exec(resetHint) : null;
-  if (hours) return Date.parse(pausedAt) + Number(hours[1]) * 3600_000 + 30_000;
-  return Date.parse(pausedAt) + NO_HINT_WAIT_MS;
+/** A schedule waits for its last run, and prune keeps a run, while the run is unfinished. Here a
+ *  run that never saved a state counts as finished. */
+function startedAndUnfinished(verdict: Verdict): boolean {
+  return verdict.unfinished && verdict.status !== "not started";
 }
 
 export interface TickDeps {
@@ -172,9 +166,10 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
     state.fired[schedule.name] = key;
     const last = records.find((record) => record.schedule === schedule.name);
     if (last) {
-      const status = statusOf(last)?.status;
-      if (processAlive(last.pid) || (status && UNFINISHED.includes(status))) {
-        log(`schedule ${schedule.name}: skipped, run ${last.runId} has not finished (${status ?? "running"})`);
+      const lastState = statusOf(last);
+      // Questions do not change whether a run finished.
+      if (startedAndUnfinished(judge({ state: lastState, alive: processAlive(last.pid), openQuestions: 0 }))) {
+        log(`schedule ${schedule.name}: skipped, run ${last.runId} has not finished (${lastState?.status ?? "running"})`);
         continue;
       }
     }
@@ -199,12 +194,13 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
   for (const record of records) {
     if (processAlive(record.pid)) continue;
     const persisted = statusOf(record);
-    if (persisted?.status !== "paused") {
+    const { pause } = judge({ state: persisted, alive: false, openQuestions: 0 });
+    if (!persisted || !pause) {
       delete state.resumes[record.runId];
       delete state.told[record.runId];
       continue;
     }
-    if (persisted.pauseReason === "interrupted") {
+    if (pause.reason === "interrupted") {
       // A run cut off by a crash or a restart never starts again on its own.
       if (!state.told[record.runId]) {
         state.told[record.runId] = now.toISOString();
@@ -215,10 +211,8 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
     }
     const tried = state.resumes[record.runId];
     if (tried && now.getTime() - Date.parse(tried.lastAt) < RETRY_LIMIT_MS) continue;
-    let due = false;
-    if (persisted.pauseReason === "usage_limit") {
-      due = now.getTime() >= resumeTime(persisted.resetHint, persisted.updatedAt);
-    }
+    // Only a run paused at the usage limit has a time to resume by itself.
+    const due = pause.resumeAt !== undefined && now.getTime() >= pause.resumeAt.getTime();
     if (!due) continue;
     // An edit reaches a run only when the user says so, as with `orc resume`.
     const changed = record.resumeLatest ? [] : changedWorkflows(paths, record, persisted);
@@ -262,9 +256,9 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
 export function unfinishedRuns(paths: HomePaths, records = listRecords(paths)): Set<string> {
   const ids = new Set<string>();
   for (const record of records) {
-    // A run with no state yet is about to start.
-    const status = managerFor(paths, record.projectDir).getPersistence().load(record.runId)?.status;
-    if (processAlive(record.pid) || !status || UNFINISHED.includes(status)) ids.add(record.runId);
+    // A run with no state yet is about to start, and the rule counts it unfinished.
+    const state = managerFor(paths, record.projectDir).getPersistence().load(record.runId) ?? undefined;
+    if (judge({ state, alive: processAlive(record.pid), openQuestions: 0 }).unfinished) ids.add(record.runId);
   }
   return ids;
 }
@@ -310,8 +304,8 @@ export function prune(paths: HomePaths, days: number, now = new Date()): string[
   for (const record of listRecords(paths)) {
     if (Date.parse(record.createdAt) > cutoff || processAlive(record.pid)) continue;
     const m = managerFor(paths, record.projectDir);
-    const status = m.getPersistence().load(record.runId)?.status;
-    if (status && UNFINISHED.includes(status)) continue;
+    const state = m.getPersistence().load(record.runId) ?? undefined;
+    if (startedAndUnfinished(judge({ state, alive: false, openQuestions: 0 }))) continue;
     forgetRun(paths, record);
     removed.push(record.runId);
   }

@@ -3,18 +3,11 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { createRun } from "../../src/runs/launch.js";
 import { updateRecord } from "../../src/runs/records.js";
-import { resumeTime, tick } from "../../src/runs/service.js";
+import { tick } from "../../src/runs/service.js";
 import { managerFor } from "../../src/runs/worker.js";
 import { NO_CLI, setup } from "./fixture.js";
 
 describe("usage limit", () => {
-  it("resumes after the reset time, or 30 minutes after the pause when no time is known", () => {
-    const pausedAt = "2026-11-21T10:00:00.000Z";
-    assert.equal(resumeTime("Resets at 2026-11-21T12:00:00.000Z", pausedAt), Date.parse("2026-11-21T12:00:30.000Z"));
-    assert.equal(resumeTime("Resets in ~2h", pausedAt), Date.parse("2026-11-21T12:00:30.000Z"));
-    assert.equal(resumeTime(undefined, pausedAt), Date.parse("2026-11-21T10:30:00.000Z"));
-  });
-
   it("does not resume a run whose workflow changed since it started, tells the user once, and resumes it after --latest", () => {
     const job = (version: string) => `export const meta = { name: 'job', description: 'j' }\nreturn '${version}'`;
     const { paths, projectDir } = setup({ job: job("v1") });
