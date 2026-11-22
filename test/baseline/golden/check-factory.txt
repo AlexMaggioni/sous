@@ -1,0 +1,105 @@
+$ orc check factory --dry-run
+exit 0
+factory  <tmp>/check-factory/project/.orchestrator/workflows/factory.js
+ok
+dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
+  (log lines sorted)
+  <hh:mm:ss> completed  factory
+  <hh:mm:ss> done       TK-1: diff 1
+  <hh:mm:ss> done       TK-1: implementer, 85 tokens
+  <hh:mm:ss> done       TK-1: reviewer 1, 91 tokens
+  <hh:mm:ss> done       TK-1: tests
+  <hh:mm:ss> done       TK-1: verifier, 110 tokens
+  <hh:mm:ss> done       TK-2: diff 1
+  <hh:mm:ss> done       TK-2: implementer, 81 tokens
+  <hh:mm:ss> done       TK-2: reviewer 1, 87 tokens
+  <hh:mm:ss> done       TK-2: tests
+  <hh:mm:ss> done       TK-2: verifier, 107 tokens
+  <hh:mm:ss> done       TK-3: diff 1
+  <hh:mm:ss> done       TK-3: implementer, 41 tokens
+  <hh:mm:ss> done       TK-3: reviewer 1, 47 tokens
+  <hh:mm:ss> done       TK-3: tests
+  <hh:mm:ss> done       TK-3: verifier, 66 tokens
+  <hh:mm:ss> done       fetch tickets
+  <hh:mm:ss> done       triage TK-1, 129 tokens
+  <hh:mm:ss> done       triage TK-2, 125 tokens
+  <hh:mm:ss> done       triage TK-3, 85 tokens
+  <hh:mm:ss> log        3 tickets
+  <hh:mm:ss> log        Logs persisted to <tmp>/check-factory/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
+  <hh:mm:ss> log        TK-1: review 1: approved
+  <hh:mm:ss> log        TK-2: review 1: approved
+  <hh:mm:ss> log        TK-3: review 1: approved
+  <hh:mm:ss> phase      TK-1: implement
+  <hh:mm:ss> phase      TK-1: review
+  <hh:mm:ss> phase      TK-1: verify
+  <hh:mm:ss> phase      TK-2: implement
+  <hh:mm:ss> phase      TK-2: review
+  <hh:mm:ss> phase      TK-2: verify
+  <hh:mm:ss> phase      TK-3: implement
+  <hh:mm:ss> phase      TK-3: review
+  <hh:mm:ss> phase      TK-3: verify
+  <hh:mm:ss> removed    <tmp>/check-factory/orc-home/worktrees/<run-1>, which changed no file
+  <hh:mm:ss> removed    <tmp>/check-factory/orc-home/worktrees/<run-1>-nested1, which changed no file
+  <hh:mm:ss> removed    <tmp>/check-factory/orc-home/worktrees/<run-1>-nested2, which changed no file
+  <hh:mm:ss> removed    <tmp>/check-factory/orc-home/worktrees/<run-1>-nested3, which changed no file
+  <hh:mm:ss> run        factory in <tmp>/check-factory/orc-home/worktrees/<run-1>
+  <hh:mm:ss> start      TK-1: diff 1 (exec)
+  <hh:mm:ss> start      TK-1: implementer (claude/haiku)
+  <hh:mm:ss> start      TK-1: reviewer 1 (claude/haiku)
+  <hh:mm:ss> start      TK-1: tests (exec)
+  <hh:mm:ss> start      TK-1: verifier (claude/haiku)
+  <hh:mm:ss> start      TK-2: diff 1 (exec)
+  <hh:mm:ss> start      TK-2: implementer (claude/haiku)
+  <hh:mm:ss> start      TK-2: reviewer 1 (claude/haiku)
+  <hh:mm:ss> start      TK-2: tests (exec)
+  <hh:mm:ss> start      TK-2: verifier (claude/haiku)
+  <hh:mm:ss> start      TK-3: diff 1 (exec)
+  <hh:mm:ss> start      TK-3: implementer (claude/haiku)
+  <hh:mm:ss> start      TK-3: reviewer 1 (claude/haiku)
+  <hh:mm:ss> start      TK-3: tests (exec)
+  <hh:mm:ss> start      TK-3: verifier (claude/haiku)
+  <hh:mm:ss> start      fetch tickets (exec)
+  <hh:mm:ss> start      triage TK-1 (claude/haiku)
+  <hh:mm:ss> start      triage TK-2 (claude/haiku)
+  <hh:mm:ss> start      triage TK-3 (claude/haiku)
+dry run completed, with 12 agent steps answered by stand-ins
+{
+  "tickets": [
+    {
+      "id": "TK-1",
+      "title": "wordCount says an empty text has one word",
+      "choice": "build",
+      "reason": "mock-reason",
+      "result": {
+        "approved": true,
+        "verified": false,
+        "rounds": 1,
+        "evidence": "mock-evidence"
+      }
+    },
+    {
+      "id": "TK-2",
+      "title": "slugify leaves a dash at the end",
+      "choice": "build",
+      "reason": "mock-reason",
+      "result": {
+        "approved": true,
+        "verified": false,
+        "rounds": 1,
+        "evidence": "mock-evidence"
+      }
+    },
+    {
+      "id": "TK-3",
+      "title": "Text looks off sometimes",
+      "choice": "build",
+      "reason": "mock-reason",
+      "result": {
+        "approved": true,
+        "verified": false,
+        "rounds": 1,
+        "evidence": "mock-evidence"
+      }
+    }
+  ]
+}

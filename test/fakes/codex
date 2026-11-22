@@ -1,0 +1,284 @@
+#!/usr/bin/env node
+// A fake Codex CLI. `codex app-server` speaks JSON-RPC over stdio as codex-acp drives it:
+// initialize, thread start and resume, model list, a turn with an output schema, token usage,
+// interrupt, and MCP servers given by `-c` or in the thread config. It answers as lib.mjs
+// decides and logs each turn to FAKE_LOG. `codex --version` prints a version like the real one.
+
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { appendLog, debug, decide, loginPresent, mcpSummary, readJsonLines, waitFor } from "./lib.mjs";
+
+const VERSION = "0.169.0";
+const argv = process.argv.slice(2);
+
+if (argv.includes("--version") || argv.includes("-V")) {
+  process.stdout.write(`codex-cli ${VERSION}\n`);
+  process.exit(0);
+}
+if (!argv.includes("app-server")) {
+  process.stderr.write("This fake codex only runs `codex app-server` and `codex --version`.\n");
+  process.exit(2);
+}
+
+/** `-c key=value` overrides, with the value read as JSON when it parses. */
+function overrides(args) {
+  const out = {};
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] !== "-c" && args[i] !== "--config") continue;
+    const pair = args[++i] ?? "";
+    const eq = pair.indexOf("=");
+    if (eq < 0) continue;
+    const raw = pair.slice(eq + 1);
+    let value = raw;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      value = raw;
+    }
+    out[pair.slice(0, eq)] = value;
+  }
+  return out;
+}
+
+/** MCP servers from `-c mcp_servers.<name>.<key>=...` overrides. */
+function mcpFromOverrides(given) {
+  const servers = {};
+  for (const [key, value] of Object.entries(given)) {
+    const match = /^mcp_servers\.([^.]+)(?:\.(.+))?$/.exec(key);
+    if (!match) continue;
+    const server = (servers[match[1]] ??= {});
+    if (match[2]) server[match[2]] = value;
+    else Object.assign(server, value);
+  }
+  return servers;
+}
+
+const cliOverrides = overrides(argv);
+const threadsDir = join(dirname(process.env.FAKE_LOG ?? join(process.cwd(), "fake.log")), "codex-threads");
+const threads = new Map();
+
+const MODEL = {
+  id: "gpt-fake",
+  model: "gpt-fake",
+  upgrade: null,
+  upgradeInfo: null,
+  availabilityNux: null,
+  displayName: "GPT Fake",
+  description: "Fake Codex model",
+  modelSpecialty: null,
+  hidden: false,
+  supportedReasoningEfforts: ["low", "medium", "high"].map((reasoningEffort) => ({ reasoningEffort, description: reasoningEffort })),
+  defaultReasoningEffort: "medium",
+  inputModalities: ["text"],
+  supportsPersonality: false,
+  multiAgentVersion: null,
+  additionalSpeedTiers: [],
+  serviceTiers: [],
+  defaultServiceTier: null,
+  availableAccessPrograms: null,
+  isDefault: true,
+};
+
+const USAGE = { totalTokens: 150, inputTokens: 120, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 30, reasoningOutputTokens: 0 };
+
+const send = (message) => {
+  debug("codex", "out", message);
+  process.stdout.write(`${JSON.stringify(message)}\n`);
+};
+const notify = (method, params) => send({ method, params });
+
+function threadView(thread) {
+  return {
+    id: thread.id,
+    sessionId: thread.id,
+    forkedFromId: null,
+    parentThreadId: null,
+    preview: thread.preview ?? "",
+    ephemeral: false,
+    section: null,
+    sectionEnteredAt: null,
+    projectId: null,
+    historyMode: "full",
+    modelProvider: "openai",
+    model: thread.model,
+    reasoningEffort: thread.effort,
+    createdAt: 1700000000,
+    updatedAt: 1700000000,
+    status: { type: "idle" },
+    path: null,
+    cwd: thread.cwd,
+    cliVersion: VERSION,
+    source: "appServer",
+    gitInfo: null,
+    name: null,
+    turns: [],
+  };
+}
+
+function threadResponse(thread) {
+  return {
+    thread: threadView(thread),
+    model: thread.model,
+    modelProvider: "openai",
+    serviceTier: null,
+    reasoningEffort: thread.effort,
+    disabledPluginIds: [],
+    cwd: thread.cwd,
+    instructionSources: [],
+    approvalPolicy: "never",
+    approvalsReviewer: "user",
+    sandbox: { type: "workspaceWrite", writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
+    turnsBackwardsCursor: null,
+  };
+}
+
+function openThread(params, resumed) {
+  const config = params.config ?? {};
+  const id = resumed ? params.threadId : randomUUID();
+  const thread = {
+    id,
+    resumed,
+    cwd: params.cwd ?? process.cwd(),
+    config,
+    model: params.model ?? config.model ?? cliOverrides.model ?? MODEL.id,
+    effort: config.model_reasoning_effort ?? cliOverrides.model_reasoning_effort ?? null,
+    baseInstructions: params.baseInstructions ?? null,
+    developerInstructions: params.developerInstructions ?? null,
+    mcpServers: { ...mcpFromOverrides(cliOverrides), ...(config.mcp_servers ?? {}) },
+    turn: undefined,
+  };
+  threads.set(id, thread);
+  return thread;
+}
+
+function promptText(input) {
+  return (input ?? [])
+    .filter((item) => item?.type === "text")
+    .map((item) => item.text)
+    .join("\n");
+}
+
+async function runTurn(thread, turnId, params) {
+  const prompt = promptText(params.input);
+  const schema = params.outputSchema ?? null;
+  const decision = decide("codex", prompt, schema);
+  const turn = { id: turnId, interrupted: false };
+  thread.turn = turn;
+  const model = params.model ?? thread.model;
+  appendLog({
+    program: "codex",
+    argv,
+    cwd: params.cwd ?? thread.cwd,
+    model,
+    effort: params.effort ?? thread.effort ?? null,
+    sessionId: thread.id,
+    resume: thread.resumed,
+    schema,
+    mcpServers: mcpSummary(thread.mcpServers),
+    approvalPolicy: params.approvalPolicy ?? null,
+    sandboxPolicy: params.sandboxPolicy?.type ?? null,
+    baseInstructions: thread.baseInstructions,
+    developerInstructions: thread.developerInstructions,
+    login: loginPresent(),
+    prompt,
+    rule: decision.rule,
+    outcome: decision.kind,
+  });
+  mkdirSync(threadsDir, { recursive: true });
+  writeFileSync(join(threadsDir, thread.id), "");
+  thread.preview ||= prompt.slice(0, 80);
+
+  const base = { threadId: thread.id, turnId };
+  const turnView = (status, items = [], error = null) => ({ id: turnId, items, itemsView: "full", status, error, startedAt: 1700000000, completedAt: status === "inProgress" ? null : 1700000001, durationMs: status === "inProgress" ? null : 1000 });
+  notify("turn/started", { threadId: thread.id, turn: turnView("inProgress") });
+
+  await waitFor(decision, () => turn.interrupted);
+  thread.turn = undefined;
+
+  if (turn.interrupted) {
+    notify("turn/completed", { threadId: thread.id, turn: turnView("interrupted") });
+    return;
+  }
+  if (decision.kind === "limit") {
+    // The real app-server reports the spent window, with its reset time, before the error.
+    const window = { usedPercent: 100, windowDurationMins: 300, resetsAt: decision.resetsAt ?? null };
+    const rateLimits = { limitId: "codex", limitName: null, normalModelSlug: null, primary: window, secondary: null, credits: null, individualLimit: null, spendControlReached: null, planType: "plus", rateLimitReachedType: "rate_limit_reached" };
+    notify("account/rateLimits/updated", { rateLimits });
+  }
+  if (decision.kind === "limit" || decision.kind === "fail") {
+    const error =
+      decision.kind === "limit"
+        ? { message: "You've hit your usage limit. Upgrade to Pro or try again later.", codexErrorInfo: "usageLimitExceeded", additionalDetails: null, misalignment: null }
+        : { message: decision.message, codexErrorInfo: "internalServerError", additionalDetails: null, misalignment: null };
+    notify("error", { ...base, error, willRetry: false });
+    notify("turn/completed", { threadId: thread.id, turn: turnView("failed", [], error) });
+    return;
+  }
+  const itemId = `msg_${randomUUID().slice(0, 8)}`;
+  const item = { type: "agentMessage", id: itemId, text: "", phase: null, memoryCitation: null, delivery: null, questions: null };
+  notify("item/started", { ...base, item, startedAtMs: 1700000000000 });
+  notify("item/agentMessage/delta", { ...base, itemId, delta: decision.text });
+  const done = { ...item, text: decision.text };
+  notify("item/completed", { ...base, item: done, completedAtMs: 1700000001000 });
+  notify("thread/tokenUsage/updated", { ...base, tokenUsage: { total: USAGE, last: USAGE, modelContextWindow: 272000 } });
+  notify("turn/completed", { threadId: thread.id, turn: turnView("completed", [done]) });
+}
+
+function onRequest(message) {
+  const { id, method } = message;
+  const params = message.params ?? {};
+  const reply = (result) => send({ id, result });
+  const fail = (code, text) => send({ id, error: { code, message: text } });
+  switch (method) {
+    case "initialize":
+      return reply({ userAgent: `codex_cli_rs/${VERSION} (fake)`, codexHome: join(dirname(threadsDir), "codex-home"), platformFamily: "unix", platformOs: "macos" });
+    case "account/read":
+      return reply({ account: { type: "chatgpt", email: null, planType: "plus" }, requiresOpenaiAuth: true });
+    case "account/rateLimits/read":
+      return reply({ rateLimits: null, rateLimitsByLimitId: null });
+    case "skills/list":
+      return reply({ data: [] });
+    case "model/list":
+      return reply({ data: [MODEL], nextCursor: null });
+    case "config/read":
+      return reply({ config: { ...cliOverrides }, origins: {}, layers: params.includeLayers ? [] : null });
+    case "thread/start":
+      return reply(threadResponse(openThread(params, false)));
+    case "thread/resume": {
+      if (!existsSync(join(threadsDir, params.threadId ?? ""))) return fail(-32600, `no rollout found for thread id ${params.threadId}`);
+      return reply(threadResponse(openThread(params, true)));
+    }
+    case "thread/read": {
+      const thread = threads.get(params.threadId);
+      if (!thread) return fail(-32600, `thread not found: ${params.threadId}`);
+      return reply({ thread: threadView(thread) });
+    }
+    case "turn/start": {
+      const thread = threads.get(params.threadId);
+      if (!thread) return fail(-32600, `thread not found: ${params.threadId}`);
+      const turnId = randomUUID();
+      reply({ turn: { id: turnId, items: [], itemsView: "full", status: "inProgress", error: null, startedAt: 1700000000, completedAt: null, durationMs: null } });
+      thread.chain = (thread.chain ?? Promise.resolve()).then(() => runTurn(thread, turnId, params));
+      return;
+    }
+    case "turn/interrupt": {
+      const thread = threads.get(params.threadId);
+      if (thread?.turn) thread.turn.interrupted = true;
+      return reply({});
+    }
+    case "thread/unsubscribe":
+      threads.delete(params.threadId);
+      return reply({ status: "unsubscribed" });
+    default:
+      return reply({});
+  }
+}
+
+readJsonLines(process.stdin, (message) => {
+  debug("codex", "in", message);
+  if (message.method && message.id !== undefined) onRequest(message);
+});
+process.stdin.on("end", () => process.exit(0));
+process.on("SIGTERM", () => process.exit(143));
+debug("codex", "argv", argv);

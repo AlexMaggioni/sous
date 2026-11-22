@@ -1,0 +1,24 @@
+$ orc check agent-session --dry-run
+exit 0
+agent-session  <tmp>/check-agent-session/project/.orchestrator/workflows/agent-session.js
+ok
+dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
+  (log lines sorted)
+  <hh:mm:ss> completed  agent-session
+  <hh:mm:ss> done       planner again, 21 tokens
+  <hh:mm:ss> done       planner, 22 tokens
+  <hh:mm:ss> log        Logs persisted to <tmp>/check-agent-session/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
+  <hh:mm:ss> run        agent-session in <tmp>/check-agent-session/orc-home/scratch/<run-1>
+  <hh:mm:ss> start      planner
+  <hh:mm:ss> start      planner again
+dry run completed, with 2 agent steps answered by stand-ins
+{
+  "plan": {
+    "steps": [
+      "mock-steps-1"
+    ],
+    "size": "small",
+    "done": true
+  },
+  "more": "stand-in answer from planner again"
+}

@@ -1,0 +1,580 @@
+$ orc run questions --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "questions",
+  "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-questions/orc-home/logs/<run-1>.log"
+}
+
+$ orc wait <run-1> --json
+exit 4
+{
+  "runId": "<run-1>",
+  "workflow": "questions",
+  "status": "running",
+  "questions": [
+    {
+      "id": "<run-1>--0",
+      "prompt": "Pick a color for the draft",
+      "kind": "select",
+      "choices": [
+        "red",
+        "blue"
+      ],
+      "breakpoint": false
+    }
+  ],
+  "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>"
+}
+
+$ orc inbox
+exit 0
+<run-1>--0  questions  <n>s ago
+  Pick a color for the draft
+  orc answer <run-1>--0 <one of: red, blue>
+
+$ orc answer <run-1> blue
+exit 0
+answered <run-1>--0
+
+$ orc wait <run-1> --json
+exit 4
+{
+  "runId": "<run-1>",
+  "workflow": "questions",
+  "status": "running",
+  "questions": [
+    {
+      "id": "<run-1>--2",
+      "prompt": "asker asks: Which file should I edit?",
+      "kind": "input",
+      "breakpoint": false
+    }
+  ],
+  "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>"
+}
+
+$ orc inbox <run-1>
+exit 0
+<run-1>--2  questions  <n>s ago
+  asker asks: Which file should I edit?
+  orc answer <run-1>--2 "..."
+
+$ orc answer <run-1> src/textkit.js
+exit 0
+answered <run-1>--2
+
+$ orc wait <run-1> --json
+exit 4
+{
+  "runId": "<run-1>",
+  "workflow": "questions",
+  "status": "running",
+  "questions": [
+    {
+      "id": "<run-1>--5",
+      "prompt": "Breakpoint: Check the draft\n\nDraft: Fake claude answer.\n\nReply approve, stop, or send back with a note.",
+      "kind": "input",
+      "breakpoint": true
+    }
+  ],
+  "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>"
+}
+
+$ orc send-back <run-1> "Make it shorter"
+exit 0
+answered <run-1>--5
+
+$ orc wait <run-1> --json
+exit 4
+{
+  "runId": "<run-1>",
+  "workflow": "questions",
+  "status": "running",
+  "questions": [
+    {
+      "id": "<run-1>--7",
+      "prompt": "Breakpoint: Check the draft\n\nDraft: Fake claude answer.\n\nReply approve, stop, or send back with a note.",
+      "kind": "input",
+      "breakpoint": true
+    }
+  ],
+  "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>"
+}
+
+$ orc approve <run-1>
+exit 0
+answered <run-1>--7
+
+$ orc wait <run-1> --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "questions",
+  "status": "completed",
+  "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+  "result": {
+    "color": "blue",
+    "asked": "Fake claude answer.",
+    "draft": "Fake claude answer."
+  }
+}
+
+$ orc show <run-1>
+exit 0
+questions  <run-1>
+status    completed
+place     none  <tmp>/scenario-questions/orc-home/scratch/<run-1>
+started   <time>  by cli
+program   Claude Code 2.1.329  <repo>/test/fakes/claude
+account   Claude Code: default, Claude Code's own login in ~/.claude
+account   Codex: default, Codex's own login in ~/.codex
+tokens    600  in <n>s
+steps
+  done  asker  (<n>s, 150 tokens)
+  done  asker (answer 1)  (<n>s, 150 tokens)
+  done  drafter  (<n>s, 150 tokens)
+  done  drafter  (<n>s, 150 tokens)
+result
+{
+  "color": "blue",
+  "asked": "Fake claude answer.",
+  "draft": "Fake claude answer."
+}
+
+$ orc show <run-1> --json
+exit 0
+{
+  "record": {
+    "runId": "<run-1>",
+    "workflow": "questions",
+    "file": "<tmp>/scenario-questions/project/.orchestrator/workflows/questions.js",
+    "args": {},
+    "place": "none",
+    "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+    "projectDir": "<tmp>/scenario-questions/project",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "<createdAt>",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": null
+      },
+      "codex": {
+        "name": "default",
+        "folder": null
+      }
+    },
+    "programs": {
+      "claude": {
+        "path": "<repo>/test/fakes/claude",
+        "version": "2.1.329"
+      }
+    }
+  },
+  "state": {
+    "runId": "<run-1>",
+    "workflowName": "questions",
+    "scriptOrigin": {
+      "kind": "inline"
+    },
+    "args": {},
+    "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+    "runtime": {
+      "engineVersion": "4.0.5",
+      "node": "<node>",
+      "v8": "<v8>",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "resume": {
+      "format": "identity-v1"
+    },
+    "eventStreamId": "<eventStreamId>",
+    "eventSeq": 31,
+    "fallbacks": [
+      {
+        "callIndex": 3,
+        "label": "asker (answer 1)",
+        "requestedSpec": "(default)",
+        "kind": "continuation",
+        "continuation": {
+          "outcome": "reattached",
+          "method": "resume"
+        },
+        "message": "continuation: reattached via session/resume"
+      }
+    ],
+    "checkpointsTaken": [
+      {
+        "callIndex": 0,
+        "kind": "select",
+        "decision": "blue",
+        "source": "live"
+      },
+      {
+        "callIndex": 2,
+        "kind": "input",
+        "decision": "src/textkit.js",
+        "source": "live"
+      },
+      {
+        "callIndex": 5,
+        "kind": "input",
+        "decision": {
+          "decision": "send back",
+          "note": "Make it shorter"
+        },
+        "source": "live"
+      },
+      {
+        "callIndex": 7,
+        "kind": "input",
+        "decision": "approve",
+        "source": "live"
+      }
+    ],
+    "callsAllocated": 8,
+    "limits": {
+      "maxAgents": 1000,
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "completed",
+    "phases": [],
+    "agents": [
+      {
+        "id": 1,
+        "label": "asker",
+        "prompt": "ASKER Which file should change?\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.",
+        "status": "done",
+        "callIndex": 1,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "QUESTION: Which file should I edit?",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "QUESTION: Which file should I edit?",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-1>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 1,
+          "label": "asker",
+          "keptOpen": true
+        },
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 2,
+        "label": "asker (answer 1)",
+        "prompt": "The user answered: src/textkit.js\n\nContinue the task.\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.",
+        "status": "done",
+        "callIndex": 3,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0
+        },
+        "provenance": {
+          "source": "live",
+          "continuation": {
+            "reattached": true,
+            "method": "resume"
+          }
+        },
+        "session": {
+          "sessionId": "<id-1>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 3,
+          "label": "asker (answer 1)",
+          "keptOpen": true
+        },
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 3,
+        "label": "drafter",
+        "prompt": "DRAFT first in blue",
+        "status": "done",
+        "callIndex": 4,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-2>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 4,
+          "label": "drafter",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 4,
+        "label": "drafter",
+        "prompt": "DRAFT again in blue: Make it shorter",
+        "status": "done",
+        "callIndex": 6,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-3>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 6,
+          "label": "drafter",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      }
+    ],
+    "logs": [
+      "Logs persisted to <tmp>/scenario-questions/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+    ],
+    "result": {
+      "color": "blue",
+      "asked": "Fake claude answer.",
+      "draft": "Fake claude answer."
+    },
+    "tokenUsage": {
+      "input": 480,
+      "output": 120,
+      "total": 600,
+      "cost": 0.0036,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "<startedAt>",
+    "updatedAt": "<updatedAt>",
+    "completedAt": "<completedAt>",
+    "durationMs": "<durationMs>"
+  },
+  "questions": []
+}
+
+fake requests (sorted):
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-1>","--replay-user-messages",""],"cwd":"<tmp>/scenario-questions/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: asker (answer 1)\n\nThe user answered: src/textkit.js\n\nContinue the task.\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-1>","--replay-user-messages",""],"cwd":"<tmp>/scenario-questions/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: asker\n\nASKER Which file should change?\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.","rule":0,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-3>","--replay-user-messages",""],"cwd":"<tmp>/scenario-questions/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: drafter\n\nDRAFT again in blue: Make it shorter","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-2>","--replay-user-messages",""],"cwd":"<tmp>/scenario-questions/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: drafter\n\nDRAFT first in blue","rule":null,"outcome":"answer"}

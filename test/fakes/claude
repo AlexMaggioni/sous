@@ -1,0 +1,276 @@
+#!/usr/bin/env node
+// A fake Claude Code CLI, as the Claude Agent SDK drives it: stream-json in and out, the
+// control protocol, --resume, a result with structured_output when --json-schema is given,
+// usage numbers, and the usage-limit messages. It answers as lib.mjs decides and logs each
+// user turn to FAKE_LOG. `claude --version` prints a version like the real one.
+
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { appendLog, debug, decide, loginPresent, mcpSummary, readJsonLines, waitFor } from "./lib.mjs";
+
+const VERSION = "2.1.329";
+const argv = process.argv.slice(2);
+
+if (argv.includes("--version") || argv.includes("-v")) {
+  process.stdout.write(`${VERSION} (Claude Code)\n`);
+  process.exit(0);
+}
+
+/** Flags as the SDK writes them: --name value, --name=value, or --name alone. */
+function parseFlags(args) {
+  const flags = {};
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (!arg.startsWith("--")) continue;
+    let name = arg.slice(2);
+    let value = true;
+    const eq = name.indexOf("=");
+    if (eq >= 0) {
+      value = name.slice(eq + 1);
+      name = name.slice(0, eq);
+    } else if (i + 1 < args.length && !args[i + 1].startsWith("--")) {
+      value = args[++i];
+    }
+    if (name in flags) flags[name] = [].concat(flags[name], value);
+    else flags[name] = value;
+  }
+  return flags;
+}
+
+const flags = parseFlags(argv);
+const list = (value) => (typeof value === "string" && value !== "" ? value.split(",") : value === "" ? [] : undefined);
+const parseJson = (value) => {
+  try {
+    return typeof value === "string" ? JSON.parse(value) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const resumeId = typeof flags.resume === "string" ? flags.resume : undefined;
+const sessionId = typeof flags["session-id"] === "string" ? flags["session-id"] : (resumeId ?? randomUUID());
+const schema = parseJson(flags["json-schema"]);
+const mcpConfig = parseJson(flags["mcp-config"]);
+const sessionsDir = join(dirname(process.env.FAKE_LOG ?? join(process.cwd(), "fake.log")), "claude-sessions");
+
+// The real CLI fails a resume of a session it never saved.
+if (resumeId && !existsSync(join(sessionsDir, resumeId))) {
+  process.stderr.write(`No conversation found with session ID: ${resumeId}\n`);
+  process.exit(1);
+}
+
+const MODELS = [
+  { value: "default", displayName: "Default (recommended)", description: "Fake default model", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high"] },
+  { value: "sonnet", displayName: "Sonnet", description: "Fake Sonnet", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high"] },
+  { value: "opus", displayName: "Opus", description: "Fake Opus", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high"] },
+  { value: "haiku", displayName: "Haiku", description: "Fake Haiku" },
+];
+const modelName = (alias) => (!alias || alias === "default" ? "claude-sonnet-fake" : alias.startsWith("claude-") ? alias : `claude-${alias}-fake`);
+
+const state = {
+  model: typeof flags.model === "string" ? flags.model : undefined,
+  effort: typeof flags.effort === "string" ? flags.effort : undefined,
+  init: {},
+  turn: undefined,
+  queue: [],
+};
+
+const write = (message) => {
+  debug("claude", "out", message);
+  process.stdout.write(`${JSON.stringify(message)}\n`);
+};
+
+const USAGE = { input_tokens: 120, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 30 };
+const COST = 0.0012;
+
+function respond(requestId, response = {}) {
+  write({ type: "control_response", response: { subtype: "success", request_id: requestId, response } });
+}
+
+function onControl(message) {
+  const request = message.request ?? {};
+  switch (request.subtype) {
+    case "initialize":
+      state.init = request;
+      respond(message.request_id, {
+        commands: [],
+        agents: [],
+        output_style: "default",
+        available_output_styles: ["default"],
+        models: MODELS,
+        account: { email: "fake@example.invalid", subscriptionType: "max", tokenSource: "claude.ai" },
+        pid: 0,
+      });
+      return;
+    case "set_model":
+      state.model = request.model ?? undefined;
+      respond(message.request_id);
+      return;
+    case "apply_flag_settings":
+      if (request.settings && "effortLevel" in request.settings) state.effort = request.settings.effortLevel ?? undefined;
+      if (request.settings && "model" in request.settings) state.model = request.settings.model ?? undefined;
+      respond(message.request_id);
+      return;
+    case "interrupt":
+      if (state.turn) state.turn.interrupted = true;
+      respond(message.request_id);
+      return;
+    case "mcp_status":
+      respond(message.request_id, { mcpServers: mcpSummary(mcpConfig?.mcpServers).map((server) => ({ name: server.name, status: "connected" })) });
+      return;
+    default:
+      respond(message.request_id);
+  }
+}
+
+function promptText(message) {
+  const content = message.message?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((block) => block?.type === "text")
+    .map((block) => block.text)
+    .join("\n");
+}
+
+const base = () => ({ session_id: sessionId, uuid: randomUUID() });
+const sessionState = (value) => write({ type: "system", subtype: "session_state_changed", state: value, ...base() });
+
+function assistant(model, text, extra = {}) {
+  return {
+    type: "assistant",
+    message: {
+      id: `msg_fake_${randomUUID().slice(0, 8)}`,
+      type: "message",
+      role: "assistant",
+      model,
+      content: [{ type: "text", text }],
+      stop_reason: "end_turn",
+      stop_sequence: null,
+      usage: model === "<synthetic>" ? { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } : USAGE,
+    },
+    parent_tool_use_id: null,
+    ...extra,
+    ...base(),
+  };
+}
+
+function streamText(model, text) {
+  const event = (body) => write({ type: "stream_event", event: body, parent_tool_use_id: null, ...base() });
+  event({ type: "message_start", message: { id: `msg_fake_${randomUUID().slice(0, 8)}`, type: "message", role: "assistant", model, content: [], stop_reason: null, usage: { ...USAGE, output_tokens: 1 } } });
+  event({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
+  event({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text } });
+  event({ type: "content_block_stop", index: 0 });
+}
+
+function result(fields) {
+  write({
+    type: "result",
+    duration_ms: 1000,
+    duration_api_ms: 900,
+    num_turns: 1,
+    stop_reason: "end_turn",
+    total_cost_usd: COST,
+    usage: { ...USAGE, server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 }, service_tier: "standard" },
+    modelUsage: {
+      [modelName(state.model)]: { inputTokens: 120, outputTokens: 30, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, webSearchRequests: 0, costUSD: COST, contextWindow: 200000, maxOutputTokens: 64000 },
+    },
+    permission_denials: [],
+    ...fields,
+    ...base(),
+  });
+}
+
+let initSent = false;
+
+async function runTurn(message) {
+  const prompt = promptText(message);
+  const decision = decide("claude", prompt, schema);
+  const turn = { interrupted: false };
+  state.turn = turn;
+  appendLog({
+    program: "claude",
+    argv,
+    cwd: process.cwd(),
+    model: state.model ?? null,
+    effort: state.effort ?? null,
+    sessionId,
+    resume: Boolean(resumeId),
+    schema: schema ?? null,
+    mcpServers: mcpSummary(mcpConfig?.mcpServers),
+    allowedTools: list(flags.allowedTools) ?? [],
+    disallowedTools: list(flags.disallowedTools) ?? [],
+    tools: list(flags.tools) ?? null,
+    systemPrompt: state.init.systemPrompt ?? flags["system-prompt"] ?? null,
+    appendSystemPrompt: state.init.appendSystemPrompt ?? flags["append-system-prompt"] ?? null,
+    skills: state.init.skills ?? null,
+    login: loginPresent(),
+    prompt,
+    rule: decision.rule,
+    outcome: decision.kind,
+  });
+  mkdirSync(sessionsDir, { recursive: true });
+  writeFileSync(join(sessionsDir, sessionId), "");
+
+  // The replay of the user message tells the SDK client which turn is now running.
+  write({ ...message, session_id: sessionId, isReplay: true });
+  sessionState("running");
+  if (!initSent) {
+    initSent = true;
+    write({
+      type: "system",
+      subtype: "init",
+      cwd: process.cwd(),
+      tools: ["Bash", "Edit", "Glob", "Grep", "Read", "Write"],
+      mcp_servers: mcpSummary(mcpConfig?.mcpServers).map((server) => ({ name: server.name, status: "connected" })),
+      model: modelName(state.model),
+      permissionMode: typeof flags["permission-mode"] === "string" ? flags["permission-mode"] : "default",
+      slash_commands: [],
+      apiKeySource: "none",
+      claude_code_version: VERSION,
+      output_style: "default",
+      agents: [],
+      skills: [],
+      plugins: [],
+      ...base(),
+    });
+  }
+
+  await waitFor(decision, () => turn.interrupted);
+  const model = modelName(state.model);
+
+  if (turn.interrupted) {
+    write({ type: "user", message: { role: "user", content: [{ type: "text", text: "[Request interrupted by user]" }] }, parent_tool_use_id: null, ...base() });
+    result({ subtype: "error_during_execution", is_error: true, errors: ["Request interrupted by user"], stop_reason: null });
+  } else if (decision.kind === "limit") {
+    // The limit hits on the turn's second request: one real answer, then the rejection.
+    streamText(model, "Working on it.");
+    write(assistant(model, "Working on it."));
+    write({ type: "rate_limit_event", rate_limit_info: { status: "rejected", resetsAt: decision.resetsAt, rateLimitType: "five_hour", overageStatus: "rejected" }, ...base() });
+    const text = "You've hit your limit · resets soon";
+    write(assistant("<synthetic>", text, { error: "rate_limit" }));
+    result({ subtype: "success", is_error: true, result: text });
+  } else if (decision.kind === "fail") {
+    const text = `API Error: 500 ${decision.message}`;
+    write(assistant("<synthetic>", text, { error: "server_error" }));
+    result({ subtype: "success", is_error: true, result: text });
+  } else {
+    streamText(model, decision.text);
+    write(assistant(model, decision.text));
+    result({ subtype: "success", is_error: false, result: decision.text, ...(schema ? { structured_output: decision.value } : {}) });
+  }
+  sessionState("idle");
+  state.turn = undefined;
+}
+
+let chain = Promise.resolve();
+readJsonLines(process.stdin, (message) => {
+  debug("claude", "in", message);
+  if (message.type === "control_request") onControl(message);
+  else if (message.type === "control_response") return;
+  else if (message.type === "user") chain = chain.then(() => runTurn(message));
+});
+process.stdin.on("end", () => chain.then(() => process.exit(0)));
+process.on("SIGTERM", () => process.exit(143));
+debug("claude", "argv", argv);

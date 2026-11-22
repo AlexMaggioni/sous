@@ -1,0 +1,446 @@
+$ orc run rulesync-mcp --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "rulesync-mcp",
+  "cwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-rulesync-mcp/orc-home/logs/<run-1>.log"
+}
+
+$ orc wait <run-1> --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "rulesync-mcp",
+  "status": "completed",
+  "cwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
+  "result": {
+    "onClaude": "Fake claude answer.",
+    "onCodex": "Fake codex answer.",
+    "ownServer": "Fake claude answer.",
+    "codexServer": "Fake codex answer."
+  }
+}
+
+$ orc show <run-1>
+exit 0
+rulesync-mcp  <run-1>
+status    completed
+place     none  <tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>
+started   <time>  by cli
+program   Claude Code 2.1.329  <repo>/test/fakes/claude
+program   Codex 0.169.0  <repo>/test/fakes/codex
+account   Claude Code: default, Claude Code's own login in ~/.claude
+account   Codex: default, Codex's own login in ~/.codex
+tokens    600  in <n>s
+steps
+  done  researcher  (<n>s, 150 tokens)  claude/haiku
+  done  researcher on codex  (<n>s, 150 tokens)  codex/gpt-fake
+  done  docs step  (<n>s, 150 tokens)
+  done  docs step on codex  (<n>s, 150 tokens)  codex
+result
+{
+  "onClaude": "Fake claude answer.",
+  "onCodex": "Fake codex answer.",
+  "ownServer": "Fake claude answer.",
+  "codexServer": "Fake codex answer."
+}
+
+$ orc show <run-1> --json
+exit 0
+{
+  "record": {
+    "runId": "<run-1>",
+    "workflow": "rulesync-mcp",
+    "file": "<tmp>/scenario-rulesync-mcp/project/.orchestrator/workflows/rulesync-mcp.js",
+    "args": {},
+    "place": "none",
+    "cwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
+    "projectDir": "<tmp>/scenario-rulesync-mcp/project",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "<createdAt>",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": null
+      },
+      "codex": {
+        "name": "default",
+        "folder": null
+      }
+    },
+    "programs": {
+      "claude": {
+        "path": "<repo>/test/fakes/claude",
+        "version": "2.1.329"
+      },
+      "codex": {
+        "path": "<repo>/test/fakes/codex",
+        "version": "0.169.0"
+      }
+    }
+  },
+  "state": {
+    "runId": "<run-1>",
+    "workflowName": "rulesync-mcp",
+    "scriptOrigin": {
+      "kind": "inline"
+    },
+    "args": {},
+    "cwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
+    "runtime": {
+      "engineVersion": "4.0.5",
+      "node": "<node>",
+      "v8": "<v8>",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "resume": {
+      "format": "identity-v1"
+    },
+    "eventStreamId": "<eventStreamId>",
+    "eventSeq": 23,
+    "callsAllocated": 4,
+    "limits": {
+      "maxAgents": 1000,
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "completed",
+    "phases": [],
+    "agents": [
+      {
+        "id": 1,
+        "label": "researcher",
+        "prompt": "MCP-CLAUDE Look it up.",
+        "status": "done",
+        "model": "claude/haiku",
+        "callIndex": 0,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-1>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "model": "claude/haiku",
+          "costGauge": 0.0012,
+          "callIndex": 0,
+          "label": "researcher",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 2,
+        "label": "researcher on codex",
+        "prompt": "MCP-CODEX Look it up.",
+        "status": "done",
+        "model": "codex/gpt-fake",
+        "callIndex": 1,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake codex answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake codex answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0
+        },
+        "session": {
+          "sessionId": "<id-2>",
+          "backendId": "codex",
+          "poolKey": "codex",
+          "initializeMeta": {
+            "steering": {
+              "supported": true
+            },
+            "loadedTurn": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "pause",
+                "resume",
+                "clear"
+              ]
+            },
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            }
+          },
+          "cwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "model": "codex/gpt-fake",
+          "callIndex": 1,
+          "label": "researcher on codex",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 3,
+        "label": "docs step",
+        "prompt": "MCP-STEP Use the docs.",
+        "status": "done",
+        "callIndex": 2,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-3>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 2,
+          "label": "docs step",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 4,
+        "label": "docs step on codex",
+        "prompt": "MCP-STEP-CODEX Use the docs.",
+        "status": "done",
+        "model": "codex",
+        "callIndex": 3,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake codex answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake codex answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0
+        },
+        "session": {
+          "sessionId": "<id-4>",
+          "backendId": "codex",
+          "poolKey": "codex",
+          "initializeMeta": {
+            "steering": {
+              "supported": true
+            },
+            "loadedTurn": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "pause",
+                "resume",
+                "clear"
+              ]
+            },
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            }
+          },
+          "cwd": "<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "callIndex": 3,
+          "label": "docs step on codex",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      }
+    ],
+    "logs": [
+      "Logs persisted to <tmp>/scenario-rulesync-mcp/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+    ],
+    "result": {
+      "onClaude": "Fake claude answer.",
+      "onCodex": "Fake codex answer.",
+      "ownServer": "Fake claude answer.",
+      "codexServer": "Fake codex answer."
+    },
+    "tokenUsage": {
+      "input": 480,
+      "output": 120,
+      "total": 600,
+      "cost": 0.0024,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "<startedAt>",
+    "updatedAt": "<updatedAt>",
+    "completedAt": "<completedAt>",
+    "durationMs": "<durationMs>"
+  },
+  "questions": []
+}
+
+fake requests (sorted):
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--effort","high","--permission-prompt-tool","stdio","--allowedTools","Skill(lookup)","--disallowedTools","AskUserQuestion","--tools","default","--mcp-config","{\"mcpServers\":{\"notes\":{\"type\":\"stdio\",\"command\":\"node\",\"args\":[\"notes-server.js\"],\"env\":{\"NOTES_DIR\":\"notes\"}}}}","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-1>","--replay-user-messages",""],"cwd":"<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>","model":"haiku","effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[{"name":"notes","transport":"stdio"}],"allowedTools":["Skill(lookup)"],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":["lookup"],"login":[],"prompt":"You look things up in the notes and the docs, then answer in one line.\n\nTask label: researcher\n\nMCP-CLAUDE Look it up.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--mcp-config","{\"mcpServers\":{\"docs\":{\"type\":\"http\",\"url\":\"https://example.invalid/mcp\",\"headers\":{}},\"notes\":{\"type\":\"stdio\",\"command\":\"node\",\"args\":[\"notes-server.js\"],\"env\":{\"NOTES_DIR\":\"notes\"}}}}","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-3>","--replay-user-messages",""],"cwd":"<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"},{"name":"notes","transport":"stdio"}],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: docs step\n\nMCP-STEP Use the docs.","rule":null,"outcome":"answer"}
+{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>","model":"gpt-fake","effort":"low","sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"},{"name":"notes","transport":"stdio"}],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":null,"login":[],"prompt":"You look things up in the notes and the docs, then answer in one line.\n\nTask label: researcher on codex\n\nMCP-CODEX Look it up.","rule":null,"outcome":"answer"}
+{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-rulesync-mcp/orc-home/scratch/<run-1>","model":"gpt-fake","effort":"medium","sessionId":"<id-4>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"}],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":null,"login":[],"prompt":"Task label: docs step on codex\n\nMCP-STEP-CODEX Use the docs.","rule":null,"outcome":"answer"}

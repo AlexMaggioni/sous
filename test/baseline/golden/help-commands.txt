@@ -1,0 +1,99 @@
+$ orc 
+exit 0
+same as orc --help
+
+$ orc help
+exit 0
+same as orc --help
+
+$ orc -h
+exit 0
+same as orc --help
+
+$ orc run --help
+exit 0
+same as orc --help
+
+$ orc wait --help
+exit 0
+same as orc --help
+
+$ orc list --help
+exit 0
+same as orc --help
+
+$ orc show --help
+exit 0
+same as orc --help
+
+$ orc log --help
+exit 0
+same as orc --help
+
+$ orc inbox --help
+exit 0
+same as orc --help
+
+$ orc answer --help
+exit 0
+same as orc --help
+
+$ orc approve --help
+exit 0
+same as orc --help
+
+$ orc send-back --help
+exit 0
+same as orc --help
+
+$ orc pause --help
+exit 0
+same as orc --help
+
+$ orc resume --help
+exit 0
+same as orc --help
+
+$ orc stop --help
+exit 0
+same as orc --help
+
+$ orc rerun --help
+exit 0
+same as orc --help
+
+$ orc workflows --help
+exit 0
+same as orc --help
+
+$ orc check --help
+exit 0
+same as orc --help
+
+$ orc schedule --help
+exit 0
+same as orc --help
+
+$ orc daemon --help
+exit 0
+same as orc --help
+
+$ orc gc --help
+exit 0
+same as orc --help
+
+$ orc discard --help
+exit 0
+same as orc --help
+
+$ orc prune --help
+exit 0
+same as orc --help
+
+$ orc account --help
+exit 0
+same as orc --help
+
+$ orc doctor --help
+exit 0
+same as orc --help

@@ -1,0 +1,43 @@
+$ orc check fanout --dry-run
+exit 0
+fanout  <tmp>/check-fanout/project/.orchestrator/workflows/fanout.js
+  note: declares no inputs, so it takes any
+ok
+dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
+  (log lines sorted)
+  <hh:mm:ss> completed  fanout
+  <hh:mm:ss> done       child run: child agent, 15 tokens
+  <hh:mm:ss> done       child run: child echo
+  <hh:mm:ss> done       left, 14 tokens
+  <hh:mm:ss> done       list files
+  <hh:mm:ss> done       right, 15 tokens
+  <hh:mm:ss> log        Logs persisted to <tmp>/check-fanout/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
+  <hh:mm:ss> phase      fan out
+  <hh:mm:ss> phase      nest
+  <hh:mm:ss> removed    <tmp>/check-fanout/orc-home/worktrees/<run-1>, which changed no file
+  <hh:mm:ss> run        fanout in <tmp>/check-fanout/orc-home/worktrees/<run-1>
+  <hh:mm:ss> start      child run: child agent
+  <hh:mm:ss> start      child run: child echo (exec)
+  <hh:mm:ss> start      left
+  <hh:mm:ss> start      list files (exec)
+  <hh:mm:ss> start      right (claude/haiku)
+dry run completed, with 3 agent steps answered by stand-ins
+{
+  "left": "stand-in answer from left",
+  "right": "stand-in answer from right",
+  "files": [
+    "src:",
+    "textkit.js",
+    "",
+    "test:",
+    "textkit.test.js",
+    "true"
+  ],
+  "child": {
+    "out": {
+      "summary": "mock-summary",
+      "count": 1
+    },
+    "echo": "child-nested"
+  }
+}

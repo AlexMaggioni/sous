@@ -1,0 +1,22 @@
+$ orc check emails --dry-run
+exit 0
+emails  <tmp>/check-emails/project/.orchestrator/workflows/emails.js
+ok
+dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
+  (log lines sorted)
+  <hh:mm:ss> completed  emails
+  <hh:mm:ss> done       read mailbox
+  <hh:mm:ss> done       save drafts
+  <hh:mm:ss> done       sort, 344 tokens
+  <hh:mm:ss> log        Logs persisted to <tmp>/check-emails/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
+  <hh:mm:ss> question   Breakpoint: Approve these replies Reply approve, stop, or send back with a note.
+           answered   "approve" (dry run)
+  <hh:mm:ss> run        emails in <tmp>/check-emails/orc-home/scratch/<run-1>
+  <hh:mm:ss> start      read mailbox (exec)
+  <hh:mm:ss> start      save drafts (exec)
+  <hh:mm:ss> start      sort (claude/haiku)
+dry run completed, with 1 agent step answered by stand-ins
+{
+  "drafts": [],
+  "skipped": []
+}

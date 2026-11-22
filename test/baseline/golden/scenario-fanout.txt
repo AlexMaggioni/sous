@@ -1,0 +1,461 @@
+$ orc run fanout --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "fanout",
+  "cwd": "<tmp>/scenario-fanout/project",
+  "log": "<tmp>/scenario-fanout/orc-home/logs/<run-1>.log"
+}
+
+$ orc wait <run-1> --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "fanout",
+  "status": "completed",
+  "cwd": "<tmp>/scenario-fanout/project",
+  "result": {
+    "left": "Fake claude answer.",
+    "right": "Fake claude answer.",
+    "files": [
+      "src:",
+      "textkit.js",
+      "",
+      "test:",
+      "textkit.test.js",
+      "true"
+    ],
+    "child": {
+      "out": {
+        "summary": "fake-summary",
+        "count": 1
+      },
+      "echo": "child-nested"
+    }
+  }
+}
+
+$ orc show <run-1>
+exit 0
+fanout  <run-1>
+status    completed
+place     folder  <tmp>/scenario-fanout/project
+started   <time>  by cli
+program   Claude Code 2.1.329  <repo>/test/fakes/claude
+account   Claude Code: default, Claude Code's own login in ~/.claude
+account   Codex: default, Codex's own login in ~/.codex
+tokens    450  in <n>s
+steps
+  done  left  (<n>s, 150 tokens)
+  done  right  (<n>s, 150 tokens)  claude/haiku
+  done  list files  (<n>s)  exec
+  child run  (workflow child)
+    done  child agent  (<n>s, 150 tokens)
+    done  child echo  (<n>s)  exec
+result
+{
+  "left": "Fake claude answer.",
+  "right": "Fake claude answer.",
+  "files": [
+    "src:",
+    "textkit.js",
+    "",
+    "test:",
+    "textkit.test.js",
+    "true"
+  ],
+  "child": {
+    "out": {
+      "summary": "fake-summary",
+      "count": 1
+    },
+    "echo": "child-nested"
+  }
+}
+
+$ orc show <run-1> --json
+exit 0
+{
+  "record": {
+    "runId": "<run-1>",
+    "workflow": "fanout",
+    "file": "<tmp>/scenario-fanout/project/.orchestrator/workflows/fanout.js",
+    "args": {},
+    "place": "folder",
+    "cwd": "<tmp>/scenario-fanout/project",
+    "projectDir": "<tmp>/scenario-fanout/project",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "<createdAt>",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": null
+      },
+      "codex": {
+        "name": "default",
+        "folder": null
+      }
+    },
+    "programs": {
+      "claude": {
+        "path": "<repo>/test/fakes/claude",
+        "version": "2.1.329"
+      }
+    },
+    "nested": {
+      "<run-1>-nested1": {
+        "workflow": "child",
+        "label": "child run"
+      }
+    }
+  },
+  "state": {
+    "runId": "<run-1>",
+    "workflowName": "fanout",
+    "scriptOrigin": {
+      "kind": "inline"
+    },
+    "args": {},
+    "cwd": "<tmp>/scenario-fanout/project",
+    "effectiveCwd": "<tmp>/scenario-fanout/project",
+    "runtime": {
+      "engineVersion": "4.0.5",
+      "node": "<node>",
+      "v8": "<v8>",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "environment": {
+      "git": {
+        "head": "9e9677ccc62025a0975507f728b6a3525c3e9947",
+        "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "resume": {
+      "format": "identity-v1",
+      "terminalEnvironment": {
+        "git": {
+          "head": "9e9677ccc62025a0975507f728b6a3525c3e9947",
+          "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "eventStreamId": "<eventStreamId>",
+    "eventSeq": 31,
+    "nestedWorkflows": true,
+    "callsAllocated": 3,
+    "limits": {
+      "maxAgents": 1000,
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "completed",
+    "phases": [
+      "fan out",
+      "nest"
+    ],
+    "currentPhase": "nest",
+    "agents": [
+      {
+        "id": 1,
+        "label": "left",
+        "phase": "fan out",
+        "prompt": "FANOUT-LEFT Name one file.",
+        "status": "done",
+        "callIndex": 0,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-1>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-fanout/project",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 0,
+          "label": "left",
+          "phase": "fan out",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 2,
+        "label": "right",
+        "phase": "fan out",
+        "prompt": "FANOUT-RIGHT Name one test.",
+        "status": "done",
+        "model": "claude/haiku",
+        "callIndex": 1,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-2>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-fanout/project",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "model": "claude/haiku",
+          "costGauge": 0.0012,
+          "callIndex": 1,
+          "label": "right",
+          "phase": "fan out",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 3,
+        "label": "list files",
+        "phase": "fan out",
+        "prompt": "{\"kind\":\"sh\",\"command\":\"ls -1 src test && git rev-parse --is-inside-work-tree\"}",
+        "status": "done",
+        "model": "exec",
+        "callIndex": 2,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "resultPreview": "{\"code\":0,\"stdout\":\"src:\\ntextkit.js\\n\\ntest:\\ntextkit.test.js\\ntrue\\n\",\"stderr…",
+        "tokens": 0,
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 4,
+        "label": "child agent",
+        "prompt": "CHILD Work on nested.",
+        "status": "done",
+        "callIndex": 0,
+        "scope": "<run-1>-nested1",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "{\"summary\":\"fake-summary\",\"count\":1}",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "{\"summary\":\"fake-summary\",\"count\":1}",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-3>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-fanout/project",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 0,
+          "label": "child agent",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 5,
+        "label": "child echo",
+        "prompt": "{\"kind\":\"sh\",\"command\":\"echo child-nested\"}",
+        "status": "done",
+        "model": "exec",
+        "callIndex": 1,
+        "scope": "<run-1>-nested1",
+        "startedAt": "<startedAt>",
+        "resultPreview": "{\"code\":0,\"stdout\":\"child-nested\\n\",\"stderr\":\"\"}",
+        "tokens": 0,
+        "endedAt": "<endedAt>"
+      }
+    ],
+    "logs": [
+      "Logs persisted to <tmp>/scenario-fanout/orc-home/runs/projects/project-<hash>/runs/<run-1>.log"
+    ],
+    "result": {
+      "left": "Fake claude answer.",
+      "right": "Fake claude answer.",
+      "files": [
+        "src:",
+        "textkit.js",
+        "",
+        "test:",
+        "textkit.test.js",
+        "true"
+      ],
+      "child": {
+        "out": {
+          "summary": "fake-summary",
+          "count": 1
+        },
+        "echo": "child-nested"
+      }
+    },
+    "tokenUsage": {
+      "input": 360,
+      "output": 90,
+      "total": 450,
+      "cost": 0.0036,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "<startedAt>",
+    "updatedAt": "<updatedAt>",
+    "completedAt": "<completedAt>",
+    "durationMs": "<durationMs>"
+  },
+  "questions": []
+}
+
+fake requests (sorted):
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema","{\"type\":\"object\",\"properties\":{\"summary\":{\"type\":\"string\"},\"count\":{\"type\":\"integer\"}},\"required\":[\"summary\",\"count\"],\"additionalProperties\":false}","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-3>","--replay-user-messages",""],"cwd":"<tmp>/scenario-fanout/project","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":{"type":"object","properties":{"summary":{"type":"string"},"count":{"type":"integer"}},"required":["summary","count"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: child agent\n\nCHILD Work on nested.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-2>","--replay-user-messages",""],"cwd":"<tmp>/scenario-fanout/project","model":"haiku","effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Workflow phase: fan out\n\nTask label: right\n\nFANOUT-RIGHT Name one test.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-1>","--replay-user-messages",""],"cwd":"<tmp>/scenario-fanout/project","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Workflow phase: fan out\n\nTask label: left\n\nFANOUT-LEFT Name one file.","rule":null,"outcome":"answer"}

@@ -1,0 +1,712 @@
+$ orc run places --json --place none
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "places",
+  "cwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-places/orc-home/logs/<run-1>.log"
+}
+
+$ orc wait <run-1> --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "places",
+  "status": "completed",
+  "cwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
+  "result": {
+    "where": [
+      "no git"
+    ],
+    "said": "Fake claude answer."
+  }
+}
+
+$ orc run places --json --place folder
+exit 0
+{
+  "runId": "<run-2>",
+  "workflow": "places",
+  "cwd": "<tmp>/scenario-places/project",
+  "log": "<tmp>/scenario-places/orc-home/logs/<run-2>.log"
+}
+
+$ orc wait <run-2> --json
+exit 0
+{
+  "runId": "<run-2>",
+  "workflow": "places",
+  "status": "completed",
+  "cwd": "<tmp>/scenario-places/project",
+  "result": {
+    "where": [
+      "git main",
+      "mail",
+      "package.json",
+      "src"
+    ],
+    "said": "Fake claude answer."
+  }
+}
+
+$ orc run places --json --place worktree
+exit 0
+{
+  "runId": "<run-3>",
+  "workflow": "places",
+  "cwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
+  "log": "<tmp>/scenario-places/orc-home/logs/<run-3>.log"
+}
+
+$ orc wait <run-3> --json
+exit 0
+{
+  "runId": "<run-3>",
+  "workflow": "places",
+  "status": "completed",
+  "cwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
+  "branch": "orc/<run-3>",
+  "result": {
+    "where": [
+      "git orc/<run-3>",
+      "mail",
+      "package.json",
+      "src"
+    ],
+    "said": "Fake claude answer."
+  }
+}
+
+$ orc show <run-1>
+exit 0
+places  <run-1>
+status    completed
+place     none  <tmp>/scenario-places/orc-home/scratch/<run-1>
+started   <time>  by cli
+program   Claude Code 2.1.329  <repo>/test/fakes/claude
+account   Claude Code: default, Claude Code's own login in ~/.claude
+account   Codex: default, Codex's own login in ~/.codex
+tokens    150  in <n>s
+steps
+  done  where  (<n>s)  exec
+  done  where agent  (<n>s, 150 tokens)
+result
+{
+  "where": [
+    "no git"
+  ],
+  "said": "Fake claude answer."
+}
+
+$ orc show <run-1> --json
+exit 0
+{
+  "record": {
+    "runId": "<run-1>",
+    "workflow": "places",
+    "file": "<tmp>/scenario-places/project/.orchestrator/workflows/places.js",
+    "args": {},
+    "place": "none",
+    "cwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
+    "projectDir": "<tmp>/scenario-places/project",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "<createdAt>",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": null
+      },
+      "codex": {
+        "name": "default",
+        "folder": null
+      }
+    },
+    "programs": {
+      "claude": {
+        "path": "<repo>/test/fakes/claude",
+        "version": "2.1.329"
+      }
+    }
+  },
+  "state": {
+    "runId": "<run-1>",
+    "workflowName": "places",
+    "scriptOrigin": {
+      "kind": "inline"
+    },
+    "args": {},
+    "cwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
+    "runtime": {
+      "engineVersion": "4.0.5",
+      "node": "<node>",
+      "v8": "<v8>",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "resume": {
+      "format": "identity-v1"
+    },
+    "eventStreamId": "<eventStreamId>",
+    "eventSeq": 13,
+    "callsAllocated": 2,
+    "limits": {
+      "maxAgents": 1000,
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "completed",
+    "phases": [],
+    "agents": [
+      {
+        "id": 1,
+        "label": "where",
+        "prompt": "{\"kind\":\"sh\",\"command\":\"if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then echo \\\"git $(git rev-parse --abbrev-ref HEAD)\\\"; else echo \\\"no git\\\"; fi; ls -1 | head -3\"}",
+        "status": "done",
+        "model": "exec",
+        "callIndex": 0,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "resultPreview": "{\"code\":0,\"stdout\":\"no git\\n\",\"stderr\":\"\"}",
+        "tokens": 0,
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 2,
+        "label": "where agent",
+        "prompt": "PLACES Say where you are.",
+        "status": "done",
+        "callIndex": 1,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-1>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 1,
+          "label": "where agent",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      }
+    ],
+    "logs": [
+      "Logs persisted to <tmp>/scenario-places/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+    ],
+    "result": {
+      "where": [
+        "no git"
+      ],
+      "said": "Fake claude answer."
+    },
+    "tokenUsage": {
+      "input": 120,
+      "output": 30,
+      "total": 150,
+      "cost": 0.0012,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "<startedAt>",
+    "updatedAt": "<updatedAt>",
+    "completedAt": "<completedAt>",
+    "durationMs": "<durationMs>"
+  },
+  "questions": []
+}
+
+$ orc show <run-2>
+exit 0
+places  <run-2>
+status    completed
+place     folder  <tmp>/scenario-places/project
+started   <time>  by cli
+program   Claude Code 2.1.329  <repo>/test/fakes/claude
+account   Claude Code: default, Claude Code's own login in ~/.claude
+account   Codex: default, Codex's own login in ~/.codex
+tokens    150  in <n>s
+steps
+  done  where  (<n>s)  exec
+  done  where agent  (<n>s, 150 tokens)
+result
+{
+  "where": [
+    "git main",
+    "mail",
+    "package.json",
+    "src"
+  ],
+  "said": "Fake claude answer."
+}
+
+$ orc show <run-2> --json
+exit 0
+{
+  "record": {
+    "runId": "<run-2>",
+    "workflow": "places",
+    "file": "<tmp>/scenario-places/project/.orchestrator/workflows/places.js",
+    "args": {},
+    "place": "folder",
+    "cwd": "<tmp>/scenario-places/project",
+    "projectDir": "<tmp>/scenario-places/project",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "<createdAt>",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": null
+      },
+      "codex": {
+        "name": "default",
+        "folder": null
+      }
+    },
+    "programs": {
+      "claude": {
+        "path": "<repo>/test/fakes/claude",
+        "version": "2.1.329"
+      }
+    }
+  },
+  "state": {
+    "runId": "<run-2>",
+    "workflowName": "places",
+    "scriptOrigin": {
+      "kind": "inline"
+    },
+    "args": {},
+    "cwd": "<tmp>/scenario-places/project",
+    "effectiveCwd": "<tmp>/scenario-places/project",
+    "runtime": {
+      "engineVersion": "4.0.5",
+      "node": "<node>",
+      "v8": "<v8>",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "environment": {
+      "git": {
+        "head": "9e9677ccc62025a0975507f728b6a3525c3e9947",
+        "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "resume": {
+      "format": "identity-v1",
+      "terminalEnvironment": {
+        "git": {
+          "head": "9e9677ccc62025a0975507f728b6a3525c3e9947",
+          "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "eventStreamId": "<eventStreamId>",
+    "eventSeq": 13,
+    "callsAllocated": 2,
+    "limits": {
+      "maxAgents": 1000,
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "completed",
+    "phases": [],
+    "agents": [
+      {
+        "id": 1,
+        "label": "where",
+        "prompt": "{\"kind\":\"sh\",\"command\":\"if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then echo \\\"git $(git rev-parse --abbrev-ref HEAD)\\\"; else echo \\\"no git\\\"; fi; ls -1 | head -3\"}",
+        "status": "done",
+        "model": "exec",
+        "callIndex": 0,
+        "scope": "<run-2>",
+        "startedAt": "<startedAt>",
+        "resultPreview": "{\"code\":0,\"stdout\":\"git main\\nmail\\npackage.json\\nsrc\\n\",\"stderr\":\"\"}",
+        "tokens": 0,
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 2,
+        "label": "where agent",
+        "prompt": "PLACES Say where you are.",
+        "status": "done",
+        "callIndex": 1,
+        "scope": "<run-2>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-2>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-places/project",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 1,
+          "label": "where agent",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      }
+    ],
+    "logs": [
+      "Logs persisted to <tmp>/scenario-places/orc-home/runs/projects/project-<hash>/runs/<run-2>.log"
+    ],
+    "result": {
+      "where": [
+        "git main",
+        "mail",
+        "package.json",
+        "src"
+      ],
+      "said": "Fake claude answer."
+    },
+    "tokenUsage": {
+      "input": 120,
+      "output": 30,
+      "total": 150,
+      "cost": 0.0012,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "<startedAt>",
+    "updatedAt": "<updatedAt>",
+    "completedAt": "<completedAt>",
+    "durationMs": "<durationMs>"
+  },
+  "questions": []
+}
+
+$ orc show <run-3>
+exit 0
+places  <run-3>
+status    completed
+place     worktree  <tmp>/scenario-places/orc-home/worktrees/<run-3>  (branch orc/<run-3>)
+started   <time>  by cli
+program   Claude Code 2.1.329  <repo>/test/fakes/claude
+account   Claude Code: default, Claude Code's own login in ~/.claude
+account   Codex: default, Codex's own login in ~/.codex
+tokens    150  in <n>s
+steps
+  done  where  (<n>s)  exec
+  done  where agent  (<n>s, 150 tokens)
+result
+{
+  "where": [
+    "git orc/<run-3>",
+    "mail",
+    "package.json",
+    "src"
+  ],
+  "said": "Fake claude answer."
+}
+
+$ orc show <run-3> --json
+exit 0
+{
+  "record": {
+    "runId": "<run-3>",
+    "workflow": "places",
+    "file": "<tmp>/scenario-places/project/.orchestrator/workflows/places.js",
+    "args": {},
+    "place": "worktree",
+    "cwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
+    "projectDir": "<tmp>/scenario-places/project",
+    "worktree": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
+    "branch": "orc/<run-3>",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "<createdAt>",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": null
+      },
+      "codex": {
+        "name": "default",
+        "folder": null
+      }
+    },
+    "programs": {
+      "claude": {
+        "path": "<repo>/test/fakes/claude",
+        "version": "2.1.329"
+      }
+    }
+  },
+  "state": {
+    "runId": "<run-3>",
+    "workflowName": "places",
+    "scriptOrigin": {
+      "kind": "inline"
+    },
+    "args": {},
+    "cwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
+    "effectiveCwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
+    "runtime": {
+      "engineVersion": "4.0.5",
+      "node": "<node>",
+      "v8": "<v8>",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "environment": {
+      "git": {
+        "head": "9e9677ccc62025a0975507f728b6a3525c3e9947",
+        "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "resume": {
+      "format": "identity-v1",
+      "terminalEnvironment": {
+        "git": {
+          "head": "9e9677ccc62025a0975507f728b6a3525c3e9947",
+          "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "eventStreamId": "<eventStreamId>",
+    "eventSeq": 13,
+    "callsAllocated": 2,
+    "limits": {
+      "maxAgents": 1000,
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "completed",
+    "phases": [],
+    "agents": [
+      {
+        "id": 1,
+        "label": "where",
+        "prompt": "{\"kind\":\"sh\",\"command\":\"if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then echo \\\"git $(git rev-parse --abbrev-ref HEAD)\\\"; else echo \\\"no git\\\"; fi; ls -1 | head -3\"}",
+        "status": "done",
+        "model": "exec",
+        "callIndex": 0,
+        "scope": "<run-3>",
+        "startedAt": "<startedAt>",
+        "resultPreview": "{\"code\":0,\"stdout\":\"git orc/<run-3>\\nmail\\npackage.json\\nsrc\\n\",\"stderr…",
+        "tokens": 0,
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 2,
+        "label": "where agent",
+        "prompt": "PLACES Say where you are.",
+        "status": "done",
+        "callIndex": 1,
+        "scope": "<run-3>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-3>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 1,
+          "label": "where agent",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      }
+    ],
+    "logs": [
+      "Logs persisted to <tmp>/scenario-places/orc-home/runs/projects/<run-3>-<hash>/runs/<run-3>.log"
+    ],
+    "result": {
+      "where": [
+        "git orc/<run-3>",
+        "mail",
+        "package.json",
+        "src"
+      ],
+      "said": "Fake claude answer."
+    },
+    "tokenUsage": {
+      "input": 120,
+      "output": 30,
+      "total": 150,
+      "cost": 0.0012,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "<startedAt>",
+    "updatedAt": "<updatedAt>",
+    "completedAt": "<completedAt>",
+    "durationMs": "<durationMs>"
+  },
+  "questions": []
+}
+
+fake requests (sorted):
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-1>","--replay-user-messages",""],"cwd":"<tmp>/scenario-places/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-3>","--replay-user-messages",""],"cwd":"<tmp>/scenario-places/orc-home/worktrees/<run-3>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-2>","--replay-user-messages",""],"cwd":"<tmp>/scenario-places/project","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}

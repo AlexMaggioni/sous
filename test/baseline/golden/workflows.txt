@@ -1,0 +1,29 @@
+$ orc workflows
+exit 0
+agent-session  An agent step with a schema, then a second turn in the same session
+  --topic  string, optional, default "a small change"  What to plan
+child  A small workflow that fanout runs inside itself
+  --topic  string, optional, default "alone"  What the child works on
+emails  Sort an inbox, draft replies to the emails that need one, and wait for your approval
+  --mailbox  string, optional, default "mail/inbox.json"  JSON file of emails, [{ id, from, subject, body }], relative to the project folder
+factory  Take open bug tickets from Linear, or from tickets/ without a key, and run the ticket workflow on each clear one
+  --team  string, optional, default ""  Linear team key, such as ENG. Empty takes every team.
+  --label  string, optional, default "Bug"  Linear label of the tickets to take
+  --limit  number, optional, default 5  Most tickets in one run
+  --rounds  number, optional, default 2  Most review rounds per ticket
+fanout  Parallel agent steps, a shell step and a nested workflow
+harnesses  A Claude Code step and a Codex step
+limit  A step that hits the usage limit, which pauses the run
+  --model  string, optional, default "claude"  Model of the step
+pause  The test pauses the run during its first step, then resumes it
+places  Report where the run works
+questions  A question, an agent that asks, and a breakpoint sent back once
+retry  A step that fails once and is retried, and one with no retries that pauses the run
+rulesync-mcp  A rulesync agent with MCP servers on each harness, and a step that names its own
+stop-step  Two steps at once; the test stops the slow one, then resumes the run
+ticket  Implement a ticket, loop with a reviewer until it approves, verify it, and commit
+  --ticket  string, required  What to build or fix
+  --rounds  number, optional, default 3  Most review rounds
+  --test  string, optional, default "npm test"  The command that runs the tests
+  --reviewer  string, optional, default "reviewer"  The agent that reviews
+tools  An agent with an allow list and a deny list

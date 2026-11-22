@@ -1,0 +1,7 @@
+// MCP servers for the baseline scenarios. The fake programs never start them.
+{
+  "mcpServers": {
+    "notes": { "command": "node", "args": ["notes-server.js"], "env": { "NOTES_DIR": "notes" } },
+    "docs": { "type": "http", "url": "https://example.invalid/mcp" }
+  }
+}

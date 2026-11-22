@@ -1,0 +1,272 @@
+$ orc run limit --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "limit",
+  "cwd": "<tmp>/scenario-limit-claude/orc-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-limit-claude/orc-home/logs/<run-1>.log"
+}
+
+$ orc wait <run-1> --json
+exit 2
+{
+  "runId": "<run-1>",
+  "workflow": "limit",
+  "status": "paused",
+  "pauseReason": "usage_limit",
+  "resetHint": "Resets at 2100-01-01T12:00:00.000Z",
+  "reason": "usage_limit",
+  "cwd": "<tmp>/scenario-limit-claude/orc-home/scratch/<run-1>"
+}
+
+$ orc inbox
+exit 0
+nothing waits for you
+
+$ orc resume <run-1>
+exit 0
+resumed <run-1>  limit  in <tmp>/scenario-limit-claude/orc-home/scratch/<run-1>
+  follow: orc wait <run-1>    log: orc log <run-1> -f
+
+$ orc wait <run-1> --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "limit",
+  "status": "completed",
+  "cwd": "<tmp>/scenario-limit-claude/orc-home/scratch/<run-1>",
+  "result": {
+    "before": "before",
+    "answer": "Fake claude answer."
+  }
+}
+
+$ orc show <run-1>
+exit 0
+limit  <run-1>
+status    completed
+place     none  <tmp>/scenario-limit-claude/orc-home/scratch/<run-1>
+started   <time>  by cli
+inputs    {"model":"claude"}
+program   Claude Code 2.1.329  <repo>/test/fakes/claude
+account   Claude Code: default, Claude Code's own login in ~/.claude
+account   Codex: default, Codex's own login in ~/.codex
+tokens    300  in <n>s
+steps
+  done  before  (<n>s)  exec
+  done  worker  (<n>s, 150 tokens)  claude
+result
+{
+  "before": "before",
+  "answer": "Fake claude answer."
+}
+
+$ orc show <run-1> --json
+exit 0
+{
+  "record": {
+    "runId": "<run-1>",
+    "workflow": "limit",
+    "file": "<tmp>/scenario-limit-claude/project/.orchestrator/workflows/limit.js",
+    "args": {
+      "model": "claude"
+    },
+    "place": "none",
+    "cwd": "<tmp>/scenario-limit-claude/orc-home/scratch/<run-1>",
+    "projectDir": "<tmp>/scenario-limit-claude/project",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "<createdAt>",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": null
+      },
+      "codex": {
+        "name": "default",
+        "folder": null
+      }
+    },
+    "programs": {
+      "claude": {
+        "path": "<repo>/test/fakes/claude",
+        "version": "2.1.329"
+      }
+    }
+  },
+  "state": {
+    "runId": "<run-1>",
+    "workflowName": "limit",
+    "scriptOrigin": {
+      "kind": "inline"
+    },
+    "args": {
+      "model": "claude"
+    },
+    "cwd": "<tmp>/scenario-limit-claude/orc-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-limit-claude/orc-home/scratch/<run-1>",
+    "runtime": {
+      "engineVersion": "4.0.5",
+      "node": "<node>",
+      "v8": "<v8>",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "resume": {
+      "format": "identity-v1"
+    },
+    "continuation": {
+      "generation": 1,
+      "replayedPrefix": 1
+    },
+    "eventStreamId": "<eventStreamId>",
+    "eventSeq": 23,
+    "legacyResume": true,
+    "fallbacks": [
+      {
+        "callIndex": 1,
+        "label": "worker",
+        "requestedSpec": "claude",
+        "backendId": "claude",
+        "kind": "continuation",
+        "continuation": {
+          "outcome": "reattached",
+          "method": "resume"
+        },
+        "message": "continuation: reattached via session/resume"
+      }
+    ],
+    "callsAllocated": 2,
+    "limits": {
+      "maxAgents": 1000,
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "completed",
+    "phases": [],
+    "agents": [
+      {
+        "id": 1,
+        "label": "before",
+        "prompt": "{\"kind\":\"sh\",\"command\":\"echo before\"}",
+        "status": "done",
+        "model": "exec",
+        "callIndex": 0,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "resultPreview": "{\"code\":0,\"stdout\":\"before\\n\",\"stderr\":\"\"}",
+        "tokens": 0,
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 2,
+        "label": "worker",
+        "prompt": "LIMIT Do the work.",
+        "status": "done",
+        "model": "claude",
+        "callIndex": 1,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0
+        },
+        "provenance": {
+          "source": "live",
+          "continuation": {
+            "reattached": true,
+            "method": "resume"
+          }
+        },
+        "session": {
+          "sessionId": "<id-1>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-limit-claude/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 1,
+          "label": "worker",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      }
+    ],
+    "logs": [
+      "agent worker attempt 1/3 failed: Internal error: You've hit your limit · resets soon",
+      "Logs persisted to <tmp>/scenario-limit-claude/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+    ],
+    "result": {
+      "before": "before",
+      "answer": "Fake claude answer."
+    },
+    "tokenUsage": {
+      "input": 120,
+      "output": 30,
+      "total": 300,
+      "cost": 0.0012,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "<startedAt>",
+    "updatedAt": "<updatedAt>",
+    "completedAt": "<completedAt>",
+    "durationMs": "<durationMs>"
+  },
+  "questions": []
+}
+
+fake requests (sorted):
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-1>","--replay-user-messages",""],"cwd":"<tmp>/scenario-limit-claude/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: worker\n\nLIMIT Do the work.","rule":0,"outcome":"limit"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--resume=<id-1>","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--replay-user-messages",""],"cwd":"<tmp>/scenario-limit-claude/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: worker\n\nYour previous turn was interrupted before it finished — the provider paused it for a usage limit or expired credentials, not because the task was complete. The full task and all prior context are already in this session's history; do not restart or repeat work you already did. Continue from where you stopped and produce the COMPLETE final answer to the original task now.","rule":null,"outcome":"answer"}

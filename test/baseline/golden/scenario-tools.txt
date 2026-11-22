@@ -1,0 +1,282 @@
+$ orc run tools --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "tools",
+  "cwd": "<tmp>/scenario-tools/orc-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-tools/orc-home/logs/<run-1>.log"
+}
+
+$ orc wait <run-1> --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "tools",
+  "status": "completed",
+  "cwd": "<tmp>/scenario-tools/orc-home/scratch/<run-1>",
+  "result": {
+    "limited": "Fake claude answer.",
+    "free": "Fake claude answer."
+  }
+}
+
+$ orc show <run-1>
+exit 0
+tools  <run-1>
+status    completed
+place     none  <tmp>/scenario-tools/orc-home/scratch/<run-1>
+started   <time>  by cli
+program   Claude Code 2.1.329  <repo>/test/fakes/claude
+account   Claude Code: default, Claude Code's own login in ~/.claude
+account   Codex: default, Codex's own login in ~/.codex
+tokens    300  in <n>s
+steps
+  done  limited  (<n>s, 150 tokens)  claude/sonnet
+  done  free  (<n>s, 150 tokens)
+result
+{
+  "limited": "Fake claude answer.",
+  "free": "Fake claude answer."
+}
+
+$ orc show <run-1> --json
+exit 0
+{
+  "record": {
+    "runId": "<run-1>",
+    "workflow": "tools",
+    "file": "<tmp>/scenario-tools/project/.orchestrator/workflows/tools.js",
+    "args": {},
+    "place": "none",
+    "cwd": "<tmp>/scenario-tools/orc-home/scratch/<run-1>",
+    "projectDir": "<tmp>/scenario-tools/project",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "<createdAt>",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": null
+      },
+      "codex": {
+        "name": "default",
+        "folder": null
+      }
+    },
+    "programs": {
+      "claude": {
+        "path": "<repo>/test/fakes/claude",
+        "version": "2.1.329"
+      }
+    }
+  },
+  "state": {
+    "runId": "<run-1>",
+    "workflowName": "tools",
+    "scriptOrigin": {
+      "kind": "inline"
+    },
+    "args": {},
+    "cwd": "<tmp>/scenario-tools/orc-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-tools/orc-home/scratch/<run-1>",
+    "runtime": {
+      "engineVersion": "4.0.5",
+      "node": "<node>",
+      "v8": "<v8>",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "resume": {
+      "format": "identity-v1"
+    },
+    "eventStreamId": "<eventStreamId>",
+    "eventSeq": 13,
+    "callsAllocated": 2,
+    "limits": {
+      "maxAgents": 1000,
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "completed",
+    "phases": [],
+    "agents": [
+      {
+        "id": 1,
+        "label": "limited",
+        "prompt": "TOOLS-LIMITED Read the code.",
+        "status": "done",
+        "model": "claude/sonnet",
+        "callIndex": 0,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-1>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-tools/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "model": "claude/sonnet",
+          "costGauge": 0.0012,
+          "callIndex": 0,
+          "label": "limited",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 2,
+        "label": "free",
+        "prompt": "TOOLS-FREE Do anything.",
+        "status": "done",
+        "callIndex": 1,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-2>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-tools/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 1,
+          "label": "free",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      }
+    ],
+    "logs": [
+      "Logs persisted to <tmp>/scenario-tools/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+    ],
+    "result": {
+      "limited": "Fake claude answer.",
+      "free": "Fake claude answer."
+    },
+    "tokenUsage": {
+      "input": 240,
+      "output": 60,
+      "total": 300,
+      "cost": 0.0024,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "<startedAt>",
+    "updatedAt": "<updatedAt>",
+    "completedAt": "<completedAt>",
+    "durationMs": "<durationMs>"
+  },
+  "questions": []
+}
+
+fake requests (sorted):
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--allowedTools","Read,Grep,Bash(git *),mcp__notes__search","--disallowedTools","Write,WebFetch,AskUserQuestion","--tools","Read,Grep,Bash","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-1>","--replay-user-messages",""],"cwd":"<tmp>/scenario-tools/orc-home/scratch/<run-1>","model":"sonnet","effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":["Read","Grep","Bash(git *)","mcp__notes__search"],"disallowedTools":["Write","WebFetch","AskUserQuestion"],"tools":["Read","Grep","Bash"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"You read the code and report what you find. You change no file.\n\nTask label: limited\n\nTOOLS-LIMITED Read the code.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-2>","--replay-user-messages",""],"cwd":"<tmp>/scenario-tools/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: free\n\nTOOLS-FREE Do anything.","rule":null,"outcome":"answer"}

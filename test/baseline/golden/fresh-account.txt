@@ -1,0 +1,6 @@
+$ orc account
+exit 0
+Claude Code
+* default        Claude Code's own login, in ~/.claude
+Codex
+* codex/default  Codex's own login, in ~/.codex

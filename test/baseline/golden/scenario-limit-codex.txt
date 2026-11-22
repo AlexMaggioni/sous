@@ -1,0 +1,265 @@
+$ orc run limit --json -- --model codex
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "limit",
+  "cwd": "<tmp>/scenario-limit-codex/orc-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-limit-codex/orc-home/logs/<run-1>.log"
+}
+
+$ orc wait <run-1> --json
+exit 2
+{
+  "runId": "<run-1>",
+  "workflow": "limit",
+  "status": "paused",
+  "pauseReason": "usage_limit",
+  "reason": "usage_limit",
+  "cwd": "<tmp>/scenario-limit-codex/orc-home/scratch/<run-1>"
+}
+
+$ orc resume <run-1>
+exit 0
+resumed <run-1>  limit  in <tmp>/scenario-limit-codex/orc-home/scratch/<run-1>
+  follow: orc wait <run-1>    log: orc log <run-1> -f
+
+$ orc wait <run-1> --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "limit",
+  "status": "completed",
+  "cwd": "<tmp>/scenario-limit-codex/orc-home/scratch/<run-1>",
+  "result": {
+    "before": "before",
+    "answer": "Fake codex answer."
+  }
+}
+
+$ orc show <run-1>
+exit 0
+limit  <run-1>
+status    completed
+place     none  <tmp>/scenario-limit-codex/orc-home/scratch/<run-1>
+started   <time>  by cli
+inputs    {"model":"codex"}
+program   Codex 0.169.0  <repo>/test/fakes/codex
+account   Claude Code: default, Claude Code's own login in ~/.claude
+account   Codex: default, Codex's own login in ~/.codex
+tokens    156  in <n>s
+steps
+  done  before  (<n>s)  exec
+  done  worker  (<n>s, 150 tokens)  codex
+result
+{
+  "before": "before",
+  "answer": "Fake codex answer."
+}
+
+$ orc show <run-1> --json
+exit 0
+{
+  "record": {
+    "runId": "<run-1>",
+    "workflow": "limit",
+    "file": "<tmp>/scenario-limit-codex/project/.orchestrator/workflows/limit.js",
+    "args": {
+      "model": "codex"
+    },
+    "place": "none",
+    "cwd": "<tmp>/scenario-limit-codex/orc-home/scratch/<run-1>",
+    "projectDir": "<tmp>/scenario-limit-codex/project",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "<createdAt>",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": null
+      },
+      "codex": {
+        "name": "default",
+        "folder": null
+      }
+    },
+    "programs": {
+      "codex": {
+        "path": "<repo>/test/fakes/codex",
+        "version": "0.169.0"
+      }
+    }
+  },
+  "state": {
+    "runId": "<run-1>",
+    "workflowName": "limit",
+    "scriptOrigin": {
+      "kind": "inline"
+    },
+    "args": {
+      "model": "codex"
+    },
+    "cwd": "<tmp>/scenario-limit-codex/orc-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-limit-codex/orc-home/scratch/<run-1>",
+    "runtime": {
+      "engineVersion": "4.0.5",
+      "node": "<node>",
+      "v8": "<v8>",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "resume": {
+      "format": "identity-v1"
+    },
+    "continuation": {
+      "generation": 1,
+      "replayedPrefix": 1
+    },
+    "eventStreamId": "<eventStreamId>",
+    "eventSeq": 23,
+    "legacyResume": true,
+    "fallbacks": [
+      {
+        "callIndex": 1,
+        "label": "worker",
+        "requestedSpec": "codex",
+        "backendId": "codex",
+        "kind": "continuation",
+        "continuation": {
+          "outcome": "reattached",
+          "method": "resume"
+        },
+        "message": "continuation: reattached via session/resume"
+      }
+    ],
+    "callsAllocated": 2,
+    "limits": {
+      "maxAgents": 1000,
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "completed",
+    "phases": [],
+    "agents": [
+      {
+        "id": 1,
+        "label": "before",
+        "prompt": "{\"kind\":\"sh\",\"command\":\"echo before\"}",
+        "status": "done",
+        "model": "exec",
+        "callIndex": 0,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "resultPreview": "{\"code\":0,\"stdout\":\"before\\n\",\"stderr\":\"\"}",
+        "tokens": 0,
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 2,
+        "label": "worker",
+        "prompt": "LIMIT Do the work.",
+        "status": "done",
+        "model": "codex",
+        "callIndex": 1,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake codex answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake codex answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0
+        },
+        "provenance": {
+          "source": "live",
+          "continuation": {
+            "reattached": true,
+            "method": "resume"
+          }
+        },
+        "session": {
+          "sessionId": "<id-1>",
+          "backendId": "codex",
+          "poolKey": "codex",
+          "initializeMeta": {
+            "steering": {
+              "supported": true
+            },
+            "loadedTurn": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "pause",
+                "resume",
+                "clear"
+              ]
+            },
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            }
+          },
+          "cwd": "<tmp>/scenario-limit-codex/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "callIndex": 1,
+          "label": "worker",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      }
+    ],
+    "logs": [
+      "agent worker attempt 1/3 failed: You've hit your usage limit. Upgrade to Pro or try again later. (codex typed failure: limit)",
+      "Logs persisted to <tmp>/scenario-limit-codex/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+    ],
+    "result": {
+      "before": "before",
+      "answer": "Fake codex answer."
+    },
+    "tokenUsage": {
+      "input": 120,
+      "output": 30,
+      "total": 156,
+      "cost": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "<startedAt>",
+    "updatedAt": "<updatedAt>",
+    "completedAt": "<completedAt>",
+    "durationMs": "<durationMs>"
+  },
+  "questions": []
+}
+
+fake requests (sorted):
+{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-limit-codex/orc-home/scratch/<run-1>","model":"gpt-fake","effort":"medium","sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":null,"login":[],"prompt":"Task label: worker\n\nLIMIT Do the work.","rule":0,"outcome":"limit"}
+{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-limit-codex/orc-home/scratch/<run-1>","model":"gpt-fake","effort":"medium","sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":null,"login":[],"prompt":"Task label: worker\n\nYour previous turn was interrupted before it finished — the provider paused it for a usage limit or expired credentials, not because the task was complete. The full task and all prior context are already in this session's history; do not restart or repeat work you already did. Continue from where you stopped and produce the COMPLETE final answer to the original task now.","rule":null,"outcome":"answer"}

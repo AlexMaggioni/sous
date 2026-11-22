@@ -1,0 +1,291 @@
+$ orc run pause --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "pause",
+  "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-pause/orc-home/logs/<run-1>.log"
+}
+
+$ orc pause <run-1>
+exit 0
+pausing <run-1>: steps already running finish, nothing new starts. orc resume <run-1> goes on.
+
+$ orc wait <run-1> --json
+exit 2
+{
+  "runId": "<run-1>",
+  "workflow": "pause",
+  "status": "paused",
+  "pauseReason": "requested",
+  "reason": "requested",
+  "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>"
+}
+
+$ orc resume <run-1>
+exit 0
+resumed <run-1>  pause  in <tmp>/scenario-pause/orc-home/scratch/<run-1>
+  follow: orc wait <run-1>    log: orc log <run-1> -f
+
+$ orc wait <run-1> --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "pause",
+  "status": "completed",
+  "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
+  "result": {
+    "first": "Fake claude answer.",
+    "second": "Fake claude answer."
+  }
+}
+
+$ orc show <run-1>
+exit 0
+pause  <run-1>
+status    completed
+place     none  <tmp>/scenario-pause/orc-home/scratch/<run-1>
+started   <time>  by cli
+program   Claude Code 2.1.329  <repo>/test/fakes/claude
+account   Claude Code: default, Claude Code's own login in ~/.claude
+account   Codex: default, Codex's own login in ~/.codex
+tokens    300  in <n>s
+steps
+  done  first  (<n>s)
+  done  second  (<n>s, 150 tokens)
+result
+{
+  "first": "Fake claude answer.",
+  "second": "Fake claude answer."
+}
+
+$ orc show <run-1> --json
+exit 0
+{
+  "record": {
+    "runId": "<run-1>",
+    "workflow": "pause",
+    "file": "<tmp>/scenario-pause/project/.orchestrator/workflows/pause.js",
+    "args": {},
+    "place": "none",
+    "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
+    "projectDir": "<tmp>/scenario-pause/project",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "<createdAt>",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": null
+      },
+      "codex": {
+        "name": "default",
+        "folder": null
+      }
+    },
+    "programs": {
+      "claude": {
+        "path": "<repo>/test/fakes/claude",
+        "version": "2.1.329"
+      }
+    }
+  },
+  "state": {
+    "runId": "<run-1>",
+    "workflowName": "pause",
+    "scriptOrigin": {
+      "kind": "inline"
+    },
+    "args": {},
+    "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
+    "runtime": {
+      "engineVersion": "4.0.5",
+      "node": "<node>",
+      "v8": "<v8>",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "resume": {
+      "format": "identity-v1"
+    },
+    "continuation": {
+      "generation": 1,
+      "replayedPrefix": 1
+    },
+    "eventStreamId": "<eventStreamId>",
+    "eventSeq": 18,
+    "legacyResume": true,
+    "callsAllocated": 2,
+    "limits": {
+      "maxAgents": 1000,
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "completed",
+    "phases": [],
+    "agents": [
+      {
+        "id": 1,
+        "label": "first",
+        "prompt": "PAUSE-FIRST Start.",
+        "status": "done",
+        "callIndex": 0,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "resultPreview": "Fake claude answer.",
+        "tokens": 0,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-1>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 0,
+          "label": "first",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 2,
+        "label": "second",
+        "prompt": "PAUSE-SECOND Go on.",
+        "status": "done",
+        "callIndex": 1,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "**Auto mode unavailable:** the selected model does not support Auto mode; using Accept edits instead.",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "Fake claude answer.",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "Fake claude answer.",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-2>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "initializeMeta": {
+            "jetbrains": {
+              "air": {
+                "version": 1,
+                "capabilities": [
+                  "sessionFailure",
+                  "agentFileChangeReport",
+                  "nativeSubagentSessions",
+                  "asyncTasks",
+                  "recommendedValue"
+                ]
+              }
+            },
+            "steering": {
+              "supported": true
+            },
+            "goal": {
+              "version": 1,
+              "controlMethod": "_session/goal",
+              "actions": [
+                "set",
+                "clear"
+              ]
+            }
+          },
+          "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "costGauge": 0.0012,
+          "callIndex": 1,
+          "label": "second",
+          "keptOpen": false
+        },
+        "endedAt": "<endedAt>"
+      }
+    ],
+    "logs": [
+      "Logs persisted to <tmp>/scenario-pause/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+    ],
+    "result": {
+      "first": "Fake claude answer.",
+      "second": "Fake claude answer."
+    },
+    "tokenUsage": {
+      "input": 240,
+      "output": 60,
+      "total": 300,
+      "cost": 0.0024,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "<startedAt>",
+    "updatedAt": "<updatedAt>",
+    "completedAt": "<completedAt>",
+    "durationMs": "<durationMs>"
+  },
+  "questions": []
+}
+
+fake requests (sorted):
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-1>","--replay-user-messages",""],"cwd":"<tmp>/scenario-pause/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: first\n\nPAUSE-FIRST Start.","rule":0,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool","stdio","--disallowedTools","AskUserQuestion","--tools","default","--setting-sources=user,project,local","--permission-mode","default","--allow-dangerously-skip-permissions","--include-partial-messages","--session-id=<id-2>","--replay-user-messages",""],"cwd":"<tmp>/scenario-pause/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":["default"],"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: second\n\nPAUSE-SECOND Go on.","rule":null,"outcome":"answer"}

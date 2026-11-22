@@ -1,0 +1,25 @@
+$ orc check rulesync-mcp --dry-run
+exit 0
+rulesync-mcp  <tmp>/check-rulesync-mcp/project/.orchestrator/workflows/rulesync-mcp.js
+  note: declares no inputs, so it takes any
+ok
+dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
+  (log lines sorted)
+  <hh:mm:ss> completed  rulesync-mcp
+  <hh:mm:ss> done       docs step on codex, 19 tokens
+  <hh:mm:ss> done       docs step, 14 tokens
+  <hh:mm:ss> done       researcher on codex, 17 tokens
+  <hh:mm:ss> done       researcher, 15 tokens
+  <hh:mm:ss> log        Logs persisted to <tmp>/check-rulesync-mcp/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
+  <hh:mm:ss> run        rulesync-mcp in <tmp>/check-rulesync-mcp/orc-home/scratch/<run-1>
+  <hh:mm:ss> start      docs step
+  <hh:mm:ss> start      docs step on codex (codex)
+  <hh:mm:ss> start      researcher (claude/haiku)
+  <hh:mm:ss> start      researcher on codex (codex)
+dry run completed, with 4 agent steps answered by stand-ins
+{
+  "onClaude": "stand-in answer from researcher",
+  "onCodex": "stand-in answer from researcher on codex",
+  "ownServer": "stand-in answer from docs step",
+  "codexServer": "stand-in answer from docs step on codex"
+}

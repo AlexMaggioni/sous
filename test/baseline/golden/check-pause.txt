@@ -1,0 +1,19 @@
+$ orc check pause --dry-run
+exit 0
+pause  <tmp>/check-pause/project/.orchestrator/workflows/pause.js
+  note: declares no inputs, so it takes any
+ok
+dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
+  (log lines sorted)
+  <hh:mm:ss> completed  pause
+  <hh:mm:ss> done       first, 12 tokens
+  <hh:mm:ss> done       second, 14 tokens
+  <hh:mm:ss> log        Logs persisted to <tmp>/check-pause/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
+  <hh:mm:ss> run        pause in <tmp>/check-pause/orc-home/scratch/<run-1>
+  <hh:mm:ss> start      first
+  <hh:mm:ss> start      second
+dry run completed, with 2 agent steps answered by stand-ins
+{
+  "first": "stand-in answer from first",
+  "second": "stand-in answer from second"
+}
