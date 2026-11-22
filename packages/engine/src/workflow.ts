@@ -315,14 +315,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
    */
   home?: HomePaths;
   /**
-   * APPROVED script-declared custom ACP backends (from `meta.backends`), threaded to every
-   * agent() call as RunOptions.backends. The engine NEVER reads meta.backends itself — a
-   * composition root must obtain approval (MCP elicitation / SDK allowScriptBackends / env
-   * opt-in) and pass the result here, so script backends are inert by default at every
-   * layer. ADDITIVE: not part of the resume identity hash.
-   */
-  scriptBackends?: Record<string, WorkflowBackendConfig>;
-  /**
    * Ask the human a checkpoint() question and resolve to their explicit reply.
    * Missing, rejected, timed-out, or unanswered interactions durably pause the run.
    */
@@ -695,7 +687,6 @@ export async function runWorkflow<T = unknown>(
   const home = options.home ?? homePaths();
   const vmFilename = `${sanitizeVmName(meta.name)}.js`;
   const preludeLines = DETERMINISM_PRELUDE.split("\n").length;
-  const backendsDigest = options.scriptBackends ? hashCanonicalStrictJson(options.scriptBackends) : null;
   // Snapshot the agentType registry ONCE per run so two agent() calls can't
   // observe a mid-run edit (determinism); a later resume re-reads it. The agents
   // directory is parameterized via options.agentsDir (defaults to AGENTS_DIR).
@@ -1276,7 +1267,8 @@ export async function runWorkflow<T = unknown>(
       meta: agentOptions.meta ?? null,
       promptMeta: agentOptions.promptMeta ?? null,
       label,
-      backends: backendsDigest,
+      // No run approves script backends now. The key stays, so the inputs format does not change.
+      backends: null,
     };
     const callInputsHash = hashCallInputs(callInputs);
     const legacyCallInputsHash = hashCallInputsV1({
@@ -1653,18 +1645,13 @@ export async function runWorkflow<T = unknown>(
                   ),
                   model: modelSpec,
                   mode: effectiveMode,
-                  configOptions: effectiveConfigOptions,
                   tier: agentOptions.tier,
                   toolNames: agentDef?.tools,
                   disallowedToolNames: agentDef?.disallowedTools,
                   cwd: runCwd,
                   mcpServers: agentOptions.mcpServers,
                   images: agentOptions.images,
-                  meta: agentOptions.meta,
-                  promptMeta: agentOptions.promptMeta,
-                  backends: options.scriptBackends,
                   runId,
-                  keepSession: agentOptions.keepSession,
                   ...(continueFromSession === undefined ? {} : { continueFromSession }),
                   // Agent({ continue }) sends this step's prompt into the earlier
                   // session. Only a resumed, interrupted turn gets the runner's resume instruction.
@@ -2357,9 +2344,6 @@ export async function runWorkflow<T = unknown>(
     shared.depth++;
     try {
       const child = await runWorkflow(childScript, {
-        // Spread inherits the PARENT's approved scriptBackends (same trust context — the
-        // parent chose to nest); the child's own meta.backends stays inert (nothing here
-        // approves it, and only the composition root can).
         ...options,
         args,
         cwd: childCwd,
@@ -3457,10 +3441,8 @@ function validateMeta(meta: unknown): asserts meta is WorkflowMeta {
   if (value.backends !== undefined) validateMetaBackends(value.backends);
 }
 
-/** Structural validation of script-declared `meta.backends`. The engine only PARSES these —
- *  it never spawns them; the composition root decides whether to approve and thread them
- *  (ExecOptions.scriptBackends). Deep policy checks (reserved names, etc.) live in the
- *  runner, which re-validates whatever it is handed. */
+/** Checks the shape of `meta.backends`. A script may still declare it, and a bad one still
+ *  fails, but no step runs on it. */
 function validateMetaBackends(backends: unknown): void {
   if (!backends || typeof backends !== "object" || Array.isArray(backends)) {
     throw new Error("meta.backends must be an object of { <name>: { command, args?, env?, sessionMeta?, structuredOutputTool? } }");

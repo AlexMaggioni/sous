@@ -3,13 +3,9 @@ import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
 import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { JournalEntry, WorkflowBackendConfig } from "../src/workflow-result.js";
 import { parseWorkflowScript, runWorkflow } from "../src/workflow.js";
 
-// meta.backends is a SCRIPT-DECLARED, TRUST-GATED input: the engine PARSES it (structural
-// validation) but never acts on it — script backends reach agent() calls ONLY when the
-// composition root passes an approved registry via options.scriptBackends. Secure-by-default
-// at the engine layer: meta.backends alone must thread NOTHING to the runner.
+// A script may declare meta.backends. The engine checks its shape and runs no step on it.
 
 const BACKENDS_SNIPPET =
   'backends: { browser: { command: "browser-acp", args: ["--headless"], env: { HEADLESS: "1" }, sessionMeta: { mode: "verify" }, structuredOutputTool: false } }';
@@ -63,51 +59,10 @@ describe("meta.backends parsing", () => {
   });
 });
 
-describe("scriptBackends threading (composition-root-gated)", () => {
-  it("meta.backends ALONE threads nothing — script backends are inert by default", async () => {
+describe("meta.backends at run time", () => {
+  it("gives no step the declared backends", async () => {
     const { runner, captured } = capturingRunner();
     await runWorkflow(SCRIPT_WITH_BACKENDS, { agent: runner, persistLogs: false });
-    assert.equal(captured()?.backends, undefined, "the engine never reads meta.backends into the run");
-  });
-
-  it("options.scriptBackends is threaded to every agent() call as RunOptions.backends", async () => {
-    const { runner, captured } = capturingRunner();
-    const approved: Record<string, WorkflowBackendConfig> = {
-      browser: { command: "browser-acp", args: ["--headless"], structuredOutputTool: false },
-    };
-    await runWorkflow(SCRIPT_WITH_BACKENDS, { agent: runner, persistLogs: false, scriptBackends: approved });
-    assert.deepEqual(captured()?.backends, approved);
-  });
-
-  it("does NOT fold scriptBackends into the resume identity hash", async () => {
-    const echo: AgentRunner = {
-      async run<S extends TSchema | undefined = undefined>(prompt: string): Promise<AgentResult<S>> {
-        return `ran:${prompt}` as AgentResult<S>;
-      },
-    };
-    const journalOf = async (withBackends: boolean): Promise<JournalEntry[]> => {
-      const journal: JournalEntry[] = [];
-      await runWorkflow(SCRIPT_WITH_BACKENDS, {
-        agent: echo,
-        persistLogs: false,
-        scriptBackends: withBackends ? { browser: { command: "browser-acp" } } : undefined,
-        onAgentJournal: (e) => journal.push(e),
-      });
-      return journal;
-    };
-    const [withBackends] = await journalOf(true);
-    const [without] = await journalOf(false);
-    assert.equal(withBackends.hash, without.hash, "resume keys stay byte-identical across backend wiring");
-  });
-
-  it("a nested workflow() inherits the parent's APPROVED scriptBackends (same trust context)", async () => {
-    const { runner, captured } = capturingRunner();
-    const parent = [
-      'export const meta = { name: "parent", description: "d" };',
-      'return await workflow(`export const meta = { name: "child", description: "d" };\\nreturn await agent("p", { model: "browser" });`);',
-    ].join("\n");
-    const approved: Record<string, WorkflowBackendConfig> = { browser: { command: "browser-acp" } };
-    await runWorkflow(parent, { agent: runner, persistLogs: false, scriptBackends: approved });
-    assert.deepEqual(captured()?.backends, approved, "the child run's agent() saw the parent's approved registry");
+    assert.equal((captured() as Record<string, unknown> | undefined)?.backends, undefined, "the engine never reads meta.backends into the run");
   });
 });

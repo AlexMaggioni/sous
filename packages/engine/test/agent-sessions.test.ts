@@ -71,10 +71,10 @@ describe("agent session records (result.agentSessions)", () => {
     assert.equal(second.callIndex, 1);
     assert.equal(second.label, "helper");
     assert.equal(second.keptOpen, false);
-    // keepSession reached the runner opts bag on exactly the call that set it.
+    // keepSession only marks the record. No step reads it, so the runner never gets it.
     assert.deepEqual(
       runner.seen.map((c) => c.keepSession),
-      [true, undefined],
+      [undefined, undefined],
     );
   });
 

@@ -288,7 +288,7 @@ test("a fresh manager preserves actual authored configuration on cold continuati
   let failBeta = true;
   const runner: AgentRunner = {
     async run(prompt, options) {
-      dispatched.push({ model: options.model, mode: options.mode, configOptions: options.configOptions });
+      dispatched.push({ model: options.model, mode: options.mode, configOptions: (options as Record<string, unknown>).configOptions });
       if (prompt === "beta" && failBeta) {
         failBeta = false;
         throw new Error("beta failed once");
@@ -317,11 +317,16 @@ return { alpha, beta };`;
     const completed = await started.promise;
     assert.equal(completed.status, "completed");
     assert.equal(dispatched.length, 3, "alpha replays from the journal; only beta runs live");
+    // No step reads configOptions. The call record keeps them.
     assert.deepEqual(structuredClone(dispatched[2]), {
       model: "codex/gpt",
       mode: "agent",
-      configOptions: { reasoning_effort: "xhigh" },
+      configOptions: undefined,
     });
+    assert.deepEqual(
+      completed.calls?.filter((call) => call.label === "beta").map((call) => call.configOptionsRequested),
+      [{ reasoning_effort: "xhigh" }],
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(persistenceRoot, { recursive: true, force: true });

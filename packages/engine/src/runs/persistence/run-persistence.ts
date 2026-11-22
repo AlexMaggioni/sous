@@ -90,6 +90,7 @@ export interface PersistedRunAdmission {
   strict: true;
   routingSnapshot: WorkflowRoutingSnapshot;
   defaultModel?: string;
+  /** Backends an older run approved. No run writes it now, but its hash still covers it. */
   scriptBackends?: Record<string, WorkflowBackendConfig>;
   routingHash: string;
   recordedAt: string;

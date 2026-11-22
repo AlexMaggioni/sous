@@ -273,9 +273,7 @@ export type WorkflowContinuationRefusalReason =
   | "checkpoint-mismatch"
   | "auth-required"
   /** The revised script does not parse (a `meta` or structure error). */
-  | "script-invalid"
-  /** The revised script declares a backend the run's admission never approved. */
-  | "backends-changed";
+  | "script-invalid";
 
 export type WorkflowContinuationStart =
   | {
@@ -388,13 +386,6 @@ export interface ExecOptions {
   stepOverrides?: Record<string, Record<string, unknown>>;
   /** The environment code steps run with. Pass it again on resume. */
   codeEnv?: CodeStepEnv;
-  /**
-   * APPROVED script-declared custom ACP backends (`meta.backends`) for this run. The
-   * composition root owns the approval decision (MCP elicitation, SDK allowScriptBackends,
-   * or the env opt-in) — omitting this leaves script-declared backends inert. Threaded to
-   * runWorkflow's scriptBackends verbatim.
-   */
-  scriptBackends?: Record<string, WorkflowBackendConfig>;
 }
 
 export interface WorkflowManagerOptions {
@@ -578,23 +569,6 @@ function isContinuationSession(
 
 function hashScriptText(script: string): string {
   return createHash("sha256").update(script, "utf8").digest("hex");
-}
-
-/**
- * A revision may keep or drop approved backends but never introduce or alter one: approval was
- * given for exact commands. Without a routing admission the declaration is inert either way.
- */
-function revisionKeepsApprovedBackends(
-  declared: Record<string, WorkflowBackendConfig> | undefined,
-  approved: Record<string, WorkflowBackendConfig> | undefined,
-): boolean {
-  if (!declared || Object.keys(declared).length === 0 || approved === undefined) return true;
-  return Object.entries(declared).every(([name, config]) => {
-    const approvedConfig = approved[name];
-    if (approvedConfig === undefined) return false;
-    const left = canonicalStrictJson(config);
-    return left !== undefined && left === canonicalStrictJson(approvedConfig);
-  });
 }
 
 function runReason(status: RunStatus, error: WorkflowError | undefined): string | undefined {
@@ -1520,7 +1494,7 @@ export class WorkflowManager extends EventEmitter {
       exec.resumeJournal !== undefined || exec.resumeCalls !== undefined || exec.checkpointReplies !== undefined ||
       exec.executionMode !== undefined ||
       exec.requireAgentConfiguration !== undefined ||
-      exec.scriptBackends !== undefined || exec.defaultModel !== undefined
+      exec.defaultModel !== undefined
     ) {
       throw this.scriptValidationError("prepared acceptance accepts new immutable inputs and runtime limits only");
     }
@@ -2128,7 +2102,6 @@ export class WorkflowManager extends EventEmitter {
       agentRetries,
       confirm,
       onNestedWorkflow,
-      scriptBackends,
     } = exec;
     const resumeJournal = resumeExecution?.resumeJournal ?? exec.resumeJournal;
     const preparedResume = resumeExecution?.preparedResume;
@@ -2191,7 +2164,6 @@ export class WorkflowManager extends EventEmitter {
           managed.nestedWorkflows = true;
           onNestedWorkflow?.(ordinal, childRunId);
         },
-        scriptBackends: managed.admission?.scriptBackends ?? scriptBackends,
         loadSavedWorkflow: this.loadSavedWorkflow,
         ...this.orchestratorOptions,
         ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
@@ -3078,7 +3050,6 @@ export class WorkflowManager extends EventEmitter {
       exec.cwd !== undefined ||
       exec.defaultModel !== undefined ||
       exec.requireAgentConfiguration !== undefined ||
-      exec.scriptBackends !== undefined ||
       exec.executionMode !== undefined ||
       exec.journaling === false
     ) {
@@ -3346,11 +3317,6 @@ export class WorkflowManager extends EventEmitter {
         this.persistence.releaseRunLease(lease);
         publication.lease = undefined;
         return { accepted: false, reason: "script-invalid" };
-      }
-      if (!revisionKeepsApprovedBackends(revisionMeta.backends, persisted.admission?.scriptBackends)) {
-        this.persistence.releaseRunLease(lease);
-        publication.lease = undefined;
-        return { accepted: false, reason: "backends-changed" };
       }
     }
 
@@ -3979,7 +3945,6 @@ function createRunAdmission(
     format: 3,
     routingSnapshot,
     ...(exec.defaultModel === undefined ? {} : { defaultModel: exec.defaultModel }),
-    ...(exec.scriptBackends === undefined ? {} : { scriptBackends: exec.scriptBackends }),
   });
   if (!captured.ok) {
     throw new WorkflowError(`workflow routing is not strict JSON at ${captured.path}`, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, { recoverable: false });

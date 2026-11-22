@@ -6,22 +6,18 @@ import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry } from "../src/workflow-result.js";
 import { runWorkflow } from "../src/workflow.js";
 
-// agent({ meta, promptMeta }) are ADDITIVE run inputs (the generic ACP `_meta` passthroughs):
-// the engine must thread them through to the runner opts verbatim (the runner merges them into
-// ACP session/new / session/prompt `_meta`), but they must NOT enter the resume identity hash
-// (hashAgentCall) — they shape the agent, not the logical call, exactly like mcpServers.
+// A script may still set agent({ meta, promptMeta }). They count in the call's inputs, so a
+// resumed session notices a change, but no step reads them and they stay out of the resume hash.
 
-describe("agent({ meta, promptMeta }) plumbing", () => {
-  it("threads meta and promptMeta from agent() into the runner opts", async () => {
-    let meta: Record<string, unknown> | undefined;
-    let promptMeta: Record<string, unknown> | undefined;
+describe("agent({ meta, promptMeta })", () => {
+  it("are accepted, and no step receives them", async () => {
+    let given: Record<string, unknown> | undefined;
     const capturing: AgentRunner = {
       async run<S extends TSchema | undefined = undefined>(
         _prompt: string,
         options?: RunOptions<S>,
       ): Promise<AgentResult<S>> {
-        meta = options?.meta;
-        promptMeta = options?.promptMeta;
+        given = options as Record<string, unknown> | undefined;
         return "ok" as AgentResult<S>;
       },
     };
@@ -33,39 +29,12 @@ const a = await agent('p', {
 })
 return a`;
 
-    await runWorkflow(script, { agent: capturing, persistLogs: false });
+    const result = await runWorkflow(script, { agent: capturing, persistLogs: false });
 
-    // Cross-realm objects have a different Object.prototype; normalize through JSON.
-    assert.deepEqual(JSON.parse(JSON.stringify(meta)), {
-      credsRef: "vault://qa",
-      allowedDomains: ["preview.example.com"],
-    });
-    assert.deepEqual(JSON.parse(JSON.stringify(promptMeta)), { viewport: "1280x800" });
-  });
-
-  it("passes undefined through when neither is provided", async () => {
-    let sawOptions = false;
-    let meta: unknown = "sentinel";
-    let promptMeta: unknown = "sentinel";
-    const capturing: AgentRunner = {
-      async run<S extends TSchema | undefined = undefined>(
-        _prompt: string,
-        options?: RunOptions<S>,
-      ): Promise<AgentResult<S>> {
-        sawOptions = true;
-        meta = options?.meta;
-        promptMeta = options?.promptMeta;
-        return "ok" as AgentResult<S>;
-      },
-    };
-    await runWorkflow(
-      `export const meta = { name: 'm', description: 'meta' }
-return await agent('p', { label: 'a' })`,
-      { agent: capturing, persistLogs: false },
-    );
-    assert.ok(sawOptions);
-    assert.equal(meta, undefined);
-    assert.equal(promptMeta, undefined);
+    assert.equal(result.result, "ok");
+    assert.ok(given);
+    assert.equal("meta" in given, false);
+    assert.equal("promptMeta" in given, false);
   });
 
   it("does NOT fold meta/promptMeta into the resume identity hash", async () => {

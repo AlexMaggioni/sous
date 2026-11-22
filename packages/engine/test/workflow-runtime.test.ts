@@ -105,27 +105,30 @@ return r`,
   assert.deepEqual(seen, ["read-only"]);
 });
 
-test("agent() forwards configOptions to the runner without coercion", async () => {
+test("agent() records configOptions without coercion and gives them to no step", async () => {
   const seen: Array<Record<string, string | boolean> | undefined> = [];
-  await runWorkflow(
+  const result = await runWorkflow(
     `export const meta = { name: 'config_threading', description: 'config threading' }
 return agent('x', { label: 'config-agent', configOptions: { reasoning_effort: 'high', fast_mode: true } })`,
     {
       agent: {
-        async run(_prompt: string, options: { configOptions?: Record<string, string | boolean> }) {
-          seen.push(options.configOptions);
+        async run(_prompt: string, options: Record<string, unknown>) {
+          assert.equal("configOptions" in options, false);
           return "ok";
         },
       },
+      onAgentStart: (event) => seen.push(event.configOptions),
       persistLogs: false,
     },
   );
 
   assert.equal(seen.length, 1);
-  assert.deepEqual(Object.entries(seen[0] ?? {}), [
-    ["reasoning_effort", "high"],
-    ["fast_mode", true],
-  ]);
+  for (const given of [seen[0], result.calls?.[0]?.configOptionsRequested]) {
+    assert.deepEqual(Object.entries(given ?? {}), [
+      ["reasoning_effort", "high"],
+      ["fast_mode", true],
+    ]);
+  }
 });
 
 test("authored model/mode/config reach dispatch and actual call records unchanged", async () => {
@@ -153,15 +156,13 @@ return agent('two', { label: 'two', model: 'codex/gpt-5' })`,
     },
   );
 
+  // No step reads configOptions, so dispatch carries the model and mode only.
   assert.deepEqual(seen, [
-    {
-      model: "claude/opus",
-      mode: "code",
-      configOptions: { effort: "high", fast: false },
-    },
+    { model: "claude/opus", mode: "code", configOptions: undefined },
     { model: "codex/gpt-5", mode: undefined, configOptions: undefined },
   ]);
   assert.deepEqual(result.calls.map((call) => call.modelRequested), ["claude/opus", "codex/gpt-5"]);
+  assert.deepEqual(result.calls.map((call) => call.configOptionsRequested), [{ effort: "high", fast: false }, undefined]);
 });
 
 test("strict routing rejects a missing model before dispatch", async () => {

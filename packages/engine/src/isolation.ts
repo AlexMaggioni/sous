@@ -171,7 +171,6 @@ export interface RunIsolationOptions {
   cwd?: string;
   executionCwd?: string;
   persistenceRoot?: string;
-  scriptBackends?: Record<string, WorkflowBackendConfig>;
   concurrency?: number;
   agentRetries?: number;
   signal?: AbortSignal;
@@ -1537,7 +1536,6 @@ export async function runIsolation<T = unknown>(
         executionMode: { kind: "isolation", baselineRunId: options.baselineRunId },
         cwd: executionCwd,
         journaling,
-        scriptBackends: options.scriptBackends,
         defaultModel: options.defaultModel ?? recording.defaultModel,
         onProgress: options.onProgress,
         signal: combinedSignal,

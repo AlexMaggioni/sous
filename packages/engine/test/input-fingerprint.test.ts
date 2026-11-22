@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { WorkflowBackendConfig } from "../src/workflow-result.js";
 import type { TSchema } from "typebox";
 import { CALL_INPUTS_FORMAT, type WorkflowRunOptions, runWorkflow } from "../src/workflow.js";
 
@@ -129,24 +128,6 @@ return await agent('same-prompt')`,
     ]);
 
     for (const variant of variants) assert.equal(variant, baseline);
-  });
-
-  it("folds a canonical digest of the approved backend registry into every call", async () => {
-    const first: Record<string, WorkflowBackendConfig> = {
-      browser: { command: "browser-acp", args: ["--profile", "one"] },
-    };
-    const equivalent: Record<string, WorkflowBackendConfig> = {
-      browser: { args: ["--profile", "one"], command: "browser-acp" },
-    };
-    const changed: Record<string, WorkflowBackendConfig> = {
-      browser: { command: "browser-acp", args: ["--profile", "two"] },
-    };
-    const firstHash = await fingerprintFor("{ label: 'fixed' }", { scriptBackends: first });
-    const equivalentHash = await fingerprintFor("{ label: 'fixed' }", { scriptBackends: equivalent });
-    const changedHash = await fingerprintFor("{ label: 'fixed' }", { scriptBackends: changed });
-
-    assert.equal(firstHash, equivalentHash);
-    assert.notEqual(firstHash, changedHash);
   });
 
   it("uses pre-resolution isolation inputs while exposing the actual worktree cwd", async () => {

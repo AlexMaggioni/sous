@@ -2,7 +2,7 @@
 import type { Static, TSchema } from "typebox";
 import type { AgentHistoryEntry } from "./agent-history.js";
 import type { McpServerConfig } from "./mcp-config.js";
-import type { AgentSessionRef, WorkflowBackendConfig } from "../workflow-result.js";
+import type { AgentSessionRef } from "../workflow-result.js";
 
 /** Real token/cost usage for ONE subagent run. Delivered OUT-OF-BAND via
  *  RunOptions.onUsage — NEVER via run()'s return value. Fires on BOTH the success
@@ -73,10 +73,10 @@ export interface PromptImage {
  * (workflow.ts:488), so a renamed field would NOT raise a compile error — it would
  * mis-bind at runtime. Engine-passed core fields: label, schema, signal, instructions,
  * images, model, mode, tier, toolNames, disallowedToolNames, cwd, onModelResolved, onModelFallback,
- * onUsage, and onHistory. Plus ADDITIVE run inputs that wire
- * infrastructure / shape the backend, so none enters the resume identity hash (hashAgentCall): `mcpServers`,
- * `runId`, the old ACP `_meta` passthroughs `meta` / `promptMeta`, the run-scoped custom
- * backend registry `backends`, and the session hand-off fields `keepSession` / `onSessionOpen` / `continueFromSession`.
+ * onUsage, and onHistory. Plus run inputs that wire infrastructure, so none enters the resume
+ * identity hash (hashAgentCall): `mcpServers`, `runId`, and the session hand-off fields
+ * `onSessionOpen` / `continueFromSession`. A script's configOptions, meta, promptMeta and
+ * keepSession stay in the call's identity and inputs, but no step reads them, so they are not here.
  * `maxSchemaRetries` is runner-internal (the engine never passes it). Pi's
  * `tools?: ToolDefinition[]` is DROPPED — a pi-coding-agent type with no ACP analog (ACP
  * injects tools via session/new mcpServers, not this field) and never passed by the engine.
@@ -110,10 +110,6 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
    *  A mode does not silently invent a client-side allow/deny policy: live permission requests are
    *  handled by the host resolver, while explicitly authored tool allow/deny lists remain binding. */
   mode?: string;
-  /** Agent-advertised ACP session config options, set verbatim after model selection and before
-   *  the prompt. Option ids are applied in ascending lexicographic order. The reserved `model`
-   *  id is rejected by the workflow engine; use the dedicated `model` field instead. */
-  configOptions?: Record<string, string | boolean>;
   /** Coarse tier ("small" | "medium" | "big"). Consulted only when `model` is unset; `model` wins. */
   tier?: string;
   /** Working directory (e.g. an isolated git worktree). ABSOLUTE. Maps to ACP session/new {cwd}. NOT hashed. */
@@ -148,25 +144,11 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
    *  part of the resume identity hash (hashAgentCall) — it correlates, it does not identify the
    *  logical call. Omitted => no runId `_meta` is stamped. */
   runId?: string;
-  /** Script-declared custom backends (an approved `meta.backends`). Only the ACP runner could
-   *  start them. The steps module ignores them. Not part of the resume identity hash. */
-  backends?: Record<string, WorkflowBackendConfig>;
-  /** The ACP runner's session `_meta` passthrough. The harnesses have no `_meta`, so the steps
-   *  module ignores it. Not part of the resume identity hash. */
-  meta?: Record<string, unknown>;
-  /** The ACP runner's prompt `_meta` passthrough. The steps module ignores it. Not hashed. */
-  promptMeta?: Record<string, unknown>;
   /** Base64 image attachments appended to the prompt as ACP image ContentBlocks. When the
    *  connected agent does not advertise promptCapabilities.image, each attachment DEGRADES to a
    *  bracketed text note (never an error, never silently dropped) per the ACP rule that the client
    *  adapts content to the agent's advertised prompt capabilities. */
   images?: readonly PromptImage[];
-  /** Skip the release-time best-effort ACP `session/close` so the agent-persisted session is
-   *  guaranteed untouched for a later re-open (`runner.loadSession`/`resumeSession` with the
-   *  onSessionOpen ref). The pooled process is still released either way. ADDITIVE and NOT part
-   *  of the resume identity hash (hashAgentCall) — it shapes session disposal, not the logical
-   *  call. Omitted/false => today's behavior (close when the agent advertises it). */
-  keepSession?: boolean;
   /** The run's ACP session identity, fired EXACTLY ONCE for whichever acquisition wins:
    *  `session/new`, or `session/resume`/`session/load` on a successful reattach — never
    *  twice. A failed reattach that falls to a fresh `session/new` fires it exactly once for
@@ -219,7 +201,7 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
   callPath?: string;
   /** The input fingerprint for THIS call: sha256 of the canonical strict-JSON of
    *  the call's resolved unhashed execution inputs (cwd/isolation/images/mcpServers/
-   *  meta/promptMeta/keepSession/label/effective timeout+retries/approved-backends
+   *  meta/promptMeta/keepSession/label/effective timeout+retries/backends
    *  digest). Identical across retry attempts. ABSENT when any component fails
    *  strict-JSON canonicalization — never fabricated. ADDITIVE, not a hash input. */
   callInputsHash?: string;

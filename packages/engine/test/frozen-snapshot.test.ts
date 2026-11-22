@@ -107,16 +107,16 @@ return value.nested.value`),
   });
 
   it("accepts real vm-realm plain records and preserves JSON-observable members", async () => {
+    // The schema carries a record made in the script's realm to the runner, which returns it.
     const runner: AgentRunner = {
       async run(_prompt, options) {
-        return options?.meta as never;
+        return (options?.schema as { examples: unknown[] }).examples[0] as never;
       },
     };
     const result = await runWorkflow(
       script(`const fromAgent = await agent('echo', {
   label: 'echo',
-  schema: { type: 'object' },
-  meta: { flag: null, nested: { order: ['a', 'b'] } }
+  schema: { type: 'object', examples: [{ flag: null, nested: { order: ['a', 'b'] } }] }
 })
 const fromCheckpoint = await checkpoint('explicit')
 return {

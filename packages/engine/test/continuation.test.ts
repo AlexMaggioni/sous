@@ -231,11 +231,7 @@ describe("live-boundary continuation", () => {
     try {
       mkdirSync(join(fixture.cwd, "changed-cwd"));
       const source = await recordInterrupted(fixture.cwd);
-      const changed: Array<{
-        name: string;
-        script: string;
-        scriptBackends?: Record<string, { command: string }>;
-      }> = [
+      const changed: Array<{ name: string; script: string }> = [
         { name: "images", script: workflow(`images: [{ data: "YQ==", mimeType: "image/png" }]`) },
         { name: "mcpServers", script: workflow(`mcpServers: [{ name: "tools", command: "tool-server" }]`) },
         { name: "promptMeta", script: workflow(`promptMeta: { trace: "changed" }`) },
@@ -246,11 +242,6 @@ describe("live-boundary continuation", () => {
           script: workflow("", `return await agent('task', { label: 'changed-label' })`),
         },
         { name: "cwd", script: workflow(`cwd: "changed-cwd"`) },
-        {
-          name: "script backend digest",
-          script: workflow(),
-          scriptBackends: { custom: { command: "changed-command" } },
-        },
         { name: "missing live fingerprint", script: workflow("meta: { invalid: undefined }") },
       ];
 
@@ -260,7 +251,6 @@ describe("live-boundary continuation", () => {
           cwd: fixture.cwd,
           persistLogs: false,
           preparedContinuation: prepared(source.candidate),
-          scriptBackends: item.scriptBackends,
           agent: {
             async run(_prompt, options) {
               assert.equal(options.continueFromSession, undefined, item.name);

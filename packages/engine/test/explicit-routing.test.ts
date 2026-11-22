@@ -92,7 +92,8 @@ const configOptions = { reasoning_effort: "high" };
 const pending = agent("work", { configOptions });
 configOptions.reasoning_effort = "low";
 return await pending;`, {
-    agent: { async run(_prompt, options) { seen.push(options.configOptions); return "ok"; } },
+    agent: { async run(_prompt, options) { assert.equal("configOptions" in options, false); return "ok"; } },
+    onAgentStart: (event) => seen.push(event.configOptions),
     requireAgentConfiguration: true, persistLogs: false,
   });
   assert.deepEqual(seen, [{ reasoning_effort: "high" }]);

@@ -20,11 +20,8 @@ export interface WorkflowMetaPhase {
   model?: string;
 }
 
-/** One SCRIPT-DECLARED custom ACP backend (`meta.backends[name]`) — how to spawn an agent
- *  server the workflow wants to route `agent()` calls to. Structurally identical to the
- *  host-level registry config the ACP runner had, but declared by the SCRIPT
- *  AUTHOR, so it is a TRUST-GATED input: the engine parses it and otherwise ignores it; only
- *  a host that has obtained approval threads it into the run via ExecOptions.scriptBackends. */
+/** One backend a script declares in `meta.backends[name]`. The engine checks its shape and
+ *  runs no step on it. Older run files may hold approved ones. */
 export interface WorkflowBackendConfig {
   /** The ACP server executable (absolute path or on PATH). */
   command: string;
@@ -47,9 +44,7 @@ export interface WorkflowMeta {
   phases?: WorkflowMetaPhase[];
   /** Default model for agents whose phase has no route and that set no model/tier. */
   model?: string;
-  /** Script-declared custom ACP backends, keyed by routing name (`agent({ model: "<name>" })`
-   *  or `"<name>/<inner-model>"`). INERT unless the composition root approves and threads
-   *  them (see WorkflowBackendConfig); host-registered names always win on conflict. */
+  /** Backends the script declares, by name. Checked for shape, never run. */
   backends?: Record<string, WorkflowBackendConfig>;
 }
 

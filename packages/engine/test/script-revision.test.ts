@@ -176,7 +176,7 @@ test(
 );
 
 test(
-  "a revision may keep approved backends but cannot introduce or alter one",
+  "a revision may add or alter meta.backends, since no run approves or runs them",
   withDirs(async ({ cwd, root }) => {
     const agent = perCallRunner();
     const manager = new WorkflowManager({ cwd, persistenceRoot: root, agent: agent.runner });
@@ -185,28 +185,18 @@ test(
 const a = await agent('first', { label: 'a' })
 const b = await agent('${second}', { label: 'b' })
 return { a, b }`;
-    const approved = { browser: { command: "browser-acp", args: ["--headless"] } };
     const { runId, promise } = manager.startInBackground(
       withBackends('browser: { command: "browser-acp", args: ["--headless"] }', "second"),
       undefined,
-      { requireAgentConfiguration: true, scriptBackends: approved },
+      { requireAgentConfiguration: true },
     );
     await waitUntil(() => agent.calls.length === 1, "a starts");
     assert.equal(manager.stop(runId), true);
     agent.calls[0].resolve("lost");
     await promise.catch(() => {});
 
-    const added = await manager.continueRun(runId, {
-      script: withBackends('browser: { command: "browser-acp", args: ["--headless"] }, other: { command: "other-acp" }', "second"),
-    });
-    assert.deepEqual(added, { accepted: false, reason: "backends-changed" });
-    const altered = await manager.continueRun(runId, {
-      script: withBackends('browser: { command: "browser-acp", args: ["--visible"] }', "second"),
-    });
-    assert.deepEqual(altered, { accepted: false, reason: "backends-changed" });
-
     const kept = await manager.continueRun(runId, {
-      script: withBackends('browser: { command: "browser-acp", args: ["--headless"] }', "second, revised"),
+      script: withBackends('browser: { command: "browser-acp", args: ["--visible"] }, other: { command: "other-acp" }', "second, revised"),
     });
     assert.equal(kept.accepted, true);
     if (!kept.accepted) return;
