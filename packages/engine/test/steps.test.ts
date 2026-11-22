@@ -412,7 +412,7 @@ describe("steps on the fake programs", () => {
 });
 
 describe("steps with a runner of their own", () => {
-  it("runs code steps itself and passes agent steps on with effort, skills and listed MCP servers", async () => {
+  it("passes agent steps on with effort, skills and listed MCP servers", async () => {
     const seen: Array<Record<string, unknown>> = [];
     const root = temp("steps-mcp");
     const projectDir = join(root, "project");
@@ -424,9 +424,6 @@ describe("steps with a runner of their own", () => {
       inner: { run: async (_prompt: string, options: unknown) => { seen.push(options as Record<string, unknown>); return "ok"; } } as never,
       mcp: lookupMcpServers({ projectDir, rulesyncGlobal: join(root, "aiglobal"), defaultHarness: "claude", env }, {}),
     });
-    const code = (await steps.run(JSON.stringify({ kind: "js", source: "return 1" }), { model: "exec" } as never)) as unknown as { result: unknown };
-    assert.equal(code.result, 1);
-    assert.equal(seen.length, 0, "code steps never reach the agent runner");
     assert.equal(await steps.run("go", { label: "a", effort: "high", skills: ["tdd"], mcpNames: ["linear"] } as never), "ok");
     assert.deepEqual([seen[0]!.effort, seen[0]!.skills], ["high", ["tdd"]]);
     assert.equal((seen[0]!.mcpServers as Array<{ name: string }>)[0]!.name, "linear");
@@ -479,8 +476,7 @@ describe("steps with a runner of their own", () => {
       return true;
     });
     assert.equal(calls, 0);
-    // Code steps need none. A Claude Code step needs Claude Code.
-    await steps.run(JSON.stringify({ kind: "js", source: "return 1" }), { model: "exec" } as never);
+    // A Claude Code step needs Claude Code.
     await assert.rejects(steps.run("go", { label: "other", model: "claude/some-model" } as never), (error: unknown) => {
       assert.ok(error instanceof WorkflowError);
       assert.match(error.message, /^step "other": Claude Code is not installed: no claude program on PATH/);

@@ -130,9 +130,6 @@ async function runOnAccounts(
     ...(options.dryRun ? {} : { slots }),
     agents,
     mcp: lookupMcpServers(settings, { ...base, ...secrets }),
-    // Code steps also get the project folder, since a run may work elsewhere (a worktree, a scratch folder).
-    env: { ...secrets, ORC_PROJECT: record.projectDir },
-    base,
     accounts,
     // A runner from a test or the dry run brings its own programs.
     ...(inner ? {} : { programs: programLookup(config) }),
@@ -272,6 +269,8 @@ async function runOnAccounts(
     agent: runner,
     cwd: record.cwd,
     confirm: confirm as never,
+    // Code steps also get the project folder, since a run may work elsewhere (a worktree, a scratch folder).
+    codeEnv: { env: { ...secrets, ORC_PROJECT: record.projectDir }, base },
     ...(record.concurrency ? { concurrency: record.concurrency } : {}),
     ...(record.overrides ? { stepOverrides: record.overrides } : {}),
     ...(record.defaultModel ?? config.defaultModel ? { defaultModel: record.defaultModel ?? config.defaultModel } : {}),

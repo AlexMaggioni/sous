@@ -1,50 +1,13 @@
 // Script functions added on top of agent() and checkpoint().
 //
-// Code steps (sh, js, py, run, waitUntil) are agent() calls with model "exec". The host's
-// runner runs them locally instead of opening an agent session, so they get the engine's
-// journal, resume, retries, limits and events for free. Their prompt is a JSON spec, so
-// editing the code changes the call's identity and a resumed run reruns it.
+// Code steps (sh, js, py, run, waitUntil) go to the engine's code() as a spec. The engine runs
+// them itself, so they get the journal, resume, retries, limits and events of any step.
 
 import type { AgentDefinition } from "./agent-registry.js";
+import type { ExecSpec } from "./code-steps.js";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
 
-export const EXEC_MODEL = "exec";
 export const DEFAULT_MAX_NESTING_DEPTH = 5;
-
-/** The result every code step returns. */
-export const EXEC_RESULT_SCHEMA = Object.freeze({
-  type: "object",
-  properties: {
-    code: { type: "number" },
-    stdout: { type: "string" },
-    stderr: { type: "string" },
-    result: {},
-  },
-  required: ["code"],
-});
-
-export type ExecKind = "sh" | "js" | "py" | "file" | "wait";
-
-export interface ExecSpec {
-  kind: ExecKind;
-  /** sh and wait: the shell command. */
-  command?: string;
-  /** js and py: the code. It may `return` a value, which becomes `result`. */
-  source?: string;
-  /** file: the script file, run by its extension (.js .mjs .py .sh, else directly). */
-  file?: string;
-  args?: string[];
-  /** js, py and file: a JSON value the code reads as `input` (stdin for files). */
-  input?: unknown;
-  cwd?: string;
-  env?: Record<string, string>;
-  /** sh and file: return a non-zero exit as a result instead of failing the step. */
-  allowFail?: boolean;
-  /** wait: seconds between two checks. */
-  everySeconds?: number;
-  /** wait: give up after this many seconds. */
-  timeoutSeconds?: number;
-}
 
 /** Parse "90", 90, "90s", "10m", "2h" into seconds. Returns undefined for anything else. */
 export function parseDurationSeconds(value: unknown): number | undefined {
@@ -107,11 +70,20 @@ export function orchestratorRunExtras(
 }
 
 type AgentFn = (prompt: string, options?: Record<string, unknown>) => Promise<unknown>;
+/** What a code step passes besides its spec. */
+export interface CodeStepOptions {
+  label: string;
+  retries: number;
+  timeout?: number | string;
+  phase?: string;
+}
+type CodeFn = (spec: ExecSpec, options: CodeStepOptions) => Promise<unknown>;
 type CheckpointFn = (prompt: string, options?: Record<string, unknown>) => Promise<unknown>;
 type WorkflowFn = (name: string, args?: unknown, options?: { place?: string; label?: string }) => Promise<unknown>;
 
 export interface OrchestratorGlobalDeps {
   agent: AgentFn;
+  code: CodeFn;
   checkpoint: CheckpointFn;
   workflow: WorkflowFn;
   log: (message: string) => void;
@@ -158,10 +130,8 @@ export function createOrchestratorGlobals(deps: OrchestratorGlobalDeps) {
       ...(options.env === undefined ? {} : { env: { ...options.env } }),
       ...(options.allowFail ? { allowFail: true } : {}),
     };
-    return deps.agent(JSON.stringify(fullSpec), {
+    return deps.code(fullSpec, {
       label: options.label ?? defaultLabel,
-      model: EXEC_MODEL,
-      schema: EXEC_RESULT_SCHEMA,
       retries: options.retries ?? 0,
       ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
       ...(options.phase === undefined ? {} : { phase: options.phase }),

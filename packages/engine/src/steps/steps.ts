@@ -1,7 +1,7 @@
 // The steps module. It turns a workflow's agent call into one step on Claude Code or Codex.
 // It picks the harness, finds the program once per run, names the MCP servers, takes a slot,
 // sets the time limit and runs the step. A schema answer that does not fit gets repair turns
-// in the same session. Code steps (model "exec") run here too.
+// in the same session. Code steps never come here: the engine runs them.
 // A test or the dry run gives `inner`, a runner of its own, and then no program starts.
 
 import type { TSchema } from "typebox";
@@ -28,10 +28,9 @@ import type { AgentSessionRef } from "../workflow-result.js";
 import type { McpServerConfig } from "./mcp-config.js";
 import { harnessName, isHarness, missingServer, planStep, removedHarness, routeHarness, type AgentLookup, type McpLookup } from "../agents.js";
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
-import { EXEC_MODEL, type ExecSpec, type StepGiven } from "../orchestrator-globals.js";
+import type { StepGiven } from "../orchestrator-globals.js";
 import type { SlotPool } from "../runs/slots.js";
 import { buildPrompt, checkImages, CONTINUATION_INSTRUCTION, extractValidated, REPROMPT_TEXT, toMcpServer, validateValue } from "./answer.js";
-import { runExecSpec } from "./exec.js";
 
 /** The runner a test or the dry run gives instead of the programs. */
 export type InnerRunner = AgentRunner & { dispose?: () => Promise<void> | void };
@@ -46,10 +45,6 @@ export interface StepsOptions {
   agents?: AgentLookup;
   /** The MCP servers a step can list with `mcp: [...]`. */
   mcp?: McpLookup;
-  /** Extra environment for code steps. */
-  env?: Record<string, string>;
-  /** The environment code steps start from. Default process.env. */
-  base?: Record<string, string | undefined>;
   /** The account each harness's steps run as. None keeps the caller's login. */
   accounts?: Partial<Record<HarnessId, Account>>;
   /** Where to look for each program. With `inner` and no `programs`, no lookup runs. */
@@ -157,16 +152,6 @@ export function createSteps(options: StepsOptions): AgentRunner & { dispose(): P
 
   const run = async (prompt: string, given: Record<string, unknown> = {}): Promise<unknown> => {
     const call = given as StepCall;
-    if (call.model === EXEC_MODEL) {
-      let spec: ExecSpec;
-      try {
-        spec = JSON.parse(prompt) as ExecSpec;
-      } catch {
-        throw new WorkflowError("a code step's spec is not valid JSON", WorkflowErrorCode.INVALID_ARGUMENT, { recoverable: false, agentLabel: call.label });
-      }
-      return runExecSpec(spec, { cwd: call.cwd ?? options.cwd, signal: call.signal, timeoutMs: call.timeoutMs, env: options.env, base: options.base });
-    }
-
     const stop = (message: string) =>
       new WorkflowError(`step "${call.label ?? "agent"}": ${message}`, WorkflowErrorCode.INVALID_ARGUMENT, { recoverable: false, agentLabel: call.label });
     const removed = removedHarness(call.model);

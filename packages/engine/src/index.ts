@@ -159,12 +159,11 @@ export {
 
 // ── Orchestrator additions (code steps, questions, breakpoints, choices) ──
 export {
-  EXEC_RESULT_SCHEMA,
   DEFAULT_MAX_NESTING_DEPTH,
   parseDurationSeconds,
   orchestratorRunExtras,
-  type ExecKind,
 } from "./orchestrator-globals.js";
+export { EXEC_RESULT_SCHEMA, type ExecKind } from "./code-steps.js";
 
 // ── Workflow directory view (folders of versioned workflow scripts) ──
 export {

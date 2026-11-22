@@ -1,12 +1,63 @@
-// Runs code steps: sh, js, py, a script file, and wait. Each runs in a child process in the
-// step's folder. A step fails on a non-zero exit, unless it allows that, and on its time limit.
+// Code steps: sh, js, py, a script file, and wait. The engine runs each one itself, in a child
+// process in the step's folder, and never hands it to the steps module. A step fails on a
+// non-zero exit, unless it allows that, and on its time limit.
+//
+// A code step keeps the identity it had when it went through the agent path: its journal entry
+// is hashed with the JSON spec as the prompt, "exec" as the model and the result schema below.
+// So a run started by older code replays its finished code steps, and editing a step's code
+// changes its identity, so a resumed run runs it again.
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, resolve } from "node:path";
-import { WorkflowError, WorkflowErrorCode } from "../errors.js";
-import type { ExecSpec } from "../orchestrator-globals.js";
+import { WorkflowError, WorkflowErrorCode } from "./errors.js";
+
+/** The model name a code step records. Old run files hold it, so it stays. */
+export const EXEC_MODEL = "exec";
+
+/** The result every code step returns. It is part of the step's identity. */
+export const EXEC_RESULT_SCHEMA = Object.freeze({
+  type: "object",
+  properties: {
+    code: { type: "number" },
+    stdout: { type: "string" },
+    stderr: { type: "string" },
+    result: {},
+  },
+  required: ["code"],
+});
+
+export type ExecKind = "sh" | "js" | "py" | "file" | "wait";
+
+export interface ExecSpec {
+  kind: ExecKind;
+  /** sh and wait: the shell command. */
+  command?: string;
+  /** js and py: the code. It may `return` a value, which becomes `result`. */
+  source?: string;
+  /** file: the script file, run by its extension (.js .mjs .py .sh, else directly). */
+  file?: string;
+  args?: string[];
+  /** js, py and file: a JSON value the code reads as `input` (stdin for files). */
+  input?: unknown;
+  cwd?: string;
+  env?: Record<string, string>;
+  /** sh and file: return a non-zero exit as a result instead of failing the step. */
+  allowFail?: boolean;
+  /** wait: seconds between two checks. */
+  everySeconds?: number;
+  /** wait: give up after this many seconds. */
+  timeoutSeconds?: number;
+}
+
+/** The environment code steps run with. The worker sets it from the run's accounts and secrets. */
+export interface CodeStepEnv {
+  /** Extra environment, such as secrets. The step's own env wins. */
+  env?: Record<string, string>;
+  /** The environment the extra one goes on. Default process.env. */
+  base?: Record<string, string | undefined>;
+}
 
 export interface ExecResult {
   code: number;
@@ -16,15 +67,11 @@ export interface ExecResult {
   checks?: number;
 }
 
-export interface ExecContext {
+export interface ExecContext extends CodeStepEnv {
   /** The run's folder. A step's own cwd resolves against it. */
   cwd: string;
   signal?: AbortSignal;
   timeoutMs?: number;
-  /** Extra environment, such as secrets. The step's own env wins. */
-  env?: Record<string, string>;
-  /** The environment the extra one goes on. Default process.env. */
-  base?: Record<string, string | undefined>;
 }
 
 const MAX_OUTPUT = 200_000;
@@ -161,7 +208,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-export async function runExecSpec(spec: ExecSpec, context: ExecContext): Promise<ExecResult> {
+export async function runCodeStep(spec: ExecSpec, context: ExecContext): Promise<ExecResult> {
   const cwd = spec.cwd ? (isAbsolute(spec.cwd) ? spec.cwd : resolve(context.cwd, spec.cwd)) : context.cwd;
   if (!existsSync(cwd)) throw stepError(`the step's folder does not exist: ${cwd}`);
   const work = mkdtempSync(join(tmpdir(), "orc-step-"));

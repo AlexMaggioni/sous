@@ -105,6 +105,7 @@ import {
   type WorkflowPreparation,
 } from "./workflow-preparation.js";
 import { assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
+import type { CodeStepEnv } from "./code-steps.js";
 
 const ENGINE_VERSION = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 
@@ -385,6 +386,8 @@ export interface ExecOptions {
   onNestedWorkflow?: (ordinal: number, childRunId: string) => void;
   /** Per-run changes to steps, by label. Pass them again on resume. */
   stepOverrides?: Record<string, Record<string, unknown>>;
+  /** The environment code steps run with. Pass it again on resume. */
+  codeEnv?: CodeStepEnv;
   /**
    * APPROVED script-declared custom ACP backends (`meta.backends`) for this run. The
    * composition root owns the approval decision (MCP elicitation, SDK allowScriptBackends,
@@ -2192,6 +2195,7 @@ export class WorkflowManager extends EventEmitter {
         loadSavedWorkflow: this.loadSavedWorkflow,
         ...this.orchestratorOptions,
         ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
+        ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
         ...(managed.nestedJournal?.length
           ? { nestedResumeJournals: nestedJournalsByScope(managed.nestedJournal) }
           : {}),
@@ -3519,6 +3523,7 @@ export class WorkflowManager extends EventEmitter {
       confirm: exec.confirm,
       onNestedWorkflow: exec.onNestedWorkflow,
       ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
+      ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
       onMissingAgentConfiguration: exec.onMissingAgentConfiguration,
       ...(revisedExecution ? {} : { resumeJournal }),
     }, revisedExecution ?? (checkpointReplies.accepted

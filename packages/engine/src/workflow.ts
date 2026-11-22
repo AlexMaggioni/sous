@@ -85,9 +85,10 @@ import { nestedArgs } from "./workflow-inputs.js";
 import {
   createOrchestratorGlobals,
   DEFAULT_MAX_NESTING_DEPTH,
-  EXEC_MODEL,
   orchestratorRunExtras,
+  type CodeStepOptions,
 } from "./orchestrator-globals.js";
+import { EXEC_MODEL, EXEC_RESULT_SCHEMA, runCodeStep, type CodeStepEnv, type ExecSpec } from "./code-steps.js";
 
 // WorkflowMeta / WorkflowMetaPhase / JournalEntry / WorkflowRunResult are the
 // host-facing types (defined once in workflow-result.ts). The bare engine
@@ -295,6 +296,8 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   nestedResumeJournals?: ReadonlyMap<string, Map<number, JournalEntry>>;
   /** Per-run changes to steps, by label, such as { reviewer: { model: "haiku" } }. */
   stepOverrides?: Record<string, Record<string, unknown>>;
+  /** The environment code steps run with. Nested runs get the same. */
+  codeEnv?: CodeStepEnv;
   /** How deep workflow() may nest. Default 5. */
   maxNestingDepth?: number;
   /**
@@ -1147,10 +1150,14 @@ export async function runWorkflow<T = unknown>(
     return captured.clone;
   };
 
+  // One step. An agent step goes to the agent runner. A code step brings its spec and the
+  // engine runs it here; its prompt is the spec as JSON and its model is "exec", so it keeps
+  // the identity it had when code steps went through the agent runner.
   const agentImplementation = (
     prompt: string,
     agentOptions: AgentOptions,
     onAllocated: (callIndex: number) => void,
+    codeSpec?: ExecSpec,
   ): Promise<unknown> => {
     validateAgentOptions(agentOptions, realmObjectPrototype);
     const resumeDeclared = validateResumeDeclaration(agentOptions, realmObjectPrototype);
@@ -1423,7 +1430,7 @@ export async function runWorkflow<T = unknown>(
 
       const recordTokens = (value: unknown, usage: AgentUsage | undefined): number => {
         // A code step uses no model, so it counts no tokens.
-        const tokens = modelSpec === EXEC_MODEL ? 0 : usage && usage.total > 0 ? usage.total : estimateTokens(value) + estimateTokens(prompt);
+        const tokens = codeSpec ? 0 : usage && usage.total > 0 ? usage.total : estimateTokens(value) + estimateTokens(prompt);
         if (usage) {
           shared.tokenUsage.input += usage.input;
           shared.tokenUsage.output += usage.output;
@@ -1628,7 +1635,12 @@ export async function runWorkflow<T = unknown>(
               let rawRunnerPromise: Promise<unknown>;
               beginResumeActivity();
               try {
-                rawRunnerPromise = agentRunner.run(prompt, {
+                rawRunnerPromise = codeSpec ? runCodeStep(codeSpec, {
+                  ...options.codeEnv,
+                  cwd: runCwd,
+                  signal: attemptSignal,
+                  timeoutMs: orchestratorRunExtras(agentOptions, agentDef).timeoutMs,
+                }) : agentRunner.run(prompt, {
                   label,
                   schema: agentOptions.schema,
                   signal: attemptSignal,
@@ -2225,19 +2237,23 @@ export async function runWorkflow<T = unknown>(
     return preparedResume ? runPreparedAgent() : runManualAgent();
   };
 
-  const agent = (prompt: string, agentOptions: AgentOptions = {}): Promise<unknown> => {
+  const step = (prompt: string, agentOptions: AgentOptions, codeSpec?: ExecSpec): Promise<unknown> => {
     let allocated = false;
     let promise: Promise<unknown>;
     try {
       promise = agentImplementation(prompt, agentOptions, () => {
         allocated = true;
         beginResumeActivity();
-      });
+      }, codeSpec);
     } catch (error) {
       promise = Promise.reject(error);
     }
     return allocated ? observeResumeActivity(promise) : promise;
   };
+  const agent = (prompt: string, agentOptions: AgentOptions = {}): Promise<unknown> => step(prompt, agentOptions);
+  // A code step: the same fields as before go into its identity.
+  const code = (spec: ExecSpec, codeOptions: CodeStepOptions): Promise<unknown> =>
+    step(JSON.stringify(spec), { ...codeOptions, model: EXEC_MODEL, schema: EXEC_RESULT_SCHEMA as TSchema }, spec);
 
   const parallel = async (thunks: Array<() => Promise<unknown>>) => {
     throwIfAborted();
@@ -3051,6 +3067,7 @@ export async function runWorkflow<T = unknown>(
   // Code steps, questions, breakpoints and choose(), built on agent() and checkpoint().
   const orchestrator = createOrchestratorGlobals({
     agent: agent as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
+    code,
     checkpoint: checkpoint as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
     workflow: workflowFn,
     log,

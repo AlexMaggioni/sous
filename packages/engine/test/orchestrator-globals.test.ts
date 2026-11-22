@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -11,6 +11,7 @@ import type { JournalEntry } from "../src/workflow-result.js";
 import { parseAgentDefinition, type AgentRegistry } from "../src/agent-registry.js";
 import { parseDurationSeconds } from "../src/orchestrator-globals.js";
 import { runWorkflow } from "../src/workflow.js";
+import { createSteps } from "../src/steps/steps.js";
 import { homePaths } from "../src/runs/home.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
@@ -41,16 +42,20 @@ function recordingRunner(answer: (prompt: string, options: Record<string, unknow
   return { runner, calls };
 }
 
-const execAnswer = (prompt: string) => {
-  const spec = JSON.parse(prompt) as { kind: string; command?: string; source?: string; input?: unknown };
-  return { code: 0, stdout: `ran ${spec.kind}`, stderr: "", result: spec.input ?? null };
-};
+/** A folder for code steps, with a script file and the file waitUntil checks. */
+function codeFolder(): string {
+  const cwd = mkdtempSync(join(tmpdir(), "code-steps-"));
+  mkdirSync(join(cwd, "scripts"));
+  writeFileSync(join(cwd, "scripts", "check.sh"), 'echo "args $1"; cat > "$ORC_RESULT"\n');
+  writeFileSync(join(cwd, "done"), "");
+  return cwd;
+}
 
 describe("code steps", () => {
-  it("send sh, js, py, run and waitUntil to the runner as exec calls with a JSON spec", async () => {
-    const { runner, calls } = recordingRunner((prompt, options) =>
-      options.model === "exec" ? execAnswer(prompt) : "agent",
-    );
+  it("run sh, js, py, run and waitUntil in the engine, never in the agent runner", async () => {
+    const { runner, calls } = recordingRunner(() => "agent");
+    const cwd = codeFolder();
+    const started: Array<{ prompt: string; model?: string }> = [];
     const script = `export const meta = { name: 'code', description: 'code steps' }
 const a = await sh('echo hi', { allowFail: true, timeout: '2m' })
 const b = await js('return input.n + 1', { n: 1 })
@@ -58,40 +63,88 @@ const c = await py('return input', [1, 2])
 const d = await run('scripts/check.sh', { args: ['x'], input: { y: 1 } })
 const e = await waitUntil('test -f done', { every: '30s', timeout: '1h' })
 return { a, b, c, d, e }`;
-    const result = await runWorkflow<Record<string, { stdout: string; result: unknown }>>(script, {
+    const result = await runWorkflow<Record<string, { code: number; stdout: string; result: unknown }>>(script, {
       agent: runner,
+      cwd,
       persistLogs: false,
+      onAgentStart: (event) => started.push({ prompt: event.prompt, model: event.model }),
     });
-    assert.equal(calls.length, 5);
-    assert.ok(calls.every((call) => call.options.model === "exec"));
-    assert.ok(calls.every((call) => call.options.schema !== undefined), "code steps return a structured result");
-    const specs = calls.map((call) => JSON.parse(call.prompt));
+    assert.equal(calls.length, 0, "code steps never reach the agent runner");
+    // Each step keeps the identity it had as an agent call: the spec as JSON and the model "exec".
+    assert.ok(started.every((step) => step.model === "exec"));
+    const specs = started.map((step) => JSON.parse(step.prompt));
     assert.deepEqual(specs[0], { kind: "sh", command: "echo hi", allowFail: true });
-    assert.equal(calls[0]!.options.timeoutMs, 120_000);
     assert.deepEqual(specs[1], { kind: "js", source: "return input.n + 1", input: { n: 1 } });
     assert.deepEqual(specs[2], { kind: "py", source: "return input", input: [1, 2] });
     assert.deepEqual(specs[3], { kind: "file", file: "scripts/check.sh", args: ["x"], input: { y: 1 } });
     assert.deepEqual(specs[4], { kind: "wait", command: "test -f done", everySeconds: 30, timeoutSeconds: 3600 });
-    assert.equal(result.result.b!.stdout, "ran js");
-    assert.deepEqual(JSON.parse(JSON.stringify(result.result.b!.result)), { n: 1 });
+    const out = JSON.parse(JSON.stringify(result.result)) as Record<string, { code: number; stdout: string; result?: unknown }>;
+    assert.equal(out.a!.stdout, "hi\n");
+    assert.equal(out.b!.result, 2);
+    assert.deepEqual(out.c!.result, [1, 2]);
+    assert.equal(out.d!.stdout, "args x\n");
+    assert.deepEqual(out.d!.result, { y: 1 });
+    assert.equal(out.e!.code, 0);
+    assert.equal(result.tokenUsage.input + result.tokenUsage.output, 0, "a code step uses no model");
+  });
+
+  it("need no agent program", async () => {
+    const empty = mkdtempSync(join(tmpdir(), "no-programs-"));
+    const steps = createSteps({
+      cwd: empty,
+      inner: { run: async () => "ok" } as never,
+      programs: () => ({ env: { PATH: empty }, usualDirs: [] }),
+    });
+    const result = await runWorkflow<{ result: unknown }>(`export const meta = { name: 'plain', description: 'plain' }
+return await js('return 1')`, { agent: steps, cwd: empty, persistLogs: false });
+    assert.equal(result.result.result, 1);
+  });
+
+  it("keep their time limit and retries", async () => {
+    const { runner } = recordingRunner(() => "agent");
+    const cwd = codeFolder();
+    const started = Date.now();
+    const slow = await runWorkflow(`export const meta = { name: 'slow', description: 'slow' }
+return await sh('sleep 5', { timeout: 0.2 })`, { agent: runner, cwd, persistLogs: false });
+    assert.ok(Date.now() - started < 4000, "the time limit stopped the step");
+    assert.equal(slow.result, null, "a failed step gives null when the run does not pause on it");
+    assert.match(String(slow.calls?.[0]?.error?.message), /^timed out after 0s$/);
+    const flaky = await runWorkflow<{ stdout: string }>(`export const meta = { name: 'flaky', description: 'flaky' }
+return await sh('echo x >> tries; test $(wc -l < tries) -ge 2 && echo second', { retries: 1 })`, { agent: runner, cwd, persistLogs: false });
+    assert.equal(flaky.result.stdout, "second\n");
+    assert.equal(readFileSync(join(cwd, "tries"), "utf8"), "x\nx\n");
+  });
+
+  it("get the environment the run gives them", async () => {
+    const { runner } = recordingRunner(() => "agent");
+    const cwd = codeFolder();
+    const result = await runWorkflow<{ stdout: string }>(`export const meta = { name: 'envs', description: 'envs' }
+return await sh('echo "$FROM_BASE $SECRET"')`, {
+      agent: runner,
+      cwd,
+      persistLogs: false,
+      codeEnv: { env: { SECRET: "s3" }, base: { PATH: process.env.PATH, FROM_BASE: "b1" } },
+    });
+    assert.equal(result.result.stdout, "b1 s3\n");
   });
 
   it("are journaled, so a resumed run does not run them twice", async () => {
-    const first = recordingRunner((prompt) => execAnswer(prompt));
+    const { runner } = recordingRunner(() => "agent");
+    const cwd = codeFolder();
     const script = `export const meta = { name: 'once', description: 'once' }
-const a = await sh('date > stamp')
-return a.stdout`;
+const a = await sh('echo ran >> marker && wc -l < marker')
+return a.stdout.trim()`;
     const journal: JournalEntry[] = [];
-    await runWorkflow<string>(script, { agent: first.runner, persistLogs: false, onAgentJournal: (e) => journal.push(e) });
-    assert.equal(first.calls.length, 1);
-    const second = recordingRunner((prompt) => execAnswer(prompt));
+    const run1 = await runWorkflow<string>(script, { agent: runner, cwd, persistLogs: false, onAgentJournal: (e) => journal.push(e) });
+    assert.equal(run1.result, "1");
     const run2 = await runWorkflow<string>(script, {
-      agent: second.runner,
+      agent: runner,
+      cwd,
       persistLogs: false,
       resumeJournal: new Map(journal.map((e) => [e.index, e])),
     });
-    assert.equal(second.calls.length, 0, "the replay reuses the recorded result");
-    assert.equal(run2.result, "ran sh");
+    assert.equal(run2.result, "1", "the replay reuses the recorded result");
+    assert.equal(readFileSync(join(cwd, "marker"), "utf8"), "ran\n", "the step ran once");
   });
 });
 
