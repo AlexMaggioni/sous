@@ -90,6 +90,7 @@ import {
   runWorkflow,
 } from "./workflow.js";
 import { captureWorkflowRouting, isWorkflowRoutingSnapshot } from "./workflow-routing.js";
+import type { AgentRegistry } from "./agent-registry.js";
 import { createWorkflowLogTail, projectWorkflowRunStatus } from "./run-observability.js";
 import {
   LiveAgentObservability,
@@ -413,6 +414,11 @@ export interface WorkflowManagerOptions {
   /** Override the directory scanned for `agentType` definitions (defaults to AGENTS_DIR). */
   agentsDir?: string;
   /**
+   * orchestrator: load the `agentType` definitions for a run's folder. Replaces the scan of
+   * agentsDir when given. orc looks agents up in rulesync and in each harness's own folders.
+   */
+  loadAgents?: (cwd: string) => AgentRegistry;
+  /**
    * Absolute workflow persistence root. Precedence is this explicit option >
    * AGENTPRISM_PERSISTENCE_ROOT > `~/.agentprism/workflows`.
    */
@@ -684,6 +690,7 @@ export class WorkflowManager extends EventEmitter {
   private sessionId?: string;
   private defaultAgentRetries: number;
   private agentsDir?: string;
+  private loadAgents?: (cwd: string) => AgentRegistry;
   private persistenceRoot: string;
   private journaling: boolean;
   private environmentKey?: string;
@@ -700,6 +707,7 @@ export class WorkflowManager extends EventEmitter {
     this.sessionId = options.sessionId;
     this.defaultAgentRetries = options.defaultAgentRetries ?? 0;
     this.agentsDir = options.agentsDir;
+    this.loadAgents = options.loadAgents;
     this.persistenceRoot = workflowHomeDir({ persistenceRoot: options.persistenceRoot });
     this.journaling = options.journaling ?? true;
     this.environmentKey = options.environmentKey;
@@ -1638,7 +1646,7 @@ export class WorkflowManager extends EventEmitter {
     ) {
       throw this.scriptValidationError("prepared admission requires canonical configuration and preserves accepted inputs");
     }
-    const admission = createRunAdmission(exec, new Date().toISOString(), managed.effectiveCwd, managed.agentsDir, managed.mainModel);
+    const admission = createRunAdmission(exec, new Date().toISOString(), managed.effectiveCwd, managed.agentsDir, managed.mainModel, this.loadAgents);
     if (!admission) throw this.scriptValidationError("prepared admission requires canonical configuration");
     const previous = {
       preparation: managed.preparation,
@@ -1812,7 +1820,7 @@ export class WorkflowManager extends EventEmitter {
     const capturedArgs = snapshotArgs(args);
     const effectiveCwd = exec.cwd ?? this.cwd;
     const startedAt = new Date();
-    const admission = createRunAdmission(exec, startedAt.toISOString(), effectiveCwd, this.agentsDir, this.mainModel);
+    const admission = createRunAdmission(exec, startedAt.toISOString(), effectiveCwd, this.agentsDir, this.mainModel, this.loadAgents);
     return {
       runId: identity.runId,
       cwd: exec.cwd,
@@ -2168,6 +2176,7 @@ export class WorkflowManager extends EventEmitter {
         requireAgentConfiguration: managed.admission?.strict ?? exec.requireAgentConfiguration,
         onMissingAgentConfiguration: exec.onMissingAgentConfiguration,
         agentsDir: managed.agentsDir,
+        ...(this.loadAgents && !managed.admission?.routingSnapshot ? { agentRegistry: this.loadAgents(managed.effectiveCwd) } : {}),
         signal: managed.controller.signal,
         pauseSignal: (managed.pauseController ??= new AbortController()).signal,
         concurrency: resolvedConcurrency,
@@ -3956,9 +3965,10 @@ function createRunAdmission(
   cwd: string,
   agentsDir?: string,
   mainModel?: string,
+  loadAgents?: (cwd: string) => AgentRegistry,
 ): PersistedRunAdmission | undefined {
   if (exec.requireAgentConfiguration !== true) return undefined;
-  const routingSnapshot = captureWorkflowRouting(cwd, agentsDir, mainModel);
+  const routingSnapshot = captureWorkflowRouting(cwd, agentsDir, mainModel, loadAgents?.(cwd));
   const captured = cloneFrozenStrictJson({
     format: 3,
     routingSnapshot,

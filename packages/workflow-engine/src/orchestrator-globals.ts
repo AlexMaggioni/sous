@@ -63,26 +63,46 @@ interface ExtraOptions {
   effort?: string;
   skills?: string[];
   mcp?: string[];
+  agentType?: string;
+  model?: string;
+}
+
+/** The values a step set itself, apart from its agent definition's. */
+export interface StepGiven {
+  model?: string;
+  effort?: string;
+  skills?: string[];
+  mcp?: string[];
 }
 
 /**
  * The per-step extras the orc runner reads from RunOptions. A step's list replaces the
  * definition's list. Nothing here is set when neither the step nor the definition has it.
+ * `agentType` is the name the step asked for, also when no definition has it, so the host can
+ * stop the step. `stepGiven` lets the host tell the step's own values from the definition's.
  */
 export function orchestratorRunExtras(
   options: ExtraOptions,
   def: AgentDefinition | undefined,
-): { timeoutMs?: number; effort?: string; skills?: string[]; mcpNames?: string[]; agentType?: string } {
+): { timeoutMs?: number; effort?: string; skills?: string[]; mcpNames?: string[]; agentType?: string; stepGiven?: StepGiven } {
   const timeout = parseDurationSeconds(options.timeout ?? def?.timeout);
   const effort = options.effort ?? def?.effort;
   const skills = options.skills ?? def?.skills;
   const mcpNames = options.mcp ?? def?.mcp;
+  const agentType = typeof options.agentType === "string" ? options.agentType : def?.name;
+  const given: StepGiven = {
+    ...(typeof options.model === "string" ? { model: options.model } : {}),
+    ...(options.effort === undefined ? {} : { effort: options.effort }),
+    ...(options.skills === undefined ? {} : { skills: [...options.skills] }),
+    ...(options.mcp === undefined ? {} : { mcp: [...options.mcp] }),
+  };
   return {
     ...(timeout === undefined ? {} : { timeoutMs: Math.round(timeout * 1000) }),
     ...(effort === undefined ? {} : { effort }),
     ...(skills === undefined ? {} : { skills: [...skills] }),
     ...(mcpNames === undefined ? {} : { mcpNames: [...mcpNames] }),
-    ...(def ? { agentType: def.name } : {}),
+    ...(agentType === undefined ? {} : { agentType }),
+    ...(agentType === undefined ? {} : { stepGiven: given }),
   };
 }
 

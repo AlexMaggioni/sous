@@ -6,7 +6,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { WorkflowManager, openWorkflowDir, parseDurationSeconds, parseWorkflowScript, type WorkflowRunResult } from "@automatalabs/workflow-engine";
 import type { AgentRunner } from "@automatalabs/shared-types";
-import { agentsDirOption, ensureHome, homePaths, loadConfig, loadMcpServers, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
+import { lookupAgents, lookupMcpServers, registryOf } from "./agents.js";
+import { ensureHome, homePaths, loadConfig, loadSecrets, lookupSettings, workflowDirs, type HomePaths } from "./home.js";
 import { checkInputs, workflowExtras } from "./inputs.js";
 import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuestion, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
@@ -72,7 +73,8 @@ export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<
     // Run state is keyed to the manager's folder, so every orc manager uses the home folder.
     cwd: paths.home,
     persistenceRoot: paths.runs,
-    agentsDir: agentsDirOption(projectDir, paths),
+    // Agents come from rulesync and the harnesses' own folders, looked up from the run's project.
+    loadAgents: () => registryOf(lookupAgents(lookupSettings(paths, projectDir))),
     defaultAgentRetries: loadConfig(paths).retries,
     loadSavedWorkflow: (name) => dirs.resolve(name),
     orchestrator: {
@@ -114,13 +116,16 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
   updateRecord(paths, runId, { pid: process.pid });
 
   const secrets = loadSecrets(paths);
-  const mcpServers = loadMcpServers(record.projectDir, paths, { ...process.env, ...secrets });
+  const settings = lookupSettings(paths, record.projectDir, config);
+  const agents = lookupAgents(settings);
+  const mcp = lookupMcpServers(settings, { ...process.env, ...secrets });
   const slots = new SlotPool(paths.slots, paths.queue, () => loadConfig(paths).maxAgents, record.priority);
   const runner = createOrcRunner({
     cwd: record.cwd,
     inner: options.inner ?? (await loadInner()),
     ...(options.dryRun ? {} : { slots }),
-    mcpServers,
+    agents,
+    mcp,
     // Code steps also get the project folder, since a run may work elsewhere (a worktree, a scratch folder).
     env: { ...secrets, ORC_PROJECT: record.projectDir },
     onSlot: ({ label, state }) => {

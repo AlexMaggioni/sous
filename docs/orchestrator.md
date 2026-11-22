@@ -15,19 +15,21 @@ node packages/orc/dist/cli.js help
 
 ## Folders
 
-The home folder is `~/.orchestrator`, or `$ORC_HOME`. A project's `.orchestrator/` folder has the
-same `workflows/`, `agents/` and `mcp.json`, and wins over the home folder's on a name clash. The
-project is the nearest folder up from where you run `orc` that has `.orchestrator/` or `.git`.
+The home folder is `~/.orchestrator`, or `$ORC_HOME`. A project's `.orchestrator/workflows/`
+holds its own workflows, which win over the home folder's on a name clash. The project is the
+nearest folder up from where you run `orc` that has `.orchestrator/` or `.git`.
 
 | Path | What it holds |
 | --- | --- |
 | `workflows/<name>.js` | saved workflows |
-| `agents/<name>.md` | named agents |
-| `mcp.json` | MCP servers by name: `{ "linear": { "command": "...", "args": [], "env": { "KEY": "${LINEAR_API_KEY}" } } }`, or `{ "type": "http", "url": "...", "headers": {} }` |
-| `secrets.env` | `KEY=value` lines. Agents and code steps get them in their environment, and `mcp.json` can use them as `${KEY}`. The shell environment works too. |
-| `config.json` | `maxAgents` (4), `defaultPlace` ("worktree"), `defaultModel`, `notify` (true), `keepDays` (all kept), `retries` (2) |
+| `secrets.env` | `KEY=value` lines. Agents and code steps get them in their environment, and an MCP server's settings can use them as `${KEY}`. The shell environment works too. |
+| `config.json` | `maxAgents` (4), `defaultPlace` ("worktree"), `defaultModel`, `defaultHarness`, `rulesyncGlobal`, `notify` (true), `keepDays` (all kept), `retries` (2) |
 | `runs/`, `records/`, `inbox/`, `logs/` | run state, one record per run, open questions, one log per run |
 | `worktrees/`, `scratch/` | the places runs work in |
+
+Agents and MCP servers come from [rulesync](https://github.com/dyoshikawa/rulesync)'s folders and
+from the harnesses' own folders. orc reads them and never writes into them. See
+[Agents](#agents).
 
 ## A workflow
 
@@ -56,8 +58,8 @@ return { summary: built }
 ```
 
 `orc run ticket --ticket "Add a --json flag"` turns flags into `args`. `orc check ticket --ticket x`
-checks a workflow without running it: the script parses, the inputs fit, and each workflow, agent,
-MCP server and script file it names exists.
+checks a workflow without running it: the script parses, the inputs fit, each workflow, agent,
+MCP server and script file it names exists, and each agent can run on the harness its step picks.
 
 `orc check ticket --ticket x --dry-run` then runs the workflow once with stand-in agents, to catch
 mistakes in its steps and in how they connect. Each agent step answers at once: with a value that
@@ -86,7 +88,7 @@ commit step failed with "nothing to commit". The workflow now commits only when 
 The engine's own steps all work: `agent`, `parallel`, `pipeline`, `gate`, `retry`, `checkpoint`,
 `phase`, `log` (see [api.md](api.md#workflow-script-dsl)). orc adds these:
 
-- `agent()` takes `timeout` ("10m"), `effort`, `skills`, `mcp` (names from `mcp.json`),
+- `agent()` takes `timeout` ("10m"), `effort`, `skills`, `mcp` (server names, see [Agents](#agents)),
   `continue: "<label>"` (go on in that earlier step's session, which set `keepSession: true`) and
   `ask: true` (the agent may stop with a line starting `QUESTION:`; the user answers and the same
   session goes on).
@@ -107,28 +109,98 @@ The engine's own steps all work: `agent`, `parallel`, `pipeline`, `gate`, `retry
 Agents pass text to each other through prompts, or structured objects with `schema`. Steps that
 should share files run in the same place.
 
-### Named agents
+## Agents
 
-`agents/<name>.md` is a named agent: a Markdown body that frames the agent's task, and frontmatter
-with `model`, `tools`, `disallowedTools`, `skills`, `mcp`, `effort` and `timeout`. A step uses it
-with `agentType: "<name>"`. A step's own `skills`, `mcp`, `effort`, `timeout` or `model` replaces
-the agent's, never adds to it.
+A step uses an agent with `agentType: "<name>"`. orc looks each agent up on its own, in this
+order, and takes the first one it finds:
 
-An agent in a run never stops to ask for permission. `tools` is its allow list: the built-in tools
-it does not name don't exist for it. `disallowedTools` is its deny list. Both apply whatever your
-own Claude Code settings allow, even in bypass mode. A refused tool comes back to the agent, which
-works around it or fails the step. With neither list, the agent may use every tool. An allow list
-names whole tools: `Bash(npm test)` allows all of Bash.
+1. `.rulesync/subagents/<name>.md` in the project;
+2. the same in the global rulesync folder, the folder `rulesyncGlobal` names in `config.json`;
+3. the harnesses' own folders in the project: `.claude/agents/`, `.codex/agents/`,
+   `.opencode/agents/`;
+4. the same folders in the home folder: `~/.claude/agents/`, `~/.codex/agents/`,
+   `~/.config/opencode/agents/`.
+
+A rulesync agent is one file for every harness. Its frontmatter has a block per harness, and orc
+reads the block of the harness the step runs on:
 
 ```md
 ---
 name: reviewer
-model: claude/opus
-effort: high
-skills: [code-review]
+description: Reviews one change
+targets: ["*"]
+claudecode:
+  model: haiku
+  effort: high
+  tools: [Read, Grep, Glob]
+  skills: [code-review]
+  mcpServers: [linear]
+codexcli:
+  model: gpt-6-luna
+  model_reasoning_effort: high
+orc:
+  harness: claude
 ---
 You review one change. Report what blocks it, then what could be better.
 ```
+
+- The agent runs on `orc.harness`, else on the default harness: `defaultHarness` in `config.json`,
+  else the harness of `defaultModel`, else Claude Code.
+- A step picks another harness with its model: `model: "codex"` runs the agent's Codex block,
+  with that block's model. `model: "codex/gpt-6-luna"` sets the model too.
+- A block with no model runs the run's model when it is on that harness, else the harness's own
+  default model.
+- Fields at the top of the frontmatter, such as `skills`, `mcpServers`, `tools`, `effort` and
+  `timeout`, apply on every harness, and a block's own field replaces them. `rulesync generate`
+  leaves top-level fields out of the files it writes, so your own sessions don't get them.
+- A step's own `skills`, `mcp`, `effort`, `timeout` or `model` replaces the agent's, never adds to
+  it.
+
+An agent in a harness's own folder runs only on that harness. A step that sends it to another
+harness makes the workflow invalid, and the message says to move the agent to rulesync. An agent
+in two harnesses' folders and not in rulesync gives the default harness's copy. When the default
+harness has no copy, the workflow is invalid. A step that picks its harness while running, such as
+`model: args.harness`, stops with the same message when the agent can't run there.
+
+An agent in a run never stops to ask for permission. `tools` is its allow list: the built-in tools
+it does not name don't exist for it. `disallowedTools` is its deny list. On Claude Code both apply
+whatever your own Claude Code settings allow, even in bypass mode. A refused tool comes back to the
+agent, which works around it or fails the step. With neither list, the agent may use every tool.
+An allow list names whole tools: `Bash(npm test)` allows all of Bash.
+
+### MCP servers
+
+A step or an agent names its MCP servers. orc looks each name up in `.rulesync/mcp.jsonc` in the
+project, then in the global rulesync folder's, then in the config of the harness the step runs on:
+`.mcp.json` and `~/.claude.json` for Claude Code, `config.toml` for Codex, `opencode.json` for
+OpenCode. A server in rulesync wins over one with the same name in a harness's config. On Codex
+that holds when both use the same transport, both a command or both a url. When they differ,
+Codex keeps its own server.
+
+```jsonc
+{
+  "mcpServers": {
+    "linear": { "command": "npx", "args": ["-y", "linear-mcp"], "env": { "KEY": "${LINEAR_API_KEY}" } },
+    "docs": { "type": "http", "url": "https://example.com/mcp" }
+  }
+}
+```
+
+### Skills and your own sessions
+
+orc reads agents and MCP servers from `.rulesync/` directly. Skills are different: each harness
+finds them in its own folders, such as `.claude/skills/`. `npx rulesync generate` writes
+`.rulesync/skills/` there, with the agents and MCP servers, for your own Claude Code or Codex
+sessions too. orc never writes into those folders. On Claude Code an agent's `skills` list is the
+only skills it sees. Codex has no such list and sees every skill in its folders.
+
+### Codex's version
+
+A Codex step runs through codex-acp, which runs the Codex it bundles, 0.156.1. That version may
+not offer your newest models, such as gpt-6.1-sol. Set `CODEX_PATH` to your own `codex`, such as
+`/opt/homebrew/bin/codex`, to run that one instead. Without it, the bundled Codex also rewrites
+Codex's own skills in `~/.codex/skills/.system/` when your Codex is another version, and your
+Codex writes its set back on its next start.
 
 ## Runs
 
@@ -214,7 +286,8 @@ started it, and `orc` refuses a workflow with `startedBy: "people"`.
 
 ## Status
 
-Proven end to end with real agents on `claude/haiku`, in a copy of `examples/textkit`:
+Proven end to end with real agents, on `claude/haiku` unless a proof says otherwise, in a copy of
+`examples/textkit` or a scratch folder:
 
 - [The ticket workflow](proof/ticket.md), in one round, and with the review loop, where each
   review goes back to the implementer's own session until the reviewer approves.
@@ -224,6 +297,10 @@ Proven end to end with real agents on `claude/haiku`, in a copy of `examples/tex
   with a note, redrafted and approved.
 - [An agent's tool lists](proof/tools.md). An agent denied Bash, and one allowed only Read, Grep
   and Glob, are both refused Bash, even with Claude Code settings that bypass permissions.
+- [The shared layer](proof/shared.md), on Claude Code and on Codex. One rulesync agent runs on
+  both, agents are found in the agreed order, an agent from a harness's own folder stays on that
+  harness, `orc check` refuses the workflows that can't run, an agent's own skill and MCP server
+  work on both harnesses, and the harnesses' agent, skill and MCP files stay as they were.
 - A schedule in a workflow's meta. With `schedule: "* * * * *"`, `orc daemon run` started one run
   a minute, each marked as started by the schedule.
 

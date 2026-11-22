@@ -912,7 +912,9 @@ const HELP = `orc runs saved workflows in the background.
   orc prune --days N                   remove finished runs older than N days
 
 Home: ${homePaths().home} (set ORC_HOME to change). A project's .orchestrator/ folder holds its
-workflows, agents and mcp.json, and wins over the home folder's.`;
+workflows, and wins over the home folder's. Agents and MCP servers come from the project's
+.rulesync/, then the global rulesync folder (rulesyncGlobal in config.json), then the harnesses'
+own folders, such as .claude/agents/ and .codex/agents/.`;
 
 export async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;

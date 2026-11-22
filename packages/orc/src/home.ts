@@ -1,10 +1,11 @@
 // The orc home folder (~/.orchestrator, or $ORC_HOME) and a project's .orchestrator folder.
-// A project's agents, workflows and servers win over the home folder's.
+// A project's workflows win over the home folder's. Agents and MCP servers come from rulesync
+// and the harnesses' own folders (agents.ts).
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
-import type { McpServerConfig } from "@automatalabs/shared-types";
+import { dirname, join, resolve } from "node:path";
+import { isHarness, routeHarness, type Harness, type LookupSettings } from "./agents.js";
 
 export type Place = "worktree" | "folder" | "none";
 
@@ -15,6 +16,10 @@ export interface OrcConfig {
   defaultPlace: Place;
   /** Model for agent steps that name none. */
   defaultModel?: string;
+  /** The harness of a rulesync agent that names none in its orc block. */
+  defaultHarness?: Harness;
+  /** The folder that holds the user's global .rulesync folder, such as ~/.aiglobal. */
+  rulesyncGlobal?: string;
   /** Send a macOS notice when a run asks something, pauses or ends. */
   notify: boolean;
   /** How long to keep finished runs. Undefined keeps them all. */
@@ -37,14 +42,12 @@ export function homePaths(home = orcHome()) {
     inbox: join(home, "inbox"),
     slots: join(home, "slots"),
     queue: join(home, "queue"),
-    agents: join(home, "agents"),
     workflows: join(home, "workflows"),
     worktrees: join(home, "worktrees"),
     scratch: join(home, "scratch"),
     logs: join(home, "logs"),
     config: join(home, "config.json"),
     secrets: join(home, "secrets.env"),
-    mcp: join(home, "mcp.json"),
     schedules: join(home, "schedules.json"),
     projects: join(home, "projects.json"),
     daemonPid: join(home, "daemon.pid"),
@@ -108,9 +111,22 @@ export function workflowDirs(projectDir: string, paths: HomePaths = homePaths())
   return [join(projectDir, ".orchestrator", "workflows"), paths.workflows];
 }
 
-/** The engine's agentsDir option: the project folder, then the home folder. */
-export function agentsDirOption(projectDir: string, paths: HomePaths = homePaths()): string {
-  return `${join(projectDir, ".orchestrator", "agents")}${delimiter}${paths.agents}`;
+/** The configured default harness, else the default model's harness, else Claude Code. */
+export function defaultHarness(config: OrcConfig): Harness {
+  if (isHarness(config.defaultHarness)) return config.defaultHarness;
+  return config.defaultModel?.includes("/") ? routeHarness(config.defaultModel)! : "claude";
+}
+
+/** What the agent and MCP lookups need for a project. */
+export function lookupSettings(paths: HomePaths, projectDir: string, config: OrcConfig = loadConfig(paths), env: Record<string, string | undefined> = process.env): LookupSettings {
+  const global = config.rulesyncGlobal?.replace(/^~(?=$|\/)/, homedir());
+  return {
+    projectDir,
+    ...(global ? { rulesyncGlobal: resolve(global) } : {}),
+    defaultHarness: defaultHarness(config),
+    ...(config.defaultModel ? { defaultModel: config.defaultModel } : {}),
+    env,
+  };
 }
 
 /** KEY=VALUE lines from secrets.env. Lines starting with # are skipped. Quotes are removed. */
@@ -125,44 +141,6 @@ export function loadSecrets(paths: HomePaths = homePaths()): Record<string, stri
     let value = match[2]!.trim();
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
     out[match[1]!] = value;
-  }
-  return out;
-}
-
-interface ServerEntry {
-  type?: "stdio" | "http" | "sse";
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  url?: string;
-  headers?: Record<string, string>;
-}
-
-/** Replace ${NAME} with the secret or environment value. */
-function expand(value: string, vars: Record<string, string | undefined>): string {
-  return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name: string) => vars[name] ?? "");
-}
-
-/**
- * Named MCP servers, from mcp.json in the home folder and in the project's .orchestrator
- * folder. The file maps a name to { command, args, env } or { type: "http", url, headers }.
- */
-export function loadMcpServers(projectDir: string, paths: HomePaths = homePaths(), vars: Record<string, string | undefined> = process.env): Record<string, McpServerConfig> {
-  const entries = {
-    ...readJson<Record<string, ServerEntry>>(paths.mcp, {}),
-    ...readJson<Record<string, ServerEntry>>(join(projectDir, ".orchestrator", "mcp.json"), {}),
-  };
-  const out: Record<string, McpServerConfig> = {};
-  for (const [name, entry] of Object.entries(entries)) {
-    const pairs = (record: Record<string, string> | undefined) =>
-      Object.entries(record ?? {}).map(([key, value]) => ({ name: key, value: expand(String(value), vars) }));
-    if (entry.type === "http" || entry.type === "sse") {
-      if (!entry.url) throw new Error(`mcp server "${name}" needs a url`);
-      out[name] = { type: entry.type, name, url: expand(entry.url, vars), headers: pairs(entry.headers) };
-    } else {
-      if (!entry.command) throw new Error(`mcp server "${name}" needs a command`);
-      out[name] = { name, command: entry.command, args: (entry.args ?? []).map((arg) => expand(arg, vars)), env: pairs(entry.env) };
-    }
   }
   return out;
 }

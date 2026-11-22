@@ -1,8 +1,9 @@
 # Examples
 
 `textkit/` is a small Node library with two known bugs, three tickets and an inbox. Its
-`.orchestrator/` folder holds three workflows and the agents they use. Each agent runs on
-`claude/haiku`, to keep the runs cheap. `docs/proof/` has real runs of all three.
+`.orchestrator/workflows/` folder holds three workflows, and `.rulesync/subagents/` the agents
+they use, in rulesync's format. Each agent runs on Claude Code with haiku, to keep the runs cheap.
+`docs/proof/` has real runs of all three.
 
 Set up a copy, since the ticket workflow needs a git repo to branch from:
 

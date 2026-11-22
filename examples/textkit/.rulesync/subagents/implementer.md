@@ -1,7 +1,9 @@
 ---
 name: implementer
+targets: ["*"]
 description: Implements one ticket in the current folder, tests first
-model: claude/haiku
+claudecode:
+  model: haiku
 ---
 You implement one ticket in the current folder, which is a git worktree of the project.
 

@@ -1,17 +1,35 @@
 // orc as a library: the pieces the command line is made of, for tests and for other tools.
 
+export {
+  HARNESSES,
+  harnessHomes,
+  lookupAgents,
+  lookupMcpServers,
+  missingAgent,
+  parseJsonc,
+  planStep,
+  registryOf,
+  routeHarness,
+  rulesyncFolders,
+  type AgentLookup,
+  type FoundAgent,
+  type Harness,
+  type LookupSettings,
+  type McpLookup,
+  type StepPlan,
+} from "./agents.js";
 export { checkWorkflow, type CheckResult } from "./check.js";
 export { cronMatches, nextRun, parseCron, type Cron } from "./cron.js";
 export { daemonMain, daemonPid, loadSchedules, prune, resumeTime, saveSchedules, tick, type Schedule, type TickDeps } from "./daemon.js";
 export { runExecSpec, type ExecContext, type ExecResult } from "./exec.js";
 export {
-  agentsDirOption,
+  defaultHarness,
   ensureHome,
   findProjectDir,
   homePaths,
   loadConfig,
-  loadMcpServers,
   loadSecrets,
+  lookupSettings,
   orcHome,
   workflowDirs,
   type HomePaths,

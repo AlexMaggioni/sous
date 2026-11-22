@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { WorkflowError, WorkflowErrorCode, type AgentRunner } from "@automatalabs/shared-types";
 import { checkWorkflow } from "../src/check.js";
@@ -18,13 +18,24 @@ import { managerFor, runWorker } from "../src/worker.js";
 
 // Whole runs in this process, with a fake agent runner, the way `orc run` drives them.
 
+// The agent lookup reads the harnesses' home folders. These tests give it empty ones.
+const harnessHome = mkdtempSync(join(tmpdir(), "orc-harness-home-"));
+process.env.CLAUDE_CONFIG_DIR = join(harnessHome, ".claude");
+process.env.CODEX_HOME = join(harnessHome, ".codex");
+process.env.XDG_CONFIG_HOME = join(harnessHome, ".config");
+delete process.env.AGENTPRISM_DEFAULT_BACKEND;
+
+function write(file: string, content: string): void {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, content);
+}
+
 function setup(workflows: Record<string, string>, config: Record<string, unknown> = {}): { paths: HomePaths; projectDir: string } {
   const root = mkdtempSync(join(tmpdir(), "orc-runs-"));
   const paths = ensureHome(homePaths(join(root, "home")));
   writeFileSync(paths.config, JSON.stringify({ notify: false, defaultPlace: "folder", ...config }));
   const projectDir = join(root, "project");
   mkdirSync(join(projectDir, ".orchestrator", "workflows"), { recursive: true });
-  mkdirSync(join(projectDir, ".orchestrator", "agents"), { recursive: true });
   for (const [name, script] of Object.entries(workflows)) writeFileSync(join(projectDir, ".orchestrator", "workflows", `${name}.js`), script);
   return { paths, projectDir };
 }
@@ -413,6 +424,51 @@ return await workflow('child', { task: 'B' })`,
   });
 });
 
+describe("agents and harnesses", () => {
+  it("runs one rulesync agent on each harness with that harness's block, and stops a harness's own agent sent elsewhere", async () => {
+    const { paths, projectDir } = setup({
+      both: `export const meta = { name: 'both', description: 'one reviewer on two harnesses' }
+const a = await agent('Review it', { agentType: 'reviewer', label: 'on claude' })
+const b = await agent('Review it', { agentType: 'reviewer', label: 'on codex', model: 'codex' })
+return { a, b }`,
+      wrong: `export const meta = { name: 'wrong', description: 'picks the harness while running', inputs: { harness: { type: 'string', default: 'claude' } } }
+await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness })`,
+    });
+    write(
+      join(projectDir, ".rulesync", "subagents", "reviewer.md"),
+      "---\nname: reviewer\ndescription: reviews\nclaudecode:\n  model: haiku\n  tools: [Read]\n  effort: high\ncodexcli:\n  model: gpt-test\n  model_reasoning_effort: low\n---\nAnswer REVIEW.\n",
+    );
+    write(join(projectDir, ".codex", "agents", "fixer.toml"), 'name = "fixer"\ndescription = "fixes"\ndeveloper_instructions = "Fix it."\n');
+    // Like AgentPrism, the stand-in reports the model it ran without its harness.
+    const { runner, calls } = fakeRunner((call) => {
+      (call.options.onModelResolved as ((id: string) => void) | undefined)?.(String(call.options.model).split("/").pop()!);
+      return `${call.label} done`;
+    });
+    const record = createRun(paths, { workflow: "both", projectDir, inputs: {} });
+    const result = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    assert.equal(result?.status, "completed");
+    const [claude, codex] = calls;
+    assert.deepEqual([claude!.options.model, claude!.options.toolNames], ["claude/haiku", ["Read"]]);
+    assert.deepEqual([codex!.options.model, codex!.options.toolNames], ["codex/gpt-test", undefined]);
+    // Each harness gets its block's effort where it reads it.
+    assert.equal(claude!.options.configOptions, undefined);
+    assert.equal((claude!.options.meta as { claudeCode: { options: { effort: string } } }).claudeCode.options.effort, "high");
+    assert.deepEqual(codex!.options.configOptions, { reasoning_effort: "low" });
+    assert.match(String(codex!.options.instructions), /Answer REVIEW\./);
+    // orc show lists each step with its harness and model.
+    const state = managerFor(paths, projectDir).getPersistence().load(record.runId);
+    assert.deepEqual(state?.agents.map((step) => [step.label, step.model]), [["on claude", "claude/haiku"], ["on codex", "codex/gpt-test"]]);
+
+    const before = calls.length;
+    const wrong = createRun(paths, { workflow: "wrong", projectDir, inputs: { harness: "claude" } });
+    const stopped = await runWorker(wrong.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    assert.notEqual(stopped?.status, "completed");
+    const wrongState = managerFor(paths, projectDir).getPersistence().load(wrong.runId);
+    assert.match(String(wrongState?.reason), /step "fixer": agent "fixer" comes from .*fixer\.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code\. Move it to rulesync/);
+    assert.equal(calls.length, before, "the agent never started");
+  });
+});
+
 describe("places and reruns", () => {
   const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   const gitProject = (workflows: Record<string, string>) => {
@@ -506,27 +562,34 @@ return build`);
 });
 
 describe("check", () => {
-  it("finds missing workflows, agents and MCP servers without running anything", () => {
+  it("finds missing workflows, agents and MCP servers, and agents sent to a harness they can't run on", () => {
     const { paths, projectDir } = setup({
-      outer: `export const meta = { name: 'outer', description: 'nests', inputs: { ticket: 'The ticket' } }
+      outer: `export const meta = { name: 'outer', description: 'nests', inputs: { ticket: 'The ticket', harness: { type: 'string', description: 'The harness', default: 'claude' } } }
 await workflow('inner', {})
 await workflow('ghost', {})
 await agent('x', { agentType: 'implementer', mcp: ['linear'] })
-await agent('y', { agentType: 'reviewer' })`,
+await agent('y', { agentType: 'reviewer', model: 'codex' })
+await agent('w', { agentType: 'fixer', model: 'claude/haiku' })
+await agent('v', { agentType: 'fixer', model: args.harness })`,
       inner: `export const meta = { name: 'inner', description: 'inner' }
 await agent('z', { agentType: 'nobody' })`,
     });
-    writeFileSync(join(projectDir, ".orchestrator", "agents", "implementer.md"), "---\nname: implementer\ndescription: builds\n---\nBuild it.\n");
-    writeFileSync(join(projectDir, ".orchestrator", "agents", "reviewer.md"), "---\nname: reviewer\ndescription: reviews\n---\nReview it.\n");
+    write(join(projectDir, ".rulesync", "subagents", "implementer.md"), "---\nname: implementer\ndescription: builds\n---\nBuild it.\n");
+    write(join(projectDir, ".rulesync", "subagents", "reviewer.md"), "---\nname: reviewer\ndescription: reviews\ncodexcli:\n  model: gpt-test\n---\nReview it.\n");
+    write(join(projectDir, ".codex", "agents", "fixer.toml"), 'name = "fixer"\ndescription = "fixes"\ndeveloper_instructions = "Fix it."\n');
     const result = checkWorkflow(paths, projectDir, "outer", { tickt: "x" });
-    assert.deepEqual(result.problems.sort(), [
-      'MCP server "linear" is not in mcp.json',
-      'no agent "nobody" (in inner). Agents live in .orchestrator/agents/ or ~/.orchestrator/agents/ as <name>.md.',
-      'no saved workflow "ghost"',
-      "missing input --ticket (The ticket)",
-      "unknown input --tickt. This workflow takes: --ticket",
-    ].sort());
-    writeFileSync(join(projectDir, ".orchestrator", "mcp.json"), JSON.stringify({ linear: { command: "npx", args: ["linear-mcp"] } }));
+    const expected = [
+      /^no MCP server "linear" for Claude Code\. orc looks in .*Add it to \.rulesync\/mcp\.jsonc\.$/,
+      /^agent "fixer" comes from .*\/\.codex\/agents\/fixer\.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code\. Move it to rulesync, as \.rulesync\/subagents\/fixer\.md/,
+      /^in inner: no agent "nobody"\. orc looks in \.rulesync\/subagents\/, then the global rulesync folder/,
+      /^no saved workflow "ghost"$/,
+      /^missing input --ticket \(The ticket\)$/,
+      /^unknown input --tickt\. This workflow takes: --ticket, --harness$/,
+    ];
+    assert.equal(result.problems.length, expected.length, result.problems.join("\n"));
+    for (const pattern of expected) assert.ok(result.problems.some((p) => pattern.test(p)), `${pattern} in:\n${result.problems.join("\n")}`);
+    assert.ok(result.notes.some((n) => /a step with agent "fixer" picks its harness while running\. The agent comes from .*fixer\.toml, so the step stops on any harness but Codex\./.test(n)));
+    write(join(projectDir, ".rulesync", "mcp.jsonc"), `{ "mcpServers": { "linear": { "command": "npx", "args": ["linear-mcp"] } } }`);
     assert.equal(checkWorkflow(paths, projectDir, "outer").problems.some((p) => p.includes("linear")), false);
   });
 });

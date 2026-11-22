@@ -28,6 +28,8 @@
     "@automatalabs/acp-agents": "workspace:*",
     "@automatalabs/shared-types": "workspace:*",
     "@automatalabs/workflow-engine": "workspace:*",
-    "@automatalabs/workflows": "workspace:*"
+    "@automatalabs/workflows": "workspace:*",
+    "smol-toml": "1.9.1",
+    "yaml": "2.9.0"
   }
 }

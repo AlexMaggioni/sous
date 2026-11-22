@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
 import type { AgentResult, AgentRunner, JournalEntry, RunOptions } from "@automatalabs/shared-types";
 import { parseAgentDefinition, type AgentRegistry } from "../src/agent-registry.js";
 import { parseDurationSeconds } from "../src/orchestrator-globals.js";
 import { runWorkflow } from "../src/workflow.js";
+import { WorkflowManager } from "../src/workflow-manager.js";
 
 // orchestrator: code steps, questions, breakpoints, choose(), and the per-step options.
 
@@ -159,6 +163,52 @@ return 1`;
     assert.equal(b!.options.effort, "low");
     assert.deepEqual(b!.options.skills, ["security"]);
     assert.deepEqual(b!.options.mcpNames, []);
+    // The host tells the step's own values from the definition's.
+    assert.deepEqual(a!.options.stepGiven, {});
+    assert.deepEqual(b!.options.stepGiven, { effort: "low", skills: ["security"], mcp: [] });
+  });
+
+  it("pass the name of an agent no definition has, so the host can stop the step", async () => {
+    const { runner, calls } = recordingRunner(() => "ok");
+    const script = `export const meta = { name: 'ghost', description: 'ghost' }
+await agent('go', { label: 'g', agentType: 'nobody', model: 'codex' })
+return 1`;
+    await runWorkflow(script, { agent: runner, persistLogs: false, agentRegistry: new Map() });
+    assert.equal(calls[0]!.options.agentType, "nobody");
+    assert.deepEqual(calls[0]!.options.stepGiven, { model: "codex" });
+  });
+
+  it("take the host's agents from loadAgents, for the run's folder", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "load-agents-"));
+    const asked: string[] = [];
+    const def = parseAgentDefinition(`---\nname: reviewer\nmodel: claude/haiku\n---\nAnswer FROM-HOST.`, "user", "reviewer.md")!;
+    // No session ref: a stored run checks a ref's fields, and this test is about the agents.
+    const calls: Call[] = [];
+    const runner: AgentRunner = {
+      async run(prompt, options) {
+        calls.push({ prompt, options: { ...(options ?? {}) } as Record<string, unknown> });
+        return "ok" as never;
+      },
+    };
+    try {
+      const manager = new WorkflowManager({
+        cwd,
+        persistenceRoot: join(cwd, "store"),
+        agent: runner,
+        loadAgents: (folder) => {
+          asked.push(folder);
+          return new Map([["reviewer", def]]);
+        },
+      });
+      const run = await manager.runSync(`export const meta = { name: "host-agents", description: "host agents" };
+return await agent("review", { agentType: "reviewer" });`);
+      assert.equal(run.status, "completed");
+      assert.equal(calls[0]!.options.model, "claude/haiku");
+      assert.match(String(calls[0]!.options.instructions), /Answer FROM-HOST\./);
+      assert.ok(asked.length > 0 && asked.every((folder) => folder === cwd));
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it("continue reopens the session of the step with that label", async () => {

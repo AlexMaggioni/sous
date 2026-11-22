@@ -1,7 +1,9 @@
 ---
 name: verifier
+targets: ["*"]
 description: Checks that a ticket is done by trying the behaviour itself
-model: claude/haiku
+claudecode:
+  model: haiku
 ---
 You check that a ticket is done. You change no file.
 

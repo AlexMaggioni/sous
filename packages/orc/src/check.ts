@@ -1,11 +1,13 @@
 // `orc check`: what can be known about a workflow without running it. The script parses, the
 // inputs given fit what it declares, and each workflow, agent, MCP server and script file it
 // names exists. Names built at run time can't be checked, so the check reads literals only.
+// A step that names an agent and a harness must be able to run that agent there.
 
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { agentDirsFromOption, loadAgentRegistry, openWorkflowDir, parseWorkflowScript } from "@automatalabs/workflow-engine";
-import { agentsDirOption, loadMcpServers, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
+import { openWorkflowDir, parseWorkflowScript } from "@automatalabs/workflow-engine";
+import { harnessName, lookupAgents, lookupMcpServers, missingServer, planStep, routeHarness, type Harness, type McpLookup } from "./agents.js";
+import { loadSecrets, lookupSettings, workflowDirs, type HomePaths } from "./home.js";
 import { nextRun, parseCron } from "./cron.js";
 import { checkInputs } from "./inputs.js";
 import { resolveWorkflow } from "./launch.js";
@@ -34,18 +36,47 @@ function stringList(script: string, key: string): string[] {
   return [...out];
 }
 
+/** The object literal around a position, from the nearest unclosed "{" before it to its "}". */
+function enclosingObject(script: string, at: number): { start: number; text: string } | undefined {
+  let depth = 0;
+  let start = -1;
+  for (let i = at; i >= 0; i--) {
+    if (script[i] === "}") depth++;
+    else if (script[i] === "{") {
+      if (depth === 0) {
+        start = i;
+        break;
+      }
+      depth--;
+    }
+  }
+  if (start < 0) return undefined;
+  depth = 0;
+  for (let i = start; i < script.length; i++) {
+    if (script[i] === "{") depth++;
+    else if (script[i] === "}" && --depth === 0) return { start, text: script.slice(start, i + 1) };
+  }
+  return { start, text: script.slice(start) };
+}
+
+const literal = (text: string, key: string) => new RegExp(`\\b${key}\\s*:\\s*(['"])([^'"]+)\\1`).exec(text)?.[2];
+
 export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: string, given?: Record<string, unknown>): CheckResult {
   const resolved = resolveWorkflow(paths, projectDir, nameOrPath);
   const problems: string[] = [];
   const notes: string[] = [];
   const dirs = openWorkflowDir(workflowDirs(projectDir, paths));
-  const registry = loadAgentRegistry(projectDir, agentDirsFromOption(agentsDirOption(projectDir, paths)));
-  let servers: Record<string, unknown> = {};
+  const settings = lookupSettings(paths, projectDir);
+  const agents = lookupAgents(settings);
+  let mcp: McpLookup | undefined;
   try {
-    servers = loadMcpServers(projectDir, paths, { ...process.env, ...loadSecrets(paths) });
+    mcp = lookupMcpServers(settings, { ...process.env, ...loadSecrets(paths) });
   } catch (error) {
     problems.push((error as Error).message);
   }
+  const checkServers = (names: string[], harness: Harness, within: string) => {
+    for (const name of names) if (mcp && !mcp.find(name, harness)) problems.push(`${within}${missingServer(name, harness, mcp)}`);
+  };
 
   problems.push(...(resolved.extras.metaProblems ?? []));
   if (given) {
@@ -57,6 +88,7 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
     if (seen.has(name)) return;
     seen.add(name);
     const where = name === resolved.name ? "" : ` (in ${name})`;
+    const within = name === resolved.name ? "" : `in ${name}: `;
     if (depth > 5) {
       problems.push(`workflows nest more than 5 levels deep${where}`);
       return;
@@ -75,13 +107,31 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
       }
       visit(child, text, depth + 1);
     }
-    for (const agentType of literals(script, /\bagentType\s*:\s*(['"])([^'"]+)\1/g)) {
-      if (!registry.has(agentType)) {
-        problems.push(`no agent "${agentType}"${where}. Agents live in .orchestrator/agents/ or ~/.orchestrator/agents/ as <name>.md.`);
-      }
+    // Each step's options: the agent it names, the model or harness, and its MCP servers.
+    const steps = new Map<number, string>();
+    for (const match of script.matchAll(/\b(agentType|mcp)\s*:/g)) {
+      const step = enclosingObject(script, match.index);
+      if (step) steps.set(step.start, step.text);
     }
-    for (const server of stringList(script, "mcp")) {
-      if (!(server in servers)) problems.push(`MCP server "${server}" is not in mcp.json${where}`);
+    for (const text of steps.values()) {
+      const agentType = literal(text, "agentType");
+      const model = literal(text, "model");
+      const servers = stringList(text, "mcp");
+      if (agentType) {
+        const planned = planStep(agents, agentType, { ...(model ? { model } : {}), ...(servers.length ? { mcp: servers } : {}) });
+        if ("problem" in planned) {
+          problems.push(`${within}${planned.problem}`);
+          continue;
+        }
+        const { plan } = planned;
+        if (!model && /\bmodel\s*:/.test(text) && plan.agent.from !== "rulesync") {
+          const from = harnessName(plan.agent.from);
+          notes.push(`${within}a step with agent "${agentType}" picks its harness while running. The agent comes from ${plan.agent.file}, so the step stops on any harness but ${from}.`);
+        }
+        checkServers(plan.mcp ?? [], plan.harness, within);
+      } else if (!/\bagentType\s*:/.test(text)) {
+        checkServers(servers, routeHarness(model, settings.env) ?? settings.defaultHarness, within);
+      }
     }
     for (const file of literals(script, /\brun\(\s*(['"])([^'"]+)\1/g)) {
       const full = isAbsolute(file) ? file : join(projectDir, file);
@@ -102,7 +152,7 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
     file: resolved.file,
     ...(extras.description ? { description: extras.description } : {}),
     inputs: extras.inputs,
-    problems,
-    notes,
+    problems: [...new Set(problems)],
+    notes: [...new Set(notes)],
   };
 }

@@ -194,6 +194,12 @@ importers:
       '@automatalabs/workflows':
         specifier: workspace:*
         version: link:../workflows
+      smol-toml:
+        specifier: 1.9.1
+        version: 1.9.1
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
 
   packages/pi-acp:
     dependencies:
@@ -2407,6 +2413,10 @@ packages:
   slash@3.0.0:
     resolution: {integrity: sha512-g9Q1haeby36OSStwb4ntCGGGaKsaVSjQ68fBxoQcutl5fS1vuY18H3wSt3jFyFtrkx+Kz0V1G85A4MyAdDMi2Q==}
     engines: {node: '>=8'}
+
+  smol-toml@1.9.1:
+    resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
+    engines: {node: '>= 18'}
 
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
@@ -4884,6 +4894,8 @@ snapshots:
   signal-exit@4.1.0: {}
 
   slash@3.0.0: {}
+
+  smol-toml@1.9.1: {}
 
   source-map-js@1.2.1: {}
 

@@ -1,7 +1,9 @@
 ---
 name: strict-reviewer
+targets: ["*"]
 description: Reviews one change with a high bar on edge cases
-model: claude/haiku
+claudecode:
+  model: haiku
 ---
 You review one change against its ticket, with a high bar. You may read files and run `npm test`,
 but you change no file.

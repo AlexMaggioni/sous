@@ -1,4 +1,4 @@
-import { agentDirsFromOption, loadAgentRegistry, type AgentDefinition } from "./agent-registry.js";
+import { agentDirsFromOption, loadAgentRegistry, type AgentDefinition, type AgentRegistry } from "./agent-registry.js";
 import { loadModelTierConfig, type ModelTierConfig } from "./model-tier-config.js";
 import { deepFreeze } from "./strict-json.js";
 
@@ -9,8 +9,9 @@ export interface WorkflowRoutingSnapshot {
   mainModel?: string;
 }
 
-export function captureWorkflowRouting(cwd: string, agentsDir?: string, mainModel?: string): WorkflowRoutingSnapshot {
-  const definitions = loadAgentRegistry(cwd, agentDirsFromOption(agentsDir));
+export function captureWorkflowRouting(cwd: string, agentsDir?: string, mainModel?: string, registry?: AgentRegistry): WorkflowRoutingSnapshot {
+  // orchestrator: a host that loads its own agents passes them in.
+  const definitions = registry ?? loadAgentRegistry(cwd, agentDirsFromOption(agentsDir));
   // Loaded definitions carry optional undefined fields. Persist their JSON representation.
   return deepFreeze(JSON.parse(JSON.stringify({
     modelTiers: loadModelTierConfig(),

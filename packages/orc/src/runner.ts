@@ -1,10 +1,12 @@
 // The runner orc gives the engine. Code steps (model "exec") run locally. Agent steps take a
 // slot from the machine-wide cap, then run through AgentPrism's ACP runner with the step's
-// effort, skills, MCP servers and time limit.
+// effort, skills, MCP servers and time limit. A step that names an agent runs on the harness
+// agents.ts picks for it, with that harness's settings, or stops when the agent can't run there.
 
 import { createAcpRunner } from "@automatalabs/acp-agents";
 import { WorkflowError, WorkflowErrorCode, type AgentRunner, type McpServerConfig } from "@automatalabs/shared-types";
 import { EXEC_MODEL, type ExecSpec } from "@automatalabs/workflow-engine";
+import { isHarness, missingServer, planStep, routeHarness, type AgentLookup, type Harness, type McpLookup, type StepGiven } from "./agents.js";
 import { runExecSpec } from "./exec.js";
 import type { SlotPool } from "./slots.js";
 
@@ -14,8 +16,10 @@ export interface OrcRunnerOptions {
   /** The agent runner. Defaults to AgentPrism's ACP runner, made on the first agent step. */
   inner?: AgentRunner & { dispose?: () => Promise<void> | void };
   slots?: SlotPool;
-  /** Named MCP servers a step can list with `mcp: [...]`. */
-  mcpServers?: Record<string, McpServerConfig>;
+  /** The agents a step can name with `agentType`, from rulesync and the harnesses' own folders. */
+  agents?: AgentLookup;
+  /** The MCP servers a step can list with `mcp: [...]`, for the step's harness. */
+  mcp?: McpLookup;
   /** Extra environment for code steps. */
   env?: Record<string, string>;
   /** Called when an agent step waits for a slot and when it gets one. */
@@ -35,8 +39,20 @@ interface OrcRunExtras {
   skills?: string[];
   mcpNames?: string[];
   agentType?: string;
+  stepGiven?: StepGiven;
   toolNames?: string[];
   disallowedToolNames?: string[];
+}
+
+/** What an agent step runs with, after its agent is looked up. */
+interface StepRun {
+  harness: Harness;
+  model?: string;
+  effort?: string;
+  skills?: string[];
+  mcpNames?: string[];
+  tools?: string[];
+  disallowedTools?: string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -99,17 +115,30 @@ export function createOrcRunner(options: OrcRunnerOptions): AgentRunner & { disp
       return runExecSpec(spec, { cwd: extras.cwd ?? options.cwd, signal: extras.signal, timeoutMs: extras.timeoutMs, env: options.env });
     }
 
+    const stop = (message: string) =>
+      new WorkflowError(`step "${extras.label ?? "agent"}": ${message}`, WorkflowErrorCode.INVALID_ARGUMENT, { recoverable: false, agentLabel: extras.label });
+    const env = options.agents?.settings.env ?? process.env;
+    let step: StepRun = {
+      harness: routeHarness(extras.model, env) ?? options.agents?.settings.defaultHarness ?? "claude",
+      ...(extras.model ? { model: extras.model } : {}),
+      effort: extras.effort,
+      skills: extras.skills,
+      mcpNames: extras.mcpNames,
+      tools: extras.toolNames,
+      disallowedTools: extras.disallowedToolNames,
+    };
+    if (extras.agentType && options.agents) {
+      const planned = planStep(options.agents, extras.agentType, extras.stepGiven, extras.model);
+      if ("problem" in planned) throw stop(planned.problem);
+      const { plan } = planned;
+      step = { harness: plan.harness, model: plan.model, effort: plan.effort, skills: plan.skills, mcpNames: plan.mcp, tools: plan.tools, disallowedTools: plan.disallowedTools };
+    }
+
     const servers = [...(extras.mcpServers ?? [])];
-    for (const name of extras.mcpNames ?? []) {
-      const server = options.mcpServers?.[name];
-      if (!server) {
-        throw new WorkflowError(
-          `step "${extras.label ?? "agent"}" lists the MCP server "${name}", which is not in mcp.json. Add it to ~/.orchestrator/mcp.json or the project's .orchestrator/mcp.json.`,
-          WorkflowErrorCode.INVALID_ARGUMENT,
-          { recoverable: false, agentLabel: extras.label },
-        );
-      }
-      if (!servers.some((existing) => existing.name === server.name)) servers.push(server);
+    for (const name of step.mcpNames ?? []) {
+      const found = options.mcp?.find(name, step.harness);
+      if (!found) throw stop(options.mcp ? missingServer(name, step.harness, options.mcp) : `no MCP server "${name}". Add it to .rulesync/mcp.jsonc.`);
+      if (!servers.some((existing) => existing.name === found.server.name)) servers.push(found.server);
     }
 
     const signals: AbortSignal[] = [];
@@ -125,12 +154,26 @@ export function createOrcRunner(options: OrcRunnerOptions): AgentRunner & { disp
       options.onSlot?.({ label: extras.label, state: "running" });
     }
     try {
-      const { timeoutMs: _t, effort: _e, skills: _s, mcpNames: _m, agentType: _a, ...rest } = extras as OrcRunExtras & Record<string, unknown>;
+      const { timeoutMs: _t, effort: _e, skills: _s, mcpNames: _m, agentType: _a, stepGiven: _g, model: _model, toolNames: _tn, disallowedToolNames: _dn, ...rest } = extras as OrcRunExtras &
+        Record<string, unknown>;
+      // The step's record shows the harness and model it runs on, such as claude/haiku, also when
+      // the agent's block picked the model. AgentPrism reports the model without its harness.
+      const resolved = (extras as { onModelResolved?: (id: string) => void }).onModelResolved;
+      const withHarness = (id: string) => (isHarness(id.split("/")[0]!.toLowerCase()) ? id : `${step.harness}/${id}`);
+      const onModelResolved = resolved && ((id: string) => resolved(withHarness(id)));
+      if (step.model && step.model !== extras.model) onModelResolved?.(step.model);
+      // Codex takes effort as a session setting, where Claude Code takes it in its options.
+      const configOptions = step.harness === "codex" && step.effort ? { reasoning_effort: step.effort, ...(rest.configOptions as Record<string, string | boolean> | undefined) } : rest.configOptions;
       return await innerRunner().run(prompt, {
         ...rest,
+        ...(configOptions ? { configOptions } : {}),
+        ...(onModelResolved ? { onModelResolved } : {}),
+        ...(step.model ? { model: step.model } : {}),
+        ...(step.tools ? { toolNames: step.tools } : {}),
+        ...(step.disallowedTools ? { disallowedToolNames: step.disallowedTools } : {}),
         ...(signal ? { signal } : {}),
         ...(servers.length ? { mcpServers: servers } : {}),
-        meta: claudeMeta(extras.meta, { effort: extras.effort, skills: extras.skills, tools: extras.toolNames, disallowedTools: extras.disallowedToolNames }),
+        meta: claudeMeta(extras.meta, { effort: step.effort, skills: step.skills, tools: step.tools, disallowedTools: step.disallowedTools }),
       } as never);
     } catch (error) {
       if (timeout?.aborted && !extras.signal?.aborted) {
