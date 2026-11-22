@@ -5,21 +5,21 @@
 // Each question gets a stand-in answer. At the end the run, its worktrees and its scratch folders
 // are deleted.
 
-import { readFileSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { dirname } from "node:path";
-import { createRun, fabricateFromSchema, forgetRun, isGitRepo, loadConfig, loadRecord, removeWorktree, resolveWorkflow, runWorker, runWorktrees, savedState, type AgentRunner, type HomePaths } from "@orchestrator/engine";
+import { fabricateFromSchema } from "../fabricate.js";
+import { isGitRepo, removeWorktree, runWorktrees } from "../places/places.js";
+import { loadConfig, type HomePaths } from "../runs/home.js";
+import { createRun } from "../runs/launch.js";
+import { loadRecord } from "../runs/records.js";
+import { forgetRun } from "../runs/service.js";
+import { runWorker, savedState } from "../runs/worker.js";
+import type { AgentRunner } from "../steps/agent-runner.js";
+import { resolveWorkflow } from "./dir.js";
 
 /** Step label, or a pattern with `*`, to its answer. A list is a series of answers given in turn,
  *  the last one repeating, so an answer that is itself a list goes inside one: `[["a", "b"]]`. */
 export type Answers = Record<string, unknown>;
-
-export function readAnswers(file: string): Answers {
-  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`${file} must hold an object from step label to answer, such as {"reviewer *": {"approved": false, "review": "Add a test"}}`);
-  }
-  return parsed as Answers;
-}
 
 function matches(pattern: string, label: string): boolean {
   if (!pattern.includes("*")) return pattern === label;

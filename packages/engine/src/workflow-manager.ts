@@ -87,10 +87,10 @@ import {
   type WorkflowRunOptions,
   hashWorkflowAdmissionRouting,
   isStepFailedPause,
-  parseWorkflowScript,
   resolveWorkflowRunLimits,
   runWorkflow,
 } from "./workflow.js";
+import { parseWorkflowScript } from "./workflows/script.js";
 import { captureWorkflowRouting, isWorkflowRoutingSnapshot } from "./workflow-routing.js";
 import type { AgentRegistry } from "./agent-registry.js";
 import { createWorkflowLogTail, projectWorkflowRunStatus } from "./run-observability.js";

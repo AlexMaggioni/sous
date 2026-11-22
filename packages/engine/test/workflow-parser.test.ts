@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import { parseWorkflowScript, workflowMayUseDefaultModel } from "../src/workflow.js";
+import { parseWorkflowScript, readWorkflowScript } from "../src/workflows/script.js";
 
 const validScript = `export const meta = {
   name: 'demo_workflow',
@@ -13,22 +13,6 @@ const validScript = `export const meta = {
 phase('Scan')
 return { ok: true }
 `;
-
-test("workflowMayUseDefaultModel conservatively detects hidden/default-model agent allocation", () => {
-  const script = (body: string, model = "") =>
-    `export const meta = { name: "routing", description: "d"${model ? `, model: ${JSON.stringify(model)}` : ""} };\n${body}`;
-
-  assert.equal(workflowMayUseDefaultModel(script("return 1")), false);
-  assert.equal(workflowMayUseDefaultModel(script('return agent("x", { model: "codex" })')), false);
-  assert.equal(workflowMayUseDefaultModel(script('return agent("x", { tier: "small" })')), false);
-  assert.equal(workflowMayUseDefaultModel(script('if (args.use) return agent("x"); return 1')), true);
-  assert.equal(workflowMayUseDefaultModel(script('return agent("x", { model: args.model })')), true);
-  assert.equal(workflowMayUseDefaultModel(script('return agent("x", { model: "codex", ...args.options })')), true);
-  assert.equal(workflowMayUseDefaultModel(script('return agent("x", { ...args.options, model: "codex" })')), false);
-  assert.equal(workflowMayUseDefaultModel(script('return verify("claim")')), true);
-  assert.equal(workflowMayUseDefaultModel(script('return workflow(args.child)')), true);
-  assert.equal(workflowMayUseDefaultModel(script('return agent("x")', "codex")), false);
-});
 
 test("parseWorkflowScript accepts literal workflow metadata", () => {
   const parsed = parseWorkflowScript(validScript);
@@ -224,4 +208,29 @@ test("parseWorkflowScript rejects direct nondeterministic calls with their API a
       },
     );
   }
+});
+
+test("readWorkflowScript reads the names a script refers to from its tree, in order", () => {
+  const { refs } = readWorkflowScript(`export const meta = { name: "refs", description: "d", model: "claude" }
+// workflow("in-a-comment")
+await workflow("child", {})
+await workflow(\`second\`, {})
+await workflow("an inline script with spaces")
+await agent("a", { agentType: "implementer", model: "codex", mcp: ["linear", \`github\`, "linear", args.extra] })
+await agent("b", { mcp: ["slack"], model: args.model })
+await agent("c", { "agentType": args.who, model })
+await tools.run("not-this.sh")
+await run("scripts/build.sh")
+await choose("pick (one)", { any: true })
+`);
+  assert.deepEqual(refs.workflows, ["child", "second"]);
+  assert.deepEqual(refs.models, ["claude", "codex"]);
+  assert.deepEqual(refs.steps, [
+    { agentType: "implementer", setsAgentType: true, model: "codex", setsModel: true, mcp: ["linear", "github"] },
+    { setsAgentType: false, setsModel: true, mcp: ["slack"] },
+    { setsAgentType: true, setsModel: true, mcp: [] },
+  ]);
+  assert.deepEqual(refs.scripts, ["scripts/build.sh"]);
+  assert.equal(refs.choosesAnyWorkflow, true);
+  assert.equal(readWorkflowScript(`export const meta = { name: "n", description: "d" }\nawait choose("p", { any: false })`).refs.choosesAnyWorkflow, false);
 });

@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
 import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import { parseWorkflowScript, runWorkflow } from "../src/workflow.js";
+import { runWorkflow } from "../src/workflow.js";
+import { parseWorkflowScript } from "../src/workflows/script.js";
 
 // A script may declare meta.backends. The engine checks its shape and runs no step on it.
 

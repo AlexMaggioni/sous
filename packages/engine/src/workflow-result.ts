@@ -46,6 +46,14 @@ export interface WorkflowMeta {
   model?: string;
   /** Backends the script declares, by name. Checked for shape, never run. */
   backends?: Record<string, WorkflowBackendConfig>;
+  // The fields below are as the script wrote them. workflowExtras checks them and gives them types.
+  inputs?: unknown;
+  outputs?: unknown;
+  place?: unknown;
+  concurrency?: unknown;
+  startedBy?: unknown;
+  timeout?: unknown;
+  schedule?: unknown;
 }
 
 /**

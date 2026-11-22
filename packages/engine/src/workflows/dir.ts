@@ -23,10 +23,12 @@
  * anything else (which also blocks path traversal out of the configured dirs).
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve as resolvePath } from "node:path";
-import type { WorkflowMeta } from "./workflow-result.js";
-import { parseWorkflowScript } from "./workflow.js";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { basename, isAbsolute, join, resolve as resolvePath } from "node:path";
+import { workflowDirs, type HomePaths } from "../runs/home.js";
+import type { WorkflowMeta } from "../workflow-result.js";
+import { workflowExtras, type WorkflowExtras } from "./meta.js";
+import { parseWorkflowScript, readWorkflowScript, type ScriptRefs } from "./script.js";
 
 /** One workflow file found by WorkflowDir.list(). */
 export interface WorkflowDirEntry {
@@ -36,6 +38,8 @@ export interface WorkflowDirEntry {
   file: string;
   /** The parsed `export const meta` literal — undefined when the file doesn't parse. */
   meta?: WorkflowMeta;
+  /** The meta's inputs, place, schedule, time limit and who may start it, checked. Set with meta. */
+  extras?: WorkflowExtras;
   /** Parse error message when `meta` is undefined. */
   error?: string;
 }
@@ -139,7 +143,8 @@ export function openWorkflowDir(dir: string | string[], options: OpenWorkflowDir
       const entries: WorkflowDirEntry[] = [];
       for (const [name, file] of scan()) {
         try {
-          entries.push({ name, file, meta: parseWorkflowScript(readFileSync(file, "utf8")).meta });
+          const { meta } = parseWorkflowScript(readFileSync(file, "utf8"));
+          entries.push({ name, file, meta, extras: workflowExtras(meta) });
         } catch (error) {
           entries.push({ name, file, error: error instanceof Error ? error.message : String(error) });
         }
@@ -157,6 +162,44 @@ export function openWorkflowDir(dir: string | string[], options: OpenWorkflowDir
       );
     },
   };
+}
+
+/** A saved workflow, read once: its meta as written, the meta checked, and the names it uses. */
+export interface ResolvedWorkflow {
+  name: string;
+  file: string;
+  script: string;
+  meta: WorkflowMeta;
+  extras: WorkflowExtras;
+  refs: ScriptRefs;
+}
+
+/** A saved workflow by name (project first, then home), or a script file by path. */
+export function resolveWorkflow(paths: HomePaths, projectDir: string, nameOrPath: string): ResolvedWorkflow {
+  let file: string | undefined;
+  const asPath = isAbsolute(nameOrPath) ? nameOrPath : resolvePath(process.cwd(), nameOrPath);
+  if ((nameOrPath.includes("/") || nameOrPath.endsWith(".js") || nameOrPath.endsWith(".mjs")) && existsSync(asPath)) {
+    file = asPath;
+  } else {
+    const dirs = workflowDirs(projectDir, paths);
+    const entry = openWorkflowDir(dirs)
+      .list()
+      .find((candidate) => candidate.name === nameOrPath);
+    if (!entry) {
+      const names = openWorkflowDir(dirs)
+        .list()
+        .map((candidate) => candidate.name);
+      throw new Error(
+        `no workflow "${nameOrPath}". Looked in ${dirs.join(" and ")}.${names.length ? ` Saved workflows: ${names.join(", ")}.` : ""}`,
+      );
+    }
+    if (entry.error) throw new Error(`${entry.file} does not parse: ${entry.error}`);
+    file = entry.file;
+  }
+  const script = readFileSync(file, "utf8");
+  const { meta, refs } = readWorkflowScript(script);
+  const name = basename(file).replace(/(\.workflow)?\.m?js$/, "");
+  return { name, file, script, meta, extras: workflowExtras(meta), refs };
 }
 
 /** Tiny edit-distance ranking for read()'s did-you-mean; good enough for CLI typos. */

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { checkInputs, workflowExtras } from "../src/workflow-inputs.js";
+import { checkInputs, workflowExtras } from "../src/workflows/meta.js";
 
 describe("inputs", () => {
   it("fill defaults, convert types and list every problem at once", () => {

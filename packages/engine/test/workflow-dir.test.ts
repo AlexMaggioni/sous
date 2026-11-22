@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { openWorkflowDir } from "../src/workflow-dir.js";
+import { openWorkflowDir } from "../src/workflows/dir.js";
 
 const ROOT = mkdtempSync(join(tmpdir(), "workflow-dir-test-"));
 after(() => rmSync(ROOT, { recursive: true, force: true }));

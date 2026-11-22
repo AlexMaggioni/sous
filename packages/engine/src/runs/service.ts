@@ -11,8 +11,7 @@
 import { existsSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RunStatus } from "../workflow-result.js";
-import { openWorkflowDir } from "../workflow-dir.js";
-import { workflowExtras } from "../workflow-inputs.js";
+import { openWorkflowDir } from "../workflows/dir.js";
 import { workflowProjectPaths } from "./persistence/project-paths.js";
 import { gcWorktrees, runWorktrees } from "../places/places.js";
 import { changedWorkflows } from "./control.js";
@@ -79,9 +78,8 @@ export function fileSchedules(paths: HomePaths): Schedule[] {
   const out: Schedule[] = [];
   const read = (dir: string, projectDir: string, place?: Place) => {
     for (const entry of openWorkflowDir(dir).list()) {
-      if (!entry.meta) continue;
-      const extras = workflowExtras(entry.meta as unknown as Record<string, unknown>);
-      if (!extras.schedule || extras.metaProblems?.length) continue;
+      const extras = entry.extras;
+      if (!extras?.schedule || extras.metaProblems?.length) continue;
       out.push({
         name: entry.file,
         workflow: entry.file,

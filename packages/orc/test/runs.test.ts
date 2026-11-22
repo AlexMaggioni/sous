@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import {
   busyWorktrees,
   createRun,
+  dryRun,
   ensureHome,
   fileSchedules,
   gcWorktrees,
@@ -29,7 +30,6 @@ import {
   type HomePaths,
 } from "@orchestrator/engine";
 import { checkWorkflow } from "../src/check.js";
-import { dryRun } from "../src/dryrun.js";
 import { main } from "../src/cli.js";
 
 // Whole runs in this process, with a fake agent runner, the way `orc run` drives them.
@@ -826,6 +826,66 @@ await agent('c', { model: 'claude/haiku' })`,
     ];
     assert.equal(problems.length, expected.length, problems.join("\n"));
     for (const pattern of expected) assert.ok(problems.some((p) => pattern.test(p)), `${pattern} in:\n${problems.join("\n")}`);
+  });
+
+  // Until step 4, check found names with regular expressions over the script text. It reads them
+  // from the parsed script now. Each test below is a script where the two differ, and says how.
+  describe("reads names from the parsed script", () => {
+    const check = (body: string, withFixer = false) => {
+      const { paths, projectDir } = setup({ diff: `export const meta = { name: 'diff', description: 'd' }\n${body}\nreturn 1` });
+      if (withFixer) write(join(projectDir, ".codex", "agents", "fixer.toml"), 'name = "fixer"\ndescription = "fixes"\ndeveloper_instructions = "Fix it."\n');
+      const result = checkWorkflow(paths, projectDir, "diff");
+      return { problems: result.problems, notes: result.notes.filter((note) => note !== "declares no inputs, so it takes any") };
+    };
+    const fromCodex = /^agent "fixer" comes from .*\/\.codex\/agents\/fixer\.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code\./;
+
+    it("skips names in comments and in the text of strings, which the text scan read", () => {
+      const result = check(`// await workflow('ghost', {})
+/* await agent('a', { model: 'pi/gpt-test' }) */
+const text = "run('missing.sh')"`);
+      assert.deepEqual(result, { problems: [], notes: [] });
+    });
+
+    it("skips workflow() and run() called on an object, which the text scan read as the global ones", () => {
+      const result = check(`const tools = { workflow: async () => 1, run: async () => 2 }
+await tools.workflow('ghost', {})
+await tools.run('missing.sh')`);
+      assert.deepEqual(result, { problems: [], notes: [] });
+    });
+
+    it("reads a quoted key, which the text scan missed", () => {
+      const result = check(`await agent('a', { "model": "pi/gpt-test" })`);
+      assert.deepEqual(result, { problems: ['model "pi/gpt-test" names the harness "pi", which orc no longer runs. Use one of claude, codex.'], notes: [] });
+    });
+
+    it("reads a template string with nothing in it to fill, which the text scan missed", () => {
+      // The text scan found no workflow here, and read the model as one picked while running.
+      const result = check("await workflow(`ghost`, {})\nawait agent('a', { agentType: 'fixer', model: `claude/haiku` })", true);
+      assert.equal(result.problems.length, 2, result.problems.join("\n"));
+      assert.equal(result.problems[0], 'no saved workflow "ghost"');
+      assert.match(result.problems[1]!, fromCodex);
+      assert.deepEqual(result.notes, []);
+    });
+
+    it("reads a shorthand model as a model picked while running, which the text scan missed", () => {
+      const result = check(`const model = args.harness
+await agent('a', { agentType: 'fixer', model })`, true);
+      assert.deepEqual(result.problems, []);
+      assert.equal(result.notes.length, 1, result.notes.join("\n"));
+      assert.match(result.notes[0]!, /^a step with agent "fixer" picks its harness while running\. The agent comes from .*fixer\.toml, so the step stops on any harness but Codex\.$/);
+    });
+
+    it("reads a step's own keys only, where the text scan also read the objects inside it", () => {
+      // The text scan took the inner model as the step's, so it sent fixer to Claude Code.
+      const result = check(`await agent('a', { agentType: 'fixer', extra: { model: 'claude/haiku' } })`, true);
+      assert.deepEqual(result, { problems: [], notes: [] });
+      assert.match(check(`await agent('a', { agentType: 'fixer', model: 'claude/haiku' })`, true).problems.join("\n"), fromCodex);
+    });
+
+    it("finds any: true after a parenthesis in choose(), which the text scan missed", () => {
+      const result = check(`await choose('pick one (or none)', { any: true })`);
+      assert.deepEqual(result, { problems: [], notes: ["an agent may pick any saved workflow"] });
+    });
   });
 });
 

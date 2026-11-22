@@ -16,10 +16,10 @@ import { WorkflowManager } from "./workflow-manager.js";
 import {
   CALL_INPUTS_FORMAT,
   CALL_PATH_FORMAT,
-  parseWorkflowScript,
   type CheckpointCallContext,
   type CheckpointOptions,
 } from "./workflow.js";
+import { parseWorkflowScript } from "./workflows/script.js";
 import type { WorkflowSnapshot } from "./display.js";
 
 export const RECORDING_UNUSABLE_REASONS = Object.freeze([

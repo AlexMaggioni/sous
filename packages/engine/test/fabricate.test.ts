@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { fabricateFromSchema } from "../src/index.js";
+import { fabricateFromSchema } from "../src/fabricate.js";
 
 test("fabricateFromSchema covers the portable-schema subset", () => {
   assert.equal(fabricateFromSchema({ type: "string", enum: ["a", "b"] }), "a");

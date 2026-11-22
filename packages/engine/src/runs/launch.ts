@@ -2,53 +2,16 @@
 // start its worker in the background. Used by `orc run`, `orc rerun` and the schedules.
 
 import { spawn } from "node:child_process";
-import { existsSync, openSync, readFileSync, closeSync } from "node:fs";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { openSync, closeSync } from "node:fs";
+import { join } from "node:path";
 import { generateRunId } from "./persistence/run-persistence.js";
-import { parseWorkflowScript } from "../workflow.js";
-import { openWorkflowDir } from "../workflow-dir.js";
-import { checkInputs, workflowExtras, type WorkflowExtras } from "../workflow-inputs.js";
+import { resolveWorkflow } from "../workflows/dir.js";
+import { checkInputs } from "../workflows/meta.js";
 import { preparePlace } from "../places/places.js";
-import { loadConfig, rememberProject, workflowDirs, type HomePaths, type Place } from "./home.js";
+import { loadConfig, rememberProject, type HomePaths, type Place } from "./home.js";
 import { accountsForRun } from "../accounts.js";
 import { saveRecord, updateRecord, type RunRecord } from "./records.js";
 import type { Priority } from "./slots.js";
-
-export interface ResolvedWorkflow {
-  name: string;
-  file: string;
-  script: string;
-  meta: Record<string, unknown>;
-  extras: WorkflowExtras;
-}
-
-/** A saved workflow by name (project first, then home), or a script file by path. */
-export function resolveWorkflow(paths: HomePaths, projectDir: string, nameOrPath: string): ResolvedWorkflow {
-  let file: string | undefined;
-  const asPath = isAbsolute(nameOrPath) ? nameOrPath : resolve(process.cwd(), nameOrPath);
-  if ((nameOrPath.includes("/") || nameOrPath.endsWith(".js") || nameOrPath.endsWith(".mjs")) && existsSync(asPath)) {
-    file = asPath;
-  } else {
-    const dirs = workflowDirs(projectDir, paths);
-    const entry = openWorkflowDir(dirs)
-      .list()
-      .find((candidate) => candidate.name === nameOrPath);
-    if (!entry) {
-      const names = openWorkflowDir(dirs)
-        .list()
-        .map((candidate) => candidate.name);
-      throw new Error(
-        `no workflow "${nameOrPath}". Looked in ${dirs.join(" and ")}.${names.length ? ` Saved workflows: ${names.join(", ")}.` : ""}`,
-      );
-    }
-    if (entry.error) throw new Error(`${entry.file} does not parse: ${entry.error}`);
-    file = entry.file;
-  }
-  const script = readFileSync(file, "utf8");
-  const { meta } = parseWorkflowScript(script);
-  const name = basename(file).replace(/(\.workflow)?\.m?js$/, "");
-  return { name, file, script, meta: meta as unknown as Record<string, unknown>, extras: workflowExtras(meta as unknown as Record<string, unknown>) };
-}
 
 export interface CreateRunRequest {
   workflow: string;

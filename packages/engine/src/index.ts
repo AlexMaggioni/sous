@@ -5,9 +5,7 @@
 // ── Engine entry ──
 export {
   runWorkflow,
-  parseWorkflowScript,
   isStepFailedPause,
-  workflowMayUseDefaultModel,
   hashCheckpointInputs,
   hashWorkflowAdmissionRouting,
   resolveWorkflowRunLimits,
@@ -165,19 +163,13 @@ export {
 } from "./orchestrator-globals.js";
 export { EXEC_RESULT_SCHEMA, type ExecKind } from "./code-steps.js";
 
-// ── Workflow directory view (folders of versioned workflow scripts) ──
-export {
-  openWorkflowDir,
-  type WorkflowDir,
-  type WorkflowDirEntry,
-  type OpenWorkflowDirOptions,
-} from "./workflow-dir.js";
+// ── Saved workflows: the folders that hold them, their checked meta, the names a script refers to, and the dry run ──
+export { openWorkflowDir } from "./workflows/dir.js";
+export { readWorkflowScript, type ScriptRefs } from "./workflows/script.js";
+export { dryRun, type Answers } from "./workflows/dry-run.js";
 
 // ── Frontmatter parser (engine-local; replaces Pi's parseFrontmatter) ──
 export { parseFrontmatter } from "./frontmatter.js";
-
-// ── Stand-in values for a dry run ──
-export { fabricateFromSchema } from "./fabricate.js";
 
 // ── Snapshot model + headless text rendering ──
 export {
@@ -350,13 +342,14 @@ export {
 export { findRecord, listRecords, loadRecord, processAlive, scopePath, updateRecord, type RunRecord } from "./runs/records.js";
 export { listQuestions, normalizeAnswer, readQuestion, writeAnswer, type Question } from "./runs/inbox.js";
 export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
-export { createRun, InputProblems, logFile, resolveWorkflow, startWorker } from "./runs/launch.js";
+export { createRun, InputProblems, logFile, startWorker } from "./runs/launch.js";
+export { resolveWorkflow } from "./workflows/dir.js";
 export { managerFor, runWorker, savedState, workerMain } from "./runs/worker.js";
-export { busyWorktrees, daemonMain, daemonPid, fileSchedules, forgetRun, loadSchedules, prune, saveSchedules, tick, unfinishedRuns, type Schedule } from "./runs/service.js";
+export { busyWorktrees, daemonMain, daemonPid, fileSchedules, loadSchedules, prune, saveSchedules, tick, unfinishedRuns, type Schedule } from "./runs/service.js";
 export { readLogFrom, stateOf, statusWord, waitForRun, withLiveSteps } from "./runs/view.js";
 export { answerQuestion, answerValue, breakpointValue, discardRun, findQuestion, pauseRun, rerun, resumeCheck, resumeRun, reuseCheck, stopRun, stopStep, type AnswerKind } from "./runs/control.js";
-export { checkInputs, workflowExtras } from "./workflow-inputs.js";
-export { gcWorktrees, isGitRepo, isPlace, removeWorktree, runWorktrees } from "./places/places.js";
+export { checkInputs } from "./workflows/meta.js";
+export { gcWorktrees, isPlace } from "./places/places.js";
 
 // ── Accounts, agents and the installed programs ──
 export {

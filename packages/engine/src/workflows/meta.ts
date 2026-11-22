@@ -14,11 +14,13 @@
 //   }
 //
 // `orc run ticket --ticket "Add a --json flag"` turns the flags into the run's args.
+// workflowExtras reads these fields from the parsed meta once, into a typed WorkflowExtras.
 
-import { parseDurationSeconds } from "./orchestrator-globals.js";
-import { isPlace } from "./places/places.js";
-import type { Place } from "./runs/home.js";
-import { parseCron } from "./runs/cron.js";
+import { parseDurationSeconds } from "../orchestrator-globals.js";
+import { isPlace } from "../places/places.js";
+import type { Place } from "../runs/home.js";
+import { parseCron } from "../runs/cron.js";
+import type { WorkflowMeta } from "../workflow-result.js";
 
 export interface InputSpec {
   type?: "string" | "number" | "boolean" | "json";
@@ -45,7 +47,7 @@ export interface WorkflowExtras {
   metaProblems?: string[];
 }
 
-export function workflowExtras(meta: Record<string, unknown>): WorkflowExtras {
+export function workflowExtras(meta: WorkflowMeta): WorkflowExtras {
   const inputs: Record<string, InputSpec> = {};
   const rawInputs = meta.inputs;
   if (Array.isArray(rawInputs)) {
@@ -157,7 +159,7 @@ export function checkInputs(extras: WorkflowExtras, given: Record<string, unknow
  * The args a nested workflow() runs with: the same check and defaults as a run started from the
  * command line. Args that are no object pass as they are. Throws when an input is wrong or missing.
  */
-export function nestedArgs(name: string, meta: Record<string, unknown>, args: unknown): unknown {
+export function nestedArgs(name: string, meta: WorkflowMeta, args: unknown): unknown {
   if (args !== undefined && (args === null || typeof args !== "object" || Array.isArray(args))) return args;
   // A promise passes as it is, and the child awaits it.
   if (typeof (args as { then?: unknown } | undefined)?.then === "function") return args;

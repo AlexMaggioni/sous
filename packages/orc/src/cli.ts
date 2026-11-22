@@ -3,14 +3,13 @@
 // schedule them. `orc help` lists the commands.
 
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, openSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { answerQuestion, answerValue, breakpointValue, busyWorktrees, createRun, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listQuestions, listRecords, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, saveSchedules, scopePath, startWorker, stateOf, statusWord, stopRun, stopStep, waitForRun, withLiveSteps, workerMain, workflowDirs, workflowExtras, writeAnswer, type AnswerKind, type HomePaths, type PersistedRunState, type Place, type Question, type RunRecord, type Schedule } from "@orchestrator/engine";
+import { answerQuestion, answerValue, breakpointValue, busyWorktrees, createRun, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listQuestions, listRecords, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, saveSchedules, scopePath, startWorker, stateOf, statusWord, stopRun, stopStep, waitForRun, withLiveSteps, workerMain, workflowDirs, writeAnswer, type AnswerKind, type Answers, type HomePaths, type PersistedRunState, type Place, type Question, type RunRecord, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { checkWorkflow } from "./check.js";
-import { dryRun, readAnswers } from "./dryrun.js";
 import { doctor } from "./doctor.js";
 
 class Usage extends Error {}
@@ -464,7 +463,7 @@ function cmdWorkflows(parsed: Parsed): number {
   const { paths, projectDir } = context(parsed);
   const entries = openWorkflowDir(workflowDirs(projectDir, paths)).list();
   if (parsed.flags.json) {
-    printJson(entries.map((entry) => ({ name: entry.name, file: entry.file, ...(entry.error ? { error: entry.error } : { ...workflowExtras((entry.meta ?? {}) as unknown as Record<string, unknown>) }) })));
+    printJson(entries.map((entry) => ({ name: entry.name, file: entry.file, ...(entry.error ? { error: entry.error } : { ...entry.extras }) })));
     return 0;
   }
   if (!entries.length) {
@@ -476,7 +475,7 @@ function cmdWorkflows(parsed: Parsed): number {
       out(`${entry.name}  (does not parse: ${entry.error})`);
       continue;
     }
-    const extras = workflowExtras((entry.meta ?? {}) as unknown as Record<string, unknown>);
+    const extras = entry.extras!;
     out(`${entry.name}${extras.description ? `  ${extras.description}` : ""}`);
     for (const [name, spec] of Object.entries(extras.inputs)) {
       const bits = [spec.type ?? "string", spec.required === false || spec.default !== undefined ? "optional" : "required"];
@@ -485,6 +484,14 @@ function cmdWorkflows(parsed: Parsed): number {
     }
   }
   return 0;
+}
+
+function readAnswers(file: string): Answers {
+  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${file} must hold an object from step label to answer, such as {"reviewer *": {"approved": false, "review": "Add a test"}}`);
+  }
+  return parsed as Answers;
 }
 
 async function cmdCheck(parsed: Parsed): Promise<number> {

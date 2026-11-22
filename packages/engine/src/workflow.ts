@@ -3,8 +3,6 @@ import { assertExplicitCheckpointProvenance, assertExplicitCheckpointDecision } 
 import { existsSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import vm from "node:vm";
-import type { Node } from "acorn";
-import { parse } from "acorn";
 import type { TSchema } from "typebox";
 import type { AgentHistoryEntry } from "./steps/agent-history.js";
 import type {
@@ -21,8 +19,6 @@ import type {
   WorkflowBackendConfig,
   WorkflowCallRecord,
   WorkflowCheckpointTaken,
-  WorkflowMeta,
-  WorkflowMetaPhase,
   WorkflowResumeCallDecision,
   WorkflowResumeSafety,
   WorkflowRunFallback,
@@ -81,7 +77,8 @@ import {
 import { makeStepWorktree, nestedPlace, removeStepWorktree, type Worktree } from "./places/places.js";
 import { homePaths, type HomePaths } from "./runs/home.js";
 import { noteNested } from "./runs/records.js";
-import { nestedArgs } from "./workflow-inputs.js";
+import { nestedArgs } from "./workflows/meta.js";
+import { parseWorkflowScript } from "./workflows/script.js";
 import {
   createOrchestratorGlobals,
   DEFAULT_MAX_NESTING_DEPTH,
@@ -577,8 +574,6 @@ interface ResumeSeedController {
   consumed: Set<string>;
   commitSeed: (remaining: PersistedResumeSeed) => void;
 }
-
-type AnyNode = Node & { [key: string]: any; start: number; end: number };
 
 /**
  * Runtime determinism hardening, run inside the vm realm BEFORE the user script.
@@ -2337,7 +2332,7 @@ export async function runWorkflow<T = unknown>(
     const label = typeof nestedOptions?.label === "string" ? nestedOptions.label : undefined;
     noteNested(home, rootRunId, childRunId, { parent: runId, workflow: childName, ...(label ? { label } : {}) });
     // The child gets its declared defaults, as it would started on its own.
-    const args = nestedArgs(childName, parseWorkflowScript(childScript).meta as unknown as Record<string, unknown>, childArgs);
+    const args = nestedArgs(childName, parseWorkflowScript(childScript).meta, childArgs);
     // A nested workflow can ask for its own place (a worktree, a folder, none).
     const place = nestedOptions?.place;
     const childCwd = place !== undefined ? nestedPlace(home, rootRunId, childRunId, place, baseCwd) : options.cwd;
@@ -3196,281 +3191,6 @@ function sameFallback(left: WorkflowRunFallback, right: WorkflowRunFallback): bo
     left.kind === right.kind &&
     left.message === right.message
   );
-}
-
-function parseWorkflowAst(script: string): AnyNode {
-  return parse(script, {
-    ecmaVersion: "latest",
-    sourceType: "module",
-    allowAwaitOutsideFunction: true,
-    allowReturnOutsideFunction: true,
-    locations: true,
-    ranges: false,
-  }) as AnyNode;
-}
-
-export function parseWorkflowScript(script: string): { meta: WorkflowMeta; body: string } {
-  const ast = parseWorkflowAst(script);
-
-  // This direct-syntax check provides fast author feedback without chasing aliases.
-  // DETERMINISM_PRELUDE remains the authoritative runtime enforcement for aliases,
-  // computed access, and other forms that intentionally stay outside this AST check.
-  const violation = findDeterminismViolation(ast);
-  if (violation) {
-    const start = violation.node.loc?.start;
-    const location = start ? ` at line ${start.line}, column ${start.column + 1}` : "";
-    throw new WorkflowError(
-      `Workflow scripts must be deterministic: ${violation.api} is unavailable${location}`,
-      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-      { recoverable: false },
-    );
-  }
-
-  const first = ast.body?.[0] as AnyNode | undefined;
-  if (first?.type !== "ExportNamedDeclaration") {
-    throw new WorkflowError(
-      "`export const meta = { name, description, phases }` must be the first statement in the script",
-      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-      { recoverable: false },
-    );
-  }
-
-  const declaration = first.declaration as AnyNode | null;
-  if (declaration?.type !== "VariableDeclaration" || declaration.kind !== "const") {
-    throw new WorkflowError(
-      "meta export must be `export const meta = ...`",
-      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-      {
-        recoverable: false,
-      },
-    );
-  }
-  if (declaration.declarations.length !== 1) {
-    throw new WorkflowError("meta export must declare only `meta`", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
-      recoverable: false,
-    });
-  }
-
-  const declarator = declaration.declarations[0] as AnyNode;
-  if (declarator.id?.type !== "Identifier" || declarator.id.name !== "meta") {
-    throw new WorkflowError("meta export must declare `meta`", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
-      recoverable: false,
-    });
-  }
-  if (!declarator.init)
-    throw new WorkflowError("meta must have a literal value", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
-      recoverable: false,
-    });
-
-  const meta = evaluateLiteral(declarator.init, "meta");
-  validateMeta(meta);
-
-  return {
-    meta,
-    body: script.slice(0, first.start) + script.slice(first.end),
-  };
-}
-
-/**
- * Conservative static companion to the validator's reached-path mock report. It catches direct
- * model-less calls hidden behind branches the fabricated dry-run result did not take, plus stdlib
- * helpers/nested workflows that can allocate default-model agents. Aliased/computed calls are left
- * to the reached-path report; a prior direct agent that controls such a branch is already enough to
- * make this return true.
- */
-export function workflowMayUseDefaultModel(script: string): boolean {
-  const parsed = parseWorkflowScript(script);
-  const ast = parseWorkflowAst(script);
-  const metaDefault = typeof parsed.meta.model === "string" && parsed.meta.model.trim() !== "";
-  const pending = [ast];
-  while (pending.length > 0) {
-    const node = pending.pop()!;
-    if (node.type === "CallExpression" && node.callee?.type === "Identifier") {
-      const name = node.callee.name;
-      if (name === "workflow") return true;
-      if (["verify", "judgePanel", "completenessCheck"].includes(name) && !metaDefault) return true;
-      if (name === "agent" && !metaDefault && !hasStaticModelOrTier(node.arguments?.[1])) return true;
-    }
-    pushAstChildren(node, pending);
-  }
-  return false;
-}
-
-function hasStaticModelOrTier(options: AnyNode | undefined): boolean {
-  if (options?.type !== "ObjectExpression") return false;
-  let modelPinned = false;
-  let tierPinned = false;
-  for (const property of options.properties as AnyNode[]) {
-    // A spread/computed key can replace either field. Later literal properties may pin it again.
-    if (property.type !== "Property" || property.computed || property.kind !== "init") {
-      modelPinned = false;
-      tierPinned = false;
-      continue;
-    }
-    const key = property.key?.type === "Identifier" ? property.key.name : property.key?.value;
-    if (key !== "model" && key !== "tier") continue;
-    const value = property.value?.type === "Literal" ? property.value.value : undefined;
-    if (key === "model") modelPinned = typeof value === "string";
-    else tierPinned = typeof value === "string" && value.trim() !== "";
-  }
-  return modelPinned || tierPinned;
-}
-
-function pushAstChildren(node: AnyNode, pending: AnyNode[]): void {
-  const children: AnyNode[] = [];
-  for (const value of Object.values(node)) {
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item && typeof item === "object" && typeof (item as AnyNode).type === "string") children.push(item as AnyNode);
-      }
-    } else if (value && typeof value === "object" && typeof (value as AnyNode).type === "string") {
-      children.push(value as AnyNode);
-    }
-  }
-  for (let index = children.length - 1; index >= 0; index--) pending.push(children[index]);
-}
-
-function findDeterminismViolation(ast: AnyNode): { api: string; node: AnyNode } | undefined {
-  const pending = [ast];
-  while (pending.length > 0) {
-    const node = pending.pop()!;
-    const api = nondeterministicApi(node);
-    if (api) return { api, node };
-
-    pushAstChildren(node, pending);
-  }
-  return undefined;
-}
-
-function nondeterministicApi(node: AnyNode): string | undefined {
-  if (
-    (node.type === "CallExpression" || node.type === "NewExpression") &&
-    node.arguments.length === 0 &&
-    node.callee?.type === "Identifier" &&
-    node.callee.name === "Date"
-  ) {
-    return node.type === "NewExpression" ? "new Date()" : "Date()";
-  }
-  if (node.type !== "CallExpression" || node.callee?.type !== "MemberExpression" || node.callee.computed) {
-    return undefined;
-  }
-  const object = node.callee.object as AnyNode;
-  const property = node.callee.property as AnyNode;
-  if (object.type === "Identifier" && object.name === "Date" && property.type === "Identifier" && property.name === "now") {
-    return "Date.now()";
-  }
-  if (
-    object.type === "Identifier" &&
-    object.name === "Math" &&
-    property.type === "Identifier" &&
-    property.name === "random"
-  ) {
-    return "Math.random()";
-  }
-  return undefined;
-}
-
-function evaluateLiteral(node: AnyNode, path: string): unknown {
-  switch (node.type) {
-    case "ObjectExpression": {
-      const out: Record<string, unknown> = {};
-      for (const prop of node.properties as AnyNode[]) {
-        if (prop.type === "SpreadElement") throw new Error(`spread not allowed in ${path}`);
-        if (prop.type !== "Property") throw new Error(`only plain properties allowed in ${path}`);
-        if (prop.computed) throw new Error(`computed keys not allowed in ${path}`);
-        if (prop.kind !== "init" || prop.method) throw new Error(`methods/accessors not allowed in ${path}`);
-        const key = propertyKey(prop.key as AnyNode, path);
-        if (key === "__proto__" || key === "constructor" || key === "prototype") {
-          throw new Error(`reserved key name not allowed in ${path}: ${key}`);
-        }
-        out[key] = evaluateLiteral(prop.value as AnyNode, `${path}.${key}`);
-      }
-      return out;
-    }
-    case "ArrayExpression":
-      return (node.elements as Array<AnyNode | null>).map((element, index) => {
-        if (!element) throw new Error(`sparse arrays not allowed in ${path}`);
-        if (element.type === "SpreadElement") throw new Error(`spread not allowed in ${path}`);
-        return evaluateLiteral(element, `${path}[${index}]`);
-      });
-    case "Literal":
-      return node.value;
-    case "TemplateLiteral":
-      if (node.expressions.length > 0) throw new Error(`template interpolation not allowed in ${path}`);
-      return node.quasis.map((quasi: AnyNode) => quasi.value.cooked ?? quasi.value.raw).join("");
-    case "UnaryExpression":
-      if (node.operator === "-" && node.argument?.type === "Literal" && typeof node.argument.value === "number") {
-        return -node.argument.value;
-      }
-      throw new Error(`only negative-number unary allowed in ${path}`);
-    default:
-      throw new Error(`non-literal node type in ${path}: ${node.type}`);
-  }
-}
-
-function propertyKey(node: AnyNode, path: string): string {
-  if (node.type === "Identifier") return node.name;
-  if (node.type === "Literal" && (typeof node.value === "string" || typeof node.value === "number"))
-    return String(node.value);
-  throw new Error(`unsupported key type in ${path}: ${node.type}`);
-}
-
-function validateMeta(meta: unknown): asserts meta is WorkflowMeta {
-  if (!meta || typeof meta !== "object") throw new Error("meta must be an object");
-  const value = meta as WorkflowMeta;
-  if (typeof value.name !== "string" || !value.name.trim()) throw new Error("meta.name must be a non-empty string");
-  if (typeof value.description !== "string" || !value.description.trim())
-    throw new Error("meta.description must be a non-empty string");
-  if (value.model !== undefined && typeof value.model !== "string") throw new Error("meta.model must be a string");
-  if (value.phases !== undefined) {
-    if (!Array.isArray(value.phases)) throw new Error("meta.phases must be an array");
-    for (const [index, phase] of value.phases.entries()) {
-      if (!phase || typeof phase !== "object" || typeof (phase as WorkflowMetaPhase).title !== "string") {
-        throw new Error(
-          `meta.phases[${index}] must be an object shaped { title: string, detail?: string, model?: string }; phase entries cannot be strings`,
-        );
-      }
-      if ((phase as WorkflowMetaPhase).detail !== undefined && typeof (phase as WorkflowMetaPhase).detail !== "string") {
-        throw new Error(`meta.phases[${index}].detail must be a string`);
-      }
-      if ((phase as WorkflowMetaPhase).model !== undefined && typeof (phase as WorkflowMetaPhase).model !== "string") {
-        throw new Error(`meta.phases[${index}].model must be a string`);
-      }
-    }
-  }
-  if (value.backends !== undefined) validateMetaBackends(value.backends);
-}
-
-/** Checks the shape of `meta.backends`. A script may still declare it, and a bad one still
- *  fails, but no step runs on it. */
-function validateMetaBackends(backends: unknown): void {
-  if (!backends || typeof backends !== "object" || Array.isArray(backends)) {
-    throw new Error("meta.backends must be an object of { <name>: { command, args?, env?, sessionMeta?, structuredOutputTool? } }");
-  }
-  for (const [name, config] of Object.entries(backends as Record<string, unknown>)) {
-    if (!config || typeof config !== "object" || Array.isArray(config)) {
-      throw new Error(`meta.backends.${name} must be an object with at least { command }`);
-    }
-    const c = config as Record<string, unknown>;
-    if (typeof c.command !== "string" || !c.command.trim()) {
-      throw new Error(`meta.backends.${name}.command must be a non-empty string`);
-    }
-    if (c.args !== undefined && !(Array.isArray(c.args) && c.args.every((a) => typeof a === "string"))) {
-      throw new Error(`meta.backends.${name}.args must be an array of strings`);
-    }
-    if (
-      c.env !== undefined &&
-      (!c.env || typeof c.env !== "object" || Array.isArray(c.env) || Object.values(c.env).some((v) => typeof v !== "string"))
-    ) {
-      throw new Error(`meta.backends.${name}.env must be an object of string values`);
-    }
-    if (c.sessionMeta !== undefined && (!c.sessionMeta || typeof c.sessionMeta !== "object" || Array.isArray(c.sessionMeta))) {
-      throw new Error(`meta.backends.${name}.sessionMeta must be an object`);
-    }
-    if (c.structuredOutputTool !== undefined && typeof c.structuredOutputTool !== "boolean") {
-      throw new Error(`meta.backends.${name}.structuredOutputTool must be a boolean`);
-    }
-  }
 }
 
 function createLimiter(limit: number) {

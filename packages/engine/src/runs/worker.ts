@@ -8,7 +8,7 @@ import { limitNotice, runAccounts } from "../accounts.js";
 import { envFor, lookupAgents, lookupMcpServers, lookupSettings, registryOf } from "../agents.js";
 import { parseDurationSeconds } from "../orchestrator-globals.js";
 import type { PersistedRunState } from "./persistence/run-persistence.js";
-import { openWorkflowDir } from "../workflow-dir.js";
+import { openWorkflowDir } from "../workflows/dir.js";
 import { WorkflowManager } from "../workflow-manager.js";
 import { dropUnchangedWorktrees, runWorktrees } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
@@ -80,7 +80,7 @@ export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<
       listSavedWorkflows: () =>
         dirs
           .list()
-          .filter((entry) => entry.meta && (entry.meta as { startedBy?: unknown }).startedBy !== "people")
+          .filter((entry) => entry.extras && entry.extras.startedBy !== "people")
           .map((entry) => ({ name: entry.name, ...(entry.meta?.description ? { description: entry.meta.description } : {}) })),
       // Nested runs and step worktrees go on this home's records and under its worktrees folder.
       home: paths,
