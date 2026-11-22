@@ -85,7 +85,7 @@ commit step failed with "nothing to commit". The workflow now commits only when 
 ### Steps
 
 The engine's own steps all work: `agent`, `parallel`, `pipeline`, `gate`, `retry`, `checkpoint`,
-`phase`, `log` (see [api.md](api.md#workflow-script-dsl)). orc adds these:
+`phase`, `log` (see [the engine README](../packages/engine/README.md#the-script-dsl)). orc adds these:
 
 - `agent()` takes `timeout` ("10m"), `effort`, `skills`, `mcp` (server names, see [Agents](#agents)),
   `continue: "<label>"` (go on in that earlier step's session, which set `keepSession: true`) and

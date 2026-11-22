@@ -34,7 +34,8 @@ node <this repo>/packages/orc/dist/cli.js check ticket --ticket "$(cat tickets/T
 | `packages/engine` | Runs a workflow script, with its journal and resume. |
 | `packages/harnesses` | Runs one step on Claude Code or Codex, each through its own SDK. |
 
-[`docs/refactor-plan.md`](docs/refactor-plan.md) says how the packages came down to these three.
+[`docs/refactor-plan.md`](docs/refactor-plan.md) says how the packages came down to these three,
+and [`docs/proof/refactor.md`](docs/proof/refactor.md) shows the result.
 
 ## Tests
 

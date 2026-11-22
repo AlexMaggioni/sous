@@ -6,13 +6,13 @@ This repository is orchestrator: a way for one person to define, run and follow 
 
 - `README.md`: what orc is and how to build it.
 - `docs/orchestrator.md`: the features, the commands and the file formats.
-- `docs/refactor-plan.md`: the refactor under way, step by step.
+- `docs/refactor-plan.md`: the refactor that brought the code to three packages, and `docs/proof/refactor.md`, the proof that it kept the behavior.
 
 The code and its tests are the current state. When prose and code disagree, fix the prose.
 
 ## Rules
 
-- The repository ends with three packages: `orc`, `engine` and `harnesses`. `docs/refactor-plan.md` says how it gets there.
+- The repository has three packages: `orc`, `engine` and `harnesses`. The architecture test keeps their imports, outside libraries and exports in line.
 - The architecture test lives in `test/architecture.test.mjs`. Change its tables only in a commit of their own, and never to turn a red test green.
 - Keep the default tests deterministic and free of credentials. Live tests stay behind their environment variables.
 - Tests never write into the real home folder. The engine and orc test scripts give each run a temporary HOME. A test that needs a folder makes its own.

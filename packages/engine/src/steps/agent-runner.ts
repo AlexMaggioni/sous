@@ -8,44 +8,34 @@ import type { AgentResult, RunOptions } from "./agent-run.js";
 
 export interface AgentRunner {
   /**
-   * Run ONE subagent to completion.
+   * Run one agent step to completion. The engine relies on these rules, so changing one means
+   * changing the engine's call in workflow.ts too.
    *
-   * FROZEN CONTRACT (do not widen it without changing the engine's call site):
+   *  - `prompt` is a plain string. `options` is one bag and may be left out.
    *
-   *  - `prompt` is a plain positional string; `options` is one optional bag that
-   *    DEFAULTS TO {} (the engine's historical Pick<WorkflowAgent,"run"> seam relies
-   *    on options being optional).
+   *  - The return is the raw value, never an envelope. With a schema it is the parsed and
+   *    validated object. Without one it is the agent's final text. Usage goes to
+   *    options.onUsage, not into the return.
    *
-   *  - RETURN is the RAW value, NEVER an envelope (AgentResult):
-   *       schema present => Static<schema>   (a parsed + validated object)
-   *       no schema       => the assistant's final text (string)
-   *    Usage is delivered OUT-OF-BAND via options.onUsage; it is NOT in the return.
-   *    A {result, usage} wrapper would change the frozen call — rejected.
+   *  - The return must be JSON and stable for a given resume identity, which hashAgentCall in
+   *    workflow.ts computes. The engine journals the value as it is (onAgentJournal) and replays
+   *    it on resume. The engine gives each call its index when the script makes the call, before
+   *    the limiter, so the runner must not depend on the order calls start or finish.
    *
-   *  - The return MUST be JSON-serializable and STABLE for a fixed resume identity
-   *    (sha256{prompt, model, mode-when-set, tier, phase, agentType, agentDef, schema}, hashAgentCall
-   *    workflow.ts:1045-1064): the engine journals it verbatim (onAgentJournal,
-   *    workflow.ts:502) and replays it on resume (:413). callIndex is assigned at
-   *    LEXICAL call time before the limiter (:391), so parallel()/pipeline() fan-out
-   *    stays reproducible — the runner MUST NOT depend on invocation/completion order
-   *    for identity.
+   *  - On failure, throw. A WorkflowError from this package keeps its code and `recoverable`
+   *    flag. The engine sorts errors with wrapError: a recoverable one is retried up to
+   *    agentRetries times, then the step returns null. Any other error stops the run, also
+   *    inside parallel() and pipeline(). The codes a runner raises are AGENT_EMPTY_OUTPUT
+   *    (recoverable, no text on a call without a schema), SCHEMA_NONCOMPLIANCE (the answer
+   *    never matched the schema) and PROVIDER_USAGE_LIMIT (the subscription limit, which pauses
+   *    the run and carries resetHint). The engine adds AGENT_CANCELLED, WORKFLOW_ABORTED and
+   *    SCRIPT_ERROR itself.
    *
-   *  - On failure THROW — ideally a WorkflowError{code, recoverable} from this same
-   *    package (so `instanceof` holds across packages). The engine classifies via
-   *    wrapError (:515): recoverable => retried up to agentRetries then resolves null;
-   *    non-recoverable => rethrown and halts the run (incl. inside parallel/pipeline).
-   *    Leaf codes the runner raises:
-   *      AGENT_EMPTY_OUTPUT     (recoverable)      no assistant text on a no-schema call
-   *      SCHEMA_NONCOMPLIANCE   (non-recoverable)  schema never satisfied after the ladder
-   *      PROVIDER_USAGE_LIMIT   (non-recoverable)  quota/rate wall -> engine PAUSES, carries resetHint
-   *    (AGENT_CANCELLED + WORKFLOW_ABORTED + SCRIPT_ERROR are added by the ENGINE, not the runner.)
+   *  - The engine owns stopping. It passes options.signal, and the steps module hands that
+   *    signal to the harness, which stops the step.
    *
-   *  - ABORT is the ENGINE's responsibility: the engine passes options.signal and calls
-   *    throwIfAborted() before/after. The steps module passes options.signal to the harness,
-   *    which stops the step.
-   *
-   *  - There is NO checkpoint method: human-in-the-loop is the engine's options.confirm
-   *    callback (workflow.ts:798-829), not a runner concern.
+   *  - Questions to the user are not the runner's job. The engine asks them through its
+   *    options.confirm callback.
    */
   run<S extends TSchema | undefined = undefined>(
     prompt: string,
