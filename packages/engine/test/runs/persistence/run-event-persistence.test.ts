@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
 import {
   closeSync,
   existsSync,
@@ -12,10 +11,8 @@ import {
   rmSync,
   statSync,
   unlinkSync,
-  watch,
   writeFileSync,
   writeSync,
-  type FSWatcher,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -373,13 +370,9 @@ test(
       [1, 1, 5, 5],
     );
 
-    const stream = persistence.watchEvents(runId, { after: 5, streamId: page.streamId });
-    try {
-      assert.equal((await stream.next()).value?.event.type, "agentTranscript");
-      assert.equal((await stream.next()).value?.event.type, "agentProgress");
-    } finally {
-      stream.close();
-    }
+    const tail = persistence.readEvents(runId, { after: 5, streamId: page.streamId });
+    assert.equal(tail.events[0]?.event.type, "agentTranscript");
+    assert.equal(tail.events[1]?.event.type, "agentProgress");
   }),
 );
 
@@ -616,157 +609,6 @@ test(
   },
 );
 
-class FakeWatcher extends EventEmitter {
-  closed = 0;
-  unrefed = 0;
-
-  close(): void {
-    this.closed++;
-  }
-
-  ref(): this {
-    return this;
-  }
-
-  unref(): this {
-    this.unrefed++;
-    return this;
-  }
-
-  [Symbol.dispose](): void {
-    this.close();
-  }
-}
-
-test(
-  "watchEvents is pull-based, drains backlog, recovers coalesced changes, and releases resources",
-  async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "ap-run-events-watch-cwd-"));
-    const root = mkdtempSync(join(tmpdir(), "ap-run-events-watch-root-"));
-    const watchers: FakeWatcher[] = [];
-    const watchCallbacks: Array<() => void> = [];
-    const intervalCallbacks: Array<() => void> = [];
-    const clearedTimers: unknown[] = [];
-    let timerUnrefs = 0;
-    const fakeWatch = ((_path: unknown, callback: () => void) => {
-      const watcher = new FakeWatcher();
-      watchers.push(watcher);
-      watchCallbacks.push(callback);
-      return watcher as unknown as FSWatcher;
-    }) as typeof watch;
-    const originalSetInterval = globalThis.setInterval;
-    const originalClearInterval = globalThis.clearInterval;
-    globalThis.setInterval = ((callback: () => void) => {
-      intervalCallbacks.push(callback);
-      return {
-        unref() {
-          timerUnrefs++;
-        },
-      } as NodeJS.Timeout;
-    }) as typeof setInterval;
-    globalThis.clearInterval = ((timer: unknown) => {
-      clearedTimers.push(timer);
-    }) as typeof clearInterval;
-    try {
-      const persistence = createRunPersistence(cwd, { watch: fakeWatch }, { persistenceRoot: root });
-      const runId = "watch-stream";
-      persistence.save(state(runId));
-      persistence.appendEvent(runId, { seq: 1, timestamp: TIMESTAMP, event: stopped(runId) });
-
-      const stream = persistence.watchEvents(runId);
-      assert.equal(stream.streamId, STREAM_A);
-      assert.equal(stream.closed, false);
-      assert.equal(watchers[0]?.unrefed, 1);
-      assert.equal(timerUnrefs, 1);
-      assert.equal((await stream.next()).value?.seq, 1);
-
-      const notificationPending = stream.next();
-      await assert.rejects(stream.next(), TypeError);
-      persistence.appendEvent(runId, { seq: 2, timestamp: TIMESTAMP, event: stopped(runId) });
-      watchCallbacks[0]!();
-      assert.equal((await notificationPending).value?.seq, 2);
-
-      const recoveryPending = stream.next();
-      persistence.appendEvent(runId, { seq: 3, timestamp: TIMESTAMP, event: stopped(runId) });
-      intervalCallbacks[0]!();
-      assert.equal((await recoveryPending).value?.seq, 3);
-
-      const closePending = stream.next();
-      stream.close();
-      assert.deepEqual(await closePending, { done: true, value: undefined });
-      assert.equal(stream.closed, true);
-      assert.deepEqual(await stream.next(), { done: true, value: undefined });
-      assert.deepEqual(await stream.return("ignored"), { done: true, value: undefined });
-      assert.equal(watchers[0]?.closed, 1);
-      assert.equal(clearedTimers.length, 1);
-
-      const controller = new AbortController();
-      const aborted = persistence.watchEvents(runId, { after: 3, signal: controller.signal });
-      const abortPending = aborted.next();
-      controller.abort();
-      assert.deepEqual(await abortPending, { done: true, value: undefined });
-      assert.equal(aborted.closed, true);
-
-      const alreadyAbortedController = new AbortController();
-      alreadyAbortedController.abort();
-      const alreadyAborted = persistence.watchEvents(runId, { after: 3, signal: alreadyAbortedController.signal });
-      assert.equal(alreadyAborted.closed, true);
-      assert.deepEqual(await alreadyAborted.next(), { done: true, value: undefined });
-      assert.equal(watchers.every((watcher) => watcher.closed === 1), true);
-    } finally {
-      globalThis.setInterval = originalSetInterval;
-      globalThis.clearInterval = originalClearInterval;
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(root, { recursive: true, force: true });
-    }
-  },
-);
-
-test(
-  "watchers pin their generation and fail closed across sidecar deletion and immediate recreation",
-  async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "ap-run-events-pin-cwd-"));
-    const root = mkdtempSync(join(tmpdir(), "ap-run-events-pin-root-"));
-    const callbacks: Array<() => void> = [];
-    const watchers: FakeWatcher[] = [];
-    const fakeWatch = ((_path: unknown, callback: () => void) => {
-      const watcher = new FakeWatcher();
-      callbacks.push(callback);
-      watchers.push(watcher);
-      return watcher as unknown as FSWatcher;
-    }) as typeof watch;
-    try {
-      const persistence = createRunPersistence(cwd, { watch: fakeWatch }, { persistenceRoot: root });
-
-      const deletedRun = "watch-deleted";
-      persistence.save(state(deletedRun));
-      persistence.appendEvent(deletedRun, { seq: 1, timestamp: TIMESTAMP, event: stopped(deletedRun) });
-      persistence.save(state(deletedRun, { eventSeq: 1 }));
-      const deletedStream = persistence.watchEvents(deletedRun, { after: 1 });
-      const deletedPending = deletedStream.next();
-      unlinkSync(join(persistence.getRunsDir(), `${deletedRun}.events.jsonl`));
-      callbacks[0]!();
-      await assert.rejects(deletedPending, (error) => error instanceof RunEventLogError && error.code === "SNAPSHOT_AHEAD");
-      assert.equal(deletedStream.closed, true);
-      assert.deepEqual(await deletedStream.next(), { done: true, value: undefined });
-
-      const recreatedRun = "watch-recreated";
-      persistence.save(state(recreatedRun));
-      persistence.appendEvent(recreatedRun, { seq: 1, timestamp: TIMESTAMP, event: stopped(recreatedRun) });
-      const recreatedStream = persistence.watchEvents(recreatedRun, { after: 1 });
-      const recreatedPending = recreatedStream.next();
-      persistence.save(state(recreatedRun, { eventStreamId: STREAM_B, eventSeq: 0 }));
-      callbacks[1]!();
-      await assert.rejects(recreatedPending, (error) => error instanceof RunEventLogError && error.code === "STREAM_MISMATCH");
-      assert.equal(recreatedStream.closed, true);
-      assert.equal(watchers.every((watcher) => watcher.closed === 1), true);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(root, { recursive: true, force: true });
-    }
-  },
-);
-
 test(
   "createRunPersistence is already event-capable and default deletion removes its sidecar",
   withPersistence(({ persistence, eventPath }) => {
@@ -803,8 +645,8 @@ test(
   }),
 );
 
-// A COMPLETE legacy `FsLayer` value: every pre-existing member and NONE of the six hooks
-// (openSync/writeSync/closeSync/truncateSync/statSync/watch) added for the event sidecar. It must
+// A COMPLETE legacy `FsLayer` value: every pre-existing member and NONE of the four hooks
+// (openSync/writeSync/closeSync/truncateSync) added for the event sidecar. It must
 // still satisfy `FsLayer` — the new members are optional — so a pre-contract override annotated as
 // `FsLayer` stays source-compatible; making them required would be a type-level breaking change.
 const legacyFsLayer: FsLayer = {
@@ -818,11 +660,11 @@ const legacyFsLayer: FsLayer = {
 };
 
 test(
-  "a complete legacy FsLayer omitting the six new hooks compiles and falls back to node:fs",
+  "a complete legacy FsLayer omitting the four new hooks compiles and falls back to node:fs",
   withPersistence(({ persistence, eventPath }) => {
     const runId = "legacy-fslayer";
     persistence.save(state(runId));
-    // append/read exercise openSync/writeSync/closeSync/statSync — none supplied by legacyFsLayer,
+    // append/read exercise openSync/writeSync/closeSync — none supplied by legacyFsLayer,
     // so the factory's node:fs fallback carries the verified append and the cursor read.
     const record = persistence.appendEvent(runId, { seq: 1, timestamp: TIMESTAMP, event: stopped(runId) });
     assert.equal(record.seq, 1);
@@ -914,13 +756,9 @@ test("withRunEvents wraps structural persistence once, delegates it, and deletes
 });
 
 // The daemon event path honors its bounds. On a real ≥20,000-record journal with a cursor
-// lagging ≥5,000 records, a readEvents page
-// and a watchEvents catch-up must both stay bounded (no whole-file re-parse per record served) AND
-// yield the event loop while draining. Pre-fix, watchEvents.consume() re-parsed the entire journal
-// once per record yielded — a measured 115.8-second main-thread block for a 500-record catch-up on
-// a 9.7 MB journal, which starved /healthz and blew waitMs.
+// lagging ≥5,000 records, a readEvents page must stay bounded (no whole-file re-parse per read).
 test(
-  "R0: a >=20k-record journal serves a 5k-lagging read page and watch catch-up within bounds while yielding the loop",
+  "R0: a >=20k-record journal serves a 5k-lagging read page within bounds",
   withPersistence(async ({ persistence }) => {
     const runId = "r0-bounded";
     persistence.save(state(runId));
@@ -951,37 +789,5 @@ test(
     assert.equal(page.endCursor, total);
     assert.equal(page.hasMore, true);
     assert.ok(readMs < 1_000, `readEvents of a 5k-lagging page took ${readMs}ms (expected < 1000ms)`);
-
-    // Reproduce the daemon await's catch-up: watch from the lagging cursor and drain all 5,000
-    // backlog records. Pre-fix each next() re-parsed the whole 20k-record journal, so the drain
-    // held the event loop for many minutes; a 0 ms timer scheduled alongside it would not fire
-    // until it finished. Post-fix the catch-up is served from the cache and stays a short burst, so
-    // the timer fires promptly — the same responsiveness the daemon's /healthz probe relies on.
-    let timerDelayMs = Number.POSITIVE_INFINITY;
-    const timerScheduledAt = Date.now();
-    const heartbeat = setTimeout(() => {
-      timerDelayMs = Date.now() - timerScheduledAt;
-    }, 0);
-
-    const stream = persistence.watchEvents(runId, { after });
-    const drained: number[] = [];
-    const drainStart = Date.now();
-    try {
-      while (drained.length < lag) {
-        const next = await stream.next();
-        assert.equal(next.done, false);
-        drained.push(next.value!.seq);
-      }
-    } finally {
-      stream.close();
-    }
-    const drainMs = Date.now() - drainStart;
-    // Let the pending 0 ms timer run now that the drain has released the loop.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    clearTimeout(heartbeat);
-
-    assert.deepEqual(drained, Array.from({ length: lag }, (_, index) => after + index + 1));
-    assert.ok(drainMs < 2_000, `watchEvents catch-up of ${lag} records took ${drainMs}ms (expected < 2000ms)`);
-    assert.ok(timerDelayMs < 1_000, `a 0ms timer was starved for ${timerDelayMs}ms by the catch-up`);
   }),
 );

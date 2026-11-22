@@ -343,8 +343,8 @@ Journaling runs use the existing project-scoped `runsDir` and one structured sid
 
 `createRunPersistence()` and `manager.getPersistence()` return `RunEventPersistence`, an additive
 subtype of `RunPersistence`. A snapshot carries `eventStreamId` plus the highest reflected
-`eventSeq`; read the snapshot, consume the suffix after that watermark, then watch from the returned
-cursor while pinning the same stream generation:
+`eventSeq`; read the snapshot, then read the suffix after that watermark while pinning the same
+stream generation:
 
 ```ts
 const persistence = manager.getPersistence();
@@ -359,21 +359,11 @@ const page = persistence.readEvents(runId, {
   limit: 100,
 });
 for (const record of page.events) consume(record);
-
-const stream = persistence.watchEvents(runId, {
-  streamId: page.streamId,
-  after: page.cursor,
-  signal,
-});
-for await (const record of stream) consume(record);
 ```
 
 `readEvents()` returns `{ events, streamId, cursor, endCursor, hasMore }` (default limit 100,
-maximum 1000). `watchEvents()` validates synchronously, yields backlog before new appends, and
-returns a pull-based `RunEventStream`; abort, `close()`, and `return()` end it normally. The stream
-does not auto-close on completion/pause/error because the run may resume. Every continuation must
-pass the prior stream ID so delete/recreate of the same `runId` fails with `STREAM_MISMATCH` instead
-of joining generations.
+maximum 1000). Every later read must pass the prior stream ID so delete/recreate of the same `runId`
+fails with `STREAM_MISMATCH` instead of joining generations.
 
 Lifecycle, call, usage, and authored-log events persist by default; `agentHistory` and the
 `agentEvent` stream remain live-only. Records are projected at write time, capped at 65,536
@@ -393,8 +383,8 @@ From `@orchestrator/engine` (see `src/index.ts`):
   `ContinuationCandidate`, and the resume policy/report/replay-eligibility types.
 - **Manager & persistence** — `WorkflowManager` (`WorkflowManagerOptions`, `ExecOptions`,
   `ManagedRun`, `WorkflowAgentCallCancellation`, `PersistedRunStopResult`); `createRunPersistence`, `generateRunId`, and
-  types `RunPersistence`, `RunEventPersistence`, `RunEventStream`, `RunLease`, `RunLeaseOwner`, `RunStatus`, `PersistedRunState`,
-  `PersistedAgentState`, `FsLayer`; `readEvents()`/`watchEvents()` options/results/errors; safe
+  types `RunPersistence`, `RunEventPersistence`, `RunLease`, `RunLeaseOwner`, `RunStatus`, `PersistedRunState`,
+  `PersistedAgentState`, `FsLayer`; `readEvents()` options/results/errors; safe
   `inspectRun()` and the `WorkflowRunStatus` / inspection / log-tail / call / truncation contracts.
 - **Saved workflows** — `openWorkflowDir` and the `WorkflowDir` / `WorkflowDirEntry` /
   `OpenWorkflowDirOptions` types.

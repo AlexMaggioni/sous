@@ -12,10 +12,8 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
-  statSync,
   truncateSync,
   unlinkSync,
-  watch,
   writeFileSync,
   writeSync,
 } from "node:fs";
@@ -263,7 +261,7 @@ export interface PersistedRunState {
    *  New-format journaling runs write 0 before their first event. */
   eventSeq?: number;
   /** At least one persistable live event could not be appended. When set, the log is not a
-   *  gap-free projection and read/watch fail with EVENT_LOG_INCOMPLETE. */
+   *  gap-free projection and reads fail with EVENT_LOG_INCOMPLETE. */
   eventLogIncomplete?: true;
 }
 
@@ -350,8 +348,6 @@ export type FsLayer = {
   writeSync?: typeof writeSync;
   closeSync?: typeof closeSync;
   truncateSync?: typeof truncateSync;
-  statSync?: typeof statSync;
-  watch?: typeof watch;
 };
 
 export interface RunPersistenceOptions {
@@ -799,6 +795,4 @@ export {
   type ReadRunEventsResult,
   type RunEventLogErrorCode,
   type RunEventPersistence,
-  type RunEventStream,
-  type WatchRunEventsOptions,
 } from "./run-event-persistence.js";

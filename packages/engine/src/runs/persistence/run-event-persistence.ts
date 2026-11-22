@@ -2,12 +2,9 @@ import {
   closeSync,
   openSync,
   readFileSync,
-  statSync,
   truncateSync,
   unlinkSync,
-  watch,
   writeSync,
-  type FSWatcher,
 } from "node:fs";
 import { join, resolve } from "node:path";
 import {
@@ -25,15 +22,6 @@ export const RUN_EVENT_READ_LIMIT_MAX = 1_000 as const;
 
 const STREAM_ID_PATTERN = /^[0-9a-f]{32}$/;
 const RUN_EVENT_WRAPPER = Symbol("orchestrator.runEventPersistence");
-const RECOVERY_INTERVAL_MS = 250;
-// A backlog catch-up serves cached records back-to-back on microtasks — each is O(1), and a
-// non-yielding run is an atomic microtask chain that completes before any macrotask, so a
-// subscriber's dirty-bit coalescing (and an await's waitMs timer) are never interleaved mid-drain.
-// Only once a single synchronous burst has held the loop for this long does the next record resolve
-// on a setImmediate, bounding how long a pathologically large journal can starve the daemon's
-// /healthz probe. For journals at the R0 magnitude the whole drain is well under this, so it stays
-// atomic and fast; the cap matters only for far larger backlogs.
-const WATCH_YIELD_INTERVAL_MS = 50;
 // Soft cap on distinct runs held in the read cache. Writer-owned caches are released with their run
 // lease and are never evicted; this bounds only the read-seeded caches a long-lived daemon accrues
 // by reading many foreign/terminal runs, evicting least-recently-used ones first.
@@ -90,22 +78,6 @@ export interface ReadRunEventsResult {
   hasMore: boolean;
 }
 
-export interface WatchRunEventsOptions {
-  /** Backlog begins strictly after this seq. Default 0. */
-  after?: number;
-  /** Expected generation from a snapshot or prior read. */
-  streamId?: string;
-  /** Abort ends iteration normally. */
-  signal?: AbortSignal;
-}
-
-export interface RunEventStream extends AsyncIterableIterator<RunEventLogRecord> {
-  readonly streamId: string;
-  readonly closed: boolean;
-  return(value?: unknown): Promise<IteratorResult<RunEventLogRecord>>;
-  close(): void;
-}
-
 export type RunEventLogErrorCode =
   | "RUN_NOT_FOUND"
   | "EVENT_LOG_UNAVAILABLE"
@@ -156,7 +128,6 @@ export interface AppendRunEventInput {
 export interface RunEventPersistence extends RunPersistence {
   appendEvent(runId: string, input: AppendRunEventInput): RunEventLogRecord;
   readEvents(runId: string, options?: ReadRunEventsOptions): ReadRunEventsResult;
-  watchEvents(runId: string, options?: WatchRunEventsOptions): RunEventStream;
 }
 
 interface ResolvedEventFs {
@@ -166,8 +137,6 @@ interface ResolvedEventFs {
   writeSync: typeof writeSync;
   closeSync: typeof closeSync;
   truncateSync: typeof truncateSync;
-  statSync: typeof statSync;
-  watch: typeof watch;
 }
 
 interface ParsedSuffix {
@@ -191,7 +160,6 @@ const FNV_OFFSET_1 = 0x811c9dc5 | 0;
 const FNV_OFFSET_2 = 0x9dc5811c | 0;
 const FNV_PRIME_1 = 0x01000193;
 const FNV_PRIME_2 = 0x01000197;
-const EMPTY_BUFFER = Buffer.alloc(0);
 
 function newPrefixHash(): PrefixHash {
   return { h1: FNV_OFFSET_1, h2: FNV_OFFSET_2 };
@@ -222,7 +190,7 @@ function prefixHashEquals(left: PrefixHash, right: PrefixHash): boolean {
 /**
  * Per-run, in-memory validated view of the event log, keyed by runId inside one
  * RunEventPersistence wrapper. The daemon is the journal's writer, so appendEvent maintains
- * this view directly and readEvents/watchEvents serve from it — parsing only the never-before
+ * this view directly and readEvents serves from it — parsing only the never-before
  * -seen suffix — instead of re-parsing the whole file for every read and every record yielded.
  */
 interface RunEventCache {
@@ -235,8 +203,6 @@ interface RunEventCache {
   prefixHash: PrefixHash;
   /** Stateful semantic validator, resumed across incremental suffix parses. */
   validate: (record: RunEventLogRecord) => string | undefined;
-  /** Events-file size at the last observation — the watcher's cheap change gate. */
-  lastFileSize: number;
   /** This process has repaired the torn tail and owns the writer epoch for this run. */
   writerRepaired: boolean;
 }
@@ -1016,8 +982,6 @@ function resolveEventFs(fsOverride: Partial<FsLayer> = {}): ResolvedEventFs {
     writeSync: fsOverride.writeSync ?? writeSync,
     closeSync: fsOverride.closeSync ?? closeSync,
     truncateSync: fsOverride.truncateSync ?? truncateSync,
-    statSync: fsOverride.statSync ?? statSync,
-    watch: fsOverride.watch ?? watch,
   };
 }
 
@@ -1026,41 +990,10 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
     return persistence as RunEventPersistence;
   }
 
-  // One validated in-memory view per run (see RunEventCache), plus per-run in-process wakeups
-  // fired by appendEvent so a live watcher of the run we are writing is served straight from the
-  // cache without touching the filesystem. Both maps are keyed by runId and released with the run.
+  // One validated in-memory view per run (see RunEventCache), keyed by runId and released with the run.
   const runCaches = new Map<string, RunEventCache>();
-  const changeNotifiers = new Map<string, Set<() => void>>();
   const runsDir = resolve(persistence.getRunsDir());
   const eventPath = (runId: string) => join(runsDir, `${runId}.events.jsonl`);
-
-  const registerNotifier = (runId: string, notify: () => void): void => {
-    let listeners = changeNotifiers.get(runId);
-    if (listeners === undefined) {
-      listeners = new Set();
-      changeNotifiers.set(runId, listeners);
-    }
-    listeners.add(notify);
-  };
-
-  const deregisterNotifier = (runId: string, notify: () => void): void => {
-    const listeners = changeNotifiers.get(runId);
-    if (listeners === undefined) return;
-    listeners.delete(notify);
-    if (listeners.size === 0) changeNotifiers.delete(runId);
-  };
-
-  const fireNotifiers = (runId: string): void => {
-    const listeners = changeNotifiers.get(runId);
-    if (listeners === undefined) return;
-    for (const notify of [...listeners]) {
-      try {
-        notify();
-      } catch {
-        // A single watcher's fault must not abort the append or starve its siblings.
-      }
-    }
-  };
 
   // Move a read-seeded cache to the most-recently-used position (Map preserves insertion order),
   // and evict the least-recently-used read caches once the map exceeds MAX_CACHED_RUNS. Writer-owned
@@ -1173,14 +1106,12 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
   const cacheFromParse = (
     parsed: ReturnType<typeof validatedParse>,
     writerRepaired: boolean,
-    lastFileSize: number,
   ): RunEventCache => ({
     streamId: parsed.streamId,
     records: parsed.records,
     completeBytes: parsed.completeBytes,
     prefixHash: prefixHashOf(parsed.buffer, parsed.completeBytes),
     validate: parsed.validate,
-    lastFileSize,
     writerRepaired,
   });
 
@@ -1200,46 +1131,21 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
         throw eventError("Unable to repair the partial event-log suffix", "IO_ERROR", runId, parsed.path, parsed.records.length + 1, cause);
       }
     }
-    const cache = cacheFromParse(parsed, true, parsed.completeBytes);
+    const cache = cacheFromParse(parsed, true);
     runCaches.set(runId, cache);
     return cache;
   };
 
   /**
    * Bring the cached view of `runId` up to date and hand it back, doing work proportional only to
-   * the never-before-seen suffix. `trustSizeGate` (watch wakeups) permits skipping the file read
-   * and prefix re-verification when the events file is byte-length-unchanged — the snapshot is
-   * still re-read every time so a stream rotation still fails closed. Point reads leave it off so
-   * an in-place same-length rewrite of an already-validated prefix is still caught.
+   * the never-before-seen suffix. The file is re-read and its validated prefix re-verified every
+   * time, so an in-place same-length rewrite of an already-validated prefix is still caught.
    */
   const ensureReadCache = (
     runId: string,
     suppliedStreamId?: string,
-    trustSizeGate = false,
   ): { cache: RunEventCache; snapshot: PersistedRunState; path: string } => {
     const snapshot = loadSnapshot(runId);
-    const path = eventPath(runId);
-    const cached = runCaches.get(runId);
-
-    if (trustSizeGate && cached !== undefined) {
-      let present = true;
-      let size = -1;
-      try {
-        size = fs.statSync(path).size;
-      } catch (cause) {
-        if (isEnoent(cause)) present = false;
-        else throw eventError("Unable to read the event log", "IO_ERROR", runId, path, undefined, cause);
-      }
-      const classified = classify(runId, snapshot, { path, present, buffer: EMPTY_BUFFER }, suppliedStreamId);
-      if (classified.streamId === cached.streamId && present && size === cached.lastFileSize) {
-        if (classified.snapshot.eventSeq! > cached.records.length) {
-          throw snapshotAheadError(runId, path, classified.snapshot.eventSeq!);
-        }
-        touchReadCache(runId, cached);
-        return { cache: cached, snapshot: classified.snapshot, path };
-      }
-    }
-
     const sidecar = readSidecar(runId);
     const classified = classify(runId, snapshot, sidecar, suppliedStreamId);
     const streamId = classified.streamId;
@@ -1269,7 +1175,6 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
           cache.completeBytes = suffix.completeBytes;
         }
       }
-      cache.lastFileSize = sidecar.buffer.length;
       touchReadCache(runId, cache);
     } else {
       const validate = createSemanticValidator();
@@ -1280,7 +1185,6 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
         completeBytes: parsed.completeBytes,
         prefixHash: prefixHashOf(sidecar.buffer, parsed.completeBytes),
         validate,
-        lastFileSize: sidecar.buffer.length,
         writerRepaired: false,
       };
       runCaches.set(runId, cache);
@@ -1382,194 +1286,11 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
     if (written !== line.length) {
       throw eventError("Event-log append returned a short write", "IO_ERROR", runId, path, input.seq);
     }
-    // The durable write succeeded: advance the writer-owned view (O(bytes-written)) and wake any
-    // live watcher of this run so it is served from memory without a filesystem round-trip.
+    // The durable write succeeded: advance the writer-owned view (O(bytes-written)).
     cache.records.push(record);
     foldPrefixHash(cache.prefixHash, line, 0, line.length);
     cache.completeBytes += line.length;
-    cache.lastFileSize = cache.completeBytes;
-    fireNotifiers(runId);
     return record;
-  };
-
-  const watchEvents = (runId: string, options: WatchRunEventsOptions = {}): RunEventStream => {
-    let normalized: ReturnType<typeof normalizeReadOptions>;
-    try {
-      normalized = normalizeReadOptions({ after: options.after, limit: 1, streamId: options.streamId });
-    } catch (error) {
-      const invalid = error as RunEventLogError;
-      throw new RunEventLogError(invalid.message, invalid.code, { runId });
-    }
-    // Seed/validate the shared cache once and pin the generation; every record is then served from
-    // memory, so a backlog catch-up costs one parse of the never-seen suffix, not one whole-file
-    // re-parse per record yielded (the measured 115.8-second block this fix removes).
-    const path = eventPath(runId);
-    const initial = ensureReadCache(runId, normalized.streamId);
-    if (normalized.after > initial.cache.records.length) {
-      throw eventError("after is ahead of the complete event-log tail", "CURSOR_AHEAD", runId, initial.path, normalized.after);
-    }
-    const pinnedStreamId = initial.cache.streamId;
-    let cursor = normalized.after;
-    let closed = false;
-    let watcher: FSWatcher | undefined;
-    let timer: NodeJS.Timeout | undefined;
-    let pending:
-      | {
-          resolve: (result: IteratorResult<RunEventLogRecord>) => void;
-          reject: (error: unknown) => void;
-        }
-      | undefined;
-    let deferredError: RunEventLogError | undefined;
-    let lastSignature: string;
-    let lastYieldAt = Date.now();
-
-    const signature = (): string => {
-      try {
-        const stats = fs.statSync(path);
-        return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}`;
-      } catch (cause) {
-        if (isEnoent(cause)) return "missing";
-        throw eventError("Unable to stat the event log", "IO_ERROR", runId, path, undefined, cause);
-      }
-    };
-
-    const closeResources = () => {
-      deregisterNotifier(runId, notify);
-      if (watcher !== undefined) {
-        try {
-          watcher.close();
-        } catch {
-          // Resource cleanup is best-effort after the stream has reached its terminal state.
-        }
-        watcher = undefined;
-      }
-      if (timer !== undefined) {
-        clearInterval(timer);
-        timer = undefined;
-      }
-      options.signal?.removeEventListener("abort", close);
-    };
-
-    const finishWithError = (error: unknown) => {
-      const wrapped = error instanceof RunEventLogError
-        ? error
-        : eventError("Event watcher failed", "IO_ERROR", runId, path, undefined, error);
-      if (pending === undefined) {
-        deferredError = wrapped;
-        return;
-      }
-      const current = pending;
-      pending = undefined;
-      closed = true;
-      closeResources();
-      current.reject(wrapped);
-    };
-
-    const consume = () => {
-      if (closed || pending === undefined) return;
-      if (deferredError !== undefined) {
-        const error = deferredError;
-        deferredError = undefined;
-        finishWithError(error);
-        return;
-      }
-      try {
-        let cache = runCaches.get(runId);
-        if (cache === undefined || cache.streamId !== pinnedStreamId || cursor >= cache.records.length) {
-          // Caught up, cache dropped, or a possible stream rotation: revalidate against the snapshot
-          // and absorb any foreign growth. The size gate keeps a writer's own noisy directory
-          // wakeups from re-reading and re-hashing the whole journal each time.
-          cache = ensureReadCache(runId, pinnedStreamId, true).cache;
-        }
-        if (cursor >= cache.records.length) return;
-        const record = cache.records[cursor]!;
-        cursor += 1;
-        const current = pending;
-        pending = undefined;
-        const result: IteratorResult<RunEventLogRecord> = { done: false, value: record };
-        // Serve on a microtask (fast, and it keeps a fast drain atomic w.r.t. macrotasks so a
-        // subscriber's coalescing holds), escalating to a macrotask yield only once a single
-        // synchronous burst has held the loop past WATCH_YIELD_INTERVAL_MS — that releases the loop
-        // for a queued /healthz response or the await's own timeout on a pathologically long drain.
-        const now = Date.now();
-        if (now - lastYieldAt >= WATCH_YIELD_INTERVAL_MS) {
-          lastYieldAt = now;
-          setImmediate(() => current.resolve(result));
-        } else {
-          current.resolve(result);
-        }
-      } catch (error) {
-        finishWithError(error);
-      }
-    };
-
-    const notify = () => consume();
-
-    function close() {
-      if (closed) return;
-      closed = true;
-      closeResources();
-      if (pending !== undefined) {
-        const current = pending;
-        pending = undefined;
-        current.resolve({ done: true, value: undefined });
-      }
-    }
-
-    lastSignature = signature();
-    try {
-      watcher = fs.watch(runsDir, notify);
-      watcher.on("error", finishWithError);
-      watcher.unref();
-    } catch (cause) {
-      closeResources();
-      throw cause instanceof RunEventLogError
-        ? cause
-        : eventError("Unable to watch the event-log directory", "IO_ERROR", runId, path, undefined, cause);
-    }
-    timer = setInterval(() => {
-      try {
-        const current = signature();
-        if (current !== lastSignature) {
-          lastSignature = current;
-          notify();
-        }
-      } catch (error) {
-        finishWithError(error);
-      }
-    }, RECOVERY_INTERVAL_MS);
-    timer.unref();
-    // The writer wakes us directly on every append of THIS run — no directory-wide fs.watch fan-out
-    // and no statSync poll latency on the hot path; the watch + poll above remain the foreign-writer
-    // fallback (another process, or this run reopened after a restart).
-    registerNotifier(runId, notify);
-
-    const stream: RunEventStream = {
-      streamId: pinnedStreamId,
-      get closed() {
-        return closed;
-      },
-      next() {
-        if (closed) return Promise.resolve({ done: true, value: undefined });
-        if (pending !== undefined) return Promise.reject(new TypeError("RunEventStream.next() is already pending"));
-        return new Promise<IteratorResult<RunEventLogRecord>>((resolve, reject) => {
-          pending = { resolve, reject };
-          consume();
-        });
-      },
-      return() {
-        close();
-        return Promise.resolve({ done: true, value: undefined });
-      },
-      close,
-      [Symbol.asyncIterator]() {
-        return this;
-      },
-    };
-
-    options.signal?.addEventListener("abort", close, { once: true });
-    if (options.signal?.aborted) close();
-    return stream;
   };
 
   const wrapper = {
@@ -1623,7 +1344,6 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
     ...(persistence.readScript ? { readScript: (runId: string) => persistence.readScript!(runId) } : {}),
     appendEvent,
     readEvents,
-    watchEvents,
   } as RunEventPersistence & { [RUN_EVENT_WRAPPER]: true };
   Object.defineProperty(wrapper, RUN_EVENT_WRAPPER, { value: true });
   return wrapper;
