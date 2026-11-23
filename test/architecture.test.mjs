@@ -103,6 +103,141 @@ const NEVER_REACH = [
   },
 ];
 
+/**
+ * The 36 behavior changes of docs/proof/improve.md, each with the tests that hold it. A test is a
+ * file and the title its test() or it() call gets. The rule fails when a title is no longer a test
+ * of its file, or when the test is skipped. A title that the source builds from a template stays as
+ * the source writes it, ${...} included, and a third part names the case of the file that the
+ * title stands for. A change with no test yet has `waiting` in place of `tests`, and the test run
+ * lists it as todo. A later commit adds its tests. docs/test-plan/pins.tsv says what each test
+ * holds, and where the hold is partial.
+ *
+ * A test that holds a change keeps its file and its title. A cut or a merge keeps them too.
+ */
+const PINS = [
+  // Runs
+  { change: "A run paused for a lost login resumes once the login is back", tests: [
+    ["packages/orc/test/runs.test.ts", "a run paused for a lost login pauses again while the login is gone, says why, and resumes once the person logs in again"],
+    ["packages/engine/test/runs/rule.test.ts", "${row}: ${expected.word}", '"paused, auth_required"'],
+  ] },
+  { change: "A step's time limit counts from when it holds a slot", tests: [
+    ["packages/orc/test/runs.test.ts", "a step's time limit counts from when it starts running, not while it waits for a free slot"],
+  ] },
+  { change: "choose() takes the run's step changes like agent()", tests: [
+    ["packages/orc/test/runs.test.ts", "per-run step changes reach the agent that choose() asks"],
+  ] },
+  { change: "A step that sets tier stops with an error", tests: [
+    ["packages/engine/test/runs/call-hash-pin.test.ts", "refuses a step with a tier, so no call keeps a hash for it"],
+  ] },
+  { change: "A script that calls verify, judgePanel, loopUntilDry or completenessCheck fails with a ReferenceError", waiting: "No test names any of the four." },
+  { change: "A run whose worker died while another process held its lock reads as interrupted with exit 2", tests: [
+    ["packages/orc/test/reads.test.ts", "write no file"],
+    ["packages/engine/test/runs/rule.test.ts", "${row}: ${expected.word}", '"running, worker gone"'],
+  ] },
+  { change: "The state saves when the run paused, once", tests: [
+    ["packages/orc/test/accounts.test.ts", "a limit with no reset time is tried again 30 minutes after the pause, whatever saves the state later"],
+  ] },
+  { change: "ask(\"Breakpoint: ...\") is a plain question", tests: [
+    ["packages/orc/test/runs.test.ts", "a question whose text starts like a breakpoint's is a plain question, which send-back refuses"],
+  ] },
+  { change: "orc stop --step writes its request to a file of its own", tests: [
+    ["packages/orc/test/runs.test.ts", "a step stop survives the worker saving a record it read before the request"],
+    ["packages/orc/test/runs.test.ts", "a step stop left by a worker that ended is dropped when the next worker starts"],
+  ] },
+  { change: "orc stop --step build stops the step that orc log names build", tests: [
+    ["packages/orc/test/runs.test.ts", "stopping a step by its name stops only that step, not a nested step with the same label"],
+  ] },
+  { change: "orc doctor --live --model haiku runs haiku", tests: [
+    ["packages/engine/test/programs.test.ts", "runs a bare model name on the harness it routes to, and says so"],
+  ] },
+  { change: "The worker's last log line for a run paused on a failed step says why", tests: [
+    ["packages/engine/test/runs/worker-log.test.ts", "says why a step failed, on a start and on a resume alike"],
+  ] },
+  { change: "The run's log gets a note line when a program could not do what a step asked", tests: [
+    ["packages/engine/test/steps.test.ts", "reports once per step what its program could not do as asked, also when the step fails"],
+  ] },
+  { change: "An MCP server of a type a step cannot start says so", tests: [
+    ["packages/engine/test/mcp-servers.test.ts", "names the server and its type when a step cannot start it"],
+  ] },
+
+  // Questions
+  { change: "orc answer <q> stop at a breakpoint stops the run", tests: [
+    ["packages/orc/test/questions.test.ts", "orc answer <q> stop stops a running run, as orc stop does"],
+  ] },
+  { change: "An answer file with no value pauses the run", waiting: "No test writes an answer file with no value." },
+
+  // Resume
+  { change: "--latest keeps the steps that match after an edit", tests: [
+    ["packages/orc/test/resume.test.ts", "with --latest and step 1 edited, keeps the steps after it"],
+  ] },
+  { change: "A reuse of a run that was resumed, a nested run and a loop replay their finished steps", tests: [
+    ["packages/orc/test/resume.test.ts", "reuses the steps of a resumed run after an edited first step"],
+    ["packages/orc/test/resume.test.ts", "reuses the steps of a nested workflow"],
+  ] },
+  { change: "A paused reuse run keeps its source's steps when it resumes", tests: [
+    ["packages/orc/test/resume.test.ts", "resumes a paused reuse run with its source's later steps"],
+  ] },
+  { change: "A stale journal row under a later call no longer replays", tests: [
+    ["packages/engine/test/runs/resume-moved-rows.test.ts", "runs a step live after two failed resumes moved an identical step's row"],
+    ["packages/engine/test/resume-rows.test.ts", "joins the journal and the call rows of a scope by index"],
+  ] },
+  { change: "On a resume, an agent step that returned a blank result with no schema runs again", tests: [
+    ["packages/engine/test/incremental-engine-resume.test.ts", "runs live a step whose recorded text is blank, unless the step has a schema"],
+  ] },
+  { change: "orc show --json shows the strategy occurrence-v1 and the match occurrence", tests: [
+    ["packages/orc/test/resume.test.ts", "with --latest and step 1 edited, keeps the steps after it"],
+    ["packages/orc/test/resume.test.ts", "reuses the steps of a resumed run after an edited first step"],
+  ] },
+
+  // Accounts and clean-up
+  { change: "A second orc account use spare, after a move whose worker did not start, retries the resume", tests: [
+    ["packages/orc/test/accounts.test.ts", "orc account use goes by the account whose limit a run hit, so a second use after a move whose worker did not start tries again"],
+    ["packages/engine/test/runs/run.test.ts", "lists the runs whose worker is gone and that paused at the limit, newest first, each with the account whose limit it hit"],
+  ] },
+  { change: "Forgetting or pruning a run removes its open questions", tests: [
+    ["packages/engine/test/runs/forget.test.ts", "forgetRun removes the run's open question from the inbox"],
+  ] },
+  { change: "orc prune and the service skip a run while another process holds its lock", tests: [
+    ["packages/engine/test/runs/forget.test.ts", "with a lock held by a live process, pruneRuns keeps the finished run whole"],
+  ] },
+  { change: "A forgotten or pruned run leaves no file behind", tests: [
+    ["packages/engine/test/runs/layout.test.ts", "a forgotten run leaves only the home's folders"],
+    ["packages/engine/test/runs/forget.test.ts", "pruneRuns removes the same files once the run is older than the days given"],
+  ] },
+
+  // Reads
+  { change: "orc list, show, wait, inbox, log and account list write nothing", tests: [
+    ["packages/orc/test/reads.test.ts", "write no file"],
+  ] },
+  { change: "While a run is live, orc show --json gives a step what a saved step has", tests: [
+    ["packages/engine/test/runs/run.test.ts", "the event log gives each step what the saved state gives it"],
+  ] },
+  { change: "orc show lists the steps that finished before a worker was killed as done", tests: [
+    ["packages/engine/test/runs/run.test.ts", "the event log gives the steps the worker never saved, and none of them runs"],
+  ] },
+  { change: "orc log -f prints the no run error if the run's record is deleted just after its worker ends", waiting: "No test deletes a record during a follow." },
+
+  // The library
+  { change: "A reuse run that ends without an engine result lists its call rows in the order they settled", waiting: "The proof says orc reads no result's call rows, so only a direct call shows it." },
+  { change: "A caller that passes no places object gets no home to make worktrees in", tests: [
+    ["packages/engine/test/places.test.ts", "a step with isolation worktree and no places works in the run's folder, and the log says why"],
+    ["packages/engine/test/orchestrator-globals.test.ts", "with no places, a nested place of its own fails and says why, and place folder works in the parent's folder"],
+  ] },
+  { change: "runSync on a run that paused or failed returns the result the run saved", tests: [
+    ["packages/engine/test/manager-state.test.ts", "runSync returns the result its paused or failed run kept and saved"],
+  ] },
+  { change: "A stopped run's result has abortSignaled", tests: [
+    ["packages/engine/test/manager-state.test.ts", "a stopped run's result says its signal was aborted, as its saved state does"],
+  ] },
+  { change: "A resume of a run that paused for a lost login, or on a question with no confirm callback, starts the run", tests: [
+    ["packages/engine/test/auth-pause.test.ts", "cold resume of an auth pause runs the step again, and the run completes once the login is back"],
+    ["packages/engine/test/checkpoint.test.ts", "durable checkpoint: cold resume without a reply or live confirm pauses again at the same question"],
+  ] },
+  { change: "The file of step stop requests holds one JSON object per line", tests: [
+    ["packages/orc/test/runs.test.ts", "stopping a step by its name stops only that step, not a nested step with the same label"],
+  ] },
+];
+
 // ── The breaks of today. They can only go. ──────────────────────────────────────────────────────
 
 const BREAKS = {
@@ -360,6 +495,26 @@ function contractBreaks() {
   return found;
 }
 
+/**
+ * The titles of the tests a file runs: the first argument of each test() and it() call, other than
+ * a skipped or todo one. A title built from a template is the template's source text.
+ */
+function runningTitles(file) {
+  const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+  const titles = new Set();
+  const visit = (node) => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && ["test", "it"].includes(node.expression.text) && node.arguments.length) {
+      const [title, ...rest] = node.arguments;
+      const off = rest.some((arg) => ts.isObjectLiteralExpression(arg) && arg.properties.some((prop) => prop.name && ["skip", "todo"].includes(prop.name.getText())));
+      if (!off && ts.isStringLiteralLike(title)) titles.add(title.text);
+      else if (!off && ts.isTemplateExpression(title)) titles.add(title.getText().slice(1, -1));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return titles;
+}
+
 // ── The tests ───────────────────────────────────────────────────────────────────────────────────
 
 const state = collect();
@@ -401,3 +556,27 @@ test("each package exports only what its caller imports", () => {
   assert.equal(lines.join("\n"), "", lines.join("\n"));
 });
 test("both adapters exist and pass one contract test", () => compareList("contract"));
+
+test("each behavior change keeps the test that holds it", () => {
+  assert.equal(PINS.length, 36, "docs/proof/improve.md lists 36 behavior changes, and the table holds one row for each");
+  const lines = [];
+  const read = new Map();
+  for (const { change, tests = [], waiting } of PINS) {
+    if (!tests.length && !waiting) lines.push(`${change}: has no test and is not waiting for one`);
+    for (const [file, title, needs] of tests) {
+      if (!existsSync(join(ROOT, file))) {
+        lines.push(`${change}: ${file} is gone`);
+        continue;
+      }
+      if (!read.has(file)) read.set(file, { titles: runningTitles(join(ROOT, file)), text: readFileSync(join(ROOT, file), "utf8") });
+      const { titles, text } = read.get(file);
+      if (!titles.has(title)) lines.push(`${change}: "${title}" is no longer a test of ${file}`);
+      else if (needs && !text.includes(needs)) lines.push(`${change}: ${file} no longer has the case ${needs}`);
+    }
+  }
+  const message = `A behavior change lost its test. Keep the test's file and title, or move the pin in a commit of its own:\n  ${lines.join("\n  ")}`;
+  assert.ok(lines.length === 0, message);
+});
+for (const { change, waiting } of PINS) {
+  if (waiting) test(`a behavior change waits for its test: ${change}`, { todo: waiting });
+}
