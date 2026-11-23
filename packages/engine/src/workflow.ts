@@ -58,6 +58,15 @@ import {
 import type { PersistedCheckpointInjection, PersistedResumeSeed } from "./runs/persistence/run-persistence.js";
 import { nestedRunId } from "./resume-identity.js";
 import {
+  createDecisionOrder,
+  createStepLedger,
+  type DecisionTurn,
+  type Pairing,
+  type SettledCall,
+  type SourceRow,
+  type SourceScope,
+} from "./step-ledger.js";
+import {
   canonicalStrictJson,
   cloneFrozenStrictJson,
   cloneTelemetry,
@@ -503,11 +512,6 @@ interface RuntimeState {
   settlementSeq: number;
 }
 
-interface ResumeDecisionGate {
-  predecessor: Promise<void>;
-  release: () => void;
-}
-
 interface ResumeSeedController {
   seed: PersistedResumeSeed;
   indexes: ResumeCandidateIndexes;
@@ -859,8 +863,12 @@ export async function runWorkflow<T = unknown>(
             disabledReason: preparedResume.disabledReason,
           }
     : undefined;
-  const resumeDecisions = new Map<number, WorkflowResumeCallDecision>();
-  let resumeDecisionTail = Promise.resolve();
+  // A prepared resume reports a decision for each call, in the order calls were opened.
+  const decisionOrder = createDecisionOrder({
+    ordered: preparedResume !== undefined,
+    onDecision: (decision) => guardTerminal("onResumeDecision", () => options.onResumeDecision?.(decision)),
+  });
+  const emitResumeDecision = decisionOrder.decide;
   let resumeFatalError: WorkflowError | undefined;
 
   const createResumeSeedController = (
@@ -874,32 +882,6 @@ export async function runWorkflow<T = unknown>(
   const identitySeed = preparedResume?.strategy === "identity-v1"
     ? createResumeSeedController(preparedResume.seed, preparedResume.commitSeed)
     : undefined;
-
-  const appendResumeDecisionGate = (): ResumeDecisionGate | undefined => {
-    if (!preparedResume) return undefined;
-    const predecessor = resumeDecisionTail;
-    let resolveGate!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      resolveGate = resolve;
-    });
-    resumeDecisionTail = predecessor.then(() => gate, () => gate);
-    let released = false;
-    return {
-      predecessor,
-      release: () => {
-        if (released) return;
-        released = true;
-        resolveGate();
-      },
-    };
-  };
-
-  const emitResumeDecision = (decision: WorkflowResumeCallDecision) => {
-    if (resumeDecisions.has(decision.index)) return;
-    const frozen = deepFreeze({ ...decision }) as WorkflowResumeCallDecision;
-    resumeDecisions.set(frozen.index, frozen);
-    guardTerminal("onResumeDecision", () => options.onResumeDecision?.(frozen));
-  };
 
   const resumePersistenceError = (error: unknown): WorkflowError =>
     error instanceof WorkflowError && error.code === WorkflowErrorCode.PERSISTENCE_ERROR
@@ -985,7 +967,7 @@ export async function runWorkflow<T = unknown>(
     );
     if (hasPriorNonResult || hasPriorPendingReply) return false;
     return priorCandidates.every((candidate) =>
-      [...resumeDecisions.values()].some((decision) =>
+      decisionOrder.decisions().some((decision) =>
         decision.action === "replayed" &&
         decision.sourceRunId === candidate.sourceRunId &&
         decision.recordedIndex === candidate.recordedIndex
@@ -994,7 +976,7 @@ export async function runWorkflow<T = unknown>(
   };
 
   const enterResumeDecision = async (
-    gate: ResumeDecisionGate,
+    gate: DecisionTurn,
     call: { index: number; kind: "agent" | "checkpoint" },
   ) => {
     await gate.predecessor;
@@ -1020,6 +1002,125 @@ export async function runWorkflow<T = unknown>(
     guardTerminal("onCallRecord", () => options.onCallRecord?.(record));
     return record;
   };
+
+  // Today's three rules, each as a source the ledger pairs through.
+  const injectionRow = (injection: PersistedCheckpointInjection): SourceRow => ({
+    sourceRunId: injection.sourceRunId,
+    recordedIndex: injection.recordedIndex,
+    entry: {
+      checkpointDecision: injection.checkpointDecision,
+      index: injection.recordedIndex,
+      hash: injection.hash,
+      result: injection.decision,
+      kind: "checkpoint",
+    },
+    injected: true,
+  });
+
+  // A reuse whose source passed admission: rows found by path, hash and inputs in its seed.
+  const identitySource = (controller: ResumeSeedController): SourceScope => ({
+    pair(call, accept) {
+      const decisionCall = { index: call.index, kind: call.kind };
+      if (resumeFatalError) {
+        emitResumeDecision({ ...decisionCall, action: "failed", reason: "resume-fatal-latch" });
+        throw resumeFatalError;
+      }
+      const match = selectResumeCandidate(controller.indexes, {
+        kind: call.kind,
+        hash: call.hash,
+        path: call.path,
+        inputsHash: call.inputsHash,
+        consumed: controller.consumed,
+      });
+      const movedInjectionWithoutSourcePrefix =
+        match.action === "replay" &&
+        match.source.type === "injection" &&
+        match.match === "unique-hash" &&
+        !sourcePrefixReplayed(controller, match.source.injection);
+      if (match.action === "replay" && !movedInjectionWithoutSourcePrefix) {
+        const row: SourceRow = match.source.type === "candidate"
+          ? {
+              sourceRunId: match.source.candidate.sourceRunId,
+              recordedIndex: match.source.candidate.recordedIndex,
+              entry: match.source.candidate.entry,
+              call: match.source.candidate.call,
+            }
+          : injectionRow(match.source.injection);
+        const value = accept(row);
+        commitResumeRemoval(controller, [indexedSourceOccurrence(match.source)], decisionCall);
+        return { action: "replay", row, value, match: match.match, provenance: true, journaled: false };
+      }
+      if (match.action === "live" && match.remove) {
+        commitResumeRemoval(controller, [indexedSourceOccurrence(match.remove)], decisionCall);
+      }
+      return { action: "live", reason: match.action === "live" ? match.reason : "not-recorded" };
+    },
+  });
+
+  // A reuse of a source that failed admission's identity checks: the source's rows by index,
+  // up to the first miss.
+  const positionalSource = (prepared: Extract<PreparedResume, { strategy: "positional-v1" }>): SourceScope => ({
+    pair(call, accept) {
+      const sourceCall = positionalSourceCall(prepared, call.index, call.kind, call.hash);
+      const match = selectPositionalResume({
+        index: call.index,
+        kind: call.kind,
+        hash: call.hash,
+        inputsHash: call.inputsHash,
+        eligibility: prepared.eligibility,
+        firstMiss: state.firstMiss,
+        cached: journaling ? options.resumeJournal?.get(call.index) : undefined,
+        sourceCall,
+      });
+      state.firstMiss = match.nextFirstMiss;
+      if (match.action === "live") return { action: "live", reason: match.reason };
+      const row: SourceRow = {
+        sourceRunId: prepared.sourceRunId,
+        recordedIndex: call.index,
+        entry: match.entry,
+        ...(sourceCall ? { call: sourceCall } : {}),
+      };
+      return {
+        action: "replay",
+        row,
+        value: accept(row),
+        match: match.match,
+        provenance: sourceCall !== undefined,
+        journaled: false,
+      };
+    },
+  });
+
+  // A same-ID resume: the run's own journal row at the call's index, when the hashes agree.
+  // Without sameRunContinuation it replays only up to the first miss.
+  const indexSource: SourceScope = {
+    pair(call, accept) {
+      const cached = journaling ? options.resumeJournal?.get(call.index) : undefined;
+      const hashMatches = cached != null && cached.hash === call.hash;
+      if (hashMatches && (options.sameRunContinuation || call.index < state.firstMiss)) {
+        const row: SourceRow = { sourceRunId: runId, recordedIndex: call.index, entry: cached };
+        return { action: "replay", row, value: accept(row), match: "index-hash", provenance: true, journaled: true };
+      }
+      if (!hashMatches) state.firstMiss = Math.min(state.firstMiss, call.index);
+      return { action: "live" };
+    },
+  };
+
+  const ledger = createStepLedger({
+    source: !preparedResume
+      ? indexSource
+      : preparedResume.strategy === "identity-v1"
+        ? identitySource(identitySeed as ResumeSeedController)
+        : preparedResume.strategy === "positional-v1"
+          ? positionalSource(preparedResume)
+          : { pair: () => ({ action: "live", reason: "strategy-live" }) },
+    order: decisionOrder,
+    counter: { next: () => state.callSeq++ },
+    sink: {
+      call: appendCallRecord,
+      journal: (entry) => guardTerminal("onAgentJournal", () => options.onAgentJournal?.(entry)),
+    },
+  });
 
   // Allocation happens before limiter admission, so a run can halt while calls are
   // either executing or still queued. Keep the engine-owned identity closures alive
@@ -1159,7 +1260,7 @@ export async function runWorkflow<T = unknown>(
     // Deterministic resume key: assigned at lexical call time, before the limiter,
     // so parallel()/pipeline() fan-out is reproducible for a fixed script.
     const callIndex = state.callSeq++;
-    const resumeDecisionGate = appendResumeDecisionGate();
+    const resumeDecisionGate = decisionOrder.reserve();
     onAllocated(callIndex);
     reportRootCallAllocated(callIndex);
 
@@ -1845,7 +1946,7 @@ export async function runWorkflow<T = unknown>(
     };
 
     const runPreparedAgent = async (): Promise<unknown> => {
-      const gate = resumeDecisionGate as ResumeDecisionGate;
+      const gate = resumeDecisionGate as DecisionTurn;
       const decisionCall = { index: callIndex, kind: "agent" as const };
       let delegated = false;
       try {
@@ -2149,7 +2250,7 @@ export async function runWorkflow<T = unknown>(
   const workflowImplementation = async (
     nameOrScript: string,
     childArgs: unknown,
-    resumeGate: ResumeDecisionGate | undefined,
+    resumeGate: DecisionTurn | undefined,
     nestedOptions: { place?: string; label?: string } | undefined,
     localOrdinal: number,
   ) => {
@@ -2219,7 +2320,7 @@ export async function runWorkflow<T = unknown>(
   };
 
   const workflowFn = (nameOrScript: string, childArgs?: unknown, nestedOptions?: { place?: string; label?: string }): Promise<unknown> => {
-    const resumeGate = appendResumeDecisionGate();
+    const resumeGate = decisionOrder.reserve();
     beginResumeActivity();
     let promise: Promise<unknown>;
     try {
@@ -2302,35 +2403,25 @@ export async function runWorkflow<T = unknown>(
     const callHash = hashCheckpoint(promptText, capturedCheckpointOptions);
     const callInputsHash = hashCheckpointInputs(capturedCheckpointOptions);
     const callPath = captureCallPath(vmFilename, preludeLines);
-    const callIndex = state.callSeq++;
-    const resumeDecisionGate = appendResumeDecisionGate();
+    const slot = ledger.open({
+      kind: "checkpoint",
+      hash: callHash,
+      ...(callPath !== undefined ? { path: callPath } : {}),
+      ...(callInputsHash !== undefined ? { inputsHash: callInputsHash } : {}),
+    });
+    const callIndex = slot.index;
     onAllocated(callIndex);
     reportRootCallAllocated(callIndex);
-    let settled: WorkflowCallRecord | undefined;
     let interrupt: (() => void) | undefined;
-    const settle = (
-      terminal: Omit<
-        WorkflowCallRecord,
-        "index" | "kind" | "hash" | "path" | "inputsHash" | "scope" | "settlementOrdinal"
-      >,
-    ): WorkflowCallRecord => {
-      if (settled) return settled;
-      if (interrupt) {
+    const settle = (terminal: SettledCall, entry?: JournalEntry): WorkflowCallRecord => {
+      if (!slot.settled && interrupt) {
         unsettledCallInterruptions.delete(interrupt);
         noteCallSettled();
       }
-      settled = appendCallRecord({
-        index: callIndex,
-        kind: "checkpoint",
-        hash: callHash,
-        ...(callPath !== undefined ? { path: callPath } : {}),
-        ...(callInputsHash !== undefined ? { inputsHash: callInputsHash } : {}),
-        ...terminal,
-      });
-      return settled;
+      return slot.settle(terminal, entry);
     };
     interrupt = () => {
-      if (settled) return;
+      if (slot.settled) return;
       const error = pauseRequested()
         ? new WorkflowError(
             `checkpoint "${promptText}" was not asked because the workflow paused by host request`,
@@ -2357,223 +2448,68 @@ export async function runWorkflow<T = unknown>(
     }
     shared.agentCount++;
 
-    const replayCheckpoint = (input: {
-      resultSnapshot: unknown;
-      sourceRunId: string;
-      recordedIndex: number;
-      match: "path-hash" | "unique-hash" | "index-hash";
-      checkpointInjected?: true;
-      checkpointHostDecision: boolean;
-      manifestProvenance: boolean;
-      reportJournal?: boolean;
-    }): unknown => {
+    const journalEntry = (result: unknown): JournalEntry => deepFreeze({
+      index: callIndex,
+      hash: callHash,
+      result,
+      kind: "checkpoint" as const,
+      checkpointDecision: "explicit-v1" as const,
+      scope: runId,
+      call: { kind: "checkpoint" as const, label: "checkpoint" as const, phase: state.currentPhase },
+    });
+
+    const replayCheckpoint = (pairing: Extract<Pairing<unknown>, { action: "replay" }>): unknown => {
+      const { row, value: resultSnapshot } = pairing;
+      // A row with no call row is the run's own journal row, which only an answer writes.
+      const checkpointHostDecision = row.injected === true || row.call === undefined ||
+        row.call.origin === "confirm" ||
+        (row.call.origin === "journal-replay" && row.call.replay?.checkpointHostDecision === true);
       const terminalRecord = settle({
         outcome: "result",
         origin: "journal-replay",
         checkpointDecision: "explicit-v1",
-        ...(input.manifestProvenance
+        ...(pairing.provenance
           ? {
               replay: {
-                sourceRunId: input.sourceRunId,
-                recordedIndex: input.recordedIndex,
-                match: input.match,
-                ...(input.checkpointHostDecision ? { checkpointHostDecision: true as const } : {}),
-                ...(input.checkpointInjected ? { checkpointInjected: true as const } : {}),
+                sourceRunId: row.sourceRunId,
+                recordedIndex: row.recordedIndex,
+                match: pairing.match,
+                ...(checkpointHostDecision ? { checkpointHostDecision: true as const } : {}),
+                ...(row.injected ? { checkpointInjected: true as const } : {}),
               },
             }
           : {}),
-      });
-      if (terminalRecord.outcome !== "result") return input.resultSnapshot;
-      const journalEntry = deepFreeze({
-        index: callIndex,
-        hash: callHash,
-        result: input.resultSnapshot,
-        kind: "checkpoint" as const,
-        checkpointDecision: "explicit-v1" as const,
-        scope: runId,
-        call: { kind: "checkpoint" as const, label: "checkpoint" as const, phase: state.currentPhase },
-      });
-      if (input.reportJournal !== false) {
-        guardTerminal("onAgentJournal", () => options.onAgentJournal?.(journalEntry));
-      }
+      }, pairing.journaled ? undefined : journalEntry(resultSnapshot));
+      if (terminalRecord.outcome !== "result") return resultSnapshot;
       const checkpointTaken: WorkflowCheckpointTaken = deepFreeze({
         callIndex,
         kind: checkpointKind ?? "confirm",
-        decision: input.resultSnapshot,
-        source: input.checkpointInjected ? "injected" : "journal-replay",
+        decision: resultSnapshot,
+        source: row.injected ? "injected" : "journal-replay",
       });
       state.checkpointsTaken.push(checkpointTaken);
       guardTerminal("onCheckpointTaken", () => options.onCheckpointTaken?.(checkpointTaken));
-      return input.resultSnapshot;
+      return resultSnapshot;
     };
 
-    if (preparedResume) {
-      const gate = resumeDecisionGate as ResumeDecisionGate;
-      const decisionCall = { index: callIndex, kind: "checkpoint" as const };
-      try {
-        await enterResumeDecision(gate, decisionCall);
-        let liveReason: Extract<WorkflowResumeCallDecision, { action: "live" }>;
-
-        if (preparedResume.strategy === "identity-v1") {
-          const match = selectResumeCandidate((identitySeed as ResumeSeedController).indexes, {
-            kind: "checkpoint",
-            hash: callHash,
-            path: callPath,
-            inputsHash: callInputsHash,
-            consumed: (identitySeed as ResumeSeedController).consumed,
-          });
-          const movedInjectionWithoutSourcePrefix =
-            match.action === "replay" &&
-            match.source.type === "injection" &&
-            match.match === "unique-hash" &&
-            !sourcePrefixReplayed(
-              identitySeed as ResumeSeedController,
-              match.source.injection,
-            );
-          if (match.action === "replay" && !movedInjectionWithoutSourcePrefix) {
-            assertExplicitCheckpointDecision(match.source.type === "candidate"
-              ? match.source.candidate.entry : match.source.injection);
-            const result = match.source.type === "candidate"
-              ? match.source.candidate.entry.result
-              : match.source.injection.decision;
-            const resultSnapshot = strictSnapshot(result, `checkpoint "${promptText}" replayed reply`);
-            commitResumeRemoval(
-              identitySeed as ResumeSeedController,
-              [indexedSourceOccurrence(match.source)],
-              decisionCall,
-            );
-            const source = match.source.type === "candidate"
-              ? match.source.candidate
-              : match.source.injection;
-            const checkpointInjected = match.source.type === "injection" ? true as const : undefined;
-            const checkpointHostDecision = checkpointInjected === true || (
-              match.source.type === "candidate" && (
-                match.source.candidate.call.origin === "confirm" ||
-                (match.source.candidate.call.origin === "journal-replay" &&
-                  match.source.candidate.call.replay?.checkpointHostDecision === true)
-              )
-            );
-            emitResumeDecision({
-              index: callIndex,
-              kind: "checkpoint",
-              action: "replayed",
-              sourceRunId: source.sourceRunId,
-              recordedIndex: source.recordedIndex,
-              match: match.match,
-              ...(checkpointInjected ? { checkpointInjected } : {}),
-            });
-            gate.release();
-            return replayCheckpoint({
-              resultSnapshot,
-              sourceRunId: source.sourceRunId,
-              recordedIndex: source.recordedIndex,
-              match: match.match,
-              ...(checkpointInjected ? { checkpointInjected } : {}),
-              checkpointHostDecision,
-              manifestProvenance: true,
-            });
-          }
-          if (match.action === "live" && match.remove) {
-            commitResumeRemoval(
-              identitySeed as ResumeSeedController,
-              [indexedSourceOccurrence(match.remove)],
-              decisionCall,
-            );
-          }
-          liveReason = {
-            index: callIndex,
-            kind: "checkpoint",
-            action: "live",
-            reason: match.action === "live" ? match.reason : "not-recorded",
-          };
-        } else if (preparedResume.strategy === "positional-v1") {
-          const sourceCall = positionalSourceCall(preparedResume, callIndex, "checkpoint", callHash);
-          const match = selectPositionalResume({
-            index: callIndex,
-            kind: "checkpoint",
-            hash: callHash,
-            inputsHash: callInputsHash,
-            eligibility: preparedResume.eligibility,
-            firstMiss: state.firstMiss,
-            cached: journaling ? options.resumeJournal?.get(callIndex) : undefined,
-            sourceCall,
-          });
-          state.firstMiss = match.nextFirstMiss;
-          if (match.action === "replay") {
-            assertExplicitCheckpointDecision(match.entry);
-            const resultSnapshot = strictSnapshot(
-              match.entry.result,
-              `checkpoint "${promptText}" replayed reply`,
-            );
-            const checkpointHostDecision = sourceCall?.origin === "confirm" ||
-              (sourceCall?.origin === "journal-replay" &&
-                sourceCall.replay?.checkpointHostDecision === true);
-            emitResumeDecision({
-              index: callIndex,
-              kind: "checkpoint",
-              action: "replayed",
-              sourceRunId: preparedResume.sourceRunId,
-              recordedIndex: callIndex,
-              match: match.match,
-            });
-            gate.release();
-            return replayCheckpoint({
-              resultSnapshot,
-              sourceRunId: preparedResume.sourceRunId,
-              recordedIndex: callIndex,
-              match: match.match,
-              checkpointHostDecision,
-              manifestProvenance: sourceCall !== undefined,
-            });
-          }
-          liveReason = {
-            index: callIndex,
-            kind: "checkpoint",
-            action: "live",
-            reason: match.reason,
-          };
-        } else {
-          liveReason = {
-            index: callIndex,
-            kind: "checkpoint",
-            action: "live",
-            reason: "strategy-live",
-          };
-        }
-
-        if (options.confirm) options.onResumeFilesystemTainted?.();
-        emitResumeDecision(liveReason);
-        gate.release();
-      } catch (error) {
-        gate.release();
-        settle({ outcome: "error", origin: "engine", error: projectRecordedError(error) });
-        throw error;
-      }
-    } else {
-      const cached = journaling ? options.resumeJournal?.get(callIndex) : undefined;
-      if (
-        cached != null &&
-        cached.hash === callHash &&
-        (options.sameRunContinuation || callIndex < state.firstMiss)
-      ) {
-        try {
-          assertExplicitCheckpointDecision(cached);
-          const resultSnapshot = strictSnapshot(cached.result, `checkpoint "${promptText}" replayed reply`);
-          return replayCheckpoint({
-            resultSnapshot,
-            sourceRunId: runId,
-            recordedIndex: callIndex,
-            match: "index-hash",
-            checkpointHostDecision: true,
-            manifestProvenance: true,
-            reportJournal: false,
-          });
-        } catch (error) {
-          settle({ outcome: "error", origin: "journal-replay", error: projectRecordedError(error) });
-          throw error;
-        }
-      }
-      if (cached == null || cached.hash !== callHash) state.firstMiss = Math.min(state.firstMiss, callIndex);
+    try {
+      const paired = slot.pair((row) => {
+        assertExplicitCheckpointDecision(row.entry);
+        return strictSnapshot(row.entry.result, `checkpoint "${promptText}" replayed reply`);
+      });
+      // Only a prepared resume waits for its turn. A same-ID resume pairs at once.
+      const pairing = paired instanceof Promise ? await paired : paired;
+      if (pairing.action === "replay") return replayCheckpoint(pairing);
+      if (preparedResume && options.confirm) options.onResumeFilesystemTainted?.();
+      slot.live(pairing.reason);
+    } catch (error) {
+      slot.release();
+      settle({
+        outcome: "error",
+        origin: preparedResume ? "engine" : "journal-replay",
+        error: projectRecordedError(error),
+      });
+      throw error;
     }
 
     const origin = options.confirm ? "confirm" as const : "engine" as const;
@@ -2639,20 +2575,11 @@ export async function runWorkflow<T = unknown>(
         // checkpoint so the script cannot catch serialization failure and cross its gate.
         throw waiting();
       }
-      const terminalRecord = settle({ outcome: "result", origin, ...(journaling ? { checkpointDecision: "explicit-v1" as const } : {}) });
+      const terminalRecord = settle(
+        { outcome: "result", origin, ...(journaling ? { checkpointDecision: "explicit-v1" as const } : {}) },
+        journaling ? journalEntry(replySnapshot) : undefined,
+      );
       if (terminalRecord.outcome !== "result") return reply;
-      if (journaling) {
-        const entry = deepFreeze({
-          index: callIndex,
-          hash: callHash,
-          result: replySnapshot,
-          kind: "checkpoint" as const,
-          checkpointDecision: "explicit-v1" as const,
-          scope: runId,
-          call: { kind: "checkpoint" as const, label: "checkpoint" as const, phase: state.currentPhase },
-        });
-        guardTerminal("onAgentJournal", () => options.onAgentJournal?.(entry));
-      }
       const checkpointTaken: WorkflowCheckpointTaken = deepFreeze({
         callIndex,
         kind: checkpointKind ?? "confirm",
@@ -2820,7 +2747,7 @@ export async function runWorkflow<T = unknown>(
     calls: Object.freeze([...state.calls]) as WorkflowCallRecord[],
     callsAllocated: state.callSeq,
     ...(resumeReportPlan
-      ? { resumeReport: buildResumeReport(resumeReportPlan, [...resumeDecisions.values()]) }
+      ? { resumeReport: buildResumeReport(resumeReportPlan, decisionOrder.decisions()) }
       : {}),
     effectiveLimits,
     ...(abortSignaled ? { abortSignaled: true as const } : {}),
