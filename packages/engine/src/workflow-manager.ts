@@ -146,10 +146,8 @@ export interface ManagedRun {
   callsAllocated?: number;
   limits?: NonNullable<WorkflowRunResult["effectiveLimits"]>;
   abortSignaled?: true;
-  mainModel?: string;
   /** Host-pinned fallback for otherwise unmodelled agent calls in this execution. */
   defaultModel?: string;
-  agentsDir?: string;
   nestedWorkflows?: true;
   legacyResume?: true;
   /** A fresh run seeded from another execution; terminal saves replace inherited rows. */
@@ -357,15 +355,11 @@ export interface WorkflowManagerOptions {
    * constructs an agent itself.
    */
   agent?: AgentRunner;
-  /** The session's main model (provider/id), for auto-tiering explore agents. */
-  mainModel?: string;
   /** Default retry attempts after recoverable agent failures. */
   defaultAgentRetries?: number;
-  /** Override the directory scanned for `agentType` definitions (defaults to AGENTS_DIR). */
-  agentsDir?: string;
   /**
-   * Load the `agentType` definitions for a run's folder. Replaces the scan of
-   * agentsDir when given. orc looks agents up in rulesync and in each harness's own folders.
+   * Load the `agentType` definitions for a run's folder. Without it, a run has no
+   * definitions. orc looks agents up in rulesync and in each harness's own folders.
    */
   loadAgents?: (cwd: string) => AgentRegistry;
   /**
@@ -616,10 +610,7 @@ export class WorkflowManager extends EventEmitter {
   private loadSavedWorkflow?: (name: string) => string | undefined;
   private orchestratorOptions: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "home" | "pauseOnFailedStep">;
   private agent?: AgentRunner;
-  /** The session's main model (provider/id), for auto-tiering explore agents. */
-  private mainModel?: string;
   private defaultAgentRetries: number;
-  private agentsDir?: string;
   private loadAgents?: (cwd: string) => AgentRegistry;
   private persistenceRoot: string;
   private journaling: boolean;
@@ -632,9 +623,7 @@ export class WorkflowManager extends EventEmitter {
     this.loadSavedWorkflow = options.loadSavedWorkflow;
     this.orchestratorOptions = options.orchestrator ?? {};
     this.agent = options.agent;
-    this.mainModel = options.mainModel;
     this.defaultAgentRetries = options.defaultAgentRetries ?? 0;
-    this.agentsDir = options.agentsDir;
     this.loadAgents = options.loadAgents;
     this.persistenceRoot = workflowHomeDir({ persistenceRoot: options.persistenceRoot });
     this.journaling = options.journaling ?? true;
@@ -1464,9 +1453,7 @@ export class WorkflowManager extends EventEmitter {
         concurrency: exec.concurrency ?? this.concurrency,
         agentRetries: exec.agentRetries ?? this.defaultAgentRetries,
       }),
-      mainModel: this.mainModel,
       defaultModel: exec.defaultModel,
-      agentsDir: this.agentsDir,
       executionMode: exec.executionMode,
       ...(exec.resumeFromRunId ? { resumeSourceRunId: exec.resumeFromRunId } : {}),
       ...(exec.resumeJournal ? { legacyResume: true as const, newRunResume: true as const } : {}),
@@ -1747,9 +1734,7 @@ export class WorkflowManager extends EventEmitter {
         cwd: managed.effectiveCwd,
         args: argsForVm,
         agent,
-        mainModel: managed.mainModel,
         defaultModel: managed.defaultModel,
-        agentsDir: managed.agentsDir,
         ...(this.loadAgents ? { agentRegistry: this.loadAgents(managed.effectiveCwd) } : {}),
         signal: managed.controller.signal,
         pauseSignal: (managed.pauseController ??= new AbortController()).signal,
@@ -2428,9 +2413,7 @@ export class WorkflowManager extends EventEmitter {
       ...(managed.resumeReport ? { resumeReport: managed.resumeReport } : {}),
       ...(managed.replayEligibility ? { replayEligibility: managed.replayEligibility } : {}),
       ...(managed.continuation ? { continuation: managed.continuation } : {}),
-      mainModel: managed.mainModel,
       defaultModel: managed.defaultModel,
-      agentsDir: managed.agentsDir,
       executionMode: managed.executionMode,
       eventStreamId: managed.eventStreamId,
       eventSeq: managed.eventSeq,
@@ -2865,9 +2848,7 @@ export class WorkflowManager extends EventEmitter {
         concurrency: exec.concurrency ?? persisted.limits?.concurrency ?? this.concurrency,
         agentRetries: exec.agentRetries ?? persisted.limits?.agentRetries ?? this.defaultAgentRetries,
       }),
-      mainModel: persisted.mainModel ?? this.mainModel,
       defaultModel: persisted.defaultModel,
-      agentsDir: persisted.agentsDir ?? this.agentsDir,
       sameRunContinuation: true,
       journaling: true,
       background: true,

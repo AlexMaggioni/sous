@@ -10,8 +10,7 @@
  * simply contribute nothing — a normal state for an optional shared/user tier.
  *
  * Name convention: the filename stem is the workflow name (`review-pr.workflow.js` or
- * `review-pr.js` => "review-pr"), mirroring the agentType registry's
- * `<AGENTS_DIR>/<name>.md`. Across dirs, the FIRST hit wins (list dirs in
+ * `review-pr.js` => "review-pr"). Across dirs, the FIRST hit wins (list dirs in
  * precedence order, e.g. project before shared); within a dir, the more specific
  * `.workflow.js` beats `.js`.
  *

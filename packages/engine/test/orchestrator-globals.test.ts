@@ -8,7 +8,7 @@ import type { TSchema } from "typebox";
 import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry } from "../src/workflow-result.js";
-import { parseAgentDefinition, type AgentRegistry } from "../src/agent-registry.js";
+import type { AgentDefinition, AgentRegistry } from "../src/agent-registry.js";
 import { parseDurationSeconds } from "../src/orchestrator-globals.js";
 import { runWorkflow } from "../src/workflow.js";
 import { createSteps } from "../src/steps/steps.js";
@@ -196,13 +196,16 @@ return 'went on'`;
 
 describe("agent options", () => {
   it("pass timeout, effort, skills and MCP names to the runner, with the step's lists replacing the definition's", async () => {
-    const def = parseAgentDefinition(
-      `---\nname: reviewer\nmodel: haiku\nskills: [review, tdd]\nmcp: [linear]\neffort: high\ntimeout: 10m\n---\nYou review code.`,
-      "user",
-      "reviewer.md",
-    )!;
-    assert.deepEqual(def.skills, ["review", "tdd"]);
-    assert.deepEqual(def.mcp, ["linear"]);
+    const def: AgentDefinition = {
+      name: "reviewer",
+      model: "haiku",
+      skills: ["review", "tdd"],
+      mcp: ["linear"],
+      effort: "high",
+      timeout: "10m",
+      prompt: "You review code.",
+      source: "user",
+    };
     const registry: AgentRegistry = new Map([["reviewer", def]]);
     const { runner, calls } = recordingRunner(() => "ok");
     const script = `export const meta = { name: 'opts', description: 'opts' }
@@ -238,7 +241,7 @@ return 1`;
   it("take the host's agents from loadAgents, for the run's folder", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "load-agents-"));
     const asked: string[] = [];
-    const def = parseAgentDefinition(`---\nname: reviewer\nmodel: claude/haiku\n---\nAnswer FROM-HOST.`, "user", "reviewer.md")!;
+    const def: AgentDefinition = { name: "reviewer", model: "claude/haiku", prompt: "Answer FROM-HOST.", source: "user" };
     // No session ref: a stored run checks a ref's fields, and this test is about the agents.
     const calls: Call[] = [];
     const runner: AgentRunner = {

@@ -19,13 +19,3 @@ export const WORKFLOW_SAVED_DIR = ".agentprism/workflows/saved";
 
 /** User-level model tiers config file, relative to the home directory. */
 export const MODEL_TIERS_FILE = ".agentprism/workflows/model-tiers.json";
-
-/**
- * Default named workflow subagent definitions directory, relative to a base dir.
- * Resolved both project-relative (cwd/<AGENTS_DIR>) and home-relative
- * (~/<AGENTS_DIR>); project entries win on name collision. Each `*.md` file is an
- * agent definition (frontmatter + body prompt). The engine no longer hardcodes the
- * agents directory; callers may override it via the engine's `agentsDir` option
- * (see WorkflowRunOptions.agentsDir).
- */
-export const AGENTS_DIR = ".orchestrator/engine/agents";

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -8,120 +8,11 @@ import {
   type AgentDefinition,
   type AgentRegistry,
   agentDefinitionKey,
-  loadAgentRegistry,
-  parseAgentDefinition,
   resolveAgentType,
 } from "../src/agent-registry.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
 import { homePaths } from "../src/runs/home.js";
-
-// ── parseAgentDefinition ───────────────────────────────────────────────────
-
-describe("parseAgentDefinition", () => {
-  it("parses frontmatter (name/description/model/tools/disallowedTools) + body", () => {
-    const md = [
-      "---",
-      "name: security-auditor",
-      "description: Reviews code for vulnerabilities",
-      "model: openai/gpt-4.1",
-      "tools: [read, grep]",
-      "disallowedTools:",
-      "  - write",
-      "  - bash",
-      "---",
-      "You are a security auditor. Be thorough.",
-    ].join("\n");
-    const def = parseAgentDefinition(md, "project", "security-auditor.md");
-    assert.ok(def);
-    assert.equal(def.name, "security-auditor");
-    assert.equal(def.description, "Reviews code for vulnerabilities");
-    assert.equal(def.model, "openai/gpt-4.1");
-    assert.deepEqual(def.tools, ["read", "grep"]);
-    assert.deepEqual(def.disallowedTools, ["write", "bash"]);
-    assert.equal(def.prompt, "You are a security auditor. Be thorough.");
-    assert.equal(def.source, "project");
-  });
-
-  it("derives name from filename when frontmatter has none", () => {
-    const def = parseAgentDefinition("Just a body, no frontmatter.", "user", "reviewer.md");
-    assert.ok(def);
-    assert.equal(def.name, "reviewer");
-    assert.equal(def.prompt, "Just a body, no frontmatter.");
-    assert.equal(def.tools, undefined);
-  });
-
-  it("returns null when there is no name and no body", () => {
-    assert.equal(parseAgentDefinition("", "project", ""), null);
-  });
-
-  it("drops empty/blank tool entries (minimal frontmatter parser keeps bare scalars as strings)", () => {
-    // The dependency-free frontmatter parser does NO YAML type inference:
-    // every inline-array scalar is a string (a bare `3` becomes "3", not a number,
-    // and a quoted '' / '  ' becomes an empty/blank string). toStringArray then drops
-    // only empty / whitespace-only entries; non-empty tokens are kept verbatim.
-    const md = "---\nname: x\ntools: [read, 3, '', '  ', write]\n---\nbody";
-    const def = parseAgentDefinition(md, "project", "x.md");
-    assert.deepEqual(def?.tools, ["read", "3", "write"]);
-  });
-
-  it("parses isolation: worktree from frontmatter", () => {
-    const content = "---\nname: isolated-agent\nisolation: worktree\n---\nBody.";
-    const def = parseAgentDefinition(content, "project", "isolated-agent.md");
-    assert.ok(def);
-    assert.equal(def.isolation, "worktree");
-  });
-
-  it("ignores unknown isolation values", () => {
-    const content = "---\nname: agent\nisolation: unknown-value\n---\nBody.";
-    const def = parseAgentDefinition(content, "project", "agent.md");
-    assert.ok(def);
-    assert.equal(def.isolation, undefined);
-  });
-});
-
-// ── loadAgentRegistry (dir injection, now .orchestrator/engine/agents by default) ──
-
-describe("loadAgentRegistry", () => {
-  function writeDef(dir: string, file: string, content: string) {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, file), content, "utf-8");
-  }
-
-  it("loads project + user defs; project wins on a name collision", () => {
-    const root = mkdtempSync(join(tmpdir(), "agents-"));
-    const projectDir = join(root, "project");
-    const userDir = join(root, "user");
-    writeDef(projectDir, "reviewer.md", "---\nname: reviewer\nmodel: project/model\n---\nproject body");
-    writeDef(userDir, "reviewer.md", "---\nname: reviewer\nmodel: user/model\n---\nuser body");
-    writeDef(userDir, "researcher.md", "---\nname: researcher\n---\nuser-only researcher");
-
-    const reg = loadAgentRegistry(root, { projectDir, userDir });
-    assert.equal(reg.size, 2);
-    assert.equal(reg.get("reviewer")?.model, "project/model", "project def wins");
-    assert.equal(reg.get("reviewer")?.source, "project");
-    assert.equal(reg.get("researcher")?.source, "user");
-    rmSync(root, { recursive: true, force: true });
-  });
-
-  it("returns an empty registry when no dirs exist", () => {
-    const reg = loadAgentRegistry("/nonexistent", {
-      projectDir: "/nonexistent/a",
-      userDir: "/nonexistent/b",
-    });
-    assert.equal(reg.size, 0);
-  });
-
-  it("skips non-.md files and survives an unreadable file", () => {
-    const root = mkdtempSync(join(tmpdir(), "agents-"));
-    const projectDir = join(root, "p");
-    writeDef(projectDir, "ok.md", "---\nname: ok\n---\nbody");
-    writeDef(projectDir, "notes.txt", "ignored");
-    const reg = loadAgentRegistry(root, { projectDir, userDir: join(root, "none") });
-    assert.deepEqual([...reg.keys()], ["ok"]);
-    rmSync(root, { recursive: true, force: true });
-  });
-});
 
 describe("resolveAgentType", () => {
   const reg: AgentRegistry = new Map([

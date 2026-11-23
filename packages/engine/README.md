@@ -334,18 +334,18 @@ From `@orchestrator/engine` (see `src/index.ts`):
 - **Errors** — `WorkflowError`, `WorkflowErrorCode`, `isWorkflowError`, `wrapError`,
   `isProviderUsageLimit`, `isAuthRequired`, `isAbortError`, `isTimeoutError`,
   `ProviderUsageLimitContext`, `AuthErrorContext`, and `CheckpointContext`.
-- **Config caps** — `MAX_AGENTS_PER_RUN`, `MAX_CONCURRENCY`, `MAX_AGENT_RETRIES`, `AGENTS_DIR`.
+- **Config caps** — `MAX_AGENTS_PER_RUN`, `MAX_CONCURRENCY`, `MAX_AGENT_RETRIES`.
 - **Model routing / tiers** — `parseModelRoutingFromMeta`, `resolveModelForPhase`,
   `buildDefaultTierConfig`, `loadModelTierConfig`, `saveModelTierConfig`,
   `resolveTierModel`, `sortedTierNames`, `getModelTierConfigPath`.
-- **Agent registry** (`agentType` definitions) — `loadAgentRegistry`, `resolveAgentType`,
-  `parseAgentDefinition`, `applyToolPolicy`, `agentDefinitionKey`, `listAgentTypes`.
+- **Agent registry** (`agentType` definitions) — `resolveAgentType`, `applyToolPolicy`,
+  `agentDefinitionKey`, `listAgentTypes`.
 - **Worktree isolation** — `createWorktree`, `removeWorktree`, type `Worktree`.
 - **Display / snapshots** — `preview`, `renderWorkflowText`, `renderWorkflowLines`,
   `createWorkflowSnapshot`, `recomputeWorkflowSnapshot`, `statusIcon`, `shorten`.
-- **Paths / logger / frontmatter** — `workflowProjectPaths`, `workflowHomeDir`,
+- **Paths / logger** — `workflowProjectPaths`, `workflowHomeDir`,
   `workflowProjectKey`, `ORCHESTRATOR_PERSISTENCE_ROOT_ENV`,
-  `createWorkflowLogger`, `parseFrontmatter`.
+  `createWorkflowLogger`.
 - **Seam types** (from `src/steps/` and the run records): `AgentRunner`, `RunOptions`,
   `AgentResult`, `AgentUsage`, `WorkflowMeta`, `WorkflowRunResult`, `WorkflowRunFallback`,
   `WorkflowCheckpointTaken`, `WorkflowCheckpointSource`, `JournalEntry`,

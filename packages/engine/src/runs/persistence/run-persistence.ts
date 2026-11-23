@@ -221,10 +221,8 @@ export interface PersistedRunState {
   callsAllocated?: number;
   limits?: WorkflowRunLimits;
   abortSignaled?: true;
-  mainModel?: string;
   /** Host-pinned fallback used by otherwise unmodelled agent calls in this run. */
   defaultModel?: string;
-  agentsDir?: string;
   nestedWorkflows?: true;
   legacyResume?: true;
   executionMode?: { kind: "isolation"; baselineRunId: string };

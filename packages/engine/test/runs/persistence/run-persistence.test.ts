@@ -369,8 +369,6 @@ test(
       callsAllocated: 1,
       limits: { maxAgents: 10, concurrency: 2, agentRetries: 1 },
       abortSignaled: true,
-      mainModel: "provider/model",
-      agentsDir: "/agents",
       nestedWorkflows: true,
       legacyResume: true,
       executionMode: { kind: "isolation", baselineRunId: "baseline" },

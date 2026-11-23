@@ -106,22 +106,21 @@ return {}`;
   });
 });
 
-test("unresolved tier falls back to mainModel before runner default behavior", async () => {
+test("a tier missing from the config leaves the model undefined and passes the raw tier", async () => {
   await withModelTiers({ medium: "vendor/medium-model" }, async () => {
     const seen: Array<{ model?: string; tier?: string }> = [];
     await runWorkflow(
-      `export const meta = { name: 'tier-main', description: 'tier main fallback' }
+      `export const meta = { name: 'tier-missing', description: 'tier missing from config' }
 return await agent('work', { label: 'a', tier: 'small' })`,
       {
         agent: capturingRunner((options) =>
           seen.push({ model: options.model as string | undefined, tier: options.tier as string | undefined }),
         ),
-        mainModel: "session/main-model",
         persistLogs: false,
       },
     );
 
-    assert.deepEqual(seen, [{ model: "session/main-model", tier: "small" }]);
+    assert.deepEqual(seen, [{ model: undefined, tier: "small" }]);
   });
 });
 

@@ -30,8 +30,6 @@ import {
   type AgentDefinition,
   type AgentRegistry,
   agentDefinitionKey,
-  agentDirsFromOption,
-  loadAgentRegistry,
   resolveAgentType,
 } from "./agent-registry.js";
 import {
@@ -111,12 +109,6 @@ export interface WorkflowAgentOptions {
   cwd?: string;
   /** Extra system guidance prepended to every subagent task. */
   instructions?: string;
-  /**
-   * The session's main model spec. A registered first segment routes and is stripped once;
-   * the remaining id is sent verbatim. A backend name alone uses that harness's default.
-   * Used as the fallback for an unresolved authored tier.
-   */
-  mainModel?: string;
   /**
    * Host-pinned model/backend for calls that author no model, agentType model, tier, or
    * phase/meta route. Unlike a runner's ambient default, this participates in the call
@@ -200,20 +192,11 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
    * calls only its run() method and builds no runner of its own.
    */
   agent: AgentRunner;
-  /** The session's main model spec, shown in /workflows for default agents. */
-  mainModel?: string;
   /**
-   * Named subagent definitions for `agent({ agentType })`. Snapshotted once per
-   * run for determinism. Defaults to scanning `<cwd>/<AGENTS_DIR>` + `~/<AGENTS_DIR>`.
-   * Injectable for tests.
+   * Named subagent definitions for `agent({ agentType })`, built by the host.
+   * Snapshotted once per run for determinism. Defaults to an empty registry.
    */
   agentRegistry?: AgentRegistry;
-  /**
-   * Override the directory scanned for `agentType` definitions (`*.md`). When set,
-   * it replaces BOTH the project and user defaults — the parameterization of the old
-   * hardcoded agents directory. Ignored when `agentRegistry` is supplied directly.
-   */
-  agentsDir?: string;
   concurrency?: number;
   /** Retry attempts after a recoverable agent failure. Default 0. */
   agentRetries?: number;
@@ -431,8 +414,7 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    *  @deprecated Replay is determined by recorded call correspondence, not world state. */
   resume?: { filesystem: "read-only" };
   /**
-   * Name of a registered subagent definition (`<AGENTS_DIR>/<name>.md`, project >
-   * user). Binds that definition's tool allow/denylist, model, and body prompt
+   * Name of a subagent definition in the run's `agentRegistry`. Binds that definition's tool allow/denylist, model, and body prompt
    * to this agent. An explicit `model` overrides the definition's model; the
    * definition's model overrides `tier`/phase. An unknown name logs a warning
    * and falls back to default tools/model (with the name as a prose hint).
@@ -643,7 +625,7 @@ export async function runWorkflow<T = unknown>(
   // Per-phase model routing from meta.phases[].model, with meta.model as the default.
   const routingConfig = parseModelRoutingFromMeta(meta.phases, meta.model);
   // Snapshot tier routing once per run. A missing/unparseable file preserves the
-  // historical runner-default behavior unless a tier falls through to mainModel.
+  // historical runner-default behavior.
   const modelTierConfig = loadModelTierConfig();
   const effectiveLimits = resolveWorkflowRunLimits(options);
   const {
@@ -657,15 +639,9 @@ export async function runWorkflow<T = unknown>(
   const home = options.home ?? homePaths();
   const vmFilename = `${sanitizeVmName(meta.name)}.js`;
   const preludeLines = DETERMINISM_PRELUDE.split("\n").length;
-  // Snapshot the agentType registry ONCE per run so two agent() calls can't
-  // observe a mid-run edit (determinism); a later resume re-reads it. The agents
-  // directory is parameterized via options.agentsDir (defaults to AGENTS_DIR).
-  const agentRegistry =
-    options.agentRegistry ??
-    loadAgentRegistry(
-      baseCwd,
-      agentDirsFromOption(options.agentsDir),
-    );
+  // The host snapshots the agentType registry once per run, so two agent() calls
+  // can't observe a mid-run edit (determinism); a later resume re-reads it.
+  const agentRegistry: AgentRegistry = options.agentRegistry ?? new Map();
 
   // Initialize logger
   const logger = createWorkflowLogger({
@@ -1133,10 +1109,10 @@ export async function runWorkflow<T = unknown>(
     }
 
     // Model precedence: explicit agentOptions.model > agentType.model > resolved tier >
-    // mainModel tier fallback > phase/meta route > host-pinned defaultModel > historical
-    // runner default. A tier suppresses phase/default routing; when it has no configured
-    // model and no mainModel fallback, leave model undefined and pass the raw tier through
-    // for the runner to route under the same deterministic rules.
+    // phase/meta route > host-pinned defaultModel > historical runner default. A tier
+    // suppresses phase/default routing; when it has no configured model, leave model
+    // undefined and pass the raw tier through for the runner to route under the same
+    // deterministic rules.
     const explicitModel = agentOptions.model ?? agentDef?.model;
     const tierModel =
       !explicitModel && agentOptions.tier && modelTierConfig
@@ -1145,7 +1121,7 @@ export async function runWorkflow<T = unknown>(
     const phaseModel = agentOptions.tier ? undefined : resolveModelForPhase(assignedPhase, routingConfig);
     const authoredModel =
       explicitModel ??
-      (agentOptions.tier ? tierModel || options.mainModel : phaseModel ?? options.defaultModel);
+      (agentOptions.tier ? tierModel || undefined : phaseModel ?? options.defaultModel);
     const modelSpec = authoredModel;
     if (modelSpec?.endsWith("/*")) {
       throw new WorkflowError(
@@ -1157,10 +1133,10 @@ export async function runWorkflow<T = unknown>(
     const effectiveMode = agentOptions.mode;
     const effectiveConfigOptions = agentOptions.configOptions === undefined ? undefined : { ...agentOptions.configOptions };
     const effectiveAgentOptions = { ...agentOptions, configOptions: effectiveConfigOptions };
-    // For display in /workflows: the model this agent runs on — its explicit/phase/default
-    // spec, else the session's main model. The real resolved id overrides this via
-    // onModelResolved once the subagent session is created.
-    let displayModel = modelSpec ?? options.mainModel;
+    // For display in /workflows: the model this agent runs on, its explicit/phase/default
+    // spec. The real resolved id overrides this via onModelResolved once the subagent
+    // session is created.
+    let displayModel = modelSpec;
     if (hasModelConfigOption(effectiveConfigOptions)) {
       // Surface the rejected effective call to validation/observability without invoking the
       // AgentRunner. The following assertion is the pre-session authority.

@@ -52,7 +52,7 @@ phase("Review");
 await agent("phase");
 return agent("explicit", { model: "opencode" });`, {
       agent: { async run(_prompt, options) { routes.push(options.model); return "ok"; } },
-      persistLogs: false, mainModel: "pi/provider/main",
+      persistLogs: false,
       agentRegistry: new Map([["reviewer", { name: "reviewer", prompt: "Review", source: "project", model: "claude/defined" }]]),
     });
   } finally {
@@ -60,7 +60,7 @@ return agent("explicit", { model: "opencode" });`, {
     else process.env.HOME = previousHome;
     rmSync(home, { recursive: true, force: true });
   }
-  assert.deepEqual(routes, ["codex", "claude/defined", "pi/provider/small", "pi/provider/main", "claude", "opencode"]);
+  assert.deepEqual(routes, ["codex", "claude/defined", "pi/provider/small", undefined, "claude", "opencode"]);
 });
 
 test("aggregator selectors fail before dispatch", async () => {
