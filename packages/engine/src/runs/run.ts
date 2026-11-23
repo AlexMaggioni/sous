@@ -10,10 +10,10 @@ import type { Harness } from "../agents.js";
 import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
 import { listQuestions, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
-import { createRun, logFile, startWorker, type CreateRunRequest } from "./launch.js";
+import { createRun, startWorker, type CreateRunRequest } from "./launch.js";
 import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
-import { readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
+import { logFile, readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
 import { currentWorkflows, stopColdRun } from "./worker.js";
 
 /** A question a run asks, as the inbox holds it. */

@@ -3,7 +3,6 @@
 
 // ── Runs: the orc home, run records, questions, schedules, the reads and the requests ──
 export {
-  daemonLog,
   ensureHome,
   findProjectDir,
   homePaths,
@@ -16,7 +15,8 @@ export {
 export { listRecords, loadRecord, scopePath, type RunRecord } from "./runs/records.js";
 export { answerValue, breakpointValue, normalizeAnswer, readQuestion, type AnswerKind } from "./runs/inbox.js";
 export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
-export { InputProblems, logFile } from "./runs/launch.js";
+export { InputProblems } from "./runs/launch.js";
+export { daemonLog, logFile } from "./runs/store.js";
 export { workerMain } from "./runs/worker.js";
 export { daemonMain, daemonPid, fileSchedules, loadSchedules, saveSchedules, type Schedule } from "./runs/service.js";
 export {

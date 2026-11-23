@@ -6,10 +6,10 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { WorkflowError, WorkflowErrorCode } from "../../src/errors.js";
 import { ensureHome, homePaths, type HomePaths } from "../../src/runs/home.js";
-import { createRun, logFile } from "../../src/runs/launch.js";
+import { createRun } from "../../src/runs/launch.js";
 import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
 import { listRuns, readLog, readRun, runDetail, waitingRuns } from "../../src/runs/run.js";
-import type { StoreFs } from "../../src/runs/store.js";
+import { logFile, type StoreFs } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import { heldRunner, settle, setup, until } from "./fixture.js";
 

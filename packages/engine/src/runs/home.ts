@@ -110,11 +110,6 @@ export function rememberProject(paths: HomePaths, projectDir: string): void {
   renameSync(temp, paths.projects);
 }
 
-/** The service's own log. */
-export function daemonLog(paths: HomePaths): string {
-  return join(paths.logs, "daemon.log");
-}
-
 export function workflowDirs(projectDir: string, paths: HomePaths = homePaths()): string[] {
   return [join(projectDir, ".orchestrator", "workflows"), paths.workflows];
 }

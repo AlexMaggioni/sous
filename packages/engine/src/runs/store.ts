@@ -1,6 +1,6 @@
-// Plain reads of a run's engine files, the engine's persistence for the worker's manager, and the
-// delete of a run that is forgotten. Only removeEngineRun and removeRunFiles write, and no manager
-// is built.
+// Where a run's files live, plain reads of its engine files, the engine's persistence for the
+// worker's manager, and the delete of a run that is forgotten. Only removeEngineRun and
+// removeRunFiles write, and no manager is built.
 
 import { existsSync, readdirSync, readFileSync, rmdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
@@ -8,13 +8,22 @@ import { workflowProjectPaths } from "./persistence/project-paths.js";
 import { createRunPersistence, loadRunState, type FsLayer, type PersistedRunState } from "./persistence/run-persistence.js";
 import type { RunEventPersistence } from "./persistence/run-event-persistence.js";
 import type { HomePaths } from "./home.js";
-import { logFile } from "./launch.js";
 import { snapshotFile, type RunRecord } from "./records.js";
 
 /** The file calls the store reads through. Tests hand it one that counts the calls. */
 export type StoreFs = Pick<FsLayer, "existsSync" | "readdirSync" | "readFileSync">;
 
 const DISK: StoreFs = { existsSync, readdirSync, readFileSync };
+
+/** The run's worker log. The worker's output goes there. */
+export function logFile(paths: HomePaths, runId: string): string {
+  return join(paths.logs, `${runId}.log`);
+}
+
+/** The service's own log. */
+export function daemonLog(paths: HomePaths): string {
+  return join(paths.logs, "daemon.log");
+}
 
 /** The engine's folders for orc's runs. Every orc manager works from the home folder, so the
  *  folders do not depend on the run's project. */

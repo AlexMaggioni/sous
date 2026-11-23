@@ -3,7 +3,6 @@
 
 import { spawn } from "node:child_process";
 import { openSync, closeSync } from "node:fs";
-import { join } from "node:path";
 import { generateRunId } from "./persistence/run-persistence.js";
 import { resolveWorkflow } from "../workflows/dir.js";
 import { checkInputs } from "../workflows/meta.js";
@@ -11,6 +10,7 @@ import { preparePlace } from "../places/places.js";
 import { loadConfig, rememberProject, type HomePaths, type Place } from "./home.js";
 import { accountsForRun } from "../accounts.js";
 import { saveRecord, updateRecord, type RunRecord } from "./records.js";
+import { logFile } from "./store.js";
 import type { Priority } from "./slots.js";
 
 export interface CreateRunRequest {
@@ -82,10 +82,6 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   saveRecord(paths, record);
   rememberProject(paths, request.projectDir);
   return record;
-}
-
-export function logFile(paths: HomePaths, runId: string): string {
-  return join(paths.logs, `${runId}.log`);
 }
 
 /** Start the run's worker in the background. Its output goes to logs/<run id>.log. */
