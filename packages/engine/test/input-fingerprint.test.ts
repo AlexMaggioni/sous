@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { TSchema } from "typebox";
 import { CALL_INPUTS_FORMAT, type WorkflowRunOptions, runWorkflow } from "../src/workflow.js";
@@ -17,7 +17,7 @@ async function fingerprintFor(optionsSource: string, overrides: RunOverrides = {
   const runner: AgentRunner = {
     async run<S extends TSchema | undefined = undefined>(
       _prompt: string,
-      options?: RunOptions<S>,
+      options?: StepRequest<S>,
     ): Promise<AgentResult<S>> {
       fingerprint = options?.callInputsHash;
       return "ok" as AgentResult<S>;
@@ -138,7 +138,7 @@ return await agent('same-prompt')`,
     const runner: AgentRunner = {
       async run<S extends TSchema | undefined = undefined>(
         _prompt: string,
-        options?: RunOptions<S>,
+        options?: StepRequest<S>,
       ): Promise<AgentResult<S>> {
         fingerprints.push(options?.callInputsHash);
         if (options?.cwd) resolvedCwds.push(options.cwd);

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { RunOptions } from "../src/steps/agent-run.js";
+import type { StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 /** Every run() call gets its own deferred result, resolved by call order. */
@@ -12,7 +12,7 @@ function perCallRunner() {
   return {
     calls,
     runner: {
-      async run(prompt: string, _options?: RunOptions) {
+      async run(prompt: string, _options?: StepRequest) {
         return new Promise((resolve) => {
           calls.push({ prompt, resolve });
         });

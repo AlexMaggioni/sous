@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
-import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry } from "../src/workflow-result.js";
 import type { McpServerConfig } from "../src/steps/mcp-config.js";
@@ -22,7 +22,7 @@ describe("agent({ mcpServers }) plumbing", () => {
     const capturing: AgentRunner = {
       async run<S extends TSchema | undefined = undefined>(
         _prompt: string,
-        options?: RunOptions<S>,
+        options?: StepRequest<S>,
       ): Promise<AgentResult<S>> {
         invoked = true;
         captured = options?.mcpServers;
@@ -48,7 +48,7 @@ return a`;
     const capturing: AgentRunner = {
       async run<S extends TSchema | undefined = undefined>(
         _prompt: string,
-        options?: RunOptions<S>,
+        options?: StepRequest<S>,
       ): Promise<AgentResult<S>> {
         sawOptions = true;
         captured = options?.mcpServers;

@@ -14,7 +14,8 @@ import { createRun } from "../runs/launch.js";
 import { loadRecord } from "../runs/records.js";
 import { forgetRun } from "../runs/service.js";
 import { runWorker, savedState } from "../runs/worker.js";
-import type { AgentRunner } from "../steps/agent-runner.js";
+import type { PlannedRequest } from "../steps/agent-run.js";
+import type { InnerRunner } from "../steps/steps.js";
 import { resolveWorkflow } from "./dir.js";
 
 /** Step label, or a pattern with `*`, to its answer. A list is a series of answers given in turn,
@@ -32,15 +33,14 @@ function matches(pattern: string, label: string): boolean {
 
 /** Agents that answer at once: the answer given for the step, else a value that fits the step's
  *  schema, else a line of text. Booleans in a made-up value are true, so loops on them end. */
-export function standInAgents(answers: Answers = {}): AgentRunner & { calls: string[] } {
+export function standInAgents(answers: Answers = {}): InnerRunner & { calls: string[] } {
   const calls: string[] = [];
   const given = new Map<string, number>();
-  const run = async (_prompt: string, options: Record<string, unknown> = {}): Promise<unknown> => {
-    const label = typeof options.label === "string" ? options.label : "agent";
+  const run = async (_prompt: string, request: PlannedRequest): Promise<unknown> => {
+    const label = request.label ?? "agent";
     calls.push(label);
     // A session id lets a later step continue this one, as with real agents.
-    const open = options.onSessionOpen as ((ref: unknown) => void) | undefined;
-    open?.({ sessionId: `dry-run-${calls.length}`, backendId: "claude", cwd: options.cwd, reopen: { load: true, resume: true, list: true } });
+    request.onSessionOpen?.({ sessionId: `dry-run-${calls.length}`, backendId: "claude", cwd: request.cwd!, reopen: { load: true, resume: true, list: true } });
     const key = Object.hasOwn(answers, label) ? label : Object.keys(answers).find((pattern) => matches(pattern, label));
     if (key !== undefined) {
       const value = answers[key];
@@ -49,9 +49,9 @@ export function standInAgents(answers: Answers = {}): AgentRunner & { calls: str
       given.set(key, n + 1);
       return value[Math.min(n, value.length - 1)];
     }
-    return options.schema ? fabricateFromSchema(options.schema, label) : `stand-in answer from ${label}`;
+    return request.schema ? fabricateFromSchema(request.schema, label) : `stand-in answer from ${label}`;
   };
-  return { run: run as AgentRunner["run"], calls };
+  return { run, calls };
 }
 
 export interface DryRunResult {

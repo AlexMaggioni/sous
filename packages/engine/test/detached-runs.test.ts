@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { AgentUsage, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentUsage, StepRequest } from "../src/steps/agent-run.js";
 import type { JournalEntry } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
@@ -39,8 +39,8 @@ function memoryPersistence() {
   return { persistence, states, saves };
 }
 
-function runnerFrom(impl: (prompt: string, options: RunOptions) => unknown | Promise<unknown>): AgentRunner {
-  return { run: (prompt: string, options?: RunOptions) => Promise.resolve(impl(prompt, options ?? {})) } as AgentRunner;
+function runnerFrom(impl: (prompt: string, options: StepRequest) => unknown | Promise<unknown>): AgentRunner {
+  return { run: (prompt: string, options?: StepRequest) => Promise.resolve(impl(prompt, options ?? {})) } as AgentRunner;
 }
 
 function deferred<T>() {

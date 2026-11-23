@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AgentHistoryEntry } from "../src/steps/agent-history.js";
-import type { AgentResultProvenance, AgentUsage, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentResultProvenance, AgentUsage, StepRequest } from "../src/steps/agent-run.js";
 import type { WorkflowCallRecord } from "../src/workflow-result.js";
 import { runWorkflow } from "../src/workflow.js";
 import { WorkflowManager } from "../src/workflow-manager.js";

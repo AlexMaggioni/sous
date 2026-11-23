@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { RunOptions } from "../src/steps/agent-run.js";
+import type { StepRequest } from "../src/steps/agent-run.js";
 import type { WorkflowReplayProvenanceField } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
@@ -767,7 +767,7 @@ describe("WorkflowManager world-neutral journal replay", () => {
 
   function artifactRunner(cwd: string, calls: string[]): AgentRunner {
     return {
-      async run(prompt: string, options: RunOptions) {
+      async run(prompt: string, options: StepRequest) {
         calls.push(prompt);
         if (prompt.startsWith("write:")) {
           const value = prompt.slice("write:".length);

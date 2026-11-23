@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry, WorkflowCallRecord, WorkflowResumeCallDecision } from "../src/workflow-result.js";
-import type { RunOptions } from "../src/steps/agent-run.js";
+import type { StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import {
   cloneResumeCandidate,
@@ -111,7 +111,7 @@ function identityPrepared(
 describe("PreparedResume identity engine integration", () => {
   it("replays moved calls, re-journals current indexes, rebinds sessions, and keeps usage observational", async () => {
     const sourceRunner: AgentRunner = {
-      async run(prompt: string, options: RunOptions) {
+      async run(prompt: string, options: StepRequest) {
         options.onUsage?.(usage(5));
         options.onSessionOpen?.({
           sessionId: `session-${prompt}`,
@@ -142,7 +142,7 @@ const values = await parallel([
 return { values }`), {
       runId: "resume-target",
       agent: {
-        async run(prompt: string, options: RunOptions) {
+        async run(prompt: string, options: StepRequest) {
           runnerPrompts.push(prompt);
           options.onUsage?.(usage(7));
           return `live:${prompt}`;

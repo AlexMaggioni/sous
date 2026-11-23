@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { AgentSessionRef } from "../src/workflow-result.js";
-import type { RunOptions } from "../src/steps/agent-run.js";
+import type { StepRequest } from "../src/steps/agent-run.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
 
@@ -93,10 +93,10 @@ describe("journal hash (hashAgentCall byte-stability)", () => {
       const journal: JournalEntry[] = [];
       let inputsHash: string | undefined;
       const runner = {
-        async run(prompt: string, options?: RunOptions) {
+        async run(prompt: string, options?: StepRequest) {
           inputsHash = options?.callInputsHash;
           if (withContinuationMetadata) {
-            const directive: RunOptions = { ...options, continueFromSession: sessionRef };
+            const directive: StepRequest = { ...options, continueFromSession: sessionRef };
             assert.deepEqual(directive.continueFromSession, sessionRef);
             options?.onSessionOpen?.(sessionRef);
             options?.onResultProvenance?.({

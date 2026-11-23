@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
-import type { AgentResult, PromptImage, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentResult, PromptImage, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry } from "../src/workflow-result.js";
 import { runWorkflow } from "../src/workflow.js";
@@ -17,7 +17,7 @@ describe("agent({ images }) plumbing", () => {
     const capturing: AgentRunner = {
       async run<S extends TSchema | undefined = undefined>(
         _prompt: string,
-        options?: RunOptions<S>,
+        options?: StepRequest<S>,
       ): Promise<AgentResult<S>> {
         images = options?.images;
         return "ok" as AgentResult<S>;
@@ -44,7 +44,7 @@ return a`;
     const capturing: AgentRunner = {
       async run<S extends TSchema | undefined = undefined>(
         _prompt: string,
-        options?: RunOptions<S>,
+        options?: StepRequest<S>,
       ): Promise<AgentResult<S>> {
         sawOptions = true;
         images = options?.images;

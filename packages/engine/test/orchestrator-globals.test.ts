@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
-import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry } from "../src/workflow-result.js";
 import type { AgentDefinition, AgentRegistry } from "../src/agent-registry.js";
@@ -28,7 +28,7 @@ function recordingRunner(answer: (prompt: string, options: Record<string, unknow
 } {
   const calls: Call[] = [];
   const runner: AgentRunner = {
-    async run<S extends TSchema | undefined = undefined>(prompt: string, options?: RunOptions<S>): Promise<AgentResult<S>> {
+    async run<S extends TSchema | undefined = undefined>(prompt: string, options?: StepRequest<S>): Promise<AgentResult<S>> {
       const opts = { ...(options ?? {}) } as Record<string, unknown>;
       calls.push({ prompt, options: opts });
       opts.onSessionOpen && (opts.onSessionOpen as (ref: unknown) => void)({

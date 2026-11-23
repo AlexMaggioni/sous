@@ -22,18 +22,21 @@ import {
   type Account,
 } from "@orchestrator/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
-import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, RunOptions } from "./agent-run.js";
+import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, PlannedRequest, StepRequest } from "./agent-run.js";
 import type { AgentRunner } from "./agent-runner.js";
 import type { AgentSessionRef } from "../workflow-result.js";
 import type { McpServerConfig } from "./mcp-config.js";
 import { harnessName, isHarness, missingServer, planStep, removedHarness, routeHarness, type AgentLookup, type McpLookup } from "../agents.js";
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
-import type { StepGiven } from "../orchestrator-globals.js";
 import type { SlotPool } from "../runs/slots.js";
 import { buildPrompt, checkImages, CONTINUATION_INSTRUCTION, extractValidated, REPROMPT_TEXT, toMcpServer, validateValue } from "./answer.js";
 
-/** The runner a test or the dry run gives instead of the programs. */
-export type InnerRunner = AgentRunner & { dispose?: () => Promise<void> | void; auth?: LoginCheck };
+/** The runner a test or the dry run gives instead of the programs. It gets the planned step. */
+export interface InnerRunner {
+  run(prompt: string, request: PlannedRequest): Promise<unknown>;
+  dispose?: () => Promise<void> | void;
+  auth?: LoginCheck;
+}
 
 /** The engine asks it before it resumes a run that paused for a lost login. */
 interface LoginCheck {
@@ -60,16 +63,6 @@ export interface StepsOptions {
   /** Called when a step hits its program's usage limit, before the run pauses. */
   onLimit?: (event: { program: HarnessId; label?: string }) => void;
 }
-
-/** What the engine passes for one agent call. */
-type StepCall = RunOptions<TSchema | undefined> & {
-  timeoutMs?: number;
-  effort?: string;
-  skills?: string[];
-  mcpNames?: string[];
-  agentType?: string;
-  stepGiven?: StepGiven;
-};
 
 /** What a step runs with, after its agent is looked up. */
 interface Plan {
@@ -141,7 +134,7 @@ export function createSteps(options: StepsOptions): AgentRunner & { dispose(): P
     return pending;
   }
 
-  function plan(call: StepCall, stop: (message: string) => WorkflowError): Plan {
+  function plan(call: StepRequest, stop: (message: string) => WorkflowError): Plan {
     if (call.agentType && options.agents) {
       const planned = planStep(options.agents, call.agentType, call.stepGiven, call.model);
       if ("problem" in planned) throw stop(planned.problem);
@@ -160,8 +153,7 @@ export function createSteps(options: StepsOptions): AgentRunner & { dispose(): P
     };
   }
 
-  const run = async (prompt: string, given: Record<string, unknown> = {}): Promise<unknown> => {
-    const call = given as StepCall;
+  const run = async (prompt: string, call: StepRequest): Promise<unknown> => {
     const stop = (message: string) =>
       new WorkflowError(`step "${call.label ?? "agent"}": ${message}`, WorkflowErrorCode.INVALID_ARGUMENT, { recoverable: false, agentLabel: call.label });
     const removed = removedHarness(call.model);
@@ -210,7 +202,7 @@ export function createSteps(options: StepsOptions): AgentRunner & { dispose(): P
   };
 
   return {
-    run: run as AgentRunner["run"],
+    run,
     // A run paused for a lost login may resume: each step starts its program, which reads the
     // login again. If it is still gone, the step fails the same way and the run pauses again.
     // A runner that stands in for the programs answers for its own login.
@@ -232,7 +224,7 @@ const withHarness = (harness: HarnessId, id: string) => (isHarness(id.split("/")
 async function runInner(
   inner: InnerRunner,
   prompt: string,
-  call: StepCall,
+  call: StepRequest,
   step: Plan,
   given: { signal?: AbortSignal; servers: McpServerConfig[]; account?: Account },
 ): Promise<unknown> {
@@ -241,7 +233,7 @@ async function runInner(
   const resolved = call.onModelResolved;
   const onModelResolved = resolved && ((id: string) => resolved(withHarness(step.harness, id)));
   if (step.model && step.model !== call.model) onModelResolved?.(step.model);
-  return inner.run(prompt, {
+  const request: PlannedRequest = {
     ...rest,
     ...(onModelResolved ? { onModelResolved } : {}),
     ...(step.model ? { model: step.model } : {}),
@@ -252,14 +244,15 @@ async function runInner(
     ...(signal ? { signal } : {}),
     ...(servers.length ? { mcpServers: servers } : {}),
     ...(account ? { account } : {}),
-  } as RunOptions);
+  };
+  return inner.run(prompt, request);
 }
 
 /** One step on a harness, with its continuation, its schema repairs and what it reports. */
 async function runOnHarness(
   adapter: Adapter,
   prompt: string,
-  call: StepCall,
+  call: StepRequest,
   step: Plan,
   given: { cwd: string; signal?: AbortSignal; servers: McpServerConfig[]; stop: (message: string) => WorkflowError; account?: Account },
 ): Promise<unknown> {

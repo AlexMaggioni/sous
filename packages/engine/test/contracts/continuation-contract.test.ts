@@ -4,7 +4,7 @@ import type {
   AgentResultProvenance,
   ContinuationAttempt,
   ContinuationSkipReason,
-  RunOptions,
+  StepRequest,
 } from "../../src/steps/agent-run.js";
 import type { AgentSessionRef, JournalCallMetadata, WorkflowRunFallback } from "../../src/workflow-result.js";
 
@@ -36,7 +36,7 @@ const sessionRef: AgentSessionRef = {
 };
 
 test("continuation shared types JSON-round-trip every additive branch", () => {
-  const options: RunOptions = { continueFromSession: sessionRef };
+  const options: StepRequest = { continueFromSession: sessionRef };
   const attempts: ContinuationAttempt[] = [
     { reattached: true, method: "resume" },
     { reattached: true, method: "load" },

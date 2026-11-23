@@ -24,19 +24,15 @@ The engine references the backend through a single frozen method. Supply anythin
 matches this shape (from `src/steps/agent-runner.ts`):
 
 ```ts
-import type { AgentRunner, RunOptions, AgentResult } from "@orchestrator/engine";
-import type { TSchema } from "typebox";
+import type { AgentRunner, StepRequest } from "@orchestrator/engine";
 
 // Minimal stand-in. A real runner starts an agent, as the engine's steps module does.
 // With no `schema` the return is the assistant's text;
 // with a typebox `schema` it is the parsed, validated object. Usage is reported
-// out-of-band via options.onUsage — never in the return value.
+// out-of-band via request.onUsage — never in the return value.
 const myRunner: AgentRunner = {
-  async run<S extends TSchema | undefined = undefined>(
-    prompt: string,
-    _options?: RunOptions<S>,
-  ): Promise<AgentResult<S>> {
-    return `(stub) ${prompt}` as AgentResult<S>;
+  async run(prompt: string, _request: StepRequest): Promise<unknown> {
+    return `(stub) ${prompt}`;
   },
 };
 ```
@@ -344,7 +340,7 @@ From `@orchestrator/engine` (see `src/index.ts`):
 - **Paths / logger** — `workflowProjectPaths`, `workflowHomeDir`,
   `workflowProjectKey`, `ORCHESTRATOR_PERSISTENCE_ROOT_ENV`,
   `createWorkflowLogger`.
-- **Seam types** (from `src/steps/` and the run records): `AgentRunner`, `RunOptions`,
+- **Seam types** (from `src/steps/` and the run records): `AgentRunner`, `StepRequest`,
   `AgentResult`, `AgentUsage`, `WorkflowMeta`, `WorkflowRunResult`, `WorkflowRunFallback`,
   `WorkflowCheckpointTaken`, `WorkflowCheckpointSource`, `JournalEntry`,
   `TokenUsage`, …

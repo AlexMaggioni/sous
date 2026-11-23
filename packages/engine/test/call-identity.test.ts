@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry } from "../src/workflow-result.js";
 import type { TSchema } from "typebox";
@@ -10,13 +10,13 @@ import {
   runWorkflow,
 } from "../src/workflow.js";
 
-type CapturedIdentity = Pick<RunOptions, "callIndex" | "callHash" | "callPath" | "callInputsHash" | "runId">;
+type CapturedIdentity = Pick<StepRequest, "callIndex" | "callHash" | "callPath" | "callInputsHash" | "runId">;
 
 function captureIdentity(target: CapturedIdentity[]): AgentRunner {
   return {
     async run<S extends TSchema | undefined = undefined>(
       _prompt: string,
-      options?: RunOptions<S>,
+      options?: StepRequest<S>,
     ): Promise<AgentResult<S>> {
       target.push({
         callIndex: options?.callIndex,
@@ -61,7 +61,7 @@ return await agent('inspect', { label: 'inspect' })`,
     const runner: AgentRunner = {
       async run<S extends TSchema | undefined = undefined>(
         _prompt: string,
-        options?: RunOptions<S>,
+        options?: StepRequest<S>,
       ): Promise<AgentResult<S>> {
         calls.push({
           callIndex: options?.callIndex,

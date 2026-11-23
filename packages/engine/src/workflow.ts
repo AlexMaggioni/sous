@@ -1601,7 +1601,7 @@ export async function runWorkflow<T = unknown>(
                       scope: runId,
                     }));
                   },
-                } as any);
+                });
               } catch (error) {
                 transitionResumeActivity(-1);
                 throw error;

@@ -1,11 +1,13 @@
-// What one agent step is given and what it returns: RunOptions, AgentResult and usage.
+// What one agent step is given and what it returns: the step request, AgentResult and usage.
 import type { Static, TSchema } from "typebox";
+import type { Account } from "@orchestrator/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
 import type { McpServerConfig } from "./mcp-config.js";
+import type { StepGiven } from "../orchestrator-globals.js";
 import type { AgentSessionRef } from "../workflow-result.js";
 
 /** Real token/cost usage for ONE subagent run. Delivered OUT-OF-BAND via
- *  RunOptions.onUsage — NEVER via run()'s return value. Fires on BOTH the success
+ *  EngineFields.onUsage — NEVER via run()'s return value. Fires on BOTH the success
  *  AND error paths (agent.ts:441-455) so partial usage is never lost. `total === 0`
  *  is the "provider reported nothing" sentinel -> the engine falls back to a chars/4
  *  estimate (workflow.ts:444). onUsage may never fire at all, so every consumer
@@ -61,24 +63,17 @@ export interface PromptImage {
 }
 
 /**
- * The options side of the AgentRunner seam: the bag the engine passes with each agent
- * call. Inputs go in (prompt/schema/images/model/tier/cwd/signal/instructions/tool lists);
- * reports come back through the on* callbacks, NEVER through the return value.
- *
- * KEEP THE FIELD NAMES. The engine also spreads per-step extras into the same bag
- * (orchestratorRunExtras), and the steps module reads fields by name, so a renamed field
- * can stop reaching it without a compile error. Engine-passed core fields: label, schema,
- * signal, instructions, images, model, mode, tier, toolNames, disallowedToolNames, cwd,
- * onModelResolved, onUsage, and onHistory. Plus run inputs that wire
- * infrastructure, so none enters the resume identity hash (hashAgentCall): `mcpServers`,
- * `runId`, and the session hand-off fields `onSessionOpen` / `continueFromSession`. A
- * script's configOptions, meta, promptMeta and keepSession stay in the call's identity and
- * inputs, but no step reads them, so they are not here. The engine never passes
- * `maxSchemaRetries`. The additive call identity context (`callIndex`, `callHash`,
- * `callPath`, `callInputsHash`) is scoped to one engine call and does not enter the resume
- * identity hash.
+ * The fields the engine sets on every agent call. A runner gets them in the step request, and a
+ * test's or the dry run's runner gets them again once the steps module has planned the step.
+ * Inputs go in (prompt, schema, images, cwd, signal, instructions). Reports come back through the
+ * on* callbacks, never through the return value. `mcpServers`, `runId` and the session hand-off
+ * fields wire the call, so none enters the resume identity hash (hashAgentCall). A script's
+ * configOptions, meta, promptMeta and keepSession stay in the call's identity and inputs, but no
+ * step reads them, so they are not here. The engine never passes `maxSchemaRetries`. The call
+ * identity context (`callIndex`, `callHash`, `callPath`, `callInputsHash`) is scoped to one engine
+ * call and does not enter the resume identity hash.
  */
-export interface RunOptions<S extends TSchema | undefined = undefined> {
+export interface EngineFields<S extends TSchema | undefined = TSchema | undefined> {
   /** Human label for logs/telemetry. NOT part of the resume identity hash. */
   label?: string;
   /** typebox schema. Present => result is Static<schema>; absent => result is text.
@@ -93,22 +88,13 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
   /** Engine-owned cancellation. The steps module joins it with the step's time limit and
    *  passes the result to the harness, which stops the step when it fires. */
   signal?: AbortSignal;
-  /** Model spec (`harness/modelId` or a bare `modelId`). The steps module picks the harness
-   *  from it and sends the rest as the model. Omitted => the harness default. */
-  model?: string;
   /** The harness mode. Claude Code: a permission mode. Codex: read-only, workspace-write,
    *  agent or agent-full-access. When omitted, Claude Code uses `auto` where the model
    *  offers it, and Codex uses `agent`. A mode the harness lacks leaves its default and adds
    *  a note. */
   mode?: string;
-  /** Coarse tier ("small" | "medium" | "big"). Consulted only when `model` is unset; `model` wins. */
-  tier?: string;
   /** Working directory (e.g. an isolated git worktree). ABSOLUTE. The harness runs the step there. NOT hashed. */
   cwd?: string;
-  /** Tool allow-list (agentType `tools`). The harness gets it as the step's allowed tools. */
-  toolNames?: string[];
-  /** Tool deny-list (agentType `disallowedTools`), applied after the allow-list. */
-  disallowedToolNames?: string[];
   /** With `schema`: extra client-side repair turns before strict prose extraction. Leaf default 2.
    *  Runner-internal — the engine never passes it and it is NOT plumbed to the MCP tool. */
   maxSchemaRetries?: number;
@@ -185,6 +171,42 @@ export interface RunOptions<S extends TSchema | undefined = undefined> {
    *  digest). Identical across retry attempts. ABSENT when any component fails
    *  strict-JSON canonicalization — never fabricated. ADDITIVE, not a hash input. */
   callInputsHash?: string;
+}
+
+/** What the engine sends the runner for one agent call. */
+export interface StepRequest<S extends TSchema | undefined = TSchema | undefined> extends EngineFields<S> {
+  /** The model spec the step asked for (`harness/modelId`, a bare `modelId`, or a harness
+   *  alone). It is also hashed. The steps module picks the harness from it. Omitted => the
+   *  harness default. */
+  model?: string;
+  /** Coarse tier ("small" | "medium" | "big"). No runner reads it. */
+  tier?: string;
+  /** Tool allow-list of the agent's default block. */
+  toolNames?: string[];
+  /** Tool deny-list of the agent's default block, applied after the allow-list. */
+  disallowedToolNames?: string[];
+  /** The step's time limit, else its agent's. The steps module counts it once the step holds a slot. */
+  timeoutMs?: number;
+  /** The step's effort, skills and MCP server names, else its agent's default block's. */
+  effort?: string;
+  skills?: string[];
+  mcpNames?: string[];
+  /** The agent the step names, also when no agent has that name, so the runner can refuse it. */
+  agentType?: string;
+  /** The values the step set itself, apart from its agent's. Set with `agentType`. */
+  stepGiven?: StepGiven;
+}
+
+/** What a test's or the dry run's runner gets once the steps module has planned the step. */
+export interface PlannedRequest extends EngineFields {
+  /** The model spec that runs, with its harness. */
+  model?: string;
+  effort?: string;
+  skills?: string[];
+  toolNames?: string[];
+  disallowedToolNames?: string[];
+  /** The account the step's harness runs as. */
+  account?: Account;
 }
 
 /** The result side of the seam: schema => the validated object, no schema => text.

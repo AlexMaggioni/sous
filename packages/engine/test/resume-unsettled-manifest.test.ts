@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import type { RunOptions } from "../src/steps/agent-run.js";
+import type { StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
@@ -32,7 +32,7 @@ async function waitUntil(predicate: () => boolean, message: string): Promise<voi
   assert.fail(message);
 }
 
-function abortablePending(options: RunOptions): Promise<never> {
+function abortablePending(options: StepRequest): Promise<never> {
   return new Promise((_resolve, reject) => {
     const abort = () => reject(options.signal?.reason ?? new Error("aborted"));
     if (options.signal?.aborted) abort();
@@ -49,7 +49,7 @@ return await parallel(${JSON.stringify(prompts)}.map((prompt) => () =>
 
 function usageLimitRunner(completed: ReadonlySet<string>, release: Promise<void>) {
   return {
-    async run(prompt: string, options: RunOptions): Promise<unknown> {
+    async run(prompt: string, options: StepRequest): Promise<unknown> {
       if (completed.has(prompt)) return `source:${prompt}`;
       if (prompt === "usage") {
         await release;

@@ -96,9 +96,9 @@ describe("steps on the fake programs", () => {
     const steps = createSteps(onFakes(place, { onProgram: ({ program, path, version }) => found.push(`${program} ${path} ${version}`) }));
     try {
       const common = { onModelResolved: (id: string) => models.push(id), onSessionOpen: (ref: AgentSessionRef) => sessions.push(ref), onUsage: (u: AgentUsage) => usage.push(u) };
-      assert.equal(await steps.run("hello", { label: "a", model: "claude/haiku", instructions: "Answer CLAUDE.", ...common } as never), "Fake claude answer.");
-      assert.equal(await steps.run("again", { label: "b", model: "claude/haiku", ...common } as never), "Fake claude answer.");
-      assert.equal(await steps.run("hi", { label: "c", model: "codex/gpt-6.1-sol", effort: "low", instructions: "Answer CODEX.", ...common } as never), "Fake codex answer.");
+      assert.equal(await steps.run("hello", { label: "a", model: "claude/haiku", instructions: "Answer CLAUDE.", ...common }), "Fake claude answer.");
+      assert.equal(await steps.run("again", { label: "b", model: "claude/haiku", ...common }), "Fake claude answer.");
+      assert.equal(await steps.run("hi", { label: "c", model: "codex/gpt-6.1-sol", effort: "low", instructions: "Answer CODEX.", ...common }), "Fake codex answer.");
     } finally {
       await steps.dispose();
     }
@@ -127,7 +127,7 @@ describe("steps on the fake programs", () => {
     const place = fakePlace();
     const steps = createSteps(onFakes(place, { accounts: { claude: { ...place.accounts.claude, token: "token-value", named: true } } }));
     try {
-      await steps.run("hello", { label: "a", model: "claude/haiku" } as never);
+      await steps.run("hello", { label: "a", model: "claude/haiku" });
     } finally {
       await steps.dispose();
     }
@@ -139,7 +139,7 @@ describe("steps on the fake programs", () => {
     const place = fakePlace();
     const steps = createSteps(onFakes(place));
     try {
-      await steps.run("hello", { label: "a", model: "claude/haiku", toolNames: ["Read", "Bash(npm test)", "mcp__linear__list_issues"], disallowedToolNames: ["Edit", "Write"] } as never);
+      await steps.run("hello", { label: "a", model: "claude/haiku", toolNames: ["Read", "Bash(npm test)", "mcp__linear__list_issues"], disallowedToolNames: ["Edit", "Write"] });
     } finally {
       await steps.dispose();
     }
@@ -158,12 +158,12 @@ describe("steps on the fake programs", () => {
     const counted = { onUsage: (u: AgentUsage) => costs.push(u.cost), onSessionCostGauge: (g: number) => gauges.push(g) };
     let first: AgentSessionRef | undefined;
     try {
-      await steps.run("first", { label: "a", model: "claude/haiku", onSessionOpen: (ref: AgentSessionRef) => (first ??= ref), ...counted } as never);
+      await steps.run("first", { label: "a", model: "claude/haiku", onSessionOpen: (ref: AgentSessionRef) => (first ??= ref), ...counted });
       const recorded = (costGauge: number) => ({ ...first!, costGauge });
       // The same total as recorded, a higher one, and a lower one, which means Claude Code started the total over.
-      for (const gauge of [0.0012, 0.0005, 0.005]) await steps.run("next", { label: "a", model: "claude/haiku", continueFromSession: recorded(gauge), ...counted } as never);
+      for (const gauge of [0.0012, 0.0005, 0.005]) await steps.run("next", { label: "a", model: "claude/haiku", continueFromSession: recorded(gauge), ...counted });
       // A schema repair resumes the step's own session, so its reading holds the first turn's cost.
-      await steps.run("name a city", { label: "b", model: "claude/haiku", schema: Type.Object({ city: Type.String() }, { additionalProperties: false }), ...counted } as never);
+      await steps.run("name a city", { label: "b", model: "claude/haiku", schema: Type.Object({ city: Type.String() }, { additionalProperties: false }), ...counted });
     } finally {
       await steps.dispose();
     }
@@ -180,8 +180,8 @@ describe("steps on the fake programs", () => {
     const agents = lookupAgents({ projectDir: place.cwd, rulesyncGlobal: join(place.dir, "aiglobal"), env });
     const steps = createSteps(onFakes(place, { agents }));
     try {
-      await steps.run("hi", { label: "a", agentType: "nobash" } as never);
-      await steps.run("hi", { label: "b", agentType: "fixer" } as never);
+      await steps.run("hi", { label: "a", agentType: "nobash" });
+      await steps.run("hi", { label: "b", agentType: "fixer" });
     } finally {
       await steps.dispose();
     }
@@ -198,7 +198,7 @@ describe("steps on the fake programs", () => {
     const sessions: AgentSessionRef[] = [];
     const steps = createSteps(onFakes(place, { agents }));
     try {
-      await steps.run("hi", { label: "codex agent", agentType: "reviewer", onModelResolved: (id: string) => models.push(id), onSessionOpen: (ref: AgentSessionRef) => sessions.push(ref) } as never);
+      await steps.run("hi", { label: "codex agent", agentType: "reviewer", onModelResolved: (id: string) => models.push(id), onSessionOpen: (ref: AgentSessionRef) => sessions.push(ref) });
     } finally {
       await steps.dispose();
     }
@@ -216,7 +216,7 @@ describe("steps on the fake programs", () => {
       const schema = Type.Object({ city: Type.String() }, { additionalProperties: false });
       let value: unknown;
       try {
-        value = await steps.run("name a city", { label: "a", model, schema } as never);
+        value = await steps.run("name a city", { label: "a", model, schema });
       } finally {
         await steps.dispose();
       }
@@ -234,7 +234,7 @@ describe("steps on the fake programs", () => {
         const place = fakePlace([{ answer: { town: 1 } }]);
         const steps = createSteps(onFakes(place));
         try {
-          await assert.rejects(steps.run("name a city", { label: "lbl", model, schema, maxSchemaRetries } as never), (error: unknown) => {
+          await assert.rejects(steps.run("name a city", { label: "lbl", model, schema, maxSchemaRetries }), (error: unknown) => {
             assert.ok(error instanceof WorkflowError);
             assert.equal(error.code, WorkflowErrorCode.SCHEMA_NONCOMPLIANCE);
             assert.equal(error.recoverable, false);
@@ -255,8 +255,8 @@ describe("steps on the fake programs", () => {
       const steps = createSteps(onFakes(place));
       const image = { data: "aGVsbG8=", mimeType: "image/png" };
       try {
-        await steps.run("look", { label: "a", model, images: [image] } as never);
-        await assert.rejects(steps.run("look", { label: "b", model, images: [{ data: "", mimeType: "image/png" }] } as never), (error: unknown) => {
+        await steps.run("look", { label: "a", model, images: [image] });
+        await assert.rejects(steps.run("look", { label: "b", model, images: [{ data: "", mimeType: "image/png" }] }), (error: unknown) => {
           assert.ok(error instanceof WorkflowError);
           assert.equal(error.code, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR);
           assert.match(error.message, /images\[0\]\.data must be a non-empty string/);
@@ -275,7 +275,7 @@ describe("steps on the fake programs", () => {
       const limits: string[] = [];
       const steps = createSteps(onFakes(place, { onLimit: ({ program, label }) => limits.push(`${program} ${label}`) }));
       try {
-        await assert.rejects(steps.run("hello", { label: "a", model } as never), (error: unknown) => {
+        await assert.rejects(steps.run("hello", { label: "a", model }), (error: unknown) => {
           assert.ok(error instanceof WorkflowError);
           assert.equal(error.code, WorkflowErrorCode.PROVIDER_USAGE_LIMIT);
           assert.equal(error.resetHint, `Resets at ${RESET_ISO}`);
@@ -291,7 +291,7 @@ describe("steps on the fake programs", () => {
       const place = fakePlace([{ auth: true }]);
       const steps = createSteps(onFakes(place));
       try {
-        await assert.rejects(steps.run("hello", { label: "a", model } as never), (error: unknown) => {
+        await assert.rejects(steps.run("hello", { label: "a", model }), (error: unknown) => {
           assert.ok(error instanceof WorkflowError);
           assert.equal(error.code, WorkflowErrorCode.AUTH_REQUIRED);
           assert.equal(error.recoverable, false);
@@ -309,7 +309,7 @@ describe("steps on the fake programs", () => {
       const controller = new AbortController();
       const sessions: string[] = [];
       try {
-        const running = steps.run("hello", { label: "a", model, signal: controller.signal, onSessionOpen: (ref: AgentSessionRef) => sessions.push(ref.sessionId) } as never);
+        const running = steps.run("hello", { label: "a", model, signal: controller.signal, onSessionOpen: (ref: AgentSessionRef) => sessions.push(ref.sessionId) });
         await until(() => place.lines().length === 1);
         controller.abort();
         await assert.rejects(running);
@@ -323,7 +323,7 @@ describe("steps on the fake programs", () => {
       const place = fakePlace([{ hold: "never" }]);
       const steps = createSteps(onFakes(place));
       try {
-        await assert.rejects(steps.run("hello", { label: "slow", model, timeoutMs: 500 } as never), (error: unknown) => {
+        await assert.rejects(steps.run("hello", { label: "slow", model, timeoutMs: 500 }), (error: unknown) => {
           assert.ok(error instanceof WorkflowError);
           assert.match(error.message, /timed out after 1s/);
           assert.equal(error.recoverable, true);
@@ -338,7 +338,7 @@ describe("steps on the fake programs", () => {
       const place = fakePlace([{ answer: "  " }]);
       const steps = createSteps(onFakes(place));
       try {
-        await assert.rejects(steps.run("hello", { label: "a", model } as never), (error: unknown) => {
+        await assert.rejects(steps.run("hello", { label: "a", model }), (error: unknown) => {
           assert.ok(error instanceof WorkflowError);
           assert.equal(error.code, WorkflowErrorCode.AGENT_EMPTY_OUTPUT);
           assert.equal(error.recoverable, true);
@@ -355,7 +355,7 @@ describe("steps on the fake programs", () => {
         const place = fakePlace([rule]);
         const steps = createSteps(onFakes(place));
         try {
-          await assert.rejects(steps.run("hello", { label: "a", model } as never), (error: unknown) => {
+          await assert.rejects(steps.run("hello", { label: "a", model }), (error: unknown) => {
             assert.ok(error instanceof WorkflowError);
             assert.equal(error.code, WorkflowErrorCode.AGENT_EXECUTION_ERROR);
             assert.equal(error.recoverable, true);
@@ -382,7 +382,7 @@ describe("steps on the fake programs", () => {
         const place = fakePlace([rule]);
         const steps = createSteps(onFakes(place));
         try {
-          await assert.rejects(steps.run("hello", { label: "a", model } as never), (error: unknown) => {
+          await assert.rejects(steps.run("hello", { label: "a", model }), (error: unknown) => {
             assert.ok(error instanceof WorkflowError);
             assert.equal(error.code, WorkflowErrorCode.AGENT_EXECUTION_ERROR);
             assert.equal(error.recoverable, false);
@@ -403,14 +403,14 @@ describe("steps on the fake programs", () => {
       const provenance: AgentResultProvenance[] = [];
       let first: AgentSessionRef | undefined;
       try {
-        await steps.run("first", { label: "a", model, onSessionOpen: (ref: AgentSessionRef) => (first ??= ref) } as never);
+        await steps.run("first", { label: "a", model, onSessionOpen: (ref: AgentSessionRef) => (first ??= ref) });
         assert.ok(first);
         // A journal from before the harnesses records only these three fields.
         const old = { sessionId: first.sessionId, backendId: first.backendId, cwd: first.cwd } as AgentSessionRef;
-        await steps.run("second", { label: "a", model, continueFromSession: old, onResultProvenance: (p: AgentResultProvenance) => provenance.push(p) } as never);
+        await steps.run("second", { label: "a", model, continueFromSession: old, onResultProvenance: (p: AgentResultProvenance) => provenance.push(p) });
         const gone = { ...old, sessionId: "00000000-0000-4000-8000-000000000000" };
         assert.equal(
-          await steps.run("third", { label: "a", model, continueFromSession: gone, onResultProvenance: (p: AgentResultProvenance) => provenance.push(p) } as never),
+          await steps.run("third", { label: "a", model, continueFromSession: gone, onResultProvenance: (p: AgentResultProvenance) => provenance.push(p) }),
           `Fake ${harness} answer.`,
         );
       } finally {
@@ -438,14 +438,14 @@ describe("steps with a runner of their own", () => {
     const env = { CLAUDE_CONFIG_DIR: join(root, "claude"), CODEX_HOME: join(root, "codex"), XDG_CONFIG_HOME: join(root, "config") };
     const steps = createSteps({
       cwd: temp("runner"),
-      inner: { run: async (_prompt: string, options: unknown) => { seen.push(options as Record<string, unknown>); return "ok"; } } as never,
+      inner: { run: async (_prompt: string, options: unknown) => { seen.push(options as Record<string, unknown>); return "ok"; } },
       mcp: lookupMcpServers({ projectDir, rulesyncGlobal: join(root, "aiglobal"), defaultHarness: "claude", env }, {}),
     });
-    assert.equal(await steps.run("go", { label: "a", effort: "high", skills: ["tdd"], mcpNames: ["linear"] } as never), "ok");
+    assert.equal(await steps.run("go", { label: "a", effort: "high", skills: ["tdd"], mcpNames: ["linear"] }), "ok");
     assert.deepEqual([seen[0]!.effort, seen[0]!.skills], ["high", ["tdd"]]);
     assert.equal((seen[0]!.mcpServers as Array<{ name: string }>)[0]!.name, "linear");
     assert.equal(seen[0]!.mcpNames, undefined);
-    await assert.rejects(steps.run("go", { label: "b", mcpNames: ["gmail"] } as never), /step "b": no MCP server "gmail" for Claude Code\. orc looks in .*Add it to \.rulesync\/mcp\.jsonc\./);
+    await assert.rejects(steps.run("go", { label: "b", mcpNames: ["gmail"] }), /step "b": no MCP server "gmail" for Claude Code\. orc looks in .*Add it to \.rulesync\/mcp\.jsonc\./);
   });
 
   it("times out an agent step as a failure a retry can fix", async () => {
@@ -454,9 +454,9 @@ describe("steps with a runner of their own", () => {
       inner: {
         run: (_prompt: string, options: { signal?: AbortSignal }) =>
           new Promise((_resolve, reject) => options.signal?.addEventListener("abort", () => reject(new Error("aborted")))),
-      } as never,
+      },
     });
-    await assert.rejects(steps.run("slow", { label: "slow", timeoutMs: 100 } as never), (error: unknown) => {
+    await assert.rejects(steps.run("slow", { label: "slow", timeoutMs: 100 }), (error: unknown) => {
       assert.ok(error instanceof WorkflowError);
       assert.match(error.message, /timed out after 0s/);
       assert.equal(error.recoverable, true);
@@ -466,9 +466,9 @@ describe("steps with a runner of their own", () => {
 
   it("refuses a step whose model names Pi or OpenCode instead of running it on Claude Code", async () => {
     let calls = 0;
-    const steps = createSteps({ cwd: temp("runner-removed"), inner: { run: async () => { calls += 1; return "ok"; } } as never });
+    const steps = createSteps({ cwd: temp("runner-removed"), inner: { run: async () => { calls += 1; return "ok"; } } });
     for (const model of ["pi/gpt-test", "opencode/big", "OpenCode"]) {
-      await assert.rejects(steps.run("go", { label: "old", model } as never), (error: unknown) => {
+      await assert.rejects(steps.run("go", { label: "old", model }), (error: unknown) => {
         assert.ok(error instanceof WorkflowError);
         assert.match(error.message, /^step "old": model "[^"]+" names the harness "(pi|opencode)", which orc no longer runs\. Use one of claude, codex\.$/);
         assert.equal(error.recoverable, false);
@@ -483,10 +483,10 @@ describe("steps with a runner of their own", () => {
     const empty = temp("no-programs");
     const steps = createSteps({
       cwd: temp("runner-missing"),
-      inner: { run: async () => { calls++; return "ok"; } } as never,
+      inner: { run: async () => { calls++; return "ok"; } },
       programs: () => ({ env: { PATH: empty }, usualDirs: [] }),
     });
-    await assert.rejects(steps.run("go", { label: "writer", model: "codex/gpt-6.1-sol" } as never), (error: unknown) => {
+    await assert.rejects(steps.run("go", { label: "writer", model: "codex/gpt-6.1-sol" }), (error: unknown) => {
       assert.ok(error instanceof WorkflowError);
       assert.match(error.message, /^step "writer": Codex is not installed: no codex program on PATH/);
       assert.equal(error.recoverable, false);
@@ -494,7 +494,7 @@ describe("steps with a runner of their own", () => {
     });
     assert.equal(calls, 0);
     // A Claude Code step needs Claude Code.
-    await assert.rejects(steps.run("go", { label: "other", model: "claude/some-model" } as never), (error: unknown) => {
+    await assert.rejects(steps.run("go", { label: "other", model: "claude/some-model" }), (error: unknown) => {
       assert.ok(error instanceof WorkflowError);
       assert.match(error.message, /^step "other": Claude Code is not installed: no claude program on PATH/);
       return true;
@@ -508,16 +508,16 @@ describe("steps with a runner of their own", () => {
     const reported: string[] = [];
     const steps = createSteps({
       cwd: temp("runner-programs"),
-      inner: { run: async () => "ok" } as never,
+      inner: { run: async () => "ok" },
       programs: (harness) => {
         looked.push(harness);
         return { path: join(FAKES, harness), env: {} };
       },
       onProgram: ({ program, path }) => reported.push(`${program} ${path}`),
     });
-    await steps.run("one", { label: "a", model: "claude/haiku" } as never);
-    await steps.run("two", { label: "b", model: "claude/opus" } as never);
-    await steps.run("three", { label: "c", model: "codex/gpt-6.1-sol" } as never);
+    await steps.run("one", { label: "a", model: "claude/haiku" });
+    await steps.run("two", { label: "b", model: "claude/opus" });
+    await steps.run("three", { label: "c", model: "codex/gpt-6.1-sol" });
     await steps.dispose();
     assert.deepEqual(looked, ["claude", "codex"]);
     assert.deepEqual(reported, [`claude ${join(FAKES, "claude")}`, `codex ${join(FAKES, "codex")}`]);
@@ -525,19 +525,19 @@ describe("steps with a runner of their own", () => {
   });
 
   it("looks for no program when the caller brings its own runner", async () => {
-    const steps = createSteps({ cwd: temp("runner-own"), inner: { run: async () => "ok" } as never });
-    assert.equal(await steps.run("go", { label: "a", model: "codex/gpt-6.1-sol" } as never), "ok");
+    const steps = createSteps({ cwd: temp("runner-own"), inner: { run: async () => "ok" } });
+    assert.equal(await steps.run("go", { label: "a", model: "codex/gpt-6.1-sol" }), "ok");
   });
 
   it("gives the runner the account of the step's harness", async () => {
     const seen: unknown[] = [];
     const steps = createSteps({
       cwd: temp("runner-account"),
-      inner: { run: async (_prompt: string, options: { account?: unknown }) => { seen.push(options.account); return "ok"; } } as never,
+      inner: { run: async (_prompt: string, options: { account?: unknown }) => { seen.push(options.account); return "ok"; } },
       accounts: { claude: { token: "t", named: true }, codex: { folder: "/codex" } },
     });
-    await steps.run("one", { label: "a", model: "claude/haiku" } as never);
-    await steps.run("two", { label: "b", model: "codex/gpt-6.1-sol" } as never);
+    await steps.run("one", { label: "a", model: "claude/haiku" });
+    await steps.run("two", { label: "b", model: "codex/gpt-6.1-sol" });
     assert.deepEqual(seen, [{ token: "t", named: true }, { folder: "/codex" }]);
   });
 });

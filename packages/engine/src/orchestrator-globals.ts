@@ -39,7 +39,7 @@ export interface StepGiven {
 }
 
 /**
- * The per-step extras the orc runner reads from RunOptions. A step's list replaces the
+ * The per-step extras the steps module reads from the step request. A step's list replaces the
  * definition's list. Nothing here is set when neither the step nor the definition has it.
  * `agentType` is the name the step asked for, also when no definition has it, so the host can
  * stop the step. `stepGiven` lets the host tell the step's own values from the definition's.

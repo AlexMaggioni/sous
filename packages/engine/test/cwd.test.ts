@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
-import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry } from "../src/workflow-result.js";
 import { runWorkflow } from "../src/workflow.js";
@@ -18,7 +18,7 @@ function capturingRunner(capture: (cwd: string | undefined) => void): AgentRunne
   return {
     async run<S extends TSchema | undefined = undefined>(
       _prompt: string,
-      options?: RunOptions<S>,
+      options?: StepRequest<S>,
     ): Promise<AgentResult<S>> {
       capture(options?.cwd);
       return "ok" as AgentResult<S>;

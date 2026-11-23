@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { RunOptions } from "../src/steps/agent-run.js";
+import type { StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 const SCRIPT = `export const meta = { name: 'fallbacks', description: 'fallbacks', phases: [{ title: 'Review' }] }
@@ -16,7 +16,7 @@ return { first, second, decision }`;
 function sessionRunner(): AgentRunner {
   let call = 0;
   return {
-    run: (async (_prompt: string, options: RunOptions = {}) => {
+    run: (async (_prompt: string, options: StepRequest = {}) => {
       options.onSessionOpen?.({
         sessionId: `session-${call}`,
         backendId: "codex",

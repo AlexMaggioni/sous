@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { TSchema } from "typebox";
 import {
@@ -15,7 +15,7 @@ async function pathsFor(body: string, meta = "{ name: 'path', description: 'call
   const runner: AgentRunner = {
     async run<S extends TSchema | undefined = undefined>(
       _prompt: string,
-      options?: RunOptions<S>,
+      options?: StepRequest<S>,
     ): Promise<AgentResult<S>> {
       paths.push(options?.callPath);
       return "ok" as AgentResult<S>;
@@ -86,7 +86,7 @@ return await parallel([1, 2, 3].map((value) => () => agent('map-' + value)))`);
     const runner: AgentRunner = {
       async run<S extends TSchema | undefined = undefined>(
         _prompt: string,
-        options?: RunOptions<S>,
+        options?: StepRequest<S>,
       ): Promise<AgentResult<S>> {
         runnerPaths.push(options?.callPath);
         return "ok" as AgentResult<S>;

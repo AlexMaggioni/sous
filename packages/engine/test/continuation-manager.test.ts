@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { RunOptions } from "../src/steps/agent-run.js";
+import type { StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
@@ -65,13 +65,13 @@ function fixture(): {
 class ContinuationRunner implements AgentRunner {
   mode: "usage-pause" | "auth-pause" | "continue" = "usage-pause";
   authReady = false;
-  readonly directives: Array<RunOptions["continueFromSession"]> = [];
+  readonly directives: Array<StepRequest["continueFromSession"]> = [];
   readonly calls: string[] = [];
   readonly auth = {
     canResume: (_backendId: string) => this.authReady,
   };
 
-  async run(prompt: string, options: RunOptions): Promise<string> {
+  async run(prompt: string, options: StepRequest): Promise<string> {
     this.calls.push(prompt);
     if (this.mode === "usage-pause" || this.mode === "auth-pause") {
       options.onSessionOpen?.({
@@ -179,7 +179,7 @@ describe("WorkflowManager continuation wiring", () => {
     const test = fixture();
     try {
       const calls: string[] = [];
-      const directives: Array<RunOptions["continueFromSession"]> = [];
+      const directives: Array<StepRequest["continueFromSession"]> = [];
       let continuing = false;
       const runner: AgentRunner = {
         async run(prompt, options) {

@@ -1,6 +1,6 @@
 // SESSION RECORDS through the engine — the workflow-level half of the run() session hand-off.
 //
-// The runner reports each call's session out-of-band (RunOptions.onSessionOpen);
+// The runner reports each call's session out-of-band (StepRequest.onSessionOpen);
 // the engine's job is to make that identity durable and addressable for HOSTS:
 //   - one AgentSessionRecord per live agent() call on result.agentSessions (callIndex/label/
 //     phase context + keptOpen), even with journaling disabled — it rides the result;

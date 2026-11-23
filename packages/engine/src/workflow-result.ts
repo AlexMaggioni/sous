@@ -56,9 +56,9 @@ export interface WorkflowMeta {
 
 /**
  * The handle for ONE session a step opened on a harness. The steps module builds it from
- * the session id the harness reports and hands it out through RunOptions.onSessionOpen,
+ * the session id the harness reports and hands it out through StepRequest.onSessionOpen,
  * never through run()'s return value. A later call continues the session when the engine
- * passes it back as RunOptions.continueFromSession. It holds no secrets and is
+ * passes it back as StepRequest.continueFromSession. It holds no secrets and is
  * JSON-round-trippable, since journal entries and run results keep it.
  */
 export interface AgentSessionRef {

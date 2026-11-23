@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { RunOptions } from "../src/steps/agent-run.js";
+import type { StepRequest } from "../src/steps/agent-run.js";
 import type { WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
@@ -57,7 +57,7 @@ test("engine host cancellation settles one call null, bypasses retries, and leav
     const journals: number[] = [];
     const ended: Array<{ callIndex: number; errorCode?: WorkflowErrorCode }> = [];
     const runner = {
-      async run(prompt: string, options: RunOptions): Promise<unknown> {
+      async run(prompt: string, options: StepRequest): Promise<unknown> {
         invocations.push(prompt);
         if (prompt === "peer") return "peer-ok";
         return new Promise((_resolve, reject) => {
@@ -160,7 +160,7 @@ test("resume replays a completed sibling and reruns the cancelled occurrence", a
       persistenceRoot: dirs.root,
       environmentKey: "agent-cancel-resume",
       agent: {
-        async run(prompt: string, options: RunOptions): Promise<unknown> {
+        async run(prompt: string, options: StepRequest): Promise<unknown> {
           sourcePrompts.push(prompt);
           if (prompt === "peer") return "source-peer";
           return new Promise((_resolve, reject) => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
-import type { AgentResult, RunOptions } from "../src/steps/agent-run.js";
+import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import { runWorkflow } from "../src/workflow.js";
 import { parseWorkflowScript } from "../src/workflows/script.js";
@@ -16,14 +16,14 @@ const SCRIPT_WITH_BACKENDS = [
   'return await agent("p", { label: "a", model: "browser" });',
 ].join("\n");
 
-function capturingRunner(): { runner: AgentRunner; captured: () => RunOptions | undefined } {
-  let captured: RunOptions | undefined;
+function capturingRunner(): { runner: AgentRunner; captured: () => StepRequest | undefined } {
+  let captured: StepRequest | undefined;
   const runner: AgentRunner = {
     async run<S extends TSchema | undefined = undefined>(
       _prompt: string,
-      options?: RunOptions<S>,
+      options?: StepRequest<S>,
     ): Promise<AgentResult<S>> {
-      captured = options as RunOptions;
+      captured = options as StepRequest;
       return "ok" as AgentResult<S>;
     },
   };

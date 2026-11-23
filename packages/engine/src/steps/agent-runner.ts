@@ -1,21 +1,19 @@
 // The seam between the engine and whatever runs an agent step: the steps module, or a
 // test's fake. The engine calls only run(), and it builds no runner of its own
-// (WorkflowRunOptions.agent is required). Code steps never come here. The field names in
-// RunOptions are the real contract: the engine spreads extra fields into the same bag, so a
-// renamed field can stop reaching the runner without a compile error.
-import type { TSchema } from "typebox";
-import type { AgentResult, RunOptions } from "./agent-run.js";
+// (WorkflowRunOptions.agent is required). Code steps never come here. StepRequest types every
+// field the engine sends, so a renamed field fails the build.
+import type { StepRequest } from "./agent-run.js";
 
 export interface AgentRunner {
   /**
    * Run one agent step to completion. The engine relies on these rules, so changing one means
    * changing the engine's call in workflow.ts too.
    *
-   *  - `prompt` is a plain string. `options` is one bag and may be left out.
+   *  - `prompt` is a plain string. `request` is one bag.
    *
-   *  - The return is the raw value, never an envelope. With a schema it is the parsed and
-   *    validated object. Without one it is the agent's final text. Usage goes to
-   *    options.onUsage, not into the return.
+   *  - The return is the raw value (AgentResult), never an envelope. With a schema it is the
+   *    parsed and validated object. Without one it is the agent's final text. Usage goes to
+   *    request.onUsage, not into the return.
    *
    *  - The return must be JSON and stable for a given resume identity, which hashAgentCall in
    *    workflow.ts computes. The engine journals the value as it is (onAgentJournal) and replays
@@ -31,14 +29,11 @@ export interface AgentRunner {
    *    the run and carries resetHint). The engine adds AGENT_CANCELLED, WORKFLOW_ABORTED and
    *    SCRIPT_ERROR itself.
    *
-   *  - The engine owns stopping. It passes options.signal, and the steps module hands that
+   *  - The engine owns stopping. It passes request.signal, and the steps module hands that
    *    signal to the harness, which stops the step.
    *
    *  - Questions to the user are not the runner's job. The engine asks them through its
    *    options.confirm callback.
    */
-  run<S extends TSchema | undefined = undefined>(
-    prompt: string,
-    options?: RunOptions<S>,
-  ): Promise<AgentResult<S>>;
+  run(prompt: string, request: StepRequest): Promise<unknown>;
 }
