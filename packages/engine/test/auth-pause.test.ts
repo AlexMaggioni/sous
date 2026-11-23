@@ -233,14 +233,12 @@ test(
       resumedEvent = true;
     });
 
-    const ok = (await manager.resumeInBackground(runId)).accepted;
-    assert.equal(ok, true, "resume was accepted");
+    const resumed = await manager.resumeInBackground(runId);
+    assert.equal(resumed.accepted, true, "resume was accepted");
     assert.equal(resumedEvent, true, "a proceeding resume emits 'resumed'");
+    if (!resumed.accepted) assert.fail("resume was not accepted");
 
-    const deadline = Date.now() + 5_000;
-    while (manager.getRun(runId)?.status === "running" && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 25));
-    }
+    await resumed.promise;
     assert.equal(manager.getRun(runId)?.status, "completed", "the auth-paused run resumed and completed");
     assert.ok(agent.runCalls >= 1, "the agent re-executed live");
   }),
