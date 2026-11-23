@@ -1,13 +1,11 @@
 /**
- * Workflow manager for background execution, pause/resume, and run management.
+ * The manager of one orc run, set up by the run's worker. It starts or resumes the run, pauses
+ * it, saves its state and publishes its events.
  *
- * The injected agent backend is an `AgentRunner` (the seam in steps/agent-runner.ts);
- * the manager never constructs a concrete agent. It
- * COMPOSES the host-facing `WorkflowRunResult` (which carries the terminal status
- * trio) on top of the engine's bare `EngineRunResult` — the engine seam stays
- * unchanged. `runSync` (the path the MCP shell drives) resolves to a TERMINAL
- * result even on pause/fail/abort, so the caller can read `run.status` without a
- * try/catch.
+ * The agent steps go to the injected `AgentRunner` (steps/agent-runner.ts). The manager never
+ * builds a concrete agent. It builds the `WorkflowRunResult`, with the run's status, on top of
+ * the engine's bare `EngineRunResult`. `runSync`, the worker's path, resolves to a final result
+ * even when the run pauses, fails or stops, so the worker reads `run.status` with no try/catch.
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -1069,14 +1067,12 @@ export class WorkflowManager extends EventEmitter {
   }
 
   /**
-   * Execute a workflow synchronously (blocking) while still tracking it like a
-   * background run, so the run navigator and the live task panel see it.
-   * `onProgress` fires on every progress event with the current snapshot, letting
-   * a caller (e.g. the workflow tool) drive its own inline display.
+   * Run a workflow and wait for it to end. The run is tracked like a background run, and
+   * `onProgress` fires with the current snapshot on every progress event.
    *
-   * Unlike the background path, runSync resolves to a TERMINAL WorkflowRunResult
-   * (status completed|paused|failed|aborted) even when the run does not complete,
-   * so the MCP shell can project `run.status` without catching.
+   * Unlike the background path, runSync resolves to a final WorkflowRunResult, with status
+   * completed, paused, failed or aborted, even when the run does not complete. The worker reads
+   * `run.status` with no try/catch.
    */
   async runSync(script: string, args?: unknown, exec: ExecOptions = {}): Promise<WorkflowRunResult> {
     const { managed, resumeExecution } = this.initializeRun(script, args, exec, false);
