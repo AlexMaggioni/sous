@@ -71,6 +71,12 @@ async function answerWhenAsked(paths: HomePaths, runId: string, reply: (prompt: 
 
 const quiet = () => {};
 
+/** Poll until `ready` holds. It fails after 20 seconds, which a slow machine does not reach. */
+async function waitFor(ready: () => boolean): Promise<void> {
+  for (let i = 0; i < 2000 && !ready(); i++) await new Promise((r) => setTimeout(r, 10));
+  assert.ok(ready(), "timed out");
+}
+
 describe("runs", () => {
   it("an agent asks a question, the answer comes through the inbox, and the same session goes on", async () => {
     const { paths, projectDir } = testHome({
@@ -266,12 +272,13 @@ return { top, nested }`,
     );
     const workers = inProcess({ inner: runner, handleSignals: true });
     const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const file = logFile(paths, record.runId);
     const running = workers.ended(record.runId);
-    for (let i = 0; i < 500 && calls.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+    await waitFor(() => calls.length === 2);
 
     assert.equal(stopStep(paths, record.runId, "build"), true);
-    for (let i = 0; i < 300 && !stopped.length; i++) await new Promise((r) => setTimeout(r, 10));
-    await new Promise((r) => setTimeout(r, 100));
+    // The worker logs "stopping build" once it has aborted every step the request names.
+    await waitFor(() => readFileSync(file, "utf8").includes("stopping   build\n"));
     assert.deepEqual(stopped, ["build top"], "the nested step named \"ticket A: build\" goes on");
 
     hang = false;
@@ -280,7 +287,6 @@ return { top, nested }`,
     const state = readState(paths, record.runId);
     assert.equal(state?.status, "paused");
     assert.equal(state?.pauseReason, "step_stopped");
-    assert.match(readFileSync(logFile(paths, record.runId), "utf8"), /stopping   build\n/);
 
     resumeRun(paths, workers.launch, record.runId);
     const done = await workers.ended(record.runId);
@@ -333,11 +339,13 @@ return { top, nested }`,
     const workers = inProcess({ inner: runner, handleSignals: true });
     workers.launch(paths, record.runId, "start");
     const running = workers.ended(record.runId);
-    for (let i = 0; i < 500 && !calls.some((c) => c.label === "build"); i++) await new Promise((r) => setTimeout(r, 10));
+    await waitFor(() => calls.some((c) => c.label === "build"));
 
+    // The worker's SIGUSR2 handler is on the process before this one, so it has run when this one does.
+    const handled = new Promise<void>((resolve) => process.once("SIGUSR2", () => resolve()));
     process.kill(process.pid, "SIGUSR2");
-    await new Promise((r) => setTimeout(r, 200));
-    assert.doesNotMatch(readFileSync(file, "utf8"), /stopping/);
+    await handled;
+    assert.doesNotMatch(readFileSync(file, "utf8"), /stopping|no step/);
     assert.equal(stopStep(paths, record.runId, "build"), true);
     await running;
     assert.equal(readState(paths, record.runId)?.pauseReason, "step_stopped");
@@ -376,38 +384,26 @@ return { first, second }`,
       {
         queue: `export const meta = { name: 'queue', description: 'two steps share one slot' }
 return await parallel([
-  () => agent('a', { label: 'a', timeout: '1s' }),
-  () => agent('b', { label: 'b', timeout: '1s' }),
+  () => agent('a', { label: 'a' }),
+  () => agent('b', { label: 'b', timeout: '200ms' }),
 ])`,
       },
       { maxAgents: 1 },
     );
-    // Each step runs 600ms, under its 1s limit. The one that waits for the slot
-    // waits at least 600ms more, so the wait and the run together pass 1s.
-    const stopped: string[] = [];
-    const { runner, calls } = fakeRunner(
-      (call) =>
-        new Promise((resolve, reject) => {
-          const signal = call.options.signal as AbortSignal | undefined;
-          const onAbort = () => {
-            clearTimeout(timer);
-            stopped.push(call.label!);
-            reject(signal!.reason);
-          };
-          const timer = setTimeout(() => {
-            signal?.removeEventListener("abort", onAbort);
-            resolve(`${call.label} done`);
-          }, 600);
-          signal?.addEventListener("abort", onAbort);
-        }),
-    );
+    // Step a holds the slot for 400ms. Step b waits that long for it, twice its limit, and then
+    // runs at once. Counted from the wait, b would be stopped at 200ms, before a lets go.
+    // A runner that sees its signal already aborted ends the step, as the harnesses' runners do.
+    const { runner, calls } = fakeRunner((call) => {
+      if (call.label === "a") return new Promise((resolve) => setTimeout(() => resolve("a done"), 400));
+      (call.options.signal as AbortSignal | undefined)?.throwIfAborted();
+      return "b done";
+    });
     const workers = inProcess({ inner: runner });
     const record = startRun(paths, workers.launch, { workflow: "queue", projectDir, inputs: {} });
     const done = await workers.ended(record.runId);
-    assert.deepEqual(stopped, [], "no step was stopped by its time limit");
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["a done", "b done"]);
-    assert.equal(calls.length, 2, "each step ran once");
+    assert.deepEqual(calls.map((call) => call.label), ["a", "b"], "a held the slot first, and each step ran once");
   });
 
   it("per-run step changes and a default model reach the agent", async () => {
@@ -708,11 +704,6 @@ describe("the run tree", () => {
       .split("\n")
       .filter((line, i, all) => line.startsWith("  ") && all.slice(0, i).every((l) => l.startsWith("  ")))
       .map((line) => line.replace(/\s+\(\d+s(, \d+ tokens)?\)$|\s+\(\d+ tokens\)$/, ""));
-
-  const waitFor = async (ready: () => boolean) => {
-    for (let i = 0; i < 500 && !ready(); i++) await new Promise((r) => setTimeout(r, 10));
-    assert.ok(ready(), "timed out");
-  };
 
   const hangUntilAborted = (call: Call) =>
     new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted"))));
