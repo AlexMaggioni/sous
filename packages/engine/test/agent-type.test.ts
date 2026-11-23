@@ -4,11 +4,10 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { type AgentDefinition, agentDefinitionKey } from "../src/agent-registry.js";
+import { type AgentDefinition, agentDefinitionKey, lookupAgents } from "../src/agents.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
 import { homePaths } from "../src/runs/home.js";
-import { lookupAgents } from "../src/agents.js";
 import { createSteps, type InnerRunner } from "../src/steps/steps.js";
 import type { PlannedRequest } from "../src/steps/agent-run.js";
 

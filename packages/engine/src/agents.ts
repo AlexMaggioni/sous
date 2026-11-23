@@ -9,7 +9,6 @@ import { homedir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import { createClaudeHarness, createCodexHarness, type Account } from "@orchestrator/harnesses";
 import type { McpServerConfig } from "./steps/mcp-config.js";
-import { agentDefinitionKey, type AgentDefinition } from "./agent-registry.js";
 import { parseDurationSeconds } from "./orchestrator-globals.js";
 import type { StepAsk, StepRoute } from "./steps/agent-runner.js";
 import { loadConfig, type HomePaths, type OrcConfig } from "./runs/home.js";
@@ -385,6 +384,63 @@ export function modelFor(harness: Harness, model: string | undefined, fallback?:
   if (model) return `${harness}/${model}`;
   if (fallback && routeHarness(fallback, env) === harness) return fallback;
   return harness;
+}
+
+/**
+ * An agent's definition, as its default harness block gives it. A workflow script names an agent
+ * with `agent("audit this dir", { agentType: "security-auditor" })`, and routeStep turns the
+ * agent's default block into a definition only to hash it.
+ *
+ * Bound: `tools` (allowlist), `disallowedTools` (denylist), `model`, and the
+ * markdown body (`prompt`). `skills`, `mcp`, `effort` and `timeout` are defaults that
+ * a step's own values replace. Wired: `isolation` ("worktree") → createWorktree().
+ */
+export interface AgentDefinition {
+  /** Stable identity used as the `agentType` value. */
+  name: string;
+  /** One-line summary (for discoverability in the tool guideline). */
+  description?: string;
+  /** Allowlist of coding-tool names the subagent may use. Undefined = all. */
+  tools?: string[];
+  /** Denylist of coding-tool names, applied after the allowlist. */
+  disallowedTools?: string[];
+  /** Model spec: optional registered harness prefix plus a verbatim id, or a backend-only name. */
+  model?: string;
+  /** Isolation mode. When "worktree", agents using this type run in a git worktree. */
+  isolation?: "worktree";
+  /** Default skills for this agent. A step's list replaces them. */
+  skills?: string[];
+  /** Default MCP server names (from the host's servers file). A step's list replaces them. */
+  mcp?: string[];
+  /** Default reasoning effort. */
+  effort?: string;
+  /** Default time limit for one attempt, such as "10m". */
+  timeout?: string;
+  /** Markdown body, prepended to the subagent's task as role guidance. */
+  prompt: string;
+  /** Where the definition was loaded from (project wins over user). */
+  source: "project" | "user";
+}
+
+/**
+ * A stable identity string for a resolved definition, folded into the resume
+ * call-hash so editing an agent `.md` invalidates that call's cached result.
+ *
+ * Keep the serialization as it is: it is part of each agent call's resume hash,
+ * so a change would make every old journal miss.
+ */
+export function agentDefinitionKey(def: AgentDefinition | undefined): string | null {
+  if (!def) return null;
+  return JSON.stringify({
+    tools: def.tools ?? null,
+    disallowedTools: def.disallowedTools ?? null,
+    model: def.model ?? null,
+    isolation: def.isolation ?? null,
+    // Only when set, so older journals keep replaying.
+    ...(def.skills ? { skills: def.skills } : {}),
+    ...(def.effort ? { effort: def.effort } : {}),
+    prompt: def.prompt,
+  });
 }
 
 /** An agent as the engine sees it. With no model in its block, the run's model applies. */

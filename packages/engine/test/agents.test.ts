@@ -233,7 +233,7 @@ describe("routeStep", () => {
     });
   });
 
-  // The engine's agent tests, through routeStep: test/agent-registry.test.ts and test/orchestrator-globals.test.ts.
+  // The engine's agent tests, through routeStep: test/agent-type.test.ts and test/orchestrator-globals.test.ts.
   it("gives the agent's timeout, effort, skills and MCP names, with the step's own values replacing them", () => {
     const place = lookupPlace();
     write(

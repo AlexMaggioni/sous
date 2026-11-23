@@ -19,7 +19,7 @@ function capturingRunner(capture: (options: PlannedRequest) => void) {
   };
 }
 
-async function withModelTiers<T>(
+async function withOldTierFile<T>(
   tiers: Record<string, string>,
   fn: (configPath: string) => Promise<T>,
 ): Promise<T> {
@@ -88,7 +88,7 @@ return await agent('plain', { label: 'a' })`,
 });
 
 test("a tier is refused, also when the old tier file names a model for it", async () => {
-  await withModelTiers({ small: "vendor/small-model" }, async () => {
+  await withOldTierFile({ small: "vendor/small-model" }, async () => {
     let calls = 0;
     const script = `export const meta = {
   name: 'tiered', description: 'tiered', phases: [{ title: 'A', model: 'phase/model' }]
