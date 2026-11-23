@@ -193,6 +193,11 @@ These are choices for the owner, not bugs the branch left.
 - `--latest` keeps a step whose inputs match even when it read a file that an edited step wrote.
 - A run's files keep today's layout. A folder per run needs a reader for both layouts and changes
   12 to 27 goldens.
+- The readers for runs saved by older code sit in about ten modules. A format version with one
+  cut-over would let old runs show but not resume, and the readers could go. Whether that is fine
+  depends on how many paused runs are worth resuming. The folder per run fits the same cut-over.
+- The run manager still holds a map of runs and `startInBackground`, for a host that runs many runs
+  in one process. orc runs one per worker. A one-run object would change 32 test files.
 - A step that asks for a mode its program lacks gets a note in the log, not a refusal.
 - The monitoring app may read the event log or `runDetail`. Both work today.
 - `AGENTPRISM_DEFAULT_BACKEND` still sends a bare model such as `haiku` to Codex. No doc names it.
