@@ -27,7 +27,6 @@ test("onProgress snapshots carry live agent counters, not frozen 0s", async () =
       agent: { run: async () => "ok" },
     });
     const result = await manager.runSync(TWO_AGENT_SCRIPT, undefined, {
-      journaling: false,
       onProgress: (snapshot) => {
         seen.push({
           agentCount: snapshot.agentCount,

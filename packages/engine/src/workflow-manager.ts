@@ -166,11 +166,6 @@ export interface ManagedRun {
   resumeReportPlan?: PreparedResume;
   resumeDecisions?: Map<number, WorkflowResumeCallDecision>;
   executionMode?: PersistedRunState["executionMode"];
-  /**
-   * False for host-owned transcript storage. The run stays fully tracked in memory,
-   * but the engine writes no run-state/log journal files and resume is forbidden.
-   */
-  journaling: boolean;
   /** Cross-process execution lease for this run, when it is actively executing. */
   lease?: RunLease;
   eventStreamId?: string;
@@ -187,7 +182,6 @@ export interface ManagedRun {
 
 interface EventPublicationState {
   runId: string;
-  journaling: boolean;
   lease?: RunLease;
   eventStreamId?: string;
   eventSeq?: number;
@@ -295,12 +289,6 @@ export interface ExecOptions {
   resumeJournal?: Map<number, JournalEntry>;
   /** Load this persisted run as the source for a new managed execution. */
   resumeFromRunId?: string;
-  /**
-   * Whether THIS run writes/reads the engine persistence journal. Default is the
-   * manager setting. When false, no run-state/log files are written and resume
-   * rejects with "journaling disabled for this run".
-   */
-  journaling?: boolean;
   /** Cap on total agents for this run. */
   maxAgents?: number;
   /** Host signal (e.g. tool/Esc) that should abort this run when fired. */
@@ -357,8 +345,6 @@ export interface WorkflowManagerOptions {
    * the default filesystem persistence for `cwd` and `persistenceRoot`.
    */
   persistence?: RunPersistence;
-  /** Default journaling policy for runs created by this manager. Default true. */
-  journaling?: boolean;
   /** Opaque host/process generation identity attached to newly acquired filesystem leases. */
   leaseOwnerId?: string;
   /** Default non-git environment label for replay provenance diagnostics. */
@@ -586,7 +572,6 @@ export class WorkflowManager extends EventEmitter {
   private agent?: AgentRunner;
   private defaultAgentRetries: number;
   private persistenceRoot: string;
-  private journaling: boolean;
   private environmentKey?: string;
 
   constructor(options: WorkflowManagerOptions = {}) {
@@ -598,7 +583,6 @@ export class WorkflowManager extends EventEmitter {
     this.agent = options.agent;
     this.defaultAgentRetries = options.defaultAgentRetries ?? 0;
     this.persistenceRoot = workflowHomeDir({ persistenceRoot: options.persistenceRoot });
-    this.journaling = options.journaling ?? true;
     this.environmentKey = options.environmentKey;
     this.persistence = options.persistence
       ? withRunEvents(options.persistence)
@@ -624,7 +608,6 @@ export class WorkflowManager extends EventEmitter {
 
   private reconcileListedRun(candidate: PersistedRunState): PersistedRunState | null {
     if (
-      !this.journaling ||
       this.getRun(candidate.runId) !== undefined ||
       (candidate.status !== "pending" && candidate.status !== "running")
     ) {
@@ -664,7 +647,6 @@ export class WorkflowManager extends EventEmitter {
   }
 
   private reconcileListedRuns(rows: PersistedRunState[]): PersistedRunState[] {
-    if (!this.journaling) return rows;
     const reconciled: PersistedRunState[] = [];
     for (const row of rows) {
       const current = this.reconcileListedRun(row);
@@ -741,7 +723,7 @@ export class WorkflowManager extends EventEmitter {
     });
   }
 
-  private validateNewRunOptions(exec: ExecOptions, journaling: boolean): void {
+  private validateNewRunOptions(exec: ExecOptions): void {
     validateScriptOrigin(exec.scriptOrigin);
     const hasSource = exec.resumeFromRunId !== undefined;
     if (hasSource && (typeof exec.resumeFromRunId !== "string" || exec.resumeFromRunId.length === 0)) {
@@ -749,9 +731,6 @@ export class WorkflowManager extends EventEmitter {
     }
     if (exec.resumeJournal !== undefined && hasSource) {
       throw this.scriptValidationError("resumeJournal is mutually exclusive with resumeFromRunId");
-    }
-    if (hasSource && !journaling) {
-      throw this.scriptValidationError("resumeFromRunId requires journaling");
     }
     if (hasSource && exec.runId === exec.resumeFromRunId) {
       throw this.scriptValidationError("runId must differ from resumeFromRunId");
@@ -1126,23 +1105,22 @@ export class WorkflowManager extends EventEmitter {
     exec: ExecOptions,
     background: boolean,
   ): InitializedRun {
-    const journaling = this.resolveJournaling(exec);
-    this.validateNewRunOptions(exec, journaling);
+    this.validateNewRunOptions(exec);
     const source = exec.resumeFromRunId === undefined
       ? undefined
       : this.acquireResumeSource(exec.resumeFromRunId);
     let identity: { runId: string; lease: RunLease } | undefined;
     try {
       identity = this.acquireNewRunIdentity(exec.runId);
-      const managed = this.createManaged(script, args, journaling, exec, background, identity);
+      const managed = this.createManaged(script, args, exec, background, identity);
       const resumeExecution = source
         ? this.prepareManagedResume(managed, source.source)
         : undefined;
-      if (!source && managed.journaling && exec.resumeJournal) {
+      if (!source && exec.resumeJournal) {
         managed.journal = latestRows([...exec.resumeJournal.values()]);
       }
       this.runs.set(managed.runId, managed);
-      if (managed.journaling && (source || exec.resumeJournal)) {
+      if (source || exec.resumeJournal) {
         this.persistRunOrThrow(managed);
       } else {
         this.persistRun(managed);
@@ -1225,7 +1203,6 @@ export class WorkflowManager extends EventEmitter {
   private createManaged(
     script: string,
     args: unknown | undefined,
-    journaling: boolean,
     exec: ExecOptions,
     background: boolean,
     identity: { runId: string; lease: RunLease },
@@ -1252,9 +1229,9 @@ export class WorkflowManager extends EventEmitter {
       controller: new AbortController(),
       startedAt,
       script,
-      // Every journaled run keeps an editable working copy of its script in the run store unless
+      // Every run keeps an editable working copy of its script in the run store unless
       // the caller recorded the script's own path as its origin.
-      ...(exec.scriptOrigin ? { scriptOrigin: exec.scriptOrigin } : journaling ? { scriptOrigin: { kind: "inline" as const } } : {}),
+      scriptOrigin: exec.scriptOrigin ?? { kind: "inline" as const },
       args: capturedArgs.ok ? capturedArgs.clone : args,
       argsSnapshotOk: capturedArgs.ok,
       ...(!capturedArgs.ok ? { argsUnreplayable: true as const } : {}),
@@ -1266,7 +1243,7 @@ export class WorkflowManager extends EventEmitter {
       effectiveCwd,
       runtime: runtimeIdentity(),
       environment: captureRunEnvironment(effectiveCwd, exec.environmentKey ?? this.environmentKey),
-      ...(journaling ? { resume: { format: "identity-v1" as const } } : {}),
+      resume: { format: "identity-v1" as const },
       resumeActivity: 0,
       resumeFilesystemTainted: false,
       resumeTerminalFinalized: false,
@@ -1282,15 +1259,11 @@ export class WorkflowManager extends EventEmitter {
       executionMode: exec.executionMode,
       ...(exec.resumeFromRunId ? { resumeSourceRunId: exec.resumeFromRunId } : {}),
       ...(exec.resumeJournal ? { legacyResume: true as const, newRunResume: true as const } : {}),
-      journaling,
       background,
       lease: identity.lease,
-      ...(journaling ? { eventStreamId: generateEventStreamId(), eventSeq: 0 } : {}),
+      eventStreamId: generateEventStreamId(),
+      eventSeq: 0,
     };
-  }
-
-  private resolveJournaling(exec: ExecOptions): boolean {
-    return exec.journaling ?? this.journaling;
   }
 
   private createRunEvent<Name extends EngineRunEventName>(
@@ -1331,7 +1304,6 @@ export class WorkflowManager extends EventEmitter {
   ): EventPublicationState {
     const state: EventPublicationState = {
       runId: snapshot.runId,
-      journaling: true,
       lease,
       eventStreamId: snapshot.eventStreamId,
       eventSeq: snapshot.eventSeq,
@@ -1379,7 +1351,6 @@ export class WorkflowManager extends EventEmitter {
     let appendedRecord: RunEventLogRecord | undefined;
     if (
       isPersistableRunEvent(event) &&
-      state.journaling &&
       state.lease &&
       !state.eventLogIncomplete
     ) {
@@ -1529,11 +1500,6 @@ export class WorkflowManager extends EventEmitter {
       else hostSignal.addEventListener("abort", () => managed.controller.abort(), { once: true });
     }
     try {
-      if (!managed.journaling && (resumeJournal || resumeRows)) {
-        throw new WorkflowError("journaling disabled for this run", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
-          recoverable: false,
-        });
-      }
       // Resolve the injected agent backend (per-run override > constructor). The
       // engine REQUIRES an AgentRunner and never constructs one.
       const agent = this.resolveAgent(exec);
@@ -1560,17 +1526,10 @@ export class WorkflowManager extends EventEmitter {
         pauseOnFailedStep: true,
         ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
         ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
-        // Manager-level `journal` events are observation, not persistence. Keep the engine's
-        // deterministic journal callback active even when file journaling is disabled; the
-        // manager decides below whether an entry is persisted or only emitted.
-        journaling: true,
-        persistLogs: managed.journaling,
         persistenceRoot: this.persistenceRoot,
-        resumeJournal: managed.journaling ? resumeJournal : undefined,
-        ...(managed.journaling && resumeRows ? { resumeRows } : {}),
-        resumeFromRunId: managed.journaling
-          ? preparedResume?.sourceRunId ?? (resumeJournal || resumeRows ? managed.runId : undefined)
-          : undefined,
+        resumeJournal,
+        ...(resumeRows ? { resumeRows } : {}),
+        resumeFromRunId: preparedResume?.sourceRunId ?? (resumeJournal || resumeRows ? managed.runId : undefined),
         tokenUsageBaseline: managed.sameRunContinuation
           ? {
               input: managed.snapshot.tokenUsage?.input ?? 0,
@@ -2052,25 +2011,23 @@ export class WorkflowManager extends EventEmitter {
     if (matching.length === 0) return;
 
     let persistenceError: WorkflowError | undefined;
-    if (managed.journaling) {
-      try {
-        this.persistRunOrThrow(managed);
-        if (managed.eventLogIncomplete) {
-          throw new WorkflowError(
-            `Agent call ${event.callIndex} cancellation for run ${managed.runId} could not be durably acknowledged because its event log is incomplete.`,
+    try {
+      this.persistRunOrThrow(managed);
+      if (managed.eventLogIncomplete) {
+        throw new WorkflowError(
+          `Agent call ${event.callIndex} cancellation for run ${managed.runId} could not be durably acknowledged because its event log is incomplete.`,
+          WorkflowErrorCode.PERSISTENCE_ERROR,
+          { recoverable: false },
+        );
+      }
+    } catch (error) {
+      persistenceError = error instanceof WorkflowError
+        ? error
+        : new WorkflowError(
+            `Agent call ${event.callIndex} cancellation for run ${managed.runId} could not be persisted: ${errorMessage(error)}`,
             WorkflowErrorCode.PERSISTENCE_ERROR,
             { recoverable: false },
           );
-        }
-      } catch (error) {
-        persistenceError = error instanceof WorkflowError
-          ? error
-          : new WorkflowError(
-              `Agent call ${event.callIndex} cancellation for run ${managed.runId} could not be persisted: ${errorMessage(error)}`,
-              WorkflowErrorCode.PERSISTENCE_ERROR,
-              { recoverable: false },
-            );
-      }
     }
 
     for (const attempt of matching) {
@@ -2280,11 +2237,7 @@ export class WorkflowManager extends EventEmitter {
   }
 
   private persistRun(managed: ManagedRun) {
-    if (
-      !managed.journaling ||
-      !managed.lease ||
-      this.persistence.validateRunLease?.(managed.lease) === false
-    ) return;
+    if (!managed.lease || this.persistence.validateRunLease?.(managed.lease) === false) return;
     try {
       this.persistence.save(this.persistedState(managed));
     } catch (err) {
@@ -2293,13 +2246,11 @@ export class WorkflowManager extends EventEmitter {
   }
 
   private persistRunOrThrow(managed: ManagedRun): void {
-    const leaseFailure = !managed.journaling
-      ? "journaling is disabled"
-      : !managed.lease
-        ? "the lease is missing"
-        : this.persistence.validateRunLease?.(managed.lease) === false
-          ? "the lease is no longer owned"
-          : undefined;
+    const leaseFailure = !managed.lease
+      ? "the lease is missing"
+      : this.persistence.validateRunLease?.(managed.lease) === false
+        ? "the lease is no longer owned"
+        : undefined;
     if (leaseFailure) {
       throw new WorkflowError(
         `run ${managed.runId} cannot be durably updated because ${leaseFailure}`,
@@ -2375,8 +2326,7 @@ export class WorkflowManager extends EventEmitter {
       exec.resumeJournal !== undefined ||
       exec.cwd !== undefined ||
       exec.defaultModel !== undefined ||
-      exec.executionMode !== undefined ||
-      exec.journaling === false
+      exec.executionMode !== undefined
     ) {
       throw this.scriptValidationError(
         "same-run continuation accepts only runtime controls; script, args, cwd, provider configuration, and replay inputs are immutable",
@@ -2389,8 +2339,6 @@ export class WorkflowManager extends EventEmitter {
     // Guard: refuse to resume a run that is already running. Paused, failed, and stopped
     // (aborted) runs can restart from their journal; only completed runs are final.
     const active = this.runs.get(runId);
-    if (active?.journaling === false) throw new Error("journaling disabled for this run");
-    if (!this.resolveJournaling(exec)) throw new Error("journaling disabled for this run");
     if (active?.status === "running") {
       return { accepted: false };
     }
@@ -2622,7 +2570,6 @@ export class WorkflowManager extends EventEmitter {
       }),
       defaultModel: persisted.defaultModel,
       sameRunContinuation: true,
-      journaling: true,
       background: true,
       lease,
       eventStreamId: publication.eventStreamId,
@@ -2767,25 +2714,23 @@ export class WorkflowManager extends EventEmitter {
       const lease = this.persistence.acquireRunLease(runId);
       if (!lease) return false;
       managed.lease = lease;
-      if (managed.journaling) {
-        let current: PersistedRunState | null;
-        try {
-          current = this.persistence.load(runId);
-        } catch (error) {
-          this.reportPersistenceFailure(error);
-          this.releaseRunLease(managed);
-          return false;
-        }
-        if (current?.status !== "paused") {
-          this.releaseRunLease(managed);
-          return false;
-        }
-        pausedSnapshot = current;
-        const publication = this.prepareEventPublicationState(current, lease);
-        managed.eventStreamId = publication.eventStreamId;
-        managed.eventSeq = publication.eventSeq;
-        managed.eventLogIncomplete = publication.eventLogIncomplete;
+      let current: PersistedRunState | null;
+      try {
+        current = this.persistence.load(runId);
+      } catch (error) {
+        this.reportPersistenceFailure(error);
+        this.releaseRunLease(managed);
+        return false;
       }
+      if (current?.status !== "paused") {
+        this.releaseRunLease(managed);
+        return false;
+      }
+      pausedSnapshot = current;
+      const publication = this.prepareEventPublicationState(current, lease);
+      managed.eventStreamId = publication.eventStreamId;
+      managed.eventSeq = publication.eventSeq;
+      managed.eventLogIncomplete = publication.eventLogIncomplete;
     }
 
     managed.controller.abort();
@@ -2913,7 +2858,7 @@ export class WorkflowManager extends EventEmitter {
    */
   getRun(runId: string): ManagedRun | undefined {
     const managed = this.runs.get(runId);
-    if (!managed || !managed.journaling) return managed;
+    if (!managed) return managed;
     if (managed.lease && this.persistence.validateRunLease?.(managed.lease) !== false) return managed;
     const persisted = this.persistence.load(runId);
     if (!persisted) return managed;

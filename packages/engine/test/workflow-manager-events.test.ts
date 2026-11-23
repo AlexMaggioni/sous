@@ -669,7 +669,7 @@ test("automatic usage_limit and auth_required settlements carry reason + errorRe
 });
 
 test("typed EventEmitter methods retain arbitrary-event fallbacks", () => {
-  const manager = new WorkflowManager({ journaling: false, agent: { async run() { return "unused"; } } });
+  const manager = new WorkflowManager({ agent: { async run() { return "unused"; } } });
   const logListener = (payload: EngineRunEventPayloadMap["log"]) => {
     assert.equal(payload.message, "typed");
   };

@@ -215,7 +215,6 @@ describe("WorkflowManager resumeFromRunId admission", () => {
         { resumeFromRunId: "" },
         { resumeFromRunId: 1 as unknown as string },
         { resumeFromRunId: sourceRunId, resumeJournal: new Map() },
-        { resumeFromRunId: sourceRunId, journaling: false },
         { resumeFromRunId: sourceRunId, runId: sourceRunId },
       ];
       for (const exec of invalid) {

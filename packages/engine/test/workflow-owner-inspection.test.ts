@@ -59,16 +59,3 @@ test("another manager's whole stop supersedes a cached pause in the same generat
     rmSync(cwd, { recursive: true, force: true });
   }
 });
-
-test("non-journaled SDK runs keep their in-memory run after completion", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "workflow-ephemeral-inspection-"));
-  try {
-    const manager = new WorkflowManager({ cwd, persistenceRoot: join(cwd, "store"), journaling: false, agent: { async run() { return "unused"; } } });
-    const result = await manager.runSync('export const meta = { name: "ephemeral", description: "SDK history" }; return 42;');
-    assert.equal(manager.getPersistence().load(result.runId), null);
-    assert.equal(manager.getRun(result.runId)?.result?.result, 42);
-    assert.equal(manager.getRun(result.runId)?.status, "completed");
-  } finally {
-    rmSync(cwd, { recursive: true, force: true });
-  }
-});

@@ -20,14 +20,14 @@ async function inStore(fn: (paths: { cwd: string; persistenceRoot: string; root:
   }
 }
 
-test("a journaled inline run records its origin and writes no script copy, and delete removes an old copy", async () => {
+test("an inline run records its origin and writes no script copy, and delete removes an old copy", async () => {
   await inStore(async (paths) => {
     const manager = new WorkflowManager({ ...paths, agent: runner });
     const source = script("inline");
     const run = await manager.runSync(source);
     const persistence = manager.getPersistence();
     const location = inlineScriptFile(persistence.getRunsDir(), run.runId);
-    assert.deepEqual(persistence.load(run.runId)?.scriptOrigin, { kind: "inline" }, "journaled runs default to an inline origin");
+    assert.deepEqual(persistence.load(run.runId)?.scriptOrigin, { kind: "inline" }, "runs default to an inline origin");
     assert.equal(persistence.load(run.runId)?.script, source);
     assert.equal(existsSync(location), false, "the state holds the script, so no copy is written");
 
@@ -55,7 +55,7 @@ test("a path origin records the caller's file, writes no copy, and delete never 
   });
 });
 
-test("a script origin must be inline or an absolute path, and no copy is written without journaling", async () => {
+test("a script origin must be inline or an absolute path", async () => {
   await inStore(async (paths) => {
     const manager = new WorkflowManager({ ...paths, agent: runner });
     for (const origin of [
@@ -69,9 +69,6 @@ test("a script origin must be inline or an absolute path, and no copy is written
         (error: unknown) => (error as { code?: string }).code === WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
       );
     }
-    const unjournaled = await manager.runSync(script("ephemeral"), undefined, { journaling: false });
-    assert.equal(unjournaled.status, "completed");
-    assert.equal(existsSync(inlineScriptFile(manager.getPersistence().getRunsDir(), unjournaled.runId)), false);
   });
 });
 
@@ -104,7 +101,7 @@ test("a custom persistence records the origin, and the manager touches no file o
       releaseRunLease() {},
       getRunsDir() { return join(paths.root, "never-created"); },
     };
-    const manager = new WorkflowManager({ agent: runner, persistence: custom, journaling: true });
+    const manager = new WorkflowManager({ agent: runner, persistence: custom });
     const { promise, runId } = manager.startInBackground(script("memory"), undefined, {});
     await promise;
     assert.equal(records.get(runId)?.status, "completed");
