@@ -470,14 +470,6 @@ export interface WorkflowCallRecord {
   scope?: string;
 }
 
-export interface WorkflowLogTail {
-  lines: string[];
-  totalLines: number;
-  omittedLines: number;
-  truncatedLines: number;
-  redactedLines: number;
-}
-
 /** Host-resolved execution bounds in force for one run. */
 export interface WorkflowRunLimits {
   maxAgents: number;
@@ -520,8 +512,6 @@ export interface WorkflowRunResult<T = unknown> {
   tokenUsage?: TokenUsage;
   /** Captured log lines. */
   logs: string[];
-  /** Redacted final log lines for a paused, failed, or aborted run. */
-  logTail?: WorkflowLogTail;
   /** Present when status !== "completed": human-readable cause (e.g. "usage_limit",
    *  "auth_required", "checkpoint_required"). NOT the machine-readable contract — hosts branch
    *  on `reason`, then read the corresponding structured context when present. */

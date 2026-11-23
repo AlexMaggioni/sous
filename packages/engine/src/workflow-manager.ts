@@ -75,7 +75,6 @@ import {
 } from "./workflow.js";
 import { parseWorkflowScript } from "./workflows/script.js";
 import type { RunPlaces } from "./places/places.js";
-import { createWorkflowLogTail } from "./run-observability.js";
 import { assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
 import { assertCurrentSave, olderSave } from "./older-save.js";
 import type { CodeStepEnv } from "./code-steps.js";
@@ -1121,9 +1120,6 @@ export class WorkflowManager extends EventEmitter {
       durationMs: engineResult?.durationMs ?? Date.now() - managed.startedAt.getTime(),
       tokenUsage,
       logs: engineResult?.logs ?? managed.snapshot.logs,
-      ...(managed.status === "completed"
-        ? {}
-        : { logTail: createWorkflowLogTail(engineResult?.logs ?? managed.snapshot.logs, 20) }),
       reason,
       resetHint: usageLimit ? error?.resetHint : undefined,
       // Structured, NON-SECRET auth surface for an auth pause (§2.12) — hosts read this,

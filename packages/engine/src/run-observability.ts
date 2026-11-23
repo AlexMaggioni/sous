@@ -1,10 +1,6 @@
 import type { AgentResultProvenance, AgentUsage } from "./steps/agent-run.js";
 import type { AuthErrorContext, CheckpointContext, WorkflowRecordedError } from "./errors.js";
-import type {
-  TokenUsage,
-  WorkflowCallRecord,
-  WorkflowLogTail,
-} from "./workflow-result.js";
+import type { TokenUsage, WorkflowCallRecord } from "./workflow-result.js";
 import type {
   PersistableEngineRunEvent,
   PersistedRunEvent,
@@ -102,18 +98,6 @@ function compactJson(value: unknown, depth: number, state: CompactState): unknow
     state.truncated = true;
   }
   return output;
-}
-
-export function createWorkflowLogTail(logs: string[], logLines = 20): WorkflowLogTail {
-  const selected = logLines === 0 ? [] : logs.slice(-logLines);
-  const sanitized = selected.map(sanitizeText);
-  return {
-    lines: sanitized.map((line) => line.value),
-    totalLines: logs.length,
-    omittedLines: logs.length - sanitized.length,
-    truncatedLines: sanitized.filter((line) => line.truncated).length,
-    redactedLines: sanitized.filter((line) => line.redacted).length,
-  };
 }
 
 interface RunEventProjectionState {
