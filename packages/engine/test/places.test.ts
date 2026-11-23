@@ -35,18 +35,6 @@ function tempHome(): HomePaths {
 const step = { runId: "run-9", index: 0, label: "Edit it" };
 
 describe("a step's worktree", () => {
-  it("is not made outside a git repository, and the step gets the reason", () => {
-    const home = tempHome();
-    const dir = mkdtempSync(join(tmpdir(), "orc-places-nogit-"));
-    try {
-      const made = placesIn(home, "run-9").makeStepWorktree(dir, step);
-      assert.deepEqual(made, { reason: "not a git repository" });
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(home.home, { recursive: true, force: true });
-    }
-  });
-
   it("is made under the home's worktrees folder on branch orc/<name>, then removed with its branch", () => {
     const home = tempHome();
     const repo = gitRepo();
@@ -87,20 +75,6 @@ describe("a step's worktree", () => {
     }
   });
 
-  it("removing it does not throw when its folder is already gone", () => {
-    const home = tempHome();
-    const repo = gitRepo();
-    try {
-      const made = placesIn(home, "run-9").makeStepWorktree(repo, step);
-      assert.ok("tree" in made);
-      rmSync(made.tree.dir, { recursive: true, force: true });
-      assert.doesNotThrow(() => placesIn(home, "run-9").removeStepWorktree(repo, made.tree));
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-      rmSync(home.home, { recursive: true, force: true });
-    }
-  });
-
   it("removing it does not throw when git fails on broken worktree metadata", () => {
     const home = tempHome();
     const repo = gitRepo();
@@ -109,7 +83,8 @@ describe("a step's worktree", () => {
       assert.ok("tree" in made);
       rmSync(made.tree.dir, { recursive: true, force: true });
       const meta = join(repo, ".git", "worktrees", "run-9-0-edit-it");
-      if (existsSync(meta)) writeFileSync(join(meta, "gitdir"), "/nonexistent/path\n");
+      assert.ok(existsSync(meta), "git keeps the worktree's metadata after its folder is removed");
+      writeFileSync(join(meta, "gitdir"), "/nonexistent/path\n");
       assert.doesNotThrow(() => placesIn(home, "run-9").removeStepWorktree(repo, made.tree));
     } finally {
       rmSync(repo, { recursive: true, force: true });

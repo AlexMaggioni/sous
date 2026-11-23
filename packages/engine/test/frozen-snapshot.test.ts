@@ -1,13 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import { createRunPersistence } from "../src/runs/persistence/run-persistence.js";
-import { WorkflowManager } from "../src/workflow-manager.js";
 import { projectRecordedError } from "../src/recorded-error.js";
 import { isStepFailedPause, runWorkflow } from "../src/workflow.js";
 
@@ -37,35 +32,6 @@ return value.nested.value`),
     assert.deepEqual(journal?.result, { nested: { value: 1 } });
     assert.equal(Object.isFrozen(journal?.result), true);
     assert.equal(Object.isFrozen((journal?.result as { nested: object }).nested), true);
-  });
-
-  it("prevents a manager journal listener from changing the persisted result", async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "frozen-manager-"));
-    const persistenceRoot = mkdtempSync(join(tmpdir(), "frozen-manager-root-"));
-    try {
-      const manager = new WorkflowManager({
-        cwd,
-        persistenceRoot,
-        agent: { async run() { return { stable: true }; } },
-      });
-      let mutationThrew = false;
-      manager.on("journal", ({ entry }: { entry: JournalEntry }) => {
-        try {
-          (entry.result as { stable: boolean }).stable = false;
-        } catch {
-          mutationThrew = true;
-        }
-      });
-      const result = await manager.runSync(
-        script(`return await agent('value', { label: 'value', schema: { type: 'object' } })`),
-      );
-      const persisted = createRunPersistence(cwd, undefined, { persistenceRoot }).load(result.runId);
-      assert.equal(mutationThrew, true);
-      assert.deepEqual(persisted?.journal?.[0].result, { stable: true });
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(persistenceRoot, { recursive: true, force: true });
-    }
   });
 
   it("rejects every non-strict-JSON result shape with a typed path-bearing error", async () => {

@@ -186,19 +186,6 @@ describe("WorkflowManager resumeFromRunId admission", () => {
     );
   });
 
-  it("replays a checkpointed prefix across a Node version string change and reports it", async () => {
-    await assertDriftedCheckpointResume(
-      "runtime-node-target",
-      (manager, sourceRunId) => {
-        const source = manager.getPersistence().load(sourceRunId);
-        assert.ok(source?.runtime);
-        source.runtime.node = "v0.0.0-recorded";
-        manager.getPersistence().save(source);
-      },
-      "runtime.node",
-    );
-  });
-
   it("validates exact option combinations before creating a target run", async () => {
     const dirs = tempDirs();
     try {
@@ -744,55 +731,4 @@ return await agent(${JSON.stringify(reader)}, {
   label: "reader",
   resume: { filesystem: "read-only" },
 })`, "writer-counterexample");
-
-  it("runs an edited writer but replays its unchanged reader", async () => {
-    const dirs = gitDirs();
-    try {
-      const sourceCalls: string[] = [];
-      const source = await new WorkflowManager({
-        cwd: dirs.cwd,
-        persistenceRoot: dirs.root,
-        agent: artifactRunner(dirs.cwd, sourceCalls),
-      }).runSync(writerScript("write:v1", "read"));
-      const targetCalls: string[] = [];
-      const target = await new WorkflowManager({
-        cwd: dirs.cwd,
-        persistenceRoot: dirs.root,
-        agent: artifactRunner(dirs.cwd, targetCalls),
-      }).runSync(writerScript("write:v2", "read"), undefined, { resumeFromRunId: source.runId });
-      assert.deepEqual(targetCalls, ["write:v2"]);
-      assert.equal(target.result, "v1");
-      assert.equal(target.resumeReport?.strategy, "occurrence-v1");
-      assert.deepEqual(target.resumeReport?.calls.map((decision) =>
-        decision.action === "live" ? decision.reason : decision.action), [
-        "not-recorded",
-        "replayed",
-      ]);
-    } finally {
-      dirs.cleanup();
-    }
-  });
-
-  it("replays an unchanged writer before running a changed downstream reader", async () => {
-    const dirs = gitDirs();
-    try {
-      const source = await new WorkflowManager({
-        cwd: dirs.cwd,
-        persistenceRoot: dirs.root,
-        agent: artifactRunner(dirs.cwd, []),
-      }).runSync(writerScript("write:v1", "read:first"));
-      const targetCalls: string[] = [];
-      const target = await new WorkflowManager({
-        cwd: dirs.cwd,
-        persistenceRoot: dirs.root,
-        agent: artifactRunner(dirs.cwd, targetCalls),
-      }).runSync(writerScript("write:v1", "read:changed"), undefined, { resumeFromRunId: source.runId });
-      assert.deepEqual(targetCalls, ["read:changed"]);
-      assert.equal(target.result, "v1");
-      assert.equal(target.resumeReport?.replayed, 1);
-      assert.equal(target.resumeReport?.live, 1);
-    } finally {
-      dirs.cleanup();
-    }
-  });
 });

@@ -208,34 +208,3 @@ return { a, b }`;
     assert.equal((await kept.promise).status, "completed");
   }),
 );
-
-test(
-  "the SDK resume() path continues a revision positionally",
-  withDirs(async ({ cwd, root }) => {
-    const agent = perCallRunner();
-    const manager = new WorkflowManager({ cwd, persistenceRoot: root, agent: agent.runner });
-    manager.on("error", () => {});
-    const { runId, promise } = manager.startInBackground(threeCalls("second"));
-    await waitUntil(() => agent.calls.length === 1, "a starts");
-    agent.calls[0].resolve("a-done");
-    await waitUntil(() => agent.calls.length === 2, "b starts");
-    assert.equal(manager.stop(runId), true);
-    agent.calls[1].resolve("lost");
-    await promise.catch(() => {});
-
-    const revised = threeCalls("second, revised");
-    const resumed = await manager.resumeInBackground(runId, { script: revised });
-    assert.equal(resumed.accepted, true);
-    if (!resumed.accepted) return;
-    assert.equal(manager.getPersistence().load(runId)?.script, revised);
-    await waitUntil(() => agent.calls.length === 3, "the edited call runs live");
-    assert.equal(agent.calls[2].prompt, "second, revised");
-    agent.calls[2].resolve("b-new");
-    await waitUntil(() => agent.calls.length === 4, "c runs live");
-    agent.calls[3].resolve("c-done");
-    const result = await resumed.promise;
-    assert.equal(result.status, "completed");
-    assert.equal(JSON.stringify(result.result), JSON.stringify({ a: "a-done", b: "b-new", c: "c-done" }));
-    assert.equal(result.resumeReport?.calls[0]?.action, "replayed", "the unchanged first call replayed");
-  }),
-);

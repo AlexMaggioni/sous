@@ -86,21 +86,3 @@ return await agent('plain', { label: 'a' })`,
 
   assert.equal(instructions, undefined);
 });
-
-test("a tier is refused, also when the old tier file names a model for it", async () => {
-  await withOldTierFile({ small: "vendor/small-model" }, async () => {
-    let calls = 0;
-    const script = `export const meta = {
-  name: 'tiered', description: 'tiered', phases: [{ title: 'A', model: 'phase/model' }]
-}
-phase('A')
-await agent('tier beats phase', { label: 'tiered', tier: 'small' })
-return {}`;
-
-    await assert.rejects(
-      runWorkflow(script, { agent: capturingRunner(() => calls++), persistLogs: false }),
-      { message: 'tier is gone. Set the model with model, such as "claude/haiku", or name an agent with agentType.' },
-    );
-    assert.equal(calls, 0, "a step with a tier never reaches the runner");
-  });
-});

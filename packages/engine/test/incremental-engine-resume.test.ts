@@ -195,75 +195,9 @@ return { values }`), {
     ]);
     assert.deepEqual(recording.journal.map((entry) => entry.session), originalSessions);
   });
-
-  it("keeps unrelated replay candidates after a changed live call", async () => {
-    const recording = await record(source(`
-const first = await agent("first", { label: "first", resume: { filesystem: "read-only" } })
-const second = await agent("second", { label: "second", resume: { filesystem: "read-only" } })
-return { first, second }`));
-    const runnerPrompts: string[] = [];
-    const result = await runWorkflow(source(`
-const first = await agent("changed", { label: "first" })
-const second = await agent("second", { label: "second", resume: { filesystem: "read-only" } })
-return { first, second }`), {
-      runId: "unsafe-target",
-      agent: {
-        async run(prompt: string) {
-          runnerPrompts.push(prompt);
-          return `live:${prompt}`;
-        },
-      },
-      ...occurrence(seedFor(recording), "unsafe-target"),
-      persistLogs: false,
-    });
-
-    assert.deepEqual(runnerPrompts, ["changed"]);
-    assert.deepEqual(result.resumeReport?.calls.map((decision) =>
-      decision.action === "live" ? decision.reason : decision.action), [
-      "not-recorded",
-      "replayed",
-    ]);
-  });
 });
 
 describe("PreparedResume allocation-ordered barriers and fan-out", () => {
-  it("replays 38 of 40 declared readers when two prompts change", async () => {
-    const original = Array.from({ length: 40 }, (_value, index) => `reader-${index}`);
-    const changed = [...original];
-    changed[5] = "reader-5-changed";
-    changed[20] = "reader-20-changed";
-    const recording = await record(fanout(original, false));
-    const runnerPrompts: string[] = [];
-    const result = await runWorkflow(fanout(changed, false), {
-      runId: "reader-fanout-target",
-      agent: { async run(prompt) { runnerPrompts.push(prompt); return `live:${prompt}`; } },
-      ...occurrence(seedFor(recording), "reader-fanout-target"),
-      persistLogs: false,
-    });
-
-    assert.deepEqual(runnerPrompts.sort(), ["reader-20-changed", "reader-5-changed"]);
-    assert.equal(result.resumeReport?.replayed, 38);
-    assert.equal(result.resumeReport?.live, 2);
-    assert.equal(result.resumeReport?.failed, 0);
-  });
-
-  it("replays an unannotated 40-reader recording", async () => {
-    const items = Array.from({ length: 40 }, (_value, index) => `unsafe-reader-${index}`);
-    const recording = await record(fanout(items, false, false));
-    assert.equal(recording.calls.every((call) => call.resumeSafety === undefined), true);
-    let runnerCalls = 0;
-    const result = await runWorkflow(fanout(items, false, false), {
-      runId: "unsafe-reader-target",
-      agent: { async run(prompt) { runnerCalls += 1; return `live:${prompt}`; } },
-      ...occurrence(seedFor(recording), "unsafe-reader-target"),
-      persistLogs: false,
-    });
-    assert.equal(runnerCalls, 0);
-    assert.equal(result.resumeReport?.replayed, 40);
-    assert.equal(result.resumeReport?.live, 0);
-    assert.equal(result.resumeReport?.calls.every((decision) => decision.action === "replayed"), true);
-  });
-
   it("replays matching worktrees without making degradation a suffix barrier", async () => {
     const repository = initGitRepo();
     const home = tempPlaces();

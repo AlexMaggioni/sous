@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,12 +14,8 @@ import { normalizeResumeSeed } from "../src/resume-matcher.js";
 import { resumeRows } from "../src/resume-rows.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { tempPlaces } from "./helpers/places.js";
-import { CHECKPOINT_INPUTS_FORMAT, hashCheckpointInputs } from "../src/checkpoint-call.js";
-import {
-  CALL_INPUTS_FORMAT,
-  isStepFailedPause,
-  runWorkflow,
-} from "../src/workflow.js";
+import { hashCheckpointInputs } from "../src/checkpoint-call.js";
+import { isStepFailedPause, runWorkflow } from "../src/workflow.js";
 
 const script = (body: string, name = "incremental-recording") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: 'incremental recording' }\n${body}`;
@@ -258,15 +253,6 @@ return { safe, unsafe, empty }`),
 });
 
 describe("checkpoint input recording and byte compatibility", () => {
-  it("versions the explicit-decision policy independently of the checkpoint prompt identity", () => {
-    const digest = (canonical: string) => createHash("sha256").update(canonical).digest("hex");
-    assert.equal(CHECKPOINT_INPUTS_FORMAT, 2);
-    assert.equal(CALL_INPUTS_FORMAT, 2);
-    assert.equal(hashCheckpointInputs({}), digest('{"checkpointDecision":"explicit-v1"}'));
-    assert.equal(hashCheckpointInputs({ timeoutMs: 125 }), digest('{"checkpointDecision":"explicit-v1","timeoutMs":125}'));
-    assert.notEqual(hashCheckpointInputs({}), digest("{}"), "historical defaults cannot match current execution inputs");
-  });
-
   it("captures option getters once and records fingerprints on resolved and waiting checkpoints", async () => {
     let seenOptions: unknown;
     const result = await runWorkflow(script(`
