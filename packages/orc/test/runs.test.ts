@@ -94,6 +94,25 @@ const quiet = () => {};
 /** These tests start no worker process, so orc's cli file is never run. */
 const NO_CLI = "/nonexistent/orc/cli.js";
 
+/** Run orc on this home and keep what it prints, to stdout and stderr. */
+async function orc(paths: HomePaths, argv: string[]): Promise<{ code: number; out: string }> {
+  const before = process.env.ORC_HOME;
+  process.env.ORC_HOME = paths.home;
+  const printed: string[] = [];
+  const write = process.stdout.write.bind(process.stdout);
+  const writeErr = process.stderr.write.bind(process.stderr);
+  process.stdout.write = ((chunk: string) => (printed.push(String(chunk)), true)) as typeof process.stdout.write;
+  process.stderr.write = ((chunk: string) => (printed.push(String(chunk)), true)) as typeof process.stderr.write;
+  try {
+    return { code: await main(argv), out: printed.join("") };
+  } finally {
+    process.stdout.write = write;
+    process.stderr.write = writeErr;
+    if (before === undefined) delete process.env.ORC_HOME;
+    else process.env.ORC_HOME = before;
+  }
+}
+
 describe("runs", () => {
   it("an agent asks a question, the answer comes through the inbox, and the same session goes on", async () => {
     const { paths, projectDir } = setup({
@@ -130,6 +149,31 @@ return draft`,
     assert.equal(calls.length, 2);
     assert.match(asked[0]!, /^Breakpoint: Check the plan\n\nlong plan/);
     assert.match(asked[1]!, /short plan/);
+  });
+
+  it("a question whose text starts like a breakpoint's is a plain question, which send-back refuses", async () => {
+    const { paths, projectDir } = setup({
+      lookalike: `export const meta = { name: 'lookalike', description: 'asks' }
+return await ask('Breakpoint: not one')`,
+    });
+    const { runner } = fakeRunner(() => "unused");
+    const record = createRun(paths, { workflow: "lookalike", projectDir, inputs: {} });
+    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    for (let i = 0; i < 750 && !runQuestions(paths, record.runId).length; i++) await new Promise((r) => setTimeout(r, 20));
+    const id = runQuestions(paths, record.runId)[0]!.id;
+    const inbox = await orc(paths, ["inbox", "--json"]);
+    const sendBack = await orc(paths, ["send-back", id, "shorter"]);
+    const answer = await orc(paths, ["answer", id, "fine"]);
+    const result = await running;
+    assert.deepEqual(
+      (JSON.parse(inbox.out) as Array<{ prompt: string; breakpoint: boolean }>).map((q) => [q.prompt, q.breakpoint]),
+      [["Breakpoint: not one", false]],
+    );
+    assert.equal(sendBack.code, 64, sendBack.out);
+    assert.match(sendBack.out, new RegExp(`${id} is not a breakpoint`));
+    assert.equal(answer.code, 0, answer.out);
+    assert.equal(result?.status, "completed");
+    assert.equal(result?.result, "fine");
   });
 
   it("a step that keeps failing pauses the run on it, and resume runs it again while finished steps stay done", async () => {

@@ -8,6 +8,7 @@ import { limitNotice, runAccounts } from "../accounts.js";
 import { envFor, lookupAgents, lookupMcpServers, lookupSettings } from "../agents.js";
 import { parseDurationSeconds } from "../orchestrator-globals.js";
 import { openWorkflowDir } from "../workflows/dir.js";
+import type { CheckpointCallContext } from "../workflow.js";
 import { WorkflowManager } from "../workflow-manager.js";
 import { dropUnchangedWorktrees, runWorktrees } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
@@ -35,8 +36,8 @@ export interface WorkerOptions {
 }
 
 /** The answer a dry run gives a question: approve, yes, the first choice, or a stand-in text. */
-export function standInAnswer(prompt: string, checkpoint: { kind?: "confirm" | "input" | "select"; choices?: readonly string[] }): unknown {
-  if (prompt.startsWith("Breakpoint: ")) return "approve";
+export function standInAnswer(checkpoint: { kind?: "confirm" | "input" | "select"; choices?: readonly string[] }, purpose?: CheckpointCallContext["purpose"]): unknown {
+  if (purpose === "breakpoint") return "approve";
   if (checkpoint.kind === "select") return checkpoint.choices?.[0] ?? "";
   if (checkpoint.kind === "input") return "stand-in answer";
   return true;
@@ -154,12 +155,12 @@ async function runOnAccounts(
 
   const waits = new AbortController();
   const pollMs = options.pollMs ?? 500;
-  const confirm = (prompt: string, checkpoint: { kind?: "confirm" | "input" | "select"; choices?: string[] }, context?: { callIndex: number; hash: string; scope: string }) => {
+  const confirm = (prompt: string, checkpoint: { kind?: "confirm" | "input" | "select"; choices?: string[] }, context?: CheckpointCallContext) => {
     const scope = context?.scope ?? runId;
     const callIndex = context?.callIndex ?? 0;
     const id = questionId(scope, callIndex);
     if (options.dryRun) {
-      const value = standInAnswer(prompt, checkpoint);
+      const value = standInAnswer(checkpoint, context?.purpose);
       log(`${stamp()} question   ${from(scope)}${oneLine(prompt, 200)}\n           answered   ${JSON.stringify(value)} (dry run)`);
       return Promise.resolve(value);
     }
@@ -173,7 +174,7 @@ async function runOnAccounts(
       prompt,
       kind: checkpoint.kind ?? "confirm",
       ...(checkpoint.choices ? { choices: [...checkpoint.choices] } : {}),
-      breakpoint: prompt.startsWith("Breakpoint: "),
+      breakpoint: context?.purpose === "breakpoint",
       askedAt: new Date().toISOString(),
     };
     return new Promise<unknown>((resolve, reject) => {

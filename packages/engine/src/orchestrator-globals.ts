@@ -36,6 +36,8 @@ export interface OrchestratorGlobalDeps {
   agent: AgentFn;
   code: CodeFn;
   checkpoint: CheckpointFn;
+  /** The checkpoint breakpoint() asks through. It marks the question as a breakpoint. */
+  breakpointCheckpoint: CheckpointFn;
   workflow: WorkflowFn;
   log: (message: string) => void;
   listSavedWorkflows?: () => Array<{ name: string; description?: string }>;
@@ -168,7 +170,7 @@ export function createOrchestratorGlobals(deps: OrchestratorGlobalDeps) {
     const prompt = (shown: unknown) =>
       `Breakpoint: ${title}\n${shown === undefined ? "" : `\n${render(shown)}\n`}\nReply approve, stop, or send back with a note.`;
     const decide = async (shown: unknown) => {
-      const decision = normalizeDecision(await deps.checkpoint(prompt(shown), { kind: "input" }));
+      const decision = normalizeDecision(await deps.breakpointCheckpoint(prompt(shown), { kind: "input" }));
       if (decision.decision === "stop") {
         throw new WorkflowError(`Stopped at breakpoint "${title}"${decision.note ? `: ${decision.note}` : ""}`, WorkflowErrorCode.WORKFLOW_ABORTED, {
           recoverable: false,

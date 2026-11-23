@@ -474,6 +474,9 @@ export interface CheckpointCallContext {
   scope: string;
   /** The structural call-path key, when captured. */
   path?: string;
+  /** "breakpoint" when breakpoint() asks. It stays out of the hash, so a question asked before
+   *  it existed keeps its hash, and a script's checkpoint() cannot set it. */
+  purpose?: "breakpoint";
 }
 
 interface RuntimeState {
@@ -2274,6 +2277,7 @@ export async function runWorkflow<T = unknown>(
     promptText: string,
     checkpointOptions: CheckpointOptions,
     onAllocated: (callIndex: number) => void,
+    purpose: CheckpointCallContext["purpose"],
   ) => {
     throwIfAborted();
     if (typeof promptText !== "string") throw new TypeError("checkpoint(promptText, options?) needs a prompt string");
@@ -2600,6 +2604,7 @@ export async function runWorkflow<T = unknown>(
           hash: callHash,
           scope: runId,
           path: callPath,
+          ...(purpose ? { purpose } : {}),
         });
         const interruption = new Promise<never>((_, reject) => {
           onAbort = () => reject(new WorkflowError("workflow aborted", WorkflowErrorCode.WORKFLOW_ABORTED, { recoverable: true }));
@@ -2668,19 +2673,24 @@ export async function runWorkflow<T = unknown>(
     }
   };
 
-  const checkpoint = (promptText: string, checkpointOptions: CheckpointOptions = {}): Promise<unknown> => {
+  const askCheckpoint = (promptText: string, checkpointOptions: CheckpointOptions, purpose: CheckpointCallContext["purpose"]): Promise<unknown> => {
     let allocated = false;
     let promise: Promise<unknown>;
     try {
       promise = checkpointImplementation(promptText, checkpointOptions, () => {
         allocated = true;
         beginResumeActivity();
-      });
+      }, purpose);
     } catch (error) {
       promise = Promise.reject(error);
     }
     return allocated ? observeResumeActivity(promise) : promise;
   };
+  // The script's checkpoint() takes two arguments, so it never marks a question a breakpoint.
+  const checkpoint = (promptText: string, checkpointOptions: CheckpointOptions = {}): Promise<unknown> =>
+    askCheckpoint(promptText, checkpointOptions, undefined);
+  const breakpointCheckpoint = (promptText: string, checkpointOptions: CheckpointOptions = {}): Promise<unknown> =>
+    askCheckpoint(promptText, checkpointOptions, "breakpoint");
 
   // Adopt every engine-returned promise into the SCRIPT's realm at the context boundary.
   // This is what makes the rejection tripwire's realm-identity attribution complete: the
@@ -2701,6 +2711,7 @@ export async function runWorkflow<T = unknown>(
     agent: agent as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
     code,
     checkpoint: checkpoint as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
+    breakpointCheckpoint: breakpointCheckpoint as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
     workflow: workflowFn,
     log,
     listSavedWorkflows: options.listSavedWorkflows,

@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
 import { ensureHome, homePaths, type HomePaths } from "../../src/runs/home.js";
+import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
+import type { PersistedRunState } from "../../src/runs/persistence/run-persistence.js";
 
 export function setup(workflows: Record<string, string>, config: Record<string, unknown> = {}): { paths: HomePaths; projectDir: string } {
   const root = mkdtempSync(join(tmpdir(), "engine-runs-"));
@@ -15,6 +17,15 @@ export function setup(workflows: Record<string, string>, config: Record<string, 
   mkdirSync(join(projectDir, ".orchestrator", "workflows"), { recursive: true });
   for (const [name, script] of Object.entries(workflows)) writeFileSync(join(projectDir, ".orchestrator", "workflows", `${name}.js`), script);
   return { paths, projectDir };
+}
+
+/** Write a run's engine files the way the engine leaves them, with no manager: its state and,
+ *  when given, its event log. */
+export function plantState(paths: HomePaths, state: PersistedRunState, events?: string): void {
+  const { runsDir } = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
+  mkdirSync(runsDir, { recursive: true });
+  writeFileSync(join(runsDir, `${state.runId}.json`), JSON.stringify(state, null, 2));
+  if (events !== undefined) writeFileSync(join(runsDir, `${state.runId}.events.jsonl`), events);
 }
 
 /** The tests run the worker in this process, so no cli file ever starts. */
