@@ -98,9 +98,7 @@ describe("WorkflowError.checkpointContext", () => {
 });
 
 describe("WorkflowError", () => {
-  it("exposes the isolation recording and replay error codes as stable wire literals", () => {
-    assert.equal(WorkflowErrorCode.RECORDING_UNUSABLE, "RECORDING_UNUSABLE");
-    assert.equal(WorkflowErrorCode.REPLAY_TARGET_INVALID, "REPLAY_TARGET_INVALID");
+  it("exposes the replay and cancel error codes as stable wire literals", () => {
     assert.equal(WorkflowErrorCode.REPLAY_DIVERGENCE, "REPLAY_DIVERGENCE");
     assert.equal(WorkflowErrorCode.AGENT_CANCELLED, "AGENT_CANCELLED");
   });
@@ -109,12 +107,12 @@ describe("WorkflowError", () => {
     const projections: WorkflowRecordedError[] = [
       {
         form: "workflow-error",
-        message: "recording is incomplete",
-        code: WorkflowErrorCode.RECORDING_UNUSABLE,
+        message: "state could not be saved",
+        code: WorkflowErrorCode.PERSISTENCE_ERROR,
         recoverable: false,
         agentLabel: "researcher",
-        details: { reason: "incomplete-manifest", indexes: [2] },
-        resetHint: "record again",
+        details: { reason: "disk-full", indexes: [2] },
+        resetHint: "free disk space",
         providerUsageLimitContext: {
           backendId: "codex",
           source: "provider",

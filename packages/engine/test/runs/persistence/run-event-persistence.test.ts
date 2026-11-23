@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { WorkflowErrorCode } from "../../../src/errors.js";
 import type { PersistableEngineRunEvent, RunEventLogRecord } from "../../../src/run-events.js";
 import {
   RUN_EVENT_MAX_RECORD_BYTES,
@@ -383,6 +384,27 @@ test(
     writeFileSync(eventPath(runId), `${JSON.stringify(valid)}\n`);
     persistence.save(state(runId, { eventSeq: 2 }));
     expectCode(() => persistence.readEvents(runId), "SNAPSHOT_AHEAD");
+  }),
+);
+
+test(
+  "an old log keeps reading with an error code no run makes now, and an unknown code is still corrupt",
+  withPersistence(({ persistence, eventPath }) => {
+    const runId = "retired-codes";
+    persistence.save(state(runId));
+    const record = persistence.appendEvent(runId, {
+      seq: 1,
+      timestamp: TIMESTAMP,
+      event: { type: "agentEnd", runId, scope: runId, label: "step", result: null, errorCode: WorkflowErrorCode.AUTH_REQUIRED, callIndex: 0 },
+    });
+    const withCode = (code: string) => `${JSON.stringify({ ...record, event: { ...record.event, errorCode: code } })}\n`;
+    for (const code of ["AGENT_TIMEOUT", "AGENT_IDLE_TIMEOUT", "RECORDING_UNUSABLE", "REPLAY_TARGET_INVALID"]) {
+      writeFileSync(eventPath(runId), withCode(code));
+      const event = persistence.readEvents(runId).events[0]!.event;
+      assert.equal(event.type === "agentEnd" ? (event.errorCode as string) : undefined, code);
+    }
+    writeFileSync(eventPath(runId), withCode("NOT_A_CODE"));
+    expectCode(() => persistence.readEvents(runId), "CORRUPT_LOG");
   }),
 );
 

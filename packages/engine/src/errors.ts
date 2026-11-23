@@ -41,12 +41,6 @@ export enum WorkflowErrorCode {
   AGENT_EMPTY_OUTPUT = "AGENT_EMPTY_OUTPUT",
   AGENT_EXECUTION_ERROR = "AGENT_EXECUTION_ERROR",
   PERSISTENCE_ERROR = "PERSISTENCE_ERROR",
-  /** A recording is unusable as an isolation baseline. Non-recoverable.
-   *  details: { reason: string; runId?: string; indexes?: number[] }. */
-  RECORDING_UNUSABLE = "RECORDING_UNUSABLE",
-  /** A target could not be resolved to exactly one admissible recorded agent call.
-   *  Non-recoverable. details: { target, reason, candidates? }. */
-  REPLAY_TARGET_INVALID = "REPLAY_TARGET_INVALID",
   /** The re-executed script left the recording, or correspondence was unprovable.
    *  Non-recoverable. details: ReplayDivergenceEvent. */
   REPLAY_DIVERGENCE = "REPLAY_DIVERGENCE",
