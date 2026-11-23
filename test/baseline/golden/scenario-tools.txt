@@ -73,9 +73,6 @@ exit 0
   "state": {
     "runId": "<run-1>",
     "workflowName": "tools",
-    "scriptOrigin": {
-      "kind": "inline"
-    },
     "args": {},
     "cwd": "<tmp>/scenario-tools/orc-home/scratch/<run-1>",
     "effectiveCwd": "<tmp>/scenario-tools/orc-home/scratch/<run-1>",

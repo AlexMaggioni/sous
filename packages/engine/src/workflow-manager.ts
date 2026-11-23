@@ -33,7 +33,6 @@ import type {
   RunPauseReason,
 } from "./run-events.js";
 import { foldStep, preview, type WorkflowSnapshot } from "./display.js";
-import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
 import { journalRows } from "./resume-rows.js";
@@ -47,7 +46,6 @@ import {
   type RunLease,
   type RunPersistence,
   type RunStatus,
-  type WorkflowScriptOrigin,
   type WorkflowScriptRevision,
 } from "./runs/persistence/run-persistence.js";
 import { admitResumeSource } from "./resume-matcher.js";
@@ -96,7 +94,6 @@ export interface ManagedRun {
   pausedAt?: string;
   /** The real script, kept so the run can be resumed. */
   script: string;
-  scriptOrigin?: WorkflowScriptOrigin;
   scriptRevisions?: WorkflowScriptRevision[];
   args?: unknown;
   /** True when managed.args is a faithful strict-JSON pre-execution snapshot. */
@@ -195,8 +192,6 @@ interface RegisteredAgentAttempt extends WorkflowAgentAttemptControl {
 export interface ExecOptions {
   /** Caller-minted run id. Collision checks happen under the run lease. */
   runId?: string;
-  /** Where the script came from; an inline origin gets a working copy in the run store. */
-  scriptOrigin?: WorkflowScriptOrigin;
   /** Non-git environment label reported in replay provenance diagnostics only. */
   environmentKey?: string;
   /**
@@ -642,7 +637,6 @@ export class WorkflowManager extends EventEmitter {
   }
 
   private validateNewRunOptions(exec: ExecOptions): void {
-    validateScriptOrigin(exec.scriptOrigin);
     const hasSource = exec.resumeFromRunId !== undefined;
     if (hasSource && (typeof exec.resumeFromRunId !== "string" || exec.resumeFromRunId.length === 0)) {
       throw this.scriptValidationError("resumeFromRunId must be a non-empty string");
@@ -909,9 +903,6 @@ export class WorkflowManager extends EventEmitter {
       },
       startedAt,
       script,
-      // Every run keeps an editable working copy of its script in the run store unless
-      // the caller recorded the script's own path as its origin.
-      scriptOrigin: exec.scriptOrigin ?? { kind: "inline" as const },
       args: capturedArgs.ok ? capturedArgs.clone : args,
       argsSnapshotOk: capturedArgs.ok,
       ...(!capturedArgs.ok ? { argsUnreplayable: true as const } : {}),
@@ -1547,7 +1538,6 @@ export class WorkflowManager extends EventEmitter {
       // Persist the real script + journal so the run can be resumed. Runs live
       // in workflow run storage — protect via directory permissions, not blanking.
       script: managed.script,
-      ...(managed.scriptOrigin ? { scriptOrigin: managed.scriptOrigin } : {}),
       ...(managed.scriptRevisions ? { scriptRevisions: managed.scriptRevisions } : {}),
       args: managed.args,
       argsUnreplayable: managed.argsUnreplayable,
@@ -1826,7 +1816,6 @@ export class WorkflowManager extends EventEmitter {
       },
       startedAt: new Date(persisted.startedAt),
       script: revision ?? persisted.script,
-      ...(persisted.scriptOrigin ? { scriptOrigin: persisted.scriptOrigin } : {}),
       ...(persisted.scriptRevisions ? { scriptRevisions: persisted.scriptRevisions } : {}),
       args: capturedArgs.ok ? capturedArgs.clone : persisted.args,
       argsSnapshotOk: capturedArgs.ok,
@@ -2112,23 +2101,6 @@ export class WorkflowManager extends EventEmitter {
    */
   getPersistence(): RunPersistence {
     return this.persistence;
-  }
-}
-
-function validateScriptOrigin(origin: WorkflowScriptOrigin | undefined): void {
-  if (origin === undefined) return;
-  const invalid = () => new WorkflowError(
-    'scriptOrigin must be { kind: "inline" } or { kind: "path", path: <absolute path> }',
-    WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-    { recoverable: false },
-  );
-  if (origin === null || typeof origin !== "object") throw invalid();
-  if (origin.kind === "inline") {
-    if (Object.keys(origin).length !== 1) throw invalid();
-    return;
-  }
-  if (origin.kind !== "path" || typeof origin.path !== "string" || !isAbsolute(origin.path) || Object.keys(origin).length !== 2) {
-    throw invalid();
   }
 }
 

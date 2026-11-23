@@ -132,9 +132,6 @@ exit 0
   "state": {
     "runId": "<run-1>",
     "workflowName": "places",
-    "scriptOrigin": {
-      "kind": "inline"
-    },
     "args": {},
     "cwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
     "effectiveCwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
@@ -301,9 +298,6 @@ exit 0
   "state": {
     "runId": "<run-2>",
     "workflowName": "places",
-    "scriptOrigin": {
-      "kind": "inline"
-    },
     "args": {},
     "cwd": "<tmp>/scenario-places/project",
     "effectiveCwd": "<tmp>/scenario-places/project",
@@ -487,9 +481,6 @@ exit 0
   "state": {
     "runId": "<run-3>",
     "workflowName": "places",
-    "scriptOrigin": {
-      "kind": "inline"
-    },
     "args": {},
     "cwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
     "effectiveCwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",

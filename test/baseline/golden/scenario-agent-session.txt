@@ -88,9 +88,6 @@ exit 0
   "state": {
     "runId": "<run-1>",
     "workflowName": "agent-session",
-    "scriptOrigin": {
-      "kind": "inline"
-    },
     "args": {
       "topic": "a small change"
     },

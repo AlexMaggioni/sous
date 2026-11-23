@@ -113,9 +113,6 @@ export interface PersistedResumeSeed {
   checkpointInjections?: PersistedCheckpointInjection[];
 }
 
-/** Where a run's script came from: passed inline, or read from the caller's absolute path. */
-export type WorkflowScriptOrigin = { kind: "inline" } | { kind: "path"; path: string };
-
 /** One accepted script revision: the continuation generation that first ran the revised text. */
 export interface WorkflowScriptRevision {
   generation: number;
@@ -129,8 +126,6 @@ export interface PersistedRunState {
   workflowName: string;
   /** The text that executes: the admitted script, or the latest accepted revision. */
   script: string;
-  /** Recorded at admission; absent on runs created before script origins were tracked. */
-  scriptOrigin?: WorkflowScriptOrigin;
   /** Every continuation that ran a revised script, oldest first. */
   scriptRevisions?: WorkflowScriptRevision[];
   args?: unknown;

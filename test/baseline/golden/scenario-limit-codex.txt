@@ -93,9 +93,6 @@ exit 0
   "state": {
     "runId": "<run-1>",
     "workflowName": "limit",
-    "scriptOrigin": {
-      "kind": "inline"
-    },
     "args": {
       "model": "codex"
     },

@@ -114,9 +114,6 @@ exit 0
   "state": {
     "runId": "<run-1>",
     "workflowName": "fanout",
-    "scriptOrigin": {
-      "kind": "inline"
-    },
     "args": {},
     "cwd": "<tmp>/scenario-fanout/project",
     "effectiveCwd": "<tmp>/scenario-fanout/project",

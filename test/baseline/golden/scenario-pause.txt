@@ -93,9 +93,6 @@ exit 0
   "state": {
     "runId": "<run-1>",
     "workflowName": "pause",
-    "scriptOrigin": {
-      "kind": "inline"
-    },
     "args": {},
     "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
     "effectiveCwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",

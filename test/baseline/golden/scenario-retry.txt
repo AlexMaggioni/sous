@@ -92,9 +92,6 @@ exit 0
   "state": {
     "runId": "<run-1>",
     "workflowName": "retry",
-    "scriptOrigin": {
-      "kind": "inline"
-    },
     "args": {},
     "cwd": "<tmp>/scenario-retry/orc-home/scratch/<run-1>",
     "effectiveCwd": "<tmp>/scenario-retry/orc-home/scratch/<run-1>",
