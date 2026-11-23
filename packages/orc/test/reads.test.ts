@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { appendFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { ensureHome, homePaths, type HomePaths } from "@orchestrator/engine";
 import { readState, tick, workflowProjectPaths } from "@orchestrator/engine/testing";
-import { orc } from "./orc.js";
+import { main } from "../src/cli.js";
+import { capture, orc, waitFor } from "./orc.js";
 
 // orc's reads write nothing. The home below is planted with raw writes, the way the worker and
 // the engine leave it, so the test also shows that orc reads today's files.
@@ -182,41 +182,69 @@ describe("orc's reads", () => {
     assert.equal(printed.get(`log ${ids.done} -f`)!.out, "12:00:00 run        build\n12:01:00 completed  build\n", "a run with no worker prints its log once");
   });
 
+  /**
+   * A live run whose record names this process as its worker, so it counts as running until the
+   * record changes. The log holds one line.
+   */
+  function plantFollowed(paths: HomePaths, doneId: string) {
+    const runId = "run-follow";
+    const file = join(paths.records, `${runId}.json`);
+    const record = { ...JSON.parse(readFileSync(join(paths.records, `${doneId}.json`), "utf8")), runId };
+    writeJson(file, { ...record, pid: process.pid });
+    const log = join(paths.logs, `${runId}.log`);
+    writeFileSync(log, "12:00:00 run        build\n");
+    return { runId, log, workerEnds: () => writeJson(file, { ...record, pid: deadPid() }), runGoes: () => rmSync(file, { force: true }) };
+  }
+
+  /** Run `orc log <runId> -f` in this process. `printed()` is what it has written so far, to stdout and stderr. */
+  function follow(paths: HomePaths, runId: string) {
+    const before = process.env.ORC_HOME;
+    process.env.ORC_HOME = paths.home;
+    const chunks: string[] = [];
+    const restore = capture(chunks);
+    const ended = main(["log", runId, "-f"]).finally(() => {
+      restore();
+      if (before === undefined) delete process.env.ORC_HOME;
+      else process.env.ORC_HOME = before;
+    });
+    return { printed: () => chunks.join(""), ended };
+  }
+
   it("let orc log -f print the log, then what the worker adds, until the worker ends", async () => {
     const { paths, ids } = plant();
-    const worker = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    const { runId, log, workerEnds } = plantFollowed(paths, ids.done);
+    const following = follow(paths, runId);
     try {
-      const runId = "run-follow";
-      const record = JSON.parse(readFileSync(join(paths.records, `${ids.done}.json`), "utf8"));
-      writeJson(join(paths.records, `${runId}.json`), { ...record, runId, pid: worker.pid });
-      const log = join(paths.logs, `${runId}.log`);
-      writeFileSync(log, "12:00:00 run        build\n");
-
-      // orc runs in a process of its own, since the test runner writes to this one's stdout.
-      const here = dirname(dirname(fileURLToPath(import.meta.url)));
-      const following = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", "log", runId, "-f"], { cwd: here, env: { ...process.env, ORC_HOME: paths.home } });
-      let out = "";
-      following.stdout.on("data", (chunk) => (out += String(chunk)));
-      following.stderr.on("data", (chunk) => (out += String(chunk)));
-      const ended = new Promise<number | null>((done) => following.on("close", done));
-      // Starting orc through tsx took 11 seconds once under the full suite's load, so wait up to a minute.
-      const printed = async (text: string) => {
-        for (let i = 0; i < 2400 && !out.includes(text); i++) await new Promise((done) => setTimeout(done, 25));
-      };
-
-      await printed("build\n");
-      assert.equal(out, "12:00:00 run        build\n", "the log so far comes at once");
+      await waitFor(() => following.printed().includes("build\n"), "the log so far");
+      assert.equal(following.printed(), "12:00:00 run        build\n", "the log so far comes at once");
       appendFileSync(log, "12:01:00 agent      first\n");
-      await printed("first\n");
-      assert.equal(out, "12:00:00 run        build\n12:01:00 agent      first\n", "a line the worker adds comes while it runs");
+      await waitFor(() => following.printed().includes("first\n"), "a line the worker adds");
+      assert.equal(following.printed(), "12:00:00 run        build\n12:01:00 agent      first\n", "a line the worker adds comes while it runs");
 
       // The line written just before the worker ends comes too.
       appendFileSync(log, "12:02:00 completed  build\n");
-      worker.kill();
-      assert.equal(await ended, 0, out);
-      assert.equal(out, "12:00:00 run        build\n12:01:00 agent      first\n12:02:00 completed  build\n");
+      workerEnds();
+      assert.equal(await following.ended, 0, following.printed());
+      assert.equal(following.printed(), "12:00:00 run        build\n12:01:00 agent      first\n12:02:00 completed  build\n");
     } finally {
-      worker.kill();
+      // A failed assert must not leave the follow running, since this process counts as the worker.
+      workerEnds();
+      await following.ended;
+    }
+  });
+
+  it("let orc log -f print the no run error, and exit 1, when the run goes away while it follows", async () => {
+    const { paths, ids } = plant();
+    const { runId, runGoes } = plantFollowed(paths, ids.done);
+    const following = follow(paths, runId);
+    try {
+      await waitFor(() => following.printed().includes("build\n"), "the log so far");
+      runGoes();
+      assert.equal(await following.ended, 1);
+      assert.equal(following.printed(), `12:00:00 run        build\norc: no run "${runId}". orc list shows the runs.\n`);
+    } finally {
+      runGoes();
+      await following.ended;
     }
   });
 
