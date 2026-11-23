@@ -185,6 +185,11 @@ export interface PersistedRunState {
   pauseReason?: string;
   /** Provider reset hint for a usage-limit pause, e.g. "Resets in ~3h" (verbatim). */
   resetHint?: string;
+  /** For a usage-limit pause: when the provider's limit resets, as an RFC 3339 instant, from
+   *  the error's providerUsageLimitContext. A state saved before it existed has only resetHint. */
+  resetAt?: string;
+  /** When the run paused. Set once, when it pauses: a later save moves updatedAt, not this. */
+  pausedAt?: string;
   /** For an "auth_required" pause (§2.12/§2.13): the structured, NON-SECRET auth surface
    *  (backendId + advertised method ids/types/names). NEVER the intent's secret payload —
    *  no `authenticateMeta`, no `envValues` (Principle 9). Read by resume()'s cold re-arm. */

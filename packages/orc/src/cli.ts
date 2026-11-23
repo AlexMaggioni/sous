@@ -333,7 +333,7 @@ function cmdShow(parsed: Parsed): number {
   for (const program of HARNESSES) {
     if (record.accounts?.[program]) out(`account   ${harnessName(program)}: ${describeAccount(program, record.accounts[program])}`);
   }
-  if (record.limit && run.pause?.reason === "usage_limit") out(`limit     ${limitNotice(paths, record, saved?.resetHint)}`);
+  if (record.limit && run.pause?.reason === "usage_limit") out(`limit     ${limitNotice(paths, record, run.pause.resetAt)}`);
   if (run.tokens !== undefined) out(`tokens    ${run.tokens}${run.durationMs ? `  in ${Math.round(run.durationMs / 1000)}s` : ""}`);
   if (run.steps.length) {
     out("steps");

@@ -271,22 +271,21 @@ export function describeAccount(program: Program, account: RunAccount | undefine
   return name;
 }
 
-/** When the limit resets, from the engine's hint, such as "14:00" or "Sat 09:30". */
-export function resetText(resetHint: string | undefined, now = new Date()): string | undefined {
-  const match = resetHint ? /Resets at (\S+)/.exec(resetHint) : null;
-  const at = match ? new Date(match[1]!) : undefined;
-  if (!at || Number.isNaN(at.getTime())) return resetHint;
+/** When the limit resets, such as "14:00", or "Sat 09:30" when it is more than 20 hours away. */
+export function resetText(at: Date | undefined, now = new Date()): string | undefined {
+  if (!at || Number.isNaN(at.getTime())) return undefined;
   const time = at.toTimeString().slice(0, 5);
   return at.getTime() - now.getTime() > 20 * 3600_000 ? `${at.toLocaleDateString("en", { weekday: "short" })} ${time}` : time;
 }
 
-/** What the user reads when a run waits at the limit: whose limit, when it resets, how to go on now. */
-export function limitNotice(paths: HomePaths, record: RunRecord, resetHint: string | undefined): string {
+/** What the user reads when a run waits at the limit: whose limit, when it resets, how to go on
+ *  now. The reset time is the one the pause rule gives. */
+export function limitNotice(paths: HomePaths, record: RunRecord, resetAt: Date | undefined): string {
   const program = record.limit?.program ?? "claude";
   const name = record.limit?.account ?? record.accounts?.[program]?.name ?? DEFAULT;
   const what = harnessName(program);
   const who = name === CALLER ? `The agent's ${what} login` : name === DEFAULT ? `${what}'s own login (default)` : `${what} account ${name}`;
-  const reset = resetText(resetHint);
+  const reset = resetText(resetAt);
   const current = currentAccount(paths, program);
   const now = current !== name ? `orc account use ${accountLabel(program, current)} moves it to the account orc uses now.` : `orc account use <name> goes on now on another account.`;
   return `${who} hit its usage limit.${reset ? ` It resets at ${reset}.` : ""} ${now}`;

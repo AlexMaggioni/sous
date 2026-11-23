@@ -327,7 +327,7 @@ async function runOnAccounts(
   const error = status === "paused" ? why : status === "failed" ? (result?.reason ?? state?.reason) : undefined;
   log(`${stamp()} ${status.padEnd(10)} ${record.workflow}${reason}${error ? `: ${oneLine(String(error), 400)}` : ""}`);
   const atLimit = pause?.reason === "usage_limit" && !stopping;
-  const limitText = atLimit ? limitNotice(paths, loadRecord(paths, runId) ?? record, state?.resetHint) : undefined;
+  const limitText = atLimit ? limitNotice(paths, loadRecord(paths, runId) ?? record, pause?.resetAt) : undefined;
   if (limitText) log(`${stamp()} limit      ${limitText}`);
   if (status === "completed" || status === "aborted") {
     const trees = runWorktrees(loadRecord(paths, runId) ?? record);

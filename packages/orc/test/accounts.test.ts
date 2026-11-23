@@ -22,6 +22,7 @@ import {
 // engine's built modules by path. They are the same modules the entry loads.
 import { WorkflowError, WorkflowErrorCode } from "../../engine/dist/errors.js";
 import { createRun } from "../../engine/dist/runs/launch.js";
+import { tick } from "../../engine/dist/runs/service.js";
 import { managerFor, runWorker } from "../../engine/dist/runs/worker.js";
 import type { AgentRunner } from "../../engine/dist/steps/agent-runner.js";
 import { cmdAccount } from "../src/account-cli.js";
@@ -52,6 +53,9 @@ function setup(workflows: Record<string, string> = {}): { paths: HomePaths; proj
   return { paths, projectDir };
 }
 
+/** A cli file the tests never start: the tick gets a spawn of its own. */
+const NO_CLI = "/nonexistent/orc/cli.js";
+
 const ONE_STEP = `export const meta = { name: 'one', description: 'one step' }\nreturn await agent('go', { label: 'go' })`;
 
 /** The account a step gets: its folder, its token, and whether it is one of orc's named logins. */
@@ -76,6 +80,19 @@ function loginRunner(limited: () => boolean = () => false): { runner: AgentRunne
     },
   } as unknown as AgentRunner;
   return { runner, seen };
+}
+
+/** A runner whose steps stop at the usage limit. The reset time, if any, is in the error's typed
+ *  context alone, with no resetHint. */
+function typedLimitRunner(resetAt: string | undefined): AgentRunner {
+  return {
+    async run() {
+      throw new WorkflowError("You've hit your limit", WorkflowErrorCode.PROVIDER_USAGE_LIMIT, {
+        recoverable: false,
+        providerUsageLimitContext: { backendId: "claude", source: "provider", ...(resetAt ? { resetAt } : {}) },
+      });
+    },
+  } as unknown as AgentRunner;
 }
 
 function atLimit(paths: HomePaths) {
@@ -244,6 +261,49 @@ describe("accounts", () => {
     assert.equal(done?.status, "completed");
     assert.equal(seen.at(-1)?.token, SPARE);
     assert.equal(loadRecord(paths, record.runId)?.limit, undefined);
+  });
+
+  it("a limit known only by its typed reset time says when it resets, and the service resumes the run 30 seconds after it", async () => {
+    const { paths, projectDir } = setup({ one: ONE_STEP });
+    const resetAt = new Date(Date.now() + 2 * 3600_000);
+    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    const lines: string[] = [];
+    const paused = await runWorker(record.runId, "start", { paths, inner: typedLimitRunner(resetAt.toISOString()), log: (line) => lines.push(line) });
+    assert.equal(paused?.status, "paused");
+    const hhmm = resetAt.toTimeString().slice(0, 5);
+    assert.match(String(lines.find((line) => line.includes(" limit      "))), new RegExp(`hit its usage limit\\. It resets at ${hhmm}\\.`));
+    const show = await withHome(paths, () => main(["show", record.runId]));
+    assert.match(show.printed, new RegExp(`limit     .* hit its usage limit\\. It resets at ${hhmm}\\.`));
+
+    const spawned: string[] = [];
+    const deps = { spawn: (runId: string) => spawned.push(runId), log: quiet, notify: quiet };
+    tick(paths, NO_CLI, { ...deps, now: new Date(resetAt.getTime() + 29_000) });
+    assert.deepEqual(spawned, [], "the run waits until 30 seconds after the reset");
+    tick(paths, NO_CLI, { ...deps, now: new Date(resetAt.getTime() + 30_000) });
+    assert.deepEqual(spawned, [record.runId]);
+  });
+
+  it("a limit with no reset time is tried again 30 minutes after the pause, whatever saves the state later", async () => {
+    const { paths, projectDir } = setup({ one: ONE_STEP });
+    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    await runWorker(record.runId, "start", { paths, inner: typedLimitRunner(undefined), log: quiet });
+    const persistence = managerFor(paths, projectDir).getPersistence();
+    const first = persistence.load(record.runId)!;
+    assert.equal(first.pauseReason, "usage_limit");
+    const pausedAt = first.pausedAt;
+    assert.ok(pausedAt && Number.isFinite(Date.parse(pausedAt)), "the state says when the run paused");
+    await new Promise((done) => setTimeout(done, 5));
+    persistence.save(first);
+    const later = persistence.load(record.runId)!;
+    assert.equal(later.pausedAt, pausedAt, "a later save keeps the pause time");
+    assert.ok(Date.parse(later.updatedAt) > Date.parse(pausedAt), "the later save moved updatedAt");
+
+    const spawned: string[] = [];
+    const deps = { spawn: (runId: string) => spawned.push(runId), log: quiet, notify: quiet };
+    tick(paths, NO_CLI, { ...deps, now: new Date(Date.parse(pausedAt) + 30 * 60_000 - 1000) });
+    assert.deepEqual(spawned, [], "the run waits 30 minutes from the pause");
+    tick(paths, NO_CLI, { ...deps, now: new Date(Date.parse(pausedAt) + 30 * 60_000) });
+    assert.deepEqual(spawned, [record.runId], "the time counts from the pause, not from the later save");
   });
 
   it("remove is refused while an unfinished run uses the account", () => {

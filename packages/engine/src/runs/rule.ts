@@ -24,7 +24,7 @@ export interface RunPause {
 }
 
 export interface RunFacts {
-  state?: { status: RunStatus; pauseReason?: string; resetAt?: string; resetHint?: string; updatedAt: string };
+  state?: { status: RunStatus; pauseReason?: string; resetAt?: string; resetHint?: string; pausedAt?: string; updatedAt: string };
   /** The worker's pid is alive. The worker judges its own run at its end with false. */
   alive: boolean;
   openQuestions: number;
@@ -51,7 +51,8 @@ export interface Verdict {
 
 /** The service resumes a run this long after its limit resets. */
 const RESET_MARGIN_MS = 30_000;
-/** With no reset time, the service tries again this long after the pause. */
+/** With no reset time, the service tries again this long after the pause. A state saved before
+ *  pausedAt existed counts from updatedAt. */
 const NO_HINT_WAIT_MS = 30 * 60 * 1000;
 
 const OK = { ok: true } as const;
@@ -134,9 +135,10 @@ function pauseOf(state: RunFacts["state"]): RunPause | undefined {
   const reason = (ROWS[pausedKey(state.pauseReason)] as Row).pause!;
   if (reason === "other") return { reason, ...(state.pauseReason === undefined ? {} : { text: state.pauseReason }) };
   if (reason !== "usage_limit") return { reason };
+  const pausedAt = state.pausedAt ?? state.updatedAt;
   const typed = state.resetAt === undefined ? Number.NaN : Date.parse(state.resetAt);
-  const resetAt = Number.isFinite(typed) ? new Date(typed) : parseResetHint(state.resetHint, state.updatedAt);
-  const resumeAt = new Date(resetAt ? resetAt.getTime() + RESET_MARGIN_MS : Date.parse(state.updatedAt) + NO_HINT_WAIT_MS);
+  const resetAt = Number.isFinite(typed) ? new Date(typed) : parseResetHint(state.resetHint, pausedAt);
+  const resumeAt = new Date(resetAt ? resetAt.getTime() + RESET_MARGIN_MS : Date.parse(pausedAt) + NO_HINT_WAIT_MS);
   return { reason, ...(resetAt ? { resetAt } : {}), resumeAt };
 }
 

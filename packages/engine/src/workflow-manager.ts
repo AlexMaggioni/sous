@@ -101,6 +101,8 @@ export interface ManagedRun {
   /** Fires when a host asks this execution to pause; created lazily so an early request is kept. */
   pauseController?: AbortController;
   startedAt: Date;
+  /** When this execution paused. Later saves keep it. */
+  pausedAt?: string;
   /** The real script, kept so the run can be resumed. */
   script: string;
   scriptOrigin?: WorkflowScriptOrigin;
@@ -1956,6 +1958,7 @@ export class WorkflowManager extends EventEmitter {
         }
       } else if (paused) {
         managed.status = "paused";
+        managed.pausedAt = new Date().toISOString();
       } else {
         managed.status = "failed";
       }
@@ -2382,11 +2385,16 @@ export class WorkflowManager extends EventEmitter {
                     : "requested"
                   : undefined
           : undefined,
-      // resetHint stays usage-limit-only.
+      // resetHint and resetAt stay usage-limit-only.
       resetHint:
         managed.status === "paused" && managed.error?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT
           ? managed.error.resetHint
           : undefined,
+      resetAt:
+        managed.status === "paused" && managed.error?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT
+          ? managed.error.providerUsageLimitContext?.resetAt
+          : undefined,
+      pausedAt: managed.status === "paused" ? managed.pausedAt : undefined,
       // The NON-SECRET auth surface for an auth pause — backendId + advertised method
       // ids/types/names only (never authenticateMeta/envValues; Principle 9, §2.14). It
       // arms resume()'s cold re-check (§2.13).
@@ -2938,6 +2946,8 @@ export class WorkflowManager extends EventEmitter {
       pausedSnapshot.errorCode = undefined;
       pausedSnapshot.pauseReason = undefined;
       pausedSnapshot.resetHint = undefined;
+      pausedSnapshot.resetAt = undefined;
+      pausedSnapshot.pausedAt = undefined;
       pausedSnapshot.authContext = undefined;
       pausedSnapshot.checkpointContext = undefined;
       pausedSnapshot.abortSignaled = true;
@@ -3020,6 +3030,8 @@ export class WorkflowManager extends EventEmitter {
       current.errorCode = undefined;
       current.pauseReason = undefined;
       current.resetHint = undefined;
+      current.resetAt = undefined;
+      current.pausedAt = undefined;
       current.authContext = undefined;
       current.checkpointContext = undefined;
       current.abortSignaled = true;

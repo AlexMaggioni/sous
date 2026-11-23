@@ -118,6 +118,18 @@ describe("the reset time", () => {
     });
   });
 
+  it("counts the wait from pausedAt, which a later save does not move, and from updatedAt in a state saved before pausedAt", () => {
+    const limit = (fields: Partial<Saved>) => judge({ state: { ...saved("paused", "usage_limit"), ...fields }, ...gone }).pause;
+    const later = { pausedAt: "2026-11-21T09:00:00.000Z" };
+    assert.deepEqual(limit(later), { reason: "usage_limit", resumeAt: new Date("2026-11-21T09:30:00.000Z") });
+    assert.deepEqual(limit({ ...later, resetHint: "Resets in ~2h" }), {
+      reason: "usage_limit",
+      resetAt: new Date("2026-11-21T11:00:00.000Z"),
+      resumeAt: new Date("2026-11-21T11:00:30.000Z"),
+    });
+    assert.deepEqual(limit({}), { reason: "usage_limit", resumeAt: new Date("2026-11-21T10:30:00.000Z") });
+  });
+
   it("gives no resume time to any other pause", () => {
     for (const reason of ["auth_required", "checkpoint_required", "requested", "step_failed", "step_stopped", "time_limit", "interrupted"]) {
       assert.equal(judge({ state: { ...saved("paused", reason), resetHint: "Resets at 2026-11-21T12:00:00.000Z" }, ...gone }).pause?.resumeAt, undefined, reason);
