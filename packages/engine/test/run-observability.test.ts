@@ -124,7 +124,7 @@ test("a checkpoint call is attributed in the journal and a completed run has no 
   assert.equal("logTail" in completed, false);
 });
 
-test("journal attribution covers agents, checkpoints, synthetic replies, and replay without changing identity", async () => {
+test("journal attribution covers agents, checkpoints, and replay without changing identity", async () => {
   const store = memoryPersistence();
   let calls = 0;
   const runner = runnerFrom((prompt, options) => {
@@ -148,7 +148,7 @@ test("journal attribution covers agents, checkpoints, synthetic replies, and rep
   ].join("\n");
   const paused = await manager.runSync(script);
   assert.equal(paused.status, "paused");
-  const resumed = await manager.resumeInBackground(paused.runId, { checkpointReplies: { 0: "yes" } });
+  const resumed = await manager.resumeInBackground(paused.runId, { confirm: async () => "yes" });
   assert.equal(resumed.accepted, true);
   assert.ok(resumed.promise);
   const result = await resumed.promise;

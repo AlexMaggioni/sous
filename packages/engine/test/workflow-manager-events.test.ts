@@ -304,7 +304,7 @@ return { value, decision }`,
 
     const second = new WorkflowManager({ cwd, persistenceRoot: root, agent: runner });
     const resumed = await second.resumeInBackground(paused.runId, {
-      checkpointReplies: { [paused.checkpointContext.callIndex]: "approved" },
+      confirm: async () => "approved",
     });
     assert.equal(resumed.accepted, true);
     if (!resumed.accepted) assert.fail("replay resume should be accepted");
@@ -325,7 +325,7 @@ return { value, decision }`,
     assert.deepEqual(cached.map((event) => event.type), ["agentStart", "callRecord", "agentEnd"]);
     assert.equal(cached[1]?.type === "callRecord" ? cached[1].record.origin : undefined, "journal-replay");
     assert.equal(checkpoint.length, 1);
-    assert.equal(suffix.some((event) => event.type === "journal"), false);
+    assert.equal(suffix.some((event) => event.type === "journal" && event.entry.index === 0), false);
     assert.equal(calls, 1);
   });
 });

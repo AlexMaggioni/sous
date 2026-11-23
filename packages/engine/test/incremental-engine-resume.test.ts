@@ -13,10 +13,7 @@ import {
   normalizeResumeSeed,
 } from "../src/resume-matcher.js";
 import type { PreparedResume } from "../src/resume.js";
-import type {
-  PersistedCheckpointInjection,
-  PersistedResumeSeed,
-} from "../src/runs/persistence/run-persistence.js";
+import type { PersistedResumeSeed } from "../src/runs/persistence/run-persistence.js";
 import { runWorkflow } from "../src/workflow.js";
 
 const source = (body: string, name = "incremental-engine-resume") =>
@@ -541,84 +538,6 @@ return { decision, later }`), {
     assert.deepEqual(waitingCommits, [], "waiting consumes no retained candidates");
     assert.equal(waitingSeed.candidates.length, 2);
 
-  });
-
-  it("serves a shifted positional injection and closes the prefix immediately after it", async () => {
-    const sourceCalls: WorkflowCallRecord[] = [];
-    const sourceJournal: JournalEntry[] = [];
-    await assert.rejects(
-      runWorkflow(source(`
-await agent("prefix", { label: "prefix", resume: { filesystem: "read-only" } })
-return await checkpoint("pending", {})`), {
-        runId: "paused-source",
-        agent: { async run() { return "prefix"; } },
-        persistLogs: false,
-        onCallRecord: (call) => sourceCalls.push(call),
-        onAgentJournal: (entry) => sourceJournal.push(entry),
-      }),
-      (error: unknown) =>
-        typeof error === "object" && error !== null &&
-        (error as { code?: string }).code === WorkflowErrorCode.CHECKPOINT_REQUIRED,
-    );
-    const pending = sourceCalls[1];
-    assert.equal(pending.kind, "checkpoint");
-    assert.ok(pending.path && pending.inputsHash);
-    const injection: PersistedCheckpointInjection = {
-      checkpointDecision: "explicit-v1",
-      sourceRunId: "paused-source",
-      recordedIndex: 1,
-      hash: pending.hash,
-      path: pending.path,
-      inputsHash: pending.inputsHash,
-      decision: true,
-    };
-    const injectionSeed: PersistedResumeSeed = {
-      format: "identity-v1",
-      sourceRunId: "paused-source",
-      candidates: [],
-      checkpointInjections: [injection],
-    };
-    const commits: PersistedResumeSeed[] = [];
-    let runnerCalls = 0;
-    const prepared: PreparedResume = {
-      strategy: "positional-v1",
-      sourceRunId: "paused-source",
-      requestedPolicy: "positional",
-      fallbackReason: "unsafe-recording",
-      eligibility: "safe-prefix",
-      sourceCalls: new Map(sourceCalls.map((call) => [call.index, call])),
-      checkpoint: { seed: injectionSeed, commitSeed: (remaining) => commits.push(remaining) },
-    };
-    const result = await runWorkflow(source(`
-const decision = await checkpoint("pending", {})
-const suffix = await agent("suffix", { label: "suffix", resume: { filesystem: "read-only" } })
-return { decision, suffix }`), {
-      runId: "positional-injection-target",
-      agent: { async run() { runnerCalls += 1; return "live-suffix"; } },
-      resumeJournal: new Map(sourceJournal.map((entry) => [entry.index, entry])),
-      preparedResume: prepared,
-      persistLogs: false,
-    });
-
-    assert.deepEqual(JSON.parse(JSON.stringify(result.result)), {
-      decision: true,
-      suffix: "live-suffix",
-    });
-    assert.equal(runnerCalls, 1);
-    assert.deepEqual(result.resumeReport?.calls, [
-      {
-        index: 0,
-        kind: "checkpoint",
-        action: "replayed",
-        sourceRunId: "paused-source",
-        recordedIndex: 1,
-        match: "unique-hash",
-        checkpointInjected: true,
-      },
-      { index: 1, kind: "agent", action: "live", reason: "positional-suffix" },
-    ]);
-    assert.equal(result.calls?.[0].replay?.checkpointInjected, true);
-    assert.equal(commits.at(-1)?.checkpointInjections, undefined);
   });
 });
 

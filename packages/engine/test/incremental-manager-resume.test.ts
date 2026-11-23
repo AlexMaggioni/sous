@@ -150,7 +150,7 @@ async function assertDriftedCheckpointResume(
     const started = manager.startInBackground(DRIFT_CHECKPOINT_SCRIPT, undefined, {
       runId: targetRunId,
       resumeFromRunId: paused.runId,
-      checkpointReplies: { [paused.checkpointContext.callIndex]: true },
+      confirm: async () => true,
     });
     const admittedChange = manager.getRun(targetRunId)?.replayEligibility?.provenanceChanges
       ?.find((change) => change.field === expectedField);
@@ -160,9 +160,9 @@ async function assertDriftedCheckpointResume(
     const resumed = await started.promise;
     assert.equal(resumed.status, "completed", JSON.stringify(resumed.resumeReport));
     assert.equal(resumed.resumeReport?.strategy, "identity-v1");
-    assert.equal(resumed.resumeReport?.replayed, 3);
-    assert.equal(resumed.resumeReport?.live, 1);
-    assert.equal(resumed.replayEligibility?.replayedPrefix, 3);
+    assert.equal(resumed.resumeReport?.replayed, 2);
+    assert.equal(resumed.resumeReport?.live, 2);
+    assert.equal(resumed.replayEligibility?.replayedPrefix, 2);
     assert.ok(resumed.replayEligibility?.provenanceChanges
       ?.some((change) => change.field === expectedField));
     assert.deepEqual(livePrompts, ["after-checkpoint"], "the journaled agent prefix makes zero live calls");
@@ -220,7 +220,6 @@ describe("WorkflowManager resumeFromRunId admission", () => {
         { resumePolicy: "positional" as const, resumeJournal: new Map() },
         { resumeFromRunId: sourceRunId, journaling: false },
         { resumeFromRunId: sourceRunId, runId: sourceRunId },
-        { checkpointReplies: { 0: true } },
       ];
       for (const exec of invalid) {
         assert.throws(
@@ -359,7 +358,7 @@ return await checkpoint("approve", { })`, "legacy-ancestry"), undefined, {
       assert.equal(store.persistence.load("legacy-ancestry")?.resumeSourceRunId, sourceRunId);
 
       const resumed = await manager.resumeInBackground("legacy-ancestry", {
-        checkpointReplies: { [paused.checkpointContext.callIndex]: true },
+        confirm: async () => true,
       });
       if (!resumed.accepted) assert.fail("legacy resume was not accepted");
       const final = await resumed.promise;
@@ -509,7 +508,7 @@ describe("WorkflowManager durable identity execution", () => {
     }
   });
 
-  it("retains only the remaining seed on pause and flattens grandparent provenance with a reply", async () => {
+  it("retains only the remaining seed on pause and flattens grandparent provenance after a confirmed checkpoint", async () => {
     const dirs = tempDirs();
     try {
       const store = memoryStore(dirs.root);
@@ -544,7 +543,7 @@ const two = await agent("two", { label: "two", resume: { filesystem: "read-only"
 return { one, approval, two }`, "replied-hop"), undefined, {
         runId: "replied-hop",
         resumeFromRunId: "paused-hop",
-        checkpointReplies: { [paused.checkpointContext.callIndex]: true },
+        confirm: async () => true,
       });
       assert.equal(final.status, "completed", JSON.stringify(final.resumeReport));
       assert.deepEqual(JSON.parse(JSON.stringify(final.result)), {
@@ -553,7 +552,7 @@ return { one, approval, two }`, "replied-hop"), undefined, {
         two: "source:two",
       });
       assert.equal(final.resumeReport?.strategy, "identity-v1");
-      assert.equal(final.resumeReport?.replayed, 3);
+      assert.equal(final.resumeReport?.replayed, 2);
       const twoDecision = final.resumeReport?.calls[2];
       assert.equal(twoDecision?.action, "replayed");
       if (twoDecision?.action === "replayed") assert.equal(twoDecision.sourceRunId, sourceRunId);
@@ -641,7 +640,7 @@ return await agent("two", { label: "two", resume: { filesystem: "read-only" } })
     }
   });
 
-  it("drops an inherited positional suffix before a replied checkpoint double hop", async () => {
+  it("drops an inherited positional suffix before a confirmed checkpoint double hop", async () => {
     const dirs = tempDirs();
     try {
       const store = memoryStore(dirs.root);
@@ -682,14 +681,14 @@ return { approval, tail }`, "positional-checkpoint-target");
       }).runSync(changedScript, undefined, {
         runId: "positional-replied",
         resumeFromRunId: "positional-pause",
-        checkpointReplies: { [paused.checkpointContext.callIndex]: true },
+        confirm: async () => true,
       });
       assert.equal(resumed.status, "completed");
       assert.deepEqual(live, ["tail"]);
       assert.deepEqual(JSON.parse(JSON.stringify(resumed.result)), { approval: true, tail: "live:tail" });
       assert.deepEqual(resumed.resumeReport?.calls.map((decision) => decision.action), [
         "replayed",
-        "replayed",
+        "live",
         "live",
       ]);
     } finally {

@@ -76,7 +76,7 @@ const terminal = await promise; // rejects for pause, failure, or abort
 
 `startInBackground()` returns only after lease acquisition and its fail-fast initial save; it is
 detached from the caller, not from the Node process. If `ExecOptions.resumeJournal` is supplied, the
-manager sorts and copies the exact entries—including synthetic checkpoint replies—into the new run
+manager sorts and copies the exact entries, including journaled checkpoint answers, into the new run
 before that save. Replay hits do not emit journal callbacks, so this seeding is what makes the child
 run independently resumable after a second pause or process loss. Each later live journal append
 persists the complete inherited prefix plus suffix. A dead owner's persisted `pending` or `running`
@@ -238,8 +238,8 @@ last value may be emitted twice, and persistence records the latest cumulative s
 and terminal writes.
 
 Successful journal writes now include optional replay-neutral `JournalEntry.call` attribution.
-Agent entries record the final label/phase/resolved model/actual backend; checkpoint and synthetic
-checkpoint-reply entries record checkpoint kind/label/phase. Old entries remain readable and hashes
+Agent entries record the final label/phase/resolved model/actual backend; checkpoint entries
+record checkpoint kind/label/phase. Old entries remain readable and hashes
 are unchanged. Terminal persisted states retain a safe run-level `reason` and `errorCode` on the saved
 run. Every paused, failed, or aborted `WorkflowRunResult` has a redacted final-20 `logTail`
 (present even when empty); completed results omit it and preserve the full raw `logs` array.
@@ -249,7 +249,7 @@ continuation reattach/skip outcomes. Model selection emits no entries because ha
 propagate through the existing agent-error path.
 `checkpointsTaken` records each checkpoint
 that resolved in this execution with its journaled decision and source: `live`, `journal-replay`,
-or `injected` from `checkpointReplies`. Pausing checkpoints are omitted. Both
+or `injected` when an older saved resume seed carries the answer. Pausing checkpoints are omitted. Both
 arrays are absent when empty and stay outside call hashes.
 
 The manager treats `PROVIDER_USAGE_LIMIT`, `AUTH_REQUIRED`, `CHECKPOINT_REQUIRED`, and
@@ -259,8 +259,7 @@ settle as interrupted rows, and the run pauses with `reason:"requested"`. `stop(
 in-flight work instead and settles the run as `aborted`; both continue with `resume(runId)`. An authentication pause uses `reason: "auth_required"`
 and carries only the non-secret `authContext`; complete authentication through the injected runner,
 then resume the same journal. Every unanswered checkpoint persists `reason:"checkpoint_required"`
-and non-secret `checkpointContext`. Answer with `ExecOptions.checkpointReplies[callIndex]`, or
-supply a live `confirm` callback. Missing callbacks, `undefined`, non-JSON replies, rejection, and interaction timeout
+and non-secret `checkpointContext`. Answer with a live `confirm` callback on the resuming call. Missing callbacks, `undefined`, non-JSON replies, rejection, and interaction timeout
 pause; script `try/catch` cannot bypass the pending gate. Explicit cancellation interrupts even a
 callback that never resolves. An explicit strict-JSON answer, including `false`, `null`, or an
 empty string, is returned verbatim and journaled for cold replay. Authored `headless` and `default`

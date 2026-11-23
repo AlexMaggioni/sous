@@ -56,7 +56,6 @@ import type { PreparedContinuation, PreparedResume } from "./resume.js";
 import {
   buildResumeCandidateIndexes,
   buildResumeReport,
-  checkpointReplyNotApplied,
   indexedSourceOccurrence,
   initialPositionalFirstMiss,
   selectPositionalResume,
@@ -260,8 +259,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   onResumeDecision?: (decision: WorkflowResumeCallDecision) => void;
   /** Called after each live agent/checkpoint completes so the caller can persist the journal. */
   onAgentJournal?: (entry: JournalEntry) => void;
-  /** Checkpoint reply indexes injected for this execution, used only for result attribution. */
-  injectedCheckpointReplies?: ReadonlySet<number>;
   /** Observability callbacks; neither participates in journal identity. */
   onFallback?: (entry: WorkflowRunFallback) => void;
   onCheckpointTaken?: (entry: WorkflowCheckpointTaken) => void;
@@ -626,7 +623,7 @@ export async function runWorkflow<T = unknown>(
   const journaling = options.journaling ?? true;
   const resumeSeed = options.preparedResume?.strategy === "identity-v1"
     ? options.preparedResume.seed
-    : options.preparedResume?.strategy === "positional-v1" ? options.preparedResume.checkpoint?.seed : undefined;
+    : undefined;
   assertExplicitCheckpointProvenance({
     journal: options.resumeJournal ? [...options.resumeJournal.values()] : undefined,
     resumeSeed,
@@ -893,18 +890,12 @@ export async function runWorkflow<T = unknown>(
           strategy: preparedResume.strategy,
           sourceRunId: preparedResume.sourceRunId,
           requestedPolicy: preparedResume.requestedPolicy,
-          ...(preparedResume.checkpointReplyIndex === undefined
-            ? {}
-            : { checkpointReplyIndex: preparedResume.checkpointReplyIndex }),
         }
       : preparedResume.strategy === "positional-v1"
         ? {
             strategy: preparedResume.strategy,
             sourceRunId: preparedResume.sourceRunId,
             requestedPolicy: preparedResume.requestedPolicy,
-            ...(preparedResume.checkpointReplyIndex === undefined
-              ? {}
-              : { checkpointReplyIndex: preparedResume.checkpointReplyIndex }),
             fallbackReason: preparedResume.fallbackReason,
             eligibility: preparedResume.eligibility,
           }
@@ -912,9 +903,6 @@ export async function runWorkflow<T = unknown>(
             strategy: preparedResume.strategy,
             sourceRunId: preparedResume.sourceRunId,
             requestedPolicy: preparedResume.requestedPolicy,
-            ...(preparedResume.checkpointReplyIndex === undefined
-              ? {}
-              : { checkpointReplyIndex: preparedResume.checkpointReplyIndex }),
             disabledReason: preparedResume.disabledReason,
           }
     : undefined;
@@ -933,10 +921,6 @@ export async function runWorkflow<T = unknown>(
   const identitySeed = preparedResume?.strategy === "identity-v1"
     ? createResumeSeedController(preparedResume.seed, preparedResume.commitSeed)
     : undefined;
-  const positionalCheckpointSeed = preparedResume?.strategy === "positional-v1" && preparedResume.checkpoint
-    ? createResumeSeedController(preparedResume.checkpoint.seed, preparedResume.checkpoint.commitSeed)
-    : undefined;
-  let checkpointReplyApplied = false;
 
   const appendResumeDecisionGate = (): ResumeDecisionGate | undefined => {
     if (!preparedResume) return undefined;
@@ -2279,7 +2263,6 @@ export async function runWorkflow<T = unknown>(
         // A nested run is its own script; never reuse the parent's resume journal.
         // It replays its own journal, recorded under its run id.
         resumeJournal: options.nestedResumeJournals?.get(childRunId),
-        injectedCheckpointReplies: undefined,
         resumeFromRunId: undefined,
         preparedResume: undefined,
         preparedContinuation: undefined,
@@ -2490,7 +2473,6 @@ export async function runWorkflow<T = unknown>(
       try {
         await enterResumeDecision(gate, decisionCall);
         let liveReason: Extract<WorkflowResumeCallDecision, { action: "live" }>;
-        let checkpointReplyInputsChanged = false;
 
         if (preparedResume.strategy === "identity-v1") {
           const match = selectResumeCandidate((identitySeed as ResumeSeedController).indexes, {
@@ -2531,7 +2513,6 @@ export async function runWorkflow<T = unknown>(
                   match.source.candidate.call.replay?.checkpointHostDecision === true)
               )
             );
-            if (checkpointInjected) checkpointReplyApplied = true;
             emitResumeDecision({
               index: callIndex,
               kind: "checkpoint",
@@ -2565,60 +2546,7 @@ export async function runWorkflow<T = unknown>(
             action: "live",
             reason: match.action === "live" ? match.reason : "not-recorded",
           };
-          checkpointReplyInputsChanged = match.action === "live" && match.reason === "inputs-changed";
         } else if (preparedResume.strategy === "positional-v1") {
-          if (positionalCheckpointSeed) {
-            const injectionMatch = selectResumeCandidate(positionalCheckpointSeed.indexes, {
-              kind: "checkpoint",
-              hash: callHash,
-              path: callPath,
-              inputsHash: callInputsHash,
-              consumed: positionalCheckpointSeed.consumed,
-            });
-            if (
-              injectionMatch.action === "replay" &&
-              injectionMatch.source.type === "injection" &&
-              (injectionMatch.match === "path-hash" || callIndex < state.firstMiss)
-            ) {
-              const injection = injectionMatch.source.injection;
-              assertExplicitCheckpointDecision(injection);
-              const resultSnapshot = strictSnapshot(
-                injection.decision,
-                `checkpoint "${promptText}" injected reply`,
-              );
-              commitResumeRemoval(
-                positionalCheckpointSeed,
-                [indexedSourceOccurrence(injectionMatch.source)],
-                decisionCall,
-              );
-              if (callIndex !== injection.recordedIndex) {
-                state.firstMiss = Math.min(state.firstMiss, callIndex + 1);
-              }
-              checkpointReplyApplied = true;
-              emitResumeDecision({
-                index: callIndex,
-                kind: "checkpoint",
-                action: "replayed",
-                sourceRunId: injection.sourceRunId,
-                recordedIndex: injection.recordedIndex,
-                match: injectionMatch.match,
-                checkpointInjected: true,
-              });
-              gate.release();
-              return replayCheckpoint({
-                resultSnapshot,
-                sourceRunId: injection.sourceRunId,
-                recordedIndex: injection.recordedIndex,
-                match: injectionMatch.match,
-                checkpointInjected: true,
-                checkpointHostDecision: true,
-                manifestProvenance: true,
-              });
-            }
-            checkpointReplyInputsChanged =
-              injectionMatch.action === "live" && injectionMatch.reason === "inputs-changed";
-          }
-
           const sourceCall = positionalSourceCall(preparedResume, callIndex, "checkpoint", callHash);
           const match = selectPositionalResume({
             index: callIndex,
@@ -2640,10 +2568,6 @@ export async function runWorkflow<T = unknown>(
             const checkpointHostDecision = sourceCall?.origin === "confirm" ||
               (sourceCall?.origin === "journal-replay" &&
                 sourceCall.replay?.checkpointHostDecision === true);
-            const checkpointInjected = options.injectedCheckpointReplies?.has(callIndex)
-              ? true as const
-              : undefined;
-            if (checkpointInjected) checkpointReplyApplied = true;
             emitResumeDecision({
               index: callIndex,
               kind: "checkpoint",
@@ -2651,7 +2575,6 @@ export async function runWorkflow<T = unknown>(
               sourceRunId: preparedResume.sourceRunId,
               recordedIndex: callIndex,
               match: match.match,
-              ...(checkpointInjected ? { checkpointInjected } : {}),
             });
             gate.release();
             return replayCheckpoint({
@@ -2659,7 +2582,6 @@ export async function runWorkflow<T = unknown>(
               sourceRunId: preparedResume.sourceRunId,
               recordedIndex: callIndex,
               match: match.match,
-              ...(checkpointInjected ? { checkpointInjected } : {}),
               checkpointHostDecision,
               manifestProvenance: sourceCall !== undefined,
             });
@@ -2680,16 +2602,6 @@ export async function runWorkflow<T = unknown>(
         }
 
         if (options.confirm) options.onResumeFilesystemTainted?.();
-        if (preparedResume.checkpointReplyIndex !== undefined && !checkpointReplyApplied) {
-          liveReason = {
-            ...liveReason,
-            checkpointReply: checkpointReplyNotApplied(
-              preparedResume.checkpointReplyIndex,
-              callIndex,
-              checkpointReplyInputsChanged,
-            ),
-          };
-        }
         emitResumeDecision(liveReason);
         gate.release();
       } catch (error) {
@@ -2712,9 +2624,6 @@ export async function runWorkflow<T = unknown>(
             sourceRunId: runId,
             recordedIndex: callIndex,
             match: "index-hash",
-            ...(options.injectedCheckpointReplies?.has(callIndex)
-              ? { checkpointInjected: true as const }
-              : {}),
             checkpointHostDecision: true,
             manifestProvenance: true,
             reportJournal: false,
@@ -2964,7 +2873,7 @@ export async function runWorkflow<T = unknown>(
     calls: Object.freeze([...state.calls]) as WorkflowCallRecord[],
     callsAllocated: state.callSeq,
     ...(resumeReportPlan
-      ? { resumeReport: buildResumeReport(resumeReportPlan, [...resumeDecisions.values()], true) }
+      ? { resumeReport: buildResumeReport(resumeReportPlan, [...resumeDecisions.values()]) }
       : {}),
     effectiveLimits,
     ...(abortSignaled ? { abortSignaled: true as const } : {}),

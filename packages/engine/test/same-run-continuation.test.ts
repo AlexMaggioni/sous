@@ -97,8 +97,8 @@ return await checkpoint("ship?", { kind: "select", choices: ["ship", "hold"], })
     assert.equal(paused.status, "paused");
 
     const [first, conflicting] = await Promise.all([
-      testRun.manager.resumeInBackground(paused.runId, { checkpointReplies: { 0: "ship" } }),
-      testRun.manager.resumeInBackground(paused.runId, { checkpointReplies: { 0: "hold" } }),
+      testRun.manager.resumeInBackground(paused.runId, { confirm: async () => "ship" }),
+      testRun.manager.resumeInBackground(paused.runId, { confirm: async () => "hold" }),
     ]);
     assert.equal(first.accepted, true);
     if (!first.accepted) assert.fail("first answer refused");
@@ -107,41 +107,12 @@ return await checkpoint("ship?", { kind: "select", choices: ["ship", "hold"], })
     assert.equal(completed.result, "ship");
 
     const repeated = await testRun.manager.resumeInBackground(paused.runId, {
-      checkpointReplies: { 0: "ship" },
+      confirm: async () => "ship",
     });
     assert.equal(repeated.accepted, false);
 
     const persisted = testRun.manager.getPersistence().load(paused.runId);
     assert.equal(persisted?.journal?.find((entry) => entry.index === 0)?.result, "ship");
-  } finally {
-    testRun.cleanup();
-  }
-});
-
-test("a mismatched checkpoint batch never reports or persists a provisional answer", async () => {
-  const testRun = fixture({ async run() { return "unused"; } });
-  try {
-    const script = `export const meta = { name: "checkpoint-batch", description: "checkpoint batch" };
-return await checkpoint("ship?", { });`;
-    const paused = await testRun.manager.runSync(script, undefined, {
-      runId: "checkpoint-batch",
-    });
-    assert.equal(paused.status, "paused");
-
-    const refused = await testRun.manager.resumeInBackground(paused.runId, {
-      checkpointReplies: { 0: true, 1: false },
-    });
-    assert.deepEqual(refused, { accepted: false });
-    assert.equal(
-      testRun.manager.getPersistence().load(paused.runId)?.journal?.some((entry) => entry.index === 0),
-      false,
-    );
-
-    const continued = await testRun.manager.resumeInBackground(paused.runId, {
-      checkpointReplies: { 0: true },
-    });
-    assert.equal(continued.accepted, true);
-    if (continued.accepted) assert.equal((await continued.promise).result, true);
   } finally {
     testRun.cleanup();
   }
@@ -161,7 +132,7 @@ return { first, second };`;
     assert.equal(paused.checkpointContext?.callIndex, 0);
 
     const answered = await testRun.manager.resumeInBackground("two-gates", {
-      checkpointReplies: { 0: false },
+      confirm: async (prompt) => (prompt === "first?" ? false : undefined),
     });
     assert.equal(answered.accepted, true);
     if (!answered.accepted) assert.fail("answer refused");
@@ -170,18 +141,23 @@ return { first, second };`;
     assert.equal(pausedAgain?.pauseReason, "checkpoint_required");
     assert.equal(pausedAgain?.checkpointContext?.callIndex, 1);
 
-    // A repeat of answer 0 is not an answer for checkpoint 1. The run must stay paused rather
-    // than resolve the second gate to its authored default.
-    const repeated = await testRun.manager.resumeInBackground("two-gates", { checkpointReplies: { 0: false } });
+    // A confirm that answers only checkpoint 0 is not an answer for checkpoint 1. Checkpoint 0
+    // replays from the journal, so the run must stay paused rather than resolve the second gate
+    // to its authored default.
+    const repeated = await testRun.manager.resumeInBackground("two-gates", {
+      confirm: async (prompt) => (prompt === "first?" ? false : undefined),
+    });
     if (!repeated.accepted) assert.fail("the repeat should re-pause the run");
-    await assert.rejects(repeated.promise, /checkpoint "second\?" awaits a human decision/);
+    await assert.rejects(repeated.promise, /checkpoint "second\?" awaits an explicit human decision/);
     assert.equal(testRun.manager.getPersistence().load("two-gates")?.status, "paused");
 
-    const conflicting = await testRun.manager.resumeInBackground("two-gates", { checkpointReplies: { 0: true } });
+    const conflicting = await testRun.manager.resumeInBackground("two-gates", {
+      confirm: async (prompt) => (prompt === "first?" ? true : undefined),
+    });
     if (!conflicting.accepted) assert.fail("the conflict should re-pause the run");
-    await assert.rejects(conflicting.promise, /checkpoint "second\?" awaits a human decision/);
+    await assert.rejects(conflicting.promise, /checkpoint "second\?" awaits an explicit human decision/);
 
-    const finished = await testRun.manager.resumeInBackground("two-gates", { checkpointReplies: { 0: false, 1: false } });
+    const finished = await testRun.manager.resumeInBackground("two-gates", { confirm: async () => false });
     assert.equal(finished.accepted, true);
     if (!finished.accepted) assert.fail("answers refused");
     const completed = await finished.promise;

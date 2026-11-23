@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { JournalEntry, WorkflowCallRecord, WorkflowResumeCallDecision } from "../src/workflow-result.js";
-import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
+import { WorkflowErrorCode } from "../src/errors.js";
 import {
   admitResumeSource,
   buildResumeCandidateIndexes,
@@ -13,7 +13,6 @@ import {
   indexedSourceOccurrence,
   initialPositionalFirstMiss,
   normalizeResumeSeed,
-  parseCheckpointReplies,
   selectResumeCandidate,
   selectPositionalResume,
   type ResumeAdmissionInput,
@@ -222,7 +221,6 @@ describe("incremental resume admission", () => {
     assert.equal(safe.strategy, "identity-v1");
     assert.equal(safe.strategy === "identity-v1" && safe.seed.candidates.length, 1);
     assert.deepEqual(safe.facts, {
-      pendingRepresented: false,
       allCallsRepresented: true,
     });
 
@@ -667,26 +665,8 @@ return { first, second };`;
     assert.equal(crossKindCollision, undefined);
   });
 
-  it("parses canonical source-index checkpoint replies and prepares only unique injections", () => {
+  it("admits a paused checkpoint source with the pending checkpoint as a live call blocker", () => {
     const context = { callIndex: 1, hash: HASH_B, prompt: "approve?", kind: "confirm" as const };
-    assert.deepEqual(parseCheckpointReplies({ 1: { approved: true } }, context), {
-      recordedIndex: 1,
-      decision: { approved: true },
-    });
-    for (const replies of [{ "01": true }, { "-0": true }, { 0: true }, { 1: true, 2: false }]) {
-      assert.throws(() => parseCheckpointReplies(replies, context), (error: unknown) =>
-        error instanceof WorkflowError && error.code === WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-      );
-    }
-    assert.throws(() => parseCheckpointReplies({ 1: true }, undefined), (error: unknown) =>
-      error instanceof WorkflowError && error.code === WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-    );
-    const cyclic: { self?: unknown } = {};
-    cyclic.self = cyclic;
-    assert.throws(() => parseCheckpointReplies({ 1: cyclic }, context), (error: unknown) =>
-      error instanceof WorkflowError && error.code === WorkflowErrorCode.AGENT_EXECUTION_ERROR,
-    );
-
     const pending = checkpointRow(1, {
       outcome: "error",
       origin: "engine",
@@ -702,72 +682,10 @@ return { first, second };`;
       pauseReason: "checkpoint_required",
       checkpointContext: context,
     });
-    const injected = admission(paused, { checkpointReplies: { 1: { approved: true } } });
-    assert.equal(injected.strategy, "identity-v1");
-    assert.equal(injected.facts?.pendingRepresented, true);
-    assert.deepEqual(
-      injected.strategy === "identity-v1" && injected.seed.checkpointInjections,
-      [{
-        checkpointDecision: "explicit-v1",
-        sourceRunId: SOURCE_RUN_ID,
-        recordedIndex: 1,
-        hash: HASH_B,
-        path: "workflow.js:2:1",
-        inputsHash: INPUT_B,
-        decision: { approved: true },
-      }],
-    );
-
     const withoutReply = admission(paused);
     assert.equal(withoutReply.strategy, "identity-v1");
-    assert.equal(withoutReply.facts?.pendingRepresented, false);
+    assert.deepEqual(withoutReply.facts, { allCallsRepresented: true });
     assert.equal(withoutReply.strategy === "identity-v1" && withoutReply.seed.callBlockers?.length, 1);
-
-    const duplicateRow = checkpointRow(2, { hash: HASH_B, inputsHash: INPUT_B });
-    const duplicateSource = sourceState([prior, pending, duplicateRow], {
-      status: "paused",
-      pauseReason: "checkpoint_required",
-      checkpointContext: context,
-    });
-    const duplicateDecision = admission(duplicateSource, { checkpointReplies: { 1: true } });
-    assert.equal(duplicateDecision.strategy, "identity-v1");
-    assert.equal(duplicateDecision.facts?.pendingRepresented, false);
-
-    const retainedCheckpoint = candidate(4, {
-      sourceRunId: "older-run",
-      call: {
-        kind: "checkpoint",
-        checkpointDecision: "explicit-v1",
-        hash: HASH_B,
-        path: "older-checkpoint",
-        inputsHash: INPUT_B,
-        origin: "confirm",
-        resumeSafety: undefined,
-      },
-      entry: { kind: "checkpoint", checkpointDecision: "explicit-v1", hash: HASH_B, result: false },
-    });
-    delete retainedCheckpoint.call.resumeSafety;
-    const retainedBlocker = sourceState([prior, pending], {
-      status: "paused",
-      pauseReason: "checkpoint_required",
-      checkpointContext: context,
-      resumeSeed: {
-        format: "identity-v1",
-        sourceRunId: SOURCE_RUN_ID,
-        candidates: [retainedCheckpoint],
-      },
-    });
-    const retainedBlocked = admission(retainedBlocker, { checkpointReplies: { 1: true } });
-    assert.equal(retainedBlocked.strategy, "identity-v1");
-    assert.equal(retainedBlocked.facts?.pendingRepresented, false);
-
-    const corrupt = sourceState([prior, { ...pending, hash: HASH_C }], {
-      status: "paused",
-      pauseReason: "checkpoint_required",
-      checkpointContext: context,
-    });
-    const corruptDecision = admission(corrupt, { checkpointReplies: { 1: true } });
-    assert.equal(corruptDecision.strategy === "live" && corruptDecision.disabledReason, "manifest-invalid");
   });
 });
 

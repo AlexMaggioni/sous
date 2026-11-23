@@ -208,7 +208,7 @@ return answer;`;
     assert.equal(persisted.calls?.[0].checkpointDecision, undefined);
 
     const cold = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
-    const resumed = await cold.resumeInBackground(paused.runId, { checkpointReplies: { "0": false } });
+    const resumed = await cold.resumeInBackground(paused.runId, { confirm: async () => false });
     assert.equal(resumed.accepted, true);
     if (!resumed.accepted) assert.fail("a later explicit valid reply should continue");
     const completed = await resumed.promise;
@@ -261,7 +261,7 @@ return await agent("after", { model: "codex/second" })`;
   assert.equal(paused.status, "paused");
   assert.deepEqual(models, ["claude/first"]);
   const cold = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
-  const resumed = await cold.resumeInBackground(paused.runId, { checkpointReplies: { "1": true } });
+  const resumed = await cold.resumeInBackground(paused.runId, { confirm: async () => true });
   assert.equal(resumed.accepted, true);
   if (!resumed.accepted) assert.fail("explicit answer should continue");
   const completed = await resumed.promise;
@@ -280,7 +280,7 @@ return 1`;
 });
 
 test(
-  "durable checkpoint: pause context and prefix persist; cold reply resume journals the answer permanently",
+  "durable checkpoint: pause context and prefix persist; cold confirm resume journals the answer permanently",
   withTempPersistenceRoot(async (persistenceRoot) => {
     const store = memoryPersistence();
     const firstAgent = recordingAgent();
@@ -328,7 +328,7 @@ test(
     assert.equal(persistedPause?.journal?.[0]?.index, 0);
     assert.equal(persistedPause?.journal?.[0]?.result, "agent:before");
 
-    // Fresh manager instance: the reply is supplied out-of-band and no live confirm is asked.
+    // Fresh manager instance: the resuming call answers through its own confirm, as orc does.
     const resumedAgent = recordingAgent();
     const manager2 = new WorkflowManager({
       agent: resumedAgent.runner,
@@ -337,10 +337,9 @@ test(
     });
     let liveAsks = 0;
     const resumed = await manager2.resumeInBackground(paused.runId, {
-      checkpointReplies: { [context.callIndex]: "ship" },
       confirm: async () => {
         liveAsks++;
-        return "wrong-live-answer";
+        return "ship";
       },
     });
     assert.equal(resumed.accepted, true);
@@ -349,12 +348,12 @@ test(
 
     assert.equal(completed.status, "completed");
     assert.deepEqual(completed.checkpointsTaken, [
-      { callIndex: context.callIndex, kind: "select", decision: "ship", source: "injected" },
+      { callIndex: context.callIndex, kind: "select", decision: "ship", source: "live" },
     ]);
     assert.equal(field(completed.result, "prefix"), "agent:before");
     assert.equal(field(completed.result, "decision"), "ship");
     assert.equal(field(completed.result, "after"), "agent:after:ship");
-    assert.equal(liveAsks, 0, "the injected journal reply prevents a live re-ask");
+    assert.equal(liveAsks, 1, "the resumed run asks the paused checkpoint once");
     assert.deepEqual(resumedAgent.prompts, ["after:ship"], "the prefix replayed and only new work ran live");
 
     const finalState = store.persistence.load(paused.runId);
@@ -363,13 +362,13 @@ test(
     assert.deepEqual(
       { index: replyEntry?.index, hash: replyEntry?.hash, result: replyEntry?.result, kind: replyEntry?.kind, scope: replyEntry?.scope },
       { index: context.callIndex, hash: context.hash, result: "ship", kind: "checkpoint", scope: paused.runId },
-      "the synthetic decision is in the final persisted journal",
+      "the confirmed decision is in the final persisted journal",
     );
     assert.deepEqual(replyEntry?.call, { kind: "checkpoint", label: "checkpoint", phase: undefined });
     assert.deepEqual(finalState?.checkpointsTaken, completed.checkpointsTaken);
 
     // A third, cold manager can hydrate that final journal and complete with no reply or
-    // confirm channel at all. Every call replays, proving the synthetic answer is durable.
+    // confirm channel at all. Every call replays, proving the confirmed answer is durable.
     const replayAgent = recordingAgent();
     const manager3 = new WorkflowManager({
       agent: replayAgent.runner,
@@ -388,7 +387,7 @@ test(
 );
 
 test(
-  "durable checkpoint: real filesystem persistence survives a fresh-manager reply resume",
+  "durable checkpoint: real filesystem persistence survives a fresh-manager confirm resume",
   withTempPersistenceDirs(async (persistenceRoot, cwd) => {
     const firstAgent = recordingAgent();
     const manager1 = new WorkflowManager({
@@ -412,7 +411,7 @@ test(
       persistenceRoot,
     });
     const resumed = await manager2.resumeInBackground(paused.runId, {
-      checkpointReplies: { [context.callIndex]: "ship" },
+      confirm: async () => "ship",
     });
     assert.equal(resumed.accepted, true);
     if (!resumed.accepted) assert.fail("the fresh manager should load and resume the on-disk pause");
@@ -431,7 +430,7 @@ test(
     assert.deepEqual(
       { index: replyEntry?.index, hash: replyEntry?.hash, result: replyEntry?.result, kind: replyEntry?.kind, scope: replyEntry?.scope },
       { index: context.callIndex, hash: context.hash, result: "ship", kind: "checkpoint", scope: paused.runId },
-      "the synthetic checkpoint reply is durably journaled on disk",
+      "the confirmed checkpoint answer is durably journaled on disk",
     );
     assert.deepEqual(replyEntry?.call, { kind: "checkpoint", label: "checkpoint" });
   }),

@@ -62,7 +62,6 @@ export type PreparedResume =
       strategy: "identity-v1";
       sourceRunId: string;
       requestedPolicy: ResumePolicy;
-      checkpointReplyIndex?: number;
       seed: PersistedResumeSeed;
       /** Synchronously replace the durable remaining seed. Throws PERSISTENCE_ERROR
        *  on failure; the engine must not expose a replay/live decision first. */
@@ -72,7 +71,6 @@ export type PreparedResume =
       strategy: "positional-v1";
       sourceRunId: string;
       requestedPolicy: ResumePolicy;
-      checkpointReplyIndex?: number;
       fallbackReason: WorkflowResumeFallbackReason;
       /** "legacy" is the exact historical matcher. "safe-prefix" permits
        *  integrity-checked new-format prefix hits. "all-live" is retained for
@@ -81,17 +79,10 @@ export type PreparedResume =
       /** Root source manifest by source index when available; empty for pre-manifest legacy
        *  sources. Used to validate inputs and carry diagnostic provenance. */
       sourceCalls: ReadonlyMap<number, WorkflowCallRecord>;
-      /** Present only for a new-format shifted checkpoint injection. Its candidates
-       *  array is empty; commitSeed has the same critical semantics as above. */
-      checkpoint?: {
-        seed: PersistedResumeSeed;
-        commitSeed: (remaining: PersistedResumeSeed) => void;
-      };
     }
   | {
       strategy: "live";
       sourceRunId: string;
       requestedPolicy: ResumePolicy;
-      checkpointReplyIndex?: number;
       disabledReason: WorkflowResumeDisabledReason;
     };

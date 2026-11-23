@@ -3,7 +3,6 @@ import type {
   JournalEntry,
   ResumePolicy,
   WorkflowCallRecord,
-  WorkflowCheckpointReplyNotApplied,
   WorkflowResumeCallDecision,
   WorkflowResumeCallLiveReason,
   WorkflowResumeDisabledReason,
@@ -12,8 +11,6 @@ import type {
   WorkflowResumeSafety,
 } from "./workflow-result.js";
 import type { AgentUsage } from "./steps/agent-run.js";
-import type { CheckpointContext } from "./errors.js";
-import { WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { assertExplicitCheckpointDecision, assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
 import {
   type PersistedCheckpointInjection,
@@ -51,11 +48,9 @@ export interface ResumeAdmissionInput {
     effectiveCwd: string;
     runtime: ResumeFormatIdentity;
   };
-  checkpointReplies?: Record<string, unknown>;
 }
 
 export interface ResumeAdmissionFacts {
-  pendingRepresented: boolean;
   allCallsRepresented: boolean;
 }
 
@@ -64,7 +59,6 @@ export type ResumeAdmissionDecision =
       strategy: "identity-v1";
       sourceRunId: string;
       requestedPolicy: ResumePolicy;
-      checkpointReplyIndex?: number;
       seed: PersistedResumeSeed;
       facts: ResumeAdmissionFacts;
     }
@@ -74,9 +68,6 @@ export type ResumeAdmissionDecision =
       requestedPolicy: ResumePolicy;
       fallbackReason: WorkflowResumeFallbackReason;
       eligibility: "legacy" | "safe-prefix" | "all-live";
-      checkpointReplyIndex?: number;
-      checkpointSeed?: PersistedResumeSeed;
-      legacyCheckpointReply?: ParsedCheckpointReply;
       facts?: ResumeAdmissionFacts;
     }
   | {
@@ -84,14 +75,8 @@ export type ResumeAdmissionDecision =
       sourceRunId: string;
       requestedPolicy: ResumePolicy;
       disabledReason: WorkflowResumeDisabledReason;
-      checkpointReplyIndex?: number;
       facts?: ResumeAdmissionFacts;
     };
-
-export interface ParsedCheckpointReply {
-  recordedIndex: number;
-  decision: unknown;
-}
 
 export type IndexedResumeSource =
   | { type: "candidate"; candidate: PersistedResumeCandidate }
@@ -554,118 +539,6 @@ function validateSeed(source: PersistedRunState, sourceRunId: string): Validated
   return { candidates, blockers, injections };
 }
 
-function validationError(message: string): WorkflowError {
-  return new WorkflowError(message, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, { recoverable: false });
-}
-
-function pendingCheckpointContext(source: PersistedRunState): CheckpointContext | undefined {
-  if (source.pauseReason !== "checkpoint_required" || !isRecord(source.checkpointContext)) return undefined;
-  return source.checkpointContext as unknown as CheckpointContext;
-}
-
-export function parseCheckpointReplies(
-  replies: Record<string, unknown> | undefined,
-  context: CheckpointContext | undefined,
-): ParsedCheckpointReply | undefined {
-  if (replies === undefined) return undefined;
-  if (!isRecord(replies)) throw validationError("checkpointReplies must be an object");
-  const keys = Reflect.ownKeys(replies).filter((key) => {
-    const descriptor = Reflect.getOwnPropertyDescriptor(replies, key);
-    return descriptor?.enumerable === true;
-  });
-  if (keys.length === 0) return undefined;
-  if (!context || !isNonNegativeSafeInteger(context.callIndex)) {
-    throw validationError("checkpointReplies requires a pending durable checkpoint");
-  }
-  let selected: { key: string; index: number } | undefined;
-  for (const key of keys) {
-    if (typeof key !== "string") throw validationError("checkpointReplies keys must be canonical indexes");
-    const index = Number(key);
-    if (!isNonNegativeSafeInteger(index) || String(index) !== key) {
-      throw validationError(`checkpointReplies key ${JSON.stringify(key)} is not a canonical index`);
-    }
-    if (index !== context.callIndex || selected !== undefined) {
-      throw validationError(`checkpointReplies key ${JSON.stringify(key)} does not name the pending checkpoint`);
-    }
-    selected = { key, index };
-  }
-  if (!selected) return undefined;
-  let decision: unknown;
-  try {
-    decision = Reflect.get(replies, selected.key);
-  } catch {
-    throw new WorkflowError("checkpoint reply could not be read", WorkflowErrorCode.AGENT_EXECUTION_ERROR, {
-      recoverable: false,
-    });
-  }
-  const captured = cloneFrozenStrictJson(decision);
-  if (!captured.ok) {
-    throw new WorkflowError(
-      `checkpoint reply is not strict JSON at ${captured.path}`,
-      WorkflowErrorCode.AGENT_EXECUTION_ERROR,
-      { recoverable: false },
-    );
-  }
-  return { recordedIndex: selected.index, decision: captured.clone };
-}
-
-function pendingInjection(
-  source: PersistedRunState,
-  calls: readonly WorkflowCallRecord[],
-  seed: ValidatedSeed,
-  reply: ParsedCheckpointReply | undefined,
-): { valid: boolean; injection?: PersistedCheckpointInjection } {
-  if (!reply) return { valid: true };
-  const context = pendingCheckpointContext(source);
-  const call = calls.find((candidate) => candidate.index === reply.recordedIndex);
-  if (
-    source.status !== "paused" ||
-    !context ||
-    !isHash(context.hash) ||
-    call?.kind !== "checkpoint" ||
-    call.outcome !== "error" ||
-    (call.origin !== "engine" && call.origin !== "confirm") ||
-    !isRecord(call.error) ||
-    call.error.form !== "workflow-error" ||
-    call.error.code !== WorkflowErrorCode.CHECKPOINT_REQUIRED ||
-    call.hash !== context.hash ||
-    !isPath(call.path) ||
-    !isHash(call.inputsHash)
-  ) {
-    return { valid: false };
-  }
-  const duplicateRoot = calls.some((other) =>
-    other.kind === "checkpoint" &&
-    other.index !== call.index &&
-    other.hash === call.hash &&
-    other.inputsHash === call.inputsHash,
-  );
-  const duplicateCandidate = seed.candidates.some((candidate) =>
-    candidate.call.kind === "checkpoint" &&
-    candidate.call.hash === call.hash &&
-    candidate.call.inputsHash === call.inputsHash,
-  );
-  const duplicateBlocker = seed.blockers.some((blocker) =>
-    blocker.call.kind === "checkpoint" &&
-    blocker.call.hash === call.hash &&
-    blocker.call.inputsHash === call.inputsHash,
-  );
-  const duplicateInjection = seed.injections.some((injection) =>
-    injection.hash === call.hash && injection.inputsHash === call.inputsHash,
-  );
-  if (duplicateRoot || duplicateCandidate || duplicateBlocker || duplicateInjection) return { valid: true };
-  const injection = strictClone<PersistedCheckpointInjection>({
-    checkpointDecision: "explicit-v1",
-    sourceRunId: source.runId,
-    recordedIndex: call.index,
-    hash: call.hash,
-    path: call.path,
-    inputsHash: call.inputsHash,
-    decision: reply.decision,
-  });
-  return injection ? { valid: true, injection } : { valid: false };
-}
-
 export function cloneResumeCandidate(
   sourceRunId: string,
   entry: JournalEntry,
@@ -709,7 +582,6 @@ export function normalizeResumeSeed(input: {
   promotedBlockers?: readonly PersistedResumeCallBlocker[];
   retainedBlockers?: readonly PersistedResumeCallBlocker[];
   retainedInjections?: readonly PersistedCheckpointInjection[];
-  pendingInjection?: PersistedCheckpointInjection;
 }): PersistedResumeSeed | undefined {
   if (!isNonEmptyString(input.sourceRunId)) return undefined;
   const candidates: PersistedResumeCandidate[] = [];
@@ -732,10 +604,7 @@ export function normalizeResumeSeed(input: {
     occurrences.add(key);
     callBlockers.push(blocker);
   }
-  for (const value of [
-    ...(input.retainedInjections ?? []),
-    ...(input.pendingInjection ? [input.pendingInjection] : []),
-  ]) {
+  for (const value of input.retainedInjections ?? []) {
     const injection = validateInjection(value);
     if (!injection) return undefined;
     const key = resumeOccurrenceKey(injection.sourceRunId, injection.recordedIndex);
@@ -757,14 +626,12 @@ function liveDecision(
   requestedPolicy: ResumePolicy,
   disabledReason: Extract<ResumeAdmissionDecision, { strategy: "live" }>["disabledReason"],
   facts?: ResumeAdmissionFacts,
-  checkpointReplyIndex?: number,
 ): ResumeAdmissionDecision {
   return {
     strategy: "live",
     sourceRunId,
     requestedPolicy,
     disabledReason,
-    ...(checkpointReplyIndex === undefined ? {} : { checkpointReplyIndex }),
     ...(facts ? { facts } : {}),
   };
 }
@@ -773,35 +640,15 @@ export function admitResumeSource(input: ResumeAdmissionInput): ResumeAdmissionD
   const { source, requestedPolicy, current } = input;
   assertExplicitCheckpointProvenance(source);
   const sourceRunId = typeof source?.runId === "string" ? source.runId : "";
-  const reply = parseCheckpointReplies(input.checkpointReplies, pendingCheckpointContext(source));
-  const checkpointReplyIndex = reply?.recordedIndex;
   const markerAbsent = !isRecord(source) || !hasOwn(source, "resume") || source.resume === undefined;
   if (!markerAbsent && (!isRecord(source.resume) || source.resume.format !== "identity-v1")) {
-    return liveDecision(
-      sourceRunId,
-      requestedPolicy,
-      "unsupported-format",
-      undefined,
-      checkpointReplyIndex,
-    );
+    return liveDecision(sourceRunId, requestedPolicy, "unsupported-format");
   }
   if (!TERMINAL_STATUSES.has(String(source.status))) {
-    return liveDecision(
-      sourceRunId,
-      requestedPolicy,
-      "source-not-terminal",
-      undefined,
-      checkpointReplyIndex,
-    );
+    return liveDecision(sourceRunId, requestedPolicy, "source-not-terminal");
   }
   if (source.executionMode !== undefined) {
-    return liveDecision(
-      sourceRunId,
-      requestedPolicy,
-      "isolation-recording",
-      undefined,
-      checkpointReplyIndex,
-    );
+    return liveDecision(sourceRunId, requestedPolicy, "isolation-recording");
   }
   if (markerAbsent || source.legacyResume === true) {
     return {
@@ -810,8 +657,6 @@ export function admitResumeSource(input: ResumeAdmissionInput): ResumeAdmissionD
       requestedPolicy,
       fallbackReason: markerAbsent ? "legacy-recording" : "legacy-resume",
       eligibility: "legacy",
-      ...(checkpointReplyIndex === undefined ? {} : { checkpointReplyIndex }),
-      ...(reply ? { legacyCheckpointReply: reply } : {}),
     };
   }
 
@@ -826,16 +671,10 @@ export function admitResumeSource(input: ResumeAdmissionInput): ResumeAdmissionD
     !Array.isArray(source.calls) ||
     !isNonNegativeSafeInteger(source.callsAllocated)
   ) {
-    return liveDecision(
-      sourceRunId,
-      requestedPolicy,
-      "resume-metadata-missing",
-      undefined,
-      checkpointReplyIndex,
-    );
+    return liveDecision(sourceRunId, requestedPolicy, "resume-metadata-missing");
   }
   if (source.effectiveCwd !== current.effectiveCwd) {
-    return liveDecision(sourceRunId, requestedPolicy, "cwd-mismatch", undefined, checkpointReplyIndex);
+    return liveDecision(sourceRunId, requestedPolicy, "cwd-mismatch");
   }
   const inputsFormatLegacy =
     source.runtime.inputsFormat < 2 && current.runtime.inputsFormat === 2;
@@ -844,7 +683,7 @@ export function admitResumeSource(input: ResumeAdmissionInput): ResumeAdmissionD
     (!inputsFormatLegacy && source.runtime.inputsFormat !== current.runtime.inputsFormat) ||
     source.runtime.checkpointInputsFormat !== current.runtime.checkpointInputsFormat
   ) {
-    return liveDecision(sourceRunId, requestedPolicy, "runtime-mismatch", undefined, checkpointReplyIndex);
+    return liveDecision(sourceRunId, requestedPolicy, "runtime-mismatch");
   }
 
   if (inputsFormatLegacy) {
@@ -854,55 +693,31 @@ export function admitResumeSource(input: ResumeAdmissionInput): ResumeAdmissionD
       requestedPolicy,
       fallbackReason: "inputs-format-legacy",
       eligibility: "legacy",
-      ...(checkpointReplyIndex === undefined ? {} : { checkpointReplyIndex }),
-      ...(reply ? { legacyCheckpointReply: reply } : {}),
     };
   }
 
   const manifest = validateManifest(source, sourceRunId);
   if (!manifest) {
-    return liveDecision(sourceRunId, requestedPolicy, "manifest-invalid", undefined, checkpointReplyIndex);
+    return liveDecision(sourceRunId, requestedPolicy, "manifest-invalid");
   }
   if (!manifest.calls.every(validateCallFacts)) {
-    return liveDecision(sourceRunId, requestedPolicy, "manifest-invalid", undefined, checkpointReplyIndex);
+    return liveDecision(sourceRunId, requestedPolicy, "manifest-invalid");
   }
   const retained = validateSeed(source, sourceRunId);
   if (!retained) {
-    return liveDecision(
-      sourceRunId,
-      requestedPolicy,
-      "resume-seed-invalid",
-      undefined,
-      checkpointReplyIndex,
-    );
-  }
-  const preparedInjection = pendingInjection(source, manifest.calls, retained, reply);
-  if (!preparedInjection.valid) {
-    return liveDecision(sourceRunId, requestedPolicy, "manifest-invalid", undefined, checkpointReplyIndex);
+    return liveDecision(sourceRunId, requestedPolicy, "resume-seed-invalid");
   }
 
   const promotedBlockers = manifest.calls
-    .filter((call) =>
-      call.outcome !== "result" &&
-      !(preparedInjection.injection && call.index === preparedInjection.injection.recordedIndex))
+    .filter((call) => call.outcome !== "result")
     .map((call) => cloneResumeCallBlocker(sourceRunId, call))
     .filter((blocker): blocker is PersistedResumeCallBlocker => blocker !== undefined);
   const blockerIndexes = new Set(promotedBlockers.map((blocker) => blocker.recordedIndex));
 
-  const pendingRepresented =
-    source.status === "paused" &&
-    source.pauseReason === "checkpoint_required" &&
-    preparedInjection.injection !== undefined;
-  const pendingIndex = preparedInjection.injection?.recordedIndex;
   const allCallsRepresented = manifest.calls.every((call) =>
-    call.outcome === "result" ||
-    blockerIndexes.has(call.index) ||
-    (pendingRepresented && call.index === pendingIndex),
+    call.outcome === "result" || blockerIndexes.has(call.index),
   );
-  const facts: ResumeAdmissionFacts = {
-    pendingRepresented,
-    allCallsRepresented,
-  };
+  const facts: ResumeAdmissionFacts = { allCallsRepresented };
 
   const fallbackReason: WorkflowResumeFallbackReason | undefined =
     requestedPolicy === "positional"
@@ -911,17 +726,12 @@ export function admitResumeSource(input: ResumeAdmissionInput): ResumeAdmissionD
         ? "unsafe-recording"
         : undefined;
   if (fallbackReason) {
-    const checkpointSeed = preparedInjection.injection
-      ? normalizeResumeSeed({ sourceRunId, pendingInjection: preparedInjection.injection })
-      : undefined;
     return {
       strategy: "positional-v1",
       sourceRunId,
       requestedPolicy,
       fallbackReason,
       eligibility: "safe-prefix",
-      ...(checkpointReplyIndex === undefined ? {} : { checkpointReplyIndex }),
-      ...(checkpointSeed ? { checkpointSeed } : {}),
       facts,
     };
   }
@@ -942,16 +752,14 @@ export function admitResumeSource(input: ResumeAdmissionInput): ResumeAdmissionD
     retained: retained.candidates,
     retainedBlockers: retained.blockers,
     retainedInjections: retained.injections,
-    pendingInjection: preparedInjection.injection,
   });
   if (!seed) {
-    return liveDecision(sourceRunId, requestedPolicy, "resume-seed-invalid", facts, checkpointReplyIndex);
+    return liveDecision(sourceRunId, requestedPolicy, "resume-seed-invalid", facts);
   }
   return {
     strategy: "identity-v1",
     sourceRunId,
     requestedPolicy,
-    ...(checkpointReplyIndex === undefined ? {} : { checkpointReplyIndex }),
     seed,
     facts,
   };
@@ -1145,7 +953,7 @@ export function selectResumeCandidate(
   return { action: "replay", source, match: selected.match as "path-hash" | "unique-hash" };
 }
 
-export type ResumeReportPlan = (
+export type ResumeReportPlan =
   | { strategy: "identity-v1"; sourceRunId: string; requestedPolicy: ResumePolicy }
   | {
       strategy: "positional-v1";
@@ -1159,35 +967,11 @@ export type ResumeReportPlan = (
       sourceRunId: string;
       requestedPolicy: ResumePolicy;
       disabledReason: Extract<ResumeAdmissionDecision, { strategy: "live" }>["disabledReason"];
-    }
-) & { checkpointReplyIndex?: number };
-
-export function checkpointReplyNotApplied(
-  recordedIndex: number,
-  callIndex?: number,
-  inputsChanged = false,
-): WorkflowCheckpointReplyNotApplied {
-  const reason = inputsChanged
-    ? "checkpoint-identity-mismatch" as const
-    : "checkpoint-not-reached-at-recorded-call-site" as const;
-  const message = inputsChanged
-    ? `checkpointReplies for call ${recordedIndex} was not applied: ` +
-      "the recorded checkpoint call site was reached with different inputs after a live prefix"
-    : `checkpointReplies for call ${recordedIndex} was not applied: ` +
-      "the checkpoint was not reached at its recorded call site after a live prefix";
-  return {
-    recordedIndex,
-    status: "not-applied",
-    reason,
-    message,
-    ...(callIndex === undefined ? {} : { callIndex }),
-  };
-}
+    };
 
 export function buildResumeReport(
   plan: ResumeReportPlan,
   decisions: readonly WorkflowResumeCallDecision[],
-  finalized = false,
 ): WorkflowResumeReport {
   const indexes = new Set<number>();
   for (const decision of decisions) {
@@ -1197,23 +981,6 @@ export function buildResumeReport(
     indexes.add(decision.index);
   }
   const calls = [...decisions].sort((left, right) => left.index - right.index);
-  const appliedReply = calls.find(
-    (decision) => decision.action === "replayed" && decision.checkpointInjected === true,
-  );
-  const unappliedReply = calls.find(
-    (decision) => decision.action === "live" && decision.checkpointReply !== undefined,
-  );
-  const checkpointReply = appliedReply && plan.checkpointReplyIndex !== undefined
-    ? {
-        recordedIndex: plan.checkpointReplyIndex,
-        status: "applied" as const,
-        callIndex: appliedReply.index,
-      }
-    : unappliedReply?.action === "live"
-      ? unappliedReply.checkpointReply
-      : finalized && plan.checkpointReplyIndex !== undefined
-        ? checkpointReplyNotApplied(plan.checkpointReplyIndex)
-        : undefined;
   const report = {
     strategy: plan.strategy,
     sourceRunId: plan.sourceRunId,
@@ -1222,7 +989,6 @@ export function buildResumeReport(
     live: calls.filter((decision) => decision.action === "live").length,
     failed: calls.filter((decision) => decision.action === "failed").length,
     calls,
-    ...(checkpointReply === undefined ? {} : { checkpointReply }),
     ...(plan.strategy === "positional-v1"
       ? { fallbackReason: plan.fallbackReason, eligibility: plan.eligibility }
       : plan.strategy === "live"

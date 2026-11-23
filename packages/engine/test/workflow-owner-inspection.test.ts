@@ -21,13 +21,15 @@ return [first, second];`);
     assert.ok(cached, "the originating SDK retains its own settled history");
     assert.equal(first.getRun(initial.runId), cached);
 
-    const next = await second.resumeInBackground(initial.runId, { checkpointReplies: { 0: true } });
+    const next = await second.resumeInBackground(initial.runId, {
+      confirm: async (prompt) => (prompt === "First?" ? true : undefined),
+    });
     assert.ok(next.accepted);
     await assert.rejects(next.promise);
     assert.equal(second.getPersistence().load(initial.runId)?.status, "paused");
     assert.equal(first.getRun(initial.runId), undefined, "an older cached pause does not represent the new owner");
 
-    const last = await second.resumeInBackground(initial.runId, { checkpointReplies: { 1: false } });
+    const last = await second.resumeInBackground(initial.runId, { confirm: async () => false });
     assert.ok(last.accepted);
     await last.promise;
     assert.equal(first.getPersistence().load(initial.runId)?.status, "completed");

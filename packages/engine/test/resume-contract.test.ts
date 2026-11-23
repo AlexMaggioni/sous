@@ -71,7 +71,6 @@ const positionalPrepared: PreparedResume = {
   fallbackReason: "forced-positional",
   eligibility: "safe-prefix",
   sourceCalls: new Map([[sourceCall.index, sourceCall]]),
-  checkpoint: { seed, commitSeed: (remaining) => committedSeeds.push(remaining) },
 };
 const livePrepared: PreparedResume = {
   strategy: "live",

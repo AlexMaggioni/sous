@@ -131,7 +131,7 @@ return { count: args.count, answer }`,
         agent: { async run() { return "unused"; } },
       });
       const resumed = await second.resumeInBackground(paused.runId, {
-        checkpointReplies: { [paused.checkpointContext.callIndex]: "yes" },
+        confirm: async () => "yes",
       });
       assert.equal(resumed.accepted, true);
       if (!resumed.accepted) assert.fail("resume should be accepted");
