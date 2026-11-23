@@ -41,91 +41,58 @@ describe("isAuthRequired", () => {
   });
 });
 
-describe("WorkflowError.authContext", () => {
-  it("round-trips the structured AuthErrorContext from options onto the readonly field", () => {
-    const authContext: AuthErrorContext = {
-      backendId: "codex",
-      methods: [
-        { id: "api-key", type: "agent", name: "API Key" },
-        { id: "chat-gpt", type: "agent", name: "ChatGPT" },
-        { id: "claude-login", type: "terminal" },
-      ],
-    };
-    const e = new WorkflowError("ACP agent (codex) requires authentication", WorkflowErrorCode.AUTH_REQUIRED, {
-      recoverable: false,
-      authContext,
-    });
-    assert.equal(e.code, WorkflowErrorCode.AUTH_REQUIRED);
-    assert.deepEqual(e.authContext, authContext);
-    // The two method types a run file can hold are exactly the allowed union values.
-    assert.deepEqual(
-      e.authContext?.methods.map((m) => m.type),
-      ["agent", "agent", "terminal"],
-    );
-  });
-
-  it("leaves authContext undefined when the option is omitted", () => {
-    const e = new WorkflowError("boom", WorkflowErrorCode.AGENT_EXECUTION_ERROR);
-    assert.equal(e.authContext, undefined);
-  });
-});
-
-describe("WorkflowError.checkpointContext", () => {
-  it("round-trips the structured CheckpointContext from options onto the readonly field", () => {
-    const checkpointContext: CheckpointContext = {
-      callIndex: 2,
-      hash: "abc123",
-      prompt: "Ship this release?",
-      kind: "select",
-      choices: ["ship", "hold"],
-      timeoutMs: 30_000,
-    };
-    const error = new WorkflowError(
-      'checkpoint "Ship this release?" awaits a human decision',
-      WorkflowErrorCode.CHECKPOINT_REQUIRED,
-      { recoverable: false, checkpointContext },
-    );
-
-    assert.equal(error.code, WorkflowErrorCode.CHECKPOINT_REQUIRED);
-    assert.deepEqual(error.checkpointContext, checkpointContext);
-  });
-
-  it("leaves checkpointContext undefined when the option is omitted", () => {
-    const error = new WorkflowError("boom", WorkflowErrorCode.AGENT_EXECUTION_ERROR);
-    assert.equal(error.checkpointContext, undefined);
-  });
-});
-
 describe("WorkflowError", () => {
   it("exposes the cancel error code as a stable wire literal", () => {
     assert.equal(WorkflowErrorCode.AGENT_CANCELLED, "AGENT_CANCELLED");
   });
 
-  it("captures code, recoverable, resetHint, agentLabel, and details from options", () => {
-    const providerUsageLimitContext: ProviderUsageLimitContext = {
-      backendId: "claude",
-      source: "provider",
-      providerCode: "rate_limit",
-      resetAt: "2026-07-15T08:00:00.000Z",
-    };
-    const e = new WorkflowError("Provider usage limit reached.", WorkflowErrorCode.PROVIDER_USAGE_LIMIT, {
-      recoverable: false,
-      agentLabel: "researcher",
-      resetHint: "Resets in ~3h",
-      providerUsageLimitContext,
-      details: { provider: "claude" },
+  // One call per value of recoverable, so a constructor that ignores the option fails the true case.
+  for (const recoverable of [false, true]) {
+    it(`captures code, recoverable ${recoverable}, resetHint, agentLabel, details and the contexts from options`, () => {
+      const providerUsageLimitContext: ProviderUsageLimitContext = {
+        backendId: "claude",
+        source: "provider",
+        providerCode: "rate_limit",
+        resetAt: "2026-07-15T08:00:00.000Z",
+      };
+      const authContext: AuthErrorContext = {
+        backendId: "codex",
+        methods: [
+          { id: "api-key", type: "agent", name: "API Key" },
+          { id: "claude-login", type: "terminal" },
+        ],
+      };
+      const checkpointContext: CheckpointContext = {
+        callIndex: 2,
+        hash: "abc123",
+        prompt: "Ship this release?",
+        kind: "select",
+        choices: ["ship", "hold"],
+        timeoutMs: 30_000,
+      };
+      const e = new WorkflowError("Provider usage limit reached.", WorkflowErrorCode.PROVIDER_USAGE_LIMIT, {
+        recoverable,
+        agentLabel: "researcher",
+        resetHint: "Resets in ~3h",
+        providerUsageLimitContext,
+        authContext,
+        checkpointContext,
+        details: { provider: "claude" },
+      });
+      assert.ok(e instanceof Error);
+      assert.ok(e instanceof WorkflowError);
+      assert.equal(e.name, "WorkflowError");
+      assert.equal(e.message, "Provider usage limit reached.");
+      assert.equal(e.code, WorkflowErrorCode.PROVIDER_USAGE_LIMIT);
+      assert.equal(e.recoverable, recoverable);
+      assert.equal(e.agentLabel, "researcher");
+      assert.equal(e.resetHint, "Resets in ~3h");
+      assert.deepEqual(e.providerUsageLimitContext, providerUsageLimitContext);
+      assert.deepEqual(e.authContext, authContext);
+      assert.deepEqual(e.checkpointContext, checkpointContext);
+      assert.deepEqual(e.details, { provider: "claude" });
     });
-    assert.ok(e instanceof Error);
-    assert.ok(e instanceof WorkflowError);
-    assert.equal(e.name, "WorkflowError");
-    assert.equal(e.message, "Provider usage limit reached.");
-    assert.equal(e.code, WorkflowErrorCode.PROVIDER_USAGE_LIMIT);
-    assert.equal(e.recoverable, false);
-    assert.equal(e.agentLabel, "researcher");
-    assert.equal(e.resetHint, "Resets in ~3h");
-    assert.deepEqual(e.providerUsageLimitContext, providerUsageLimitContext);
-    assert.deepEqual(e.details, { provider: "claude" });
-  });
+  }
 
   it("defaults recoverable to false and leaves optional fields undefined when options omitted", () => {
     const e = new WorkflowError("boom", WorkflowErrorCode.AGENT_EXECUTION_ERROR);
@@ -134,15 +101,8 @@ describe("WorkflowError", () => {
     assert.equal(e.agentLabel, undefined);
     assert.equal(e.resetHint, undefined);
     assert.equal(e.providerUsageLimitContext, undefined);
+    assert.equal(e.authContext, undefined);
+    assert.equal(e.checkpointContext, undefined);
     assert.equal(e.details, undefined);
-  });
-
-  it("honors recoverable:true for transient codes", () => {
-    const e = new WorkflowError("retry me", WorkflowErrorCode.AGENT_EMPTY_OUTPUT, {
-      recoverable: true,
-      agentLabel: "writer",
-    });
-    assert.equal(e.recoverable, true);
-    assert.equal(e.agentLabel, "writer");
   });
 });
