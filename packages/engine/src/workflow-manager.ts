@@ -223,7 +223,7 @@ export interface ExecOptions {
    * Every agent step runs here (unless worktree isolation or a per-agent
    * `agent({ cwd })` overrides it further). Persisted with the run so a resume
    * re-runs in the SAME directory. Run STATE stays keyed to the manager cwd, so
-   * listing and resuming runs are unaffected by the per-run directory's lifetime.
+   * resuming a run is unaffected by the per-run directory's lifetime.
    */
   cwd?: string;
   /**
@@ -241,7 +241,7 @@ export interface ExecOptions {
   resumeFromRunId?: string;
   /** Cap on total agents for this run. */
   maxAgents?: number;
-  /** Host signal (e.g. tool/Esc) that should abort this run when fired. */
+  /** A signal that aborts this run when it fires. orc's worker calls stop() instead. */
   externalSignal?: AbortSignal;
   /** Called with the live snapshot on every progress event. */
   onProgress?: (snapshot: WorkflowSnapshot) => void;
@@ -254,7 +254,7 @@ export interface ExecOptions {
   defaultModel?: string;
   /** Retry attempts after recoverable agent failures for this execution. */
   agentRetries?: number;
-  /** Resolve a checkpoint() question with a human reply (only for UI-bearing runs). */
+  /** Answer a checkpoint() question with a person's reply. orc's worker asks it through the inbox. */
   confirm?: (
     promptText: string,
     options: CheckpointOptions,
@@ -805,8 +805,8 @@ export class WorkflowManager extends EventEmitter {
    *
    * The run is admitted and persisted before this returns, but execution begins on the next
    * macrotask: the concurrency limiter dispatches an agent on the caller's stack when capacity
-   * allows, so starting synchronously would let a permission request, checkpoint, or even the
-   * run's completion fire before the caller could register interest under the returned run ID.
+   * allows, so starting synchronously would let a checkpoint, or even the run's completion, fire
+   * before the caller could register interest under the returned run ID.
    */
   startInBackground(
     script: string,
@@ -1160,7 +1160,7 @@ export class WorkflowManager extends EventEmitter {
     };
     const publish = (event: EngineRunEvent, actions?: RunEventPublicationActions) =>
       this.publishRunEvent(managed, event, () => this.persistRun(managed), actions);
-    // Let a host abort (e.g. Esc during a blocking tool call) cancel this run.
+    // An external signal aborts this run too.
     if (externalSignal) {
       if (externalSignal.aborted) managed.controller.abort();
       else externalSignal.addEventListener("abort", () => managed.controller.abort(), { once: true });
