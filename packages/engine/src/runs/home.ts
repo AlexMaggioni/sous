@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { writeJsonFile } from "../json-file.js";
+import { readStrictJsonFile, writeJsonFile } from "../json-file.js";
 import { runFolders } from "./store.js";
 
 export type Place = "worktree" | "folder" | "none";
@@ -65,17 +65,8 @@ export function ensureHome(paths: HomePaths = homePaths()): HomePaths {
   return paths;
 }
 
-function readJson<T>(file: string, fallback: T): T {
-  if (!existsSync(file)) return fallback;
-  try {
-    return JSON.parse(readFileSync(file, "utf8")) as T;
-  } catch (error) {
-    throw new Error(`${file} is not valid JSON: ${(error as Error).message}`);
-  }
-}
-
 export function loadConfig(paths: HomePaths = homePaths()): OrcConfig {
-  return { ...DEFAULT_CONFIG, ...readJson<Partial<OrcConfig>>(paths.config, {}) };
+  return { ...DEFAULT_CONFIG, ...readStrictJsonFile<Partial<OrcConfig>>(paths.config, {}) };
 }
 
 /** The project a command runs for: the nearest folder up with .orchestrator or .git, else cwd. */
@@ -92,7 +83,7 @@ export function findProjectDir(cwd = process.cwd()): string {
 /** The projects where orc ran, whose workflow files the service reads for a schedule. */
 export function knownProjects(paths: HomePaths = homePaths()): string[] {
   try {
-    return readJson<string[]>(paths.projects, []).filter((dir) => typeof dir === "string");
+    return readStrictJsonFile<string[]>(paths.projects, []).filter((dir) => typeof dir === "string");
   } catch {
     return [];
   }

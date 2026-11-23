@@ -2,8 +2,8 @@
 // inbox/. The answer is a second file next to it. A question's id stays the same when the
 // run pauses and resumes, so an answer given while the run was paused is used on resume.
 
-import { readFileSync, unlinkSync } from "node:fs";
-import { writeJsonFile } from "../json-file.js";
+import { unlinkSync } from "node:fs";
+import { readJsonFile, writeJsonFile } from "../json-file.js";
 import type { HomePaths } from "./home.js";
 import { answerFile, questionFile, questionFiles } from "./store.js";
 
@@ -34,24 +34,16 @@ export function questionId(scope: string, callIndex: number): string {
   return `${scope}--${callIndex}`;
 }
 
-function readJson<T>(file: string): T | undefined {
-  try {
-    return JSON.parse(readFileSync(file, "utf8")) as T;
-  } catch {
-    return undefined;
-  }
-}
-
 function writeQuestion(paths: HomePaths, question: Question): void {
   writeJsonFile(questionFile(paths, question.id), question);
 }
 
 export function readQuestion(paths: HomePaths, id: string): Question | undefined {
-  return readJson<Question>(questionFile(paths, id));
+  return readJsonFile<Question>(questionFile(paths, id));
 }
 
 function readAnswer(paths: HomePaths, id: string): Answer | undefined {
-  return readJson<Answer>(answerFile(paths, id));
+  return readJsonFile<Answer>(answerFile(paths, id));
 }
 
 export function writeAnswer(paths: HomePaths, question: Question, value: unknown): void {
@@ -123,7 +115,7 @@ export function standIn(question: Pick<Question, "kind" | "choices" | "breakpoin
 export function listQuestions(paths: HomePaths, runId?: string): Question[] {
   const out: Question[] = [];
   for (const file of questionFiles(paths)) {
-    const question = readJson<Question>(file);
+    const question = readJsonFile<Question>(file);
     if (!question || (runId && question.runId !== runId)) continue;
     if (readAnswer(paths, question.id)?.hash === question.hash) continue;
     out.push(question);

@@ -8,9 +8,9 @@
 //  - removes finished runs older than keepDays, when config.json sets it;
 //  - once an hour, removes the worktrees whose branch was merged and that have nothing uncommitted.
 
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { writeJsonFile } from "../json-file.js";
+import { readJsonFile, writeJsonFile } from "../json-file.js";
 import { openWorkflowDir } from "../workflows/dir.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
@@ -44,17 +44,8 @@ interface DaemonState {
   lastGc?: string;
 }
 
-function readJson<T>(file: string, fallback: T): T {
-  if (!existsSync(file)) return fallback;
-  try {
-    return JSON.parse(readFileSync(file, "utf8")) as T;
-  } catch {
-    return fallback;
-  }
-}
-
 export function loadSchedules(paths: HomePaths): Schedule[] {
-  return readJson<Schedule[]>(paths.schedules, []);
+  return readJsonFile<Schedule[]>(paths.schedules) ?? [];
 }
 
 export function saveSchedules(paths: HomePaths, schedules: Schedule[]): void {
@@ -109,7 +100,7 @@ export interface TickDeps {
 export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): void {
   const now = deps.now ?? new Date();
   const log = deps.log ?? ((line: string) => process.stdout.write(`${new Date().toISOString()} ${line}\n`));
-  const state = readJson<DaemonState>(paths.daemonState, { fired: {}, resumes: {} });
+  const state = readJsonFile<DaemonState>(paths.daemonState) ?? { fired: {}, resumes: {} };
   const config = loadConfig(paths);
   const tell = deps.notify ?? ((title: string, body: string) => notify(title, body, config.notify));
   state.told ??= {};
@@ -221,7 +212,7 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
 }
 
 export function daemonPid(paths: HomePaths): number | undefined {
-  const pid = Number(readJson<{ pid?: number }>(paths.daemonPid, {}).pid);
+  const pid = Number(readJsonFile<{ pid?: number }>(paths.daemonPid)?.pid);
   return Number.isInteger(pid) && processAlive(pid) ? pid : undefined;
 }
 

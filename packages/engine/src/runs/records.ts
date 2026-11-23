@@ -6,7 +6,7 @@
 // replaces the whole file, so two writers at once would lose one's change.
 
 import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
-import { writeJsonFile } from "../json-file.js";
+import { readJsonFile, writeJsonFile } from "../json-file.js";
 import type { PlaceNotes } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
@@ -126,11 +126,7 @@ export function saveSnapshot(paths: HomePaths, runId: string, scripts: Record<st
 }
 
 export function loadSnapshot(paths: HomePaths, runId: string): Record<string, string> {
-  try {
-    return JSON.parse(readFileSync(snapshotFile(paths, runId), "utf8")) as Record<string, string>;
-  } catch {
-    return {};
-  }
+  return readJsonFile<Record<string, string>>(snapshotFile(paths, runId)) ?? {};
 }
 
 export function saveRecord(paths: HomePaths, record: RunRecord): void {

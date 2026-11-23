@@ -2,8 +2,9 @@
 // Waiting agents queue by priority, then by arrival: a person's run goes before a scheduled one.
 // A slot or a ticket whose process has died is removed by the next one that looks.
 
-import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readdirSync, unlinkSync, writeSync } from "node:fs";
 import { join } from "node:path";
+import { readJsonFile } from "../json-file.js";
 
 export type Priority = "user" | "schedule";
 
@@ -22,12 +23,8 @@ function alive(pid: number): boolean {
 }
 
 function readPid(file: string): number | undefined {
-  try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as { pid?: unknown };
-    return typeof parsed.pid === "number" ? parsed.pid : undefined;
-  } catch {
-    return undefined;
-  }
+  const pid = readJsonFile<{ pid?: unknown }>(file)?.pid;
+  return typeof pid === "number" ? pid : undefined;
 }
 
 function removeIfDead(file: string): boolean {
