@@ -138,7 +138,12 @@ const PINS = [
   { change: "A step that sets tier stops with an error", tests: [
     ["packages/engine/test/runs/call-hash-pin.test.ts", "refuses a step with a tier, so no call keeps a hash for it"],
   ] },
-  { change: "A script that calls verify, judgePanel, loopUntilDry or completenessCheck fails with a ReferenceError", waiting: "No test names any of the four." },
+  { change: "A script that calls verify, judgePanel, loopUntilDry or completenessCheck fails with a ReferenceError", tests: [
+    ["packages/engine/test/script-functions.test.ts", "a script that calls verify fails with a ReferenceError"],
+    ["packages/engine/test/script-functions.test.ts", "a script that calls judgePanel fails with a ReferenceError"],
+    ["packages/engine/test/script-functions.test.ts", "a script that calls loopUntilDry fails with a ReferenceError"],
+    ["packages/engine/test/script-functions.test.ts", "a script that calls completenessCheck fails with a ReferenceError"],
+  ] },
   { change: "A run whose worker died while another process held its lock reads as interrupted with exit 2", tests: [
     ["packages/orc/test/reads.test.ts", "write no file"],
     ["packages/engine/test/runs/rule.test.ts", "${row}: ${expected.word}", '"running, worker gone"'],
