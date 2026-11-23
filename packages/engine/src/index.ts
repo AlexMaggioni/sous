@@ -16,9 +16,9 @@ export {
 export { findRecord, listRecords, loadRecord, processAlive, scopePath, type RunRecord } from "./runs/records.js";
 export { answerValue, breakpointValue, normalizeAnswer, readQuestion, type AnswerKind } from "./runs/inbox.js";
 export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
-export { InputProblems, logFile, startWorker } from "./runs/launch.js";
+export { InputProblems, logFile } from "./runs/launch.js";
 export { workerMain } from "./runs/worker.js";
-export { busyWorktrees, daemonMain, daemonPid, fileSchedules, loadSchedules, saveSchedules, unfinishedRuns, type Schedule } from "./runs/service.js";
+export { busyWorktrees, daemonMain, daemonPid, fileSchedules, loadSchedules, saveSchedules, type Schedule } from "./runs/service.js";
 export {
   answerQuestion,
   discardRun,
@@ -28,6 +28,7 @@ export {
   pruneRuns,
   readLogFrom,
   readRun,
+  removeAccount,
   rerunRun,
   resumeRun,
   runDetail,
@@ -35,6 +36,7 @@ export {
   startRun,
   stopRun,
   stopStep,
+  useAccount,
   waitForRun,
   type RunDetail,
   type RunQuestion,
@@ -58,8 +60,6 @@ export {
   folderText,
   limitNotice,
   listAccounts,
-  removeAccount,
-  useAccount,
 } from "./accounts.js";
 export { HARNESSES, harnessName, isHarness, loginOf } from "./agents.js";
 export { checkPrograms, setupTokenProgram } from "./programs.js";

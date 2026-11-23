@@ -229,12 +229,6 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
   writeJson(paths.daemonState, state);
 }
 
-/** The runs that have not finished: a worker runs them, or they wait paused. */
-export function unfinishedRuns(paths: HomePaths): Set<string> {
-  // A run with no state yet is about to start, and the rule counts it unfinished.
-  return new Set(listRuns(paths).filter((run) => run.unfinished).map((run) => run.runId));
-}
-
 /** The worktrees of the runs that have not finished, borrowed ones included. gc keeps these. */
 export function busyWorktrees(paths: HomePaths, runs = listRuns(paths)): Set<string> {
   const dirs = new Set<string>();

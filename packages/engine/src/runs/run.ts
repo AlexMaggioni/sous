@@ -1,9 +1,11 @@
 // orc's runs. The reads: the list of runs, one run, its steps, its questions, and the wait for it
 // to end. The requests: start, stop, stop a step, pause, resume, run again, answer, discard the
-// worktrees, forget and prune. Callers get views and never open a run file. A read writes nothing.
+// worktrees, forget and prune, and the account changes that look at the runs. Callers get views
+// and never open a run file. A read writes nothing.
 
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import type { PersistedRunState, RunStatus } from "./persistence/run-persistence.js";
+import { deleteAccount, DEFAULT, moveRunAccount, setCurrentAccount, type AccountName } from "../accounts.js";
 import { removeWorktree, runWorktrees } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
 import { listQuestions, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
@@ -487,4 +489,54 @@ export function pruneRuns(paths: HomePaths, days: number, now = new Date()): str
     removed.push(record.runId);
   }
   return removed;
+}
+
+// ── Accounts ──
+
+/** A run that `orc account use` moved, or left waiting. */
+export interface Moved {
+  runId: string;
+  workflow: string;
+  from: string;
+}
+
+export interface UseResult extends AccountName {
+  /** The runs moved to the account and resumed. */
+  moved: Moved[];
+  /** Runs waiting at the limit of this same account. They go on after the reset. */
+  same: Moved[];
+}
+
+/**
+ * Make the account orc's current one for its program. Then each run waiting at that program's
+ * usage limit moves to it and resumes now, also the runs that agents started. `deps.spawn` starts
+ * the worker in tests, as in the service's tick.
+ */
+export function useAccount(paths: HomePaths, spec: string, cliFile: string, deps: { spawn?: (runId: string) => void } = {}): UseResult {
+  const { program, name } = setCurrentAccount(paths, spec);
+  const spawn = deps.spawn ?? ((runId: string) => startWorker(paths, cliFile, runId, "resume"));
+  const moved: Moved[] = [];
+  const same: Moved[] = [];
+  for (const run of listRuns(paths)) {
+    const { record } = run;
+    if (processAlive(record.pid) || run.pause?.reason !== "usage_limit") continue;
+    // A run from before accounts, or one whose program is unknown, counts as waiting on Claude Code.
+    if ((record.limit?.program ?? "claude") !== program) continue;
+    const before = record.accounts?.[program];
+    const entry = { runId: record.runId, workflow: record.workflow, from: before?.name ?? DEFAULT };
+    if (before?.name === name) {
+      same.push(entry);
+      continue;
+    }
+    moveRunAccount(paths, record, program, name);
+    spawn(record.runId);
+    moved.push(entry);
+  }
+  return { program, name, moved, same };
+}
+
+/** Forget a login. Refused while an unfinished run uses it, also one that has not started yet. */
+export function removeAccount(paths: HomePaths, spec: string): AccountName {
+  const unfinished = listRuns(paths).filter((run) => run.unfinished).map((run) => run.record);
+  return deleteAccount(paths, spec, unfinished);
 }

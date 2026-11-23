@@ -19,11 +19,8 @@ import {
   processAlive,
   removeAccount,
   setupTokenProgram,
-  startWorker,
-  unfinishedRuns,
   useAccount,
   type HomePaths,
-  type RunRecord,
 } from "@orchestrator/engine";
 
 export interface AccountCommandOptions {
@@ -37,15 +34,6 @@ export interface AccountCommandOptions {
   out?: (line: string) => void;
   /** orc's built cli.js, which `orc account use` starts the moved runs with. */
   cliFile?: () => string;
-}
-
-/** Whether a run waits at a usage limit. It reads the runs once, at its first call. */
-function atLimit(paths: HomePaths): (record: RunRecord) => boolean {
-  let waiting: Set<string> | undefined;
-  return (record) => {
-    waiting ??= new Set(listRuns(paths).filter((run) => run.pause?.reason === "usage_limit").map((run) => run.runId));
-    return waiting.has(record.runId);
-  };
 }
 
 /** Read a line without showing it. Pasted text works. */
@@ -126,10 +114,7 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
       return 0;
     }
     case "use": {
-      const result = useAccount(paths, needName(), {
-        atLimit: atLimit(paths),
-        resume: (runId) => startWorker(paths, cliFile(options), runId, "resume"),
-      });
+      const result = useAccount(paths, needName(), cliFile(options));
       const label = accountLabel(result.program, result.name);
       out(`orc uses ${harnessName(result.program)} account ${label} for new runs.`);
       for (const run of result.moved) out(`resumed ${run.runId}  ${run.workflow}  on ${label}, was waiting at the limit of ${run.from}`);
@@ -138,7 +123,7 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
     }
     case "remove":
     case "rm": {
-      const { program, name } = removeAccount(paths, needName(), unfinishedRuns(paths));
+      const { program, name } = removeAccount(paths, needName());
       out(`removed ${harnessName(program)} account ${accountLabel(program, name)}.${currentAccount(paths, program) === "default" ? " orc uses default." : ""}`);
       return 0;
     }

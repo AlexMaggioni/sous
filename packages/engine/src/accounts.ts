@@ -3,7 +3,7 @@
 // `claude setup-token`, in accounts.json, which only the user can read. Each run records its
 // account and keeps it when it pauses and resumes, also when the service resumes it. A run that an
 // agent starts uses that agent's account. `orc account use` moves the runs waiting at a usage limit
-// to the new account and resumes them. Codex steps use Codex's own login for now.
+// to the new account and resumes them, through run.ts. Codex steps use Codex's own login for now.
 
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import type { Account } from "@orchestrator/harnesses";
 import { HARNESSES, harnessName, isHarness, loginOf, type Harness as Program } from "./agents.js";
 import type { HomePaths } from "./runs/home.js";
-import { listRecords, loadRecord, processAlive, updateRecord, type RunAccount, type RunRecord } from "./runs/records.js";
+import { loadRecord, updateRecord, type RunAccount, type RunRecord } from "./runs/records.js";
 
 /** The program's own login. */
 export const DEFAULT = "default";
@@ -125,12 +125,13 @@ export function addAccount(paths: HomePaths, spec: string, token: string): Accou
   return { program, name };
 }
 
-/** Forget a login. Refused while an unfinished run uses it. */
-export function removeAccount(paths: HomePaths, spec: string, unfinished: Set<string>): AccountName {
+/** Forget a login. Refused while one of the unfinished runs given uses it. run.ts's removeAccount
+ *  finds those runs. */
+export function deleteAccount(paths: HomePaths, spec: string, unfinished: readonly RunRecord[]): AccountName {
   const { program, name } = parseAccountName(spec);
   const file = readFile(paths);
   if (!file.logins?.[program]?.[name]) throw new Error(`no account ${accountLabel(program, name)}. orc account lists them.`);
-  const using = listRecords(paths).filter((record) => unfinished.has(record.runId) && record.accounts?.[program]?.name === name);
+  const using = unfinished.filter((record) => record.accounts?.[program]?.name === name);
   if (using.length) {
     throw new Error(
       `${using.map((record) => record.runId).join(", ")} ${using.length === 1 ? "uses" : "use"} account ${accountLabel(program, name)}. ` +
@@ -144,28 +145,9 @@ export function removeAccount(paths: HomePaths, spec: string, unfinished: Set<st
   return { program, name };
 }
 
-export interface Moved {
-  runId: string;
-  workflow: string;
-  from: string;
-}
-
-export interface UseResult extends AccountName {
-  /** The runs moved to the account and resumed. */
-  moved: Moved[];
-  /** Runs waiting at the limit of this same account. They go on after the reset. */
-  same: Moved[];
-}
-
-/**
- * Make the account orc's current one for its program. Then each run waiting at that program's
- * usage limit moves to it and resumes now, also the runs that agents started.
- */
-export function useAccount(
-  paths: HomePaths,
-  spec: string,
-  deps: { atLimit: (record: RunRecord) => boolean; resume: (runId: string) => void },
-): UseResult {
+/** Make the account orc's current one for its program. run.ts's useAccount then moves the runs
+ *  waiting at the limit. */
+export function setCurrentAccount(paths: HomePaths, spec: string): AccountName {
   const { program, name } = parseAccountName(spec);
   const file = readFile(paths);
   if (name !== DEFAULT && !file.logins?.[program]?.[name]) {
@@ -174,26 +156,14 @@ export function useAccount(
   file.current = { ...file.current, [program]: name };
   if (name === DEFAULT) delete file.current[program];
   writeFile(paths, file);
+  return { program, name };
+}
 
-  const moved: Moved[] = [];
-  const same: Moved[] = [];
-  for (const record of listRecords(paths)) {
-    if (processAlive(record.pid) || !deps.atLimit(record)) continue;
-    // A run from before accounts, or one whose program is unknown, counts as waiting on Claude Code.
-    if ((record.limit?.program ?? "claude") !== program) continue;
-    const before = record.accounts?.[program];
-    const entry = { runId: record.runId, workflow: record.workflow, from: before?.name ?? DEFAULT };
-    if (before?.name === name) {
-      same.push(entry);
-      continue;
-    }
-    // The run keeps its settings folder. Only the login changes.
-    const folder = before?.folder !== undefined ? before.folder : (loginOf(program).value ?? null);
-    updateRecord(paths, record.runId, { accounts: { ...record.accounts, [program]: { name, folder } } });
-    deps.resume(record.runId);
-    moved.push(entry);
-  }
-  return { program, name, moved, same };
+/** Give a run another login for a program. The run keeps its settings folder. */
+export function moveRunAccount(paths: HomePaths, record: RunRecord, program: Program, name: string): void {
+  const before = record.accounts?.[program];
+  const folder = before?.folder !== undefined ? before.folder : (loginOf(program).value ?? null);
+  updateRecord(paths, record.runId, { accounts: { ...record.accounts, [program]: { name, folder } } });
 }
 
 /**
