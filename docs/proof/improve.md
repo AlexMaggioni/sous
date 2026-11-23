@@ -83,6 +83,12 @@ package, and passes.
   wrong mix fails the type check, where two checks at run time caught it before. The state a
   nested run shares with its parent left the options. `WorkflowRunOptions` went from 44 fields to
   38.
+- **Pauses.** The manager no longer checks a run's login or its open question before a resume. orc
+  passed both checks every time. The paused event has one case per pause reason, so a new reason
+  fails to compile until it has its own. `RunStatus` is declared once, one constant lists what a
+  stop clears, and one builder makes what each execution of a run starts with.
+- **The step stop.** `orc stop --step` sends the worker each call that runs under the name, with
+  its run or nested run and its call index. The worker matched labels before.
 
 [The engine README](../../packages/engine/README.md) describes the result.
 
@@ -131,6 +137,8 @@ Each change below has a test.
 - `orc stop --step` writes its request to a file of its own, so a request is no longer lost when
   the worker saves the record at the same moment. A stale request no longer stops a step of the
   same name after a resume.
+- `orc stop --step build` stops the step that `orc log` names "build". A nested run's step,
+  "ticket A: build", goes on. It stopped both. orc prints the same lines as before.
 - `orc doctor --live --model haiku` runs haiku. It ran the default model.
 - The worker's last log line for a run that paused on a failed step says why the step failed, on
   a start as on a resume. A start's line said only "(step_failed)".
@@ -192,6 +200,11 @@ These reach a program that calls the engine itself. orc's output does not change
 - `runSync` on a run that paused or failed returns the result the run saved, so its duration
   matches the saved state's. It built a second result a few milliseconds later.
 - A stopped run's result has `abortSignaled`, as its saved state has.
+- A resume of a run that paused for a lost login, or on a question with no `confirm` callback,
+  starts the run. It sends `resumed`, runs the step again and pauses again as a live run does. It
+  paused again before it started. `AgentRunner` has no `auth` field.
+- The file of step stop requests holds one JSON object per line, the name and its calls. It held
+  the name alone.
 
 ## Still open
 
@@ -215,8 +228,17 @@ These are choices for the owner, not bugs the branch left.
   during a pause does not rerun finished steps. A step's folder and label are outside the call
   hash. Two parallel steps with the same prompt in two folders could take each other's result if
   they start in another order on the resume. Main had the same risk.
-- `orc stop --step` finds a step by its label path. Two nested runs with the same label share
-  one, so a stop reaches the step in both.
+- `orc stop --step` stops each running call under the name it gets. Two steps with the same label
+  in one run share a name, and so do the steps of two nested runs with the same label. A stop
+  reaches all of them. orc could refuse such a name and list the calls instead.
+- A worker started by an older orc reads a stop request as a bare name. If its run has nested runs,
+  the new request could throw in its signal handler, and the run would read as interrupted. This
+  comes from reading the code, not from a run, and matters only for a run that started before an
+  upgrade.
+- The paused event and the manager's pause rule each have a case per pause reason. A module for
+  the pause would hold both. It is worth it when a new pause reason is planned.
+- The steps of a run are closures inside `runWorkflow`, and code steps go through the agent path.
+  A module per step kind pays once a third kind comes, or once code steps need their own records.
 - Agents don't get `secrets.env`. Code steps and MCP servers do.
 - In a dry run, `ORC_PROJECT` names the real project folder, so a code step that writes there
   changes the project. The emails example reads its input through it.
