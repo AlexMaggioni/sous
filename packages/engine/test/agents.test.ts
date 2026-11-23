@@ -6,7 +6,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import { lookupAgents, lookupMcpServers, planStep, registryOf, type LookupSettings } from "../src/agents.js";
+import { lookupAgents, lookupMcpServers, planStep, registryOf, routeStep, type LookupSettings } from "../src/agents.js";
+import type { StepAsk, StepRoute } from "../src/steps/agent-runner.js";
 
 const temp = (name: string) => mkdtempSync(join(tmpdir(), `engine-${name}-`));
 
@@ -123,5 +124,110 @@ describe("agents", () => {
     assert.equal(mcp.find("docs", "claude")?.server.name, "docs");
     assert.equal(mcp.find("docs", "codex"), undefined, "Claude Code's config is not Codex's");
     assert.deepEqual((mcp.find("tickets", "codex")?.server as { env?: unknown }).env, [{ name: "TOKEN", value: "t1" }]);
+  });
+});
+
+/** The agents of the call hash pins (test/runs/call-hash-pin.test.ts), with a broken file and a Codex one. */
+function pinnedLookup() {
+  const place = lookupPlace();
+  const files: Record<string, string> = {
+    reviewer: "---\nname: reviewer\ndescription: reviews\nclaudecode:\n  model: haiku\n  tools: [Read]\n  effort: high\ncodexcli:\n  model: gpt-test\n  model_reasoning_effort: low\n---\nAnswer REVIEW.\n",
+    implementer: "---\nname: implementer\ndescription: builds\n---\nBuild it.\n",
+    doubler: "---\nname: doubler\ndescription: doubles\nclaudecode:\n  model: claude/haiku\n---\nDouble it.\n",
+    isolated: "---\nname: isolated\ndescription: works apart\nisolation: worktree\n---\nWork apart.\n",
+    broken: "---\nname: broken\norc:\n  harness: gemini\n---\nx\n",
+  };
+  for (const [name, content] of Object.entries(files)) write(join(place.projectDir, ".rulesync", "subagents", `${name}.md`), content);
+  const fixer = join(place.home, ".codex", "agents", "fixer.toml");
+  write(fixer, 'name = "fixer"\ndescription = "fixes"\nmodel = "gpt-test"\ndeveloper_instructions = "Fix it."\n');
+  return { place, lookup: lookupAgents(place), fixer };
+}
+
+// The agent keys the engine hashes today. Each is agentDefinitionKey of the agent's default harness block.
+const REVIEWER_KEY = '{"tools":["Read"],"disallowedTools":null,"model":"claude/haiku","isolation":null,"effort":"high","prompt":"Answer REVIEW."}';
+const DOUBLER_KEY = '{"tools":null,"disallowedTools":null,"model":"claude/claude/haiku","isolation":null,"prompt":"Double it."}';
+const ISOLATED_KEY = '{"tools":null,"disallowedTools":null,"model":null,"isolation":"worktree","prompt":"Work apart."}';
+const IMPLEMENTER_KEY = '{"tools":null,"disallowedTools":null,"model":null,"isolation":null,"prompt":"Build it."}';
+const FIXER_KEY = '{"tools":null,"disallowedTools":null,"model":"codex/gpt-test","isolation":null,"prompt":"Fix it."}';
+
+describe("routeStep", () => {
+  it("routes each pinned step with the model and agent key the call hash has today", () => {
+    const { lookup } = pinnedLookup();
+    const cases: Array<[string, StepAsk, StepRoute]> = [
+      ["plain", {}, { agentKey: null, plan: { harness: "claude" } }],
+      ["haiku", { model: "claude/haiku" }, { requested: "claude/haiku", agentKey: null, plan: { harness: "claude", model: "claude/haiku" } }],
+      [
+        "reviewer",
+        { agentType: "reviewer" },
+        { requested: "claude/haiku", agentKey: REVIEWER_KEY, prompt: "Answer REVIEW.", plan: { harness: "claude", model: "claude/haiku", effort: "high", tools: ["Read"] } },
+      ],
+      [
+        // Case a: the hash keeps "codex" and the default block's key. The step runs the Codex block.
+        "reviewer on codex",
+        { agentType: "reviewer", model: "codex" },
+        { requested: "codex", agentKey: REVIEWER_KEY, prompt: "Answer REVIEW.", plan: { harness: "codex", model: "codex/gpt-test", effort: "low" } },
+      ],
+      [
+        "doubled",
+        { agentType: "doubler" },
+        { requested: "claude/claude/haiku", agentKey: DOUBLER_KEY, prompt: "Double it.", plan: { harness: "claude", model: "claude/claude/haiku" } },
+      ],
+      ["effort", { effort: "high", skills: ["tdd"] }, { agentKey: null, plan: { harness: "claude", effort: "high", skills: ["tdd"] } }],
+      [
+        "isolated",
+        { agentType: "isolated" },
+        { agentKey: ISOLATED_KEY, isolation: "worktree", prompt: "Work apart.", plan: { harness: "claude", model: "claude" } },
+      ],
+      ["run model", { runModel: "codex/gpt-run" }, { requested: "codex/gpt-run", agentKey: null, plan: { harness: "codex", model: "codex/gpt-run" } }],
+      ["over", { model: "claude/sonnet", runModel: "codex/gpt-run" }, { requested: "claude/sonnet", agentKey: null, plan: { harness: "claude", model: "claude/sonnet" } }],
+      [
+        // Case b: the hash has the run's model, and the agent runs on its own harness alone.
+        "no block model",
+        { agentType: "implementer", runModel: "codex/gpt-run" },
+        { requested: "codex/gpt-run", agentKey: IMPLEMENTER_KEY, prompt: "Build it.", plan: { harness: "claude", model: "claude" } },
+      ],
+      ["meta model", { runModel: "claude/sonnet" }, { requested: "claude/sonnet", agentKey: null, plan: { harness: "claude", model: "claude/sonnet" } }],
+      ["phase route", { runModel: "codex/gpt-phase" }, { requested: "codex/gpt-phase", agentKey: null, plan: { harness: "codex", model: "codex/gpt-phase" } }],
+    ];
+    for (const [label, ask, route] of cases) assert.deepEqual(routeStep(lookup, { label, ...ask }), route, label);
+  });
+
+  it("gives today's problem for a step that cannot run, still with its model and agent key", () => {
+    const { place, lookup, fixer } = pinnedLookup();
+    assert.deepEqual(routeStep(lookup, { agentType: "nobody", model: "claude/haiku" }), {
+      requested: "claude/haiku",
+      agentKey: null,
+      problem: `no agent "nobody". orc looks in .rulesync/subagents/, then the global rulesync folder (${place.global}/.rulesync/subagents/), then .claude/agents/ and .codex/agents/ in the project and in the home folder.`,
+    });
+    assert.deepEqual(routeStep(lookup, { agentType: "broken" }), {
+      agentKey: null,
+      problem: `${join(place.projectDir, ".rulesync", "subagents", "broken.md")}: orc.harness is "gemini". Use one of claude, codex.`,
+    });
+    assert.deepEqual(routeStep(lookup, { agentType: "fixer", model: "claude/haiku" }), {
+      requested: "claude/haiku",
+      agentKey: FIXER_KEY,
+      prompt: "Fix it.",
+      problem: `agent "fixer" comes from ${fixer}, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code. Move it to rulesync, as .rulesync/subagents/fixer.md in the project or in the global rulesync folder, so one file serves every harness.`,
+    });
+    assert.deepEqual(routeStep(lookup, { agentType: "reviewer", model: "pi/x" }), {
+      requested: "pi/x",
+      agentKey: REVIEWER_KEY,
+      prompt: "Answer REVIEW.",
+      problem: 'model "pi/x" names the harness "pi", which orc no longer runs. Use one of claude, codex.',
+    });
+    assert.deepEqual(routeStep(lookup, { model: "opencode/x" }), {
+      requested: "opencode/x",
+      agentKey: null,
+      problem: 'model "opencode/x" names the harness "opencode", which orc no longer runs. Use one of claude, codex.',
+    });
+  });
+
+  it("routes a step with no lookup on the model's harness, with no agent", () => {
+    assert.deepEqual(routeStep(undefined, { agentType: "reviewer", model: "claude/haiku", isolation: "worktree" }), {
+      requested: "claude/haiku",
+      agentKey: null,
+      isolation: "worktree",
+      plan: { harness: "claude", model: "claude/haiku" },
+    });
   });
 });

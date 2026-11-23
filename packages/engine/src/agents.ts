@@ -9,8 +9,9 @@ import { homedir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import { createClaudeHarness, createCodexHarness, type Account } from "@orchestrator/harnesses";
 import type { McpServerConfig } from "./steps/mcp-config.js";
-import type { AgentDefinition, AgentRegistry } from "./agent-registry.js";
-import type { StepGiven } from "./orchestrator-globals.js";
+import { agentDefinitionKey, type AgentDefinition, type AgentRegistry } from "./agent-registry.js";
+import { parseDurationSeconds, type StepGiven } from "./orchestrator-globals.js";
+import type { StepAsk, StepRoute } from "./steps/agent-runner.js";
 import { loadConfig, type HomePaths, type OrcConfig } from "./runs/home.js";
 import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
@@ -459,6 +460,75 @@ export function planStep(lookup: AgentLookup, name: string, given: StepGiven = {
       ...(settings.disallowedTools ? { disallowedTools: settings.disallowedTools } : {}),
       ...(given.skills ?? settings.skills ? { skills: given.skills ?? settings.skills } : {}),
       ...(given.mcp ?? settings.mcp ? { mcp: given.mcp ?? settings.mcp } : {}),
+    },
+  };
+}
+
+/** What a step runs with, once it is routed. */
+export interface RoutePlan {
+  harness: Harness;
+  /** The model spec, such as claude/haiku, or a harness alone. */
+  model?: string;
+  effort?: string;
+  skills?: string[];
+  mcp?: string[];
+  tools?: string[];
+  disallowedTools?: string[];
+  timeoutMs?: number;
+}
+
+/** A time limit in milliseconds, such as 600000 for "10m". */
+function millis(value: number | string | undefined): number | undefined {
+  const seconds = parseDurationSeconds(value);
+  return seconds === undefined ? undefined : Math.round(seconds * 1000);
+}
+
+/** The values the step set itself, apart from its agent's. */
+const givenOf = (ask: StepAsk): StepGiven => ({
+  ...(ask.model === undefined ? {} : { model: ask.model }),
+  ...(ask.effort === undefined ? {} : { effort: ask.effort }),
+  ...(ask.skills === undefined ? {} : { skills: [...ask.skills] }),
+  ...(ask.mcp === undefined ? {} : { mcp: [...ask.mcp] }),
+});
+
+/**
+ * Where a step goes. The model it asks for is its own, else its agent's on the agent's default
+ * harness, else the run's. That model and the agent key go into the call hash, so both keep
+ * the format they had before routing moved here. The key covers the default harness's block
+ * only. The route never throws: a step that cannot run gets a problem, which the runner
+ * refuses when it runs the step.
+ */
+export function routeStep(lookup: AgentLookup | undefined, ask: StepAsk): StepRoute {
+  const found = ask.agentType ? lookup?.agents.get(ask.agentType) : undefined;
+  const def = found && definitionOf(found);
+  const requested = ask.model ?? def?.model ?? ask.runModel;
+  const isolation = ask.isolation ?? def?.isolation;
+  const frozen: StepRoute = {
+    ...(requested === undefined ? {} : { requested }),
+    agentKey: agentDefinitionKey(def),
+    ...(isolation === undefined ? {} : { isolation }),
+    ...(def ? { prompt: def.prompt } : {}),
+  };
+  const removed = removedHarness(requested);
+  if (removed) return { ...frozen, problem: removed };
+  const timeoutMs = millis(ask.timeout ?? found?.timeout);
+  const timed = timeoutMs === undefined ? {} : { timeoutMs };
+  if (ask.agentType && lookup) {
+    const planned = planStep(lookup, ask.agentType, givenOf(ask), requested);
+    if ("problem" in planned) return { ...frozen, problem: planned.problem };
+    const { agent: _agent, ...plan } = planned.plan;
+    return { ...frozen, plan: { ...plan, ...timed } };
+  }
+  const env = lookup?.settings.env ?? process.env;
+  return {
+    ...frozen,
+    plan: {
+      harness: routeHarness(requested, env) ?? lookup?.settings.defaultHarness ?? "claude",
+      ...(requested ? { model: requested } : {}),
+      ...(ask.effort === undefined ? {} : { effort: ask.effort }),
+      ...(ask.skills === undefined ? {} : { skills: [...ask.skills] }),
+      ...(ask.mcp === undefined ? {} : { mcp: [...ask.mcp] }),
+      ...timed,
     },
   };
 }

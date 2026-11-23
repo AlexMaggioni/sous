@@ -3,6 +3,37 @@
 // (WorkflowRunOptions.agent is required). Code steps never come here. StepRequest types every
 // field the engine sends, so a renamed field fails the build.
 import type { StepRequest } from "./agent-run.js";
+import type { RoutePlan } from "../agents.js";
+
+/** What the engine knows about an agent step before it routes it. */
+export interface StepAsk {
+  label?: string;
+  agentType?: string;
+  /** The step's own values, after per-run overrides. */
+  model?: string;
+  effort?: string;
+  skills?: string[];
+  mcp?: string[];
+  timeout?: number | string;
+  isolation?: "worktree";
+  /** The run's model for this step: its phase route, else meta.model, else the run's default. */
+  runModel?: string;
+}
+
+/** Where a step goes, and the parts of it the engine hashes and records. */
+export interface StepRoute {
+  /** The model the step asked for. It goes into the call hash, the run record and continuation. */
+  requested?: string;
+  /** The agent's part of the call hash, in the format agentDefinitionKey gives. Null without an agent. */
+  agentKey: string | null;
+  isolation?: "worktree";
+  /** The agent's instructions. */
+  prompt?: string;
+  /** What the runner that made this route runs. The engine passes it back and never reads it. */
+  plan?: RoutePlan;
+  /** Why the step cannot run. The runner refuses the step when it runs it. */
+  problem?: string;
+}
 
 export interface AgentRunner {
   /**
