@@ -38,9 +38,10 @@ describe("code steps", () => {
 
   it("wait until a command succeeds, checking again and again", async () => {
     const cwd = temp("exec-wait");
-    setTimeout(() => writeFileSync(join(cwd, "done"), ""), 1200);
-    const result = await runCodeStep({ kind: "wait", command: "test -f done", everySeconds: 1, timeoutSeconds: 10 }, { cwd });
-    assert.ok((result.checks ?? 0) >= 2);
+    // The first check fails and makes the file, so the second check succeeds. A timer made the
+    // file before, and the test failed when the first check took over a second to start.
+    const result = await runCodeStep({ kind: "wait", command: "test -f done || { touch done; false; }", everySeconds: 1, timeoutSeconds: 10 }, { cwd });
+    assert.equal(result.checks, 2);
     await assert.rejects(runCodeStep({ kind: "wait", command: "false", everySeconds: 1, timeoutSeconds: 1 }, { cwd }), /still not true/);
   });
 });
