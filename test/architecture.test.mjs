@@ -1,7 +1,8 @@
 // The architecture, as a test.
 //
 // It runs none of the app. It reads the source and checks the packages, what each file imports,
-// and where a few ideas live, against the tables below. The tables are the architecture. Change
+// and where a few ideas live, against the tables below. A package's tests reach another package
+// only through its entries, as its callers do. The tables are the architecture. Change
 // them in a commit of their own, and never to turn a red test green. When a rule fails, move the
 // code to the place that owns it.
 //
@@ -180,10 +181,12 @@ function oursName(spec) {
 function collect() {
   const dirs = packageDirs();
   const files = [];
+  const tests = [];
   for (const dir of dirs) {
     for (const file of walk(join(ROOT, "packages", dir, "src"))) files.push({ dir, role: role(dir), file, path: rel(file) });
+    for (const file of walk(join(ROOT, "packages", dir, "test"))) tests.push({ dir, file, path: rel(file) });
   }
-  return { dirs, files };
+  return { dirs, files, tests };
 }
 
 // ── The rules ───────────────────────────────────────────────────────────────────────────────────
@@ -199,7 +202,7 @@ function packageBreaks({ dirs }) {
   return found;
 }
 
-function importBreaks({ files, dirs }) {
+function importBreaks({ files, dirs, tests }) {
   const found = new Set();
   for (const { dir, role: name, file, path } of files) {
     for (const { spec } of importsOf(file)) {
@@ -227,6 +230,13 @@ function importBreaks({ files, dirs }) {
         continue;
       }
       if (!MAY_IMPORT[name].outside.includes(npmName(spec))) found.add(`${name} imports ${npmName(spec)}`);
+    }
+  }
+  // A test takes another package's parts from its entries, such as the engine's test kit at
+  // @orchestrator/engine/testing, never by a path into that package's src or dist.
+  for (const { dir, file, path } of tests) {
+    for (const { spec } of importsOf(file)) {
+      if (spec.startsWith(".") && !resolve(dirname(file), spec).startsWith(join(ROOT, "packages", dir) + sep)) found.add(`${path} reaches outside its package with ${spec}`);
     }
   }
   for (const dir of dirs) {
