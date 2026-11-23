@@ -1221,6 +1221,25 @@ export async function runWorkflow<T = unknown>(
 
       const terminalUsage = (): AgentUsage | undefined => sumUsage(sealedUsage);
 
+      // What a live step settles with after its outcome and error. Success and failure both use it.
+      const liveFields = (origin: "runner" | "engine", slot: AttemptSlots | undefined, usage: AgentUsage | undefined) => ({
+        ...(origin === "runner" ? { attempts: attemptsRan } : {}),
+        ...(usage ? { usage } : {}),
+        ...(slot?.modelResolved ? { modelResolved: slot.modelResolved } : {}),
+        ...(slot?.sessionRef?.backendId ? { backendId: slot.sessionRef.backendId } : {}),
+        ...(worktree?.isolated ? { worktree: true } : {}),
+        ...(runCwd !== undefined && origin === "runner" ? { resolvedCwd: runCwd } : {}),
+        ...(resumeDeclared && resolvedIsolation === undefined
+          ? { resumeSafety: "declared-read-only" as const }
+          : resumeDeclared &&
+              resolvedIsolation === "worktree" &&
+              worktree?.isolated &&
+              agentOptions.cwd === undefined
+            ? { resumeSafety: "isolated-worktree" as const }
+            : {}),
+        ...(slot?.provenance ? { provenance: slot.provenance } : {}),
+      });
+
       const emitFailure = (
         thrown: unknown,
         origin: "runner" | "engine",
@@ -1246,21 +1265,7 @@ export async function runWorkflow<T = unknown>(
           origin,
           error: errorRecord,
           ...(aborted ? { aborted: true as const } : {}),
-          ...(origin === "runner" ? { attempts: attemptsRan } : {}),
-          ...(usage ? { usage } : {}),
-          ...(slot?.modelResolved ? { modelResolved: slot.modelResolved } : {}),
-          ...(slot?.sessionRef?.backendId ? { backendId: slot.sessionRef.backendId } : {}),
-          ...(worktree?.isolated ? { worktree: true } : {}),
-          ...(runCwd !== undefined && origin === "runner" ? { resolvedCwd: runCwd } : {}),
-          ...(resumeDeclared && resolvedIsolation === undefined
-            ? { resumeSafety: "declared-read-only" as const }
-            : resumeDeclared &&
-                resolvedIsolation === "worktree" &&
-                worktree?.isolated &&
-                agentOptions.cwd === undefined
-              ? { resumeSafety: "isolated-worktree" as const }
-              : {}),
-          ...(slot?.provenance ? { provenance: slot.provenance } : {}),
+          ...liveFields(origin, slot, usage),
         });
         emitAgentEnd({
           label,
@@ -1500,21 +1505,7 @@ export async function runWorkflow<T = unknown>(
             const terminalRecord = settle({
               outcome: "result",
               origin: "runner",
-              attempts: attemptsRan,
-              ...(usage ? { usage } : {}),
-              ...(slot.modelResolved ? { modelResolved: slot.modelResolved } : {}),
-              ...(slot.sessionRef?.backendId ? { backendId: slot.sessionRef.backendId } : {}),
-              ...(worktree?.isolated ? { worktree: true } : {}),
-              resolvedCwd: runCwd,
-              ...(resumeDeclared && resolvedIsolation === undefined
-                ? { resumeSafety: "declared-read-only" as const }
-                : resumeDeclared &&
-                    resolvedIsolation === "worktree" &&
-                    worktree?.isolated &&
-                    agentOptions.cwd === undefined
-                  ? { resumeSafety: "isolated-worktree" as const }
-                  : {}),
-              ...(slot.provenance ? { provenance: slot.provenance } : {}),
+              ...liveFields("runner", slot, usage),
             }, entry);
             if (terminalRecord.outcome !== "result") return result;
             emitAgentEnd({
