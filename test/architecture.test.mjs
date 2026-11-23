@@ -50,6 +50,9 @@ const NEVER_IMPORT = ["@agentclientprotocol/", "@zed-industries/", "@automatalab
 /** One folder per harness adapter in packages/harnesses/src. An adapter never imports another. */
 const HARNESSES = ["claude", "codex"];
 
+/** A test file of a package. */
+const TEST_FILE = /\.test\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
+
 /** The tests every adapter passes against a fake program. It names each adapter. */
 const CONTRACT_TEST = "packages/harnesses/test/contract.test.ts";
 
@@ -246,7 +249,8 @@ const BREAKS = {
   homes: [],
   reach: [],
   exports: {},
-  contract: []
+  contract: [],
+  tests: []
 };
 
 // ── Reading the source ──────────────────────────────────────────────────────────────────────────
@@ -515,6 +519,21 @@ function runningTitles(file) {
   return titles;
 }
 
+/**
+ * A test file whose imports are all types, or all outside the code it tests, can run none of that
+ * code. It needs a run-time import of its package's own src or of one of our packages.
+ */
+function testBreaks({ tests }) {
+  const found = [];
+  for (const { dir, file, path } of tests) {
+    if (!TEST_FILE.test(path)) continue;
+    const own = join(ROOT, "packages", dir, "src") + sep;
+    const runs = importsOf(file).some(({ spec, typeOnly }) => !typeOnly && (oursName(spec) || (spec.startsWith(".") && resolve(dirname(file), spec).startsWith(own))));
+    if (!runs) found.push(`${path} imports no run-time value of the code it tests`);
+  }
+  return found.sort();
+}
+
 // ── The tests ───────────────────────────────────────────────────────────────────────────────────
 
 const state = collect();
@@ -525,6 +544,7 @@ const now = {
   reach: reachBreaks(state),
   exports: exportBreaks(state),
   contract: contractBreaks(),
+  tests: testBreaks(state),
 };
 
 if (process.env.ARCH_PRINT) console.log(JSON.stringify(now, null, 2));
@@ -556,6 +576,7 @@ test("each package exports only what its caller imports", () => {
   assert.equal(lines.join("\n"), "", lines.join("\n"));
 });
 test("both adapters exist and pass one contract test", () => compareList("contract"));
+test("each test file imports a run-time value of the code it tests", () => compareList("tests"));
 
 test("each behavior change keeps the test that holds it", () => {
   assert.equal(PINS.length, 36, "docs/proof/improve.md lists 36 behavior changes, and the table holds one row for each");
