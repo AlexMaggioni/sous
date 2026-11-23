@@ -53,16 +53,18 @@ describe("resume rows", () => {
   it("joins the journal and the call rows of a scope by index", () => {
     const rows = resumeRows({
       runId: RUN,
-      journal: [entry(0, "a"), entry(1, "b")],
-      calls: [call(0, "a", "result"), call(1, "x", "error"), call(2, "c", "error")],
+      journal: [entry(0, "a"), entry(1, "b"), entry(3, "d"), entry(4, "e")],
+      calls: [call(0, "a", "result"), call(1, "x", "error"), call(2, "c", "error"), call(3, "d", "error"), call(4, "y", "result")],
       key: "hash",
     });
-    // At 1 a later call asked for something else and failed. B's result still counts.
+    // At 1 and 3 a later call took the index and failed, so B's and D's rows are stale. At 4 a
+    // later call returned a result, but its journal row was never saved.
     assert.deepEqual(shape(rows, RUN), [
       [0, "a", "result", "own"],
       [1, "x", "failed", RUN],
-      [1, "b", "result", "own"],
       [2, "c", "failed", RUN],
+      [3, "d", "failed", RUN],
+      [4, "y", "failed", RUN],
     ]);
     const [a] = rows.get(RUN)!.rows;
     assert.equal(a!.kind, "agent");

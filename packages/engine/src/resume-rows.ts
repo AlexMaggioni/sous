@@ -45,8 +45,11 @@ function byScope<T extends { index: number; scope?: string }>(rows: readonly T[]
 }
 
 /**
- * One scope's own rows, by index. A journal row is a result, unless the call row at its index
- * asked for something else. A call row with no journal row failed, stopped or never finished.
+ * One scope's own rows, by index. A journal row is a result while the call row at its index
+ * returned it, or while its index has no call row. Any other call row is a failed row: the call
+ * failed or stopped, or its result was never saved. A journal row under it is stale, since a
+ * later call took its index. A replay that moved a row to another index took it from its old
+ * index already, in the manager.
  */
 function ownRows(scope: string, journal: Map<number, JournalEntry>, calls: Map<number, WorkflowCallRecord>): ResumeRow[] {
   const rows: ResumeRow[] = [];
@@ -54,21 +57,21 @@ function ownRows(scope: string, journal: Map<number, JournalEntry>, calls: Map<n
   for (const index of indexes) {
     const entry = journal.get(index);
     const call = calls.get(index);
-    if (call && (!entry || entry.hash !== call.hash)) {
+    const result = entry !== undefined && (!call || (call.outcome === "result" && call.hash === entry.hash));
+    if (call && !result) {
       rows.push({
         index, kind: call.kind, hash: call.hash,
         ...(call.inputsHash !== undefined ? { inputsHash: call.inputsHash } : {}),
         outcome: "failed", sourceRunId: scope,
       });
     }
-    if (entry) {
-      const kind = call?.hash === entry.hash ? call.kind : entry.kind;
-      const inputsHash = call?.hash === entry.hash ? call.inputsHash : undefined;
+    if (result) {
+      const kind = call?.kind ?? entry.kind;
       rows.push({
         index,
         ...(kind !== undefined ? { kind } : {}),
         hash: entry.hash,
-        ...(inputsHash !== undefined ? { inputsHash } : {}),
+        ...(call?.inputsHash !== undefined ? { inputsHash: call.inputsHash } : {}),
         outcome: "result", sourceRunId: scope, entry, own: true,
       });
     }

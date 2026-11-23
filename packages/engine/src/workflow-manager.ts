@@ -154,6 +154,9 @@ export interface ManagedRun {
   readonly resumeSourceRunId?: string;
   /** Manager-owned remaining correspondence state for a new-run resume. */
   resumeSeed?: PersistedResumeSeed;
+  /** A same-ID resume's journal and call rows as the resume started. A replay that moves one of
+   *  them to another index takes it from its old index. */
+  resumedRows?: ReadonlySet<JournalEntry | WorkflowCallRecord>;
   /** Resume-only interrupted root calls eligible for live session continuation. */
   preparedContinuation?: PreparedContinuation;
   /** Manager-owned report, incrementally updated while the engine is executing. */
@@ -1925,6 +1928,7 @@ export class WorkflowManager extends EventEmitter {
 
   private recordCallRecord(managed: ManagedRun, record: WorkflowCallRecord): void {
     if (this.dropPostTerminal(managed, "callRecord")) return;
+    this.dropMovedRow(managed, record);
     const rootScope = record.scope === undefined || record.scope === managed.runId;
     if (rootScope) {
       if (record.origin === "journal-replay" && record.outcome === "result") {
@@ -1983,6 +1987,22 @@ export class WorkflowManager extends EventEmitter {
       () => this.persistRun(managed),
       rootScope ? { beforeLive: () => this.persistRun(managed) } : undefined,
     );
+  }
+
+  /**
+   * A same-ID resume can replay one of the run's own rows at another index, when steps open in
+   * another order. The row then lives at the new index, so drop it from the old one. Otherwise a
+   * later resume reads it twice, and gives a call that never ran the other call's result.
+   */
+  private dropMovedRow(managed: ManagedRun, record: WorkflowCallRecord): void {
+    const from = record.replay;
+    const scope = record.scope ?? managed.runId;
+    if (!managed.resumedRows || from?.sourceRunId !== scope || from.recordedIndex === record.index) return;
+    const stale = (row: JournalEntry | WorkflowCallRecord) =>
+      managed.resumedRows!.has(row) && (row.scope ?? managed.runId) === scope && row.index === from.recordedIndex;
+    managed.journal = managed.journal.filter((row) => !stale(row));
+    if (managed.nestedJournal) managed.nestedJournal = managed.nestedJournal.filter((row) => !stale(row));
+    managed.calls = managed.calls.filter((row) => !stale(row));
   }
 
   private registerAgentAttempt(
@@ -2625,6 +2645,7 @@ export class WorkflowManager extends EventEmitter {
     let occurrenceResume: OccurrenceResume | undefined;
     if (revision === undefined) {
       managed.resumeSeed = unusedSeed(persisted.resumeSeed, managed.calls, runId);
+      managed.resumedRows = new Set([...managed.journal, ...(managed.nestedJournal ?? []), ...managed.calls]);
       resumeRows = buildResumeRows({
         runId,
         journal: [...managed.journal, ...(managed.nestedJournal ?? [])],
