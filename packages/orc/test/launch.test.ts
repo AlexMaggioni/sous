@@ -22,8 +22,8 @@ for (const name of ["CLAUDECODE", "ORC_RUN_ID", "CLAUDE_CODE_OAUTH_TOKEN", "ANTH
 const one = (prompt: string) => `export const meta = { name: 'one', description: 'one step' }
 return await agent('${prompt}', { label: 'go' })`;
 const two = (second: string) => `export const meta = { name: 'two', description: 'two steps' }
-await agent('first', { label: 'first' })
-return await agent('${second}', { label: 'second' })`;
+const first = await agent('first', { label: 'first' })
+return await agent('${second} after ' + first, { label: 'second' })`;
 
 /** What orc run, resume and rerun print when they start a worker. */
 function started(paths: HomePaths, runId: string, word: "started" | "resumed"): string {
@@ -111,10 +111,12 @@ describe("orc starts workers through the launcher main takes", () => {
     assert.equal(mode, "start");
     assert.deepEqual(rerun, { code: 0, out: started(paths, runId, "started") });
     assert.equal(loadRecord(paths, runId)?.reuseFrom, earlier);
+    assert.equal(loadRecord(paths, runId)?.cwd, loadRecord(paths, earlier)?.cwd, "the new run starts in the same place");
     assert.equal((await workers.ended(runId))?.status, "completed");
     assert.deepEqual(
       calls.map((call) => call.prompt),
-      ["first", "second", "second, shorter"],
+      ["first", "second after first done", "second, shorter after first done"],
+      "the first step is not run again, and the second gets its earlier result",
     );
   });
 });

@@ -13,7 +13,6 @@ import {
   loadRecord,
   logFile,
   rememberProject,
-  rerunRun,
   resumeRun,
   runQuestions,
   saveSchedules,
@@ -658,28 +657,6 @@ describe("places and reruns", () => {
     }
     assert.equal(existsSync(waiting.worktree!), false);
     assert.equal(git(projectDir, "branch", "--list", waiting.branch!), "");
-  });
-
-  it("a rerun after an edit reuses the steps before the edit, in the same place", async () => {
-    const { paths, projectDir } = testHome({
-      two: `export const meta = { name: 'two', description: 'two steps' }
-const plan = await agent('plan it', { label: 'planner' })
-const build = await agent('build ' + plan, { label: 'builder' })
-return build`,
-    });
-    const { runner, calls } = fakeRunner((call) => (call.label === "planner" ? "the plan" : `built: ${call.prompt}`));
-    const workers = inProcess({ inner: runner });
-    const first = startRun(paths, workers.launch, { workflow: "two", projectDir, inputs: {} });
-    await workers.ended(first.runId);
-    writeFileSync(join(projectDir, ".orchestrator", "workflows", "two.js"), `export const meta = { name: 'two', description: 'two steps' }
-const plan = await agent('plan it', { label: 'planner' })
-const build = await agent('build carefully ' + plan, { label: 'builder' })
-return build`);
-    const again = rerunRun(paths, workers.launch, first.runId, { place: first.place, reuse: true });
-    assert.equal(again.cwd, first.cwd);
-    const result = await workers.ended(again.runId);
-    assert.equal(result?.result, "built: build carefully the plan");
-    assert.deepEqual(calls.map((c) => c.label), ["planner", "builder", "builder"], "the planner ran once");
   });
 
   it("an agent cannot start a workflow kept for people, nor pick it", async () => {
