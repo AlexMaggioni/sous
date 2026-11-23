@@ -418,7 +418,61 @@ const BREAKS = {
   exports: {},
   contract: [],
   tests: [],
-  scripts: []
+  scripts: [],
+  // Exported values that nothing imports.
+  unused: [
+    "packages/engine/src/accounts.ts: parseAccountName",
+    "packages/engine/src/accounts.ts: resetText",
+    "packages/engine/src/agents.ts: defaultHarness",
+    "packages/engine/src/agents.ts: harnessHomes",
+    "packages/engine/src/agents.ts: missingAgent",
+    "packages/engine/src/agents.ts: modelFor",
+    "packages/engine/src/agents.ts: parseJsonc",
+    "packages/engine/src/agents.ts: rulesyncFolders",
+    "packages/engine/src/agents.ts: settingsFor",
+    "packages/engine/src/agents.ts: wrongHarness",
+    "packages/engine/src/places/places.ts: PLACES",
+    "packages/engine/src/places/places.ts: worktreeAt",
+    "packages/engine/src/places/places.ts: worktreeUnchanged",
+    "packages/engine/src/run-events.ts: REQUESTED_PAUSE_REASONS",
+    "packages/engine/src/runs/home.ts: orcHome",
+    "packages/engine/src/runs/inbox.ts: normalizeAnswer",
+    "packages/engine/src/runs/persistence/run-event-persistence.ts: RUN_EVENT_READ_LIMIT_DEFAULT",
+    "packages/engine/src/runs/run.ts: readLogFrom",
+    "packages/engine/src/strict-json.ts: canonicalStrictJson",
+    "packages/engine/src/workflows/dry-run.ts: standInAgents",
+    "packages/harnesses/src/claude/program.ts: claudeFloor",
+    "packages/harnesses/src/claude/run.ts: claudeOptions",
+    "packages/harnesses/src/claude/run.ts: offersAuto",
+    "packages/harnesses/src/codex/config.ts: serverName",
+    "packages/harnesses/src/codex/program.ts: SUPPORTED",
+    "packages/harnesses/src/lookup.ts: inspectFile",
+    "packages/harnesses/src/lookup.ts: usualDirs",
+  ],
+  // Exported values that only the package's tests import, past the interface of their module.
+  forTests: [
+    "packages/engine/src/agents.ts: agentDefinitionKey",
+    "packages/engine/src/agents.ts: definitionOf",
+    "packages/engine/src/call-path.ts: CALL_PATH_RAW_FRAMES",
+    "packages/engine/src/checkpoint-call.ts: hashCheckpointInputs",
+    "packages/engine/src/errors.ts: isAbortError",
+    "packages/engine/src/errors.ts: isWorkflowError",
+    "packages/engine/src/failed-attempt.ts: HOST_HANDLED_CODES",
+    "packages/engine/src/resume-pairing.ts: pairCalls",
+    "packages/engine/src/runs/inbox.ts: breakpointValue",
+    "packages/engine/src/runs/persistence/project-paths.ts: WORKFLOW_PROJECTS_SUBDIR",
+    "packages/engine/src/runs/persistence/project-paths.ts: workflowProjectKey",
+    "packages/engine/src/runs/persistence/run-event-persistence.ts: RUN_EVENT_MAX_RECORD_BYTES",
+    "packages/engine/src/runs/persistence/run-event-persistence.ts: RUN_EVENT_READ_LIMIT_MAX",
+    "packages/engine/src/runs/persistence/run-event-persistence.ts: RunEventLogError",
+    "packages/engine/src/runs/persistence/run-persistence.ts: inlineScriptFile",
+    "packages/engine/src/runs/rule.ts: parseResetHint",
+    "packages/engine/src/runs/run.ts: busyWorktrees",
+    "packages/engine/src/steps/answer.ts: findJsonBlock",
+    "packages/engine/src/workflow-paths.ts: WORKFLOW_HOME_RELATIVE_DIR",
+    "packages/engine/src/workflow.ts: sanitizeVmName",
+    "packages/harnesses/src/tools.ts: matches",
+  ],
 };
 
 // ── Reading the source ──────────────────────────────────────────────────────────────────────────
@@ -453,6 +507,13 @@ function role(dir) {
  * Imports of one file: the specifier, the names it takes, and whether it takes only types, read
  * from the parsed file.
  */
+const sources = new Map();
+/** The parsed source of a file, read once. */
+function sourceOf(file) {
+  if (!sources.has(file)) sources.set(file, ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true));
+  return sources.get(file);
+}
+
 const imported = new Map();
 function importsOf(file) {
   if (!imported.has(file)) imported.set(file, readImports(file));
@@ -460,8 +521,7 @@ function importsOf(file) {
 }
 
 function readImports(file) {
-  const text = readFileSync(file, "utf8");
-  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const source = sourceOf(file);
   const found = [];
   const visit = (node) => {
     if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
@@ -802,7 +862,7 @@ function functionName(node) {
 function lineCounts({ files }) {
   const counts = new Map();
   for (const { file, path } of files) {
-    const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+    const source = sourceOf(file);
     const lineOf = (pos) => source.getLineAndCharacterOfPosition(pos).line;
     counts.set(path, lineOf(source.end) + (source.text.endsWith("\n") ? 0 : 1));
     const visit = (node, owner) => {
@@ -869,6 +929,68 @@ function memberBreaks() {
   return found;
 }
 
+/** A package's entries, from the exports and the bin of its package.json, as source paths. */
+function entriesOf(dir) {
+  const pkg = JSON.parse(readFileSync(join(ROOT, "packages", dir, "package.json"), "utf8"));
+  const targets = [...Object.values(pkg.exports ?? {}), ...Object.values(typeof pkg.bin === "string" ? [pkg.bin] : pkg.bin ?? {}), pkg.main];
+  return targets
+    .map((target) => (typeof target === "object" && target ? target.types ?? target.import : target))
+    .filter(Boolean)
+    .map((target) => `packages/${dir}/${target.replace(/^\.\//, "").replace(/^dist\//, "src/").replace(/\.js$/, ".ts")}`);
+}
+
+/** The values a file exports by name: functions, classes, variables and enums. Types are left out. */
+function exportedValues(file) {
+  const names = [];
+  for (const node of sourceOf(file).statements) {
+    const flags = ts.getCombinedModifierFlags(node);
+    if (ts.isExportAssignment(node)) names.push("default");
+    if (!(flags & ts.ModifierFlags.Export) || flags & ts.ModifierFlags.Ambient) continue;
+    if (flags & ts.ModifierFlags.Default) names.push("default");
+    else if (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node)) names.push(node.name.text);
+    else if (ts.isVariableStatement(node)) {
+      const bind = (name) => (ts.isIdentifier(name) ? names.push(name.text) : name.elements.forEach((el) => el.name && bind(el.name)));
+      for (const declaration of node.declarationList.declarations) bind(declaration.name);
+    }
+  }
+  return [...new Set(names)];
+}
+
+/**
+ * Each exported value of a source file that is not an entry, with no importer in the source of
+ * its package: `unused` when nothing imports it, `forTests` when only the package's tests do. A
+ * type-only import counts. Types are not checked, since a type that only a signature uses is often
+ * fine. Run knip by hand for those.
+ */
+function unusedExportBreaks({ files, tests, dirs }) {
+  const known = new Set(files.map(({ path }) => path));
+  const entries = new Set(dirs.flatMap(entriesOf));
+  // For each source file, the names imported from it by source and by tests. "*" is every name.
+  const takers = { source: new Map(), tests: new Map() };
+  for (const [kind, list] of [["source", files], ["tests", tests]]) {
+    for (const { file } of list) {
+      for (const { spec, names, star } of importsOf(file)) {
+        if (!spec.startsWith(".")) continue;
+        const target = rel(resolve(dirname(file), spec)).replace(/\.js$/, ".ts");
+        if (!known.has(target)) continue;
+        if (!takers[kind].has(target)) takers[kind].set(target, new Set());
+        for (const name of star ? ["*"] : names) takers[kind].get(target).add(name);
+      }
+    }
+  }
+  const takes = (kind, path, name) => takers[kind].get(path)?.has(name) || takers[kind].get(path)?.has("*");
+  const unused = [];
+  const forTests = [];
+  for (const { file, path } of files) {
+    if (entries.has(path)) continue;
+    for (const name of exportedValues(file)) {
+      if (takes("source", path, name)) continue;
+      (takes("tests", path, name) ? forTests : unused).push(`${path}: ${name}`);
+    }
+  }
+  return { unused: unused.sort(), forTests: forTests.sort() };
+}
+
 function scriptBreaks({ dirs }) {
   const found = [];
   if (!existsSync(join(ROOT, TEST_RUNNER))) found.push(`${TEST_RUNNER} is missing`);
@@ -895,6 +1017,7 @@ const now = {
   sizes: sizeBreaks(lineCounts(state)),
   members: memberBreaks(),
   machine: machineBreaks(state),
+  ...unusedExportBreaks(state),
 };
 
 if (process.env.ARCH_PRINT) console.log(JSON.stringify(now, null, 2));
@@ -930,6 +1053,8 @@ test("each package exports only what its caller imports", () => {
 test("both adapters exist and pass one contract test", () => compareList("contract"));
 test("each test file imports a run-time value of the code it tests", () => compareList("tests"));
 test("each package runs its tests on a temporary home", () => compareList("scripts"));
+test("each exported value has an importer", () => compareList("unused"));
+test("each exported value has an importer in the source, not only in tests", () => compareList("forTests"));
 test("each file and function stays under its line cap", () => assert.equal(now.sizes.join("\n"), "", now.sizes.join("\n")));
 test("the manager's methods and the run's options stay at their caps", () => assert.equal(now.members.join("\n"), "", now.members.join("\n")));
 
