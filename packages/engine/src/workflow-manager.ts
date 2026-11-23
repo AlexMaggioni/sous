@@ -39,7 +39,6 @@ import type {
   RequestedPauseReason,
   RunPauseReason,
 } from "./run-events.js";
-import type { RunEventLogRecord } from "./run-events.js";
 import { foldStep, preview, recomputeWorkflowSnapshot, type WorkflowSnapshot } from "./display.js";
 import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
@@ -179,13 +178,8 @@ export interface ManagedRun {
   background: boolean;
 }
 
-interface EventPublicationState {
-  runId: string;
-  lease?: RunLease;
-  eventStreamId?: string;
-  eventSeq?: number;
-  eventLogIncomplete?: true;
-}
+/** What a publish needs from a run: its lease and its event watermark. A live run is one. */
+type EventPublicationState = Pick<ManagedRun, "runId" | "lease" | "eventStreamId" | "eventSeq" | "eventLogIncomplete">;
 
 interface RunEventPublicationActions {
   beforeLive?: () => void;
@@ -1274,6 +1268,13 @@ export class WorkflowManager extends EventEmitter {
     if (state.eventLogIncomplete) snapshot.eventLogIncomplete = true;
   }
 
+  /** Save a run that is not live, with the watermark its publication reached. */
+  private saveWithWatermark(snapshot: PersistedRunState, publication: EventPublicationState): void {
+    this.syncEventWatermark(publication, snapshot);
+    snapshot.updatedAt = new Date().toISOString();
+    this.savePersistedState(snapshot, publication);
+  }
+
   private prepareEventPublicationState(
     snapshot: PersistedRunState,
     lease: RunLease,
@@ -1320,13 +1321,17 @@ export class WorkflowManager extends EventEmitter {
     return this.emit(type, payload);
   }
 
+  /**
+   * Append a persistable event to the run's log, when the store has one and the run holds its
+   * lease, then deliver it to live listeners. A failed append marks the log incomplete, warns and
+   * calls `saveIncompleteMarker`. No later event of the run goes to the log.
+   */
   private publishRunEvent(
     state: EventPublicationState,
     event: EngineRunEvent,
     saveIncompleteMarker: () => void,
     actions: RunEventPublicationActions = {},
   ): boolean {
-    let appendedRecord: RunEventLogRecord | undefined;
     const log = this.eventLog;
     if (
       log &&
@@ -1348,18 +1353,11 @@ export class WorkflowManager extends EventEmitter {
           event,
         });
         state.eventSeq = record.seq;
-        appendedRecord = record;
       } catch (error) {
         state.eventLogIncomplete = true;
         this.reportPersistenceFailure(error);
         saveIncompleteMarker();
       }
-    }
-
-    if (appendedRecord !== undefined) {
-      // Stable host seam for protocol-native resource update publication. Emitted only after
-      // the append is durable; consumers may safely direct readers to the new watermark.
-      this.emit("runEventPersisted", appendedRecord);
     }
 
     actions.beforeLive?.();
@@ -2308,11 +2306,7 @@ export class WorkflowManager extends EventEmitter {
       );
     }
     const publication = this.prepareEventPublicationState(persisted, lease);
-    const saveLegacyGate = () => {
-      this.syncEventWatermark(publication, persisted);
-      persisted.updatedAt = new Date().toISOString();
-      this.savePersistedState(persisted, publication);
-    };
+    const saveLegacyGate = () => this.saveWithWatermark(persisted, publication);
 
     const checkpointContext =
       persisted.pauseReason === "checkpoint_required" ? persisted.checkpointContext : undefined;
@@ -2675,9 +2669,7 @@ export class WorkflowManager extends EventEmitter {
         this.persistRun(managed);
         return;
       }
-      this.syncEventWatermark(managed, pausedSnapshot);
-      pausedSnapshot.updatedAt = new Date().toISOString();
-      this.savePersistedState(pausedSnapshot, managed);
+      this.saveWithWatermark(pausedSnapshot, managed);
     };
     this.publishRunEvent(
       managed,
@@ -2755,11 +2747,7 @@ export class WorkflowManager extends EventEmitter {
       current.checkpointContext = undefined;
       current.abortSignaled = true;
 
-      const saveStopped = () => {
-        this.syncEventWatermark(publication, current);
-        current.updatedAt = new Date().toISOString();
-        this.savePersistedState(current, publication);
-      };
+      const saveStopped = () => this.saveWithWatermark(current, publication);
       if (stoppedEventAlreadyDurable) {
         saveStopped();
       } else {
