@@ -103,12 +103,12 @@ test("live attempts emit fresh cumulative usage snapshots and persist them befor
   manager.on("tokenUsage", (event: { usage: { total: number } }) => managerSnapshots.push(event.usage.total));
   const started = manager.startInBackground(TWO_AGENT_SCRIPT);
   await waitUntil(() => calls === 2, "managed workflow did not reach the second agent");
-  assert.equal(manager.getSnapshot(started.runId)?.tokenUsage?.total, 15);
+  assert.equal(manager.getRun(started.runId)?.snapshot.tokenUsage?.total, 15);
   assert.equal(store.persistence.load(started.runId)?.tokenUsage?.total, 15);
   second.resolve("second-result");
   const result = await started.promise;
   assert.deepEqual(managerSnapshots, [15, 42, 42]);
-  assert.equal(manager.getSnapshot(started.runId)?.tokenUsage?.total, 42);
+  assert.equal(manager.getRun(started.runId)?.snapshot.tokenUsage?.total, 42);
   assert.deepEqual(result.tokenUsage, {
     input: 30,
     output: 12,
@@ -226,7 +226,7 @@ test("replay contributes no usage and background journal seeding survives a mult
     "the fail-fast initial save contains the entire inherited prefix",
   );
   await waitUntil(() => childCalls === 1, "the child did not reach its only live miss");
-  assert.equal(childManager.getSnapshot(child.runId)?.tokenUsage, undefined, "cached calls add no usage");
+  assert.equal(childManager.getRun(child.runId)?.snapshot.tokenUsage, undefined, "cached calls add no usage");
   liveMiss.resolve("ready");
   await assert.rejects(child.promise, (error: unknown) => {
     return error instanceof WorkflowError && error.code === WorkflowErrorCode.CHECKPOINT_REQUIRED;
@@ -234,7 +234,7 @@ test("replay contributes no usage and background journal seeding survives a mult
   assert.equal(childJournalEvents, 1, "replay never re-fires onAgentJournal");
   const childPersisted = store.persistence.load(child.runId);
   assert.deepEqual(childPersisted?.journal?.map((entry) => entry.index), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  assert.equal(childManager.getSnapshot(child.runId)?.tokenUsage?.total, childPersisted?.tokenUsage?.total);
+  assert.equal(childManager.getRun(child.runId)?.snapshot.tokenUsage?.total, childPersisted?.tokenUsage?.total);
 
   const checkpoint = childPersisted?.checkpointContext;
   assert.ok(checkpoint);

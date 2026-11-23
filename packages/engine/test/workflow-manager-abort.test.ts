@@ -356,7 +356,7 @@ test(
     assert.equal(manager.pause(runId), true);
     assert.equal<{ runId: string } | null>(pausedEvent, null, "the request alone does not pause: agent a is still executing");
     assert.equal(manager.getRun(runId)?.status, "running");
-    assert.equal(manager.pausePending(runId), true);
+    assert.equal(manager.getRun(runId)?.pauseController?.signal.aborted, true, "the pause request is registered");
 
     da.resolve("a-done");
     await promise.catch(() => {});
@@ -365,7 +365,6 @@ test(
     assert.equal(pausedEvent?.runId, runId);
     assert.equal((pausedEvent as { reason?: string } | null)?.reason, "requested");
     assert.equal(manager.getRun(runId)?.status, "paused");
-    assert.equal(manager.pausePending(runId), false);
     const persisted = manager.listRuns().find((r) => r.runId === runId);
     assert.equal(persisted?.pauseReason, "requested");
     assert.equal(persisted?.reason, "requested");
@@ -839,7 +838,7 @@ test(
   withTempCwd(async (cwd) => {
     const manager = new WorkflowManager({ cwd, agent: fakeAgent() });
     const { runId, promise } = manager.startInBackground(oneAgentScript);
-    const snap = manager.getSnapshot(runId);
+    const snap = manager.getRun(runId)?.snapshot;
     assert.equal(snap?.name, "tracked_demo");
     assert.equal(snap?.description, "one agent");
     assert.ok(Array.isArray(snap?.phases), "snap.phases should be an array");

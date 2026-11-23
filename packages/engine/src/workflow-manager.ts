@@ -2279,12 +2279,6 @@ export class WorkflowManager extends EventEmitter {
     return true;
   }
 
-  /** Whether a pause request is registered for a run this manager is still executing. */
-  pausePending(runId: string): boolean {
-    const managed = this.runs.get(runId);
-    return managed?.status === "running" && managed.pauseController?.signal.aborted === true;
-  }
-
   /**
    * Resume an interrupted run: replay journaled results for the unchanged prefix
    * and run the rest live. Returns false if there is nothing resumable.
@@ -2876,13 +2870,6 @@ export class WorkflowManager extends EventEmitter {
   /** Every persisted run, newest first, after reconciling runs whose owner exited. */
   listRuns(): PersistedRunState[] {
     return this.reconcileListedRuns(this.persistence.list());
-  }
-
-  /**
-   * Get snapshot of a run.
-   */
-  getSnapshot(runId: string): WorkflowSnapshot | null {
-    return this.runs.get(runId)?.snapshot ?? null;
   }
 
   /**
