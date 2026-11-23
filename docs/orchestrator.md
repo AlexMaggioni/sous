@@ -124,11 +124,14 @@ should share files run in the same place.
 
 The engine's flow steps take these arguments:
 
-- `parallel([() => agent(...), ...])` runs the functions at once. A step that fails gives `null`
-  in its slot, and the others go on.
+- `parallel([() => agent(...), ...])` runs the functions at once. A step that fails its last try
+  pauses the run, as it does outside `parallel` (see [Failures and limits](#failures-and-limits)).
+  Steps already running finish and nothing new starts. A function that throws an error of its own,
+  outside any step, gives `null` in its slot, and the others go on.
 - `pipeline(items, stage1, stage2, ...)` runs each item through the stages in turn, the items at
-  once. Each stage gets the last stage's result, the item and its index. An item whose stage fails
-  gives `null`.
+  once. Each stage gets the last stage's result, the item and its index. A step that fails its
+  last try pauses the run, as in `parallel`. A stage that throws an error of its own gives `null`
+  for that item, and its later stages don't run.
 - `retry((attempt) => ..., { attempts, until })` calls the function until `until(result)` is true,
   3 times at most by default, and returns the last result.
 - `gate((feedback, attempt) => ..., check, { attempts })` calls the function, then `check` on its
