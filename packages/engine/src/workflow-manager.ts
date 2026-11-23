@@ -2277,37 +2277,6 @@ export class WorkflowManager extends EventEmitter {
       );
   }
 
-  private agentCancellationSelectionError(
-    runId: string,
-    callIndex: number,
-    message: string,
-    inFlight = this.currentAgentAttempts(runId),
-  ): WorkflowError {
-    const listing = inFlight.length === 0
-      ? "none"
-      : inFlight
-          .map((attempt) =>
-            `${attempt.callIndex} (${JSON.stringify(attempt.label)}, scope ${JSON.stringify(attempt.scope)})`
-          )
-          .join(", ");
-    return new WorkflowError(
-      `${message} Currently in-flight agent calls (callIndex, label, scope): ${listing}.`,
-      WorkflowErrorCode.AGENT_EXECUTION_ERROR,
-      {
-        recoverable: false,
-        details: {
-          runId,
-          callIndex,
-          inFlight: inFlight.map((attempt) => ({
-            callIndex: attempt.callIndex,
-            label: attempt.label,
-            scope: attempt.scope,
-          })),
-        },
-      },
-    );
-  }
-
   private dropPostTerminal(managed: ManagedRun, event: string): boolean {
     if (managed.status === "running") return false;
     try {
@@ -2900,60 +2869,6 @@ export class WorkflowManager extends EventEmitter {
     }, revisedExecution ?? { resumeJournal });
     promise.catch(() => {});
     return { accepted: true, runId, continuation, promise };
-  }
-
-  /**
-   * Cancel exactly one in-flight agent call without aborting its owning run. The promise
-   * resolves only after the failed call record and agentEnd state are durable.
-   */
-  async cancelAgentCall(runId: string, callIndex: number): Promise<WorkflowAgentCallCancellation> {
-    if (!Number.isSafeInteger(callIndex) || callIndex < 0) {
-      throw this.agentCancellationSelectionError(
-        runId,
-        callIndex,
-        `Agent call index must be a non-negative safe integer; received ${String(callIndex)}.`,
-      );
-    }
-
-    const managed = this.runs.get(runId);
-    if (!managed) {
-      throw this.agentCancellationSelectionError(
-        runId,
-        callIndex,
-        `Workflow run "${runId}" is not live and owned by this manager.`,
-      );
-    }
-    if (managed.status !== "running") {
-      const state = managed.status === "completed" || managed.status === "failed" || managed.status === "aborted"
-        ? `already terminal (${managed.status})`
-        : managed.status;
-      throw this.agentCancellationSelectionError(
-        runId,
-        callIndex,
-        `Workflow run "${runId}" is ${state}; no agent call can be cancelled.`,
-      );
-    }
-
-    const inFlight = this.currentAgentAttempts(runId);
-    const matching = inFlight.filter((attempt) => attempt.callIndex === callIndex);
-    if (matching.length === 0) {
-      throw this.agentCancellationSelectionError(
-        runId,
-        callIndex,
-        `Agent call ${callIndex} is not currently in flight in run "${runId}"; it may already be settled, not yet allocated, or a checkpoint.`,
-        inFlight,
-      );
-    }
-    if (matching.length > 1) {
-      throw this.agentCancellationSelectionError(
-        runId,
-        callIndex,
-        `Agent call index ${callIndex} is ambiguous in run "${runId}" because ${matching.length} in-flight calls share it.`,
-        inFlight,
-      );
-    }
-
-    return this.requestAgentCancellation(matching[0]!);
   }
 
   /**

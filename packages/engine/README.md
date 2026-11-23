@@ -70,7 +70,7 @@ For process-lifetime background execution, use the returned settlement handle:
 ```ts
 const { runId, promise } = manager.startInBackground(script, { topic: "otters" });
 console.log(manager.getSnapshot(runId)?.tokenUsage); // cumulative live usage when known
-await manager.cancelAgentCall(runId, 3); // cancel one in-flight agent; the run stays live
+manager.cancelAgentSteps(runId, { label: "review" }); // stop the in-flight "review" steps
 const terminal = await promise; // rejects for pause, failure, or abort
 ```
 
@@ -85,12 +85,12 @@ a cold list or resume lookup. Live and permission-protected owner PIDs remain un
 Completed current-format crash-journal entries use identity replay; an in-flight unjournaled call
 executes again on resume. Missing terminal-environment capture is diagnostic only.
 
-`cancelAgentCall(runId, callIndex)` targets one uniquely matching live attempt. It aborts that
-attempt with recoverable `AGENT_CANCELLED`, races backend cooperation so an ignored signal still
-settles, bypasses retries, and resolves only after the failed call record and `agentEnd` state are
-committed. The script receives `null`; sibling branches continue, the run-level signal and
-`abortSignaled` remain untouched, and no journal result is created. Errors for missing, settled,
-checkpoint, or duplicate scoped indexes list the currently in-flight call-index/label pairs.
+`cancelAgentSteps(runId, { label, scope })` stops the run's in-flight attempts with that label, or
+all of them, and returns how many it stopped. It aborts each attempt with recoverable
+`AGENT_CANCELLED`, races backend cooperation so an ignored signal still settles, and bypasses
+retries. The script receives `null`; sibling branches continue, the run-level signal and
+`abortSignaled` remain untouched, and no journal result is created. Under `pauseOnFailedStep` the
+run pauses on the stopped step instead, and resume runs it again.
 
 Or call the bare engine function (no manager, no persistence layer):
 
