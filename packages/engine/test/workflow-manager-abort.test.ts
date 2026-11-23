@@ -687,7 +687,6 @@ test(
     assert.equal(run?.script, oneAgentScript);
     assert.ok(run?.controller instanceof AbortController, "should have an AbortController");
     assert.ok(run?.startedAt instanceof Date, "should have a startedAt date");
-    assert.equal(run?.background, true, "should be marked as background");
     assert.ok(Array.isArray(run?.rows.saved("running").journal), "should have a journal array");
 
     // snapshot should be populated

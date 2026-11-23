@@ -150,13 +150,6 @@ export interface ManagedRun {
   eventStreamId?: string;
   eventSeq?: number;
   eventLogIncomplete?: true;
-  /**
-   * True when the run was started in the background (or resumed) and the caller is
-   * not awaiting its result inline. Only background runs deliver their result back
-   * into the conversation; a foreground sync run already returns it as the tool
-   * result, so re-delivering would duplicate it.
-   */
-  background: boolean;
 }
 
 /** What a publish needs from a run: its lease and its event watermark. A live run is one. */
@@ -778,7 +771,6 @@ export class WorkflowManager extends EventEmitter {
     script: string,
     args: unknown | undefined,
     exec: ExecOptions,
-    background: boolean,
   ): InitializedRun {
     this.validateNewRunOptions(exec);
     const source = exec.resumeFromRunId === undefined
@@ -787,7 +779,7 @@ export class WorkflowManager extends EventEmitter {
     let identity: { runId: string; lease: RunLease } | undefined;
     try {
       identity = this.acquireNewRunIdentity(exec.runId);
-      const managed = this.createManaged(script, args, exec, background, identity);
+      const managed = this.createManaged(script, args, exec, identity);
       const resumeExecution = source
         ? this.prepareManagedResume(managed, source.source)
         : undefined;
@@ -821,7 +813,7 @@ export class WorkflowManager extends EventEmitter {
     args?: unknown,
     exec: ExecOptions = {},
   ): { runId: string; promise: Promise<WorkflowRunResult> } {
-    const { managed, resumeExecution } = this.initializeRun(script, args, exec, true);
+    const { managed, resumeExecution } = this.initializeRun(script, args, exec);
 
     // Attach a side-channel catch to prevent Node.js unhandled-rejection crashes
     // when a workflow is aborted/paused/stopped — executeRun()'s catch block
@@ -846,7 +838,7 @@ export class WorkflowManager extends EventEmitter {
    * `run.status` with no try/catch.
    */
   async runSync(script: string, args?: unknown, exec: ExecOptions = {}): Promise<WorkflowRunResult> {
-    const { managed, resumeExecution } = this.initializeRun(script, args, exec, false);
+    const { managed, resumeExecution } = this.initializeRun(script, args, exec);
     try {
       return await this.executeRun(managed, script, exec, resumeExecution);
     } catch (error) {
@@ -875,7 +867,6 @@ export class WorkflowManager extends EventEmitter {
     script: string,
     args: unknown | undefined,
     exec: ExecOptions,
-    background: boolean,
     identity: { runId: string; lease: RunLease },
   ): ManagedRun {
     const meta = parseWorkflowScript(script).meta;
@@ -930,7 +921,6 @@ export class WorkflowManager extends EventEmitter {
       defaultModel: exec.defaultModel,
       ...(exec.resumeFromRunId ? { resumeSourceRunId: exec.resumeFromRunId } : {}),
       ...(exec.resumeJournal ? { legacyResume: true as const } : {}),
-      background,
       lease: identity.lease,
       ...(this.eventLog ? { eventStreamId: generateEventStreamId(), eventSeq: 0 } : {}),
     };
@@ -2014,7 +2004,6 @@ export class WorkflowManager extends EventEmitter {
       }),
       defaultModel: persisted.defaultModel,
       sameRunContinuation: true,
-      background: true,
       lease,
       eventStreamId: publication.eventStreamId,
       eventSeq: publication.eventSeq,
