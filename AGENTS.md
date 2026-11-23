@@ -16,6 +16,7 @@ The code and its tests are the current state. When prose and code disagree, fix 
 - The architecture test lives in `test/architecture.test.mjs`. Change its tables only in a commit of their own, and never to turn a red test green.
 - Keep the default tests deterministic and free of credentials. Live tests stay behind their environment variables.
 - Tests never write into the real home folder. Each package's test script runs on a temporary HOME and login folders, with no Claude token (`test/with-temp-home.mjs`). A test that needs a folder makes its own. To run one test file, start it through that script too. The header of `test/with-temp-home.mjs` shows how.
+- A helper that two test files of a package need goes in that package's `test/helpers/`. A test never imports a path in another package. orc takes the engine's parts through `@orchestrator/engine/testing`.
 - Never weaken a test to make a change pass.
 - Keep docs plain and short. No emojis.
 

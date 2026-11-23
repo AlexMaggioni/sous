@@ -2,13 +2,12 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { it } from "node:test";
-import { WorkflowError, WorkflowErrorCode } from "../../src/errors.js";
 import { createRun } from "../../src/runs/launch.js";
 import { loadRecord } from "../../src/runs/records.js";
 import { readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
-import { setup } from "./fixture.js";
+import { boom, quiet, setup } from "./fixture.js";
 
 // A reuse run that pauses, then resumes. Its source's steps after the pause wait in the seed, and
 // replay on the resume.
@@ -18,9 +17,6 @@ const a = await agent('A', { label: 'a' })
 const b = await agent('${b}', { label: 'b' })
 const c = await agent('C', { label: 'c' })
 return [a, b, c]`;
-
-const boom = () => new WorkflowError("boom", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true });
-const quiet = () => {};
 
 async function pauseThenResume(): Promise<{ first: string[]; journal: string[]; second: string[] }> {
   const { paths, projectDir } = setup({ three: three("B") }, { retries: 0 });

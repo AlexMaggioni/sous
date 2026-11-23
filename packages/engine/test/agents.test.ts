@@ -4,17 +4,13 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { definitionOf, lookupAgents, lookupMcpServers, planStep, routeStep, type LookupSettings } from "../src/agents.js";
 import type { StepAsk, StepRoute } from "../src/steps/agent-runner.js";
+import { write } from "./helpers/files.js";
 
 const temp = (name: string) => mkdtempSync(join(tmpdir(), `engine-${name}-`));
-
-function write(file: string, content: string): void {
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, content);
-}
 
 /** A project, a global rulesync folder and harness homes of its own, so no real home is read. */
 function lookupPlace(defaultHarness: LookupSettings["defaultHarness"] = "claude"): LookupSettings & { home: string; global: string } {

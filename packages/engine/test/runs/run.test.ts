@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,17 +13,12 @@ import { engineRunFiles, logFile, managerStore, readState, type StoreFs } from "
 import { runWorker } from "../../src/runs/worker.js";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
 import { WorkflowManager } from "../../src/workflow-manager.js";
-import { heldRunner, plantState, settle, setup, until } from "./fixture.js";
+import { deadPid, heldRunner, plantState, quiet, settle, setup, until } from "./fixture.js";
 
 // The runs are planted with raw writes, the way the worker and the engine leave them.
 
 function writeJson(file: string, value: unknown): void {
   writeFileSync(file, JSON.stringify(value, null, 2));
-}
-
-/** A pid that no process has now: a child that already ended. */
-function deadPid(): number {
-  return spawnSync(process.execPath, ["-e", ""]).pid!;
 }
 
 interface Home {
@@ -229,7 +223,6 @@ describe("a run's log", () => {
   });
 });
 
-const quiet = () => {};
 const child = `export const meta = { name: 'child', description: 'child' }\nreturn await agent('build it', { label: 'build' })`;
 
 /** The steps that run now, read the way `orc stop --step` reads them. */

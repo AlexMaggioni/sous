@@ -11,9 +11,7 @@ import { createRun } from "../../src/runs/launch.js";
 import { loadRecord } from "../../src/runs/records.js";
 import { forgetRun } from "../../src/runs/run.js";
 import { runWorker } from "../../src/runs/worker.js";
-import { heldRunner, layout, projectKey, setup } from "./fixture.js";
-
-const quiet = () => {};
+import { heldRunner, layout, projectKey, quiet, setup } from "./fixture.js";
 
 const top = `export const meta = { name: 'top', description: 'top' }
 // the top workflow

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,20 +12,12 @@ import { runWorker } from "../src/runs/worker.js";
 import { runWorkflow } from "../src/workflow.js";
 import { placesIn } from "./helpers/places.js";
 import { heldRunner, setup, until } from "./runs/fixture.js";
+import { git, initGitRepo } from "./helpers/git.js";
 
 // A step with `isolation: "worktree"` gets its worktree from the places module, named like every
 // other worktree orc makes: a folder under the home's worktrees folder, on branch orc/<name>.
 
-const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-
-function gitRepo(): string {
-  const repo = mkdtempSync(join(tmpdir(), "orc-places-repo-"));
-  git(repo, "init", "-q", "-b", "main");
-  writeFileSync(join(repo, "file.txt"), "base\n");
-  git(repo, "add", ".");
-  git(repo, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "-m", "init");
-  return repo;
-}
+const gitRepo = () => initGitRepo(mkdtempSync(join(tmpdir(), "orc-places-repo-")));
 
 function tempHome(): HomePaths {
   return ensureHome(homePaths(mkdtempSync(join(tmpdir(), "orc-places-home-"))));

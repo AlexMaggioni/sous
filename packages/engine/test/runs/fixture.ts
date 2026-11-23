@@ -1,9 +1,11 @@
 // A home and a project for the runs tests. The worker hands each step to the test's runner, so
 // no program runs.
 
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
+import { WorkflowError, WorkflowErrorCode } from "../../src/errors.js";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
 import type { HomePaths } from "../../src/runs/home.js";
 import type { RunRecord } from "../../src/runs/records.js";
@@ -149,4 +151,15 @@ export async function settle<T>(read: () => T, expected: T): Promise<T> {
 /** Wait until `ready` holds, or 5 seconds pass. */
 export async function until(ready: () => boolean): Promise<void> {
   for (let i = 0; i < 250 && !ready(); i++) await new Promise((r) => setTimeout(r, 20));
+}
+
+/** A log callback that drops each line. */
+export const quiet = () => {};
+
+/** The failure of an agent step that a resume can retry. */
+export const boom = () => new WorkflowError("boom", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true });
+
+/** A pid that no process has now: a child that already ended. */
+export function deadPid(): number {
+  return spawnSync(process.execPath, ["-e", ""]).pid!;
 }

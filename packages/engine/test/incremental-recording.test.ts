@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,19 +11,11 @@ import { WorkflowManager } from "../src/workflow-manager.js";
 import { hashCheckpointInputs } from "../src/checkpoint-call.js";
 import { isStepFailedPause, runWorkflow } from "../src/workflow.js";
 import { deferred } from "./helpers/async.js";
+import { initGitRepo } from "./helpers/git.js";
 import { tempDirs } from "./helpers/temp.js";
 
 const script = (body: string, name = "incremental-recording") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: 'incremental recording' }\n${body}`;
-
-function initGitRepo(cwd: string): void {
-  execFileSync("git", ["-C", cwd, "init", "-q"]);
-  execFileSync("git", ["-C", cwd, "config", "user.email", "tests@example.com"]);
-  execFileSync("git", ["-C", cwd, "config", "user.name", "Tests"]);
-  writeFileSync(join(cwd, "tracked.txt"), "clean\n");
-  execFileSync("git", ["-C", cwd, "add", "tracked.txt"]);
-  execFileSync("git", ["-C", cwd, "commit", "-qm", "initial"]);
-}
 
 describe("checkpoint input recording and byte compatibility", () => {
   it("captures option getters once and records fingerprints on resolved and waiting checkpoints", async () => {
@@ -142,7 +133,7 @@ describe("managed identity-v1 persistence", () => {
   it("records the folder's git state at the end of a run that changed a tracked file", async () => {
     const dirs = tempDirs();
     try {
-      initGitRepo(dirs.cwd);
+      initGitRepo(dirs.cwd, "tracked.txt", "clean\n");
       const gitManager = new WorkflowManager({
         cwd: dirs.cwd,
         persistenceRoot: dirs.root,
@@ -169,7 +160,7 @@ describe("managed identity-v1 persistence", () => {
     const dirs = tempDirs();
     try {
       // In a git checkout a run that called an agent still records its terminal state.
-      initGitRepo(dirs.cwd);
+      initGitRepo(dirs.cwd, "tracked.txt", "clean\n");
       const failedManager = new WorkflowManager({
         cwd: dirs.cwd,
         persistenceRoot: dirs.root,

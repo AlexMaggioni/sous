@@ -2,22 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { WorkflowErrorCode } from "../src/errors.js";
 import { resumeRows, revisionSeed, unusedSeed } from "../src/resume-rows.js";
 import type { PersistedResumeSeed, PersistedRunState } from "../src/runs/persistence/run-persistence.js";
-import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
+import type { WorkflowCallRecord } from "../src/workflow-result.js";
+import { call, entry, full, fullEntry, H, RUN } from "./helpers/call-rows.js";
 
 // The rows a same-ID resume pairs with: the run's own rows by index, then its seed's rows.
-
-const RUN = "run";
-
-function entry(index: number, hash: string, scope = RUN): JournalEntry {
-  return { index, hash, result: `${hash} done`, kind: "agent", scope };
-}
-
-function call(index: number, hash: string, outcome: WorkflowCallRecord["outcome"], scope = RUN): WorkflowCallRecord {
-  return { index, kind: "agent", hash, inputsHash: `${hash}-in`, outcome, origin: "runner", scope };
-}
 
 /** Each row of a scope as index, hash and outcome, with "own" for the run's own result rows. */
 function shape(rows: ReturnType<typeof resumeRows>, scope: string) {
@@ -31,22 +21,6 @@ function plantedSeed(): { seed: PersistedResumeSeed; runId: string } {
   };
   const state = fixture.runs[1]!.state;
   return { seed: state.resumeSeed!, runId: state.runId };
-}
-
-/** A hash of one repeated hex digit, so the seed checks take it. */
-const H = (digit: string) => digit.repeat(64);
-
-/** A journal row and a call row a seed can hold: with a path and an inputs hash. */
-function full(index: number, digit: string, outcome: WorkflowCallRecord["outcome"], scope = RUN): WorkflowCallRecord {
-  const base = {
-    index, kind: "agent", hash: H(digit), path: `step-${digit}`, inputsHash: H(digit).slice(0, 63) + "0",
-    origin: "runner", scope,
-  } as const;
-  return outcome === "result" ? { ...base, outcome } : { ...base, outcome, error: { form: "workflow-error", message: "stopped", code: WorkflowErrorCode.AGENT_EXECUTION_ERROR } };
-}
-
-function fullEntry(index: number, digit: string, scope = RUN): JournalEntry {
-  return { index, hash: H(digit), result: `${digit} done`, kind: "agent", scope };
 }
 
 describe("resume rows", () => {

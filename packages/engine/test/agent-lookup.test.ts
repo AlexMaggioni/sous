@@ -2,16 +2,12 @@
 // MCP lookup names. The other is an agent file of Claude Code's own that strict YAML rejects.
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { lookupAgents, lookupMcpServers, missingServer, planStep, type LookupSettings } from "../src/agents.js";
-
-function write(file: string, content: string): void {
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, content);
-}
+import { write } from "./helpers/files.js";
 
 /** A project, a global rulesync folder and harness homes of its own, so no real home is read. */
 function lookupPlace(global = true): LookupSettings & { home: string; globalDir: string } {

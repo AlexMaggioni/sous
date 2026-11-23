@@ -1,16 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { checkWorkflow } from "../../src/workflows/check.js";
 import { setup } from "../runs/fixture.js";
+import { write } from "../helpers/files.js";
 
 // `orc check` without orc: the problems and notes it prints for a workflow.
-
-function write(file: string, content: string): void {
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, content);
-}
 
 describe("check", () => {
   it("finds missing workflows, agents and MCP servers, and agents sent to a harness they can't run on", () => {

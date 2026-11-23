@@ -18,11 +18,7 @@ import { lookupAgents, lookupMcpServers } from "../src/agents.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { createSteps, type StepsOptions } from "../src/steps/steps.js";
 import { waitUntil } from "./helpers/async.js";
-
-function write(file: string, content: string): void {
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, content);
-}
+import { write } from "./helpers/files.js";
 
 const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../test/fakes");
 const temp = (name: string) => mkdtempSync(join(tmpdir(), `engine-${name}-`));

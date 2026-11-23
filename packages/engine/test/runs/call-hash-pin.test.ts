@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { CALL_PATH_FORMAT } from "../../src/call-path.js";
 import { CHECKPOINT_INPUTS_FORMAT } from "../../src/checkpoint-call.js";
@@ -11,15 +10,11 @@ import { readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
 import { CALL_INPUTS_FORMAT } from "../../src/workflow.js";
-import { setup } from "./fixture.js";
+import { quiet, setup } from "./fixture.js";
+import { write } from "../helpers/files.js";
 
 // The call hash decides which steps replay when a run resumes. These pins hold the hash of each
 // kind of step, read from the saved journal of a whole run, so a change that moves one shows.
-
-function write(file: string, content: string): void {
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, content);
-}
 
 const AGENTS: Record<string, string> = {
   // A block model on each harness. Claude Code is the default harness.
@@ -50,8 +45,6 @@ function standIn(): { runner: AgentRunner; seen: Seen[] } {
   } as unknown as AgentRunner;
   return { runner, seen };
 }
-
-const quiet = () => {};
 
 /** Each call's hash from the saved journal, with what the call record keeps beside it. */
 function pins(paths: Parameters<typeof readState>[0], runId: string) {

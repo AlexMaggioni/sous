@@ -9,14 +9,13 @@ import { resumeRun, startRun } from "../src/runs/run.js";
 import { logFile, readEventsAfter, readState, type SavedEvent } from "../src/runs/store.js";
 import type { PersistedRunState } from "../src/runs/persistence/run-persistence.js";
 import { fakeRunner, inProcess, plantState, testHome } from "../src/testing.js";
+import { quiet } from "./runs/fixture.js";
 
 // The test kit at @orchestrator/engine/testing.
 
 const ONE_STEP = `export const meta = { name: 'one', description: 'one step' }\nreturn await agent('go', { label: 'go' })`;
 // A run the old code left paused, with its state and its event log.
 const OLD_RUN = join(import.meta.dirname, "fixtures", "old-failed-step-run.json");
-const quiet = () => {};
-
 describe("test kit", () => {
   it("testHome turns the desktop notices off", () => {
     assert.equal(loadConfig(testHome().paths).notify, false);

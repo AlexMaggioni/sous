@@ -1,24 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { WorkflowErrorCode } from "../src/errors.js";
 import { continueRows, newRows, reuseRows, reviseRows } from "../src/run-rows.js";
 import type { PersistedCheckpointInjection, PersistedResumeSeed } from "../src/runs/persistence/run-persistence.js";
 import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
+import { call, entry, full, fullEntry, H, RUN } from "./helpers/call-rows.js";
 
 // A run's rows as the manager saves them: each row it records, and what a save writes.
 
-const RUN = "run";
 const NESTED = `${RUN}-nested1`;
 const SOURCE = "source";
-
-/** A journal row. A null scope gives a row with none, as an old journal saved it. */
-function entry(index: number, hash: string, scope: string | null = RUN): JournalEntry {
-  return { index, hash, result: `${hash} done`, kind: "agent", ...(scope === null ? {} : { scope }) };
-}
-
-function call(index: number, hash: string, outcome: WorkflowCallRecord["outcome"], scope = RUN): WorkflowCallRecord {
-  return { index, kind: "agent", hash, inputsHash: `${hash}-in`, outcome, origin: "runner", scope };
-}
 
 /** A call that replayed the journal row at `from` of `sourceRunId`. */
 function replayed(record: WorkflowCallRecord, sourceRunId: string, from = record.index): WorkflowCallRecord {
@@ -28,22 +18,6 @@ function replayed(record: WorkflowCallRecord, sourceRunId: string, from = record
 /** Each row as index and hash, with the scope when it is not the run's. */
 const rows = (list: ReadonlyArray<JournalEntry | WorkflowCallRecord>) =>
   list.map((row) => (row.scope === RUN ? [row.index, row.hash] : [row.index, row.hash, row.scope]));
-
-/** A hash of one repeated hex digit, so the seed checks take it. */
-const H = (digit: string) => digit.repeat(64);
-
-/** A journal row and a call row a seed can hold: with a path and an inputs hash. */
-function full(index: number, digit: string, outcome: WorkflowCallRecord["outcome"], scope = RUN): WorkflowCallRecord {
-  const base = {
-    index, kind: "agent", hash: H(digit), path: `step-${digit}`, inputsHash: H(digit).slice(0, 63) + "0",
-    origin: "runner", scope,
-  } as const;
-  return outcome === "result" ? { ...base, outcome } : { ...base, outcome, error: { form: "workflow-error", message: "stopped", code: WorkflowErrorCode.AGENT_EXECUTION_ERROR } };
-}
-
-function fullEntry(index: number, digit: string, scope = RUN): JournalEntry {
-  return { index, hash: H(digit), result: `${digit} done`, kind: "agent", scope };
-}
 
 /** The seed rows as source, index and outcome. */
 function seedShape(seed: PersistedResumeSeed | undefined) {

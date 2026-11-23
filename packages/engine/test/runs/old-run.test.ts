@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
@@ -11,7 +10,7 @@ import { tick } from "../../src/runs/service.js";
 import { runWorker } from "../../src/runs/worker.js";
 import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
 import type { PersistedRunState } from "../../src/runs/persistence/run-persistence.js";
-import { heldRunner, layout, plantState, setup } from "./fixture.js";
+import { deadPid, heldRunner, layout, plantState, setup } from "./fixture.js";
 
 // A run of the workflow "two", which runs the steps "first" and "second". Its worker died while
 // "second" ran, and it holds the lock that worker left; its pids are __PID__. The fixture holds
@@ -24,11 +23,6 @@ interface OldRun {
   state: PersistedRunState;
   events: string;
   lock?: { runPath: string };
-}
-
-/** A pid that no process has now: a child that already ended. */
-function deadPid(): number {
-  return spawnSync(process.execPath, ["-e", ""]).pid!;
 }
 
 /** The dead run's state, with `edit` applied. */

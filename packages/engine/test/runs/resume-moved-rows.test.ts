@@ -2,19 +2,15 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { it } from "node:test";
-import { WorkflowError, WorkflowErrorCode } from "../../src/errors.js";
 import { createRun } from "../../src/runs/launch.js";
 import { readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
-import { setup } from "./fixture.js";
+import { boom, quiet, setup } from "./fixture.js";
 
 // A same-ID resume of a parallel run. The replays end in branch order, so a step that opens after
 // them can take another index than it had. A replayed row then lives at its new index, and a
 // later resume must not read it at its old index too.
-
-const boom = () => new WorkflowError("boom", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true });
-const quiet = () => {};
 
 const twoBranches = `export const meta = { name: 'two', description: 'two branches' }
 const [p, q] = await parallel([

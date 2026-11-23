@@ -1,8 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry, WorkflowCallRecord, WorkflowResumeCallDecision } from "../src/workflow-result.js";
@@ -17,6 +13,8 @@ import type { PersistedResumeSeed } from "../src/runs/persistence/run-persistenc
 import { runWorkflow, type WorkflowResume } from "../src/workflow.js";
 import type { RunPlaces } from "../src/places/places.js";
 import { tempPlaces } from "./helpers/places.js";
+import { git, initGitRepo } from "./helpers/git.js";
+import { tempDirs } from "./helpers/temp.js";
 
 const source = (body: string, name = "incremental-engine-resume") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: "engine resume integration" }\n${body}`;
@@ -75,17 +73,6 @@ async function record(
     onAgentJournal: (entry) => journal.push(entry),
   });
   return JSON.parse(JSON.stringify({ runId, calls, journal })) as Recording;
-}
-
-function initGitRepo(): { cwd: string; cleanup: () => void } {
-  const cwd = mkdtempSync(join(tmpdir(), "resume-engine-git-"));
-  execFileSync("git", ["-C", cwd, "init", "-q"]);
-  execFileSync("git", ["-C", cwd, "config", "user.email", "tests@example.com"]);
-  execFileSync("git", ["-C", cwd, "config", "user.name", "Tests"]);
-  writeFileSync(join(cwd, "tracked.txt"), "clean\n");
-  execFileSync("git", ["-C", cwd, "add", "tracked.txt"]);
-  execFileSync("git", ["-C", cwd, "commit", "-qm", "initial"]);
-  return { cwd, cleanup: () => rmSync(cwd, { recursive: true, force: true }) };
 }
 
 function fanout(items: readonly string[], worktree: boolean): string {
@@ -198,7 +185,8 @@ return { values }`), {
 
 describe("PreparedResume allocation-ordered barriers and fan-out", () => {
   it("replays matching worktrees without making degradation a suffix barrier", async () => {
-    const repository = initGitRepo();
+    const dirs = tempDirs("resume-engine-git");
+    initGitRepo(dirs.cwd, "tracked.txt", "clean\n");
     const home = tempPlaces();
     try {
       // Three items keep every case. Each one makes a real git worktree, so more only add time.
@@ -207,7 +195,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       changed[1] = "worktree-1-changed";
       const recording = await record(fanout(original, true), {
         runId: "worktree-source",
-        cwd: repository.cwd,
+        cwd: dirs.cwd,
         concurrency: 1,
         places: home.places("worktree-source"),
       });
@@ -216,12 +204,12 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       const orderedDecisions: number[] = [];
       const result = await runWorkflow(fanout(changed, true), {
         runId: "worktree-success",
-        cwd: repository.cwd,
+        cwd: dirs.cwd,
         concurrency: 2,
         places: home.places("worktree-success"),
         agent: {
           async run(prompt, options) {
-            assert.notEqual(options.cwd, repository.cwd);
+            assert.notEqual(options.cwd, dirs.cwd);
             runnerPrompts.push(prompt);
             return `live:${prompt}`;
           },
@@ -235,13 +223,13 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       assert.equal(result.resumeReport?.live, 1);
       assert.deepEqual(orderedDecisions, [0, 1, 2]);
 
-      execFileSync("git", ["-C", repository.cwd, "branch", "orc/degrade-0-item-0"]);
+      git(dirs.cwd, "branch", "orc/degrade-0-item-0");
       const degraded = [...original];
       degraded[0] = "worktree-0-changed";
       const degradedPrompts: string[] = [];
       const degradedResult = await runWorkflow(fanout(degraded, true), {
         runId: "degrade",
-        cwd: repository.cwd,
+        cwd: dirs.cwd,
         concurrency: 2,
         places: home.places("degrade"),
         agent: { async run(prompt) { degradedPrompts.push(prompt); return `live:${prompt}`; } },
@@ -259,14 +247,14 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
 
       const unsafeRecording = await record(fanout(original, true), {
         runId: "unsafe-worktree-source",
-        cwd: repository.cwd,
+        cwd: dirs.cwd,
         concurrency: 1,
         places: home.places("unsafe-worktree-source"),
       });
       let unsafeRunnerCalls = 0;
       const unsafeResult = await runWorkflow(fanout(original, true), {
         runId: "unsafe-worktree-target",
-        cwd: repository.cwd,
+        cwd: dirs.cwd,
         concurrency: 2,
         places: home.places("unsafe-worktree-target"),
         agent: { async run() { unsafeRunnerCalls += 1; return "live"; } },
@@ -277,7 +265,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       assert.equal(unsafeResult.resumeReport?.replayed, 3);
       assert.equal(unsafeResult.resumeReport?.live, 0);
     } finally {
-      repository.cleanup();
+      dirs.cleanup();
       home.cleanup();
     }
   });

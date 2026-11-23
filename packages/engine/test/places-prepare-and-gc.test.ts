@@ -1,7 +1,6 @@
 // The place a run gets, made from nothing, and the worktrees gc leaves for a project it did not look at.
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,8 +8,7 @@ import { afterEach, describe, it } from "node:test";
 import { gcWorktrees, preparePlace } from "../src/places/places.js";
 import { ensureHome, homePaths } from "../src/runs/home.js";
 import { placesIn } from "./helpers/places.js";
-
-const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+import { git, initGitRepo } from "./helpers/git.js";
 
 const made: string[] = [];
 const temp = (prefix: string) => {
@@ -22,14 +20,7 @@ afterEach(() => {
   for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function gitRepo(): string {
-  const repo = temp("orc-places-gc-repo-");
-  git(repo, "init", "-q", "-b", "main");
-  writeFileSync(join(repo, "file.txt"), "base\n");
-  git(repo, "add", ".");
-  git(repo, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "-m", "init");
-  return repo;
-}
+const gitRepo = () => initGitRepo(temp("orc-places-gc-repo-"));
 
 describe("preparePlace", () => {
   it("makes the scratch folder of a run, and the scratch folder above it, on a home that has neither", () => {
