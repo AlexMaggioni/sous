@@ -51,9 +51,11 @@ import { journalRows, type ResumeRow, type ResumeRows } from "./resume-rows.js";
 import {
   createDecisionLog,
   createStepLedger,
+  type LedgerCall,
   type Pairing,
   type SourceRow,
   type SourceScope,
+  type StepSlot,
 } from "./step-ledger.js";
 import {
   canonicalStrictJson,
@@ -897,6 +899,44 @@ export async function runWorkflow<T = unknown>(
   };
   signal.addEventListener("abort", interruptUnsettledCalls, { once: true });
 
+  // The start every agent, code and checkpoint call shares. `run` is the kind. Its `open`
+  // takes the call's index from the ledger, counts the call as resume activity until the
+  // call's promise settles, and reports the index to the manager. A call that fails before it
+  // opens counts nothing.
+  const startCall = (run: (open: (call: LedgerCall) => StepSlot) => Promise<unknown>): Promise<unknown> => {
+    let opened = false;
+    let promise: Promise<unknown>;
+    try {
+      promise = run((call) => {
+        const slot = ledger.open(call);
+        opened = true;
+        beginResumeActivity();
+        reportRootCallAllocated(slot.index);
+        return slot;
+      });
+    } catch (error) {
+      promise = Promise.reject(error);
+    }
+    return opened ? observeResumeActivity(promise) : promise;
+  };
+  // The cap counts agent, code and checkpoint calls, across nested runs.
+  const checkAgentLimit = () => {
+    if (shared.agentCount >= maxAgents) {
+      throw new WorkflowError(
+        `Agent limit exceeded (${maxAgents}). Use maxAgents option to increase the limit.`,
+        WorkflowErrorCode.AGENT_LIMIT_EXCEEDED,
+        { recoverable: false },
+      );
+    }
+  };
+  // A call opened while the run is halting settles as interrupted at once.
+  const interruptIfHalting = (slot: StepSlot) => {
+    if (signal.aborted || pauseRequested()) {
+      slot.interrupt();
+      throwIfAborted();
+    }
+  };
+
   const strictSnapshot = (value: unknown, description: string, agentLabel?: string): unknown => {
     const captured = cloneFrozenStrictJson(value);
     if (!captured.ok) {
@@ -915,21 +955,14 @@ export async function runWorkflow<T = unknown>(
   const agentImplementation = (
     prompt: string,
     agentOptions: AgentOptions,
-    onAllocated: (callIndex: number) => void,
+    open: (call: LedgerCall) => StepSlot,
     codeSpec?: ExecSpec,
   ): Promise<unknown> => {
     validateAgentOptions(agentOptions, realmObjectPrototype);
     const resumeDeclared = validateResumeDeclaration(agentOptions, realmObjectPrototype);
     throwIfAborted();
 
-    // Check agent limit
-    if (shared.agentCount >= maxAgents) {
-      throw new WorkflowError(
-        `Agent limit exceeded (${maxAgents}). Use maxAgents option to increase the limit.`,
-        WorkflowErrorCode.AGENT_LIMIT_EXCEEDED,
-        { recoverable: false },
-      );
-    }
+    checkAgentLimit();
 
     const assignedPhase = agentOptions.phase ?? state.currentPhase;
     const agentOrdinal = shared.agentOccurrenceCount ?? 0;
@@ -1016,7 +1049,7 @@ export async function runWorkflow<T = unknown>(
 
     // Deterministic resume key: assigned at lexical call time, before the limiter,
     // so parallel()/pipeline() fan-out is reproducible for a fixed script.
-    const stepSlot = ledger.open({
+    const stepSlot = open({
       kind: "agent",
       hash: callHash,
       ...(callPath !== undefined ? { path: callPath } : {}),
@@ -1031,8 +1064,6 @@ export async function runWorkflow<T = unknown>(
       },
     });
     const callIndex = stepSlot.index;
-    onAllocated(callIndex);
-    reportRootCallAllocated(callIndex);
 
     const emitAgentEnd = (
       event: Omit<NonNullable<WorkflowRunOptions["onAgentEnd"]> extends (event: infer E) => void ? E : never, "callIndex" | "scope">,
@@ -1112,10 +1143,7 @@ export async function runWorkflow<T = unknown>(
         });
       }
     }, legacyResumeSafety === "declared-read-only");
-    if (signal.aborted || pauseRequested()) {
-      stepSlot.interrupt();
-      throwIfAborted();
-    }
+    interruptIfHalting(stepSlot);
 
     // options.cwd, when given, must be a string.
     const checkCwdOption = () => {
@@ -1739,19 +1767,8 @@ export async function runWorkflow<T = unknown>(
     }
   };
 
-  const step = (prompt: string, agentOptions: AgentOptions, codeSpec?: ExecSpec): Promise<unknown> => {
-    let allocated = false;
-    let promise: Promise<unknown>;
-    try {
-      promise = agentImplementation(prompt, agentOptions, () => {
-        allocated = true;
-        beginResumeActivity();
-      }, codeSpec);
-    } catch (error) {
-      promise = Promise.reject(error);
-    }
-    return allocated ? observeResumeActivity(promise) : promise;
-  };
+  const step = (prompt: string, agentOptions: AgentOptions, codeSpec?: ExecSpec): Promise<unknown> =>
+    startCall((open) => agentImplementation(prompt, agentOptions, open, codeSpec));
   const agent = (prompt: string, agentOptions: AgentOptions = {}): Promise<unknown> => step(prompt, agentOptions);
   // A code step: the same fields as before go into its identity.
   const code = (spec: ExecSpec, codeOptions: CodeStepOptions): Promise<unknown> =>
@@ -1935,18 +1952,12 @@ export async function runWorkflow<T = unknown>(
   const checkpointImplementation = async (
     promptText: string,
     checkpointOptions: CheckpointOptions,
-    onAllocated: (callIndex: number) => void,
+    open: (call: LedgerCall) => StepSlot,
     purpose: CheckpointCallContext["purpose"],
   ) => {
     throwIfAborted();
     if (typeof promptText !== "string") throw new TypeError("checkpoint(promptText, options?) needs a prompt string");
-    if (shared.agentCount >= maxAgents) {
-      throw new WorkflowError(
-        `Agent limit exceeded (${maxAgents}). Use maxAgents option to increase the limit.`,
-        WorkflowErrorCode.AGENT_LIMIT_EXCEEDED,
-        { recoverable: false },
-      );
-    }
+    checkAgentLimit();
     validateCheckpointOptionKeys(checkpointOptions, realmObjectPrototype);
     const checkpointTimeoutMs = checkpointOptions.timeoutMs;
     const checkpointKind = checkpointOptions.kind;
@@ -1960,15 +1971,13 @@ export async function runWorkflow<T = unknown>(
     const callHash = hashCheckpoint(promptText, capturedCheckpointOptions);
     const callInputsHash = hashCheckpointInputs(capturedCheckpointOptions);
     const callPath = captureCallPath(vmFilename, preludeLines);
-    const slot = ledger.open({
+    const slot = open({
       kind: "checkpoint",
       hash: callHash,
       ...(callPath !== undefined ? { path: callPath } : {}),
       ...(callInputsHash !== undefined ? { inputsHash: callInputsHash } : {}),
     });
     const callIndex = slot.index;
-    onAllocated(callIndex);
-    reportRootCallAllocated(callIndex);
     // A halt settles the question as interrupted.
     slot.arm(() => {
       const error = pauseRequested()
@@ -1989,10 +1998,7 @@ export async function runWorkflow<T = unknown>(
         aborted: true,
       });
     }, false);
-    if (signal.aborted || pauseRequested()) {
-      slot.interrupt();
-      throwIfAborted();
-    }
+    interruptIfHalting(slot);
     shared.agentCount++;
 
     const journalEntry = (result: unknown): JournalEntry => deepFreeze({
@@ -2139,19 +2145,8 @@ export async function runWorkflow<T = unknown>(
     }
   };
 
-  const askCheckpoint = (promptText: string, checkpointOptions: CheckpointOptions, purpose: CheckpointCallContext["purpose"]): Promise<unknown> => {
-    let allocated = false;
-    let promise: Promise<unknown>;
-    try {
-      promise = checkpointImplementation(promptText, checkpointOptions, () => {
-        allocated = true;
-        beginResumeActivity();
-      }, purpose);
-    } catch (error) {
-      promise = Promise.reject(error);
-    }
-    return allocated ? observeResumeActivity(promise) : promise;
-  };
+  const askCheckpoint = (promptText: string, checkpointOptions: CheckpointOptions, purpose: CheckpointCallContext["purpose"]): Promise<unknown> =>
+    startCall((open) => checkpointImplementation(promptText, checkpointOptions, open, purpose));
   // The script's checkpoint() takes two arguments, so it never marks a question a breakpoint.
   const checkpoint = (promptText: string, checkpointOptions: CheckpointOptions = {}): Promise<unknown> =>
     askCheckpoint(promptText, checkpointOptions, undefined);

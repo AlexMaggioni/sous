@@ -395,6 +395,36 @@ return "done"`),
     assert.deepEqual(nestedActivities, [1, 0]);
   });
 
+  it("counts a code step as activity like an agent, and a call refused before it takes an index not at all", async () => {
+    // The activity counts, with the script's log line between them.
+    const seen: Array<number | string> = [];
+    const allocations: number[] = [];
+    const cwd = mkdtempSync(join(tmpdir(), "activity-code-"));
+    const result = await runWorkflow<string[]>(
+      // The code step is still running when the other two calls are refused. A refused call
+      // that counted as activity would lower the count before the log line.
+      script(`
+const running = js("return 1")
+const refused = []
+try { await agent("bad", { notAnOption: true }) } catch { refused.push("agent") }
+try { await checkpoint(42) } catch { refused.push("checkpoint") }
+log("refused")
+await running
+return refused`),
+      {
+        agent: { async run() { return "unused"; } },
+        cwd,
+        persistLogs: false,
+        onResumeActivity: (active) => seen.push(active),
+        onLog: (message) => seen.push(message),
+        onResumeCallAllocated: (allocated) => allocations.push(allocated),
+      },
+    );
+    assert.deepEqual([...result.result], ["agent", "checkpoint"]);
+    assert.deepEqual(seen, [1, 2, "refused", 1, 0]);
+    assert.deepEqual(allocations, [1]);
+  });
+
   it("decrements a synchronously throwing runner unit", async () => {
     const syncActivities: number[] = [];
     // The failed step pauses the run, even though the script catches the error.
