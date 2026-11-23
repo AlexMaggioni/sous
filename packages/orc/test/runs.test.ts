@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
@@ -13,24 +13,26 @@ import {
   loadRecord,
   logFile,
   rememberProject,
+  rerunRun,
+  resumeRun,
   runQuestions,
   saveSchedules,
+  startRun,
   stopStep,
   type HomePaths,
 } from "@orchestrator/engine";
 import {
   createRun,
   fakeRunner,
+  inProcess,
   knownProjects,
   plantState,
   readState,
   requestStepStop,
-  runWorker,
   saveRecord,
   stopRequestFile,
   testHome,
   tick,
-  updateRecord,
   writeAnswer,
   WorkflowError,
   WorkflowErrorCode,
@@ -78,8 +80,9 @@ const out = await agent('Do ' + args.task, { label: 'worker', ask: true })
 return out`,
     });
     const { runner, calls } = fakeRunner((call) => (call.label === "worker" ? "QUESTION: Postgres or SQLite?" : `built with ${/answered: (\w+)/.exec(call.prompt)?.[1]}`));
-    const record = createRun(paths, { workflow: "asking", projectDir, inputs: { task: "the store" } });
-    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "asking", projectDir, inputs: { task: "the store" } });
+    const running = workers.ended(record.runId);
     const asked = await answerWhenAsked(paths, record.runId, () => "SQLite");
     const result = await running;
     assert.equal(result?.status, "completed");
@@ -96,8 +99,9 @@ const draft = await breakpoint('Check the plan', (note) => agent('Plan it' + (no
 return draft`,
     });
     const { runner, calls } = fakeRunner((call) => (call.prompt.includes("Change: shorter") ? "short plan" : "long plan"));
-    const record = createRun(paths, { workflow: "checked", projectDir, inputs: {} });
-    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "checked", projectDir, inputs: {} });
+    const running = workers.ended(record.runId);
     const replies = [{ decision: "send back", note: "shorter" }, "approve"];
     const asked = await answerWhenAsked(paths, record.runId, () => replies.shift(), 2);
     const result = await running;
@@ -114,8 +118,9 @@ return draft`,
 return await ask('Breakpoint: not one')`,
     });
     const { runner } = fakeRunner(() => "unused");
-    const record = createRun(paths, { workflow: "lookalike", projectDir, inputs: {} });
-    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "lookalike", projectDir, inputs: {} });
+    const running = workers.ended(record.runId);
     for (let i = 0; i < 750 && !runQuestions(paths, record.runId).length; i++) await new Promise((r) => setTimeout(r, 20));
     const id = runQuestions(paths, record.runId)[0]!.id;
     const inbox = await orc(paths, ["inbox", "--json"]);
@@ -148,8 +153,9 @@ return { first, second }`,
       if (call.label === "second" && broken) throw new WorkflowError("the tests fail", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true });
       return `${call.label} done`;
     });
-    const record = createRun(paths, { workflow: "flaky", projectDir, inputs: {} });
-    const paused = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "flaky", projectDir, inputs: {} });
+    const paused = await workers.ended(record.runId);
     assert.equal(paused?.status, "paused");
     const state = readState(paths, record.runId);
     assert.equal(state?.pauseReason, "step_failed");
@@ -157,7 +163,8 @@ return { first, second }`,
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"]);
 
     broken = false;
-    const resumed = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: quiet });
+    resumeRun(paths, workers.launch, record.runId);
+    const resumed = await workers.ended(record.runId);
     assert.equal(resumed?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(resumed?.result)), { first: "first done", second: "second done" });
     assert.deepEqual(calls.slice(3).map((c) => c.label), ["second"], "first is not run again");
@@ -179,18 +186,22 @@ return { first, second }`,
     });
     // The stand-in for the programs knows whether its login is back.
     Object.assign(runner, { auth: { canResume: () => loggedIn } });
-    const record = createRun(paths, { workflow: "login", projectDir, inputs: {} });
-    await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "login", projectDir, inputs: {} });
+    await workers.ended(record.runId);
     assert.equal(readState(paths, record.runId)?.pauseReason, "auth_required");
     assert.deepEqual(calls.map((c) => c.label), ["first", "second"]);
 
     const lines: string[] = [];
-    await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: (line) => lines.push(line) });
+    const watched = inProcess({ inner: runner, log: (line) => lines.push(line) });
+    resumeRun(paths, watched.launch, record.runId);
+    await watched.ended(record.runId);
     assert.equal(calls.length, 2, "no step runs while the login is still gone");
     assert.match(lines.at(-1)!, /paused +login \(auth_required\): .*claude/, "the log says why the resume did not start");
 
     loggedIn = true;
-    const done = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: quiet });
+    resumeRun(paths, workers.launch, record.runId);
+    const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), { first: "first done", second: "second done" });
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"], "first is not run again");
@@ -213,31 +224,24 @@ return { first, second }`,
       if (call.label === "build" && broken) throw new WorkflowError("the tests fail", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true });
       return `${call.prompt} done`;
     });
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
-    assert.equal((await runWorker(record.runId, "start", { paths, inner: runner, log: quiet }))?.status, "paused");
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    assert.equal((await workers.ended(record.runId))?.status, "paused");
     assert.deepEqual(calls.filter((c) => c.label === "build").map((c) => c.prompt), ["v1", "v1"], "the edit did not reach the run");
 
-    const before = process.env.ORC_HOME;
-    process.env.ORC_HOME = paths.home;
-    const errors: string[] = [];
-    const write = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string) => (errors.push(String(chunk)), true)) as typeof process.stderr.write;
-    try {
-      assert.equal(await main(["resume", record.runId]), 1);
-    } finally {
-      process.stderr.write = write;
-      if (before === undefined) delete process.env.ORC_HOME;
-      else process.env.ORC_HOME = before;
-    }
-    assert.match(errors.join(""), /child changed since .*--latest takes the new version.*--same goes on with the version it started with/);
+    const asks = await orc(paths, ["resume", record.runId], { launch: workers.launch });
+    assert.equal(asks.code, 1);
+    assert.match(asks.out, /child changed since .*--latest takes the new version.*--same goes on with the version it started with/);
+    assert.equal(workers.launched.length, 1, "a resume that asks starts no worker");
 
-    await runWorker(record.runId, "resume", { paths, inner: runner, log: quiet });
+    assert.equal((await orc(paths, ["resume", record.runId, "--same"], { launch: workers.launch })).code, 0);
+    await workers.ended(record.runId);
     assert.equal(readState(paths, record.runId)?.status, "paused");
-    assert.equal(calls.at(-1)?.prompt, "v1", "a plain resume keeps the run's version");
+    assert.equal(calls.at(-1)?.prompt, "v1", "--same keeps the run's version");
 
-    updateRecord(paths, record.runId, { resumeLatest: true });
     broken = false;
-    const done = await runWorker(record.runId, "resume", { paths, inner: runner, log: quiet });
+    assert.equal((await orc(paths, ["resume", record.runId, "--latest"], { launch: workers.launch })).code, 0);
+    const done = await workers.ended(record.runId);
     assert.equal(done?.result, "v2 done");
     assert.equal(loadRecord(paths, record.runId)?.resumeLatest, undefined);
     assert.equal(calls.filter((c) => c.label === "look").length, 1, "the finished step is not run again");
@@ -257,10 +261,10 @@ return { first, built }`,
         ? new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted"))))
         : `${call.label} done`,
     );
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const workers = inProcess({ inner: runner, handleSignals: true });
+    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
     const file = logFile(paths, record.runId);
-    const log = (line: string) => appendFileSync(file, `${line}\n`);
-    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log, handleSignals: true });
+    const running = workers.ended(record.runId);
     for (let i = 0; i < 500 && !calls.some((c) => c.label === "build"); i++) await new Promise((r) => setTimeout(r, 10));
 
     const before = process.env.ORC_HOME;
@@ -286,7 +290,8 @@ return { first, built }`,
     assert.equal(existsSync(stopRequestFile(paths, record.runId)), false, "the worker took the request");
 
     hang = false;
-    const done = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: quiet });
+    resumeRun(paths, workers.launch, record.runId);
+    const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), { first: "first done", built: "build done" });
     assert.deepEqual(calls.map((c) => c.label), ["first", "build", "build"], "first is not run again");
@@ -299,9 +304,10 @@ return { first, built }`,
     const { runner, calls } = fakeRunner((call) =>
       new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted")))),
     );
-    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    const workers = inProcess({ inner: runner, handleSignals: true });
+    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
     const file = logFile(paths, record.runId);
-    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: (line: string) => appendFileSync(file, `${line}\n`), handleSignals: true });
+    const running = workers.ended(record.runId);
     for (let i = 0; i < 500 && !calls.some((c) => c.label === "build"); i++) await new Promise((r) => setTimeout(r, 10));
 
     // The worker writes the record while it runs, for a nested run or a step's worktree. Here it
@@ -327,10 +333,14 @@ return { first, built }`,
     const { runner, calls } = fakeRunner((call) =>
       new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted")))),
     );
+    // The request is left before the worker starts, so the test makes the record and starts the
+    // worker itself, as startRun does.
     const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
     requestStepStop(paths, record.runId, "build");
     const file = logFile(paths, record.runId);
-    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: (line: string) => appendFileSync(file, `${line}\n`), handleSignals: true });
+    const workers = inProcess({ inner: runner, handleSignals: true });
+    workers.launch(paths, record.runId, "start");
+    const running = workers.ended(record.runId);
     for (let i = 0; i < 500 && !calls.some((c) => c.label === "build"); i++) await new Promise((r) => setTimeout(r, 10));
 
     process.kill(process.pid, "SIGUSR2");
@@ -353,16 +363,18 @@ return { first, second }`,
 
     let hang = true;
     const { runner, calls } = fakeRunner((call) => (call.label === "second" && hang ? new Promise(() => {}) : `${call.label} done`));
-    const record = createRun(paths, { workflow: "slow", projectDir, inputs: {} });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "slow", projectDir, inputs: {} });
     assert.equal(record.timeout, "200ms");
-    await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    await workers.ended(record.runId);
     const state = readState(paths, record.runId);
     assert.equal(state?.status, "paused");
     assert.equal(state?.pauseReason, "time_limit");
     assert.match(String(state?.reason), /step "second" was stopped: the workflow's time limit of 200ms was reached/);
 
     hang = false;
-    const done = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: quiet });
+    resumeRun(paths, workers.launch, record.runId);
+    const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"]);
   });
@@ -397,8 +409,9 @@ return await parallel([
           signal?.addEventListener("abort", onAbort);
         }),
     );
-    const record = createRun(paths, { workflow: "queue", projectDir, inputs: {} });
-    const done = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "queue", projectDir, inputs: {} });
+    const done = await workers.ended(record.runId);
     assert.deepEqual(stopped, [], "no step was stopped by its time limit");
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["a done", "b done"]);
@@ -411,8 +424,9 @@ return await parallel([
 return await agent('review', { label: 'reviewer' })`,
     });
     const { runner, calls } = fakeRunner(() => "ok");
-    const record = createRun(paths, { workflow: "changes", projectDir, inputs: {}, overrides: { reviewer: { model: "claude/opus" } } });
-    await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "changes", projectDir, inputs: {}, overrides: { reviewer: { model: "claude/opus" } } });
+    await workers.ended(record.runId);
     assert.equal(calls[0]!.options.model, "claude/opus");
     // Each step keeps its own start and end time.
     const step = readState(paths, record.runId)!.agents[0]!;
@@ -425,8 +439,9 @@ return await agent('review', { label: 'reviewer' })`,
 return await choose('Pick one', { label: 'picker', steps: { a: () => 'A', b: () => 'B' } })`,
     });
     const { runner, calls } = fakeRunner(() => ({ choice: "b", reason: "b fits" }));
-    const record = createRun(paths, { workflow: "picking", projectDir, inputs: {}, overrides: { picker: { model: "claude/opus" } } });
-    const done = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "picking", projectDir, inputs: {}, overrides: { picker: { model: "claude/opus" } } });
+    const done = await workers.ended(record.runId);
     assert.equal(calls[0]!.options.model, "claude/opus");
     assert.equal((done?.result as { result?: unknown } | undefined)?.result, "B");
   });
@@ -448,8 +463,9 @@ return await agent('second', { label: 'second' })`,
       }
       return "ok";
     });
-    const record = createRun(paths, { workflow: "slow", projectDir, inputs: {} });
-    const running = runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "slow", projectDir, inputs: {} });
+    const running = workers.ended(record.runId);
     await started;
     const before = process.env.ORC_HOME;
     process.env.ORC_HOME = paths.home;
@@ -476,8 +492,9 @@ const step = await js('return { project: process.env.ORC_PROJECT, cwd: process.c
 return step.result`,
     });
     const { runner } = fakeRunner(() => "ok");
-    const record = createRun(paths, { workflow: "where", projectDir, inputs: {} });
-    const result = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "where", projectDir, inputs: {} });
+    const result = await workers.ended(record.runId);
     const found = result!.result as { project: string; cwd: string };
     assert.equal(found.project, projectDir);
     assert.notEqual(realpathSync(found.cwd), realpathSync(projectDir));
@@ -495,8 +512,9 @@ try { await workflow('child', { rounds: 1 }) } catch (error) { missing = error.m
 return { given, missing }`,
     });
     const { runner } = fakeRunner(() => "ok");
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
-    const result = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const result = await workers.ended(record.runId);
     const out = result!.result as { given: Record<string, unknown>; missing: string };
     assert.deepEqual(out.given, { task: "fix it", rounds: 2, test: "npm test" });
     assert.match(out.missing, /workflow\("child"\): missing input --task/);
@@ -511,8 +529,9 @@ await agent('look', { label: 'triage' })
 return await parallel(['A', 'B'].map((id) => () => workflow('child', { task: id }, { label: 'ticket ' + id })))`,
     });
     const { runner } = fakeRunner(() => "ok");
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
-    await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    await workers.ended(record.runId);
     const before = process.env.ORC_HOME;
     process.env.ORC_HOME = paths.home;
     const printed: string[] = [];
@@ -545,9 +564,10 @@ await workflow('child', { task: 'A' }, { label: 'ticket A' })
 return await workflow('child', { task: 'B' })`,
     });
     const { runner } = fakeRunner(() => "ok");
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
     const lines: string[] = [];
-    await runWorker(record.runId, "start", { paths, inner: runner, log: (line) => lines.push(line.slice(9)) });
+    const workers = inProcess({ inner: runner, log: (line) => lines.push(line.slice(9)) });
+    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    await workers.ended(record.runId);
     const kept = lines.filter((l) => /^(start|done|phase|log) /.test(l) && !l.includes("Logs persisted"));
     assert.deepEqual(kept.map((l) => l.replace(/, \d+ tokens$/, "")), [
       "start      triage",
@@ -584,8 +604,9 @@ await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness 
       (call.options.onModelResolved as ((id: string) => void) | undefined)?.(String(call.options.model).split("/").pop()!);
       return `${call.label} done`;
     });
-    const record = createRun(paths, { workflow: "both", projectDir, inputs: {} });
-    const result = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "both", projectDir, inputs: {} });
+    const result = await workers.ended(record.runId);
     assert.equal(result?.status, "completed");
     const [claude, codex] = calls;
     assert.deepEqual([claude!.options.model, claude!.options.toolNames], ["claude/haiku", ["Read"]]);
@@ -598,8 +619,8 @@ await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness 
     assert.deepEqual(state?.agents.map((step) => [step.label, step.model]), [["on claude", "claude/haiku"], ["on codex", "codex/gpt-test"]]);
 
     const before = calls.length;
-    const wrong = createRun(paths, { workflow: "wrong", projectDir, inputs: { harness: "claude" } });
-    const stopped = await runWorker(wrong.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const wrong = startRun(paths, workers.launch, { workflow: "wrong", projectDir, inputs: { harness: "claude" } });
+    const stopped = await workers.ended(wrong.runId);
     assert.notEqual(stopped?.status, "completed");
     const wrongState = readState(paths, wrong.runId);
     assert.match(String(wrongState?.reason), /step "fixer": agent "fixer" comes from .*fixer\.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code\. Move it to rulesync/);
@@ -625,11 +646,15 @@ describe("places and reruns", () => {
       if (call.label === "writer") writeFileSync(join(String(call.options.cwd), "new.txt"), "hello\n");
       return "done";
     });
+    // Both runs get their worktree before either worker starts. The workers run one after the other.
     const reader = createRun(paths, { workflow: "look", projectDir, inputs: {} });
     const writer = createRun(paths, { workflow: "write", projectDir, inputs: {} });
     assert.ok(existsSync(reader.worktree!) && existsSync(writer.worktree!));
-    await runWorker(reader.runId, "start", { paths, inner: runner, log: quiet });
-    await runWorker(writer.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: runner });
+    workers.launch(paths, reader.runId, "start");
+    await workers.ended(reader.runId);
+    workers.launch(paths, writer.runId, "start");
+    await workers.ended(writer.runId);
     assert.equal(existsSync(reader.worktree!), false, "nothing changed, so the worktree is gone");
     assert.equal(git(projectDir, "branch", "--list", reader.branch!), "", "and its branch");
     assert.equal(existsSync(join(writer.worktree!, "new.txt")), true, "the writer's work stays for review");
@@ -682,15 +707,16 @@ const build = await agent('build ' + plan, { label: 'builder' })
 return build`,
     });
     const { runner, calls } = fakeRunner((call) => (call.label === "planner" ? "the plan" : `built: ${call.prompt}`));
-    const first = createRun(paths, { workflow: "two", projectDir, inputs: {} });
-    await runWorker(first.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const first = startRun(paths, workers.launch, { workflow: "two", projectDir, inputs: {} });
+    await workers.ended(first.runId);
     writeFileSync(join(projectDir, ".orchestrator", "workflows", "two.js"), `export const meta = { name: 'two', description: 'two steps' }
 const plan = await agent('plan it', { label: 'planner' })
 const build = await agent('build carefully ' + plan, { label: 'builder' })
 return build`);
-    const again = createRun(paths, { workflow: "two", projectDir, inputs: {}, reuseFrom: first, origin: "rerun", rerunOf: first.runId });
+    const again = rerunRun(paths, workers.launch, first.runId, { place: first.place, reuse: true });
     assert.equal(again.cwd, first.cwd);
-    const result = await runWorker(again.runId, "start", { paths, inner: runner, log: quiet });
+    const result = await workers.ended(again.runId);
     assert.equal(result?.result, "built: build carefully the plan");
     assert.deepEqual(calls.map((c) => c.label), ["planner", "builder", "builder"], "the planner ran once");
   });
@@ -704,8 +730,9 @@ return build`);
     assert.throws(() => createRun(paths, { workflow: "private", projectDir, inputs: {}, startedByRun: "r1" }), /started by people only/);
     assert.ok(createRun(paths, { workflow: "private", projectDir, inputs: {} }), "a person can");
     const { runner, calls } = fakeRunner(() => ({ choice: "open", reason: "it is open" }));
-    const record = createRun(paths, { workflow: "picker", projectDir, inputs: {} });
-    const result = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "picker", projectDir, inputs: {} });
+    const result = await workers.ended(record.runId);
     assert.match(calls[0]!.prompt, /- open: anyone/);
     assert.doesNotMatch(calls[0]!.prompt, /private/);
     assert.equal((result?.result as { result: unknown }).result, 2);
@@ -766,10 +793,10 @@ return await parallel(['A', 'B'].map((id) => () => workflow('ticket', { id }, { 
     });
     let hang = true;
     const { runner, calls } = fakeRunner((call) => (call.prompt === "check A" && hang ? hangUntilAborted(call) : `${call.label} done`));
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const workers = inProcess({ inner: runner, handleSignals: true });
+    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
     const file = logFile(paths, record.runId);
-    const log = (line: string) => appendFileSync(file, `${line}\n`);
-    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log, handleSignals: true });
+    const running = workers.ended(record.runId);
     await waitFor(() => calls.some((c) => c.prompt === "check A") && calls.some((c) => c.prompt === "check B"));
     await waitFor(() => readFileSync(file, "utf8").includes("done       ticket B / check B: checker"));
 
@@ -795,7 +822,8 @@ return await parallel(['A', 'B'].map((id) => () => workflow('ticket', { id }, { 
     assert.equal(state?.pauseReason, "step_stopped");
 
     hang = false;
-    const done = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log });
+    resumeRun(paths, workers.launch, record.runId);
+    const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), [
       { built: "builder done", checked: "checker done" },
@@ -855,11 +883,10 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
       commit(cwd, "commit", "-q", "-m", call.prompt);
       return "built";
     });
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
-    const runId = record.runId;
+    const workers = inProcess({ inner: runner, handleSignals: true });
+    const { runId } = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
     const file = logFile(paths, runId);
-    const log = (line: string) => appendFileSync(file, `${line}\n`);
-    const running = runWorker(runId, "start", { paths, inner: runner, pollMs: 20, log, handleSignals: true });
+    const running = workers.ended(runId);
     await waitFor(() => calls.some((c) => c.prompt === "build A") && readFileSync(file, "utf8").includes("done       ticket B: builder"));
 
     // The code at 7e0547ab wrote nested entries with no parent, and no step worktrees.
@@ -907,7 +934,8 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
 
     toOldShape();
     hang = false;
-    const done = await runWorker(runId, "resume", { paths, inner: runner, pollMs: 20, log });
+    resumeRun(paths, workers.launch, runId);
+    const done = await workers.ended(runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(calls.map((c) => c.prompt).sort(), ["build A", "build A", "build B", "look"]);
     assert.ok(trees.every((tree) => existsSync(join(tree.dir, `build ${tree === trees[0] ? "A" : "B"}.txt`))), "each ticket worked in its own worktree");
