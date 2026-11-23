@@ -101,8 +101,6 @@ async function answerWhenAsked(paths: HomePaths, runId: string, reply: (prompt: 
 }
 
 const quiet = () => {};
-/** These tests start no worker process, so orc's cli file is never run. */
-const NO_CLI = "/nonexistent/orc/cli.js";
 
 /** Run orc on this home and keep what it prints, to stdout and stderr. */
 async function orc(paths: HomePaths, argv: string[]): Promise<{ code: number; out: string }> {
@@ -982,11 +980,11 @@ describe("service", () => {
     const { paths, projectDir } = setup({ nightly: `export const meta = { name: 'nightly', description: 'n' }\nreturn 1` });
     saveSchedules(paths, [{ name: "n", workflow: join(projectDir, ".orchestrator", "workflows", "nightly.js"), projectDir, cron: "0 3 * * *", inputs: {}, enabled: true, createdAt: "" }]);
     const started: string[] = [];
-    const spawn = (runId: string) => started.push(runId);
-    tick(paths, NO_CLI, { now: new Date(2026, 10, 21, 2, 59), spawn, log: quiet });
+    const launch = (_paths: unknown, runId: string) => started.push(runId);
+    tick(paths, launch, { now: new Date(2026, 10, 21, 2, 59), log: quiet });
     assert.equal(started.length, 0);
-    tick(paths, NO_CLI, { now: new Date(2026, 10, 21, 3, 0, 5), spawn, log: quiet });
-    tick(paths, NO_CLI, { now: new Date(2026, 10, 21, 3, 0, 40), spawn, log: quiet });
+    tick(paths, launch, { now: new Date(2026, 10, 21, 3, 0, 5), log: quiet });
+    tick(paths, launch, { now: new Date(2026, 10, 21, 3, 0, 40), log: quiet });
     assert.equal(started.length, 1, "once in that minute");
     const record = loadRecord(paths, started[0]!);
     assert.equal(record?.origin, "schedule");
@@ -995,7 +993,7 @@ describe("service", () => {
     // The run never started, so it counts as unfinished only once the engine knows it. Mark it paused.
     const lines: string[] = [];
     plantState(paths, { runId: started[0]!, status: "paused", pauseReason: "requested", startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), agents: [], logs: [], phases: [] });
-    tick(paths, NO_CLI, { now: new Date(2026, 10, 22, 3, 0), spawn, log: (line) => lines.push(line) });
+    tick(paths, launch, { now: new Date(2026, 10, 22, 3, 0), log: (line) => lines.push(line) });
     assert.equal(started.length, 1);
     assert.match(lines.join("\n"), /skipped, run .* has not finished/);
   });
@@ -1005,16 +1003,16 @@ describe("service", () => {
     const { paths, projectDir } = setup({ nightly, hand: `export const meta = { name: 'hand', description: 'h' }\nreturn 1` });
     const file = join(projectDir, ".orchestrator", "workflows", "nightly.js");
     const started: string[] = [];
-    const spawn = (runId: string) => started.push(runId);
-    tick(paths, NO_CLI, { now: new Date(2026, 10, 21, 3, 0), spawn, log: quiet });
+    const launch = (_paths: unknown, runId: string) => started.push(runId);
+    tick(paths, launch, { now: new Date(2026, 10, 21, 3, 0), log: quiet });
     assert.equal(started.length, 0, "the service does not know the project yet");
 
     createRun(paths, { workflow: "hand", projectDir, inputs: {} });
     assert.deepEqual(knownProjects(paths), [projectDir]);
     assert.deepEqual(fileSchedules(paths).map((schedule) => [schedule.name, schedule.cron]), [[file, "0 3 * * *"]]);
-    tick(paths, NO_CLI, { now: new Date(2026, 10, 22, 2, 59), spawn, log: quiet });
-    tick(paths, NO_CLI, { now: new Date(2026, 10, 22, 3, 0, 5), spawn, log: quiet });
-    tick(paths, NO_CLI, { now: new Date(2026, 10, 22, 3, 0, 40), spawn, log: quiet });
+    tick(paths, launch, { now: new Date(2026, 10, 22, 2, 59), log: quiet });
+    tick(paths, launch, { now: new Date(2026, 10, 22, 3, 0, 5), log: quiet });
+    tick(paths, launch, { now: new Date(2026, 10, 22, 3, 0, 40), log: quiet });
     assert.equal(started.length, 1, "once in that minute");
     const record = loadRecord(paths, started[0]!);
     assert.equal(record?.origin, "schedule");
@@ -1036,7 +1034,7 @@ describe("service", () => {
     mkdirSync(paths.workflows, { recursive: true });
     writeFileSync(join(paths.workflows, "digest.js"), `export const meta = { name: 'digest', description: 'd', place: 'worktree', schedule: '@daily' }\nreturn 1`);
     const started: string[] = [];
-    tick(paths, NO_CLI, { now: new Date(2026, 10, 22, 0, 0), spawn: (runId: string) => started.push(runId), log: quiet });
+    tick(paths, (_paths, runId) => started.push(runId), { now: new Date(2026, 10, 22, 0, 0), log: quiet });
     assert.equal(started.length, 1);
     const record = loadRecord(paths, started[0]!);
     assert.equal(record?.place, "none");
@@ -1055,9 +1053,10 @@ describe("service", () => {
     plantState(paths, { ...base, runId: limited.runId, status: "paused", pauseReason: "usage_limit", resetHint: "Resets at 2026-11-21T10:30:00.000Z", script: readFileSync(limited.file, "utf8") });
     const spawned: string[] = [];
     const told: string[] = [];
-    const deps = { spawn: (runId: string) => spawned.push(runId), notify: (title: string, body: string) => told.push(`${title}: ${body}`), log: quiet };
-    tick(paths, NO_CLI, { ...deps, now: new Date("2026-11-21T11:00:00.000Z") });
-    tick(paths, NO_CLI, { ...deps, now: new Date("2026-11-21T11:05:00.000Z") });
+    const launch = (_paths: unknown, runId: string) => spawned.push(runId);
+    const deps = { notify: (title: string, body: string) => told.push(`${title}: ${body}`), log: quiet };
+    tick(paths, launch, { ...deps, now: new Date("2026-11-21T11:00:00.000Z") });
+    tick(paths, launch, { ...deps, now: new Date("2026-11-21T11:05:00.000Z") });
     assert.deepEqual(spawned, [limited.runId]);
     assert.deepEqual(told, [`job was cut off: orc resume ${cut.runId} goes on from where it stopped`]);
   });

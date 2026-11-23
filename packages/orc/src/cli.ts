@@ -7,7 +7,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { answerQuestion, checkWorkflow, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, gcRuns, HARNESSES, harnessName, hint, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, openWorkflowDir, parseCron, pauseRun, pruneRuns, readLog, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workflowDirs, type Answers, type HomePaths, type Place, type Reply, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
+import { answerQuestion, checkWorkflow, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, gcRuns, HARNESSES, harnessName, hint, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, openWorkflowDir, parseCron, pauseRun, pruneRuns, readLog, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workerProcess, workflowDirs, type Answers, type HomePaths, type Launcher, type Place, type Reply, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { doctor } from "./doctor.js";
 
@@ -20,6 +20,13 @@ export function cliFile(): string {
     if (existsSync(candidate)) return candidate;
   }
   throw new Error("orc is not built. Run pnpm build in the orchestrator repo.");
+}
+
+/** orc's workers, each a process of its own that runs cli.js. A command that starts one finds
+ *  cli.js first, so an orc that is not built writes no record. */
+function workers(): Launcher {
+  const file = cliFile();
+  return workerProcess(() => file);
 }
 
 interface Parsed {
@@ -250,7 +257,7 @@ async function cmdRun(parsed: Parsed): Promise<number> {
   const place = str(parsed.flags.place);
   if (place !== undefined && !isPlace(place)) throw new Usage(`--place is worktree, folder or none, got "${place}"`);
   const concurrency = str(parsed.flags.concurrency);
-  const record = startRun(paths, cliFile(), {
+  const record = startRun(paths, workers(), {
     workflow,
     projectDir,
     inputs: parsed.inputs,
@@ -402,7 +409,7 @@ async function cmdResume(parsed: Parsed): Promise<number> {
   const run = needRun(paths, parsed.positionals[0]);
   // A run that cannot resume says so before this usage error. resumeRun refuses it.
   if (parsed.flags.latest && parsed.flags.same && run.resume.ok) throw new Usage("--latest or --same, not both");
-  const record = resumeRun(paths, cliFile(), run.runId, parsed.flags.latest ? "latest" : parsed.flags.same ? "same" : undefined);
+  const record = resumeRun(paths, workers(), run.runId, parsed.flags.latest ? "latest" : parsed.flags.same ? "same" : undefined);
   return startedOrWait(paths, record, "resume", parsed);
 }
 
@@ -414,7 +421,7 @@ async function cmdRerun(parsed: Parsed): Promise<number> {
   const reuse = Boolean(parsed.flags.reuse);
   // A run that cannot be reused says so before this usage error. rerunRun refuses it.
   if (reuse && parsed.flags.place && run.reuse.ok) throw new Usage("--reuse works where the earlier run worked, so it takes no --place");
-  const record = rerunRun(paths, cliFile(), run.runId, {
+  const record = rerunRun(paths, workers(), run.runId, {
     place,
     reuse,
     inputs: parsed.inputs,
@@ -586,7 +593,7 @@ async function cmdDaemon(parsed: Parsed): Promise<number> {
   const log = daemonLog(paths);
   switch (action) {
     case "run":
-      await daemonMain(paths, cliFile());
+      await daemonMain(paths, workers());
       return 0;
     case "start": {
       if (pid) {
@@ -733,8 +740,8 @@ const COMMANDS: Record<string, (parsed: Parsed) => number | Promise<number>> = {
   gc: cmdGc,
   prune: cmdPrune,
   discard: cmdDiscard,
-  account: (parsed) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message), cliFile }),
-  accounts: (parsed) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message), cliFile }),
+  account: (parsed) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message), launch: workerProcess(cliFile) }),
+  accounts: (parsed) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message), launch: workerProcess(cliFile) }),
   doctor: (parsed) => doctor({ live: parsed.flags.live === true, model: str(parsed.flags.model), json: parsed.flags.json === true }),
 };
 

@@ -12,7 +12,7 @@ import { readEventsAfter, readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
 import type { PersistedRunState } from "../../src/runs/persistence/run-persistence.js";
-import { heldRunner, layout, NO_CLI, plantState, setup } from "./fixture.js";
+import { heldRunner, layout, plantState, setup } from "./fixture.js";
 
 // A run the code before step 4 started. Its sh and js steps went to the steps module as agent
 // calls with model "exec" and finished; its agent step failed, so the run paused. The fixture
@@ -133,10 +133,11 @@ describe("a run started by the old code", () => {
 
     const reset = Date.parse("2026-11-21T10:30:00.000Z");
     const spawned: string[] = [];
-    const deps = { spawn: (id: string) => spawned.push(id), notify: () => {}, log: () => {} };
-    tick(paths, NO_CLI, { ...deps, now: new Date(reset + 29_000) });
+    const launch = (_paths: unknown, id: string) => spawned.push(id);
+    const deps = { notify: () => {}, log: () => {} };
+    tick(paths, launch, { ...deps, now: new Date(reset + 29_000) });
     assert.deepEqual(spawned, [], "the run waits until 30 seconds after the reset");
-    tick(paths, NO_CLI, { ...deps, now: new Date(reset + 30_000) });
+    tick(paths, launch, { ...deps, now: new Date(reset + 30_000) });
     assert.deepEqual(spawned, [runId]);
   });
 

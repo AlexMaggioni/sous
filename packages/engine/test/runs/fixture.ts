@@ -123,9 +123,6 @@ export function plantTodayRun(paths: HomePaths, options: TodayRunOptions = {}): 
   return moved;
 }
 
-/** The tests run the worker in this process, so no cli file ever starts. */
-export const NO_CLI = "/nonexistent/orc/cli.js";
-
 export interface Call {
   prompt: string;
   label?: string;

@@ -14,7 +14,7 @@ import { writeJsonFile } from "../json-file.js";
 import { openWorkflowDir } from "../workflows/dir.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
-import { createRun, startWorker } from "./launch.js";
+import { createRun, type Launcher } from "./launch.js";
 import { notify } from "./notify.js";
 import { processAlive } from "./records.js";
 import { readState } from "./store.js";
@@ -103,14 +103,12 @@ const RETRY_LIMIT_MS = 15 * 60 * 1000;
 export interface TickDeps {
   now?: Date;
   log?: (line: string) => void;
-  spawn?: (runId: string, mode: "start" | "resume") => void;
   notify?: (title: string, body: string) => void;
 }
 
-export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): void {
+export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): void {
   const now = deps.now ?? new Date();
   const log = deps.log ?? ((line: string) => process.stdout.write(`${new Date().toISOString()} ${line}\n`));
-  const spawnRun = deps.spawn ?? ((runId: string, mode: "start" | "resume") => startWorker(paths, cliFile, runId, mode));
   const state = readJson<DaemonState>(paths.daemonState, { fired: {}, resumes: {} });
   const config = loadConfig(paths);
   const tell = deps.notify ?? ((title: string, body: string) => notify(title, body, config.notify));
@@ -152,7 +150,7 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
         origin: "schedule",
         schedule: schedule.name,
       });
-      spawnRun(record.runId, "start");
+      launch(paths, record.runId, "start");
       log(`schedule ${schedule.name}: started run ${record.runId}`);
     } catch (error) {
       log(`schedule ${schedule.name}: could not start: ${(error as Error).message}`);
@@ -197,7 +195,7 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
       continue;
     }
     state.resumes[record.runId] = { count: (tried?.count ?? 0) + 1, lastAt: now.toISOString() };
-    spawnRun(record.runId, "resume");
+    launch(paths, record.runId, "resume");
     log(`resumed run ${record.runId} (${persisted.pauseReason})`);
   }
 
@@ -228,7 +226,7 @@ export function daemonPid(paths: HomePaths): number | undefined {
 }
 
 /** The service loop, run by `orc daemon run`. */
-export async function daemonMain(paths: HomePaths, cliFile: string, everyMs = 20_000): Promise<void> {
+export async function daemonMain(paths: HomePaths, launch: Launcher, everyMs = 20_000): Promise<void> {
   ensureHome(paths);
   const existing = daemonPid(paths);
   if (existing && existing !== process.pid) throw new Error(`the service already runs (pid ${existing})`);
@@ -242,7 +240,7 @@ export async function daemonMain(paths: HomePaths, cliFile: string, everyMs = 20
   process.stdout.write(`${new Date().toISOString()} service started\n`);
   while (running) {
     try {
-      tick(paths, cliFile);
+      tick(paths, launch);
     } catch (error) {
       process.stdout.write(`${new Date().toISOString()} tick failed: ${(error as Error).stack ?? String(error)}\n`);
     }

@@ -265,7 +265,7 @@ describe("orc's reads", () => {
     const before = walk(root, skip);
     const lines: string[] = [];
     const spawned: string[] = [];
-    tick(paths, "cli.js", { log: (line) => lines.push(line), spawn: (runId) => spawned.push(runId), notify: () => {} });
+    tick(paths, (_paths, runId) => spawned.push(runId), { log: (line) => lines.push(line), notify: () => {} });
     assert.deepEqual(changes(before, walk(root, skip)), []);
     assert.deepEqual(spawned, []);
     assert.ok(lines.some((line) => line.includes(`run ${ids.dead} was cut off`)), lines.join("\n"));

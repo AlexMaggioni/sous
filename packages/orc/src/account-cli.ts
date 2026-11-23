@@ -20,6 +20,7 @@ import {
   useAccount,
   waitingRuns,
   type HomePaths,
+  type Launcher,
 } from "@orchestrator/engine";
 
 export interface AccountCommandOptions {
@@ -31,8 +32,8 @@ export interface AccountCommandOptions {
   /** Runs `claude setup-token`. Default: in this terminal, when stdin is one. */
   setupToken?: (paths: HomePaths) => void;
   out?: (line: string) => void;
-  /** orc's built cli.js, which `orc account use` starts the moved runs with. */
-  cliFile?: () => string;
+  /** Starts the workers of the runs `orc account use` moves. */
+  launch?: Launcher;
 }
 
 /** Read a line without showing it. Pasted text works. */
@@ -79,11 +80,13 @@ function runSetupToken(paths: HomePaths): void {
   if (ran.status !== 0) throw new Error(`claude setup-token stopped with exit ${ran.status ?? ran.signal}. Nothing was added.`);
 }
 
-function cliFile(options: AccountCommandOptions): () => string {
-  return () => {
-    if (!options.cliFile) throw new Error("orc account use needs the path of orc's cli.js");
-    return options.cliFile();
-  };
+function launcher(options: AccountCommandOptions): Launcher {
+  return (
+    options.launch ??
+    (() => {
+      throw new Error("orc account use needs a launcher to start the workers of the runs it moves");
+    })
+  );
 }
 
 export async function cmdAccount(positionals: string[], options: AccountCommandOptions = {}): Promise<number> {
@@ -115,7 +118,7 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
       return 0;
     }
     case "use": {
-      const result = useAccount(paths, needName(), cliFile(options));
+      const result = useAccount(paths, needName(), launcher(options));
       const label = accountLabel(result.program, result.name);
       out(`orc uses ${harnessName(result.program)} account ${label} for new runs.`);
       for (const run of result.moved) out(`resumed ${run.runId}  ${run.workflow}  on ${label}, was waiting at the limit of ${run.from}`);

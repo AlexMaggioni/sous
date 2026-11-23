@@ -10,7 +10,7 @@ import type { Harness } from "../agents.js";
 import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
 import { listQuestions, readQuestion, removeRunQuestions, reply, type Question, type Reply } from "./inbox.js";
-import { createRun, startWorker, type CreateRunRequest } from "./launch.js";
+import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
 import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestStepStop, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
 import { logFile, readEventsAfter, readState, readStates, removeDeletedRunMarkers, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
@@ -316,9 +316,9 @@ export async function waitForRun(paths: HomePaths, runId: string, hooks: WaitHoo
 // ── Requests ──
 
 /** Check the request, write the run's record and start its worker. */
-export function startRun(paths: HomePaths, cliFile: string, request: CreateRunRequest): RunRecord {
+export function startRun(paths: HomePaths, launch: Launcher, request: CreateRunRequest): RunRecord {
   const record = createRun(paths, request);
-  startWorker(paths, cliFile, record.runId, "start");
+  launch(paths, record.runId, "start");
   return record;
 }
 
@@ -387,7 +387,7 @@ const RESUME_REFUSALS: Record<ResumeRefusal, (runId: string) => string> = {
  * choice: "latest" takes the edits, and "same" goes on with the version it started with. With
  * no choice, an edit refuses the resume.
  */
-export function resumeRun(paths: HomePaths, cliFile: string, runId: string, choice?: "latest" | "same"): RunRecord {
+export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, choice?: "latest" | "same"): RunRecord {
   const { record, resume } = readRun(paths, runId);
   if (!resume.ok) throw new Error(RESUME_REFUSALS[resume.why](record.runId));
   // The rule lets a run resume only once it has a state. The check runs with a choice too, so a
@@ -401,7 +401,7 @@ export function resumeRun(paths: HomePaths, cliFile: string, runId: string, choi
     );
   }
   if (choice === "latest") updateRecord(paths, record.runId, { resumeLatest: true });
-  startWorker(paths, cliFile, record.runId, "resume");
+  launch(paths, record.runId, "resume");
   return record;
 }
 
@@ -425,11 +425,11 @@ export interface RerunRequest {
 }
 
 /** Start an earlier run again as a new run, with its inputs, step changes and model. */
-export function rerunRun(paths: HomePaths, cliFile: string, runId: string, request: RerunRequest): RunRecord {
+export function rerunRun(paths: HomePaths, launch: Launcher, runId: string, request: RerunRequest): RunRecord {
   const { record: old, reuse } = readRun(paths, runId);
   if (request.reuse && !reuse.ok) throw new Error(REUSE_REFUSALS[reuse.why](old.runId));
   const defaultModel = request.defaultModel ?? old.defaultModel;
-  return startRun(paths, cliFile, {
+  return startRun(paths, launch, {
     ...(request.reuse ? { reuseFrom: old } : {}),
     workflow: old.file,
     projectDir: old.projectDir,
@@ -563,12 +563,10 @@ export interface UseResult extends AccountName {
 
 /**
  * Make the account orc's current one for its program. Then each run waiting at that program's
- * usage limit moves to it and resumes now, also the runs that agents started. `deps.spawn` starts
- * the worker in tests, as in the service's tick. orc looks up `cliFile` only when a run resumes.
+ * usage limit moves to it and resumes now, also the runs that agents started.
  */
-export function useAccount(paths: HomePaths, spec: string, cliFile: () => string, deps: { spawn?: (runId: string) => void } = {}): UseResult {
+export function useAccount(paths: HomePaths, spec: string, launch: Launcher): UseResult {
   const { program, name } = setCurrentAccount(paths, spec);
-  const spawn = deps.spawn ?? ((runId: string) => startWorker(paths, cliFile(), runId, "resume"));
   const moved: Moved[] = [];
   const same: Moved[] = [];
   for (const run of waitingRuns(paths)) {
@@ -579,7 +577,7 @@ export function useAccount(paths: HomePaths, spec: string, cliFile: () => string
       continue;
     }
     moveRunAccount(paths, run.runId, program, name);
-    spawn(run.runId);
+    launch(paths, run.runId, "resume");
     moved.push(entry);
   }
   return { program, name, moved, same };

@@ -1,5 +1,5 @@
 // Start a run: find the workflow, check its inputs, make its place, write its record, and
-// start its worker in the background. Used by `orc run`, `orc rerun` and the schedules.
+// start its worker through a launcher. Used by `orc run`, `orc rerun` and the schedules.
 
 import { spawn } from "node:child_process";
 import { openSync, closeSync } from "node:fs";
@@ -84,8 +84,20 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   return record;
 }
 
+/**
+ * Starts the worker of a run whose record is written. The worker notes its process in the
+ * record. orc starts it as a process of its own with workerProcess. Tests pass their own.
+ */
+export type Launcher = (paths: HomePaths, runId: string, mode: "start" | "resume") => void;
+
+/** The worker as a process of its own, in the background, as orc starts it. `cliFile` gives orc's
+ *  built cli.js. It is read only when a worker starts. */
+export function workerProcess(cliFile: () => string): Launcher {
+  return (paths, runId, mode) => updateRecord(paths, runId, { pid: spawnWorker(paths, cliFile(), runId, mode) });
+}
+
 /** Start the run's worker in the background. Its output goes to logs/<run id>.log. */
-export function spawnWorker(paths: HomePaths, cliFile: string, runId: string, mode: "start" | "resume"): number {
+function spawnWorker(paths: HomePaths, cliFile: string, runId: string, mode: "start" | "resume"): number {
   const out = openSync(logFile(paths, runId), "a");
   try {
     const child = spawn(process.execPath, [cliFile, "_worker", runId, mode], {
@@ -98,9 +110,4 @@ export function spawnWorker(paths: HomePaths, cliFile: string, runId: string, mo
   } finally {
     closeSync(out);
   }
-}
-
-/** Start the run's worker and note its process in the record. */
-export function startWorker(paths: HomePaths, cliFile: string, runId: string, mode: "start" | "resume"): void {
-  updateRecord(paths, runId, { pid: spawnWorker(paths, cliFile, runId, mode) });
 }
