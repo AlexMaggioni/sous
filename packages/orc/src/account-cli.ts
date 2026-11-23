@@ -12,14 +12,13 @@ import {
   harnessName,
   homePaths,
   listAccounts,
-  listRuns,
   loadConfig,
   loadRecord,
   loginOf,
-  processAlive,
   removeAccount,
   setupTokenProgram,
   useAccount,
+  waitingRuns,
   type HomePaths,
 } from "@orchestrator/engine";
 
@@ -134,11 +133,9 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
 
 function listCommand(paths: HomePaths, out: (line: string) => void, json: boolean): number {
   const rows = listAccounts(paths);
-  const waiting = listRuns(paths)
-    .filter((run) => !processAlive(run.record.pid) && run.pause?.reason === "usage_limit")
-    .map((run) => run.record);
+  const waiting = waitingRuns(paths);
   if (json) {
-    out(JSON.stringify({ accounts: rows, waiting: waiting.map((record) => ({ runId: record.runId, workflow: record.workflow, limit: record.limit })) }, null, 2));
+    out(JSON.stringify({ accounts: rows, waiting: waiting.map((run) => ({ runId: run.runId, workflow: run.workflow, limit: run.limit })) }, null, 2));
     return 0;
   }
   const width = Math.max(...rows.map((row) => accountLabel(row.program, row.name).length)) + 2;
@@ -157,10 +154,7 @@ function listCommand(paths: HomePaths, out: (line: string) => void, json: boolea
   }
   if (waiting.length) {
     out("\nWaiting at the usage limit:");
-    for (const record of waiting) {
-      const program = record.limit?.program ?? "claude";
-      out(`  ${record.runId}  ${record.workflow}  on ${accountLabel(program, record.limit?.account ?? record.accounts?.[program]?.name ?? "default")}`);
-    }
+    for (const run of waiting) out(`  ${run.runId}  ${run.workflow}  on ${accountLabel(run.program, run.account)}`);
     out("orc account use <name> moves them to another account and resumes them now.");
   }
   return 0;

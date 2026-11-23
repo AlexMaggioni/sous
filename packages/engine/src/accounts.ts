@@ -160,10 +160,12 @@ export function setCurrentAccount(paths: HomePaths, spec: string): AccountName {
 }
 
 /** Give a run another login for a program. The run keeps its settings folder. */
-export function moveRunAccount(paths: HomePaths, record: RunRecord, program: Program, name: string): void {
+export function moveRunAccount(paths: HomePaths, runId: string, program: Program, name: string): void {
+  const record = loadRecord(paths, runId);
+  if (!record) return;
   const before = record.accounts?.[program];
   const folder = before?.folder !== undefined ? before.folder : (loginOf(program).value ?? null);
-  updateRecord(paths, record.runId, { accounts: { ...record.accounts, [program]: { name, folder } } });
+  updateRecord(paths, runId, { accounts: { ...record.accounts, [program]: { name, folder } } });
 }
 
 /**

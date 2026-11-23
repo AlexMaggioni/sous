@@ -6,6 +6,7 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import type { PersistedRunState, RunStatus } from "./persistence/run-persistence.js";
 import { deleteAccount, DEFAULT, moveRunAccount, setCurrentAccount, type AccountName } from "../accounts.js";
+import type { Harness } from "../agents.js";
 import { removeWorktree, runWorktrees } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
 import { listQuestions, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
@@ -517,22 +518,43 @@ export function useAccount(paths: HomePaths, spec: string, cliFile: string, deps
   const spawn = deps.spawn ?? ((runId: string) => startWorker(paths, cliFile, runId, "resume"));
   const moved: Moved[] = [];
   const same: Moved[] = [];
-  for (const run of listRuns(paths)) {
-    const { record } = run;
-    if (processAlive(record.pid) || run.pause?.reason !== "usage_limit") continue;
-    // A run from before accounts, or one whose program is unknown, counts as waiting on Claude Code.
-    if ((record.limit?.program ?? "claude") !== program) continue;
-    const before = record.accounts?.[program];
-    const entry = { runId: record.runId, workflow: record.workflow, from: before?.name ?? DEFAULT };
-    if (before?.name === name) {
+  for (const run of waitingRuns(paths)) {
+    if (run.program !== program) continue;
+    const entry = { runId: run.runId, workflow: run.workflow, from: run.account };
+    if (run.account === name) {
       same.push(entry);
       continue;
     }
-    moveRunAccount(paths, record, program, name);
-    spawn(record.runId);
+    moveRunAccount(paths, run.runId, program, name);
+    spawn(run.runId);
     moved.push(entry);
   }
   return { program, name, moved, same };
+}
+
+/** A run waiting at a usage limit. */
+export interface WaitingRun {
+  runId: string;
+  workflow: string;
+  program: Harness;
+  /** The account whose limit the run hit. A run from before the record kept the limit names its
+   *  own account, or default. */
+  account: string;
+  limit?: RunRecord["limit"];
+}
+
+/** The runs waiting at a usage limit, newest first: their worker is gone and they paused there.
+ *  `orc account` lists them, and `orc account use` moves them. */
+export function waitingRuns(paths: HomePaths): WaitingRun[] {
+  const waiting: WaitingRun[] = [];
+  for (const { record, pause } of listRuns(paths)) {
+    if (processAlive(record.pid) || pause?.reason !== "usage_limit") continue;
+    // A run from before accounts, or one whose program is unknown, counts as waiting on Claude Code.
+    const program = record.limit?.program ?? "claude";
+    const account = record.limit?.account ?? record.accounts?.[program]?.name ?? DEFAULT;
+    waiting.push({ runId: record.runId, workflow: record.workflow, program, account, limit: record.limit });
+  }
+  return waiting;
 }
 
 /** Forget a login. Refused while an unfinished run uses it, also one that has not started yet. */

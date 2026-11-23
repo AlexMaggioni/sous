@@ -8,7 +8,7 @@ import { WorkflowError, WorkflowErrorCode } from "../../src/errors.js";
 import { ensureHome, homePaths, type HomePaths } from "../../src/runs/home.js";
 import { createRun } from "../../src/runs/launch.js";
 import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
-import { listRuns, readRun, runDetail } from "../../src/runs/run.js";
+import { listRuns, readRun, runDetail, waitingRuns } from "../../src/runs/run.js";
 import type { StoreFs } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import { heldRunner, settle, setup, until } from "./fixture.js";
@@ -171,6 +171,38 @@ describe("the list of runs", () => {
     const runs = listRuns(planted.paths, { fs });
     assert.deepEqual(runs.map((run) => [run.runId, run.word]), [["run-good", "failed"], ["run-broken", "completed"], ["run-none", "not started"]]);
     assert.deepEqual(reads, [join(planted.engine, "run-good.json"), join(planted.engine, "run-broken.json"), join(planted.engine, "run-broken.json.bak")]);
+  });
+});
+
+describe("the runs waiting at a usage limit", () => {
+  it("lists the runs whose worker is gone and that paused at the limit, newest first, each with the account whose limit it hit", () => {
+    const planted = home();
+    const gone = deadPid();
+    const hit = at(5);
+    const plant = (runId: string, minutesAgo: number, state: Record<string, unknown>, record: Record<string, unknown> = {}, pid?: number) => {
+      plantRecord(planted, runId, minutesAgo, pid);
+      const file = join(planted.paths.records, `${runId}.json`);
+      writeJson(file, { ...JSON.parse(readFileSync(file, "utf8")), ...record });
+      writeFileSync(join(planted.engine, `${runId}.json`), stateText(runId, minutesAgo, state));
+    };
+    const limit = { status: "paused", pauseReason: "usage_limit" };
+    // Moved to spare by orc account use, whose worker never started: it still waits at work's limit.
+    plant("run-moved", 9, limit, { accounts: { claude: { name: "spare", folder: null } }, limit: { program: "claude", account: "work", at: hit } }, gone);
+    plant("run-codex", 8, limit, { accounts: { codex: { name: "default", folder: null } }, limit: { program: "codex", account: "team", at: hit } });
+    // From before the record kept the limit: it names its own account, or default.
+    plant("run-own", 7, limit, { accounts: { claude: { name: "spare", folder: null } } });
+    plant("run-old", 6, limit);
+    plant("run-live", 5, limit, { limit: { program: "claude", account: "work", at: hit } }, process.pid);
+    plant("run-done", 4, { status: "completed", result: "done" }, { limit: { program: "claude", account: "work", at: hit } });
+    plant("run-asks", 3, { status: "paused", pauseReason: "checkpoint_required" }, { limit: { program: "claude", account: "work", at: hit } });
+    plantRecord(planted, "run-none", 2);
+
+    assert.deepEqual(waitingRuns(planted.paths), [
+      { runId: "run-old", workflow: "build", program: "claude", account: "default", limit: undefined },
+      { runId: "run-own", workflow: "build", program: "claude", account: "spare", limit: undefined },
+      { runId: "run-codex", workflow: "build", program: "codex", account: "team", limit: { program: "codex", account: "team", at: hit } },
+      { runId: "run-moved", workflow: "build", program: "claude", account: "work", limit: { program: "claude", account: "work", at: hit } },
+    ]);
   });
 });
 

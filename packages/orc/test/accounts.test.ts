@@ -22,6 +22,7 @@ import {
 import { WorkflowError, WorkflowErrorCode } from "../../engine/dist/errors.js";
 import { createRun } from "../../engine/dist/runs/launch.js";
 import { workflowProjectPaths } from "../../engine/dist/runs/persistence/project-paths.js";
+import { processAlive } from "../../engine/dist/runs/records.js";
 import { tick } from "../../engine/dist/runs/service.js";
 import { enginePersistence, readState } from "../../engine/dist/runs/store.js";
 import { runWorker } from "../../engine/dist/runs/worker.js";
@@ -101,6 +102,15 @@ function plantState(paths: HomePaths, state: Record<string, unknown> & { runId: 
   const { runsDir } = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
   mkdirSync(runsDir, { recursive: true });
   writeFileSync(join(runsDir, `${state.runId}.json`), JSON.stringify(state, null, 2));
+}
+
+/** Wait until the worker that orc account use started for a run is gone. Its cli file does not
+ *  exist, so it ends at once. */
+async function workerGone(paths: HomePaths, runId: string): Promise<void> {
+  const pid = loadRecord(paths, runId)?.pid;
+  assert.ok(pid, "the run has a worker");
+  for (let i = 0; i < 400 && processAlive(pid); i++) await new Promise((done) => setTimeout(done, 25));
+  assert.ok(!processAlive(pid), `worker ${pid} ended`);
 }
 
 async function withHome<T>(paths: HomePaths, body: () => Promise<T>): Promise<{ value: T; printed: string }> {
@@ -255,10 +265,11 @@ describe("accounts", () => {
     assert.equal(currentAccount(paths, "claude"), "default");
     assert.match(limitNotice(paths, loadRecord(paths, second.runId)!, undefined), /^Claude Code account spare hit its usage limit\. orc account use default moves it to the account orc uses now\.$/);
     const again = useAccount(paths, "spare", NO_CLI, { spawn: (runId) => resumed.push(runId) });
-    // The first run is on spare too now, and since this test resumed neither, both still wait.
-    assert.deepEqual(again.same.map((run) => run.runId).sort(), [record.runId, second.runId].sort());
-    assert.deepEqual(again.moved, []);
-    assert.deepEqual(resumed, [record.runId], "the run on spare is not resumed on spare");
+    // The second run hit spare's limit, so it waits. The first is on spare too, but no worker ran
+    // it there, so it still waits at default's limit, and spare resumes it again.
+    assert.deepEqual(again.same, [{ runId: second.runId, workflow: "one", from: "spare" }]);
+    assert.deepEqual(again.moved, [{ runId: record.runId, workflow: "one", from: "default" }]);
+    assert.deepEqual(resumed, [record.runId, record.runId], "the run at spare's own limit is not resumed on spare");
 
     // The worker that resumes it runs the step on the new login, and the limit is gone from the record.
     limited = false;
@@ -429,5 +440,40 @@ describe("accounts", () => {
     ]);
     assert.equal(loadRecord(paths, record.runId)?.accounts?.claude?.name, "default");
     assert.ok(loadRecord(paths, record.runId)?.pid, "the moved run has a worker");
+  });
+
+  it("orc account use goes by the account whose limit a run hit, so a second use after a move whose worker did not start tries again", async () => {
+    const { paths, projectDir } = setup({ one: ONE_STEP });
+    addAccount(paths, "spare", SPARE);
+    const lines: string[] = [];
+    const out = (line: string) => lines.push(line);
+    const use = (name: string) => withHome(paths, () => cmdAccount(["use", name], { out, cliFile: () => NO_CLI }));
+
+    const { runner } = loginRunner(() => true);
+    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    assert.equal(readState(paths, record.runId)?.pauseReason, "usage_limit");
+
+    // The move to spare starts a worker that never runs, so the run still waits at default's limit.
+    await use("spare");
+    assert.deepEqual(lines.splice(0), ["orc uses Claude Code account spare for new runs.", `resumed ${record.runId}  one  on spare, was waiting at the limit of default`]);
+    await workerGone(paths, record.runId);
+    const first = loadRecord(paths, record.runId)?.pid;
+    assert.equal(loadRecord(paths, record.runId)?.accounts?.claude?.name, "spare");
+    assert.equal(loadRecord(paths, record.runId)?.limit?.account, "default");
+    const listed = await withHome(paths, () => main(["account"]));
+    assert.ok(listed.printed.includes(`\n  ${record.runId}  one  on default\n`), listed.printed);
+
+    // The same use again tries the resume again. Before, it said the run waits at the limit of
+    // spare itself, though spare hit no limit.
+    await use("spare");
+    assert.deepEqual(lines.splice(0), ["orc uses Claude Code account spare for new runs.", `resumed ${record.runId}  one  on spare, was waiting at the limit of default`]);
+    assert.notEqual(loadRecord(paths, record.runId)?.pid, first, "the run has a new worker");
+    await workerGone(paths, record.runId);
+
+    // The account whose limit it hit leaves it waiting. Before, this moved it back to default.
+    await use("default");
+    assert.deepEqual(lines.splice(0), ["orc uses Claude Code account default for new runs.", `${record.runId}  one  waits at the limit of default itself, and goes on after the reset`]);
+    assert.equal(loadRecord(paths, record.runId)?.accounts?.claude?.name, "spare", "a run that waits keeps its account");
   });
 });
