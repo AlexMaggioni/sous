@@ -134,7 +134,7 @@ test("nested workflow observations use the parent stream and child callback scop
     }
     assert.ok(childEvents.every((record) => record.runId === result.runId));
     assert.deepEqual(persisted?.journal, []);
-    assert.deepEqual(persisted?.calls, []);
+    assert.deepEqual(persisted?.calls?.map((row) => [row.scope, row.index, row.outcome]), [[childRunId, 0, "result"]]);
     assert.equal(existsSync(join(manager.getPersistence().getRunsDir(), `${childRunId}.events.jsonl`)), false);
   });
 });

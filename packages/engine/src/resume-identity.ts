@@ -16,6 +16,16 @@ export function resumeOccurrenceKey(sourceRunId: string, recordedIndex: number):
   return `${sourceRunId}\u0000${recordedIndex}`;
 }
 
+/** A nested run's id. A parent numbers its workflow() calls from 1 in call order. */
+export function nestedRunId(parentRunId: string, ordinal: number): string {
+  return `${parentRunId}-nested${ordinal}`;
+}
+
+/** True when `scope` is the id of a run nested, at any depth, inside `runId`. */
+export function isNestedScope(scope: unknown, runId: string): scope is string {
+  return typeof scope === "string" && scope.startsWith(runId) && /^(-nested[1-9]\d*)+$/.test(scope.slice(runId.length));
+}
+
 export function appendIndexValue<K, V>(index: Map<K, V[]>, key: K, value: V): void {
   const values = index.get(key) ?? [];
   values.push(value);

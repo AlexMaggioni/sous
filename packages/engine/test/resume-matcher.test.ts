@@ -602,6 +602,40 @@ return { first, second };`;
     assert.equal(crossKindCollision, undefined);
   });
 
+  it("accepts call rows and seed rows of a nested run", () => {
+    const nestedScope = `${SOURCE_RUN_ID}-nested1`;
+    const root = agentRow(0);
+    const nested = agentRow(0, { scope: nestedScope, hash: HASH_C, inputsHash: INPUT_C });
+    const withNestedRows = admission(sourceState([root, nested], {
+      journal: [entryFor(root)],
+      nestedJournal: [entryFor(nested)],
+      callsAllocated: 1,
+    }));
+    assert.equal(withNestedRows.strategy, "identity-v1");
+    assert.equal(withNestedRows.strategy === "identity-v1" && withNestedRows.seed.candidates.length, 1);
+
+    const foreign = agentRow(0, { scope: "other-run", hash: HASH_C, inputsHash: INPUT_C });
+    const withForeignRow = sourceState([root, foreign], { journal: [entryFor(root)], callsAllocated: 1 });
+    assert.equal(disabledReason(admission(withForeignRow)), "manifest-invalid");
+
+    // A nested seed row and a root row with the same index are two occurrences.
+    const nestedCandidate = candidate(0, {
+      call: { scope: nestedScope, hash: HASH_C, inputsHash: INPUT_C },
+      entry: { scope: nestedScope },
+    });
+    const withNestedSeed = admission(sourceState(undefined, {
+      resumeSeed: { format: "identity-v1", sourceRunId: SOURCE_RUN_ID, candidates: [nestedCandidate] },
+    }));
+    assert.equal(withNestedSeed.strategy, "identity-v1");
+    assert.equal(withNestedSeed.strategy === "identity-v1" && withNestedSeed.seed.candidates.length, 2);
+
+    const splitScopes = candidate(0, { call: { scope: nestedScope, hash: HASH_C, inputsHash: INPUT_C } });
+    const withSplitScopes = sourceState(undefined, {
+      resumeSeed: { format: "identity-v1", sourceRunId: SOURCE_RUN_ID, candidates: [splitScopes] },
+    });
+    assert.equal(disabledReason(admission(withSplitScopes)), "resume-seed-invalid");
+  });
+
   it("admits a paused checkpoint source with the pending checkpoint as a live call blocker", () => {
     const context = { callIndex: 1, hash: HASH_B, prompt: "approve?", kind: "confirm" as const };
     const pending = checkpointRow(1, {

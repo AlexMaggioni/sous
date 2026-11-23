@@ -56,6 +56,7 @@ import {
   type ResumeReportPlan,
 } from "./resume-matcher.js";
 import type { PersistedCheckpointInjection, PersistedResumeSeed } from "./runs/persistence/run-persistence.js";
+import { nestedRunId } from "./resume-identity.js";
 import {
   canonicalStrictJson,
   cloneFrozenStrictJson,
@@ -2173,8 +2174,8 @@ export async function runWorkflow<T = unknown>(
     }
     options.onResumeFilesystemTainted?.();
     const ordinal = ++shared.nestedSeq;
-    // The one place a child run id is made. Nothing reads it apart: the record names the parent.
-    const childRunId = `${runId}-nested${localOrdinal}`;
+    // The one place a child run id is made. A resume finds a nested run's call rows by this id.
+    const childRunId = nestedRunId(runId, localOrdinal);
     nestedWorkflows = true;
     options.onNestedWorkflow?.(ordinal, childRunId);
     const resolved = options.loadSavedWorkflow?.(String(nameOrScript));

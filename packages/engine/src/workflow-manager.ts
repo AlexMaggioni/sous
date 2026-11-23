@@ -44,7 +44,7 @@ import { preview, recomputeWorkflowSnapshot, type WorkflowSnapshot } from "./dis
 import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
-import { isRunEnvironmentIdentity } from "./resume-identity.js";
+import { isNestedScope, isRunEnvironmentIdentity } from "./resume-identity.js";
 import {
   createRunPersistence,
   generateRunId,
@@ -451,6 +451,16 @@ function latestRootRows<T extends { index: number; scope?: string }>(rows: T[], 
     if (row.scope === undefined || row.scope === runId) latest.set(row.index, row);
   }
   return [...latest.values()].sort((a, b) => a.index - b.index);
+}
+
+/** The latest call row of each nested run's index, by scope and then index. */
+function latestNestedRows<T extends { index: number; scope?: string }>(rows: T[], runId: string): T[] {
+  const latest = new Map<string, T>();
+  for (const row of rows) {
+    if (isNestedScope(row.scope, runId)) latest.set(`${row.scope}\u0000${row.index}`, row);
+  }
+  return [...latest.values()].sort((a, b) =>
+    a.scope === b.scope ? a.index - b.index : (a.scope as string) < (b.scope as string) ? -1 : 1);
 }
 
 function stripLegacyCallBudgetFields(call: WorkflowCallRecord): WorkflowCallRecord {
@@ -1656,7 +1666,7 @@ export class WorkflowManager extends EventEmitter {
         managed.snapshot.agents.map((a) => a.session).filter((s): s is NonNullable<typeof s> => s != null),
       ...(fallbacks.length === 0 ? {} : { fallbacks }),
       ...(checkpointsTaken.length === 0 ? {} : { checkpointsTaken }),
-      calls: engineResult?.calls ?? managed.calls,
+      calls: engineResult?.calls ?? managed.calls.filter((row) => !isNestedScope(row.scope, managed.runId)),
       callsAllocated: engineResult?.callsAllocated ?? managed.callsAllocated,
       ...(engineResult?.resumeReport ?? managed.resumeReport
         ? { resumeReport: engineResult?.resumeReport ?? managed.resumeReport }
@@ -1909,7 +1919,7 @@ export class WorkflowManager extends EventEmitter {
       });
 
       managed.executionSettled = true;
-      managed.calls = engineResult.calls ?? [];
+      managed.calls = [...(engineResult.calls ?? []), ...latestNestedRows(managed.calls, managed.runId)];
       managed.callsAllocated = engineResult.callsAllocated;
       if (engineResult.resumeReport && managed.resumeReportPlan) {
         managed.resumeReport = buildResumeReport(
@@ -2151,7 +2161,10 @@ export class WorkflowManager extends EventEmitter {
           ]);
         }
       }
-      managed.calls = managed.calls.filter((row) => row.index !== record.index);
+      managed.calls = managed.calls.filter((row) => isNestedScope(row.scope, managed.runId) || row.index !== record.index);
+      managed.calls.push(record);
+    } else {
+      managed.calls = managed.calls.filter((row) => !(row.scope === record.scope && row.index === record.index));
       managed.calls.push(record);
     }
     this.publishRunEvent(
@@ -2287,9 +2300,10 @@ export class WorkflowManager extends EventEmitter {
   private prepareTerminalResumeState(managed: ManagedRun): void {
     if (managed.status === "running" || managed.status === "pending") return;
     if (managed.newRunResume) {
-      managed.calls = latestRows(managed.calls.filter((row) => row.scope === managed.runId));
+      const rootCalls = latestRows(managed.calls.filter((row) => row.scope === managed.runId));
+      managed.calls = [...rootCalls, ...latestNestedRows(managed.calls, managed.runId)];
       const resultRows = new Map(
-        managed.calls
+        rootCalls
           .filter((row) => row.outcome === "result")
           .map((row) => [row.index, row] as const),
       );
@@ -2310,7 +2324,7 @@ export class WorkflowManager extends EventEmitter {
       }
       if (managed.resumeSeed?.checkpointInjections) {
         const checkpointKeys = new Set(
-          managed.calls
+          rootCalls
             .filter((row) => row.kind === "checkpoint")
             .map((row) => `${row.hash}\u0000${row.inputsHash ?? ""}`),
         );
@@ -2764,7 +2778,10 @@ export class WorkflowManager extends EventEmitter {
       ...(persisted.nestedJournal?.length ? { nestedJournal: [...persisted.nestedJournal] } : {}),
       fallbacks: persisted.fallbacks ?? [],
       checkpointsTaken: [],
-      calls: latestRootRows(persisted.calls ?? [], runId).map(stripLegacyCallBudgetFields),
+      calls: [
+        ...latestRootRows(persisted.calls ?? [], runId),
+        ...latestNestedRows(persisted.calls ?? [], runId),
+      ].map(stripLegacyCallBudgetFields),
       effectiveCwd,
       runtime: runtimeIdentity(),
       environment: persisted.environment,

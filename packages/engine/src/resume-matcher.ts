@@ -22,6 +22,7 @@ import {
 import {
   appendIndexValue,
   buildResumeExactIndex,
+  isNestedScope,
   resumeContentKey,
   resumeExactKey,
   resumeOccurrenceKey,
@@ -334,7 +335,7 @@ function validateBasicCall(value: unknown, sourceRunId: string): value is Workfl
     !isHash(value.hash) ||
     !["result", "null", "error"].includes(String(value.outcome)) ||
     !["runner", "journal-replay", "confirm", "engine"].includes(String(value.origin)) ||
-    value.scope !== sourceRunId
+    (value.scope !== sourceRunId && !isNestedScope(value.scope, sourceRunId))
   ) {
     return false;
   }
@@ -382,7 +383,7 @@ function validateJournalEntry(value: unknown, sourceRunId: string): value is Jou
     isHash(value.hash) &&
     (value.kind === "agent" || value.kind === "checkpoint") &&
     (value.kind !== "checkpoint" || value.checkpointDecision === "explicit-v1") &&
-    value.scope === sourceRunId &&
+    (value.scope === sourceRunId || isNestedScope(value.scope, sourceRunId)) &&
     hasOwn(value, "result") &&
     isStrictJson(value.result) &&
     (value.session === undefined || isSession(value.session)) &&
@@ -398,7 +399,10 @@ function validateManifest(source: PersistedRunState, sourceRunId: string): Valid
   const allocated = source.callsAllocated as number;
   const callsByIndex = new Map<number, WorkflowCallRecord>();
   for (const value of calls) {
-    if (!validateBasicCall(value, sourceRunId) || callsByIndex.has(value.index)) return undefined;
+    if (!validateBasicCall(value, sourceRunId)) return undefined;
+    // A nested run's row is not part of the root manifest.
+    if (value.scope !== sourceRunId) continue;
+    if (callsByIndex.has(value.index)) return undefined;
     callsByIndex.set(value.index, value);
   }
   if (callsByIndex.size !== allocated) return undefined;
@@ -408,7 +412,13 @@ function validateManifest(source: PersistedRunState, sourceRunId: string): Valid
 
   const journalByIndex = new Map<number, JournalEntry>();
   for (const value of journal) {
-    if (!validateJournalEntry(value, sourceRunId) || journalByIndex.has(value.index)) return undefined;
+    if (
+      !validateJournalEntry(value, sourceRunId) ||
+      value.scope !== sourceRunId ||
+      journalByIndex.has(value.index)
+    ) {
+      return undefined;
+    }
     journalByIndex.set(value.index, value);
   }
 
@@ -432,6 +442,11 @@ function validateManifest(source: PersistedRunState, sourceRunId: string): Valid
   };
 }
 
+/** A seed row's occurrence: its run and index, with the nested run's id for a nested row. */
+function seedRowOccurrenceKey(row: PersistedResumeCandidate | PersistedResumeCallBlocker): string {
+  return resumeOccurrenceKey(row.call.scope ?? row.sourceRunId, row.recordedIndex);
+}
+
 function validateCandidate(value: unknown): PersistedResumeCandidate | undefined {
   if (
     !isRecord(value) ||
@@ -445,6 +460,7 @@ function validateCandidate(value: unknown): PersistedResumeCandidate | undefined
   if (
     value.call.index !== value.recordedIndex ||
     value.entry.index !== value.recordedIndex ||
+    value.entry.scope !== value.call.scope ||
     value.call.outcome !== "result" ||
     value.call.kind !== value.entry.kind ||
     value.call.hash !== value.entry.hash
@@ -515,7 +531,7 @@ function validateSeed(source: PersistedRunState, sourceRunId: string): Validated
   for (const value of seed.candidates) {
     const candidate = validateCandidate(value);
     if (!candidate) return undefined;
-    const key = resumeOccurrenceKey(candidate.sourceRunId, candidate.recordedIndex);
+    const key = seedRowOccurrenceKey(candidate);
     if (occurrences.has(key)) return undefined;
     occurrences.add(key);
     candidates.push(candidate);
@@ -523,7 +539,7 @@ function validateSeed(source: PersistedRunState, sourceRunId: string): Validated
   for (const value of seed.callBlockers ?? []) {
     const blocker = validateCallBlocker(value);
     if (!blocker) return undefined;
-    const key = resumeOccurrenceKey(blocker.sourceRunId, blocker.recordedIndex);
+    const key = seedRowOccurrenceKey(blocker);
     if (occurrences.has(key)) return undefined;
     occurrences.add(key);
     blockers.push(blocker);
@@ -591,7 +607,7 @@ export function normalizeResumeSeed(input: {
   for (const value of [...(input.promoted ?? []), ...(input.retained ?? [])]) {
     const candidate = validateCandidate(value);
     if (!candidate) return undefined;
-    const key = resumeOccurrenceKey(candidate.sourceRunId, candidate.recordedIndex);
+    const key = seedRowOccurrenceKey(candidate);
     if (occurrences.has(key)) return undefined;
     occurrences.add(key);
     candidates.push(candidate);
@@ -599,7 +615,7 @@ export function normalizeResumeSeed(input: {
   for (const value of [...(input.promotedBlockers ?? []), ...(input.retainedBlockers ?? [])]) {
     const blocker = validateCallBlocker(value);
     if (!blocker) return undefined;
-    const key = resumeOccurrenceKey(blocker.sourceRunId, blocker.recordedIndex);
+    const key = seedRowOccurrenceKey(blocker);
     if (occurrences.has(key)) return undefined;
     occurrences.add(key);
     callBlockers.push(blocker);

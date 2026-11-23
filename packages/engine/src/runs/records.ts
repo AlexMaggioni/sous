@@ -133,7 +133,7 @@ export function saveRecord(paths: HomePaths, record: RunRecord): void {
 
 /**
  * Read a record file. Older records have nested entries with no parent. This is the one place
- * that reads that old shape, and the only code that knows a child's id is `<parent>-nested<n>`.
+ * that reads that old shape. It takes the parent from the child's id, `<parent>-nested<n>`.
  */
 function readRecord(file: string): RunRecord {
   const record = JSON.parse(readFileSync(file, "utf8")) as RunRecord;

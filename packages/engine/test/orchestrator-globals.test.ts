@@ -550,6 +550,62 @@ return { first, kids, last }`;
       rmSync(persistenceRoot, { recursive: true, force: true });
     }
   });
+
+  it("a paused run saves a call row for each nested call, with its inputs hash", async () => {
+    let fixed = false;
+    const prompts: string[] = [];
+    const runner: AgentRunner = {
+      async run<S extends TSchema | undefined = undefined>(prompt: string): Promise<AgentResult<S>> {
+        prompts.push(prompt);
+        if (prompt === "y" && !fixed) throw new Error("y is broken");
+        return `done:${prompt}` as AgentResult<S>;
+      },
+    };
+    const cwd = mkdtempSync(join(tmpdir(), "nested-calls-cwd-"));
+    const persistenceRoot = mkdtempSync(join(tmpdir(), "nested-calls-store-"));
+    try {
+      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: runner, orchestrator: { pauseOnFailedStep: true } });
+      const child = `export const meta = { name: 'child', description: 'c' }
+return [await agent('x'), await agent('y')]`;
+      const script = `export const meta = { name: 'parent', description: 'p' }
+const first = await agent('a')
+const kids = await workflow(${JSON.stringify(child)})
+return [first, kids, await agent('c')]`;
+      const paused = await manager.runSync(script, undefined, { runId: "nested-calls" });
+      assert.equal(paused.status, "paused");
+      const rows = (runId: string) =>
+        (manager.getPersistence().load(runId)?.calls ?? [])
+          .filter((row) => row.scope === `${runId}-nested1`)
+          .map((row) => ({ index: row.index, kind: row.kind, outcome: row.outcome, inputsHash: typeof row.inputsHash }));
+      assert.deepEqual(rows("nested-calls"), [
+        { index: 0, kind: "agent", outcome: "result", inputsHash: "string" },
+        { index: 1, kind: "agent", outcome: "error", inputsHash: "string" },
+      ]);
+
+      fixed = true;
+      const started = await manager.resumeInBackground("nested-calls");
+      if (!started.accepted) assert.fail("resume refused");
+      const completed = await started.promise;
+      assert.equal(completed.status, "completed");
+      assert.deepEqual(prompts, ["a", "x", "y", "y", "c"]);
+      assert.deepEqual(rows("nested-calls"), [
+        { index: 0, kind: "agent", outcome: "result", inputsHash: "string" },
+        { index: 1, kind: "agent", outcome: "result", inputsHash: "string" },
+      ]);
+
+      // Nested rows do not stop a reuse. A run that was never resumed is a source with call rows.
+      // Today a reuse of it replays the root steps and runs the nested steps again.
+      const clean = await manager.runSync(script, undefined, { runId: "nested-calls-clean" });
+      assert.equal(clean.status, "completed");
+      assert.equal(rows("nested-calls-clean").length, 2);
+      const reused = await manager.runSync(script, undefined, { runId: "nested-calls-reuse", resumeFromRunId: "nested-calls-clean" });
+      assert.equal(reused.status, "completed");
+      assert.deepEqual(prompts.slice(9), ["x", "y"]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(persistenceRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("failed steps", () => {

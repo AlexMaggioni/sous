@@ -342,7 +342,7 @@ return { count: args.count, answer }`,
     assert.equal((await started.promise).status, "completed");
   });
 
-  it("rejects isolation artifacts on resume, marks legacy resumes, and persists root scope only", async () => {
+  it("rejects isolation artifacts on resume, marks legacy resumes, and persists nested calls under their own scope", async () => {
     const dirs = tempDirs();
     try {
       const persistence = createRunPersistence(dirs.cwd, undefined, { persistenceRoot: dirs.root });
@@ -390,7 +390,7 @@ return { count: args.count, answer }`,
       );
       const persisted = persistence.load(root.runId);
       assert.deepEqual(persisted?.journal?.map((entry: JournalEntry) => entry.scope), [root.runId]);
-      assert.deepEqual(persisted?.calls?.map((row: WorkflowCallRecord) => row.scope), [root.runId]);
+      assert.deepEqual(persisted?.calls?.map((row: WorkflowCallRecord) => row.scope), [root.runId, `${root.runId}-nested1`]);
       assert.equal(persisted?.nestedWorkflows, true);
       assert.deepEqual(
         persisted?.agents.map((agent) => ({ scope: agent.scope, callIndex: agent.callIndex, status: agent.status })),
