@@ -12,7 +12,7 @@ import type { CheckpointCallContext } from "../workflow.js";
 import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";
 import { dropUnchangedWorktrees, runWorktrees } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
-import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuestion, type Question } from "./inbox.js";
+import { ask, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
 import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
@@ -33,14 +33,6 @@ export interface WorkerOptions {
   /** A dry run (`orc check --dry-run`): each question gets a stand-in answer at once, agents take
    *  no slot, and nothing notifies. */
   dryRun?: boolean;
-}
-
-/** The answer a dry run gives a question: approve, yes, the first choice, or a stand-in text. */
-export function standInAnswer(checkpoint: { kind?: "confirm" | "input" | "select"; choices?: readonly string[] }, purpose?: CheckpointCallContext["purpose"]): unknown {
-  if (purpose === "breakpoint") return "approve";
-  if (checkpoint.kind === "select") return checkpoint.choices?.[0] ?? "";
-  if (checkpoint.kind === "input") return "stand-in answer";
-  return true;
 }
 
 function stamp(): string {
@@ -171,11 +163,6 @@ async function runOnAccounts(
     const scope = context?.scope ?? runId;
     const callIndex = context?.callIndex ?? 0;
     const id = questionId(scope, callIndex);
-    if (options.dryRun) {
-      const value = standInAnswer(checkpoint, context?.purpose);
-      log(`${stamp()} question   ${from(scope)}${oneLine(prompt, 200)}\n           answered   ${JSON.stringify(value)} (dry run)`);
-      return Promise.resolve(value);
-    }
     const question: Question = {
       id,
       runId,
@@ -189,31 +176,21 @@ async function runOnAccounts(
       breakpoint: context?.purpose === "breakpoint",
       askedAt: new Date().toISOString(),
     };
-    return new Promise<unknown>((resolve, reject) => {
-      const take = () => {
-        const answer = readAnswer(paths, id);
-        if (answer && answer.hash === question.hash) {
-          removeQuestion(paths, id);
-          log(`${stamp()} answered   ${id}: ${oneLine(JSON.stringify(answer.value))}`);
-          resolve(answer.value);
-          return true;
-        }
-        return false;
-      };
-      if (take()) return;
-      writeQuestion(paths, question);
+    if (options.dryRun) {
+      const value = standIn(question);
+      log(`${stamp()} question   ${from(scope)}${oneLine(prompt, 200)}\n           answered   ${JSON.stringify(value)} (dry run)`);
+      return Promise.resolve(value);
+    }
+    const asked = () => {
       const how = question.breakpoint
         ? `orc approve ${id}  |  orc send-back ${id} "note"  |  orc stop ${runId}`
         : `orc answer ${id} "..."`;
       log(`${stamp()} question   ${id}: ${oneLine(prompt, 400)}\n           answer with: ${how}`);
       notify(`${record.workflow} asks`, oneLine(prompt, 200), config.notify);
-      const timer = setInterval(() => {
-        if (take()) clearInterval(timer);
-      }, pollMs);
-      waits.signal.addEventListener("abort", () => {
-        clearInterval(timer);
-        reject(new Error("stopped waiting"));
-      }, { once: true });
+    };
+    return ask(paths, question, { signal: waits.signal, pollMs, asked }).then((value) => {
+      log(`${stamp()} answered   ${id}: ${oneLine(JSON.stringify(value))}`);
+      return value;
     });
   };
 

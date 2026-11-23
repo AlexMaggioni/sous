@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { HomePaths } from "../../src/runs/home.js";
-import { breakpointValue, decisionOf, normalizeAnswer, type Question } from "../../src/runs/inbox.js";
+import { ask, breakpointValue, decisionOf, normalizeAnswer, standIn, type Question } from "../../src/runs/inbox.js";
 import { createRun } from "../../src/runs/launch.js";
 import { updateRecord } from "../../src/runs/records.js";
 import { runQuestions } from "../../src/runs/run.js";
@@ -96,6 +96,59 @@ const color = await ask('Pick a color', { choices: ['red', 'blue'] })
 const ship = await checkpoint('Ship it?')
 const plan = await breakpoint('Check the plan', { show: 'the plan' })
 return { color, ship, plan }`;
+
+describe("ask", () => {
+  const question: Question = { id: "r1--3", runId: "r1", scope: "r1", callIndex: 3, hash: "h3", workflow: "w", prompt: "Your name?", kind: "input", breakpoint: false, askedAt: "2026-11-23T10:00:00.000Z" };
+
+  it("writes the question, waits for the answer with its hash, and removes both files", async () => {
+    const { paths } = setup({});
+    const asked: string[] = [];
+    const waits = new AbortController();
+    const answer = ask(paths, question, { signal: waits.signal, pollMs: 10, asked: () => asked.push(...inbox(paths, "r1")) });
+    assert.deepEqual(asked, ["<id>--3.json"], "asked() runs once the question is written");
+    assert.deepEqual(JSON.parse(readFileSync(join(paths.inbox, "r1--3.json"), "utf8")), question);
+    writeAnswer(paths, "r1--3", "h2", "Bob");
+    await new Promise((r) => setTimeout(r, 60));
+    assert.deepEqual(inbox(paths, "r1"), ["<id>--3.answer.json", "<id>--3.json"], "an answer to another hash waits");
+    writeAnswer(paths, "r1--3", "h3", "Ann");
+    assert.equal(await answer, "Ann");
+    assert.deepEqual(inbox(paths, "r1"), []);
+  });
+
+  it("takes an answer given before the question at once, and writes no question", async () => {
+    const { paths } = setup({});
+    writeAnswer(paths, "r1--3", "h3", { decision: "send back", note: "" });
+    let asked = 0;
+    const value = await ask(paths, question, { signal: new AbortController().signal, pollMs: 10, asked: () => asked++ });
+    assert.deepEqual(value, { decision: "send back", note: "" });
+    assert.equal(asked, 0);
+    assert.deepEqual(inbox(paths, "r1"), []);
+  });
+
+  it("stops waiting on abort and leaves the question, and an ask after the abort writes nothing", async () => {
+    const { paths } = setup({});
+    const waits = new AbortController();
+    const answer = ask(paths, question, { signal: waits.signal, pollMs: 10 });
+    waits.abort();
+    await assert.rejects(answer, /^Error: stopped waiting$/);
+    assert.deepEqual(inbox(paths, "r1"), ["<id>--3.json"], "the paused run still asks");
+    writeAnswer(paths, "r1--3", "h3", "Ann");
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(existsSync(answerFile(paths, "r1--3")), true, "the stopped wait takes nothing");
+
+    const { paths: other } = setup({});
+    await assert.rejects(ask(other, question, { signal: waits.signal, pollMs: 10 }), /stopped waiting/);
+    assert.deepEqual(inbox(other, "r1"), []);
+  });
+
+  it("gives a dry run's stand-in answers", () => {
+    assert.equal(standIn({ kind: "input", breakpoint: true }), "approve");
+    assert.equal(standIn({ kind: "select", choices: ["red", "blue"], breakpoint: false }), "red");
+    assert.equal(standIn({ kind: "select", breakpoint: false }), "");
+    assert.equal(standIn({ kind: "input", breakpoint: false }), "stand-in answer");
+    assert.equal(standIn({ kind: "confirm", breakpoint: false }), true);
+  });
+});
 
 describe("a run that waits for an answer", () => {
   it("takes the answer whose hash matches, removes both files, and logs the question and the answer", async () => {

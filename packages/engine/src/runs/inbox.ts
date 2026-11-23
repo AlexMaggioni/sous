@@ -47,7 +47,7 @@ function readJson<T>(file: string): T | undefined {
   }
 }
 
-export function writeQuestion(paths: HomePaths, question: Question): void {
+function writeQuestion(paths: HomePaths, question: Question): void {
   writeAtomic(questionFile(paths, question.id), question);
 }
 
@@ -55,7 +55,7 @@ export function readQuestion(paths: HomePaths, id: string): Question | undefined
   return readJson<Question>(questionFile(paths, id));
 }
 
-export function readAnswer(paths: HomePaths, id: string): Answer | undefined {
+function readAnswer(paths: HomePaths, id: string): Answer | undefined {
   return readJson<Answer>(answerFile(paths, id));
 }
 
@@ -63,7 +63,7 @@ export function writeAnswer(paths: HomePaths, question: Question, value: unknown
   writeAtomic(answerFile(paths, question.id), { hash: question.hash, value, answeredAt: new Date().toISOString() } satisfies Answer);
 }
 
-export function removeQuestion(paths: HomePaths, id: string): void {
+function removeQuestion(paths: HomePaths, id: string): void {
   for (const file of [questionFile(paths, id), answerFile(paths, id)]) {
     try {
       unlinkSync(file);
@@ -71,6 +71,57 @@ export function removeQuestion(paths: HomePaths, id: string): void {
       // already gone
     }
   }
+}
+
+export interface AskOptions {
+  /** Stops the wait. */
+  signal: AbortSignal;
+  /** How often to look for the answer, in ms. */
+  pollMs: number;
+  /** Runs once the question is written, before the wait. An answer given before the question skips it. */
+  asked?: () => void;
+}
+
+/**
+ * Ask a question and wait for its answer. An answer given while the run was paused is taken at
+ * once, and the question is not written again. Only an answer with the question's hash counts,
+ * and taking it removes both files. A stop of the wait rejects with "stopped waiting" and leaves
+ * the files, so a paused run still asks.
+ */
+export function ask(paths: HomePaths, question: Question, options: AskOptions): Promise<unknown> {
+  const take = (): { value: unknown } | undefined => {
+    const answer = readAnswer(paths, question.id);
+    if (!answer || answer.hash !== question.hash) return undefined;
+    removeQuestion(paths, question.id);
+    return { value: answer.value };
+  };
+  return new Promise((resolve, reject) => {
+    const early = take();
+    if (early) return resolve(early.value);
+    if (options.signal.aborted) return reject(new Error("stopped waiting"));
+    writeQuestion(paths, question);
+    options.asked?.();
+    const stop = () => {
+      clearInterval(timer);
+      reject(new Error("stopped waiting"));
+    };
+    const timer = setInterval(() => {
+      const taken = take();
+      if (!taken) return;
+      clearInterval(timer);
+      options.signal.removeEventListener("abort", stop);
+      resolve(taken.value);
+    }, options.pollMs);
+    options.signal.addEventListener("abort", stop, { once: true });
+  });
+}
+
+/** The answer a dry run gives a question: approve, yes, the first choice, or a stand-in text. */
+export function standIn(question: Pick<Question, "kind" | "choices" | "breakpoint">): unknown {
+  if (question.breakpoint) return "approve";
+  if (question.kind === "select") return question.choices?.[0] ?? "";
+  if (question.kind === "input") return "stand-in answer";
+  return true;
 }
 
 /** Open questions, oldest first, optionally for one run. Answered ones are left out. */
