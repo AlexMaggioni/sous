@@ -18,7 +18,11 @@
 //               errorInfo  Codex fails a fail rule's turn with this codexErrorInfo
 //               usage      the tokens a failed or stopped turn spent:
 //                          { "input", "output", "cacheRead", "cacheWrite" }
-//               approval   Codex asks to run this command first, and logs the decision
+//               approval   Codex asks the client first, and logs its answer. A string is a command
+//                          to run. An object has a kind: "fileChange" ({ path }), "permissions"
+//                          ({ network, fileSystem }), "mcp" ({ server, tool }) for a tool call to
+//                          approve, "form" ({ server, message }) for a question from an MCP
+//                          server, or "question" ({ message }) for the model's own question.
 //               listTools  answer with the names of the tools the session has
 //               times      apply the rule to the first N matching requests only. The count
 //                          comes from earlier lines in FAKE_LOG, so it holds across processes.

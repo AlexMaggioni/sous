@@ -49,7 +49,8 @@ interface LogLine {
   mcpServers: Array<{ name: string; transport: string }>;
   disallowedTools?: string[];
   disabledTools?: Record<string, string[]>;
-  approval?: string;
+  /** Codex: the client's answer to the request the fake sent, as the client gave it. */
+  approval?: unknown;
 }
 
 interface Case {
@@ -205,7 +206,7 @@ for (const kit of KITS) {
         assert.ok(line?.disallowedTools?.includes("mcp__demo__secret"));
       } else {
         assert.deepEqual(line?.disabledTools, { demo: ["secret"] });
-        assert.equal(line?.approval, "decline");
+        assert.deepEqual(line?.approval, { decision: "decline" });
         assert.ok(result.notes?.some((note) => note.includes("Bash")), JSON.stringify(result.notes));
       }
     });
