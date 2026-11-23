@@ -2,13 +2,13 @@
 // wait for it to end. orc prints what these return.
 
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
-import type { PersistedRunState } from "./persistence/run-persistence.js";
+import type { PersistedRunState, RunStatus } from "./persistence/run-persistence.js";
 import type { HomePaths } from "./home.js";
 import { listQuestions, type Question } from "./inbox.js";
 import { logFile } from "./launch.js";
-import { findRecord, loadRecord, processAlive, scopePrefix, type RunRecord } from "./records.js";
+import { findRecord, listRecords, loadRecord, processAlive, scopePrefix, type RunRecord } from "./records.js";
 import { judge, type Verdict } from "./rule.js";
-import { readEventsAfter, readState } from "./store.js";
+import { readEventsAfter, readState, readStates, type StoreFs } from "./store.js";
 
 /**
  * The run's state as orc shows it. Nothing is written. A run left pending or running by a worker
@@ -18,9 +18,12 @@ import { readEventsAfter, readState } from "./store.js";
  */
 export function stateOf(paths: HomePaths, record: RunRecord): PersistedRunState | undefined {
   const state = readState(paths, record.runId);
-  if (!state || state.status === "paused") return state;
-  const { pause } = judge({ state, alive: processAlive(record.pid), openQuestions: 0 });
-  if (pause?.reason !== "interrupted") return state;
+  return shownState(record, state, judge({ state, alive: processAlive(record.pid), openQuestions: 0 }));
+}
+
+/** The state as orc shows it, given what the rule says of it. */
+function shownState(record: RunRecord, state: PersistedRunState | undefined, verdict: Verdict): PersistedRunState | undefined {
+  if (!state || state.status === "paused" || verdict.pause?.reason !== "interrupted") return state;
   return { ...state, status: "paused", pauseReason: "interrupted", reason: interruptedReason(record.pid) };
 }
 
@@ -109,6 +112,42 @@ export function runningSteps(paths: HomePaths, record: RunRecord): string[] {
   });
   const nested = loadRecord(paths, record.runId)?.nested ?? record.nested;
   return [...running.values()].map((step) => `${scopePrefix(record.runId, step.scope, nested)}${step.label}`);
+}
+
+/** A run as orc's readers see it: its record, what the pause rule says of it, and its open
+ *  questions. */
+export interface RunView extends Verdict {
+  runId: string;
+  record: RunRecord;
+  questions: Question[];
+  /** The saved status and pause reason as orc shows them. A run left pending or running by a
+   *  worker that died shows as paused "interrupted". Unset while the run has no state. */
+  saved?: { status: RunStatus; pauseReason?: string };
+}
+
+function viewOf(record: RunRecord, state: PersistedRunState | undefined, questions: Question[]): RunView {
+  const alive = processAlive(record.pid);
+  const verdict = judge({ state, alive, openQuestions: alive ? questions.length : 0 });
+  const shown = shownState(record, state, verdict);
+  const saved = shown ? { status: shown.status, ...(shown.pauseReason === undefined ? {} : { pauseReason: shown.pauseReason }) } : undefined;
+  return { runId: record.runId, record, ...verdict, questions, ...(saved ? { saved } : {}) };
+}
+
+/**
+ * orc's runs, newest first, or the newest `limit` of them. It reads the records, the engine
+ * folder and the inbox once each, so its cost grows with the number of runs. `fs` is for tests.
+ */
+export function listRuns(paths: HomePaths, options: { limit?: number; fs?: StoreFs } = {}): RunView[] {
+  const records = listRecords(paths);
+  const shown = options.limit === undefined ? records : records.slice(0, options.limit);
+  const states = readStates(paths, shown.map((record) => record.runId), options.fs);
+  const asked = new Map<string, Question[]>();
+  for (const question of listQuestions(paths)) {
+    const list = asked.get(question.runId);
+    if (list) list.push(question);
+    else asked.set(question.runId, [question]);
+  }
+  return shown.map((record) => viewOf(record, states.get(record.runId), asked.get(record.runId) ?? []));
 }
 
 /** What the pause rule says of the run: its word, its pause, and whether it may resume. It

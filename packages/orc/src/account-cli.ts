@@ -12,18 +12,16 @@ import {
   harnessName,
   homePaths,
   listAccounts,
-  listRecords,
+  listRuns,
   loadConfig,
   loadRecord,
   loginOf,
   processAlive,
   removeAccount,
-  savedState,
   setupTokenProgram,
   startWorker,
   unfinishedRuns,
   useAccount,
-  verdictOf,
   type HomePaths,
   type RunRecord,
 } from "@orchestrator/engine";
@@ -41,8 +39,13 @@ export interface AccountCommandOptions {
   cliFile?: () => string;
 }
 
+/** Whether a run waits at a usage limit. It reads the runs once, at its first call. */
 function atLimit(paths: HomePaths): (record: RunRecord) => boolean {
-  return (record) => verdictOf(paths, record, savedState(paths, record)).pause?.reason === "usage_limit";
+  let waiting: Set<string> | undefined;
+  return (record) => {
+    waiting ??= new Set(listRuns(paths).filter((run) => run.pause?.reason === "usage_limit").map((run) => run.runId));
+    return waiting.has(record.runId);
+  };
 }
 
 /** Read a line without showing it. Pasted text works. */
@@ -146,7 +149,9 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
 
 function listCommand(paths: HomePaths, out: (line: string) => void, json: boolean): number {
   const rows = listAccounts(paths);
-  const waiting = listRecords(paths).filter((record) => !processAlive(record.pid) && atLimit(paths)(record));
+  const waiting = listRuns(paths)
+    .filter((run) => !processAlive(run.record.pid) && run.pause?.reason === "usage_limit")
+    .map((run) => run.record);
   if (json) {
     out(JSON.stringify({ accounts: rows, waiting: waiting.map((record) => ({ runId: record.runId, workflow: record.workflow, limit: record.limit })) }, null, 2));
     return 0;

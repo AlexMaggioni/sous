@@ -7,7 +7,6 @@ import type { WorkflowRunResult } from "../workflow-result.js";
 import { limitNotice, runAccounts } from "../accounts.js";
 import { envFor, lookupAgents, lookupMcpServers, lookupSettings } from "../agents.js";
 import { parseDurationSeconds } from "../orchestrator-globals.js";
-import type { PersistedRunState } from "./persistence/run-persistence.js";
 import { openWorkflowDir } from "../workflows/dir.js";
 import { WorkflowManager } from "../workflow-manager.js";
 import { dropUnchangedWorktrees, runWorktrees } from "../places/places.js";
@@ -17,7 +16,6 @@ import { notify } from "./notify.js";
 import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
 import { SlotPool } from "./slots.js";
-import { readState } from "./store.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
 import { programLookup } from "../programs.js";
 
@@ -87,11 +85,6 @@ export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<
     },
     ...extra,
   });
-}
-
-/** The run's saved state, as the engine last wrote it. */
-export function savedState(paths: HomePaths, record: RunRecord): PersistedRunState | undefined {
-  return readState(paths, record.runId);
 }
 
 /** Run or resume one run in this process. Resolves with the engine's result. */

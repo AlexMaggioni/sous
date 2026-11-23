@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import { gcWorktrees, makeStepWorktree, removeStepWorktree } from "../src/places/places.js";
 import { ensureHome, homePaths, type HomePaths } from "../src/runs/home.js";
 import { createRun } from "../src/runs/launch.js";
-import { listRecords, loadRecord } from "../src/runs/records.js";
+import { loadRecord } from "../src/runs/records.js";
 import { busyWorktrees } from "../src/runs/service.js";
 import { runWorker } from "../src/runs/worker.js";
 import { runWorkflow } from "../src/workflow.js";
@@ -213,7 +213,7 @@ describe("gc and a step's worktree a crash left behind", () => {
     git(tree.dir, "add", "fix.txt");
     git(tree.dir, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "-m", "fix");
     git(projectDir, "merge", "-q", tree.branch);
-    const gc = () => gcWorktrees(paths, [projectDir], { busy: busyWorktrees(paths, listRecords(paths)) });
+    const gc = () => gcWorktrees(paths, [projectDir], { busy: busyWorktrees(paths) });
 
     const before = gc();
     assert.deepEqual(before.removed, []);

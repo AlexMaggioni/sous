@@ -7,7 +7,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { answerQuestion, answerValue, breakpointValue, busyWorktrees, createRun, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listQuestions, listRecords, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, saveSchedules, scopePath, startWorker, stateOf, stopRun, stopStep, verdictOf, waitForRun, withLiveSteps, workerMain, workflowDirs, writeAnswer, type AnswerKind, type Answers, type HomePaths, type PersistedRunState, type Place, type Question, type RunRecord, type Schedule } from "@orchestrator/engine";
+import { answerQuestion, answerValue, breakpointValue, busyWorktrees, createRun, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listQuestions, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, saveSchedules, scopePath, startWorker, stateOf, stopRun, stopStep, verdictOf, waitForRun, withLiveSteps, workerMain, workflowDirs, writeAnswer, type AnswerKind, type Answers, type HomePaths, type PersistedRunState, type Place, type Question, type RunRecord, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { checkWorkflow } from "./check.js";
 import { doctor } from "./doctor.js";
@@ -286,27 +286,24 @@ async function cmdRun(parsed: Parsed): Promise<number> {
 
 function cmdList(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
-  const records = listRecords(paths);
-  const shown = parsed.flags.all ? records : records.slice(0, 20);
-  const rows = shown.map((record) => {
-    const state = stateOf(paths, record);
-    return { record, state, status: verdictOf(paths, record, state).word };
-  });
+  const runs = listRuns(paths, parsed.flags.all ? {} : { limit: 20 });
   if (parsed.flags.json) {
-    printJson(rows.map(({ record, state, status }) => ({ runId: record.runId, workflow: record.workflow, status, state: state?.status, pauseReason: state?.pauseReason, createdAt: record.createdAt, place: record.place, cwd: record.cwd, origin: record.origin })));
+    printJson(runs.map(({ record, word, saved }) => ({ runId: record.runId, workflow: record.workflow, status: word, state: saved?.status, pauseReason: saved?.pauseReason, createdAt: record.createdAt, place: record.place, cwd: record.cwd, origin: record.origin })));
     return 0;
   }
-  if (!rows.length) {
+  if (!runs.length) {
     out("no runs yet. orc workflows lists what you can run.");
     return 0;
   }
-  const width = Math.max(8, ...rows.map((row) => row.record.workflow.length));
+  const width = Math.max(8, ...runs.map((run) => run.record.workflow.length));
   out(`${"RUN".padEnd(16)} ${"WORKFLOW".padEnd(width)} ${"STATUS".padEnd(20)} ${"AGE".padEnd(5)} WHERE`);
-  for (const { record, status } of rows) {
+  for (const { record, word } of runs) {
     const where = record.place === "worktree" ? (record.branch ?? record.cwd) : record.place === "none" ? "scratch" : record.cwd;
-    out(`${record.runId.padEnd(16)} ${record.workflow.padEnd(width)} ${status.padEnd(20)} ${age(record.createdAt).padEnd(5)} ${where}`);
+    out(`${record.runId.padEnd(16)} ${record.workflow.padEnd(width)} ${word.padEnd(20)} ${age(record.createdAt).padEnd(5)} ${where}`);
   }
-  if (records.length > shown.length) out(`(${records.length - shown.length} older runs: orc list --all)`);
+  // Only the shown runs' states are read, so the count reads the records alone.
+  const older = parsed.flags.all ? 0 : listRecords(paths).length - runs.length;
+  if (older > 0) out(`(${older} older runs: orc list --all)`);
   const asks = listQuestions(paths).length;
   if (asks) out(`\n${asks} question${asks === 1 ? "" : "s"} waiting: orc inbox`);
   return 0;
@@ -652,9 +649,9 @@ async function cmdDaemon(parsed: Parsed): Promise<number> {
 
 function cmdGc(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
-  const records = listRecords(paths);
-  const projects = [...new Set(records.map((record) => record.projectDir))];
-  const result = gcWorktrees(paths, projects, { dryRun: parsed.flags["dry-run"] === true, busy: busyWorktrees(paths, records) });
+  const runs = listRuns(paths);
+  const projects = [...new Set(runs.map((run) => run.record.projectDir))];
+  const result = gcWorktrees(paths, projects, { dryRun: parsed.flags["dry-run"] === true, busy: busyWorktrees(paths, runs) });
   for (const item of result.removed) out(`${parsed.flags["dry-run"] ? "would remove" : "removed"} ${item.dir} (${item.branch}): ${item.reason}`);
   for (const item of result.kept) out(`kept ${item.dir} (${item.branch}): ${item.reason}`);
   if (!result.removed.length && !result.kept.length) out("no worktrees");

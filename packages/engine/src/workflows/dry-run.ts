@@ -13,7 +13,8 @@ import { loadConfig, type HomePaths } from "../runs/home.js";
 import { createRun } from "../runs/launch.js";
 import { loadRecord } from "../runs/records.js";
 import { forgetRun } from "../runs/service.js";
-import { runWorker, savedState } from "../runs/worker.js";
+import { readState } from "../runs/store.js";
+import { runWorker } from "../runs/worker.js";
 import type { PlannedRequest } from "../steps/agent-run.js";
 import type { InnerRunner } from "../steps/steps.js";
 import { resolveWorkflow } from "./dir.js";
@@ -79,7 +80,7 @@ export async function dryRun(paths: HomePaths, request: DryRunRequest): Promise<
   const agents = standInAgents(request.answers);
   try {
     const result = await runWorker(record.runId, "start", { paths, inner: agents, log: request.log ?? (() => {}), dryRun: true });
-    const state = savedState(paths, record);
+    const state = readState(paths, record.runId);
     const status = result?.status ?? state?.status ?? "unknown";
     const reason = result?.reason ?? state?.reason ?? state?.pauseReason;
     // The result is plain JSON, made in the workflow's own sandbox; a copy belongs to this side.
