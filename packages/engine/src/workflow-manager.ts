@@ -314,6 +314,32 @@ function runtimeIdentity(): ManagedRun["runtime"] {
   };
 }
 
+/** What each execution of a run starts with, whether the run is new or continued. */
+function freshExecution() {
+  return {
+    status: "running",
+    controller: new AbortController(),
+    checkpointsTaken: [],
+    runtime: runtimeIdentity(),
+    resumeActivity: 0,
+    resumeFilesystemTainted: false,
+    resumeTerminalFinalized: false,
+    executionSettled: false,
+    callsAllocated: 0,
+  } satisfies Partial<ManagedRun>;
+}
+
+/** A snapshot's empty agent list and counts, as each execution starts. */
+function noAgents() {
+  return {
+    agents: [],
+    agentCount: 0,
+    runningCount: 0,
+    doneCount: 0,
+    errorCount: 0,
+  } satisfies Partial<WorkflowSnapshot>;
+}
+
 /** A saved run whose inputs hashes this build computes the same way pairs on them too. */
 function pairingKey(saved: PersistedRunState["runtime"], current: ManagedRun["runtime"]): "inputs" | "hash" {
   return saved?.inputsFormat === current.inputsFormat &&
@@ -903,21 +929,16 @@ export class WorkflowManager extends EventEmitter {
     const effectiveCwd = exec.cwd ?? this.cwd;
     const startedAt = new Date();
     return {
+      ...freshExecution(),
       runId: identity.runId,
       cwd: exec.cwd,
-      status: "running",
       snapshot: {
         name: meta.name,
         description: meta.description,
         phases: meta.phases?.map((p) => p.title) ?? [],
         logs: [],
-        agents: [],
-        agentCount: 0,
-        runningCount: 0,
-        doneCount: 0,
-        errorCount: 0,
+        ...noAgents(),
       },
-      controller: new AbortController(),
       startedAt,
       script,
       // Every run keeps an editable working copy of its script in the run store unless
@@ -931,17 +952,10 @@ export class WorkflowManager extends EventEmitter {
         ? handedInRows(identity.runId, exec.resumeJournal)
         : newRows(identity.runId),
       fallbacks: [],
-      checkpointsTaken: [],
       effectiveCwd,
-      runtime: runtimeIdentity(),
       environment: captureRunEnvironment(effectiveCwd, exec.environmentKey ?? this.environmentKey),
       resume: { format: "identity-v1" as const },
-      resumeActivity: 0,
-      resumeFilesystemTainted: false,
-      resumeTerminalFinalized: false,
-      executionSettled: false,
       environmentKey: exec.environmentKey ?? this.environmentKey,
-      callsAllocated: 0,
       limits: resolveWorkflowRunLimits({
         maxAgents: exec.maxAgents,
         concurrency: exec.concurrency ?? this.concurrency,
@@ -1824,7 +1838,6 @@ export class WorkflowManager extends EventEmitter {
       }
     }
 
-    const controller = new AbortController();
     let meta: WorkflowMeta | undefined;
     try {
       meta = revision !== undefined ? revisionMeta : parseWorkflowScript(persisted.script).meta;
@@ -1835,25 +1848,21 @@ export class WorkflowManager extends EventEmitter {
     }
     const capturedArgs = snapshotArgs(persisted.args);
     const effectiveCwd = persisted.effectiveCwd ?? persisted.cwd ?? this.cwd;
-    const runtime = runtimeIdentity();
+    const fresh = freshExecution();
     // The run pairs with its own rows, then with the rows its seed still holds. Without a
     // revision the key is the kind and call hash.
     const revised = revision === undefined
       ? undefined
-      : reviseRows(runId, persisted, pairingKey(persisted.runtime, runtime));
+      : reviseRows(runId, persisted, pairingKey(persisted.runtime, fresh.runtime));
     const started = revised ?? continueRows(runId, persisted);
     const managed: ManagedRun = {
+      ...fresh,
       runId,
-      status: "running",
       snapshot: {
         name: persisted.workflowName,
         phases: persisted.phases ?? [],
         logs: persisted.logs ?? [],
-        agents: [],
-        agentCount: 0,
-        runningCount: 0,
-        doneCount: 0,
-        errorCount: 0,
+        ...noAgents(),
         ...(persisted.tokenUsage
           ? {
               tokenUsage: {
@@ -1867,7 +1876,6 @@ export class WorkflowManager extends EventEmitter {
             }
           : {}),
       },
-      controller,
       startedAt: new Date(persisted.startedAt),
       script: revision ?? persisted.script,
       ...(persisted.scriptOrigin ? { scriptOrigin: persisted.scriptOrigin } : {}),
@@ -1879,19 +1887,12 @@ export class WorkflowManager extends EventEmitter {
       meta,
       rows: started.rows,
       fallbacks: persisted.fallbacks ?? [],
-      checkpointsTaken: [],
       effectiveCwd,
-      runtime,
       environment: persisted.environment,
       ...(persisted.legacyResume ? { legacyResume: true as const } : {}),
       ...(persisted.resume ? { resume: { format: "identity-v1" as const } } : {}),
       ...(persisted.resumeSourceRunId ? { resumeSourceRunId: persisted.resumeSourceRunId } : {}),
-      resumeActivity: 0,
-      resumeFilesystemTainted: false,
-      resumeTerminalFinalized: false,
-      executionSettled: false,
       environmentKey: this.environmentKey,
-      callsAllocated: 0,
       limits: resolveWorkflowRunLimits({
         maxAgents: exec.maxAgents ?? persisted.limits?.maxAgents,
         concurrency: exec.concurrency ?? persisted.limits?.concurrency ?? this.concurrency,
