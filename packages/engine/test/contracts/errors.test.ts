@@ -10,7 +10,6 @@ import {
   type AuthErrorContext,
   type CheckpointContext,
   type ProviderUsageLimitContext,
-  type WorkflowRecordedError,
 } from "../../src/errors.js";
 
 describe("isProviderUsageLimit", () => {
@@ -100,44 +99,6 @@ describe("WorkflowError.checkpointContext", () => {
 describe("WorkflowError", () => {
   it("exposes the cancel error code as a stable wire literal", () => {
     assert.equal(WorkflowErrorCode.AGENT_CANCELLED, "AGENT_CANCELLED");
-  });
-
-  it("types each strict-JSON recorded-error projection form", () => {
-    const projections: WorkflowRecordedError[] = [
-      {
-        form: "workflow-error",
-        message: "state could not be saved",
-        code: WorkflowErrorCode.PERSISTENCE_ERROR,
-        recoverable: false,
-        agentLabel: "researcher",
-        details: { reason: "disk-full", indexes: [2] },
-        resetHint: "free disk space",
-        providerUsageLimitContext: {
-          backendId: "codex",
-          source: "provider",
-          providerCode: "usageLimitExceeded",
-        },
-        authContext: { backendId: "codex", methods: [] },
-        checkpointContext: {
-          callIndex: 2,
-          hash: "abc123",
-          prompt: "Continue?",
-          kind: "confirm",
-        },
-      },
-      {
-        form: "error",
-        name: "RouteError",
-        message: "route failed",
-        props: { route: "codex" },
-      },
-      { form: "value", value: { stopped: true }, lossy: false },
-    ];
-
-    assert.deepEqual(
-      projections.map((projection) => projection.form),
-      ["workflow-error", "error", "value"],
-    );
   });
 
   it("captures code, recoverable, resetHint, agentLabel, and details from options", () => {

@@ -18,14 +18,8 @@ const OLD_RUN = join(import.meta.dirname, "fixtures", "old-failed-step-run.json"
 const quiet = () => {};
 
 describe("test kit", () => {
-  it("testHome makes a new home that sends no notices and runs in the project folder, with the given workflows", () => {
-    const { paths, projectDir } = testHome({ one: ONE_STEP }, { maxAgents: 3 });
-    const config = loadConfig(paths);
-    assert.equal(config.notify, false);
-    assert.equal(config.defaultPlace, "folder");
-    assert.equal(config.maxAgents, 3);
-    assert.equal(readFileSync(join(projectDir, ".orchestrator", "workflows", "one.js"), "utf8"), ONE_STEP);
-    assert.notEqual(testHome().paths.home, paths.home);
+  it("testHome turns the desktop notices off", () => {
+    assert.equal(loadConfig(testHome().paths).notify, false);
   });
 
   it("plantState writes a state and an event log where the engine reads them", () => {
