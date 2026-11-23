@@ -113,7 +113,7 @@ describe("resume manifests for unsettled calls", () => {
     }
   });
 
-  it("persists dense interrupted rows for auth, checkpoint, stop, and external abort halts", async () => {
+  it("persists dense interrupted rows for auth, checkpoint and stop halts", async () => {
     const dirs = tempDirs();
     try {
       const scenarios: Array<{
@@ -174,26 +174,6 @@ return await parallel([
         assert.equal(result.callsAllocated, 2);
         assert.equal(result.calls?.length, 2);
       }
-
-      const external = new AbortController();
-      const externalManager = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistenceRoot: join(dirs.root, "external"),
-        environmentKey: ENVIRONMENT_KEY,
-        agent: { run: (_prompt, options) => abortablePending(options) },
-      });
-      const externallyAborted = externalManager.startInBackground(
-        parallelScript(["pending-0", "pending-1"], "external-abort"),
-        undefined,
-        { concurrency: 8, externalSignal: external.signal },
-      );
-      await waitUntil(
-        () => externalManager.getRun(externallyAborted.runId)?.callsAllocated === 2,
-        "external abort should see both allocations",
-      );
-      external.abort();
-      await externallyAborted.promise.catch(() => {});
-      assert.equal(externalManager.getPersistence().load(externallyAborted.runId)?.calls?.length, 2);
     } finally {
       dirs.cleanup();
     }

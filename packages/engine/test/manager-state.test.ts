@@ -260,12 +260,11 @@ return { count: args.count, answer }`,
     }
   });
 
-  it("persists abortSignaled when a script catches the caller abort and completes", async () => {
+  it("persists abortSignaled when a script catches the stop and completes", async () => {
     const dirs = tempDirs();
     try {
       let started!: () => void;
       const didStart = new Promise<void>((resolve) => { started = resolve; });
-      const controller = new AbortController();
       const manager = new WorkflowManager({
         cwd: dirs.cwd,
         persistenceRoot: dirs.root,
@@ -282,13 +281,14 @@ return { count: args.count, answer }`,
           },
         },
       });
+      const runId = "caught-stop";
       const pending = manager.runSync(
         script(`try { await agent('wait') } catch {}\nreturn 'caught'`, "caught-abort"),
         undefined,
-        { externalSignal: controller.signal },
+        { runId },
       );
       await didStart;
-      controller.abort();
+      assert.equal(manager.stop(runId), true);
       const result = await pending;
       assert.equal(result.status, "completed");
       assert.equal(result.abortSignaled, true);
@@ -299,43 +299,36 @@ return { count: args.count, answer }`,
   });
 
   it("a stopped run's result says its signal was aborted, as its saved state does", async () => {
-    for (const how of ["host signal", "stop"] as const) {
-      const dirs = tempDirs();
-      try {
-        let started!: () => void;
-        const didStart = new Promise<void>((resolve) => { started = resolve; });
-        const controller = new AbortController();
-        const manager = new WorkflowManager({
-          cwd: dirs.cwd,
-          persistenceRoot: dirs.root,
-          agent: {
-            async run(_prompt, options) {
-              started();
-              return await new Promise<string>((_resolve, reject) => {
-                options?.signal?.addEventListener(
-                  "abort",
-                  () => reject(new WorkflowError("aborted", WorkflowErrorCode.WORKFLOW_ABORTED, { recoverable: true })),
-                  { once: true },
-                );
-              });
-            },
+    const dirs = tempDirs();
+    try {
+      let started!: () => void;
+      const didStart = new Promise<void>((resolve) => { started = resolve; });
+      const manager = new WorkflowManager({
+        cwd: dirs.cwd,
+        persistenceRoot: dirs.root,
+        agent: {
+          async run(_prompt, options) {
+            started();
+            return await new Promise<string>((_resolve, reject) => {
+              options?.signal?.addEventListener(
+                "abort",
+                () => reject(new WorkflowError("aborted", WorkflowErrorCode.WORKFLOW_ABORTED, { recoverable: true })),
+                { once: true },
+              );
+            });
           },
-        });
-        const runId = `stopped-${how === "stop" ? "by-stop" : "by-signal"}`;
-        const pending = manager.runSync(script(`return await agent('wait')`, "stopped-abort"), undefined, {
-          runId,
-          ...(how === "host signal" ? { externalSignal: controller.signal } : {}),
-        });
-        await didStart;
-        if (how === "stop") assert.equal(manager.stop(runId), true);
-        else controller.abort();
-        const result = await pending;
-        assert.equal(result.status, "aborted", how);
-        assert.equal(manager.getPersistence().load(runId)?.abortSignaled, true, how);
-        assert.equal(result.abortSignaled, true, how);
-      } finally {
-        dirs.cleanup();
-      }
+        },
+      });
+      const runId = "stopped-by-stop";
+      const pending = manager.runSync(script(`return await agent('wait')`, "stopped-abort"), undefined, { runId });
+      await didStart;
+      assert.equal(manager.stop(runId), true);
+      const result = await pending;
+      assert.equal(result.status, "aborted");
+      assert.equal(manager.getPersistence().load(runId)?.abortSignaled, true);
+      assert.equal(result.abortSignaled, true);
+    } finally {
+      dirs.cleanup();
     }
   });
 

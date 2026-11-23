@@ -229,8 +229,6 @@ export interface ExecOptions {
   resumeFromRunId?: string;
   /** Cap on total agents for this run. */
   maxAgents?: number;
-  /** A signal that aborts this run when it fires. orc's worker calls stop() instead. */
-  externalSignal?: AbortSignal;
   /** Called with the live snapshot on every progress event. */
   onProgress?: (snapshot: WorkflowSnapshot) => void;
   /** Max concurrent agents for this execution. */
@@ -1156,7 +1154,6 @@ export class WorkflowManager extends EventEmitter {
   ): Promise<WorkflowRunResult> {
     const {
       maxAgents,
-      externalSignal,
       onProgress,
       concurrency,
       agentRetries,
@@ -1177,11 +1174,6 @@ export class WorkflowManager extends EventEmitter {
     };
     const publish = (event: EngineRunEvent, actions?: RunEventPublicationActions) =>
       this.publishRunEvent(managed, event, () => this.persistRun(managed), actions);
-    // An external signal aborts this run too.
-    if (externalSignal) {
-      if (externalSignal.aborted) managed.controller.abort();
-      else externalSignal.addEventListener("abort", () => managed.controller.abort(), { once: true });
-    }
     try {
       // Resolve the injected agent backend (per-run override > constructor). The
       // engine REQUIRES an AgentRunner and never constructs one.
@@ -1924,7 +1916,6 @@ export class WorkflowManager extends EventEmitter {
       maxAgents: managed.limits?.maxAgents,
       concurrency: managed.limits?.concurrency,
       agentRetries: managed.limits?.agentRetries,
-      externalSignal: exec.externalSignal,
       onProgress: exec.onProgress,
       confirm: exec.confirm,
       onNestedWorkflow: exec.onNestedWorkflow,
