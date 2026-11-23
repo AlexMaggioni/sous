@@ -39,21 +39,18 @@ function controlledRunner() {
   };
 }
 
-test("lease owner identity is observable and a second manager cannot cold-stop a live owner", async () => {
+test("the lease shows the live owner's pid and a second manager cannot cold-stop it", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orchestrator-live-owner-stop-"));
   const persistenceRoot = mkdtempSync(join(tmpdir(), "orchestrator-live-owner-store-"));
   const controlled = controlledRunner();
-  const owner = new WorkflowManager({ cwd, persistenceRoot, leaseOwnerId: "owner-generation-a", agent: controlled.runner });
-  const observer = new WorkflowManager({ cwd, persistenceRoot, leaseOwnerId: "owner-generation-b" });
+  const owner = new WorkflowManager({ cwd, persistenceRoot, agent: controlled.runner });
+  const observer = new WorkflowManager({ cwd, persistenceRoot });
   try {
     const started = owner.startInBackground(SCRIPT, undefined, { runId: "live-owner" });
     await controlled.ready;
 
     const leaseOwner = observer.getPersistence().inspectRunLease?.(started.runId);
-    assert.deepEqual(leaseOwner && { pid: leaseOwner.pid, ownerId: leaseOwner.ownerId }, {
-      pid: process.pid,
-      ownerId: "owner-generation-a",
-    });
+    assert.equal(leaseOwner?.pid, process.pid);
 
     const refused = observer.stopPersistedRun(started.runId);
     assert.equal(refused.outcome, "owned-elsewhere");
@@ -73,7 +70,7 @@ test("a manager cold-stops a lease-free paused run and appends one durable stopp
   const cwd = mkdtempSync(join(tmpdir(), "orchestrator-cold-stop-"));
   const persistenceRoot = mkdtempSync(join(tmpdir(), "orchestrator-cold-stop-store-"));
   const controlled = controlledRunner();
-  const owner = new WorkflowManager({ cwd, persistenceRoot, leaseOwnerId: "owner-generation-a", agent: controlled.runner });
+  const owner = new WorkflowManager({ cwd, persistenceRoot, agent: controlled.runner });
   try {
     const started = owner.startInBackground(TWO_CALL_SCRIPT, undefined, { runId: "cold-stop" });
     await controlled.ready;
@@ -82,7 +79,7 @@ test("a manager cold-stops a lease-free paused run and appends one durable stopp
     await started.promise.catch(() => undefined);
     assert.equal(owner.getPersistence().load(started.runId)?.status, "paused");
 
-    const fresh = new WorkflowManager({ cwd, persistenceRoot, leaseOwnerId: "owner-generation-b" });
+    const fresh = new WorkflowManager({ cwd, persistenceRoot });
     const stopped = fresh.stopPersistedRun(started.runId);
     assert.equal(stopped.outcome, "stopped");
     const state = fresh.getPersistence().load(started.runId);

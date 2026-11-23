@@ -345,8 +345,6 @@ export interface WorkflowManagerOptions {
    * the default filesystem persistence for `cwd` and `persistenceRoot`.
    */
   persistence?: RunPersistence;
-  /** Opaque host/process generation identity attached to newly acquired filesystem leases. */
-  leaseOwnerId?: string;
   /** Default non-git environment label for replay provenance diagnostics. */
   environmentKey?: string;
 }
@@ -586,10 +584,7 @@ export class WorkflowManager extends EventEmitter {
     this.environmentKey = options.environmentKey;
     this.persistence = options.persistence
       ? withRunEvents(options.persistence)
-      : createRunPersistence(this.cwd, undefined, {
-          persistenceRoot: this.persistenceRoot,
-          leaseOwnerId: options.leaseOwnerId,
-        });
+      : createRunPersistence(this.cwd, undefined, { persistenceRoot: this.persistenceRoot });
   }
 
   override emit(eventName: string | symbol, ...args: unknown[]): boolean {

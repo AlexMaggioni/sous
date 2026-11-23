@@ -251,8 +251,6 @@ export interface RunPersistence {
 export interface RunLease {
   runId: string;
   token: string;
-  /** Opaque host/process generation identity written into the lock, when configured. */
-  ownerId?: string;
   /** PID recorded by a dead lock owner replaced while acquiring this lease. */
   recoveredOwnerPid?: number;
 }
@@ -261,8 +259,6 @@ export interface RunLeaseOwner {
   runId: string;
   pid: number;
   startedAt: string;
-  /** Opaque owner identity; daemon managers use their daemon instance ID. */
-  ownerId?: string;
 }
 
 interface LockFile {
@@ -271,7 +267,6 @@ interface LockFile {
   pid: number;
   startedAt: string;
   token: string;
-  ownerId?: string;
 }
 
 /**
@@ -295,8 +290,6 @@ export type FsLayer = {
 export interface RunPersistenceOptions {
   /** Absolute workflow persistence root; explicit value wins over ORCHESTRATOR_PERSISTENCE_ROOT. */
   persistenceRoot?: string;
-  /** Opaque host/process generation identity attached to newly acquired run leases. */
-  leaseOwnerId?: string;
 }
 
 /** The copy of an inline script that older engines wrote next to the run's state. delete removes it. */
@@ -395,8 +388,7 @@ export function createRunPersistence(
     value.runPath === expectedRunPath &&
     Number.isInteger(value.pid) &&
     value.pid > 0 &&
-    typeof value.token === "string" &&
-    (value.ownerId === undefined || typeof value.ownerId === "string");
+    typeof value.token === "string";
 
   const removeStaleLegacyLock = (
     runId: string,
@@ -520,14 +512,12 @@ export function createRunPersistence(
           pid: process.pid,
           startedAt: new Date().toISOString(),
           token,
-          ...(options.leaseOwnerId === undefined ? {} : { ownerId: options.leaseOwnerId }),
         };
         try {
           _writeFileSync(lock, JSON.stringify(payload, null, 2), { flag: "wx" });
           return {
             runId,
             token,
-            ...(options.leaseOwnerId === undefined ? {} : { ownerId: options.leaseOwnerId }),
             ...(recoveredOwnerPid === undefined ? {} : { recoveredOwnerPid }),
           };
         } catch (err) {
@@ -565,15 +555,13 @@ export function createRunPersistence(
         runId,
         pid: existing.pid,
         startedAt: existing.startedAt,
-        ...(existing.ownerId === undefined ? {} : { ownerId: existing.ownerId }),
       };
     },
 
     validateRunLease(lease: RunLease): boolean {
       const existing = readLock(lease.runId);
       return validLockOwner(existing, lease.runId, primaryRunPath(lease.runId)) &&
-        existing.token === lease.token &&
-        (lease.ownerId === undefined || existing.ownerId === lease.ownerId);
+        existing.token === lease.token;
     },
 
     getRunsDir(): string {
