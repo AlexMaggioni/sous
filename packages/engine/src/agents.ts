@@ -384,6 +384,24 @@ export function modelFor(harness: Harness, model: string | undefined, fallback?:
 }
 
 /**
+ * The model a harness takes: the spec without its harness. A harness alone gives none. An agent
+ * file whose model names its harness, such as `model: claude/haiku`, gives the spec
+ * claude/claude/haiku, which the journal and the run record keep, so the harness is dropped twice.
+ */
+export function stepModel(spec: string | undefined): string | undefined {
+  if (!spec) return undefined;
+  const [first, ...rest] = spec.split("/");
+  if (!isHarness(first!.toLowerCase())) return spec;
+  const model = rest[0]?.toLowerCase() === first!.toLowerCase() ? rest.slice(1) : rest;
+  return model.length ? model.join("/") : undefined;
+}
+
+/** The spec with its harness, such as claude/haiku, for the step's record. */
+export function withHarness(harness: Harness, id: string): string {
+  return isHarness(id.split("/")[0]!.toLowerCase()) ? id : `${harness}/${id}`;
+}
+
+/**
  * An agent's definition, as its default harness block gives it. A workflow script names an agent
  * with `agent("audit this dir", { agentType: "security-auditor" })`, and routeStep turns the
  * agent's default block into a definition only to hash it.

@@ -5,9 +5,8 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createHarness, type FindOptions } from "@orchestrator/harnesses";
 import { CALLER, currentAccount, DEFAULT, stepAccount } from "./accounts.js";
-import { envFor, HARNESSES, harnessName, loginOf, routeHarness, type Harness } from "./agents.js";
+import { envFor, HARNESSES, harnessName, loginOf, routeHarness, stepModel, type Harness } from "./agents.js";
 import type { HomePaths, OrcConfig } from "./runs/home.js";
-import { stepModel } from "./steps/steps.js";
 
 /** Where to look for each program: the path config.json gives, then the harness's own order. */
 export function programLookup(config: OrcConfig): (harness: Harness) => FindOptions {

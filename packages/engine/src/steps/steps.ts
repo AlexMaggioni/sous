@@ -25,7 +25,7 @@ import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, PlannedReq
 import type { AgentRunner, LoginCheck, StepAsk, StepRoute } from "./agent-runner.js";
 import type { AgentSessionRef } from "../workflow-result.js";
 import type { McpServerConfig } from "./mcp-config.js";
-import { harnessName, isHarness, missingServer, routeStep, type AgentLookup, type McpLookup, type RoutePlan } from "../agents.js";
+import { harnessName, missingServer, routeStep, stepModel, withHarness, type AgentLookup, type McpLookup, type RoutePlan } from "../agents.js";
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
 import type { SlotPool } from "../runs/slots.js";
 import { buildPrompt, checkImages, CONTINUATION_INSTRUCTION, extractValidated, REPROMPT_TEXT, toMcpServer, validateValue } from "./answer.js";
@@ -63,19 +63,6 @@ export interface StepsOptions {
 
 /** Schema repair turns when the step sets none. */
 const REPAIRS = 2;
-
-/**
- * The model a harness takes: the spec without its harness. A harness alone gives none. An agent
- * file whose model names its harness, such as `model: claude/haiku`, gives the spec
- * claude/claude/haiku, which the journal and the run record keep, so the harness is dropped twice.
- */
-export function stepModel(spec: string | undefined): string | undefined {
-  if (!spec) return undefined;
-  const [first, ...rest] = spec.split("/");
-  if (!isHarness(first!.toLowerCase())) return spec;
-  const model = rest[0]?.toLowerCase() === first!.toLowerCase() ? rest.slice(1) : rest;
-  return model.length ? model.join("/") : undefined;
-}
 
 const isFailure = (error: unknown): error is HarnessFailure => error instanceof Error && "failure" in error;
 const failureOf = (error: unknown): Failure | undefined => (isFailure(error) ? error.failure : undefined);
@@ -184,9 +171,6 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     },
   };
 }
-
-/** The step's record shows the harness with the model, such as claude/haiku. */
-const withHarness = (harness: HarnessId, id: string) => (isHarness(id.split("/")[0]!.toLowerCase()) ? id : `${harness}/${id}`);
 
 /** A test's or the dry run's runner gets the planned step with the engine's own fields, and the account. */
 async function runInner(
