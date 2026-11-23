@@ -1,5 +1,5 @@
 // The two wire copies of a step's schema. The engine hashes the original schema to resume a
-// step, so each test also checks that the original is unchanged.
+// step, so a table of tests below checks that neither helper changes the original.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Type } from "typebox";
@@ -80,23 +80,6 @@ test("toStrictJsonSchema: unsupported validation keywords are stripped on the co
   assert.deepEqual(props.tags.items, { type: "string" });
   // nested string validator gone
   assert.equal("pattern" in address.zip, false);
-});
-
-test("toStrictJsonSchema: does NOT mutate the original hash-feeding schema", () => {
-  const schema = buildSchema();
-  const hashBefore = JSON.stringify(schema);
-
-  toStrictJsonSchema(schema);
-
-  // (a) the exact bytes the resume hash consumes are unchanged
-  assert.equal(JSON.stringify(schema), hashBefore);
-  // (b) the fields an in-place normalizer would have clobbered are intact
-  const original = view(schema);
-  assert.equal(original.additionalProperties, true);
-  assert.equal(original.title, "Person");
-  assert.deepEqual(original.required, ["name", "address", "tags"]); // optional `age` still absent
-  assert.equal(original.properties?.name?.minLength, 1);
-  assert.equal(original.properties?.name?.format, "email");
 });
 
 // ---- (6) originally-OPTIONAL props become NULLABLE under all-required strict mode --------
@@ -191,14 +174,6 @@ test("toStrictJsonSchema: oneOf is rewritten to anyOf (OpenAI strict accepts any
   assert.deepEqual(props.choice.anyOf, [{ type: "string" }, { type: "number" }]);
 });
 
-test("toStrictJsonSchema: allOf/oneOf normalization does NOT mutate the hash-feeding original", () => {
-  const schema = Type.Intersect([Type.Object({ a: Type.String() }), Type.Object({ b: Type.Optional(Type.Number()) })]);
-  const before = JSON.stringify(schema);
-  toStrictJsonSchema(schema);
-  assert.equal(JSON.stringify(schema), before, "the exact bytes the resume hash consumes are unchanged");
-  assert.ok(Array.isArray((view(schema) as JsonNode).allOf), "original still carries its allOf");
-});
-
 // ---- toAnthropicJsonSchema (Claude native outputFormat) ----------------------------------
 
 test("toAnthropicJsonSchema: additionalProperties:false forced on EVERY object, required preserved", () => {
@@ -222,6 +197,9 @@ test("toAnthropicJsonSchema: unsupported keywords stripped; supported subset kep
     age: Type.Integer({ minimum: 0, maximum: 130, default: 30 }),
     tags: Type.Array(Type.String(), { minItems: 1, maxItems: 5, uniqueItems: true }),
     empties: Type.Array(Type.String(), { minItems: 0 }),
+    pair: Type.Array(Type.String(), { minItems: 2 }),
+    slug: Type.String({ format: "custom-slug" }),
+    id: Type.String({ format: "uuid" }),
     status: Type.Unsafe({ type: "string", enum: ["a", "b"] }),
   }, { title: "Person", $id: "person" });
   const out = toAnthropicJsonSchema(schema);
@@ -236,28 +214,16 @@ test("toAnthropicJsonSchema: unsupported keywords stripped; supported subset kep
   assert.equal("maximum" in props.age, false);
   assert.equal(props.age.default, 30);
   assert.deepEqual(props.status.enum, ["a", "b"]);
-  // format: "email" is in Anthropic's supported set -> kept
+  // format: kept when it is in Anthropic's supported set, stripped otherwise
   assert.equal(props.name.format, "email");
+  assert.equal(props.id.format, "uuid");
+  assert.equal("format" in props.slug, false);
   // array constraints: minItems kept ONLY for 0/1; maxItems/uniqueItems always stripped
   assert.equal(props.tags.minItems, 1);
   assert.equal("maxItems" in props.tags, false);
   assert.equal("uniqueItems" in props.tags, false);
   assert.equal(props.empties.minItems, 0);
-});
-
-test("toAnthropicJsonSchema: minItems 0/1 kept, larger stripped; unsupported format stripped", () => {
-  const schema = Type.Object({
-    one: Type.Array(Type.String(), { minItems: 1 }),
-    two: Type.Array(Type.String(), { minItems: 2 }),
-    slug: Type.String({ format: "custom-slug" }),
-    id: Type.String({ format: "uuid" }),
-  });
-  const out = toAnthropicJsonSchema(schema);
-  const props = out.properties as Record<string, JsonNode>;
-  assert.equal(props.one.minItems, 1);
-  assert.equal("minItems" in props.two, false);
-  assert.equal("format" in props.slug, false);
-  assert.equal(props.id.format, "uuid");
+  assert.equal("minItems" in props.pair, false);
 });
 
 test("toAnthropicJsonSchema: patterns with unsupported regex features stripped, simple kept", () => {
@@ -287,15 +253,37 @@ test("toAnthropicJsonSchema: oneOf rewritten to anyOf; anyOf preserved", () => {
   assert.deepEqual(props.nullable.anyOf, [{ type: "string" }, { type: "null" }]);
 });
 
-test("toAnthropicJsonSchema: does NOT mutate the hash-feeding original", () => {
-  const schema = buildSchema();
-  const before = JSON.stringify(schema);
-  toAnthropicJsonSchema(schema);
-  assert.equal(JSON.stringify(schema), before, "the exact bytes the resume hash consumes are unchanged");
-  const original = view(schema);
+// ---- the original stays as it was (the engine hashes it to resume a step) ----------------
+
+/** What an in-place normalizer would have clobbered on the person schema. */
+function personIntact(original: JsonNode) {
   assert.equal(original.additionalProperties, true);
+  assert.equal(original.title, "Person");
+  assert.deepEqual(original.required, ["name", "address", "tags"]); // optional `age` still absent
   assert.equal(original.properties?.name?.minLength, 1);
-});
+  assert.equal(original.properties?.name?.format, "email");
+}
+
+const NO_MUTATION: Array<{ title: string; helper: (schema: object) => unknown; schema: () => object; intact: (original: JsonNode) => void }> = [
+  { title: "toStrictJsonSchema: does NOT mutate the original hash-feeding schema", helper: toStrictJsonSchema, schema: buildSchema, intact: personIntact },
+  {
+    title: "toStrictJsonSchema: allOf/oneOf normalization does NOT mutate the hash-feeding original",
+    helper: toStrictJsonSchema,
+    schema: () => Type.Intersect([Type.Object({ a: Type.String() }), Type.Object({ b: Type.Optional(Type.Number()) })]),
+    intact: (original) => assert.ok(Array.isArray(original.allOf), "original still carries its allOf"),
+  },
+  { title: "toAnthropicJsonSchema: does NOT mutate the hash-feeding original", helper: toAnthropicJsonSchema, schema: buildSchema, intact: personIntact },
+];
+
+for (const { title, helper, schema: build, intact } of NO_MUTATION) {
+  test(title, () => {
+    const schema = build();
+    const before = JSON.stringify(schema);
+    helper(schema);
+    assert.equal(JSON.stringify(schema), before, "the exact bytes the resume hash consumes are unchanged");
+    intact(view(schema));
+  });
+}
 
 // ---- map keys are data, not keywords (both normalizers) ----------------------------------
 
