@@ -2,73 +2,43 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { type ModelRoutingConfig, parseModelRoutingFromMeta, resolveModelForPhase } from "../src/model-routing.js";
 
-test("resolveModelForPhase returns default when no phases match", () => {
-  assert.equal(resolveModelForPhase("Discovery", { defaultModel: "default-model", routes: [] }), "default-model");
+const routing = (...routes: Array<[phasePattern: string, model: string]>): ModelRoutingConfig => ({
+  defaultModel: "default-model",
+  routes: routes.map(([phasePattern, model]) => ({ phasePattern, model })),
 });
+const RESEARCH = routing(["Research", "explorer-model"]);
+const REGEX = routing(["phase-\\d+", "literal-model"]);
 
-test("resolveModelForPhase returns undefined when no default and no routes", () => {
-  assert.equal(resolveModelForPhase("Discovery", { routes: [] }), undefined);
-});
+/** One row per call of resolveModelForPhase: the case, the routing, the phase and the model it gives. */
+const RESOLVE: Array<[name: string, config: ModelRoutingConfig, phase: string | undefined, expected: string | undefined]> = [
+  ["returns default when no phases match", routing(), "Discovery", "default-model"],
+  ["returns undefined when no default and no routes", { routes: [] }, "Discovery", undefined],
+  // A route is present, so a phase of undefined cannot pass for an empty list of routes.
+  ["returns defaultModel when phase is undefined", RESEARCH, undefined, "default-model"],
+  ["matches a phase title EXACTLY (no fuzzy substring)", RESEARCH, "Research", "explorer-model"],
+  ["does not match a title that only contains the route's", RESEARCH, "Deep Research", "default-model"],
+  ["matches case-sensitively", RESEARCH, "research", "default-model"],
+  ["uses the first matching route", routing(["Scan", "scan-model"], ["Scan", "other-model"]), "Scan", "scan-model"],
+  ["treats regex-looking phase patterns as exact literals, so one does not match as a regex", REGEX, "phase-3", "default-model"],
+  ["treats regex-looking phase patterns as exact literals, so one matches its own text", REGEX, "phase-\\d+", "literal-model"],
+];
 
-test("resolveModelForPhase returns defaultModel when phase is undefined", () => {
-  assert.equal(resolveModelForPhase(undefined, { defaultModel: "m", routes: [] }), "m");
-});
+for (const [name, config, phase, expected] of RESOLVE) {
+  test(`resolveModelForPhase ${name}`, () => assert.equal(resolveModelForPhase(phase, config), expected));
+}
 
-test("resolveModelForPhase matches a phase title EXACTLY (no fuzzy substring)", () => {
-  const config: ModelRoutingConfig = {
-    defaultModel: "default-model",
-    routes: [{ phasePattern: "Research", model: "explorer-model" }],
-  };
-  assert.equal(resolveModelForPhase("Research", config), "explorer-model");
-  // "Deep Research" must NOT fuzzy-match the "Research" route — falls to default.
-  assert.equal(resolveModelForPhase("Deep Research", config), "default-model");
-  // case-sensitive
-  assert.equal(resolveModelForPhase("research", config), "default-model");
-});
+/** One row per call of parseModelRoutingFromMeta: the case, the meta's phases and model, and the routing it gives. */
+const PARSE: Array<[name: string, phases: Array<{ title: string; model?: string }> | undefined, model: string | undefined, expected: ModelRoutingConfig]> = [
+  [
+    "extracts routes from phases",
+    [{ title: "Scan", model: "fast-model" }, { title: "Analyze" }, { title: "Report", model: "slow-model" }],
+    undefined,
+    { defaultModel: undefined, routes: [{ phasePattern: "Scan", model: "fast-model" }, { phasePattern: "Report", model: "slow-model" }] },
+  ],
+  ["carries meta.model as the default", [{ title: "Scan", model: "fast" }], "meta-default", { defaultModel: "meta-default", routes: [{ phasePattern: "Scan", model: "fast" }] }],
+  ["returns empty routes / no default when nothing declared", undefined, undefined, { defaultModel: undefined, routes: [] }],
+];
 
-test("resolveModelForPhase uses the first matching route", () => {
-  const config: ModelRoutingConfig = {
-    defaultModel: "default-model",
-    routes: [
-      { phasePattern: "Scan", model: "scan-model" },
-      { phasePattern: "Scan", model: "other-model" },
-    ],
-  };
-  assert.equal(resolveModelForPhase("Scan", config), "scan-model");
-});
-
-test("resolveModelForPhase treats regex-looking phase patterns as exact literals", () => {
-  const config: ModelRoutingConfig = {
-    defaultModel: "default-model",
-    routes: [{ phasePattern: "phase-\\d+", model: "literal-model" }],
-  };
-  assert.equal(resolveModelForPhase("phase-3", config), "default-model");
-  assert.equal(resolveModelForPhase("phase-\\d+", config), "literal-model");
-});
-
-test("parseModelRoutingFromMeta extracts routes from phases", () => {
-  const config = parseModelRoutingFromMeta([
-    { title: "Scan", model: "fast-model" },
-    { title: "Analyze" },
-    { title: "Report", model: "slow-model" },
-  ]);
-  assert.equal(config.routes.length, 2);
-  assert.equal(config.routes[0].phasePattern, "Scan");
-  assert.equal(config.routes[0].model, "fast-model");
-  assert.equal(config.routes[1].phasePattern, "Report");
-  assert.equal(config.routes[1].model, "slow-model");
-});
-
-test("parseModelRoutingFromMeta carries meta.model as the default", () => {
-  const config = parseModelRoutingFromMeta([{ title: "Scan", model: "fast" }], "meta-default");
-  assert.equal(config.defaultModel, "meta-default");
-  // A phase with no exact route resolves to the meta default.
-  assert.equal(resolveModelForPhase("Unrouted", config), "meta-default");
-  assert.equal(resolveModelForPhase("Scan", config), "fast");
-});
-
-test("parseModelRoutingFromMeta returns empty routes / no default when nothing declared", () => {
-  const config = parseModelRoutingFromMeta(undefined);
-  assert.deepEqual(config.routes, []);
-  assert.equal(config.defaultModel, undefined);
-});
+for (const [name, phases, model, expected] of PARSE) {
+  test(`parseModelRoutingFromMeta ${name}`, () => assert.deepEqual(parseModelRoutingFromMeta(phases, model), expected));
+}
