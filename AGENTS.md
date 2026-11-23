@@ -26,3 +26,4 @@ The code and its tests are the current state. When prose and code disagree, fix 
 - `pnpm install`, then `pnpm build`.
 - While iterating, run one package's tests, for example `pnpm --filter @orchestrator/engine test`. That does not type-check. `pnpm typecheck` does.
 - Before pushing, run `pnpm test`. It builds every package, type-checks them, then runs every test.
+- `pnpm install` sets `core.hooksPath` to `.githooks`. The pre-push hook there runs `pnpm test` and stops the push when it fails. It skips deleted branches and pushes with no new commit. `git push --no-verify` skips it.

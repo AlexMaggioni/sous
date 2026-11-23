@@ -1,0 +1,42 @@
+#!/bin/sh
+# Runs the whole gate (build, type check, every test) before a push.
+# `pnpm install` turns it on through the `prepare` script.
+# `git push --no-verify` skips it.
+
+remote="$1"
+zero=0000000000000000000000000000000000000000
+
+# Git sends one line per ref: local ref, local sha, remote ref, remote sha.
+# The gate runs when a ref brings commits the remote does not have.
+# Deleting a branch, or pushing a tag or a branch that adds no commit, skips it.
+need_gate=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then
+    new=$(git rev-list --count "$local_sha" --not --remotes="$remote" 2>/dev/null)
+  else
+    new=$(git rev-list --count "$remote_sha..$local_sha" 2>/dev/null)
+  fi
+  # When git cannot count (the remote commit is unknown here), run the gate.
+  if [ -z "$new" ] || [ "$new" -gt 0 ]; then
+    need_gate=1
+  fi
+done
+
+[ "$need_gate" = 0 ] && exit 0
+
+if ! command -v pnpm >/dev/null 2>&1 || ! command -v node >/dev/null 2>&1; then
+  echo "pre-push: pnpm or node is not on the PATH." >&2
+  echo "Fix the PATH, or push with: git push --no-verify" >&2
+  exit 1
+fi
+
+echo "pre-push: running pnpm test (build, type check, every test). Skip with git push --no-verify."
+# Git points GIT_DIR at this repository. Tests that run git in a temporary
+# folder must not inherit it.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+cd "$(git rev-parse --show-toplevel)" || exit 1
+if ! pnpm test; then
+  echo "pre-push: the gate failed, so nothing was pushed. Fix it, or push with: git push --no-verify" >&2
+  exit 1
+fi

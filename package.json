@@ -4,6 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@10.34.4",
   "scripts": {
+    "prepare": "git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm build && pnpm typecheck && pnpm test:architecture && pnpm -r test && pnpm test:baseline",
