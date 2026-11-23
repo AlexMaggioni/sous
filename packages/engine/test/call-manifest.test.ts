@@ -7,7 +7,7 @@ import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { AgentUsage, StepRequest } from "../src/steps/agent-run.js";
 import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import { runWorkflow } from "../src/workflow.js";
+import { isStepFailedPause, runWorkflow } from "../src/workflow.js";
 
 const meta = (name: string, body: string) =>
   `export const meta = { name: ${JSON.stringify(name)}, description: 'manifest test' }\n${body}`;
@@ -17,7 +17,7 @@ function usage(total: number): AgentUsage {
 }
 
 describe("engine call manifest", () => {
-  it("records success, exhausted-null, nonrecoverable, and checkpoint terminal exits", async () => {
+  it("records success, exhausted, nonrecoverable, and checkpoint terminal exits", async () => {
     let invocation = 0;
     const runner: AgentRunner = {
       async run(_prompt, options) {
@@ -39,30 +39,63 @@ describe("engine call manifest", () => {
         });
       },
     };
-    const calls: WorkflowCallRecord[] = [];
+    // A failed step pauses its run, so each failure ends a run of its own.
+    // The first run mixes agent and checkpoint calls, which share one index
+    // and settlement-ordinal sequence.
+    const mixedCalls: WorkflowCallRecord[] = [];
     await assert.rejects(runWorkflow(
       meta(
         "terminal-exits",
         `const success = await agent('success', { label: 'success', schema: { type: 'object' } })
-const exhausted = await agent('empty', { label: 'empty', retries: 1 })
-try { await agent('hard', { label: 'hard' }) } catch {}
 const confirmed = await checkpoint('confirm?')
-try { await checkpoint('bad?', { kind: 'input' }) } catch {}
-return { success, exhausted, confirmed }`,
+const exhausted = await agent('empty', { label: 'empty', retries: 1 })
+return { success, confirmed, exhausted }`,
       ),
       {
         runId: "manifest-run",
         agent: runner,
         persistLogs: false,
-        confirm: async (prompt) => (prompt === "bad?" ? new Map() : true),
-        onCallRecord: (record) => { calls.push(record); },
+        confirm: async () => true,
+        onCallRecord: (record) => { mixedCalls.push(record); },
+      },
+    ), (error: unknown) => isStepFailedPause(error as WorkflowError));
+    const hardCalls: WorkflowCallRecord[] = [];
+    await assert.rejects(runWorkflow(
+      meta("terminal-hard", `try { await agent('hard', { label: 'hard' }) } catch {}\nreturn null`),
+      {
+        runId: "manifest-hard",
+        agent: runner,
+        persistLogs: false,
+        onCallRecord: (record) => { hardCalls.push(record); },
+      },
+    ), (error: unknown) => isStepFailedPause(error as WorkflowError));
+    const checkpointCalls: WorkflowCallRecord[] = [];
+    await assert.rejects(runWorkflow(
+      meta(
+        "terminal-checkpoints",
+        `try { await checkpoint('bad?', { kind: 'input' }) } catch {}
+return null`,
+      ),
+      {
+        runId: "manifest-checkpoints",
+        agent: runner,
+        persistLogs: false,
+        confirm: async () => new Map(),
+        onCallRecord: (record) => { checkpointCalls.push(record); },
       },
     ), (error: unknown) => error instanceof WorkflowError && error.code === WorkflowErrorCode.CHECKPOINT_REQUIRED);
 
-    assert.equal(calls.length, 5);
-    assert.deepEqual(calls.map((row) => row.index), [0, 1, 2, 3, 4]);
-    assert.deepEqual(calls.map((row) => row.settlementOrdinal), [1, 2, 3, 4, 5]);
-    const [success, exhausted, hard, confirmed, bad] = calls;
+    assert.deepEqual(mixedCalls.map((row) => row.kind), ["agent", "checkpoint", "agent"]);
+    assert.deepEqual(mixedCalls.map((row) => row.index), [0, 1, 2]);
+    assert.deepEqual(mixedCalls.map((row) => row.settlementOrdinal), [1, 2, 3]);
+    assert.equal(hardCalls.length, 1);
+    assert.deepEqual(hardCalls.map((row) => row.settlementOrdinal), [1]);
+    assert.equal(checkpointCalls.length, 1);
+    assert.deepEqual(checkpointCalls.map((row) => row.index), [0]);
+    assert.deepEqual(checkpointCalls.map((row) => row.settlementOrdinal), [1]);
+    const [success, confirmed, exhausted] = mixedCalls;
+    const [hard] = hardCalls;
+    const [bad] = checkpointCalls;
     assert.deepEqual(
       {
         outcome: success.outcome,
@@ -83,7 +116,7 @@ return { success, exhausted, confirmed }`,
         scope: "manifest-run",
       },
     );
-    assert.equal(exhausted.outcome, "null");
+    assert.equal(exhausted.outcome, "error");
     assert.equal(exhausted.origin, "runner");
     assert.equal(exhausted.attempts, 2);
     assert.equal(exhausted.error?.form, "workflow-error");

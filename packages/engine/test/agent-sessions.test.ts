@@ -12,9 +12,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import { type AgentSessionRef } from "../src/workflow-result.js";
+import { type AgentSessionRecord, type AgentSessionRef } from "../src/workflow-result.js";
 import type { JournalEntry } from "../src/workflow.js";
-import { runWorkflow } from "../src/workflow.js";
+import { isStepFailedPause, runWorkflow } from "../src/workflow.js";
 
 interface SeenCall {
   prompt: string;
@@ -128,11 +128,19 @@ describe("agent session records (result.agentSessions)", () => {
     const script = `export const meta = { name: 'f', description: 'fail' }
 const a = await agent('doomed', { label: 'doomed' })
 return a`;
-    const run = await runWorkflow(script, { agent: failing, persistLogs: false });
-    assert.equal(run.result, null);
-    assert.equal(run.agentSessions?.length, 1);
-    assert.equal(run.agentSessions![0]!.sessionId, "sess-failed");
-    assert.equal(run.agentSessions![0]!.label, "doomed");
+    // The failed step pauses the run, so the session record comes from the step's end event.
+    const sessions: Array<AgentSessionRecord | undefined> = [];
+    await assert.rejects(
+      runWorkflow(script, {
+        agent: failing,
+        persistLogs: false,
+        onAgentEnd: (event) => sessions.push(event.session),
+      }),
+      (error: unknown) => isStepFailedPause(error as WorkflowError),
+    );
+    assert.equal(sessions.length, 1);
+    assert.equal(sessions[0]!.sessionId, "sess-failed");
+    assert.equal(sessions[0]!.label, "doomed");
   });
 
   it("a retried call records the SUCCEEDING attempt's session, never the failed attempt's", async () => {

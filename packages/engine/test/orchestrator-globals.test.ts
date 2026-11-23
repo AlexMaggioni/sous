@@ -7,8 +7,8 @@ import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
 import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner, StepAsk, StepRoute } from "../src/steps/agent-runner.js";
-import type { JournalEntry } from "../src/workflow-result.js";
-import { runWorkflow } from "../src/workflow.js";
+import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
+import { isStepFailedPause, runWorkflow } from "../src/workflow.js";
 import { createSteps } from "../src/steps/steps.js";
 import { homePaths } from "../src/runs/home.js";
 import { lookupAgents, lookupMcpServers } from "../src/agents.js";
@@ -104,11 +104,15 @@ return await js('return 1')`, { agent: steps, cwd: empty, persistLogs: false });
     const { runner } = recordingRunner(() => "agent");
     const cwd = codeFolder();
     const started = Date.now();
-    const slow = await runWorkflow(`export const meta = { name: 'slow', description: 'slow' }
-return await sh('sleep 5', { timeout: 0.2 })`, { agent: runner, cwd, persistLogs: false });
+    const slowRows: WorkflowCallRecord[] = [];
+    await assert.rejects(
+      runWorkflow(`export const meta = { name: 'slow', description: 'slow' }
+return await sh('sleep 5', { timeout: 0.2 })`, { agent: runner, cwd, persistLogs: false, onCallRecord: (row) => slowRows.push(row) }),
+      (error: unknown) => isStepFailedPause(error as { code?: unknown; details?: unknown }),
+      "a step that runs out of time pauses the run",
+    );
     assert.ok(Date.now() - started < 4000, "the time limit stopped the step");
-    assert.equal(slow.result, null, "a failed step gives null when the run does not pause on it");
-    assert.match(String(slow.calls?.[0]?.error?.message), /^timed out after 0s$/);
+    assert.match(String(slowRows[0]?.error?.message), /^timed out after 0s$/);
     const flaky = await runWorkflow<{ stdout: string }>(`export const meta = { name: 'flaky', description: 'flaky' }
 return await sh('echo x >> tries; test $(wc -l < tries) -ge 2 && echo second', { retries: 1 })`, { agent: runner, cwd, persistLogs: false });
     assert.equal(flaky.result.stdout, "second\n");

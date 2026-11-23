@@ -110,7 +110,7 @@ export interface WorkflowAgentOptions {
   defaultModel?: string;
 }
 
-/** Codes the host already turns into a pause, a stop or a reply. pauseOnFailedStep leaves them alone. */
+/** Codes the host already turns into a pause, a stop or a reply. A failed step with one of them does not pause the run on it. */
 const HOST_HANDLED_CODES: ReadonlySet<WorkflowErrorCode> = new Set([
   WorkflowErrorCode.PROVIDER_USAGE_LIMIT,
   WorkflowErrorCode.AUTH_REQUIRED,
@@ -122,7 +122,7 @@ const HOST_HANDLED_CODES: ReadonlySet<WorkflowErrorCode> = new Set([
 /** The message as a sentence, with one period at its end. */
 const sentence = (message: string) => (/[.!?]$/.test(message.trimEnd()) ? message.trimEnd() : `${message}.`);
 
-/** True for the pause a failed step causes under pauseOnFailedStep. */
+/** True for the pause a failed or stopped step causes. */
 export function isStepFailedPause(error: { code?: unknown; details?: unknown } | undefined): boolean {
   return (
     error?.code === WorkflowErrorCode.PAUSE_REQUESTED &&
@@ -257,13 +257,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   codeEnv?: CodeStepEnv;
   /** How deep workflow() may nest. Default 5. */
   maxNestingDepth?: number;
-  /**
-   * A step that fails on its last try, or fails in a way a retry cannot fix,
-   * pauses the whole run instead of returning null or failing it. Steps already running finish
-   * and journal, nothing new starts, and the run's pauseReason is "step_failed". The user fixes
-   * the cause and resumes: the finished steps replay and the failed step runs again.
-   */
-  pauseOnFailedStep?: boolean;
   /** Names of the saved workflows an agent may pick with choose({ any: true }). */
   listSavedWorkflows?: () => Array<{ name: string; description?: string }>;
   /**
@@ -755,8 +748,7 @@ export async function runWorkflow<T = unknown>(
   // A pause request is a gate, not a cancellation: nothing already executing is interrupted, but
   // every later admission (and every queued attempt) refuses with PAUSE_REQUESTED. Like a pending
   // checkpoint, the refusal is remembered so a script that catches it cannot keep the run going.
-  // A step that failed with pauseOnFailedStep sets pendingPause, which gates
-  // admissions the same way.
+  // A failed or stopped step sets pendingPause, which gates admissions the same way.
   const pauseRequested = () => (pauseSignal?.aborted === true || shared.pendingPause !== undefined) && !signal.aborted;
   const pauseError = () =>
     (shared.pendingPause ??= new WorkflowError(
@@ -1536,21 +1528,16 @@ export async function runWorkflow<T = unknown>(
                 `agent ${label} attempt ${attempt}/${maxAttempts} cancelled by host: ${cancellationReason.message}`,
               );
               recordTokens(null, slot.usage);
-              if (options.pauseOnFailedStep) {
-                // A step the user stopped pauses the run on it, like a failed step.
-                const why = (cancellationReason.details as { pauseReason?: unknown } | undefined)?.pauseReason;
-                const message = `step "${label}" was stopped${typeof why === "string" ? `: ${cancellationReason.message}` : ""}`;
-                log(`${sentence(message)} The run pauses: resume it to run the step again.`);
-                emitFailure(cancellationReason, "engine", "error", slot, false);
-                throw (shared.pendingPause ??= new WorkflowError(message, WorkflowErrorCode.PAUSE_REQUESTED, {
-                  recoverable: false,
-                  agentLabel: label,
-                  details: { stepFailed: true, code: WorkflowErrorCode.AGENT_CANCELLED, ...(typeof why === "string" ? { pauseReason: why } : {}) },
-                }));
-              }
-              log(`agent "${label}" cancelled by host; retries skipped`);
-              emitFailure(cancellationReason, "engine", "null", slot, false);
-              return null;
+              // A step the user stopped pauses the run on it, like a failed step.
+              const why = (cancellationReason.details as { pauseReason?: unknown } | undefined)?.pauseReason;
+              const message = `step "${label}" was stopped${typeof why === "string" ? `: ${cancellationReason.message}` : ""}`;
+              log(`${sentence(message)} The run pauses: resume it to run the step again.`);
+              emitFailure(cancellationReason, "engine", "error", slot, false);
+              throw (shared.pendingPause ??= new WorkflowError(message, WorkflowErrorCode.PAUSE_REQUESTED, {
+                recoverable: false,
+                agentLabel: label,
+                details: { stepFailed: true, code: WorkflowErrorCode.AGENT_CANCELLED, ...(typeof why === "string" ? { pauseReason: why } : {}) },
+              }));
             }
             if (signal.aborted) {
               emitFailure(error, attemptsRan > 0 ? "runner" : "engine", "error", slot, true);
@@ -1574,7 +1561,10 @@ export async function runWorkflow<T = unknown>(
               continue;
             }
 
-            if (options.pauseOnFailedStep && !HOST_HANDLED_CODES.has(workflowError.code)) {
+            // A step that fails on its last try, or in a way a retry cannot fix, pauses the whole
+            // run. Steps already running finish and journal, and nothing new starts. The user fixes
+            // the cause and resumes: the finished steps replay and this one runs again.
+            if (!HOST_HANDLED_CODES.has(workflowError.code)) {
               const tries = workflowError.recoverable ? `after ${maxAttempts} tr${maxAttempts === 1 ? "y" : "ies"}` : "and a retry cannot fix it";
               const message = `step "${label}" failed ${tries}: ${workflowError.message}`;
               log(`${sentence(message)} The run pauses: fix the cause and resume it.`);

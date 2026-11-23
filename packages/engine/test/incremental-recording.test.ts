@@ -17,6 +17,7 @@ import {
   CALL_INPUTS_FORMAT,
   CHECKPOINT_INPUTS_FORMAT,
   hashCheckpointInputs,
+  isStepFailedPause,
   runWorkflow,
 } from "../src/workflow.js";
 
@@ -113,21 +114,24 @@ return await agent("null", { resume: nullProto })`),
 
   it("records occurrence safety and carries only a validated source marker into a replay", async () => {
     const rows: WorkflowCallRecord[] = [];
-    const live = await runWorkflow(
-      script(`
+    // The empty step fails on its last try, so the run pauses on it.
+    await assert.rejects(
+      runWorkflow(
+        script(`
 const safe = await agent("safe", { resume: { filesystem: "read-only" } })
 const unsafe = await agent("unsafe")
 const empty = await agent("empty", { resume: { filesystem: "read-only" } })
 return { safe, unsafe, empty }`),
-      {
-        agent: { async run(prompt) { return prompt === "empty" ? "" : prompt; } },
-        persistLogs: false,
-        onCallRecord: (row) => rows.push(row),
-      },
+        {
+          agent: { async run(prompt) { return prompt === "empty" ? "" : prompt; } },
+          persistLogs: false,
+          onCallRecord: (row) => rows.push(row),
+        },
+      ),
+      (error: unknown) => isStepFailedPause(error as { code?: unknown; details?: unknown }),
     );
-    assert.equal(live.result && typeof live.result, "object");
     assert.deepEqual(rows.map((row) => row.resumeSafety), ["declared-read-only", undefined, "declared-read-only"]);
-    assert.deepEqual(rows.map((row) => row.outcome), ["result", "result", "null"]);
+    assert.deepEqual(rows.map((row) => row.outcome), ["result", "result", "error"]);
 
     const journal: JournalEntry = {
       index: 0,
@@ -385,11 +389,15 @@ return "done"`),
 
   it("decrements a synchronously throwing runner unit", async () => {
     const syncActivities: number[] = [];
-    await runWorkflow(script(`try { await agent("sync") } catch {}\nreturn "caught"`), {
-      agent: { run() { throw new Error("sync"); } } as AgentRunner,
-      persistLogs: false,
-      onResumeActivity: (active) => syncActivities.push(active),
-    });
+    // The failed step pauses the run, even though the script catches the error.
+    await assert.rejects(
+      runWorkflow(script(`try { await agent("sync") } catch {}\nreturn "caught"`), {
+        agent: { run() { throw new Error("sync"); } } as AgentRunner,
+        persistLogs: false,
+        onResumeActivity: (active) => syncActivities.push(active),
+      }),
+      (error: unknown) => isStepFailedPause(error as { code?: unknown; details?: unknown }),
+    );
     assert.deepEqual(syncActivities, [1, 2, 1, 0]);
   });
 });

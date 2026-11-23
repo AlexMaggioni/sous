@@ -9,7 +9,7 @@ import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { createRunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { projectRecordedError } from "../src/recorded-error.js";
-import { runWorkflow } from "../src/workflow.js";
+import { isStepFailedPause, runWorkflow } from "../src/workflow.js";
 
 const script = (body: string) =>
   `export const meta = { name: 'frozen', description: 'frozen snapshots' }\n${body}`;
@@ -94,8 +94,10 @@ return value.nested.value`),
           onCallRecord: (row) => rows.push(row),
         }),
         (error: unknown) => {
+          // The step fails in a way a retry cannot fix, so the run pauses on it.
           assert.ok(error instanceof WorkflowError, name);
-          assert.equal(error.code, WorkflowErrorCode.AGENT_EXECUTION_ERROR, name);
+          assert.ok(isStepFailedPause(error), name);
+          assert.equal((error.details as { code?: unknown }).code, WorkflowErrorCode.AGENT_EXECUTION_ERROR, name);
           assert.match(error.message, /agent .* result is not strict JSON at \$/, name);
           return true;
         },

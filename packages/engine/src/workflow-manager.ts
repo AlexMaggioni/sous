@@ -1494,8 +1494,6 @@ export class WorkflowManager extends EventEmitter {
         },
         loadSavedWorkflow: this.loadSavedWorkflow,
         ...this.orchestratorOptions,
-        // A failed or stopped step pauses the run, so resume can run it again.
-        pauseOnFailedStep: true,
         ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
         ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
         persistenceRoot: this.persistenceRoot,

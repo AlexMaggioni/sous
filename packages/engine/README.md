@@ -88,8 +88,8 @@ all of them, and returns how many it stopped. It aborts each attempt with recove
 retries. No journal result is created, and the run-level signal and `abortSignaled` remain
 untouched. The manager always pauses the run on a stopped step, with `pauseReason: "step_stopped"`,
 and a resume runs that step again. A failed step pauses the run the same way, with
-`pauseReason: "step_failed"`. Under bare `runWorkflow` without `pauseOnFailedStep`, the script
-receives `null` and sibling branches continue.
+`pauseReason: "step_failed"`. Bare `runWorkflow` pauses the same way: it rejects with
+`PAUSE_REQUESTED`, and steps already running finish first.
 
 Or call the bare engine function (no manager, no persistence layer):
 

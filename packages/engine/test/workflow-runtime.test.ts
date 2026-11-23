@@ -4,7 +4,8 @@ import test from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { AgentUsage, StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import { type JournalEntry, runWorkflow } from "../src/workflow.js";
+import { isStepFailedPause, type JournalEntry, runWorkflow } from "../src/workflow.js";
+import type { WorkflowCallRecord } from "../src/workflow-result.js";
 
 /** Agent runner that counts real invocations and echoes a per-call result. */
 function countingAgent() {
@@ -247,39 +248,50 @@ return a`,
   assert.equal(journal.length, 1, "only the final success is journaled");
 });
 
-test("runWorkflow returns null when recoverable retries are exhausted", async () => {
+test("runWorkflow pauses the run when recoverable retries are exhausted", async () => {
   let calls = 0;
   const logs: string[] = [];
   const journal: JournalEntry[] = [];
-  const result = await runWorkflow(
-    `export const meta = { name: 'retry_exhausted', description: 'retry exhausted' }
+  const starts: number[] = [];
+  const rows: WorkflowCallRecord[] = [];
+  await assert.rejects(
+    runWorkflow(
+      `export const meta = { name: 'retry_exhausted', description: 'retry exhausted' }
 const a = await agent('work', { label: 'a' })
 return a`,
-    {
-      agent: {
-        async run() {
-          calls++;
-          return "";
+      {
+        agent: {
+          async run() {
+            calls++;
+            return "";
+          },
         },
+        agentRetries: 1,
+        persistLogs: false,
+        onLog: (message) => logs.push(message),
+        onAgentJournal: (entry) => journal.push(entry),
+        onAgentStart: (event) => starts.push(event.callIndex),
+        onCallRecord: (row) => rows.push(row),
       },
-      agentRetries: 1,
-      persistLogs: false,
-      onLog: (message) => logs.push(message),
-      onAgentJournal: (entry) => journal.push(entry),
-    },
+    ),
+    (error: unknown) =>
+      isStepFailedPause(error as WorkflowError) &&
+      (error as WorkflowError).details !== undefined &&
+      ((error as WorkflowError).details as { code?: unknown }).code === WorkflowErrorCode.AGENT_EMPTY_OUTPUT,
   );
 
-  assert.equal(result.result, null);
   assert.equal(calls, 2);
-  assert.equal(result.agentCount, 1);
-  assert.equal(journal.length, 0, "failed/null recoverable results are not journaled");
+  assert.deepEqual(starts, [0], "retries should not allocate extra logical agent slots");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].attempts, 2);
+  assert.equal(journal.length, 0, "failed recoverable results are not journaled");
   assert.ok(
     logs.some((message) => /retrying/i.test(message)),
     "logs should mention retrying",
   );
   assert.ok(
-    logs.some((message) => /exhausted/i.test(message)),
-    "logs should mention exhaustion",
+    logs.some((message) => /failed after 2 tries/i.test(message)),
+    "logs should mention the last try",
   );
 });
 
@@ -301,7 +313,10 @@ return a`,
         persistLogs: false,
       },
     ),
-    (error: unknown) => error instanceof WorkflowError && error.code === WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+    (error: unknown) =>
+      isStepFailedPause(error as WorkflowError) &&
+      ((error as WorkflowError).details as { code?: unknown }).code === WorkflowErrorCode.SCRIPT_VALIDATION_ERROR &&
+      /a retry cannot fix it: hard stop/.test((error as WorkflowError).message),
   );
   assert.equal(calls, 1);
 });

@@ -53,8 +53,8 @@ export interface AgentRunner {
    *
    *  - On failure, throw. A WorkflowError from this package keeps its code and `recoverable`
    *    flag. The engine sorts errors with wrapError: a recoverable one is retried up to
-   *    agentRetries times, then the step returns null. Any other error stops the run, also
-   *    inside parallel() and pipeline(). The codes a runner raises are AGENT_EMPTY_OUTPUT
+   *    agentRetries times. After the last try, or on an error a retry cannot fix, the run
+   *    pauses on the step, also inside parallel() and pipeline(). The codes a runner raises are AGENT_EMPTY_OUTPUT
    *    (recoverable, no text on a call without a schema), SCHEMA_NONCOMPLIANCE (the answer
    *    never matched the schema) and PROVIDER_USAGE_LIMIT (the subscription limit, which pauses
    *    the run and carries resetHint). The engine adds AGENT_CANCELLED, WORKFLOW_ABORTED and
