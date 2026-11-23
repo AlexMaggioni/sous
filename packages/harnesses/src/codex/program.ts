@@ -17,7 +17,7 @@ export const CODEX: ProgramInfo = {
  * The Codex releases the adapter was checked against, by minor line. The app-server protocol
  * changes between minor releases, and src/codex/generated/ comes from the newest line here.
  */
-export const SUPPORTED = ["0.169"];
+const SUPPORTED = ["0.169"];
 
 export async function codexVersion(path: string): Promise<{ version?: string; problem?: string }> {
   const version = await programVersion(path);

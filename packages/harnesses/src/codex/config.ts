@@ -33,7 +33,7 @@ export const MODES: Record<string, Mode> = {
 export const DEFAULT_MODE = "agent";
 
 /** Codex config keys cannot hold whitespace, so a server name's whitespace becomes underscores. */
-export const serverName = (name: string) => name.replace(/\p{White_Space}/gu, "_");
+const serverName = (name: string) => name.replace(/\p{White_Space}/gu, "_");
 
 /** The MCP server names the user's config files give, from config/read with its layers. */
 export function configuredServers(read: ConfigReadResponse): Set<string> {

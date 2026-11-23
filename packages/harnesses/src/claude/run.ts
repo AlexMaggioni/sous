@@ -24,7 +24,7 @@ const EFFORTS: EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
 const ASK = "AskUserQuestion";
 
 /** The SDK options for a step, and the notes on what it could not honor. */
-export function claudeOptions(path: string, step: Step, sessionId: string, abort: AbortController, stderr: (text: string) => void) {
+function claudeOptions(path: string, step: Step, sessionId: string, abort: AbortController, stderr: (text: string) => void) {
   const notes: string[] = [];
   const allow = step.tools?.allow;
   const deny = step.tools?.deny ?? [];
@@ -75,7 +75,7 @@ function mcpConfig(server: McpServer): McpServerConfig {
 }
 
 /** Auto mode applies when the model's row offers it, or when no row names the model. */
-export function offersAuto(models: ModelInfo[], model: string | undefined): boolean {
+function offersAuto(models: ModelInfo[], model: string | undefined): boolean {
   const wanted = model ?? "default";
   const row = models.find((info) => info.value === wanted || info.resolvedModel === wanted);
   return row === undefined || row.supportsAutoMode === true;

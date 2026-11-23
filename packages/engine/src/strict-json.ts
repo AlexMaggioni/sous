@@ -175,7 +175,7 @@ function sortCanonical(value: StrictJsonValue): StrictJsonValue {
 }
 
 /** Canonical strict JSON for hashing: object keys sorted recursively, arrays ordered. */
-export function canonicalStrictJson(value: unknown): string | undefined {
+function canonicalStrictJson(value: unknown): string | undefined {
   const result = cloneStrictJsonValue(value);
   return result.ok ? JSON.stringify(sortCanonical(result.clone)) : undefined;
 }

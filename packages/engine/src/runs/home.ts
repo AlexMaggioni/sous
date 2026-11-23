@@ -34,7 +34,7 @@ export interface OrcConfig {
 
 const DEFAULT_CONFIG: OrcConfig = { maxAgents: 4, defaultPlace: "worktree", notify: true, retries: 2 };
 
-export function orcHome(): string {
+function orcHome(): string {
   return resolve(process.env.ORC_HOME ?? join(homedir(), ".orchestrator"));
 }
 

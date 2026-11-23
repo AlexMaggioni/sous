@@ -34,7 +34,7 @@ function matches(pattern: string, label: string): boolean {
 
 /** Agents that answer at once: the answer given for the step, else a value that fits the step's
  *  schema, else a line of text. Booleans in a made-up value are true, so loops on them end. */
-export function standInAgents(answers: Answers = {}): InnerRunner & { calls: string[] } {
+function standInAgents(answers: Answers = {}): InnerRunner & { calls: string[] } {
   const calls: string[] = [];
   const given = new Map<string, number>();
   const run = async (_prompt: string, request: PlannedRequest): Promise<unknown> => {

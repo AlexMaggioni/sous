@@ -234,7 +234,7 @@ export function readLog(paths: HomePaths, id: string, from = 0): LogRead {
 }
 
 /** Hand the log from `from` to `write`, and return where it ended. */
-export function readLogFrom(file: string, from: number, write: (text: string) => void): number {
+function readLogFrom(file: string, from: number, write: (text: string) => void): number {
   if (!existsSync(file)) return from;
   const size = statSync(file).size;
   if (size <= from) return from;

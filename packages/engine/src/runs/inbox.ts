@@ -131,7 +131,7 @@ export function removeRunQuestions(paths: HomePaths, runId: string): void {
  * Check an answer against the question. A choice must be one of the listed choices, in any
  * case. A breakpoint takes approve, stop, or send back with a note.
  */
-export function normalizeAnswer(question: Question, raw: unknown): unknown {
+function normalizeAnswer(question: Question, raw: unknown): unknown {
   if (question.kind === "select" && question.choices?.length) {
     const text = String(raw).trim();
     const choice = question.choices.find((c) => c.toLowerCase() === text.toLowerCase());

@@ -21,7 +21,7 @@ export interface Worktree {
   branch: string;
 }
 
-export const PLACES: readonly Place[] = ["worktree", "folder", "none"];
+const PLACES: readonly Place[] = ["worktree", "folder", "none"];
 
 export function isPlace(value: unknown): value is Place {
   return typeof value === "string" && (PLACES as readonly string[]).includes(value);
@@ -40,7 +40,7 @@ export function isGitRepo(dir: string): boolean {
 }
 
 /** The folder and branch of the worktree with this name. Every worktree orc makes is named so. */
-export function worktreeAt(paths: HomePaths, name: string): Worktree {
+function worktreeAt(paths: HomePaths, name: string): Worktree {
   return { dir: join(paths.worktrees, name), branch: `orc/${name}` };
 }
 
@@ -177,7 +177,7 @@ export const NO_PLACES: RunPlaces = {
  * True when the run in this worktree changed no file: nothing uncommitted, and the branch has not
  * moved since it was made. The branch's reflog has one entry until something commits on it.
  */
-export function worktreeUnchanged(dir: string, branch: string): boolean {
+function worktreeUnchanged(dir: string, branch: string): boolean {
   try {
     if (git(dir, ["status", "--porcelain"]) !== "") return false;
     const moves = git(dir, ["reflog", "show", "--format=%H", `refs/heads/${branch}`]).split("\n").filter(Boolean);

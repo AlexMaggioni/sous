@@ -19,14 +19,14 @@ export interface ProgramInfo {
   install: string;
 }
 
-export function usualDirs(): string[] {
+function usualDirs(): string[] {
   return [join(homedir(), ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"];
 }
 
 const expand = (path: string) => resolve(path.replace(/^~(?=$|\/)/, homedir()));
 
 /** "program" for a native file or an official launcher, "wrapper" for another script. */
-export function inspectFile(path: string, launcher: string): "program" | "wrapper" | undefined {
+function inspectFile(path: string, launcher: string): "program" | "wrapper" | undefined {
   try {
     if (!statSync(path).isFile()) return undefined;
     accessSync(path, constants.X_OK);

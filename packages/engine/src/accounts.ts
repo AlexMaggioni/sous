@@ -40,7 +40,7 @@ export interface AccountName {
 }
 
 /** "work" is a Claude Code account, "codex/work" a Codex one. "claude/work" works too. */
-export function parseAccountName(text: string | undefined): AccountName {
+function parseAccountName(text: string | undefined): AccountName {
   if (!text) throw new Error("give an account name, such as work");
   const slash = text.indexOf("/");
   const program = slash === -1 ? "claude" : text.slice(0, slash);
@@ -237,7 +237,7 @@ export function describeAccount(program: HarnessId, account: RunAccount | undefi
 }
 
 /** When the limit resets, such as "14:00", or "Sat 09:30" when it is more than 20 hours away. */
-export function resetText(at: Date | undefined, now = new Date()): string | undefined {
+function resetText(at: Date | undefined, now = new Date()): string | undefined {
   if (!at || Number.isNaN(at.getTime())) return undefined;
   const time = at.toTimeString().slice(0, 5);
   return at.getTime() - now.getTime() > 20 * 3600_000 ? `${at.toLocaleDateString("en", { weekday: "short" })} ${time}` : time;

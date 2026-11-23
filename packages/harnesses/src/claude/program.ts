@@ -18,7 +18,7 @@ export const CLAUDE: ProgramInfo = {
 let floor: string | undefined;
 
 /** The oldest Claude Code the SDK works with: its own claudeCodeVersion. */
-export function claudeFloor(): string {
+function claudeFloor(): string {
   if (floor) return floor;
   const entry = createRequire(import.meta.url).resolve("@anthropic-ai/claude-agent-sdk");
   const pkg = JSON.parse(readFileSync(join(dirname(entry), "package.json"), "utf8")) as { version: string; claudeCodeVersion: string };

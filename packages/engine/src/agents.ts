@@ -67,7 +67,7 @@ export interface LookupSettings {
 }
 
 /** The configured default harness, else the default model's harness, else Claude Code. */
-export function defaultHarness(config: OrcConfig): HarnessId {
+function defaultHarness(config: OrcConfig): HarnessId {
   if (isHarness(config.defaultHarness)) return config.defaultHarness;
   return config.defaultModel?.includes("/") ? routeHarness(config.defaultModel)! : "claude";
 }
@@ -102,7 +102,7 @@ export function envFor(harness: HarnessId, account: Account | undefined, base: R
 }
 
 /** The home folder of each harness, moved by the same variables the harnesses read. */
-export function harnessHomes(env: Record<string, string | undefined> = process.env) {
+function harnessHomes(env: Record<string, string | undefined> = process.env) {
   const claude = loginOf("claude", env);
   return {
     claude: resolve(claude.folder),
@@ -289,7 +289,7 @@ function readFolder(paths: string[], read: (file: string) => Parsed, problems: M
   return out;
 }
 
-export function rulesyncFolders(settings: Pick<LookupSettings, "projectDir" | "rulesyncGlobal">) {
+function rulesyncFolders(settings: Pick<LookupSettings, "projectDir" | "rulesyncGlobal">) {
   return {
     project: join(settings.projectDir, ".rulesync"),
     ...(settings.rulesyncGlobal ? { global: join(resolve(settings.rulesyncGlobal), ".rulesync") } : {}),
@@ -370,13 +370,13 @@ export function routeHarness(spec: string | undefined, env: Record<string, strin
 }
 
 /** The settings an agent runs with on a harness: its own block over its common settings. */
-export function settingsFor(agent: FoundAgent, harness: HarnessId): HarnessSettings {
+function settingsFor(agent: FoundAgent, harness: HarnessId): HarnessSettings {
   return { ...agent.common, ...(agent.blocks[harness] ?? {}) };
 }
 
 /** The model spec for a harness: the block's model, else the run's model when it is on that
  *  harness, else the harness alone, which runs the harness's own default model. */
-export function modelFor(harness: HarnessId, model: string | undefined, fallback?: string, env: Record<string, string | undefined> = process.env): string {
+function modelFor(harness: HarnessId, model: string | undefined, fallback?: string, env: Record<string, string | undefined> = process.env): string {
   if (model) return `${harness}/${model}`;
   if (fallback && routeHarness(fallback, env) === harness) return fallback;
   return harness;
@@ -476,14 +476,14 @@ export function definitionOf(agent: FoundAgent): AgentDefinition {
   };
 }
 
-export function missingAgent(lookup: AgentLookup, name: string): string {
+function missingAgent(lookup: AgentLookup, name: string): string {
   const global = lookup.settings.rulesyncGlobal
     ? `the global rulesync folder (${lookup.settings.rulesyncGlobal}/.rulesync/subagents/)`
     : "the global rulesync folder (none is set: rulesyncGlobal in ~/.orchestrator/config.json)";
   return `no agent "${name}". orc looks in .rulesync/subagents/, then ${global}, then .claude/agents/ and .codex/agents/ in the project and in the home folder.`;
 }
 
-export function wrongHarness(agent: FoundAgent, harness: HarnessId): string {
+function wrongHarness(agent: FoundAgent, harness: HarnessId): string {
   const from = agent.from as HarnessId;
   return `agent "${agent.name}" comes from ${agent.file}, a ${HARNESS_NAME[from]} folder, so it runs only on ${HARNESS_NAME[from]}, and this step sends it to ${HARNESS_NAME[harness]}. ${moveHint(agent.name)}`;
 }
@@ -607,7 +607,7 @@ export function routeStep(lookup: AgentLookup | undefined, ask: StepAsk): StepRo
 // ---- MCP servers ----
 
 /** JSON with comments and trailing commas, as rulesync's mcp.jsonc allows. */
-export function parseJsonc(source: string): unknown {
+function parseJsonc(source: string): unknown {
   let out = "";
   let i = 0;
   while (i < source.length) {

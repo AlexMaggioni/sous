@@ -18,7 +18,7 @@ import { MAX_OBSERVABILITY_SCALAR_BYTES, projectRunEventForPersistence } from ".
 import type { FsLayer, PersistedRunState, RunPersistence } from "./run-persistence.js";
 
 export const RUN_EVENT_MAX_RECORD_BYTES = 65_536;
-export const RUN_EVENT_READ_LIMIT_DEFAULT = 100 as const;
+const RUN_EVENT_READ_LIMIT_DEFAULT = 100 as const;
 export const RUN_EVENT_READ_LIMIT_MAX = 1_000 as const;
 
 const STREAM_ID_PATTERN = /^[0-9a-f]{32}$/;

@@ -87,7 +87,7 @@ export interface RunCallRecordPayload extends RunEventOrigin {
  * The others come from the run itself: a step failed, a host stopped a step, or the worker
  * stopped the run at its time limit. Event logs written before the last three say "requested".
  */
-export const REQUESTED_PAUSE_REASONS = ["requested", "step_failed", "step_stopped", "time_limit"] as const;
+const REQUESTED_PAUSE_REASONS = ["requested", "step_failed", "step_stopped", "time_limit"] as const;
 export type RequestedPauseReason = (typeof REQUESTED_PAUSE_REASONS)[number];
 
 export function isRequestedPauseReason(value: unknown): value is RequestedPauseReason {
