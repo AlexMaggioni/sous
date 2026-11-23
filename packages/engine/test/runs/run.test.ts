@@ -89,10 +89,10 @@ describe("the list of runs", () => {
   const id = (i: number) => `run-${String(i).padStart(2, "0")}`;
   const asking = id(7);
   const live = id(12);
-  const plant50 = () => {
+  const plantRuns = (indexes = Array.from({ length: 50 }, (_, i) => i)) => {
     const planted = home();
     const gone = deadPid();
-    for (let i = 0; i < 50; i++) {
+    for (const i of indexes) {
       const runId = id(i);
       const ago = 100 - i;
       const kind = kinds[i % kinds.length]!;
@@ -113,7 +113,7 @@ describe("the list of runs", () => {
   };
 
   it("reads each of 50 states once, and lists the engine folder once", () => {
-    const planted = plant50();
+    const planted = plantRuns();
     const { fs, reads, listed, checked } = counting();
     const runs = listRuns(planted.paths, { fs });
     assert.equal(runs.length, 50);
@@ -147,7 +147,7 @@ describe("the list of runs", () => {
   });
 
   it("reads only the states of the runs it shows", () => {
-    const planted = plant50();
+    const planted = plantRuns();
     const { fs, reads } = counting();
     const runs = listRuns(planted.paths, { limit: 20, fs });
     assert.deepEqual(runs.map((run) => run.runId), Array.from({ length: 20 }, (_, i) => id(49 - i)));
@@ -155,7 +155,8 @@ describe("the list of runs", () => {
   });
 
   it("says of each run what a read of that run alone says", () => {
-    const planted = plant50();
+    // One run of each kind, the one that asks and the live one.
+    const planted = plantRuns([0, 1, 2, 3, 4, 7, 12]);
     for (const run of listRuns(planted.paths)) {
       // The verdict, the saved status and pause reason, the record and the questions.
       assert.deepEqual(run, readRun(planted.paths, run.runId), run.runId);

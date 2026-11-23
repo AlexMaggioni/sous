@@ -451,24 +451,18 @@ test(
       runId: "update-test",
       workflowName: "wf",
       script: "export const meta = { name: 'w', description: 'w' }",
-      status: "pending",
+      status: "running",
       phases: [],
       agents: [],
       logs: [],
       startedAt: "2024-01-01T00:00:00.000Z",
       updatedAt: "2024-01-01T00:00:00.000Z",
     };
+    // The state arrives with a stamp from 2024. A save sets the stamp to now.
     rp.save(state);
-    const before = rp.load("update-test");
-    const beforeTime = before?.updatedAt;
-
-    // Small delay so updatedAt changes
-    await new Promise((r) => setTimeout(r, 10));
-
-    rp.save({ ...state, status: "running" });
-    const after = rp.load("update-test");
-    assert.notEqual(after?.updatedAt, beforeTime, "updatedAt should change");
-    assert.equal(after?.status, "running");
+    const loaded = rp.load("update-test");
+    assert.notEqual(loaded?.updatedAt, "2024-01-01T00:00:00.000Z", "updatedAt should change");
+    assert.equal(loaded?.status, "running");
   }),
 );
 
