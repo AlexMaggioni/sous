@@ -8,8 +8,8 @@ import { tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { createClaudeHarness, createCodexHarness } from "../src/index.js";
-import type { Account, FindOptions, Harness, HarnessFailure, HarnessId, Step, Usage } from "../src/index.js";
+import { createHarness } from "../src/index.js";
+import type { Account, Harness, HarnessFailure, HarnessId, Step, Usage } from "../src/index.js";
 
 const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../test/fakes");
 
@@ -20,7 +20,6 @@ delete process.env.FAKE_VERSION;
 
 interface Kit {
   id: HarnessId;
-  create(lookup: FindOptions): Harness;
   /** Writes a configured MCP server named demo, over http, into the account folder. */
   configureDemo(folder: string): void;
   /** A version the adapter does not support. */
@@ -30,13 +29,11 @@ interface Kit {
 const KITS: Kit[] = [
   {
     id: "claude",
-    create: createClaudeHarness,
     configureDemo: (folder) => writeFileSync(join(folder, ".claude.json"), JSON.stringify({ mcpServers: { demo: { type: "http", url: "https://configured.invalid/mcp" } } })),
     oldVersion: "2.0.0",
   },
   {
     id: "codex",
-    create: createCodexHarness,
     // enabled_tools would carry over into a step server under the same name.
     configureDemo: (folder) => writeFileSync(join(folder, "config.toml"), '[mcp_servers.demo]\nurl = "https://configured.invalid/mcp"\nenabled_tools = ["configured_only"]\n'),
     oldVersion: "0.150.0",
@@ -79,7 +76,7 @@ function newCase(kit: Kit, program = join(FAKES, kit.id)): Case {
   process.env.FAKE_RULES = rules;
   const account: Account = { folder };
   return {
-    harness: kit.create({ path: program, env: {} }),
+    harness: createHarness(kit.id, { path: program, env: {} }),
     dir,
     account,
     rules: (list) => writeFileSync(rules, JSON.stringify(list)),
@@ -248,7 +245,7 @@ for (const kit of KITS) {
       const wrapper = join(c.dir, kit.id);
       writeFileSync(wrapper, `#!/bin/sh\nFAKE_VERSION=${kit.oldVersion} exec "${join(FAKES, kit.id)}" "$@"\n`);
       chmodSync(wrapper, 0o755);
-      const old = kit.create({ path: wrapper, env: {} });
+      const old = createHarness(kit.id, { path: wrapper, env: {} });
       const { version, problem } = await old.version();
       assert.equal(version, kit.oldVersion);
       assert.match(problem ?? "", new RegExp(kit.oldVersion.replace(/\./g, "\\.")));
@@ -267,8 +264,8 @@ for (const kit of KITS) {
 }
 
 describe("the login variables", () => {
-  const claude = createClaudeHarness({ env: {} });
-  const codex = createCodexHarness({ env: {} });
+  const claude = createHarness("claude", { env: {} });
+  const codex = createHarness("codex", { env: {} });
   const home = process.env.HOME!;
 
   test("name each program's folder variable and the folder it uses", () => {

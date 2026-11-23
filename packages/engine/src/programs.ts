@@ -3,13 +3,11 @@
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { createClaudeHarness, createCodexHarness, type FindOptions, type Harness as Adapter } from "@orchestrator/harnesses";
+import { createHarness, type FindOptions } from "@orchestrator/harnesses";
 import { CALLER, currentAccount, DEFAULT, stepAccount } from "./accounts.js";
 import { envFor, HARNESSES, harnessName, loginOf, routeHarness, type Harness } from "./agents.js";
 import type { HomePaths, OrcConfig } from "./runs/home.js";
 import { stepModel } from "./steps/steps.js";
-
-const ADAPTERS: Record<Harness, (lookup: FindOptions) => Adapter> = { claude: createClaudeHarness, codex: createCodexHarness };
 
 /** Where to look for each program: the path config.json gives, then the harness's own order. */
 export function programLookup(config: OrcConfig): (harness: Harness) => FindOptions {
@@ -59,7 +57,7 @@ export async function checkPrograms(paths: HomePaths, config: OrcConfig, options
     const name = program === "claude" ? currentAccount(paths, program) : DEFAULT;
     const { folder, variable } = loginOf(program);
     const account = name === DEFAULT || name === CALLER ? undefined : stepAccount(paths, program, { name, folder: loginOf(program).value ?? null });
-    const adapter = ADAPTERS[program](lookup(program));
+    const adapter = createHarness(program, lookup(program));
     const report: ProgramReport = { program, name: harnessName(program), skipped: [], others: [], folder, variable, account: name };
     reports.push(report);
     const found = adapter.find();
@@ -104,7 +102,7 @@ export async function checkPrograms(paths: HomePaths, config: OrcConfig, options
 
 /** Claude Code with the environment `claude setup-token` needs, or why it can't start. */
 export function setupTokenProgram(config: OrcConfig): { path: string; env: Record<string, string | undefined> } | { problem: string } {
-  const found = ADAPTERS.claude(programLookup(config)("claude")).find();
+  const found = createHarness("claude", programLookup(config)("claude")).find();
   if ("problem" in found) return { problem: found.problem };
   // The login it makes is for the browser account, whatever this shell is logged in with.
   return { path: found.path, env: envFor("claude", { folder: loginOf("claude").value, named: true }) };

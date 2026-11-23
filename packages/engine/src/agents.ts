@@ -7,7 +7,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
-import { createClaudeHarness, createCodexHarness, type Account } from "@orchestrator/harnesses";
+import { createHarness, type Account } from "@orchestrator/harnesses";
 import type { McpServerConfig } from "./steps/mcp-config.js";
 import { parseDurationSeconds } from "./orchestrator-globals.js";
 import type { StepAsk, StepRoute } from "./steps/agent-runner.js";
@@ -92,17 +92,14 @@ export interface AgentLookup {
   problems: Map<string, AgentProblem>;
 }
 
-// For the login only. A step's program is found by the steps module.
-const ADAPTERS = { claude: createClaudeHarness(), codex: createCodexHarness() };
-
 /** A harness's login in env. Only its adapter names the variables. */
 export function loginOf(harness: Harness, env: Record<string, string | undefined> = process.env) {
-  return ADAPTERS[harness].login(env);
+  return createHarness(harness).login(env);
 }
 
 /** env with the account on it, for the program started outside a step. */
 export function envFor(harness: Harness, account: Account | undefined, base: Record<string, string | undefined> = process.env) {
-  return ADAPTERS[harness].env(account, base);
+  return createHarness(harness).env(account, base);
 }
 
 /** The home folder of each harness, moved by the same variables the harnesses read. */

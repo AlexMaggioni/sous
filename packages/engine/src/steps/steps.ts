@@ -6,8 +6,7 @@
 
 import type { TSchema } from "typebox";
 import {
-  createClaudeHarness,
-  createCodexHarness,
+  createHarness,
   type Failure,
   type FindOptions,
   type Found,
@@ -59,7 +58,6 @@ export interface StepsOptions {
   onLimit?: (event: { program: HarnessId; label?: string }) => void;
 }
 
-const ADAPTERS: Record<HarnessId, (lookup: FindOptions) => Adapter> = { claude: createClaudeHarness, codex: createCodexHarness };
 
 /** Schema repair turns when the step sets none. */
 const REPAIRS = 2;
@@ -100,14 +98,14 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
 
   /** Find the harness's program and check its version, once per run. */
   async function prepare(harness: HarnessId, where: FindOptions): Promise<Adapter | { problem: string }> {
-    const finder = ADAPTERS[harness](where);
+    const finder = createHarness(harness, where);
     const found: Found = finder.find();
     if ("problem" in found) return { problem: found.problem };
     const { version, problem } = await finder.version(found.path);
     options.onProgram?.({ program: harness, name: harnessName(harness), path: found.path, ...(version ? { version } : {}) });
     if (problem) return { problem };
     // Every later step runs on this same file.
-    return ADAPTERS[harness]({ path: found.path, env: {}, usualDirs: [] });
+    return createHarness(harness, { path: found.path, env: {}, usualDirs: [] });
   }
 
   function programFor(harness: HarnessId): Promise<Adapter | { problem: string }> | undefined {
@@ -149,7 +147,7 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     try {
       const account = options.accounts?.[step.harness];
       if (options.inner) return await runInner(options.inner, prompt, call, step, { signal, servers, account });
-      return await runOnHarness(program ?? ADAPTERS[step.harness]({}), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account });
+      return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account });
     } catch (error) {
       if ((error as { code?: unknown } | undefined)?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT) {
         options.onLimit?.({ program: step.harness, label: call.label });
