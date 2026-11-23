@@ -7,7 +7,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { answerQuestion, answerValue, breakpointValue, busyWorktrees, createRun, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listQuestions, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, saveSchedules, scopePath, startWorker, stateOf, stopRun, stopStep, verdictOf, waitForRun, withLiveSteps, workerMain, workflowDirs, writeAnswer, type AnswerKind, type Answers, type HomePaths, type PersistedRunState, type Place, type Question, type RunRecord, type Schedule } from "@orchestrator/engine";
+import { answerQuestion, answerValue, breakpointValue, busyWorktrees, createRun, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, readRun, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, runDetail, runQuestions, saveSchedules, scopePath, startWorker, stopRun, stopStep, waitForRun, workerMain, workflowDirs, writeAnswer, type AnswerKind, type Answers, type HomePaths, type Place, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { checkWorkflow } from "./check.js";
 import { doctor } from "./doctor.js";
@@ -130,14 +130,17 @@ function context(parsed: Parsed): { paths: HomePaths; projectDir: string } {
   return { paths, projectDir: project ? resolve(project) : findProjectDir() };
 }
 
-function needRecord(paths: HomePaths, id: string | undefined): RunRecord {
+/** The run id the command names. */
+function runIdArg(id: string | undefined): string {
   if (!id) throw new Usage("give a run id (orc list shows them)");
-  const record = findRecord(paths, id);
-  if (!record) throw new Error(`no run "${id}". orc list shows the runs.`);
-  return record;
+  return id;
 }
 
-type Step = PersistedRunState["agents"][number];
+function needRun(paths: HomePaths, id: string | undefined): RunView {
+  return readRun(paths, runIdArg(id));
+}
+
+type Step = RunDetail["steps"][number];
 
 /** The steps in the order they started. A nested workflow's steps go together under it, indented. */
 function printSteps(record: RunRecord, agents: readonly Step[], ended: boolean): void {
@@ -176,7 +179,7 @@ function printSteps(record: RunRecord, agents: readonly Step[], ended: boolean):
   printScope(record.runId, "  ");
 }
 
-function howToAnswer(question: Question): string {
+function howToAnswer(question: RunQuestion): string {
   if (question.breakpoint) return `orc approve ${question.id}  |  orc send-back ${question.id} "note"  |  orc stop ${question.runId}`;
   if (question.kind === "confirm") return `orc answer ${question.id} yes|no`;
   if (question.kind === "select") return `orc answer ${question.id} <one of: ${(question.choices ?? []).join(", ")}>`;
@@ -192,7 +195,7 @@ async function waitFor(paths: HomePaths, runId: string, options: { json: boolean
   const interactive = process.stdin.isTTY && process.stdout.isTTY && !options.json;
   const end = await waitForRun(paths, runId, {
     ...(options.json || options.quiet ? {} : { log: (text: string) => process.stdout.write(text) }),
-    ...(interactive ? { asks: (questions: Question[], record: RunRecord) => askHere(paths, questions, record) } : {}),
+    ...(interactive ? { asks: (questions: RunQuestion[], record: RunRecord) => askHere(paths, questions, record) } : {}),
   });
   if (end.questions) {
     if (options.json) printJson(end.summary);
@@ -208,7 +211,7 @@ async function waitFor(paths: HomePaths, runId: string, options: { json: boolean
 }
 
 /** Ask each question in the terminal and write the answer. "stop" at a breakpoint stops the run. */
-async function askHere(paths: HomePaths, questions: Question[], record: RunRecord): Promise<void> {
+async function askHere(paths: HomePaths, questions: RunQuestion[], record: RunRecord): Promise<void> {
   for (const question of questions) {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     const hint = question.breakpoint
@@ -238,7 +241,7 @@ function stopText(record: RunRecord, stop: ReturnType<typeof stopRun>): string {
   return `stopped ${record.runId}`;
 }
 
-function needQuestion(paths: HomePaths, id: string | undefined): Question {
+function needQuestion(paths: HomePaths, id: string | undefined): RunQuestion {
   if (!id) throw new Usage("give a question id (orc inbox shows them)");
   return findQuestion(paths, id);
 }
@@ -304,24 +307,22 @@ function cmdList(parsed: Parsed): number {
   // Only the shown runs' states are read, so the count reads the records alone.
   const older = parsed.flags.all ? 0 : listRecords(paths).length - runs.length;
   if (older > 0) out(`(${older} older runs: orc list --all)`);
-  const asks = listQuestions(paths).length;
+  const asks = runQuestions(paths).length;
   if (asks) out(`\n${asks} question${asks === 1 ? "" : "s"} waiting: orc inbox`);
   return 0;
 }
 
 function cmdShow(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
-  const record = needRecord(paths, parsed.positionals[0]);
-  const state = withLiveSteps(paths, record, stateOf(paths, record));
-  const questions = listQuestions(paths, record.runId);
+  const run = runDetail(paths, runIdArg(parsed.positionals[0]));
+  const { record, saved } = run;
   if (parsed.flags.json) {
-    printJson({ record, state: state ? { ...state, script: undefined, journal: undefined, nestedJournal: undefined, calls: undefined } : undefined, questions });
+    printJson({ record, state: run.engineState, questions: run.questions });
     return 0;
   }
   out(`${record.workflow}  ${record.runId}`);
-  const verdict = verdictOf(paths, record, state);
-  out(`status    ${verdict.word}${state?.resetHint ? ` (${state.resetHint})` : ""}`);
-  if (state?.reason && state.status !== "completed" && state.reason !== state.pauseReason) out(`reason    ${state.reason}`);
+  out(`status    ${run.word}${saved?.resetHint ? ` (${saved.resetHint})` : ""}`);
+  if (saved?.reason && saved.status !== "completed" && saved.reason !== saved.pauseReason) out(`reason    ${saved.reason}`);
   out(`place     ${record.place}  ${record.cwd}${record.branch ? `  (branch ${record.branch})` : ""}`);
   out(`started   ${record.createdAt}  by ${record.origin}${record.schedule ? ` (${record.schedule})` : ""}${record.rerunOf ? `, rerun of ${record.rerunOf}` : ""}${record.reuseFrom ? `, reusing its unchanged steps` : ""}${record.startedByRun ? `, from run ${record.startedByRun}` : ""}`);
   if (Object.keys(record.args).length) out(`inputs    ${JSON.stringify(record.args)}`);
@@ -333,23 +334,23 @@ function cmdShow(parsed: Parsed): number {
   for (const program of HARNESSES) {
     if (record.accounts?.[program]) out(`account   ${harnessName(program)}: ${describeAccount(program, record.accounts[program])}`);
   }
-  if (record.limit && verdict.pause?.reason === "usage_limit") out(`limit     ${limitNotice(paths, record, state?.resetHint)}`);
-  if (state?.tokenUsage) out(`tokens    ${state.tokenUsage.total}${state.durationMs ? `  in ${Math.round(state.durationMs / 1000)}s` : ""}`);
-  if (state?.agents.length) {
+  if (record.limit && run.pause?.reason === "usage_limit") out(`limit     ${limitNotice(paths, record, saved?.resetHint)}`);
+  if (run.tokens !== undefined) out(`tokens    ${run.tokens}${run.durationMs ? `  in ${Math.round(run.durationMs / 1000)}s` : ""}`);
+  if (run.steps.length) {
     out("steps");
-    printSteps(record, state.agents, state.status !== "running" && state.status !== "pending");
+    printSteps(record, run.steps, saved?.status !== "running" && saved?.status !== "pending");
   }
-  for (const question of questions) out(`asks      ${question.id}: ${question.prompt}\n          ${howToAnswer(question)}`);
-  if (state?.status === "completed" && state.result !== undefined) {
+  for (const question of run.questions) out(`asks      ${question.id}: ${question.prompt}\n          ${howToAnswer(question)}`);
+  if (run.result !== undefined) {
     out("result");
-    out(typeof state.result === "string" ? state.result : JSON.stringify(state.result, null, 2));
+    out(typeof run.result === "string" ? run.result : JSON.stringify(run.result, null, 2));
   }
   return 0;
 }
 
 async function cmdLog(parsed: Parsed): Promise<number> {
   const paths = ensureHome(homePaths());
-  const record = needRecord(paths, parsed.positionals[0]);
+  const { record } = needRun(paths, parsed.positionals[0]);
   const file = logFile(paths, record.runId);
   let offset = readLogFrom(file, 0, (text) => process.stdout.write(text));
   if (!parsed.flags.follow) return 0;
@@ -363,8 +364,7 @@ async function cmdLog(parsed: Parsed): Promise<number> {
 
 function cmdInbox(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
-  const record = parsed.positionals[0] ? needRecord(paths, parsed.positionals[0]) : undefined;
-  const questions = listQuestions(paths, record?.runId);
+  const questions = parsed.positionals[0] ? needRun(paths, parsed.positionals[0]).questions : runQuestions(paths);
   if (parsed.flags.json) {
     printJson(questions);
     return 0;
@@ -394,7 +394,7 @@ function cmdAnswer(parsed: Parsed, kind: AnswerKind): number {
 
 function cmdStop(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
-  const record = needRecord(paths, parsed.positionals[0]);
+  const { record } = needRun(paths, parsed.positionals[0]);
   if (typeof parsed.flags.step === "string") {
     const step = parsed.flags.step;
     if (!stopStep(paths, record, step)) {
@@ -410,7 +410,7 @@ function cmdStop(parsed: Parsed): number {
 
 function cmdPause(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
-  const record = needRecord(paths, parsed.positionals[0]);
+  const { record } = needRun(paths, parsed.positionals[0]);
   if (!pauseRun(record)) {
     out(`${record.runId} is not running`);
     return 1;
@@ -421,7 +421,7 @@ function cmdPause(parsed: Parsed): number {
 
 async function cmdResume(parsed: Parsed): Promise<number> {
   const paths = ensureHome(homePaths());
-  const record = needRecord(paths, parsed.positionals[0]);
+  const { record } = needRun(paths, parsed.positionals[0]);
   const changed = resumeCheck(paths, record);
   if (parsed.flags.latest && parsed.flags.same) throw new Usage("--latest or --same, not both");
   if (changed.length && !parsed.flags.latest && !parsed.flags.same) {
@@ -437,7 +437,7 @@ async function cmdResume(parsed: Parsed): Promise<number> {
 
 async function cmdRerun(parsed: Parsed): Promise<number> {
   const paths = ensureHome(homePaths());
-  const old = needRecord(paths, parsed.positionals[0]);
+  const { record: old } = needRun(paths, parsed.positionals[0]);
   const place = str(parsed.flags.place) ?? old.place;
   if (!isPlace(place)) throw new Usage(`--place is worktree, folder or none, got "${place}"`);
   const reuse = Boolean(parsed.flags.reuse);
@@ -660,7 +660,7 @@ function cmdGc(parsed: Parsed): number {
 
 function cmdDiscard(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
-  const record = needRecord(paths, parsed.positionals[0]);
+  const { record } = needRun(paths, parsed.positionals[0]);
   const yes = parsed.flags.yes === true;
   const trees = discardRun(paths, record, { remove: yes, deleted: (tree) => out(`deleted ${tree.branch} and ${tree.dir}`) });
   if (!trees.length) {
@@ -742,7 +742,7 @@ const COMMANDS: Record<string, (parsed: Parsed) => number | Promise<number>> = {
   run: cmdRun,
   wait: (parsed) => {
     const paths = ensureHome(homePaths());
-    return waitFor(paths, needRecord(paths, parsed.positionals[0]).runId, { json: parsed.flags.json === true });
+    return waitFor(paths, needRun(paths, parsed.positionals[0]).runId, { json: parsed.flags.json === true });
   },
   list: cmdList,
   ls: cmdList,

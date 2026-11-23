@@ -15,14 +15,13 @@ export {
   type Place,
 } from "./runs/home.js";
 export { findRecord, listRecords, loadRecord, processAlive, scopePath, type RunRecord } from "./runs/records.js";
-export { listQuestions, normalizeAnswer, readQuestion, writeAnswer, type Question } from "./runs/inbox.js";
+export { normalizeAnswer, readQuestion, writeAnswer } from "./runs/inbox.js";
 export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
 export { createRun, InputProblems, logFile, startWorker } from "./runs/launch.js";
 export { workerMain } from "./runs/worker.js";
 export { busyWorktrees, daemonMain, daemonPid, fileSchedules, loadSchedules, prune, saveSchedules, unfinishedRuns, type Schedule } from "./runs/service.js";
-export { listRuns, readLogFrom, stateOf, verdictOf, waitForRun, withLiveSteps } from "./runs/view.js";
+export { listRuns, readLogFrom, readRun, runDetail, runQuestions, waitForRun, type RunDetail, type RunQuestion, type RunView } from "./runs/run.js";
 export { answerQuestion, answerValue, breakpointValue, discardRun, findQuestion, pauseRun, rerun, resumeCheck, resumeRun, reuseCheck, stopRun, stopStep, type AnswerKind } from "./runs/control.js";
-export type { PersistedRunState } from "./runs/persistence/run-persistence.js";
 export { gcWorktrees, isPlace } from "./places/places.js";
 
 // ── Saved workflows: the folders that hold them, their checked meta, the names a script refers to, and the dry run ──

@@ -12,11 +12,11 @@ import {
   fileSchedules,
   gcWorktrees,
   homePaths,
-  listQuestions,
   listRecords,
   loadRecord,
   logFile,
   rememberProject,
+  runQuestions,
   saveSchedules,
   writeAnswer,
   type HomePaths,
@@ -78,12 +78,12 @@ function fakeRunner(answer: (call: Call, calls: Call[]) => unknown): { runner: A
 async function answerWhenAsked(paths: HomePaths, runId: string, reply: (prompt: string) => unknown, times = 1): Promise<string[]> {
   const asked: string[] = [];
   for (let waited = 0; asked.length < times && waited < 15_000; waited += 20) {
-    const open = listQuestions(paths, runId);
+    const open = runQuestions(paths, runId);
     if (open.length) {
       const question = open[0]!;
       asked.push(question.prompt);
       writeAnswer(paths, question, reply(question.prompt));
-      while (listQuestions(paths, runId).some((q) => q.id === question.id)) await new Promise((r) => setTimeout(r, 20));
+      while (runQuestions(paths, runId).some((q) => q.id === question.id)) await new Promise((r) => setTimeout(r, 20));
     }
     await new Promise((r) => setTimeout(r, 20));
   }
@@ -1098,7 +1098,7 @@ return { out: made.stdout.trim(), approved: verdict.approved, rounds: round, kep
     assert.deepEqual(listRecords(paths), []);
     assert.deepEqual(existsSync(paths.worktrees) ? readdirSync(paths.worktrees) : [], []);
     assert.equal(git(projectDir, "branch", "--list", "orc/*"), "");
-    assert.equal(listQuestions(paths).length, 0);
+    assert.equal(runQuestions(paths).length, 0);
     // The engine keeps a small note that the run was deleted, and nothing else.
     const left = (readdirSync(paths.home, { recursive: true }) as string[]).filter((name) => name.includes(dry.runId) && !name.endsWith(".lineage"));
     assert.deepEqual(left, []);

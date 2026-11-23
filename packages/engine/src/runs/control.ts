@@ -8,8 +8,9 @@ import type { HomePaths, Place } from "./home.js";
 import { listQuestions, normalizeAnswer, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
 import { createRun, startWorker } from "./launch.js";
 import { findRecord, loadSnapshot, processAlive, updateRecord, type RunRecord } from "./records.js";
-import { judge, type ResumeRefusal, type ReuseRefusal } from "./rule.js";
-import { stateOf, runningSteps } from "./view.js";
+import type { ResumeRefusal, ReuseRefusal } from "./rule.js";
+import { readRun, runDetail } from "./run.js";
+import { readState } from "./store.js";
 import { currentWorkflows, managerFor } from "./worker.js";
 
 /** How a stop went. */
@@ -33,7 +34,7 @@ export function stopRun(paths: HomePaths, record: RunRecord): { outcome: StopOut
  *  Returns false when the run is not running. */
 export function stopStep(paths: HomePaths, record: RunRecord, step: string): boolean {
   if (!processAlive(record.pid)) return false;
-  const running = runningSteps(paths, record);
+  const { running } = runDetail(paths, record.runId);
   if (!running.includes(step)) {
     const now = running.length ? `Running now: ${running.map((name) => `"${name}"`).join(", ")}.` : "No step runs now.";
     throw new Error(`no step named "${step}" runs in ${record.runId}. ${now}`);
@@ -64,10 +65,10 @@ export function changedWorkflows(paths: HomePaths, record: RunRecord, state: Per
 /** Check a run can resume. Returns the workflows edited since it started, which reach it only
  *  when the user says so. */
 export function resumeCheck(paths: HomePaths, record: RunRecord): string[] {
-  const state = stateOf(paths, record);
-  const { resume } = judge({ state, alive: processAlive(record.pid), openQuestions: 0 });
+  const { resume } = readRun(paths, record.runId);
   if (!resume.ok) throw new Error(RESUME_REFUSALS[resume.why](record.runId));
-  return changedWorkflows(paths, record, state!);
+  // The rule lets a run resume only once it has a state.
+  return changedWorkflows(paths, record, readState(paths, record.runId)!);
 }
 
 /** What resume says when the rule refuses it. */
@@ -86,8 +87,7 @@ export function resumeRun(paths: HomePaths, cliFile: string, record: RunRecord, 
 
 /** Check an earlier run can be run again with its unchanged steps reused. */
 export function reuseCheck(paths: HomePaths, old: RunRecord): void {
-  const state = stateOf(paths, old);
-  const { reuse } = judge({ state, alive: processAlive(old.pid), openQuestions: 0 });
+  const { reuse } = readRun(paths, old.runId);
   if (!reuse.ok) throw new Error(REUSE_REFUSALS[reuse.why](old.runId));
 }
 

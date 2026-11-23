@@ -21,7 +21,7 @@ import { notify } from "./notify.js";
 import { processAlive, snapshotFile, type RunRecord } from "./records.js";
 import type { Verdict } from "./rule.js";
 import { readState } from "./store.js";
-import { listRuns, type RunView } from "./view.js";
+import { listRuns, type RunView } from "./run.js";
 import { managerFor } from "./worker.js";
 
 export interface Schedule {

@@ -4,10 +4,14 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFil
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { WorkflowError, WorkflowErrorCode } from "../../src/errors.js";
 import { ensureHome, homePaths, type HomePaths } from "../../src/runs/home.js";
+import { createRun } from "../../src/runs/launch.js";
 import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
+import { listRuns, readRun, runDetail } from "../../src/runs/run.js";
 import type { StoreFs } from "../../src/runs/store.js";
-import { listRuns, stateOf, verdictOf } from "../../src/runs/view.js";
+import { runWorker } from "../../src/runs/worker.js";
+import { heldRunner, settle, setup, until } from "./fixture.js";
 
 // The runs are planted with raw writes, the way the worker and the engine leave them.
 
@@ -102,7 +106,7 @@ describe("the list of runs", () => {
       writeFileSync(join(planted.engine, `${runId}.json.bak`), stateText(runId, ago, extra));
     }
     plantQuestion(planted, asking);
-    return planted;
+    return { ...planted, gone };
   };
 
   it("reads each of 50 states once, and lists the engine folder once", () => {
@@ -125,7 +129,15 @@ describe("the list of runs", () => {
     assert.equal(word(asking), "asks");
     assert.equal(word(live), "running");
     const dead = runs.find((run) => run.runId === id(3))!;
-    assert.deepEqual(dead.saved, { status: "paused", pauseReason: "interrupted" }, "shown as orc resume saves it");
+    assert.deepEqual(
+      dead.saved,
+      {
+        status: "paused",
+        pauseReason: "interrupted",
+        reason: `Interrupted: owning process PID ${planted.gone} exited before completion; recovered to a resumable pause.`,
+      },
+      "shown as orc resume saves it",
+    );
     assert.equal(dead.exit, 2);
     assert.deepEqual(runs.find((run) => run.runId === asking)!.questions.map((q) => q.id), [`${asking}--0`]);
     assert.ok(runs.filter((run) => run.runId !== asking).every((run) => run.questions.length === 0));
@@ -142,11 +154,8 @@ describe("the list of runs", () => {
   it("says of each run what a read of that run alone says", () => {
     const planted = plant50();
     for (const run of listRuns(planted.paths)) {
-      const state = stateOf(planted.paths, run.record);
-      const { questions, saved, runId, record, ...verdict } = run;
-      assert.deepEqual(verdict, verdictOf(planted.paths, record, state), runId);
-      assert.equal(saved?.status, state?.status, runId);
-      assert.equal(saved?.pauseReason, state?.pauseReason, runId);
+      // The verdict, the saved status and pause reason, the record and the questions.
+      assert.deepEqual(run, readRun(planted.paths, run.runId), run.runId);
     }
   });
 
@@ -162,5 +171,105 @@ describe("the list of runs", () => {
     const runs = listRuns(planted.paths, { fs });
     assert.deepEqual(runs.map((run) => [run.runId, run.word]), [["run-good", "failed"], ["run-broken", "completed"], ["run-none", "not started"]]);
     assert.deepEqual(reads, [join(planted.engine, "run-good.json"), join(planted.engine, "run-broken.json"), join(planted.engine, "run-broken.json.bak")]);
+  });
+});
+
+const quiet = () => {};
+const child = `export const meta = { name: 'child', description: 'child' }\nreturn await agent('build it', { label: 'build' })`;
+
+/** The steps that run now, read the way `orc stop --step` reads them. */
+function running(paths: HomePaths, runId: string): string[] {
+  return runDetail(paths, runId).running.sort();
+}
+
+describe("the steps that run now", () => {
+  it("a top-level step goes by its label", async () => {
+    const { paths, projectDir } = setup({ top: `export const meta = { name: 'top', description: 'top' }\nreturn await agent('build it', { label: 'build' })` });
+    const { runner, calls, release } = heldRunner(() => "wait");
+    const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    // The step shows as running while it waits for its agent slot, before the runner has it.
+    await until(() => calls.length === 1);
+    assert.deepEqual(await settle(() => running(paths, record.runId), ["build"]), ["build"]);
+    release("build");
+    assert.equal((await worker)?.status, "completed");
+    assert.deepEqual(running(paths, record.runId), [], "nothing runs once the run ended");
+  });
+
+  it("a step of a nested run goes by the nested label and its own", async () => {
+    const { paths, projectDir } = setup({
+      child,
+      parent: `export const meta = { name: 'parent', description: 'parent' }\nreturn await workflow('child', {}, { label: 'ticket A' })`,
+    });
+    const { runner, calls, release } = heldRunner(() => "wait");
+    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    await until(() => calls.length === 1);
+    assert.deepEqual(await settle(() => running(paths, record.runId), ["ticket A: build"]), ["ticket A: build"]);
+    release("build");
+    assert.equal((await worker)?.status, "completed");
+  });
+
+  it("two nested runs side by side each show their step", async () => {
+    const { paths, projectDir } = setup({
+      child,
+      parent: `export const meta = { name: 'parent', description: 'parent' }
+return await Promise.all([workflow('child', {}, { label: 'ticket A' }), workflow('child', {}, { label: 'ticket B' })])`,
+    });
+    const { runner, calls, release } = heldRunner(() => "wait");
+    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    const both = ["ticket A: build", "ticket B: build"];
+    await until(() => calls.length === 2);
+    assert.deepEqual(await settle(() => running(paths, record.runId), both), both);
+    assert.equal(calls.length, 2);
+    release("build");
+    assert.equal((await worker)?.status, "completed");
+  });
+
+  it("a step that ended is not listed", async () => {
+    const { paths, projectDir } = setup({
+      two: `export const meta = { name: 'two', description: 'two steps' }
+await agent('first', { label: 'first' })
+return await agent('second', { label: 'second' })`,
+    });
+    const { runner, calls, release } = heldRunner((call) => (call.label === "first" ? "first done" : "wait"));
+    const record = createRun(paths, { workflow: "two", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    await until(() => calls.some((call) => call.label === "second"));
+    assert.deepEqual(await settle(() => running(paths, record.runId), ["second"]), ["second"]);
+    release("second");
+    assert.equal((await worker)?.status, "completed");
+  });
+
+  it("a step that failed is not listed, while its neighbor still runs", async () => {
+    const { paths, projectDir } = setup({
+      side: `export const meta = { name: 'side', description: 'side by side' }
+return await Promise.allSettled([agent('bad', { label: 'bad', retries: 0 }), agent('slow', { label: 'slow' })])`,
+    });
+    const { runner, calls, release } = heldRunner((call) => (call.label === "bad" ? new Error("the tests fail") : "wait"));
+    const record = createRun(paths, { workflow: "side", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    await until(() => calls.some((call) => call.label === "bad") && calls.some((call) => call.label === "slow"));
+    assert.deepEqual(await settle(() => running(paths, record.runId), ["slow"]), ["slow"]);
+    release("slow");
+    await worker;
+    assert.deepEqual(running(paths, record.runId), []);
+  });
+
+  it("a step tried again is listed once", async () => {
+    const { paths, projectDir } = setup({
+      flaky: `export const meta = { name: 'flaky', description: 'a step tried twice' }\nreturn await agent('flaky', { label: 'flaky', retries: 1 })`,
+    });
+    const { runner, calls, release } = heldRunner((_call, all) =>
+      all.length === 1 ? new WorkflowError("the tests fail", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true }) : "wait",
+    );
+    const record = createRun(paths, { workflow: "flaky", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    await until(() => calls.length === 2);
+    assert.equal(calls.length, 2, "the step ran a second time");
+    assert.deepEqual(await settle(() => running(paths, record.runId), ["flaky"]), ["flaky"]);
+    release("flaky");
+    assert.equal((await worker)?.status, "completed");
   });
 });
