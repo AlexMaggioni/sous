@@ -438,7 +438,7 @@ test(
 );
 
 test(
-  "durable checkpoint: cold resume without a reply or live confirm re-pauses without executing",
+  "durable checkpoint: cold resume without a reply or live confirm pauses again at the same question",
   withTempPersistenceRoot(async (persistenceRoot) => {
     const store = memoryPersistence();
     const firstAgent = recordingAgent();
@@ -450,18 +450,12 @@ test(
     const first = await manager1.runSync(DURABLE_SCRIPT);
     assert.equal(first.status, "paused");
     assert.ok(first.checkpointContext);
-    const before = store.persistence.load(first.runId);
-    const saveCount = store.saves.length;
 
     const coldAgent = recordingAgent();
     const manager2 = new WorkflowManager({
       agent: coldAgent.runner,
       persistence: store.persistence,
       persistenceRoot,
-    });
-    let resumedEvent = false;
-    manager2.on("resumed", () => {
-      resumedEvent = true;
     });
     let rePaused: { reason?: string; checkpointContext?: CheckpointContext; error?: WorkflowError } | undefined;
     manager2.on("paused", (event: typeof rePaused) => {
@@ -470,24 +464,22 @@ test(
 
     const resumed = await manager2.resumeInBackground(first.runId);
     assert.equal(resumed.accepted, true);
-    if (!resumed.accepted) assert.fail("the re-pause should use the accepted settlement shape");
+    if (!resumed.accepted) assert.fail("the resume should be accepted");
     await assert.rejects(
       resumed.promise,
       (error: unknown) =>
         error instanceof WorkflowError && error.code === WorkflowErrorCode.CHECKPOINT_REQUIRED,
     );
 
-    assert.equal(resumedEvent, false, "an immediate re-pause does not emit resumed");
-    assert.deepEqual(coldAgent.prompts, [], "no agent calls are made");
-    assert.equal(store.saves.length, saveCount + 1, "same-ID resume durably marks the positional artifact");
+    assert.deepEqual(coldAgent.prompts, [], "the step before the question replays, and no agent runs");
     assert.equal(rePaused?.reason, "checkpoint_required");
     assert.equal(rePaused?.error?.code, WorkflowErrorCode.CHECKPOINT_REQUIRED);
-    assert.deepEqual(rePaused?.checkpointContext, structuredClone(first.checkpointContext));
-    assert.deepEqual(
-      store.persistence.load(first.runId),
-      { ...before, legacyResume: true },
-      "the paused state and context are preserved with the permanent legacy marker",
-    );
+    // The live context's choices come from the script's realm, so the check compares plain copies.
+    assert.deepEqual(JSON.parse(JSON.stringify(rePaused?.checkpointContext)), structuredClone(first.checkpointContext));
+    const saved = store.persistence.load(first.runId);
+    assert.equal(saved?.status, "paused");
+    assert.equal(saved?.pauseReason, "checkpoint_required");
+    assert.deepEqual(saved?.checkpointContext, structuredClone(first.checkpointContext));
   }),
 );
 

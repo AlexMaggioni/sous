@@ -1807,9 +1807,6 @@ export class WorkflowManager extends EventEmitter {
     const publication = this.prepareEventPublicationState(persisted, lease);
     const saveLegacyGate = () => this.saveWithWatermark(persisted, publication);
 
-    const checkpointContext =
-      persisted.pauseReason === "checkpoint_required" ? persisted.checkpointContext : undefined;
-
     // Cold-resume re-arm (§2.13). An "auth_required" pause is resumable ONLY when the auth
     // survived: warm resume (same process, credentials still in the runner's AuthStore) or a
     // disk-backed intent (native store / env re-read by a fresh spawn). We consult the INJECTED
@@ -1858,45 +1855,6 @@ export class WorkflowManager extends EventEmitter {
           promise,
         };
       }
-    }
-
-    // Durable checkpoint cold-resume gate. A confirm callback is the only answer channel.
-    // Without one, keep the exact saved pause and run no agent or script code.
-    if (persisted.pauseReason === "checkpoint_required" && !exec.confirm) {
-      const checkpointError = new WorkflowError(
-        `checkpoint "${checkpointContext?.prompt ?? "pending checkpoint"}" awaits a human decision`,
-        WorkflowErrorCode.CHECKPOINT_REQUIRED,
-        { recoverable: false, checkpointContext },
-      );
-      const gateEventSeq = publication.eventSeq;
-      this.publishRunEvent(
-        publication,
-        this.createRunEvent("paused", {
-          runId,
-          scope: runId,
-          reason: "checkpoint_required",
-          error: checkpointError,
-          errorRecord: projectRecordedError(checkpointError),
-          checkpointContext,
-        }),
-        saveLegacyGate,
-        {
-          afterLive: () => {
-            if (publication.eventSeq !== gateEventSeq) saveLegacyGate();
-          },
-        },
-      );
-      const promise = Promise.reject<WorkflowRunResult>(checkpointError);
-      promise.catch(() => {});
-      return {
-        accepted: true,
-        runId,
-        continuation: persisted.continuation ?? deepFreeze({
-          generation: 0,
-          replayedPrefix: contiguousJournalPrefix(persisted.journal ?? [], runId),
-        }),
-        promise,
-      };
     }
 
     // A revised script (the run's editable file changed since admission) continues through an

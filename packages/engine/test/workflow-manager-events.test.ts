@@ -269,7 +269,7 @@ test("a failed step, a stopped step and a time limit pause with the same reason 
   }
 });
 
-test("automatic error persists without a listener and checkpoint gates republish paused", async () => {
+test("automatic error persists without a listener", async () => {
   await withPersistenceDirs(async ({ cwd, root }) => {
     const failedManager = new WorkflowManager({
       cwd,
@@ -284,42 +284,6 @@ test("automatic error persists without a listener and checkpoint gates republish
     if (failure?.type !== "error") assert.fail("terminal error event was not persisted");
     assert.equal(failure.scope, failed.runId);
     assert.equal(failure.errorRecord.form, "workflow-error");
-
-    const checkpointManager = new WorkflowManager({
-      cwd,
-      persistenceRoot: root,
-      agent: { async run() { return "unused"; } },
-    });
-    const checkpoint = await checkpointManager.runSync(
-      script(`await checkpoint('approve', { kind: 'confirm' })`, "checkpoint-events"),
-    );
-    const before = checkpointManager.getPersistence().load(checkpoint.runId);
-    assert.equal(checkpoint.status, "paused");
-    assert.ok(before?.eventSeq);
-
-    const cold = new WorkflowManager({
-      cwd,
-      persistenceRoot: root,
-      agent: { async run() { return "unused"; } },
-    });
-    let eventVisibleBeforeGateSave = false;
-    cold.on("paused", ({ runId }) => {
-      const records = eventLog(cold).readEvents(runId, { limit: 1_000 });
-      eventVisibleBeforeGateSave = records.events.at(-1)?.event.type === "paused";
-    });
-    const gate = await cold.resumeInBackground(checkpoint.runId);
-    assert.equal(gate.accepted, true);
-    if (!gate.accepted) assert.fail("checkpoint gate should be accepted");
-    await assert.rejects(gate.promise);
-
-    const after = cold.getPersistence().load(checkpoint.runId);
-    const records = eventLog(cold).readEvents(checkpoint.runId, { limit: 1_000 });
-    assert.equal(eventVisibleBeforeGateSave, true);
-    assert.equal(after?.eventStreamId, before?.eventStreamId);
-    assert.equal(after?.eventSeq, (before?.eventSeq ?? 0) + 1);
-    assert.equal(after?.eventSeq, records.endCursor);
-    assert.equal(records.events.at(-1)?.event.type, "paused");
-    assert.equal(records.events.some((record) => record.event.type === "resumed"), false);
   });
 });
 
