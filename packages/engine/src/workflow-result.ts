@@ -566,7 +566,7 @@ export interface WorkflowRunResult<T = unknown> {
    *  NON-SECRET pending checkpoint surface a host uses to collect and resume with a reply. */
   checkpointContext?: CheckpointContext;
   /** Session records for every session the run opened (live + journal-replayed), in call
-   *  order. Present even when journaling is off, since the result holds them. */
+   *  order. */
   agentSessions?: AgentSessionRecord[];
   /** Model-selection degrades observed on live agent calls. Absent when none occurred. */
   fallbacks?: WorkflowRunFallback[];

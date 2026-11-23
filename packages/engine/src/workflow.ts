@@ -204,11 +204,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   /** Run ID for persistence. Auto-generated if not provided. */
   runId?: string;
   /**
-   * Whether this run participates in journal replay/write callbacks. Default true.
-   * When false, resume inputs are rejected instead of being silently ignored.
-   */
-  journaling?: boolean;
-  /**
    * Resume: a journal with no call rows, by call index. A call replays the row at its own index
    * when the hashes agree. Goes with no resumeRows and no preparedResume.
    */
@@ -567,12 +562,6 @@ export async function runWorkflow<T = unknown>(
 ): Promise<EngineRunResult<T>> {
   const started = Date.now();
   const { meta, body } = parseWorkflowScript(script);
-  const journaling = options.journaling ?? true;
-  if (!journaling && (options.resumeJournal || options.resumeFromRunId || options.preparedResume || options.resumeRows)) {
-    throw new WorkflowError("journaling disabled for this run", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
-      recoverable: false,
-    });
-  }
   if (options.resumeJournal && (options.resumeRows || options.preparedResume)) {
     throw new WorkflowError(
       "resumeJournal goes with no resumeRows and no preparedResume",
@@ -614,7 +603,7 @@ export async function runWorkflow<T = unknown>(
     runId,
     cwd: options.cwd ?? process.cwd(),
     persistenceRoot: options.persistenceRoot,
-    persist: journaling ? (options.persistLogs ?? true) : false,
+    persist: options.persistLogs ?? true,
     onLog: (message) => options.onLog?.(message, callbackContext),
   });
 
@@ -1483,28 +1472,26 @@ export async function runWorkflow<T = unknown>(
             const usage = terminalUsage();
             const session = sessionRecord(slot, agentOptions.keepSession === true);
             if (session) state.agentSessions.push(session);
-            const entry = journaling
-              ? deepFreeze({
-                  index: callIndex,
-                  hash: callHash,
-                  result: resultSnapshot,
-                  kind: "agent" as const,
-                  scope: runId,
-                  ...(session ? { session } : {}),
-                  ...(usage ? { usage } : {}),
-                  call: {
-                    kind: "agent" as const,
-                    label,
-                    phase: assignedPhase,
-                    model: slot.modelResolved ?? displayModel,
-                    backendId: session?.backendId,
-                    ...(slot.provenance?.source === "live" &&
-                      slot.provenance.continuation?.reattached === true
-                      ? { continuation: { method: slot.provenance.continuation.method } }
-                      : {}),
-                  },
-                })
-              : undefined;
+            const entry = deepFreeze({
+              index: callIndex,
+              hash: callHash,
+              result: resultSnapshot,
+              kind: "agent" as const,
+              scope: runId,
+              ...(session ? { session } : {}),
+              ...(usage ? { usage } : {}),
+              call: {
+                kind: "agent" as const,
+                label,
+                phase: assignedPhase,
+                model: slot.modelResolved ?? displayModel,
+                backendId: session?.backendId,
+                ...(slot.provenance?.source === "live" &&
+                  slot.provenance.continuation?.reattached === true
+                  ? { continuation: { method: slot.provenance.continuation.method } }
+                  : {}),
+              },
+            });
             const terminalRecord = settle({
               outcome: "result",
               origin: "runner",
@@ -2159,8 +2146,8 @@ export async function runWorkflow<T = unknown>(
         throw waiting();
       }
       const terminalRecord = settle(
-        { outcome: "result", origin, ...(journaling ? { checkpointDecision: "explicit-v1" as const } : {}) },
-        journaling ? journalEntry(replySnapshot) : undefined,
+        { outcome: "result", origin, checkpointDecision: "explicit-v1" },
+        journalEntry(replySnapshot),
       );
       if (terminalRecord.outcome !== "result") return reply;
       const checkpointTaken: WorkflowCheckpointTaken = deepFreeze({

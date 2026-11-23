@@ -3,7 +3,7 @@
 // The runner reports each call's session out-of-band (StepRequest.onSessionOpen);
 // the engine's job is to make that identity durable and addressable for HOSTS:
 //   - one AgentSessionRecord per live agent() call on result.agentSessions (callIndex/label/
-//     phase context + keptOpen), even with journaling disabled — it rides the result;
+//     phase context + keptOpen);
 //   - keepSession only marks the record's keptOpen (the runner never gets it, not hashed);
 //   - journal entries carry the record, and resume REPLAYS it verbatim (the session lives in
 //     the agent's store, so the ref stays valid across process restarts exactly like results);
@@ -76,21 +76,6 @@ describe("agent session records (result.agentSessions)", () => {
       runner.seen.map((c) => c.keepSession),
       [undefined, undefined],
     );
-  });
-
-  it("rides the result even with journaling disabled (hosts that own persistence)", async () => {
-    const runner = sessionRunner();
-    let journaled = 0;
-    const run = await runWorkflow(twoCalls, {
-      agent: runner,
-      persistLogs: false,
-      journaling: false,
-      onAgentJournal: () => {
-        journaled += 1;
-      },
-    });
-    assert.equal(journaled, 0, "journaling off: no journal writes");
-    assert.equal(run.agentSessions?.length, 2, "records still surface on the result");
   });
 
   it("journals the record and resume replays it verbatim without re-running the agent", async () => {
