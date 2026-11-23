@@ -1,6 +1,7 @@
 // Where a run's files live, plain reads of its engine files, the engine's persistence for the
-// worker's manager, and the delete of a run that is forgotten. Only removeEngineRun and
-// removeRunFiles write, and no manager is built.
+// worker's manager, the agent slot pool, and the delete of a run that is forgotten. Only
+// removeEngineRun and removeRunFiles write, apart from the folders the slot pool makes, and no
+// manager is built.
 
 import { existsSync, readdirSync, readFileSync, rmdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
@@ -9,6 +10,7 @@ import { createRunPersistence, loadRunState, type FsLayer, type PersistedRunStat
 import type { RunEventPersistence } from "./persistence/run-event-persistence.js";
 import type { HomePaths } from "./home.js";
 import type { RunRecord } from "./records.js";
+import { SlotPool, type Priority } from "./slots.js";
 
 /** The file calls the store reads through. Tests hand it one that counts the calls. */
 export type StoreFs = Pick<FsLayer, "existsSync" | "readdirSync" | "readFileSync">;
@@ -64,9 +66,9 @@ export function questionFiles(paths: HomePaths): string[] {
     .map((name) => join(paths.inbox, name));
 }
 
-/** The folders of the machine-wide cap on agents: a file per held slot, and a ticket per waiting agent. */
-export function slotFolders(paths: HomePaths): { slots: string; queue: string } {
-  return { slots: paths.slots, queue: paths.queue };
+/** The machine-wide cap on agents: a file per held slot, and a ticket per waiting agent. */
+export function agentSlots(paths: HomePaths, cap: () => number, priority: Priority): SlotPool {
+  return new SlotPool(paths.slots, paths.queue, cap, priority);
 }
 
 /** The run's worker log. The worker's output goes there. */

@@ -16,8 +16,7 @@ import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuesti
 import { notify } from "./notify.js";
 import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
-import { SlotPool } from "./slots.js";
-import { managerStore, slotFolders } from "./store.js";
+import { agentSlots, managerStore } from "./store.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
 import { programLookup } from "../programs.js";
 
@@ -124,8 +123,7 @@ async function runOnAccounts(
   const settings = lookupSettings(paths, record.projectDir, config, base);
   const agents = lookupAgents(settings);
   const secrets = loadSecrets(paths);
-  const folders = slotFolders(paths);
-  const slots = new SlotPool(folders.slots, folders.queue, () => loadConfig(paths).maxAgents, record.priority);
+  const slots = agentSlots(paths, () => loadConfig(paths).maxAgents, record.priority);
   const inner = options.inner;
   const runner = createSteps({
     cwd: record.cwd,
