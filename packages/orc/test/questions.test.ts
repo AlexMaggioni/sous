@@ -8,6 +8,7 @@ import { ensureHome, homePaths, runQuestions, type HomePaths, type RunQuestion }
 // orc does not import these, so the engine entry does not export them. The tests load the
 // engine's built modules by path.
 import { createRun } from "../../engine/dist/runs/launch.js";
+import { updateRecord } from "../../engine/dist/runs/records.js";
 import { runWorker } from "../../engine/dist/runs/worker.js";
 import type { AgentRunner } from "../../engine/dist/steps/agent-runner.js";
 import { main } from "../src/cli.js";
@@ -339,5 +340,55 @@ return { color, name, ship, plan }`;
     assert.equal(question?.prompt, "Pick a color");
     assert.equal((await orc(paths, ["stop", record.runId])).code, 0);
     assert.equal((await running)?.status, "aborted");
+  });
+});
+
+describe("stop at a breakpoint", () => {
+  // A time limit pauses the run at the breakpoint, the way a run waits while nobody answers.
+  const checked = `export const meta = { name: 'checked', description: 'a breakpoint' }
+return await breakpoint('Check the plan', { show: 'the plan' })`;
+  const held = `export const meta = { name: 'held', description: 'a breakpoint', timeout: '300ms' }
+return await breakpoint('Check the plan', { show: 'the plan' })`;
+
+  async function stopped(paths: HomePaths, runId: string): Promise<void> {
+    assert.deepEqual(runQuestions(paths, runId), [], "the stop removes the question");
+    const wait = await orc(paths, ["wait", runId]);
+    assert.equal(wait.code, 3, wait.out);
+    assert.match((await orc(paths, ["show", runId])).out, /^status {4}stopped$/m);
+  }
+
+  it("orc answer <q> stop stops a running run, as orc stop does", async () => {
+    const { paths, projectDir } = setup({ checked });
+    const record = createRun(paths, { workflow: "checked", projectDir, inputs: {} });
+    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet, handleSignals: true });
+    const [question] = await asked(paths, record.runId, 1);
+    assert.deepEqual(await orc(paths, ["answer", question!.id, "Stop"]), { code: 0, out: `stopping ${record.runId}\n` });
+    assert.equal((await running)?.status, "aborted");
+    await stopped(paths, record.runId);
+  });
+
+  it("orc answer <q> stop stops a paused run at once, as orc stop does", async () => {
+    const { paths, projectDir } = setup({ held });
+    const record = createRun(paths, { workflow: "held", projectDir, inputs: {} });
+    const paused = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    assert.equal(paused?.status, "paused");
+    const [question] = runQuestions(paths, record.runId);
+    assert.deepEqual(await orc(paths, ["answer", question!.id, "stop"]), { code: 0, out: `stopped ${record.runId}\n` });
+    await stopped(paths, record.runId);
+  });
+
+  it("a stop that an older orc wrote to a paused run's answer file stops the run on resume", async () => {
+    const { paths, projectDir } = setup({ held });
+    const record = createRun(paths, { workflow: "held", projectDir, inputs: {} });
+    const paused = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    assert.equal(paused?.status, "paused");
+    const [question] = runQuestions(paths, record.runId);
+    writeFileSync(join(paths.inbox, `${question!.id}.answer.json`), `${JSON.stringify({ hash: question!.hash, value: "stop", answeredAt: new Date().toISOString() }, null, 2)}\n`);
+    updateRecord(paths, record.runId, { timeout: undefined });
+    const lines: string[] = [];
+    // A resume that ends in a stop returns no result. The log and orc say how it ended.
+    await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: (line) => lines.push(line.slice(9)) });
+    assert.deepEqual(lines.slice(1), [`answered   ${question!.id}: "stop"`, "stopping", "aborted    held"]);
+    await stopped(paths, record.runId);
   });
 });

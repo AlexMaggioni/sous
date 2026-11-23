@@ -212,13 +212,13 @@ async function askHere(paths: HomePaths, questions: RunQuestion[]): Promise<void
   }
 }
 
-/** What `orc stop` prints. */
-function stopText(record: RunRecord, stop: ReturnType<typeof stopRun>): string {
-  if (stop.outcome === "stopping") return `stopping ${record.runId}`;
-  if (stop.outcome === "already-ended") return `${record.runId} already ended (${stop.status ?? "done"})`;
-  if (stop.outcome === "never-started") return `${record.runId} never started; nothing to stop`;
-  if (stop.outcome === "held-elsewhere") return `${record.runId} is held by another process`;
-  return `stopped ${record.runId}`;
+/** What `orc stop` prints, and `orc answer` when a breakpoint's reply stops the run. */
+function stopText(runId: string, stop: ReturnType<typeof stopRun>): string {
+  if (stop.outcome === "stopping") return `stopping ${runId}`;
+  if (stop.outcome === "already-ended") return `${runId} already ended (${stop.status ?? "done"})`;
+  if (stop.outcome === "never-started") return `${runId} never started; nothing to stop`;
+  if (stop.outcome === "held-elsewhere") return `${runId} is held by another process`;
+  return `stopped ${runId}`;
 }
 
 function needQuestion(paths: HomePaths, id: string | undefined): RunQuestion {
@@ -366,6 +366,7 @@ function cmdAnswer(parsed: Parsed, via: Exclude<Reply["via"], "prompt">): number
   const answer = answerQuestion(paths, question, { via, text, json: parsed.flags.json === true });
   if ("usage" in answer) throw new Usage(answer.usage);
   if ("answered" in answer) out(`answered ${question.id}${answer.running ? "" : `. The run is not running: orc resume ${question.runId} uses the answer.`}`);
+  if ("stopped" in answer) out(stopText(question.runId, answer.stopped));
   return 0;
 }
 
@@ -381,7 +382,7 @@ function cmdStop(parsed: Parsed): number {
     out(`stopping "${step}" in ${record.runId}. The run pauses on it, and orc resume ${record.runId} runs it again.`);
     return 0;
   }
-  out(stopText(record, stopRun(paths, record.runId)));
+  out(stopText(record.runId, stopRun(paths, record.runId)));
   return 0;
 }
 

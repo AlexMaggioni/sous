@@ -214,8 +214,9 @@ export interface Reply {
 
 /**
  * Answer a question with what a person typed. It writes the answer, or says that the reply stops
- * the run, or what is wrong with the command. A choice that is not listed, or a confirm that is
- * not yes or no, throws. A reply typed at a prompt counts only while the question's file is there.
+ * the run, or what is wrong with the command. "stop" at a breakpoint stops the run, from orc
+ * answer as from the prompt. A choice that is not listed, or a confirm that is not yes or no,
+ * throws. A reply typed at a prompt counts only while the question's file is there.
  */
 export function reply(paths: HomePaths, question: Question, typed: Reply): { answered: true } | { stop: true } | { usage: string } | { gone: true } {
   if (typed.via === "prompt" && !readQuestion(paths, question.id)) return { gone: true };
@@ -230,7 +231,8 @@ function meaningOf(question: Question, { via, text, json }: Reply): { value: unk
   if (via === "prompt") {
     const typed = text.trim();
     if (!question.breakpoint) return { value: normalizeAnswer(question, typed) };
-    return typed.toLowerCase() === "stop" ? { stop: true } : { value: breakpointValue(typed) };
+    const value = breakpointValue(typed);
+    return value === "stop" ? { stop: true } : { value };
   }
   if (via === "approve") return { value: question.kind === "confirm" && !question.breakpoint ? true : "approve" };
   if (via === "send-back") {
@@ -240,6 +242,7 @@ function meaningOf(question: Question, { via, text, json }: Reply): { value: unk
   }
   if (!text && question.kind !== "confirm") return { usage: `orc answer ${question.id} "your answer"` };
   const value = question.breakpoint ? breakpointValue(text) : json ? parseJson(text) : normalizeAnswer(question, text);
+  if (question.breakpoint && value === "stop") return { stop: true };
   if (question.kind === "select" && question.choices && !question.choices.includes(value as string)) {
     return { usage: `answer one of: ${question.choices.join(", ")}` };
   }

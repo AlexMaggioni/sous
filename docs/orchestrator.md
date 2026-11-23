@@ -97,7 +97,8 @@ The engine's own steps all work: `agent`, `parallel`, `pipeline`, `gate`, `retry
   `allowFail: true`. They run in the run's place, and `ORC_PROJECT` holds the project folder.
 - `ask(question, { choices })` waits for the user's answer.
 - `breakpoint(title, step, { show, max })` runs the step, then waits for the user to approve,
-  stop the run, or send the step back with a note. The step reruns with the note.
+  stop the run, or send the step back with a note. The step reruns with the note. A stop ends the
+  run as `orc stop` does, and `orc wait` exits with 3.
 - `choose(prompt, { steps, workflows, any, none, input })` lets an agent pick the next step or
   workflow and runs it. `any: true` allows every saved workflow except those for people only.
 - `workflow(name, args, { place, label })` runs a saved workflow inside this one, five levels
@@ -277,7 +278,7 @@ the service resumes it. `orc show` prints it, and `orc doctor` checks the accoun
 | `orc run <workflow> [--input value]` | start a run in the background. `--place`, `--model`, `--set reviewer.model=claude/opus` and `--concurrency` change this run only. `--wait` follows it, `--json` prints machine-readable output. |
 | `orc list`, `orc show <run>`, `orc log <run> -f` | runs; one run's steps with the time and tokens of each, its questions and result; its log |
 | `orc inbox`, `orc answer <q> <text>` | questions waiting for you, and answering one |
-| `orc approve <q>`, `orc send-back <q> <note>` | answer a breakpoint |
+| `orc approve <q>`, `orc send-back <q> <note>` | answer a breakpoint. `orc answer <q> stop` stops the run. |
 | `orc pause <run>`, `orc resume <run> [--latest \| --same]` | finish the running steps and start nothing new; go on from there |
 | `orc stop <run>` | end the run. Its worktree stays. |
 | `orc stop <run> --step <name>` | stop one running step, by the name `orc log` gives it, such as `"ticket A: implementer"`. The run pauses on it, and `orc resume` runs it again. |
