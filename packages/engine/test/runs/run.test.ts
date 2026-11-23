@@ -31,15 +31,14 @@ interface Home {
   paths: HomePaths;
   /** The engine's folder for orc's runs. */
   engine: string;
-  legacy: string;
 }
 
 function home(): Home {
   const root = mkdtempSync(join(tmpdir(), "engine-run-"));
   const paths = ensureHome(homePaths(join(root, "home")));
-  const { runsDir, legacyRunsDir } = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
+  const { runsDir } = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
   mkdirSync(runsDir, { recursive: true });
-  return { paths, engine: runsDir, legacy: legacyRunsDir };
+  return { paths, engine: runsDir };
 }
 
 const now = Date.now();
@@ -119,8 +118,8 @@ describe("the list of runs", () => {
     assert.equal(runs.length, 50);
     assert.equal(reads.length, 50, "one read per state");
     assert.deepEqual([...reads].sort(), Array.from({ length: 50 }, (_, i) => join(planted.engine, `${id(i)}.json`)));
-    assert.deepEqual(listed, [planted.engine], "the legacy folder does not exist, so only the engine folder is listed");
-    assert.deepEqual(checked, [planted.engine, planted.legacy], "no file is checked one by one");
+    assert.deepEqual(listed, [planted.engine], "the engine folder is listed once");
+    assert.deepEqual(checked, [planted.engine], "no file is checked one by one");
 
     assert.deepEqual(runs.map((run) => run.runId), Array.from({ length: 50 }, (_, i) => id(49 - i)), "newest first");
     const word = (runId: string) => runs.find((run) => run.runId === runId)!.word;

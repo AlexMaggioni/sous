@@ -42,8 +42,6 @@ export function layout(paths: HomePaths, runId: string, cwd: string): string[] {
 export interface TodayRunOptions {
   /** A lock whose owner is this process, so the lock counts as held. */
   liveLock?: boolean;
-  /** A `.lineage` file left by an earlier forget of the same id. */
-  lineage?: boolean;
   /** An open question in the inbox. */
   question?: boolean;
   /** The run works in a worktree in the home, not in the project folder. */
@@ -77,7 +75,6 @@ export function plantTodayRun(paths: HomePaths, options: TodayRunOptions = {}): 
       .replaceAll("__ID__", TODAY_ID);
   const folders = ["run"];
   if (options.liveLock) folders.push("live-lock");
-  if (options.lineage) folders.push("lineage");
   if (options.question) folders.push("question");
   for (const folder of folders) {
     const walk = (dir: string) => {

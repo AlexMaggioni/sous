@@ -115,26 +115,25 @@ export function managerStore(paths: HomePaths): { cwd: string; persistenceRoot: 
 /** The run's state as the engine last saved it. A run left running by a worker that died still
  *  reads "running": the pause rule says what that means. */
 export function readState(paths: HomePaths, runId: string, fs: StoreFs = DISK): PersistedRunState | undefined {
-  const { runsDir, legacyRunsDir } = engineFolders(paths);
-  return loadRunState(runsDir, legacyRunsDir, runId, fs) ?? undefined;
+  const { runsDir } = engineFolders(paths);
+  return loadRunState(runsDir, runId, fs) ?? undefined;
 }
 
 /**
- * The saved states of the given runs, by run id. A run with no state is left out. Each engine
+ * The saved states of the given runs, by run id. A run with no state is left out. The engine's
  * folder is listed once, so a run with no state costs no file call, and a run with a good state
  * costs one read.
  */
 export function readStates(paths: HomePaths, runIds: Iterable<string>, fs: StoreFs = DISK): Map<string, PersistedRunState> {
-  const { runsDir, legacyRunsDir } = engineFolders(paths);
+  const { runsDir } = engineFolders(paths);
   const present = new Set<string>();
-  for (const dir of new Set([runsDir, legacyRunsDir])) {
-    if (!fs.existsSync(dir)) continue;
-    for (const name of fs.readdirSync(dir)) present.add(join(dir, String(name)));
+  if (fs.existsSync(runsDir)) {
+    for (const name of fs.readdirSync(runsDir)) present.add(join(runsDir, String(name)));
   }
   const listed = { existsSync: (file: Parameters<StoreFs["existsSync"]>[0]) => present.has(String(file)), readFileSync: fs.readFileSync };
   const states = new Map<string, PersistedRunState>();
   for (const runId of runIds) {
-    const state = loadRunState(runsDir, legacyRunsDir, runId, listed);
+    const state = loadRunState(runsDir, runId, listed);
     if (state) states.set(runId, state);
   }
   return states;
@@ -171,23 +170,6 @@ export function removeEngineRun(paths: HomePaths, runId: string): boolean {
     return true;
   } finally {
     engine.releaseRunLease(lease);
-  }
-}
-
-/** Remove each deleted-run marker (`<id>.lineage`) that older engines left in the engine's folders.
- *  A marker whose run has a state stays, since the engine removes it when it next saves that run. */
-export function removeDeletedRunMarkers(paths: HomePaths): void {
-  const { runsDir, legacyRunsDir } = engineFolders(paths);
-  for (const dir of new Set([runsDir, legacyRunsDir])) {
-    if (!existsSync(dir)) continue;
-    for (const name of readdirSync(dir)) {
-      if (!name.endsWith(".lineage") || readState(paths, name.slice(0, -".lineage".length))) continue;
-      try {
-        unlinkSync(join(dir, name));
-      } catch {
-        // already gone
-      }
-    }
   }
 }
 

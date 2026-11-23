@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, join } from "node:path";
 import { describe, it } from "node:test";
 import { WORKFLOW_PROJECTS_SUBDIR, workflowProjectKey, workflowProjectPaths } from "../src/runs/persistence/project-paths.js";
 import { ORCHESTRATOR_PERSISTENCE_ROOT_ENV, WORKFLOW_HOME_RELATIVE_DIR, workflowHomeDir } from "../src/workflow-paths.js";
@@ -43,17 +43,13 @@ describe("workflow paths", () => {
     });
   });
 
-  it("keeps new project storage under workflow home and legacy paths under cwd", () => {
+  it("keeps project storage under workflow home", () => {
     withIsolatedHome((home, cwd) => {
       const paths = workflowProjectPaths(cwd, { env: {} });
       assert.ok(paths.rootDir.startsWith(join(home, WORKFLOW_HOME_RELATIVE_DIR, WORKFLOW_PROJECTS_SUBDIR)));
       assert.equal(paths.runsDir, join(paths.rootDir, "runs"));
       assert.equal(paths.savedDir, join(paths.rootDir, "saved"));
       assert.equal(paths.settingsPath, join(paths.rootDir, "settings.json"));
-      // The legacy project-relative dirs are `.agentprism/workflows/*`
-      // (config.ts WORKFLOW_RUNS_DIR / WORKFLOW_SAVED_DIR).
-      assert.equal(paths.legacyRunsDir, resolve(cwd, ".agentprism/workflows/runs"));
-      assert.equal(paths.legacySavedDir, resolve(cwd, ".agentprism/workflows/saved"));
     });
   });
 

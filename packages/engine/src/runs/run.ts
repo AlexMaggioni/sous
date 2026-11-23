@@ -15,7 +15,7 @@ import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
 import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestStepStop, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { olderSave } from "../older-save.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
-import { logFile, readEventsAfter, readState, readStates, removeDeletedRunMarkers, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
+import { logFile, readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
 import { currentWorkflows, stopColdRun } from "./worker.js";
 
 /** A question a run asks, as the inbox holds it. */
@@ -499,8 +499,7 @@ export function workerRuns(run: RunView): boolean {
   return processAlive(run.record.pid) || (!run.resume.ok && run.resume.why === "running");
 }
 
-/** Remove finished runs older than `days`: the engine's state, orc's record and the log. Worktrees stay.
- *  It also removes the deleted-run markers older engines left. */
+/** Remove finished runs older than `days`: the engine's state, orc's record and the log. Worktrees stay. */
 export function pruneRuns(paths: HomePaths, days: number, now = new Date()): string[] {
   const cutoff = now.getTime() - days * 86_400_000;
   const removed: string[] = [];
@@ -509,7 +508,6 @@ export function pruneRuns(paths: HomePaths, days: number, now = new Date()): str
     if (Date.parse(record.createdAt) > cutoff || workerRuns(run) || startedAndUnfinished(run)) continue;
     if (forgetRun(paths, record)) removed.push(record.runId);
   }
-  removeDeletedRunMarkers(paths);
   return removed;
 }
 

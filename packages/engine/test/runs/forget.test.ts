@@ -3,12 +3,10 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import type { HomePaths } from "../../src/runs/home.js";
 import type { RunRecord } from "../../src/runs/records.js";
 import { forgetRun, pruneRuns } from "../../src/runs/run.js";
-import { layout, plantTodayRun, projectKey, setup, TODAY_ID } from "./fixture.js";
+import { layout, plantTodayRun, setup, TODAY_ID } from "./fixture.js";
 
 const folders = [
   "home/",
@@ -41,7 +39,6 @@ const engineFiles = [
 /** What the engine keeps of the home after a run is gone. */
 const kept = ["home/runs/projects/<home key>/", "home/runs/projects/<home key>/project.json", "home/runs/projects/<home key>/runs/"];
 
-const lineage = "home/runs/projects/<home key>/runs/<id>.lineage";
 const lock = "home/runs/projects/<home key>/runs/<id>.lock";
 
 /** Thirty days after the planted run started. */
@@ -93,28 +90,6 @@ describe("forget and prune on today's files", () => {
     const record = plantTodayRun(paths, { liveLock: true });
     assert.deepEqual(pruneRuns(paths, 7, later), []);
     assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles, lock].sort());
-  });
-
-  it("forgetRun and pruneRuns remove a .lineage an older engine left next to the run", () => {
-    for (const [name, remove] of Object.entries(removers)) {
-      const { paths } = setup({});
-      const record = plantTodayRun(paths, { lineage: true });
-      assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles, lineage].sort());
-      remove(paths, record);
-      assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept].sort(), name);
-    }
-  });
-
-  it("pruneRuns removes a .lineage whose run is gone, and keeps one whose run has a state", () => {
-    const { paths } = setup({});
-    const record = plantTodayRun(paths, { lineage: true });
-    // A marker an older engine left when it forgot another run.
-    const orphan = join(paths.home, "runs", "projects", projectKey(paths.home), "runs", "gone-run.lineage");
-    writeFileSync(orphan, `${JSON.stringify({ runId: "gone-run", deletedAt: "2026-11-01T00:00:00.000Z" }, null, 2)}\n`);
-    // The planted run is a day old, so the prune keeps it.
-    assert.deepEqual(pruneRuns(paths, 7, new Date(Date.parse("2026-11-24T06:21:32.322Z"))), []);
-    assert.equal(existsSync(orphan), false);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles, lineage].sort());
   });
 
   it("forgetRun removes the run's open question from the inbox", () => {

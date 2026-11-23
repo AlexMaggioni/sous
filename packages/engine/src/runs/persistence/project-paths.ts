@@ -5,7 +5,6 @@
 
 import { createHash } from "node:crypto";
 import { basename, join, resolve } from "node:path";
-import { WORKFLOW_RUNS_DIR, WORKFLOW_SAVED_DIR } from "../../config.js";
 import { workflowHomeDir, type WorkflowPathOptions } from "../../workflow-paths.js";
 
 export const WORKFLOW_PROJECTS_SUBDIR = "projects";
@@ -16,8 +15,6 @@ export interface WorkflowProjectPaths {
   runsDir: string;
   savedDir: string;
   settingsPath: string;
-  legacyRunsDir: string;
-  legacySavedDir: string;
 }
 
 export function workflowProjectKey(cwd: string): string {
@@ -36,8 +33,6 @@ export function workflowProjectPaths(cwd: string, options: WorkflowPathOptions =
     runsDir: join(rootDir, "runs"),
     savedDir: join(rootDir, "saved"),
     settingsPath: join(rootDir, "settings.json"),
-    legacyRunsDir: resolve(cwd, WORKFLOW_RUNS_DIR),
-    legacySavedDir: resolve(cwd, WORKFLOW_SAVED_DIR),
   };
 }
 

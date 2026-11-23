@@ -297,27 +297,25 @@ export function inlineScriptFile(runsDir: string, runId: string): string {
 }
 
 /**
- * Read a run's saved state, with no store built and nothing written. It tries the primary file,
- * then the legacy one, each before its .bak, so a corrupt primary does not lose the run.
+ * Read a run's saved state, with no store built and nothing written. It tries the state file
+ * before its .bak, so a corrupt state file does not lose the run.
  */
 export function loadRunState(
   runsDir: string,
-  legacyRunsDir: string,
   runId: string,
   fs: Pick<FsLayer, "existsSync" | "readFileSync"> = { existsSync, readFileSync },
 ): PersistedRunState | null {
-  for (const path of [join(runsDir, `${runId}.json`), join(legacyRunsDir, `${runId}.json`)]) {
-    for (const candidate of [path, `${path}.bak`]) {
-      let state: PersistedRunState;
-      try {
-        if (!fs.existsSync(candidate)) continue;
-        state = JSON.parse(fs.readFileSync(candidate, "utf-8") as string) as PersistedRunState;
-      } catch {
-        // corrupt candidate -> fall through to the next candidate
-        continue;
-      }
-      return state;
+  const path = join(runsDir, `${runId}.json`);
+  for (const candidate of [path, `${path}.bak`]) {
+    let state: PersistedRunState;
+    try {
+      if (!fs.existsSync(candidate)) continue;
+      state = JSON.parse(fs.readFileSync(candidate, "utf-8") as string) as PersistedRunState;
+    } catch {
+      // corrupt candidate -> fall through to the next candidate
+      continue;
     }
+    return state;
   }
   return null;
 }
@@ -335,7 +333,7 @@ export function createRunPersistence(
   const _unlinkSync = fsOverride?.unlinkSync ?? unlinkSync;
   const _writeFileSync = fsOverride?.writeFileSync ?? writeFileSync;
 
-  const { runsDir, legacyRunsDir } = workflowProjectPaths(cwd, { persistenceRoot: options.persistenceRoot });
+  const { runsDir } = workflowProjectPaths(cwd, { persistenceRoot: options.persistenceRoot });
 
   const ensureDir = () => {
     if (!_existsSync(runsDir)) {
@@ -343,18 +341,12 @@ export function createRunPersistence(
     }
   };
 
-  const runPath = (dir: string, runId: string) => join(dir, `${runId}.json`);
-  const primaryRunPath = (runId: string) => runPath(runsDir, runId);
-  const legacyRunPath = (runId: string) => runPath(legacyRunsDir, runId);
-  const lockPath = (dir: string, runId: string) => join(dir, `${runId}.lock`);
-  const lineagePath = (dir: string, runId: string) => join(dir, `${runId}.lineage`);
+  const primaryRunPath = (runId: string) => join(runsDir, `${runId}.json`);
   const inlineScriptPath = (runId: string) => inlineScriptFile(runsDir, runId);
-  const primaryLockPath = (runId: string) => lockPath(runsDir, runId);
-  const legacyLockPath = (runId: string) => lockPath(legacyRunsDir, runId);
-  const candidateRunPaths = (runId: string) => [primaryRunPath(runId), legacyRunPath(runId)];
+  const primaryLockPath = (runId: string) => join(runsDir, `${runId}.lock`);
 
   const loadState = (runId: string): PersistedRunState | null =>
-    loadRunState(runsDir, legacyRunsDir, runId, { existsSync: _existsSync, readFileSync: _readFileSync });
+    loadRunState(runsDir, runId, { existsSync: _existsSync, readFileSync: _readFileSync });
   const events = createRunEventLog(runsDir, loadState, fsOverride);
 
   const pidIsAlive = (pid: number): boolean => {
@@ -390,24 +382,6 @@ export function createRunPersistence(
     value.pid > 0 &&
     typeof value.token === "string";
 
-  const removeStaleLegacyLock = (
-    runId: string,
-  ): { available: boolean; recoveredOwnerPid?: number } => {
-    const lock = legacyLockPath(runId);
-    const existing = readLockAt(lock);
-    const valid = validLockOwner(existing, runId, legacyRunPath(runId));
-    if (valid && pidIsAlive(existing.pid)) return { available: false };
-    try {
-      if (_existsSync(lock)) _unlinkSync(lock);
-    } catch {
-      return { available: false };
-    }
-    return {
-      available: true,
-      ...(valid ? { recoveredOwnerPid: existing.pid } : {}),
-    };
-  };
-
   return {
     save(state: PersistedRunState) {
       ensureDir();
@@ -424,12 +398,6 @@ export function createRunPersistence(
       } catch {
         // backup is best-effort; the primary write already succeeded
       }
-      try {
-        const marker = lineagePath(runsDir, state.runId);
-        if (_existsSync(marker)) _unlinkSync(marker);
-      } catch {
-        // An old engine's deleted-run marker; the live record wins, so cleanup is best-effort.
-      }
     },
 
     load(runId: string): PersistedRunState | null {
@@ -438,21 +406,20 @@ export function createRunPersistence(
 
     list(): PersistedRunState[] {
       const byRunId = new Map<string, PersistedRunState>();
-      for (const dir of [runsDir, legacyRunsDir]) {
-        try {
-          if (!_existsSync(dir)) continue;
-          const files = _readdirSync(dir).filter((f) => f.endsWith(".json"));
+      try {
+        if (_existsSync(runsDir)) {
+          const files = _readdirSync(runsDir).filter((f) => f.endsWith(".json"));
           for (const file of files) {
             try {
-              const state = JSON.parse(_readFileSync(join(dir, file), "utf-8")) as PersistedRunState;
+              const state = JSON.parse(_readFileSync(join(runsDir, file), "utf-8")) as PersistedRunState;
               if (!byRunId.has(state.runId)) byRunId.set(state.runId, state);
             } catch {
               // Skip corrupted files
             }
           }
-        } catch {
-          // Skip unreadable directories; another storage location may still work.
         }
+      } catch {
+        // An unreadable directory lists no runs.
       }
       return [...byRunId.values()].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     },
@@ -461,40 +428,35 @@ export function createRunPersistence(
       // The events file goes first, before the state files and the lock.
       events.remove(runId);
       let deleted = false;
-      // Files older engines wrote next to the run: a copy of an inline script and a deleted-run marker.
-      for (const old of [inlineScriptPath(runId), lineagePath(runsDir, runId), lineagePath(legacyRunsDir, runId)]) {
+      // A copy of an inline script that older engines wrote next to the run.
+      try {
+        const old = inlineScriptPath(runId);
+        if (_existsSync(old)) _unlinkSync(old);
+      } catch {
+        // ignore leftover cleanup failures
+      }
+      const path = primaryRunPath(runId);
+      try {
+        if (_existsSync(path)) {
+          _unlinkSync(path);
+          deleted = true;
+        }
+      } catch {
+        // ignore per-file cleanup failures
+      }
+      // Snapshot recovery artifacts follow the primary; the writer lock is always last.
+      for (const sidecar of [`${path}.bak`, `${path}.tmp`]) {
         try {
-          if (_existsSync(old)) _unlinkSync(old);
+          if (_existsSync(sidecar)) _unlinkSync(sidecar);
         } catch {
-          // ignore leftover cleanup failures
+          // ignore sidecar cleanup failures
         }
       }
-      for (const path of candidateRunPaths(runId)) {
-        try {
-          if (_existsSync(path)) {
-            _unlinkSync(path);
-            deleted = true;
-          }
-        } catch {
-          // ignore per-file cleanup failures
-        }
-        // Snapshot recovery artifacts follow the primary; the writer lock is always last.
-        for (const sidecar of [`${path}.bak`, `${path}.tmp`]) {
-          try {
-            if (_existsSync(sidecar)) _unlinkSync(sidecar);
-          } catch {
-            // ignore sidecar cleanup failures
-          }
-        }
-      }
-      // Both storage locations are settled before either writer-exclusion file is removed.
-      for (const dir of [legacyRunsDir, runsDir]) {
-        try {
-          const lock = lockPath(dir, runId);
-          if (_existsSync(lock)) _unlinkSync(lock);
-        } catch {
-          // ignore lock cleanup failures
-        }
+      try {
+        const lock = primaryLockPath(runId);
+        if (_existsSync(lock)) _unlinkSync(lock);
+      } catch {
+        // ignore lock cleanup failures
       }
       return deleted;
     },
@@ -503,9 +465,7 @@ export function createRunPersistence(
       ensureDir();
       const path = primaryRunPath(runId);
       const lock = primaryLockPath(runId);
-      const legacy = removeStaleLegacyLock(runId);
-      if (!legacy.available) return null;
-      let recoveredOwnerPid = legacy.recoveredOwnerPid;
+      let recoveredOwnerPid: number | undefined;
       for (let attempt = 0; attempt < 2; attempt++) {
         const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
         const payload: LockFile = {
