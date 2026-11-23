@@ -843,19 +843,31 @@ test("resume in parallel(): editing one thunk re-runs that thunk only", async ()
 });
 
 test("callSeq is deterministic under parallel()", async () => {
-  const journal: JournalEntry[] = [];
+  // The three agents finish in the reverse of their order in the array. Each call keeps the index of
+  // its own place, so the index does not depend on which agent finishes first.
   const script = `export const meta = { name: 'par', description: 'parallel order' }
   const xs = await parallel(['p0','p1','p2'].map((p) => () => agent(p, { label: p })))
   return xs`;
-  await runWorkflow(script, {
-    agent: countingAgent().runner,
-    persistLogs: false,
-    onAgentJournal: (e) => journal.push(e),
-  });
-  assert.deepEqual(
-    journal.map((e) => e.index).sort((a, b) => a - b),
-    [0, 1, 2],
-  );
+  const gates: Record<string, ReturnType<typeof createDeferred<void>>> = { p0: createDeferred(), p1: createDeferred(), p2: createDeferred() };
+  const started: string[] = [];
+  const runner = {
+    async run(prompt: string) {
+      started.push(prompt);
+      await gates[prompt]!.promise;
+      return `ran:${prompt}`;
+    },
+  };
+  const journal: JournalEntry[] = [];
+  const run = runWorkflow(script, { agent: runner, concurrency: 3, persistLogs: false, onAgentJournal: (e) => journal.push(e) });
+  while (started.length < 3) await new Promise((resolve) => setTimeout(resolve, 0));
+  for (const [done, label] of ["p2", "p1", "p0"].entries()) {
+    gates[label]!.resolve();
+    while (journal.length <= done) await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  await run;
+
+  assert.deepEqual(journal.map((e) => e.call?.label), ["p2", "p1", "p0"], "the journal is in the order the agents finished");
+  assert.deepEqual(Object.fromEntries(journal.map((e) => [e.call?.label, e.index])), { p0: 0, p1: 1, p2: 2 });
 });
 
 test("workflow() runs a nested saved workflow and shares the global agent counter", async () => {
@@ -1157,7 +1169,7 @@ return 1`;
     persistLogs: false,
   });
 
-  assert.ok(Array.isArray(result.logs), "result.logs should be an array");
+  assert.deepEqual(result.logs, []);
 });
 
 test("gate returns the structured first-pass verdict with extra fields intact", async () => {
