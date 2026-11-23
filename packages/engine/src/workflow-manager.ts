@@ -233,20 +233,8 @@ export interface WorkflowAgentCallCancellation {
   errorCode: WorkflowErrorCode.AGENT_CANCELLED;
 }
 
-export type WorkflowContinuationRefusalReason =
-  | "running"
-  | "terminal"
-  | "owned-elsewhere"
-  | "missing"
-  | "not-continuable"
-  /** The revised script does not parse (a `meta` or structure error). */
-  | "script-invalid";
-
 export type WorkflowContinuationStart =
-  | {
-      accepted: false;
-      reason: WorkflowContinuationRefusalReason;
-    }
+  | { accepted: false }
   | {
       accepted: true;
       runId: string;
@@ -2562,11 +2550,11 @@ export class WorkflowManager extends EventEmitter {
     if (active?.journaling === false) throw new Error("journaling disabled for this run");
     if (!this.resolveJournaling(exec)) throw new Error("journaling disabled for this run");
     if (active?.status === "running") {
-      return { accepted: false, reason: "running" };
+      return { accepted: false };
     }
     const lease = this.persistence.acquireRunLease(runId);
     if (!lease) {
-      return { accepted: false, reason: "owned-elsewhere" };
+      return { accepted: false };
     }
     let persisted: PersistedRunState | null;
     try {
@@ -2577,7 +2565,7 @@ export class WorkflowManager extends EventEmitter {
     }
     if (!persisted) {
       this.persistence.releaseRunLease(lease);
-      return { accepted: false, reason: "missing" };
+      return { accepted: false };
     }
     try {
       assertExplicitCheckpointProvenance(persisted);
@@ -2587,11 +2575,11 @@ export class WorkflowManager extends EventEmitter {
     }
     if (persisted.status === "completed") {
       this.persistence.releaseRunLease(lease);
-      return { accepted: false, reason: "terminal" };
+      return { accepted: false };
     }
     if (!persisted.script || persisted.executionMode || persisted.argsUnreplayable) {
       this.persistence.releaseRunLease(lease);
-      return { accepted: false, reason: "not-continuable" };
+      return { accepted: false };
     }
     // Same-ID recovery keeps its explicit legacy marker.
     persisted.legacyResume = true;
@@ -2727,7 +2715,7 @@ export class WorkflowManager extends EventEmitter {
       } catch {
         this.persistence.releaseRunLease(lease);
         publication.lease = undefined;
-        return { accepted: false, reason: "script-invalid" };
+        return { accepted: false };
       }
     }
 
