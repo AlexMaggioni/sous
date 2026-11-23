@@ -48,7 +48,6 @@ test("SIGKILL crash residue is lazily paused and resumes under its own id", asyn
   const manager = new WorkflowManager({
     cwd,
     persistenceRoot,
-    environmentKey: "crash-environment",
     agent: {
       async run(prompt: string) {
         livePrompts.push(prompt);

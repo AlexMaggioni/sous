@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -9,7 +9,6 @@ import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { OccurrenceResume } from "../src/resume.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
-import { runsDir } from "./helpers/run-files.js";
 import { normalizeResumeSeed } from "../src/resume-matcher.js";
 import { resumeRows } from "../src/resume-rows.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
@@ -93,48 +92,7 @@ return "caught"`), {
   });
 });
 
-describe("filesystem taint and quiescence accounting", () => {
-  it("fires every recording-side taint trigger and leaves proven engine-only paths clean", async () => {
-    const tainted: string[] = [];
-    const run = async (
-      name: string,
-      body: string,
-      options: Partial<Parameters<typeof runWorkflow>[1]> = {},
-    ) => {
-      let calls = 0;
-      await runWorkflow(script(body, name), {
-        agent: { async run() { return "live"; } },
-        persistLogs: false,
-        ...options,
-        onResumeFilesystemTainted: () => { calls++; },
-      });
-      if (calls > 0) tainted.push(name);
-      return calls;
-    };
-    assert.equal(await run("unannotated", `return await agent("write")`), 1);
-    assert.equal(
-      await run("confirm", `return await checkpoint("host")`, { confirm: async () => true }),
-      1,
-    );
-    let waitingTaints = 0;
-    await assert.rejects(runWorkflow(script(`return await checkpoint("engine")`), {
-      agent: { async run() { return "unused"; } }, persistLogs: false,
-      onResumeFilesystemTainted: () => { waitingTaints++; },
-    }), (error: unknown) => error instanceof WorkflowError && error.code === WorkflowErrorCode.CHECKPOINT_REQUIRED);
-    assert.equal(waitingTaints, 0);
-    const child = script(`return "child"`, "child");
-    assert.equal(await run("nested", `return await workflow(${JSON.stringify(child)})`), 1);
-    assert.equal(
-      await run(
-        "degraded",
-        `return await agent("worktree", { isolation: "worktree" })`,
-        { cwd: mkdtempSync(join(tmpdir(), "taint-degraded-")) },
-      ),
-      1,
-    );
-    assert.deepEqual(tainted, ["unannotated", "confirm", "nested", "degraded"]);
-  });
-
+describe("quiescence accounting", () => {
   it("reports logical, raw-runner, nested, and root-allocation transitions in exact order", async () => {
     const activities: number[] = [];
     const allocations: number[] = [];
@@ -217,90 +175,9 @@ return refused`),
 });
 
 describe("managed identity-v1 persistence", () => {
-  it("pins initial and terminal marker, format, allocation, and key-arm JSON", async () => {
-    const dirs = tempDirs();
-    const pending = deferred<string>();
-    try {
-      const manager = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistenceRoot: dirs.root,
-        environmentKey: "workspace-v1",
-        agent: { async run() { return await pending.promise; } },
-      });
-      const started = manager.startInBackground(
-        script(`return await agent("safe")`, "json-fixture"),
-      );
-      const runFile = join(runsDir(dirs.cwd, dirs.root), `${started.runId}.json`);
-      const initial = JSON.parse(readFileSync(runFile, "utf8")) as PersistedRunState;
-      const initialFixture = JSON.parse(
-        readFileSync(join(import.meta.dirname, "fixtures", "identity-v1-initial.json"), "utf8"),
-      );
-      assert.deepEqual(
-        {
-          resume: initial.resume,
-          runtime: { checkpointInputsFormat: initial.runtime?.checkpointInputsFormat },
-          callsAllocated: initial.callsAllocated,
-        },
-        initialFixture,
-      );
-      assert.equal(Object.hasOwn(initial.resume ?? {}, "terminalEnvironment"), false);
-
-      pending.resolve("done");
-      await started.promise;
-      const terminal = JSON.parse(readFileSync(runFile, "utf8")) as PersistedRunState;
-      const terminalFixture = JSON.parse(
-        readFileSync(join(import.meta.dirname, "fixtures", "identity-v1-terminal.json"), "utf8"),
-      );
-      assert.deepEqual(
-        {
-          resume: terminal.resume,
-          runtime: { checkpointInputsFormat: terminal.runtime?.checkpointInputsFormat },
-          callsAllocated: terminal.callsAllocated,
-        },
-        terminalFixture,
-      );
-    } finally {
-      dirs.cleanup();
-    }
-  });
-
-  it("omits unsafe key arms, captures tainted git terminal state, and preserves zero-call keys", async () => {
+  it("records the folder's git state at the end of a run that changed a tracked file", async () => {
     const dirs = tempDirs();
     try {
-      const keyManager = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistenceRoot: dirs.root,
-        environmentKey: "static-key",
-        agent: { async run() { return "ok"; } },
-      });
-      const unsafe = await keyManager.runSync(script(`return await agent("writer")`, "unsafe-key"));
-      assert.deepEqual(keyManager.getPersistence().load(unsafe.runId)?.resume, { format: "identity-v1" });
-      const confirmed = await keyManager.runSync(
-        script(`return await checkpoint("host")`, "confirm-key"),
-        undefined,
-        { confirm: async () => true },
-      );
-      const child = script(`return "child"`, "key-child");
-      const nested = await keyManager.runSync(
-        script(`return await workflow(${JSON.stringify(child)})`, "nested-key"),
-      );
-      const degraded = await keyManager.runSync(
-        script(`return await agent("worktree", { isolation: "worktree" })`, "degraded-key"),
-      );
-      for (const run of [confirmed, nested, degraded]) {
-        assert.deepEqual(keyManager.getPersistence().load(run.runId)?.resume, { format: "identity-v1" });
-      }
-      const zero = await keyManager.runSync(script(`return "zero"`, "zero-call"));
-      assert.deepEqual(keyManager.getPersistence().load(zero.runId)?.resume?.terminalEnvironment, {
-        key: "static-key",
-      });
-      const waiting = await keyManager.runSync(
-        script(`return await checkpoint("engine")`, "waiting-key"),
-      );
-      assert.deepEqual(keyManager.getPersistence().load(waiting.runId)?.resume?.terminalEnvironment, {
-        key: "static-key",
-      });
-
       initGitRepo(dirs.cwd);
       const gitManager = new WorkflowManager({
         cwd: dirs.cwd,
@@ -324,45 +201,7 @@ describe("managed identity-v1 persistence", () => {
     }
   });
 
-  it("finalizes safe floated calls while unsafe activity omits terminal identity", async () => {
-    const dirs = tempDirs();
-    const unsafeAgent = deferred<string>();
-    const floatedCheckpoint = deferred<unknown>();
-    try {
-      const manager = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistenceRoot: dirs.root,
-        environmentKey: "static-key",
-        agent: {
-          async run(prompt) {
-            assert.equal(prompt, "unsafe");
-            return await unsafeAgent.promise;
-          },
-        },
-      });
-      const unsafeRun = await manager.runSync(
-        script(`void agent("unsafe")\nreturn "early"`, "floated-unsafe-agent"),
-      );
-      assert.equal(manager.getPersistence().load(unsafeRun.runId)?.resume?.terminalEnvironment, undefined);
-      unsafeAgent.resolve("late");
-      await new Promise((resolve) => setImmediate(resolve));
-      assert.equal(manager.getPersistence().load(unsafeRun.runId)?.resume?.terminalEnvironment, undefined);
-
-      const checkpointRun = await manager.runSync(
-        script(`void checkpoint("floated")\nreturn "early"`, "floated-checkpoint"),
-        undefined,
-        { confirm: async () => await floatedCheckpoint.promise },
-      );
-      assert.equal(manager.getPersistence().load(checkpointRun.runId)?.resume?.terminalEnvironment, undefined);
-      floatedCheckpoint.resolve(true);
-      await new Promise((resolve) => setImmediate(resolve));
-      assert.equal(manager.getPersistence().load(checkpointRun.runId)?.resume?.terminalEnvironment, undefined);
-    } finally {
-      dirs.cleanup();
-    }
-  });
-
-  it("records dense failures and fails closed on invalid activity", async () => {
+  it("records a failed run's call rows densely", async () => {
     const dirs = tempDirs();
     try {
       // In a git checkout a run that called an agent still records its terminal state.
@@ -370,7 +209,6 @@ describe("managed identity-v1 persistence", () => {
       const failedManager = new WorkflowManager({
         cwd: dirs.cwd,
         persistenceRoot: dirs.root,
-        environmentKey: "static-key",
         agent: { async run() { return "ok"; } },
       });
       const failed = await failedManager.runSync(
@@ -381,23 +219,6 @@ describe("managed identity-v1 persistence", () => {
       assert.equal(failedState?.callsAllocated, 1);
       assert.deepEqual(failedState?.calls?.map((row) => row.index), [0]);
       assert.ok(failedState?.resume?.terminalEnvironment?.git);
-
-      const invalidPending = deferred<string>();
-      const invalidManager = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistenceRoot: dirs.root,
-        environmentKey: "static-key",
-        agent: { async run() { return await invalidPending.promise; } },
-      });
-      const invalid = invalidManager.startInBackground(
-        script(`return await agent("safe")`, "invalid-counter"),
-      );
-      const managed = invalidManager.getRun(invalid.runId);
-      assert.ok(managed);
-      managed.resumeActivityInvalid = true;
-      invalidPending.resolve("done");
-      await invalid.promise;
-      assert.equal(invalidManager.getPersistence().load(invalid.runId)?.resume?.terminalEnvironment, undefined);
     } finally {
       dirs.cleanup();
     }

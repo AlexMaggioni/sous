@@ -179,11 +179,11 @@ function provenanceChanges(
   const currentEnvironment = isRunEnvironmentIdentity(run.environment)
     ? run.environment
     : undefined;
-  const sourceKind = sourceEnvironment?.git ? "git" : sourceEnvironment?.key !== undefined ? "key" : null;
-  const currentKind = currentEnvironment?.git ? "git" : currentEnvironment?.key !== undefined ? "key" : null;
+  const sourceKind = sourceEnvironment ? "git" : null;
+  const currentKind = currentEnvironment ? "git" : null;
   if (sourceKind !== currentKind) {
     append("environment.identity", sourceKind, currentKind, "environment identity");
-  } else if (sourceEnvironment?.git && currentEnvironment?.git) {
+  } else if (sourceEnvironment && currentEnvironment) {
     append("environment.git.head", sourceEnvironment.git.head, currentEnvironment.git.head, "git HEAD");
     append(
       "environment.git.dirtyDigest",
@@ -191,8 +191,6 @@ function provenanceChanges(
       currentEnvironment.git.dirtyDigest,
       "git dirty digest",
     );
-  } else if (sourceEnvironment?.key !== undefined && currentEnvironment?.key !== undefined) {
-    append("environment.key", sourceEnvironment.key, currentEnvironment.key, "environment key");
   }
   return changes;
 }

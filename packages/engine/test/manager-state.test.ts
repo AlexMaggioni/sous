@@ -170,13 +170,12 @@ return { count: args.count, answer }`,
     }
   });
 
-  it("persists effective cwd, full runtime identity, and non-git environment keys", async () => {
+  it("persists effective cwd and full runtime identity, and no environment outside git", async () => {
     const dirs = tempDirs();
     try {
       const manager = new WorkflowManager({
         cwd: dirs.cwd,
         persistenceRoot: dirs.root,
-        environmentKey: "host-environment",
         agent: { async run() { return "unused"; } },
       });
       const result = await manager.runSync(script(`return cwd`));
@@ -191,7 +190,7 @@ return { count: args.count, answer }`,
         inputsFormat: CALL_INPUTS_FORMAT,
         checkpointInputsFormat: CHECKPOINT_INPUTS_FORMAT,
       });
-      assert.deepEqual(persisted?.environment, { key: "host-environment" });
+      assert.equal(persisted?.environment, undefined);
       assert.equal(persisted?.callsAllocated, 0);
       assert.deepEqual(persisted?.limits, {
         maxAgents: 1000,

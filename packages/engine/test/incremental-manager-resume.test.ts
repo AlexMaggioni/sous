@@ -9,7 +9,6 @@ import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
-const ENVIRONMENT_KEY = "incremental-manager-v1";
 const workflow = (body: string, name = "incremental-manager") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: "manager resume" }\n${body}`;
 
@@ -92,7 +91,7 @@ async function recordSafeSource(
   manager: WorkflowManager,
   items: readonly string[],
 ): Promise<string> {
-  const result = await manager.runSync(safeCalls(items), undefined, { environmentKey: ENVIRONMENT_KEY });
+  const result = await manager.runSync(safeCalls(items));
   assert.equal(result.status, "completed");
   return result.runId;
 }
@@ -190,7 +189,6 @@ describe("WorkflowManager resumeFromRunId admission", () => {
       const manager = new WorkflowManager({
         cwd: dirs.cwd,
         persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
         agent: { async run(prompt) { return `recorded:${prompt}`; } },
       });
       const sourceRunId = await recordSafeSource(manager, ["one", "two"]);
@@ -246,7 +244,6 @@ describe("WorkflowManager resumeFromRunId admission", () => {
       const manager = new WorkflowManager({
         cwd: dirs.cwd,
         persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
         agent: { async run(prompt) { return `recorded:${prompt}`; } },
       });
       const sourceRunId = await recordSafeSource(manager, ["one", "two"]);
@@ -283,7 +280,6 @@ describe("WorkflowManager resumeFromRunId admission", () => {
       const manager = new WorkflowManager({
         cwd: dirs.cwd,
         persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
         agent: { async run(prompt) { return `source:${prompt}`; } },
       });
       const sourceRunId = await recordSafeSource(manager, ["one"]);
@@ -325,7 +321,6 @@ describe("WorkflowManager durable identity execution", () => {
       const sourceManager = new WorkflowManager({
         cwd: dirs.cwd,
         persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
         agent: { async run(prompt) { return `source:${prompt}`; } },
       });
       const sourceRunId = await recordSafeSource(sourceManager, sourceItems);
@@ -336,7 +331,6 @@ describe("WorkflowManager durable identity execution", () => {
       const targetManager = new WorkflowManager({
         cwd: dirs.cwd,
         persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
         agent: { async run(prompt) { livePrompts.push(prompt); return `live:${prompt}`; } },
       });
       const result = await targetManager.runSync(safeCalls(targetItems), undefined, {
@@ -376,7 +370,6 @@ describe("WorkflowManager durable identity execution", () => {
       const manager = new WorkflowManager({
         cwd: dirs.cwd,
         persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
         agent: { async run(prompt) { return `source:${prompt}`; } },
       });
       const sourceRunId = await recordSafeSource(manager, ["one", "two"]);
@@ -414,7 +407,6 @@ throw new Error("stop after one")`, "failed-hop"), undefined, {
       const manager = new WorkflowManager({
         cwd: dirs.cwd,
         persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
         agent: { async run(prompt) { return `live:${prompt}`; } },
       });
       const sourceRunId = await recordSafeSource(manager, ["one", "two"]);
@@ -431,7 +423,6 @@ throw new Error("stop after unsafe work")`, "unsafe-barrier"), undefined, {
       const resumed = await new WorkflowManager({
         cwd: dirs.cwd,
         persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
         agent: { async run(prompt) { live.push(prompt); return `next:${prompt}`; } },
       }).runSync(workflow(`
 await agent("changed", { label: "changed" })
@@ -454,7 +445,6 @@ return await agent("two", { label: "two" })`, "after-unsafe"), undefined, {
       const sourceManager = new WorkflowManager({
         cwd: dirs.cwd,
         persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
         agent: { async run(prompt) { return `source:${prompt}`; } },
       });
       const sourceRunId = await recordSafeSource(sourceManager, ["one", "two"]);
@@ -463,7 +453,6 @@ return await agent("two", { label: "two" })`, "after-unsafe"), undefined, {
       const initialManager = new WorkflowManager({
         cwd: dirs.cwd,
         persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
         agent: { async run() { assert.fail("initial failure must not execute"); } },
       });
       assert.throws(

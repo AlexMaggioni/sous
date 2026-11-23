@@ -246,9 +246,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
    * plan's source run, or of this run when there is no plan.
    */
   resume?: WorkflowResume;
-  /** Legacy diagnostic latch used only to decide whether a non-git terminal environment
-   *  snapshot is meaningful. It never affects journal admission or call matching. */
-  onResumeFilesystemTainted?: () => void;
   /** Manager-owned absolute root-execution activity count. The engine reports
    *  every transition; it includes logical primitives and raw runner promises. */
   onResumeActivity?: (active: number) => void;
@@ -1625,7 +1622,6 @@ async function runLevel<T>(
           ? pairing.failed.recordedIndex
           : undefined;
       }
-      options.onResumeFilesystemTainted?.();
       let reason = pairing.reason;
       // A run that reports decisions opens the step's worktree before it decides, so the
       // decision can say when the worktree is not isolated.
@@ -1765,7 +1761,6 @@ async function runLevel<T>(
         { recoverable: false },
       );
     }
-    options.onResumeFilesystemTainted?.();
     const ordinal = ++shared.nestedSeq;
     // The one place a child run id is made. A resume finds a nested run's call rows by this id.
     const childRunId = nestedRunId(runId, localOrdinal);

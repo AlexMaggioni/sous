@@ -63,7 +63,7 @@ export interface CheckpointRun {
     interruptIfHalting(slot: StepSlot): void;
   };
   /** The host's callbacks. The run passes its own options object, so the host reads them as before. */
-  host: { confirm?: CheckpointConfirm; onResumeFilesystemTainted?: () => void };
+  host: { confirm?: CheckpointConfirm };
   /** True when the run resumes under the manager's plan. */
   resuming: boolean;
   /** The run's phase now. A question reads it when it settles. */
@@ -181,7 +181,6 @@ export async function checkpointCall(
       return strictSnapshot(row.entry.result, `checkpoint "${promptText}" replayed reply`);
     });
     if (pairing.action === "replay") return replayCheckpoint(pairing);
-    if (run.resuming && run.host.confirm) run.host.onResumeFilesystemTainted?.();
     slot.live(pairing.reason);
   } catch (error) {
     slot.settle({
@@ -210,7 +209,6 @@ export async function checkpointCall(
   );
   try {
     if (!run.host.confirm) throw waiting();
-    if (!run.resuming) run.host.onResumeFilesystemTainted?.();
     let reply: unknown;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let onAbort: (() => void) | undefined;

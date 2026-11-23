@@ -30,7 +30,7 @@ const INPUT_B = "2".repeat(64);
 const INPUT_C = "3".repeat(64);
 const SOURCE_RUN_ID = "source-run";
 const CWD = "/workspace/project";
-const ENVIRONMENT = { key: "workspace-v1" } as const;
+const ENVIRONMENT = { git: { head: "f".repeat(40), dirtyDigest: "d".repeat(64) } };
 const RUNTIME = {
   node: process.version,
   v8: process.versions.v8,
@@ -89,8 +89,8 @@ function sourceState(
     script: "export const meta = { name: 'resume-source', description: 'test' }\nreturn null",
     effectiveCwd: CWD,
     runtime: { ...RUNTIME },
-    environment: { ...ENVIRONMENT },
-    resume: { format: "identity-v1", terminalEnvironment: { ...ENVIRONMENT } },
+    environment: structuredClone(ENVIRONMENT),
+    resume: { format: "identity-v1", terminalEnvironment: structuredClone(ENVIRONMENT) },
     status: "completed",
     phases: [],
     agents: [],
@@ -227,7 +227,6 @@ return { first, second };`;
     const manager = new WorkflowManager({
       cwd,
       persistenceRoot,
-      environmentKey: "resume-knobs-v1",
       agent: {
         async run(prompt) {
           liveCalls++;

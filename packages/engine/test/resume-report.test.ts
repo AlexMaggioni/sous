@@ -13,6 +13,7 @@ import type { WorkflowResumeCallDecision } from "../src/workflow-result.js";
 const SOURCE_RUN_ID = "source-run";
 const RUNTIME = { engineVersion: "1.2.0", node: "v24.0.0", v8: "13.0", pathFormat: 1, inputsFormat: 2 };
 const LIMITS = { maxAgents: 50, concurrency: 4, agentRetries: 2 };
+const GIT = { git: { head: "h0", dirtyDigest: "d0" } };
 const OCCURRENCE: PreparedResume = { strategy: "occurrence-v1", sourceRunId: SOURCE_RUN_ID, requestedPolicy: "auto" };
 
 function source(overrides: Partial<PersistedRunState> = {}): PersistedRunState {
@@ -25,7 +26,7 @@ function source(overrides: Partial<PersistedRunState> = {}): PersistedRunState {
     agents: [],
     logs: [],
     runtime: { ...RUNTIME },
-    environment: { key: "workspace-v1" },
+    environment: structuredClone(GIT),
     limits: { ...LIMITS },
     callsAllocated: 3,
     startedAt: "2026-01-01T00:00:00.000Z",
@@ -35,7 +36,7 @@ function source(overrides: Partial<PersistedRunState> = {}): PersistedRunState {
 }
 
 function run(overrides: Partial<ResumingRun> = {}): ResumingRun {
-  return { runtime: { ...RUNTIME }, environment: { key: "workspace-v1" }, limits: { ...LIMITS }, ...overrides };
+  return { runtime: { ...RUNTIME }, environment: structuredClone(GIT), limits: { ...LIMITS }, ...overrides };
 }
 
 const replayedCall = (index: number): WorkflowResumeCallDecision => ({
@@ -244,43 +245,43 @@ describe("what differs between the source run and this one", () => {
     ]);
   });
 
-  it("reports only the kind of identity when the kinds differ", () => {
+  it("reports only the kind of identity when one run has no git identity", () => {
     const eligibility = startResumeReport({
       plan: OCCURRENCE,
       source: source({ environment: { git: { head: "aaa", dirtyDigest: "d1" } } }),
-      run: run({ environment: { key: "workspace-v2" } }),
+      run: run({ environment: undefined }),
       predictedReplayablePrefix: 3,
     }).eligibility();
     assert.deepEqual(eligibility.provenanceChanges, [{
       field: "environment.identity",
       source: "git",
-      current: "key",
-      detail: "source recorded environment identity=git; this run: key",
+      current: null,
+      detail: "source recorded environment identity=git; this run: unavailable",
     }]);
     const none = startResumeReport({
       plan: OCCURRENCE,
-      source: source(),
-      run: run({ environment: undefined }),
+      source: source({ environment: undefined }),
+      run: run(),
       predictedReplayablePrefix: 3,
     }).eligibility();
-    assert.equal(none.provenanceChanges?.[0]?.detail, "source recorded environment identity=key; this run: unavailable");
+    assert.equal(none.provenanceChanges?.[0]?.detail, "source recorded environment identity=unavailable; this run: git");
   });
 
-  it("compares the environment key, the source's terminal environment first", () => {
+  it("compares the source's terminal git identity first", () => {
     const eligibility = startResumeReport({
       plan: OCCURRENCE,
       source: source({
-        environment: { key: "at-start" },
-        resume: { format: "identity-v1", terminalEnvironment: { key: "at-end" } },
+        environment: { git: { head: "at-start", dirtyDigest: "d0" } },
+        resume: { format: "identity-v1", terminalEnvironment: { git: { head: "at-end", dirtyDigest: "d0" } } },
       }),
-      run: run({ environment: { key: "now" } }),
+      run: run({ environment: { git: { head: "now", dirtyDigest: "d0" } } }),
       predictedReplayablePrefix: 3,
     }).eligibility();
     assert.deepEqual(eligibility.provenanceChanges, [{
-      field: "environment.key",
+      field: "environment.git.head",
       source: "at-end",
       current: "now",
-      detail: "source recorded environment key=at-end; this run: now",
+      detail: "source recorded git HEAD=at-end; this run: now",
     }]);
   });
 

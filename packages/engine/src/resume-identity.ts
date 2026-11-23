@@ -17,10 +17,6 @@ export function isNestedScope(scope: unknown, runId: string): scope is string {
 export function isRunEnvironmentIdentity(value: unknown): value is RunEnvironmentIdentity {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const environment = value as Record<string, unknown>;
-  const hasGit = environment.git !== undefined;
-  const hasKey = environment.key !== undefined;
-  if (hasGit === hasKey) return false;
-  if (hasKey) return typeof environment.key === "string";
   if (typeof environment.git !== "object" || environment.git === null || Array.isArray(environment.git)) {
     return false;
   }

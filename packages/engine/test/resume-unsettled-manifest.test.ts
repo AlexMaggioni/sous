@@ -7,8 +7,6 @@ import type { StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
-const ENVIRONMENT_KEY = "resume-unsettled-manifest";
-
 function tempDirs(): { cwd: string; root: string; cleanup: () => void } {
   const base = mkdtempSync(join(tmpdir(), "resume-unsettled-"));
   const cwd = join(base, "cwd");
@@ -72,7 +70,6 @@ describe("resume manifests for unsettled calls", () => {
       const source = new WorkflowManager({
         cwd: dirs.cwd,
         persistenceRoot: dirs.root,
-        environmentKey: ENVIRONMENT_KEY,
         agent: usageLimitRunner(new Set(["complete-0", "complete-1"]), release.promise),
       });
       const started = source.startInBackground(script, undefined, { concurrency: 8 });
@@ -93,7 +90,6 @@ describe("resume manifests for unsettled calls", () => {
       const continued = await new WorkflowManager({
         cwd: dirs.cwd,
         persistenceRoot: dirs.root,
-        environmentKey: ENVIRONMENT_KEY,
         agent: { async run(prompt) { live.push(prompt); return `live:${prompt}`; } },
       }).resumeInBackground(started.runId, { concurrency: 8 });
       assert.ok(continued.accepted);
@@ -132,7 +128,6 @@ describe("resume manifests for unsettled calls", () => {
         const manager = new WorkflowManager({
           cwd: dirs.cwd,
           persistenceRoot: join(dirs.root, scenario.name),
-          environmentKey: ENVIRONMENT_KEY,
           agent: { run: (_prompt, options) => abortablePending(options) },
         });
         const started = manager.startInBackground(scenario.script, undefined, { concurrency: 8 });
@@ -159,7 +154,6 @@ return await parallel([
         const manager = new WorkflowManager({
           cwd: dirs.cwd,
           persistenceRoot: root,
-          environmentKey: ENVIRONMENT_KEY,
           agent: {
             async run(prompt, options) {
               if (prompt === "halt") {

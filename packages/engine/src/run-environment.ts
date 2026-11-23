@@ -3,8 +3,7 @@ import { execFileSync } from "node:child_process";
 import { lstatSync, readFileSync, readlinkSync } from "node:fs";
 
 export type RunEnvironmentIdentity = {
-  git?: { head: string; dirtyDigest: string };
-  key?: string;
+  git: { head: string; dirtyDigest: string };
 };
 
 function fieldRemainder(record: Buffer, fields: number): Buffer | undefined {
@@ -70,10 +69,7 @@ function contentDigest(path: Buffer): string {
 
 /** Capture bounded run-environment provenance without making execution fail.
  * This snapshot is diagnostic only and must never gate journal replay. */
-export function captureRunEnvironment(
-  effectiveCwd: string,
-  environmentKey?: string,
-): RunEnvironmentIdentity | undefined {
+export function captureRunEnvironment(effectiveCwd: string): RunEnvironmentIdentity | undefined {
   try {
     const root = execFileSync("git", ["-C", effectiveCwd, "rev-parse", "--show-toplevel"], {
       encoding: "utf8",
@@ -95,6 +91,6 @@ export function captureRunEnvironment(
     }
     return { git: { head, dirtyDigest: digest.digest("hex") } };
   } catch {
-    return environmentKey !== undefined ? { key: environmentKey } : undefined;
+    return undefined;
   }
 }

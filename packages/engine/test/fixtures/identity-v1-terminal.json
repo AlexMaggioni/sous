@@ -1,9 +1,0 @@
-{
-  "resume": {
-    "format": "identity-v1"
-  },
-  "runtime": {
-    "checkpointInputsFormat": 2
-  },
-  "callsAllocated": 1
-}

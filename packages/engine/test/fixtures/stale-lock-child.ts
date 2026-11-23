@@ -11,7 +11,6 @@ let calls = 0;
 const manager = new WorkflowManager({
   cwd,
   persistenceRoot,
-  environmentKey: "crash-environment",
   agent: {
     async run(prompt: string) {
       calls++;

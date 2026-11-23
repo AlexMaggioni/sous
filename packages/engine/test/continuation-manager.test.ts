@@ -114,7 +114,6 @@ describe("WorkflowManager continuation wiring", () => {
         cwd: test.cwd,
         persistence: test.persistence,
         agent: runner,
-        environmentKey: "continuation-v1",
       });
       const paused = await manager.runSync(script, undefined, { runId: "same-id" });
       assert.equal(paused.status, "paused");

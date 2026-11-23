@@ -123,10 +123,8 @@ export interface ManagedRun {
   resume?: PersistedResumeFormat;
   resumeActivity?: number;
   resumeActivityInvalid?: true;
-  resumeFilesystemTainted?: boolean;
   resumeTerminalFinalized?: boolean;
   executionSettled?: boolean;
-  environmentKey?: string;
   callsAllocated?: number;
   limits?: NonNullable<WorkflowRunResult["effectiveLimits"]>;
   abortSignaled?: true;
@@ -191,8 +189,6 @@ interface RegisteredAgentAttempt extends WorkflowAgentAttemptControl {
 export interface ExecOptions {
   /** Caller-minted run id. Collision checks happen under the run lease. */
   runId?: string;
-  /** Non-git environment label reported in replay provenance diagnostics only. */
-  environmentKey?: string;
   /**
    * The agent backend for THIS run. Overrides the manager's constructor-injected
    * `agent`. Either this or the constructor `agent` must be set, or the run fails
@@ -273,8 +269,6 @@ export interface WorkflowManagerOptions {
    * a run's events only when the store has `appendEvent` and `readEvents`.
    */
   persistence?: RunPersistence;
-  /** Default non-git environment label for replay provenance diagnostics. */
-  environmentKey?: string;
 }
 
 type ArgsSnapshot = { ok: true; clone: unknown } | { ok: false };
@@ -304,7 +298,6 @@ function freshExecution() {
     checkpointsTaken: [],
     runtime: runtimeIdentity(),
     resumeActivity: 0,
-    resumeFilesystemTainted: false,
     resumeTerminalFinalized: false,
     executionSettled: false,
     callsAllocated: 0,
@@ -497,7 +490,6 @@ export class WorkflowManager extends EventEmitter {
   private agent?: AgentRunner;
   private defaultAgentRetries: number;
   private persistenceRoot: string;
-  private environmentKey?: string;
 
   constructor(options: WorkflowManagerOptions = {}) {
     super();
@@ -508,7 +500,6 @@ export class WorkflowManager extends EventEmitter {
     this.agent = options.agent;
     this.defaultAgentRetries = options.defaultAgentRetries ?? 0;
     this.persistenceRoot = workflowHomeDir({ persistenceRoot: options.persistenceRoot });
-    this.environmentKey = options.environmentKey;
     this.persistence = options.persistence
       ?? createRunPersistence(this.cwd, undefined, { persistenceRoot: this.persistenceRoot });
     if (hasEventLog(this.persistence)) this.eventLog = this.persistence;
@@ -901,9 +892,8 @@ export class WorkflowManager extends EventEmitter {
       rows: newRows(identity.runId),
       fallbacks: [],
       effectiveCwd,
-      environment: captureRunEnvironment(effectiveCwd, exec.environmentKey ?? this.environmentKey),
+      environment: captureRunEnvironment(effectiveCwd),
       resume: { format: "identity-v1" as const },
-      environmentKey: exec.environmentKey ?? this.environmentKey,
       limits: resolveWorkflowRunLimits({
         maxAgents: exec.maxAgents,
         concurrency: exec.concurrency ?? this.concurrency,
@@ -1174,9 +1164,6 @@ export class WorkflowManager extends EventEmitter {
             }
           : undefined,
         runId: managed.runId,
-        onResumeFilesystemTainted: () => {
-          managed.resumeFilesystemTainted = true;
-        },
         onResumeActivity: (active) => {
           if (
             !Number.isSafeInteger(active) ||
@@ -1507,12 +1494,8 @@ export class WorkflowManager extends EventEmitter {
     if (!managed.resume) return;
     managed.resume = { format: "identity-v1" };
     if (!managed.executionSettled || managed.resumeActivityInvalid || (managed.resumeActivity ?? 0) !== 0) return;
-    const terminalEnvironment = captureRunEnvironment(managed.effectiveCwd, managed.environmentKey);
-    if (terminalEnvironment?.git) {
-      managed.resume = { format: "identity-v1", terminalEnvironment };
-    } else if (terminalEnvironment?.key !== undefined && !managed.resumeFilesystemTainted) {
-      managed.resume = { format: "identity-v1", terminalEnvironment };
-    }
+    const terminalEnvironment = captureRunEnvironment(managed.effectiveCwd);
+    if (terminalEnvironment) managed.resume = { format: "identity-v1", terminalEnvironment };
   }
 
   private persistedState(managed: ManagedRun): PersistedRunState {
@@ -1814,7 +1797,6 @@ export class WorkflowManager extends EventEmitter {
       ...(persisted.legacyResume ? { legacyResume: true as const } : {}),
       ...(persisted.resume ? { resume: { format: "identity-v1" as const } } : {}),
       ...(persisted.resumeSourceRunId ? { resumeSourceRunId: persisted.resumeSourceRunId } : {}),
-      environmentKey: this.environmentKey,
       limits: resolveWorkflowRunLimits({
         maxAgents: exec.maxAgents ?? persisted.limits?.maxAgents,
         concurrency: exec.concurrency ?? persisted.limits?.concurrency ?? this.concurrency,

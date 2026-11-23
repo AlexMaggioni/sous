@@ -257,7 +257,7 @@ test(
       cwd: "/override",
       effectiveCwd: "/effective",
       runtime: { node: "v24.1.0", v8: "13.6.1", pathFormat: 1, inputsFormat: 1 },
-      environment: { key: "environment" },
+      environment: { git: { head: "head", dirtyDigest: "digest" } },
       status: "completed",
       phases: [],
       agents: [
