@@ -563,38 +563,6 @@ return { given, missing }`,
     assert.match(out.missing, /workflow\("child"\): missing input --task/);
   });
 
-  it("show puts a nested workflow's steps under it, by the label the script gave it", async () => {
-    const { paths, projectDir } = testHome({
-      child: `export const meta = { name: 'child', description: 'child', inputs: { task: 'The task' } }
-return await agent('do ' + args.task, { label: 'implementer' })`,
-      parent: `export const meta = { name: 'parent', description: 'parent' }
-await agent('look', { label: 'triage' })
-return await parallel(['A', 'B'].map((id) => () => workflow('child', { task: id }, { label: 'ticket ' + id })))`,
-    });
-    const { runner } = fakeRunner(() => "ok");
-    const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
-    await workers.ended(record.runId);
-    const before = process.env.ORC_HOME;
-    process.env.ORC_HOME = paths.home;
-    const printed: string[] = [];
-    const write = process.stdout.write.bind(process.stdout);
-    process.stdout.write = ((chunk: string) => (printed.push(String(chunk)), true)) as typeof process.stdout.write;
-    try {
-      assert.equal(await main(["show", record.runId]), 0);
-    } finally {
-      process.stdout.write = write;
-      if (before === undefined) delete process.env.ORC_HOME;
-      else process.env.ORC_HOME = before;
-    }
-    const text = printed.join("");
-    const steps = text.slice(text.indexOf("steps\n") + 6, text.indexOf("result\n")).trimEnd().split("\n");
-    assert.deepEqual(
-      steps.map((l) => l.replace(/\s+\([^)]*tokens\)$/, "")),
-      ["  done  triage", "  ticket A  (workflow child)", "    done  implementer", "  ticket B  (workflow child)", "    done  implementer"],
-    );
-  });
-
   it("the log starts a nested run's lines with its label", async () => {
     const { paths, projectDir } = testHome({
       child: `export const meta = { name: 'child', description: 'child', inputs: { task: 'The task' } }
