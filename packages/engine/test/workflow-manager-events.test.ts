@@ -581,6 +581,8 @@ test("automatic usage_limit and auth_required settlements carry reason + errorRe
     assert.equal(authResult.status, "paused");
 
     if (!liveAuth || liveAuth.reason !== "auth_required") assert.fail("live auth pause missing reason");
+    assert.equal(liveAuth.runId, authResult.runId);
+    assert.equal(liveAuth.error.code, WorkflowErrorCode.AUTH_REQUIRED);
     assert.deepEqual(liveAuth.authContext, authContext);
     assert.equal(liveAuth.errorRecord.form, "workflow-error");
     assert.equal(liveAuth.errorRecord.code, WorkflowErrorCode.AUTH_REQUIRED);

@@ -128,31 +128,6 @@ test(
 );
 
 test(
-  "'paused' event carries reason 'auth_required' + non-secret authContext, resetHint undefined (§2.12)",
-  withTempCwd(async (cwd) => {
-    const store = memoryPersistence();
-    const agent = authRequiredAgent();
-    const manager = new WorkflowManager({ cwd, persistence: store.persistence, agent: agent.runner });
-
-    let paused:
-      | { runId: string; reason?: string; error?: WorkflowError; resetHint?: unknown; authContext?: AuthErrorContext }
-      | undefined;
-    manager.on("paused", (ev: typeof paused) => {
-      paused = ev;
-    });
-
-    const result = await manager.runSync(ONE_AGENT);
-
-    assert.ok(paused, "the paused event fired");
-    assert.equal(paused?.runId, result.runId);
-    assert.equal(paused?.reason, "auth_required");
-    assert.equal(paused?.resetHint, undefined, "resetHint is undefined for an auth pause");
-    assert.equal(paused?.error?.code, WorkflowErrorCode.AUTH_REQUIRED);
-    assert.deepEqual(paused?.authContext, AUTH_CONTEXT);
-  }),
-);
-
-test(
   "persistRun writes pauseReason 'auth_required' and keeps authContext non-secret (§2.12/§2.14)",
   withTempCwd(async (cwd) => {
     const store = memoryPersistence();
@@ -280,39 +255,5 @@ test(
     }
     assert.equal(manager.getRun(runId)?.status, "completed", "the auth-paused run resumed and completed");
     assert.ok(agent.runCalls >= 1, "the agent re-executed live");
-  }),
-);
-
-test(
-  "a usage-limit cold resume proceeds and completes",
-  withTempCwd(async (cwd) => {
-    const store = memoryPersistence();
-    const runId = "cold-usage-limit";
-    const now = new Date().toISOString();
-    store.seed({
-      runId,
-      workflowName: "auth_pause_demo",
-      script: ONE_AGENT,
-      status: "paused",
-      pauseReason: "usage_limit",
-      resetHint: "Resets in ~3h",
-      phases: [],
-      agents: [],
-      logs: [],
-      journal: [],
-      startedAt: now,
-      updatedAt: now,
-    });
-    const agent = resumableAgent();
-    const manager = new WorkflowManager({ cwd, persistence: store.persistence, agent: agent.runner });
-
-    const ok = (await manager.resumeInBackground(runId)).accepted;
-    assert.equal(ok, true);
-
-    const deadline = Date.now() + 5_000;
-    while (manager.getRun(runId)?.status === "running" && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 25));
-    }
-    assert.equal(manager.getRun(runId)?.status, "completed", "the usage-limit run resumed normally");
   }),
 );

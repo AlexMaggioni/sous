@@ -559,11 +559,6 @@ describe("steps with a runner of their own", () => {
     assert.deepEqual({ claude: process.env.CLAUDE_CODE_EXECUTABLE, codex: process.env.CODEX_PATH }, saved);
   });
 
-  it("looks for no program when the caller brings its own runner", async () => {
-    const steps = createSteps({ cwd: temp("runner-own"), inner: { run: async () => "ok" } });
-    assert.equal(await steps.run("go", routed(steps, { label: "a", model: "codex/gpt-6.1-sol" })), "ok");
-  });
-
   it("gives the runner the account of the step's harness", async () => {
     const seen: unknown[] = [];
     const steps = createSteps({

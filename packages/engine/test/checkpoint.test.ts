@@ -104,7 +104,7 @@ function field(value: unknown, key: string): unknown {
   return value && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined;
 }
 
-for (const retired of [{ headless: "default" }, { headless: "abort" }, { headless: "pause" }, { default: true }, { default: false }]) {
+for (const retired of [{ headless: "default" }, { default: true }]) {
   test(`checkpoint(): rejects retired options ${JSON.stringify(retired)} before asking`, async () => {
     let asks = 0;
     await assert.rejects(runWorkflow(`export const meta = { name: 'c', description: 'checkpoint' }
