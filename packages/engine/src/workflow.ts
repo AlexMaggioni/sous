@@ -56,6 +56,8 @@ import {
 } from "./resume-matcher.js";
 import type { PersistedCheckpointInjection, PersistedResumeSeed } from "./runs/persistence/run-persistence.js";
 import { nestedRunId } from "./resume-identity.js";
+import { createPairing, type RecordedScope } from "./resume-pairing.js";
+import type { ResumeRow, ResumeRows } from "./resume-rows.js";
 import {
   createDecisionOrder,
   createStepLedger,
@@ -221,6 +223,11 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   resumeJournal?: Map<number, JournalEntry>;
   /** Resume: the run being resumed (informational; enables resume mode). */
   resumeFromRunId?: string;
+  /**
+   * Internal (manager): the recorded rows of the run and of its nested runs, by scope. A call
+   * takes the next row with its kind and call hash. Excludes resumeJournal and preparedResume.
+   */
+  resumeRows?: ResumeRows;
   /** Manager-prepared resume state. Mutually exclusive with a caller-authored
    *  resumeJournal except for strategy "positional-v1", where that map is the cache. */
   preparedResume?: PreparedResume;
@@ -593,10 +600,14 @@ export async function runWorkflow<T = unknown>(
     ? options.preparedResume.seed
     : undefined;
   assertExplicitCheckpointProvenance({
-    journal: options.resumeJournal ? [...options.resumeJournal.values()] : undefined,
+    journal: options.resumeJournal
+      ? [...options.resumeJournal.values()]
+      : options.resumeRows
+        ? [...options.resumeRows.values()].flatMap((scope) => scope.rows.flatMap((row) => (row.entry ? [row.entry] : [])))
+        : undefined,
     resumeSeed,
   });
-  if (!journaling && (options.resumeJournal || options.resumeFromRunId || options.preparedResume)) {
+  if (!journaling && (options.resumeJournal || options.resumeFromRunId || options.preparedResume || options.resumeRows)) {
     throw new WorkflowError("journaling disabled for this run", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
       recoverable: false,
     });
@@ -604,6 +615,13 @@ export async function runWorkflow<T = unknown>(
   if (options.resumeJournal && options.preparedResume && options.preparedResume.strategy !== "positional-v1") {
     throw new WorkflowError(
       "resumeJournal is compatible only with a prepared positional resume",
+      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+      { recoverable: false },
+    );
+  }
+  if (options.resumeRows && (options.resumeJournal || options.preparedResume)) {
+    throw new WorkflowError(
+      "resumeRows excludes resumeJournal and preparedResume",
       WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
       { recoverable: false },
     );
@@ -1095,8 +1113,39 @@ export async function runWorkflow<T = unknown>(
     },
   };
 
+  // A same-ID resume: the n-th call with a kind and call hash takes the n-th recorded row with
+  // them, from the scope's own rows first and then its seed's. An agent's empty text runs live.
+  const occurrenceSource = (scope: RecordedScope<ResumeRow> | undefined): SourceScope => {
+    const pairNext = createPairing(scope ?? { rows: [], key: "hash" });
+    return {
+      pair(call, accept) {
+        const paired = pairNext(call);
+        if (paired.action === "live" || !paired.row.entry) return { action: "live" };
+        const { row } = paired;
+        if (call.kind === "agent" && isEmptyTextAgentResult(row.entry!.result, call.hasSchema)) return { action: "live" };
+        const sourceRow: SourceRow = {
+          sourceRunId: row.sourceRunId,
+          recordedIndex: row.index,
+          entry: row.entry!,
+          ...(row.call ? { call: row.call } : {}),
+          ...(row.injected ? { injected: true as const } : {}),
+        };
+        return {
+          action: "replay",
+          row: sourceRow,
+          value: accept(sourceRow),
+          match: scope?.byIndex ? "index-hash" : "occurrence",
+          provenance: true,
+          journaled: row.own === true && row.index === call.index,
+        };
+      },
+    };
+  };
+
   const ledger = createStepLedger({
-    source: !preparedResume
+    source: options.resumeRows
+      ? occurrenceSource(options.resumeRows.get(runId))
+      : !preparedResume
       ? indexSource
       : preparedResume.strategy === "identity-v1"
         ? identitySource(identitySeed as ResumeSeedController)

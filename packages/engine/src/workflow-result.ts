@@ -206,7 +206,8 @@ export interface JournalEntry {
 /** Resume correspondence policy selected for a manager-prepared new execution. */
 export type ResumePolicy = "auto" | "positional";
 
-export type WorkflowResumeMatch = "path-hash" | "unique-hash" | "index-hash";
+/** "occurrence": the n-th call with a key took the n-th recorded call with that key. */
+export type WorkflowResumeMatch = "path-hash" | "unique-hash" | "index-hash" | "occurrence";
 
 export type WorkflowResumeFallbackReason =
   | "legacy-recording"

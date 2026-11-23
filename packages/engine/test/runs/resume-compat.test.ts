@@ -141,8 +141,10 @@ describe("a run saved by the code at b21cd2c4", () => {
     const { runner, prompts } = fake();
     const { result } = await work(paths, runId!, "resume", runner);
     assert.equal(readState(paths, runId!)?.status, "completed");
-    assert.deepEqual(prompts(), ["B2", "C", "D"]);
+    // C replays from the seed. The blocker keeps D live.
+    assert.deepEqual(prompts(), ["B2", "D"]);
     assert.deepEqual(result, ["A done", "B2 done", "C done", "D done"]);
+    assert.equal(readState(paths, runId!)?.resumeSeed, undefined);
   });
 
   it("resumes a paused reuse run whose seed holds a checkpoint injection", { timeout: 15_000 }, async () => {
@@ -150,8 +152,9 @@ describe("a run saved by the code at b21cd2c4", () => {
     const { runner, prompts } = fake();
     const { asked, result } = await work(paths, runId!, "resume", runner);
     assert.equal(readState(paths, runId!)?.status, "completed");
-    assert.deepEqual(asked, ["Ship it?"]);
-    assert.deepEqual(prompts(), ["A2", "B"]);
+    // The seed's answer and B replay. Only the failed step runs again.
+    assert.deepEqual(asked, []);
+    assert.deepEqual(prompts(), ["A2"]);
     assert.deepEqual(result, ["A2 done", true, "B done"]);
   });
 

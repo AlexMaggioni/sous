@@ -33,7 +33,7 @@ import { cloneFrozenStrictJson, cloneStrictJsonValue, deepFreeze } from "./stric
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const TERMINAL_STATUSES = new Set(["completed", "paused", "failed", "aborted"]);
-const RESUME_MATCHES = new Set(["path-hash", "unique-hash", "index-hash"]);
+const RESUME_MATCHES = new Set(["path-hash", "unique-hash", "index-hash", "occurrence"]);
 const RESUME_SAFETY = new Set(["declared-read-only", "isolated-worktree"]);
 
 export interface ResumeFormatIdentity {

@@ -45,6 +45,7 @@ import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
 import { isNestedScope, isRunEnvironmentIdentity } from "./resume-identity.js";
+import { resumeRows as buildResumeRows, unusedSeed, type ResumeRows } from "./resume-rows.js";
 import {
   createRunPersistence,
   generateRunId,
@@ -203,6 +204,8 @@ interface RunEventPublicationActions {
 interface ManagerResumeExecution {
   preparedResume?: PreparedResume;
   resumeJournal?: Map<number, JournalEntry>;
+  /** A same-ID resume: the run's own rows and its unused seed rows, by scope. */
+  resumeRows?: ResumeRows;
 }
 
 interface ReplayEligibilityPlan {
@@ -1696,6 +1699,7 @@ export class WorkflowManager extends EventEmitter {
       onNestedWorkflow,
     } = exec;
     const resumeJournal = resumeExecution?.resumeJournal ?? exec.resumeJournal;
+    const resumeRows = resumeExecution?.resumeRows;
     const preparedResume = resumeExecution?.preparedResume;
     const preparedContinuation = managed.preparedContinuation;
     const resolvedConcurrency = concurrency ?? this.concurrency;
@@ -1717,7 +1721,7 @@ export class WorkflowManager extends EventEmitter {
       else hostSignal.addEventListener("abort", () => managed.controller.abort(), { once: true });
     }
     try {
-      if (!managed.journaling && resumeJournal) {
+      if (!managed.journaling && (resumeJournal || resumeRows)) {
         throw new WorkflowError("journaling disabled for this run", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
           recoverable: false,
         });
@@ -1746,7 +1750,7 @@ export class WorkflowManager extends EventEmitter {
         ...this.orchestratorOptions,
         ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
         ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
-        ...(managed.nestedJournal?.length
+        ...(managed.nestedJournal?.length && !resumeRows
           ? { nestedResumeJournals: nestedJournalsByScope(managed.nestedJournal) }
           : {}),
         // Manager-level `journal` events are observation, not persistence. Keep the engine's
@@ -1756,8 +1760,9 @@ export class WorkflowManager extends EventEmitter {
         persistLogs: managed.journaling,
         persistenceRoot: this.persistenceRoot,
         resumeJournal: managed.journaling ? resumeJournal : undefined,
+        ...(managed.journaling && resumeRows ? { resumeRows } : {}),
         resumeFromRunId: managed.journaling
-          ? preparedResume?.sourceRunId ?? (resumeJournal ? managed.runId : undefined)
+          ? preparedResume?.sourceRunId ?? (resumeJournal || resumeRows ? managed.runId : undefined)
           : undefined,
         sameRunContinuation: managed.sameRunContinuation,
         tokenUsageBaseline: managed.sameRunContinuation
@@ -2314,9 +2319,7 @@ export class WorkflowManager extends EventEmitter {
           return row !== undefined && entry.kind === row.kind && entry.hash === row.hash;
         }),
       );
-      if (managed.status === "completed") {
-        managed.resumeSeed = undefined;
-      } else if (managed.resumeSeed) {
+      if (managed.status !== "completed" && managed.resumeSeed) {
         managed.resumeSeed = deepFreeze({
           ...managed.resumeSeed,
           sourceRunId: managed.runId,
@@ -2340,6 +2343,8 @@ export class WorkflowManager extends EventEmitter {
         }
       }
     }
+    // A completed run has no later steps to replay, whether or not it started as a reuse.
+    if (managed.status === "completed") managed.resumeSeed = undefined;
     if (managed.resumeTerminalFinalized) return;
     managed.resumeTerminalFinalized = true;
     if (!managed.resume) return;
@@ -2830,7 +2835,18 @@ export class WorkflowManager extends EventEmitter {
       }
     }
 
-    const resumeJournal = new Map((persisted.journal ?? []).map((e) => [e.index, e] as const));
+    // Without a revision the run pairs with its own rows, then with the rows its seed still holds.
+    let resumeRows: ResumeRows | undefined;
+    if (revision === undefined) {
+      managed.resumeSeed = unusedSeed(persisted.resumeSeed, managed.calls, runId);
+      resumeRows = buildResumeRows({
+        runId,
+        journal: [...managed.journal, ...(managed.nestedJournal ?? [])],
+        calls: managed.calls,
+        seed: managed.resumeSeed,
+        key: "hash",
+      });
+    }
     const continuation: WorkflowContinuationResult = deepFreeze({
       generation,
       replayedPrefix: contiguousJournalPrefix(managed.journal, runId),
@@ -2865,8 +2881,7 @@ export class WorkflowManager extends EventEmitter {
       onNestedWorkflow: exec.onNestedWorkflow,
       ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
       ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
-      ...(revisedExecution ? {} : { resumeJournal }),
-    }, revisedExecution ?? { resumeJournal });
+    }, revisedExecution ?? { resumeRows });
     promise.catch(() => {});
     return { accepted: true, runId, continuation, promise };
   }

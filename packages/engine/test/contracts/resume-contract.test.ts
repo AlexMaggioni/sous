@@ -25,7 +25,7 @@ type WorkflowResumeStrategy = WorkflowResumeReport["strategy"];
 
 const POLICIES = ["auto", "positional"] as const satisfies readonly ResumePolicy[];
 const STRATEGIES = ["identity-v1", "positional-v1", "live"] as const satisfies readonly WorkflowResumeStrategy[];
-const MATCHES = ["path-hash", "unique-hash", "index-hash"] as const satisfies readonly WorkflowResumeMatch[];
+const MATCHES = ["path-hash", "unique-hash", "index-hash", "occurrence"] as const satisfies readonly WorkflowResumeMatch[];
 const FALLBACK_REASONS = [
   "legacy-recording",
   "crash-residue",
@@ -229,7 +229,7 @@ const resumeResult: WorkflowRunResult = { ...legacyResult, resumeReport: identit
 test("incremental resume shared type fixtures cover every public branch", () => {
   assert.deepEqual(POLICIES, ["auto", "positional"]);
   assert.deepEqual(STRATEGIES, ["identity-v1", "positional-v1", "live"]);
-  assert.deepEqual(MATCHES, ["path-hash", "unique-hash", "index-hash"]);
+  assert.deepEqual(MATCHES, ["path-hash", "unique-hash", "index-hash", "occurrence"]);
   assert.equal(FALLBACK_REASONS.length, 5);
   assert.equal(DISABLED_REASONS.length, 12);
   assert.equal(CALL_LIVE_REASONS.length, 14);

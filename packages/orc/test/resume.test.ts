@@ -280,6 +280,25 @@ return await agent('Build ' + name, { label: 'build' })`,
     assert.equal(calls[3]!.options.continueFromSession, undefined);
   });
 
+  it("resumes a paused reuse run with its source's later steps", async () => {
+    const { paths, projectDir } = setup({ three: three("A") });
+    let broken = true;
+    const { runner, since } = fake((prompt) => (broken && prompt === "B2" ? boom() : undefined));
+    const first = createRun(paths, { workflow: "three", projectDir, inputs: {} });
+    assert.equal((await start(paths, first.runId, runner))?.status, "completed");
+    edit(projectDir, "three", three("A", "B2"));
+    const again = createRun(paths, { workflow: "three", projectDir, inputs: {}, reuseFrom: first });
+    assert.equal((await start(paths, again.runId, runner))?.status, "paused");
+    assert.deepEqual(since(3), ["B2"]);
+
+    broken = false;
+    const done = await resume(paths, again.runId, runner);
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(since(4), ["B2"], "C replays from the source");
+    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["A done", "B2 done", "C done"]);
+    assert.equal(readState(paths, again.runId)?.resumeSeed, undefined, "a completed run keeps no seed");
+  });
+
   it("without --latest, replays a step whose inputs hash changed", async () => {
     const { paths, projectDir } = setup({ three: three("A") });
     let broken = true;
