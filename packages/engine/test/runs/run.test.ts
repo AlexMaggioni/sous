@@ -10,7 +10,7 @@ import { createRun } from "../../src/runs/launch.js";
 import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
 import { listRuns, readLog, readRun, runDetail, waitingRuns } from "../../src/runs/run.js";
 import { updateRecord } from "../../src/runs/records.js";
-import { logFile, managerStore, readState, type StoreFs } from "../../src/runs/store.js";
+import { engineRunFiles, logFile, managerStore, readState, type StoreFs } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
 import { WorkflowManager } from "../../src/workflow-manager.js";
@@ -383,5 +383,40 @@ return await agent('next', { label: 'next' })`;
     plantState(paths, { ...saved, agents: [], eventSeq: 0 });
     updateRecord(paths, record.runId, { pid: process.pid });
     assert.deepEqual(runDetail(paths, record.runId).steps.map(({ id, label, status }) => ({ id, label, status })), [{ id: 1, label: "next", status: "done" }]);
+  });
+});
+
+describe("the steps after the worker was killed", () => {
+  it("the event log gives the steps the worker never saved, and none of them runs", async () => {
+    const script = `export const meta = { name: 'two', description: 'two steps' }
+await agent('first', { label: 'first' })
+return await agent('second', { label: 'second' })`;
+    const { paths, projectDir } = setup({ two: script });
+    const record = createRun(paths, { workflow: "two", projectDir, inputs: {} });
+    const runner = { async run(_prompt: string, options: { label?: string }) { return `${options.label} done`; } } as unknown as AgentRunner;
+    const manager = new WorkflowManager({ ...managerStore(paths), agent: runner });
+    assert.equal((await manager.runSync(script, {}, { runId: record.runId })).status, "completed");
+    const saved = readState(paths, record.runId)!;
+
+    // The worker was killed while "second" ran: the state was saved before the first step, and
+    // the event log ends at the start of "second".
+    const { events } = engineRunFiles(paths, record.runId);
+    const lines = readFileSync(events, "utf8").split("\n").filter(Boolean);
+    const cut = lines.findIndex((line) => {
+      const { event } = JSON.parse(line) as { event: { type: string; label?: string } };
+      return event.type === "agentStart" && event.label === "second";
+    });
+    assert.ok(cut > 0, lines.join("\n"));
+    const { completedAt: _done, durationMs: _ms, result: _result, ...before } = saved;
+    plantState(paths, { ...before, status: "running", agents: [], eventSeq: 0 }, `${lines.slice(0, cut + 1).join("\n")}\n`);
+    updateRecord(paths, record.runId, { pid: deadPid() });
+
+    const detail = runDetail(paths, record.runId);
+    assert.equal(detail.status, "interrupted");
+    assert.deepEqual(detail.steps.map(({ label, status }) => ({ label, status })), [
+      { label: "first", status: "done" },
+      { label: "second", status: "running" },
+    ]);
+    assert.deepEqual(detail.running, [], "no step runs once the worker is gone");
   });
 });

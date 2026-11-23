@@ -113,7 +113,8 @@ export function runDetail(paths: HomePaths, id: string): RunDetail {
   const state = readState(paths, record.runId);
   const alive = processAlive(record.pid);
   const { view, shown } = viewOf(record, state, listQuestions(paths, record.runId), alive);
-  const live = alive ? liveSteps(paths, record, state) : undefined;
+  // The event log has the steps the worker did not save yet, and a killed worker never saves them.
+  const live = state ? liveSteps(paths, record, state) : undefined;
   const steps = live?.steps ?? shown?.agents ?? [];
   let engineState: RunDetail["engineState"];
   if (shown) {
@@ -123,7 +124,7 @@ export function runDetail(paths: HomePaths, id: string): RunDetail {
   return {
     ...view,
     steps,
-    running: live?.running ?? [],
+    running: alive ? (live?.running ?? []) : [],
     ...(shown?.status === "completed" && shown.result !== undefined ? { result: shown.result } : {}),
     ...(shown?.tokenUsage ? { tokens: shown.tokenUsage.total } : {}),
     ...(shown?.durationMs === undefined ? {} : { durationMs: shown.durationMs }),
@@ -145,9 +146,9 @@ function stepKey(record: RunRecord, scope: unknown, callIndex: unknown): string 
 const ENDS_STEPS = new Set(["complete", "paused", "error", "stopped", "resumed"]);
 
 /**
- * A live run's steps and the names of the steps that run now. The saved state lags a live run:
- * it is saved when a step ends. The event log has every step that started or ended since. The
- * steps are left unset when the run has no state or its event log cannot be read.
+ * A run's steps and the names of the steps that run now, if its worker runs. The saved state lags
+ * the run: it is saved when a step ends. The event log has every step that started or ended since.
+ * The steps are left unset when the run has no state or its event log cannot be read.
  */
 function liveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): { steps?: Step[]; running: string[] } {
   const agents: Step[] = (state?.agents ?? []).map((agent) => ({ ...agent }));
