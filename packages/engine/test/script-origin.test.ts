@@ -33,7 +33,7 @@ test("an inline run records its origin and writes no script copy, and delete rem
 
     // An older engine wrote a copy next to the state. Deleting the run removes it.
     writeFileSync(location, source);
-    assert.equal(manager.deleteRun(run.runId), true);
+    assert.equal(persistence.delete(run.runId), true);
     assert.equal(existsSync(location), false, "deleting the run removes an old inline copy");
   });
 });
@@ -50,7 +50,7 @@ test("a path origin records the caller's file, writes no copy, and delete never 
     assert.equal(existsSync(inlineScriptFile(persistence.getRunsDir(), run.runId)), false, "a path run has no store copy");
     writeFileSync(scriptPath, `${source}\n// edited in place`);
     assert.equal(persistence.load(run.runId)?.script, source, "the admitted record is untouched by the edit");
-    assert.equal(manager.deleteRun(run.runId), true);
+    assert.equal(persistence.delete(run.runId), true);
     assert.equal(existsSync(scriptPath), true, "deleting the run never touches the caller's file");
   });
 });

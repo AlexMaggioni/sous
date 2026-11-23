@@ -669,7 +669,7 @@ test(
   }),
 );
 
-// ─── getRun tests (3 tests) ────────────────────────────────────────────────────
+// ─── getRun tests (2 tests) ────────────────────────────────────────────────────
 
 test(
   "getRun returns ManagedRun with correct fields for active background run",
@@ -713,75 +713,6 @@ test(
 
     da.resolve("done");
     await promise.catch(() => {});
-  }),
-);
-
-test(
-  "getRun returns undefined after deleteRun",
-  withTempCwd(async (cwd) => {
-    const da = deferredAgent();
-    const manager = new WorkflowManager({ cwd, agent: da.runner });
-    manager.on("error", () => {});
-    const { runId, promise } = manager.startInBackground(oneAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
-
-    // Stop first, then delete
-    manager.stop(runId);
-    const deleted = manager.deleteRun(runId);
-    assert.equal(deleted, true);
-
-    const run = manager.getRun(runId);
-    assert.equal(run, undefined, "deleted run should not be accessible");
-
-    da.resolve("done");
-    await promise.catch(() => {});
-  }),
-);
-
-// ─── deleteRun tests (2 tests) ─────────────────────────────────────────────────
-
-test(
-  "deleteRun can delete a running run (removes from memory and persistence)",
-  withTempCwd(async (cwd) => {
-    const da = deferredAgent();
-    const manager = new WorkflowManager({ cwd, agent: da.runner });
-    manager.on("error", () => {});
-    const { runId, promise } = manager.startInBackground(oneAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
-
-    // Delete while running — should succeed (removes from tracking)
-    const deleted = manager.deleteRun(runId);
-    assert.equal(deleted, true);
-
-    // Should not be in memory
-    assert.equal(manager.getRun(runId), undefined);
-
-    // Should not be in persistence
-    const runs = manager.getPersistence().list();
-    assert.equal(
-      runs.find((r) => r.runId === runId),
-      undefined,
-    );
-
-    da.resolve("done");
-    await promise.catch(() => {});
-  }),
-);
-
-test(
-  "deleteRun deletes persisted journal entries",
-  withTempCwd(async (cwd) => {
-    const manager = new WorkflowManager({ cwd, agent: fakeAgent() });
-    const { runId } = manager.startInBackground(oneAgentScript);
-    // Wait for completion
-    await new Promise((r) => setTimeout(r, 30));
-
-    const deleted = manager.deleteRun(runId);
-    assert.equal(deleted, true);
-
-    // Verify persistence file is gone by listing the persisted runs
-    const runs = manager.getPersistence().list();
-    assert.equal(runs.length, 0, "no persisted runs should remain after delete");
   }),
 );
 

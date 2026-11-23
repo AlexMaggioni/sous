@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -398,7 +398,7 @@ test("legacy resume upgrades under lease and begins a new event stream at resume
   });
 });
 
-test("deleting a running managed run prevents every later callback from recreating files", async () => {
+test("a running run whose lock another owner took and deleted never recreates its files", async () => {
   await withPersistenceDirs(async ({ cwd, root }) => {
     const entered = deferred<void>();
     const outcome = deferred<unknown>();
@@ -414,13 +414,20 @@ test("deleting a running managed run prevents every later callback from recreati
     });
     const background = manager.startInBackground(script(`return await agent('hold', { label: 'hold' })`));
     await entered.promise;
-    const eventPath = join(manager.getPersistence().getRunsDir(), `${background.runId}.events.jsonl`);
+    const persistence = manager.getPersistence();
+    const eventPath = join(persistence.getRunsDir(), `${background.runId}.events.jsonl`);
     assert.equal(existsSync(eventPath), true);
 
-    assert.equal(manager.deleteRun(background.runId), true);
+    // The lock file goes away, so another owner takes the lease and deletes the run, as orc's delete does.
+    unlinkSync(join(persistence.getRunsDir(), `${background.runId}.lock`));
+    const other = persistence.acquireRunLease(background.runId);
+    assert.ok(other, "another owner takes the free lease");
+    assert.equal(persistence.delete(background.runId), true);
+    persistence.releaseRunLease(other);
+
     outcome.resolve("late-result");
     assert.equal((await background.promise).status, "completed");
-    assert.equal(manager.getPersistence().load(background.runId), null);
+    assert.equal(persistence.load(background.runId), null);
     assert.equal(existsSync(eventPath), false);
   });
 });
