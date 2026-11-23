@@ -228,6 +228,27 @@ function runSummary(record: RunRecord, state: PersistedRunState | undefined, que
   };
 }
 
+/** A piece of a run's log. */
+export interface LogRead {
+  runId: string;
+  /** The log from the byte asked for to `end`. */
+  text: string;
+  end: number;
+  /** Whether the run's worker ran just before the read. When it did not, `text` holds the rest
+   *  of the log. */
+  running: boolean;
+}
+
+/** A run's log from byte `from` on, by the run's id or a unique start of it. Throws when no run
+ *  has it. It looks at the worker before it reads, so a read that says it ended is complete. */
+export function readLog(paths: HomePaths, id: string, from = 0): LogRead {
+  const record = needRecord(paths, id);
+  const running = processAlive(record.pid);
+  let text = "";
+  const end = readLogFrom(logFile(paths, record.runId), from, (chunk) => (text = chunk));
+  return { runId: record.runId, text, end, running };
+}
+
 /** Hand the log from `from` to `write`, and return where it ended. */
 export function readLogFrom(file: string, from: number, write: (text: string) => void): number {
   if (!existsSync(file)) return from;

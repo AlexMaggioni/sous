@@ -13,7 +13,7 @@ export {
   type HomePaths,
   type Place,
 } from "./runs/home.js";
-export { findRecord, listRecords, loadRecord, processAlive, scopePath, type RunRecord } from "./runs/records.js";
+export { listRecords, loadRecord, scopePath, type RunRecord } from "./runs/records.js";
 export { answerValue, breakpointValue, normalizeAnswer, readQuestion, type AnswerKind } from "./runs/inbox.js";
 export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
 export { InputProblems, logFile } from "./runs/launch.js";
@@ -26,7 +26,7 @@ export {
   listRuns,
   pauseRun,
   pruneRuns,
-  readLogFrom,
+  readLog,
   readRun,
   removeAccount,
   rerunRun,

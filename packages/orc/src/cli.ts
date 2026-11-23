@@ -7,7 +7,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { answerQuestion, answerValue, breakpointValue, busyWorktrees, checkWorkflow, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, pruneRuns, readLogFrom, readQuestion, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workflowDirs, type AnswerKind, type Answers, type HomePaths, type Place, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
+import { answerQuestion, answerValue, breakpointValue, busyWorktrees, checkWorkflow, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, pruneRuns, readLog, readQuestion, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workflowDirs, type AnswerKind, type Answers, type HomePaths, type Place, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { doctor } from "./doctor.js";
 
@@ -348,15 +348,14 @@ function cmdShow(parsed: Parsed): number {
 
 async function cmdLog(parsed: Parsed): Promise<number> {
   const paths = ensureHome(homePaths());
-  const { record } = needRun(paths, parsed.positionals[0]);
-  const file = logFile(paths, record.runId);
-  let offset = readLogFrom(file, 0, (text) => process.stdout.write(text));
+  let read = readLog(paths, runIdArg(parsed.positionals[0]));
+  if (read.text) process.stdout.write(read.text);
   if (!parsed.flags.follow) return 0;
-  while (processAlive(findRecord(paths, record.runId)?.pid)) {
+  while (read.running) {
     await new Promise((r) => setTimeout(r, 400));
-    offset = readLogFrom(file, offset, (text) => process.stdout.write(text));
+    read = readLog(paths, read.runId, read.end);
+    if (read.text) process.stdout.write(read.text);
   }
-  readLogFrom(file, offset, (text) => process.stdout.write(text));
   return 0;
 }
 

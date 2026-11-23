@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { WorkflowError, WorkflowErrorCode } from "../../src/errors.js";
 import { ensureHome, homePaths, type HomePaths } from "../../src/runs/home.js";
-import { createRun } from "../../src/runs/launch.js";
+import { createRun, logFile } from "../../src/runs/launch.js";
 import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
-import { listRuns, readRun, runDetail, waitingRuns } from "../../src/runs/run.js";
+import { listRuns, readLog, readRun, runDetail, waitingRuns } from "../../src/runs/run.js";
 import type { StoreFs } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import { heldRunner, settle, setup, until } from "./fixture.js";
@@ -203,6 +203,26 @@ describe("the runs waiting at a usage limit", () => {
       { runId: "run-codex", workflow: "build", program: "codex", account: "team", limit: { program: "codex", account: "team", at: hit } },
       { runId: "run-moved", workflow: "build", program: "claude", account: "work", limit: { program: "claude", account: "work", at: hit } },
     ]);
+  });
+});
+
+describe("a run's log", () => {
+  it("reads from where the last read ended, says whether the worker runs, and names a run it does not know", () => {
+    const planted = home();
+    plantRecord(planted, "run-live", 2, process.pid);
+    plantRecord(planted, "run-gone", 1, deadPid());
+    const log = logFile(planted.paths, "run-live");
+    writeFileSync(log, "one\ntwo\n");
+
+    const first = readLog(planted.paths, "run-live");
+    assert.deepEqual(first, { runId: "run-live", text: "one\ntwo\n", end: 8, running: true });
+    appendFileSync(log, "three\n");
+    const next = readLog(planted.paths, "run-live", first.end);
+    assert.deepEqual(next, { runId: "run-live", text: "three\n", end: 14, running: true });
+    assert.deepEqual(readLog(planted.paths, "run-live", next.end), { runId: "run-live", text: "", end: 14, running: true });
+
+    assert.deepEqual(readLog(planted.paths, "run-g"), { runId: "run-gone", text: "", end: 0, running: false }, "a unique start of the id, and no log yet");
+    assert.throws(() => readLog(planted.paths, "run-nope"), /^Error: no run "run-nope"\. orc list shows the runs\.$/);
   });
 });
 
