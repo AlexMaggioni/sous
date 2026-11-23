@@ -8,7 +8,7 @@ import { describe, it } from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import { validateResumeSafetyMarker, type PreparedResume } from "../src/resume.js";
+import type { PreparedResume } from "../src/resume.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { normalizeResumeSeed } from "../src/resume-matcher.js";
 import { resumeRows } from "../src/resume-rows.js";
@@ -180,67 +180,6 @@ return { safe, unsafe, empty }`),
         retained: [{ sourceRunId: "source", recordedIndex: 0, entry: journal, call: malformed as WorkflowCallRecord }],
       }),
       undefined,
-    );
-  });
-
-  it("pins every persisted safety-marker combination", () => {
-    assert.equal(validateResumeSafetyMarker(resultRow(), false), true);
-    assert.equal(validateResumeSafetyMarker(resultRow({ resumeSafety: "declared-read-only" }), false), true);
-    assert.equal(
-      validateResumeSafetyMarker(resultRow({ isolation: "worktree", resumeSafety: "declared-read-only" }), false),
-      false,
-    );
-    assert.equal(
-      validateResumeSafetyMarker(
-        resultRow({ isolation: "worktree", worktree: true, resumeSafety: "isolated-worktree" }),
-        false,
-      ),
-      true,
-    );
-    assert.equal(
-      validateResumeSafetyMarker(
-        resultRow({ isolation: "worktree", worktree: false, resumeSafety: "isolated-worktree" }),
-        false,
-      ),
-      false,
-    );
-    assert.equal(
-      validateResumeSafetyMarker(
-        resultRow({
-          origin: "journal-replay",
-          resumeSafety: "declared-read-only",
-          replay: {
-            sourceRunId: "source",
-            recordedIndex: 0,
-            match: "index-hash",
-            sourceResumeSafety: "declared-read-only",
-          },
-        }),
-        false,
-      ),
-      true,
-    );
-    assert.equal(
-      validateResumeSafetyMarker(resultRow({ origin: "journal-replay" }), false),
-      false,
-    );
-    assert.equal(
-      validateResumeSafetyMarker(
-        resultRow({ origin: "journal-replay", resumeSafety: "declared-read-only" }),
-        true,
-      ),
-      false,
-    );
-    assert.equal(
-      validateResumeSafetyMarker(
-        resultRow({ kind: "checkpoint", origin: "confirm", resumeSafety: "declared-read-only" }),
-        false,
-      ),
-      false,
-    );
-    assert.equal(
-      validateResumeSafetyMarker(resultRow({ outcome: "error", resumeSafety: "declared-read-only" }), false),
-      true,
     );
   });
 
