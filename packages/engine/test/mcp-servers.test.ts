@@ -3,16 +3,15 @@ import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
 import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { JournalEntry } from "../src/workflow-result.js";
 import type { McpServerConfig } from "../src/steps/mcp-config.js";
 import { runWorkflow } from "../src/workflow.js";
 import { toMcpServer } from "../src/steps/answer.js";
 
-// (#5) agent({ mcpServers }) is an ADDITIVE run input: the engine must thread it through to
-// the runner opts (so the harness gets them for the step), but it must NOT enter
-// the resume identity hash (hashAgentCall) — wiring tools changes which tools an agent can
-// reach, not the logical call, and folding it into the hash would needlessly bust every
-// cached result whenever tool wiring changes.
+// agent({ mcpServers }) is an additive run input. The engine threads it through to the runner
+// opts, so the harness gets the servers for the step. It stays out of the resume identity hash,
+// which cwd.test.ts checks for all the additive options. Wiring tools changes which tools an agent
+// can reach and not the logical call, so folding it in would bust every cached result whenever
+// the wiring changes.
 
 const STDIO_SERVER = { name: "fs", command: "mcp-fs", args: [], env: [] };
 
@@ -64,37 +63,6 @@ return a`;
 
     assert.ok(sawOptions);
     assert.equal(captured, undefined);
-  });
-
-  it("does NOT fold mcpServers into the resume identity hash", async () => {
-    const echo: AgentRunner = {
-      async run<S extends TSchema | undefined = undefined>(prompt: string): Promise<AgentResult<S>> {
-        return `ran:${prompt}` as AgentResult<S>;
-      },
-    };
-    const journalOf = async (withServers: boolean): Promise<JournalEntry[]> => {
-      const journal: JournalEntry[] = [];
-      const opts = withServers
-        ? `{ label: 'a', mcpServers: [{ name: 'fs', command: 'mcp-fs', args: [], env: [] }] }`
-        : `{ label: 'a' }`;
-      const script = `export const meta = { name: 'm2', description: 'mcp' }
-const a = await agent('same', ${opts})
-return a`;
-      await runWorkflow(script, {
-        agent: echo,
-        persistLogs: false,
-        onAgentJournal: (e) => journal.push(e),
-      });
-      return journal;
-    };
-
-    const [withServers] = await journalOf(true);
-    const [withoutServers] = await journalOf(false);
-    assert.equal(
-      withServers.hash,
-      withoutServers.hash,
-      "adding mcpServers must keep the resume key byte-identical (it is not part of the identity)",
-    );
   });
 });
 

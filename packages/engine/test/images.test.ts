@@ -3,13 +3,11 @@ import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
 import type { AgentResult, PromptImage, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { JournalEntry } from "../src/workflow-result.js";
 import { runWorkflow } from "../src/workflow.js";
 
-// agent({ images }) is an ADDITIVE run input: the engine must thread it through to the runner
-// opts verbatim (the steps module hands each image to the harness), but it must NOT enter the
-// resume identity hash (hashAgentCall) — it shapes the agent, not the logical call, exactly like
-// mcpServers/meta.
+// agent({ images }) is an additive run input. The engine threads it through to the runner opts
+// verbatim, and the steps module hands each image to the harness. It stays out of the resume
+// identity hash, which cwd.test.ts checks for all the additive options.
 
 describe("agent({ images }) plumbing", () => {
   it("threads images from agent() into the runner opts", async () => {
@@ -58,35 +56,5 @@ return await agent('p', { label: 'a' })`,
     );
     assert.ok(sawOptions);
     assert.equal(images, undefined);
-  });
-
-  it("does NOT fold images into the resume identity hash", async () => {
-    const echo: AgentRunner = {
-      async run<S extends TSchema | undefined = undefined>(prompt: string): Promise<AgentResult<S>> {
-        return `ran:${prompt}` as AgentResult<S>;
-      },
-    };
-    const journalOf = async (withImages: boolean): Promise<JournalEntry[]> => {
-      const journal: JournalEntry[] = [];
-      const opts = withImages
-        ? `{ label: 'a', images: [{ data: 'ZmFrZQ==', mimeType: 'image/png', uri: 'file:///tmp/a.png' }] }`
-        : `{ label: 'a' }`;
-      const script = `export const meta = { name: 'm2', description: 'images' }
-return await agent('same', ${opts})`;
-      await runWorkflow(script, {
-        agent: echo,
-        persistLogs: false,
-        onAgentJournal: (e) => journal.push(e),
-      });
-      return journal;
-    };
-
-    const withImages = await journalOf(true);
-    const withoutImages = await journalOf(false);
-    assert.deepEqual(
-      withImages.map(({ index, hash, result, kind, usage }) => ({ index, hash, result, kind, usage })),
-      withoutImages.map(({ index, hash, result, kind, usage }) => ({ index, hash, result, kind, usage })),
-      "adding images must keep the journal identity/result byte-identical (scope is run-specific)",
-    );
   });
 });

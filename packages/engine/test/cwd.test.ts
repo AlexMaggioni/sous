@@ -84,33 +84,44 @@ return await agent('p', { label: 'a', cwd: 42 })`;
       /options\.cwd must be a string/,
     );
   });
+});
 
-  it("does NOT fold cwd into the resume identity hash", async () => {
-    const echo: AgentRunner = {
-      async run<S extends TSchema | undefined = undefined>(prompt: string): Promise<AgentResult<S>> {
-        return `ran:${prompt}` as AgentResult<S>;
-      },
-    };
-    const journalOf = async (withCwd: boolean): Promise<JournalEntry[]> => {
-      const journal: JournalEntry[] = [];
-      const opts = withCwd ? `{ label: 'a', cwd: ${JSON.stringify(tmpdir())} }` : `{ label: 'a' }`;
-      const script = `export const meta = { name: 'c2', description: 'cwd' }
-const a = await agent('same', ${opts})
-return a`;
-      await runWorkflow(script, {
-        agent: echo,
-        persistLogs: false,
-        onAgentJournal: (e) => journal.push(e),
-      });
-      return journal;
-    };
+// cwd, images, mcpServers and meta shape the agent, not the logical call. Each is threaded to the
+// runner or kept in the call's inputs, and none enters the resume identity hash. One row per
+// option, with the option as the script writes it.
+const ADDITIVE_OPTIONS: Array<[name: string, option: string]> = [
+  ["cwd", `cwd: ${JSON.stringify(tmpdir())}`],
+  ["images", "images: [{ data: 'ZmFrZQ==', mimeType: 'image/png', uri: 'file:///tmp/a.png' }]"],
+  ["mcpServers", "mcpServers: [{ name: 'fs', command: 'mcp-fs', args: [], env: [] }]"],
+  ["meta/promptMeta", "meta: { credsRef: 'vault://qa' }, promptMeta: { viewport: '1280x800' }"],
+];
 
-    const [withCwd] = await journalOf(true);
-    const [withoutCwd] = await journalOf(false);
-    assert.equal(
-      withCwd.hash,
-      withoutCwd.hash,
-      "setting cwd must keep the resume key byte-identical (it is not part of the identity)",
-    );
-  });
+describe("the resume identity hash", () => {
+  const echo: AgentRunner = {
+    async run<S extends TSchema | undefined = undefined>(prompt: string): Promise<AgentResult<S>> {
+      return `ran:${prompt}` as AgentResult<S>;
+    },
+  };
+  const journalOf = async (option: string | undefined): Promise<JournalEntry[]> => {
+    const journal: JournalEntry[] = [];
+    const script = `export const meta = { name: 'c2', description: 'additive options' }
+return await agent('same', { label: 'a'${option === undefined ? "" : `, ${option}`} })`;
+    await runWorkflow(script, {
+      agent: echo,
+      persistLogs: false,
+      onAgentJournal: (e) => journal.push(e),
+    });
+    return journal;
+  };
+  const identity = (rows: JournalEntry[]) => rows.map(({ index, hash, result, kind, usage }) => ({ index, hash, result, kind, usage }));
+
+  for (const [name, option] of ADDITIVE_OPTIONS) {
+    it(`does NOT fold ${name} into the resume identity hash`, async () => {
+      assert.deepEqual(
+        identity(await journalOf(option)),
+        identity(await journalOf(undefined)),
+        `setting ${name} must keep the journal identity and result byte-identical`,
+      );
+    });
+  }
 });
