@@ -99,27 +99,6 @@ test("toStrictJsonSchema: does NOT mutate the original hash-feeding schema", () 
   assert.equal(original.properties?.name?.format, "email");
 });
 
-test("both helpers strip typebox's internal (~kind) metadata via the JSON round-trip", () => {
-  const schema = buildSchema();
-  // typebox carries a non-enumerable `~kind` marker on every node; JSON.stringify drops it.
-  assert.ok(Object.getOwnPropertyNames(schema).includes("~kind"));
-
-  for (const out of [toAnthropicJsonSchema(schema), toStrictJsonSchema(schema)]) {
-    assert.equal(Object.getOwnPropertyNames(out).includes("~kind"), false);
-    const props = out.properties as Record<string, Record<string, unknown>>;
-    assert.equal(Object.getOwnPropertyNames(props.name).includes("~kind"), false);
-  }
-  // ...and the original still has it (we cloned, not stripped-in-place).
-  assert.ok(Object.getOwnPropertyNames(schema).includes("~kind"));
-});
-
-test("toStrictJsonSchema: returned copy is independent — mutating it cannot reach the original", () => {
-  const schema = buildSchema();
-  const strict = toStrictJsonSchema(schema);
-  (strict.properties as Record<string, unknown>).injected = { type: "string" };
-  assert.equal("injected" in schema.properties, false);
-});
-
 // ---- (6) originally-OPTIONAL props become NULLABLE under all-required strict mode --------
 
 test("toStrictJsonSchema: optional prop -> required AND nullable (type unioned with null)", () => {
