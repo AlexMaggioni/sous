@@ -7,7 +7,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { answerQuestion, answerValue, breakpointValue, checkWorkflow, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, gcRuns, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, pruneRuns, readLog, readQuestion, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workflowDirs, type AnswerKind, type Answers, type HomePaths, type Place, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
+import { answerQuestion, checkWorkflow, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, gcRuns, HARNESSES, harnessName, hint, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, openWorkflowDir, parseCron, pauseRun, pruneRuns, readLog, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workflowDirs, type Answers, type HomePaths, type Place, type Reply, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { doctor } from "./doctor.js";
 
@@ -178,13 +178,6 @@ function printSteps(record: RunRecord, agents: readonly Step[], ended: boolean):
   printScope(record.runId, "  ");
 }
 
-function howToAnswer(question: RunQuestion): string {
-  if (question.breakpoint) return `orc approve ${question.id}  |  orc send-back ${question.id} "note"  |  orc stop ${question.runId}`;
-  if (question.kind === "confirm") return `orc answer ${question.id} yes|no`;
-  if (question.kind === "select") return `orc answer ${question.id} <one of: ${(question.choices ?? []).join(", ")}>`;
-  return `orc answer ${question.id} "..."`;
-}
-
 /**
  * Wait for a run to end, pause or ask. In a terminal, a question is asked right here and the
  * wait goes on. Elsewhere, such as from an agent's shell, the wait returns at the question
@@ -194,11 +187,11 @@ async function waitFor(paths: HomePaths, runId: string, options: { json: boolean
   const interactive = process.stdin.isTTY && process.stdout.isTTY && !options.json;
   const end = await waitForRun(paths, runId, {
     ...(options.json || options.quiet ? {} : { log: (text: string) => process.stdout.write(text) }),
-    ...(interactive ? { asks: (questions: RunQuestion[], record: RunRecord) => askHere(paths, questions, record) } : {}),
+    ...(interactive ? { asks: (questions: RunQuestion[]) => askHere(paths, questions) } : {}),
   });
   if (end.questions) {
     if (options.json) printJson(end.summary);
-    else for (const q of end.questions) out(`\nwaiting for an answer to ${q.id}:\n  ${q.prompt}\n  ${howToAnswer(q)}\n  then: orc wait ${runId}`);
+    else for (const q of end.questions) out(`\nwaiting for an answer to ${q.id}:\n  ${q.prompt}\n  ${hint(q)}\n  then: orc wait ${runId}`);
     return end.code;
   }
   if (options.json) printJson(end.summary);
@@ -210,24 +203,12 @@ async function waitFor(paths: HomePaths, runId: string, options: { json: boolean
 }
 
 /** Ask each question in the terminal and write the answer. "stop" at a breakpoint stops the run. */
-async function askHere(paths: HomePaths, questions: RunQuestion[], record: RunRecord): Promise<void> {
+async function askHere(paths: HomePaths, questions: RunQuestion[]): Promise<void> {
   for (const question of questions) {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const hint = question.breakpoint
-      ? "approve, stop, or a note to send back"
-      : question.kind === "confirm"
-        ? "yes or no"
-        : question.kind === "select"
-          ? (question.choices ?? []).join(" / ")
-          : "your answer";
-    const reply = (await rl.question(`\n${question.prompt}\n(${hint}) > `)).trim();
+    const text = await rl.question(`\n${question.prompt}\n(${hint(question, "prompt")}) > `);
     rl.close();
-    if (!readQuestion(paths, question.id)) continue;
-    if (question.breakpoint && reply.toLowerCase() === "stop") {
-      stopRun(paths, record.runId);
-      continue;
-    }
-    answerQuestion(paths, question, question.breakpoint ? breakpointValue(reply) : normalizeAnswer(question, reply));
+    answerQuestion(paths, question, { via: "prompt", text });
   }
 }
 
@@ -338,7 +319,7 @@ function cmdShow(parsed: Parsed): number {
     out("steps");
     printSteps(record, run.steps, saved?.status !== "running" && saved?.status !== "pending");
   }
-  for (const question of run.questions) out(`asks      ${question.id}: ${question.prompt}\n          ${howToAnswer(question)}`);
+  for (const question of run.questions) out(`asks      ${question.id}: ${question.prompt}\n          ${hint(question)}`);
   if (run.result !== undefined) {
     out("result");
     out(typeof run.result === "string" ? run.result : JSON.stringify(run.result, null, 2));
@@ -373,19 +354,18 @@ function cmdInbox(parsed: Parsed): number {
   for (const question of questions) {
     out(`${question.id}  ${question.workflow}  ${age(question.askedAt)} ago`);
     out(`  ${question.prompt.replace(/\n/g, "\n  ")}`);
-    out(`  ${howToAnswer(question)}`);
+    out(`  ${hint(question)}`);
   }
   return 0;
 }
 
-function cmdAnswer(parsed: Parsed, kind: AnswerKind): number {
+function cmdAnswer(parsed: Parsed, via: Exclude<Reply["via"], "prompt">): number {
   const paths = ensureHome(homePaths());
   const question = needQuestion(paths, parsed.positionals[0]);
   const text = parsed.positionals.slice(1).join(" ");
-  const answer = answerValue(question, kind, text, parsed.flags.json === true);
+  const answer = answerQuestion(paths, question, { via, text, json: parsed.flags.json === true });
   if ("usage" in answer) throw new Usage(answer.usage);
-  const running = answerQuestion(paths, question, answer.value);
-  out(`answered ${question.id}${running ? "" : `. The run is not running: orc resume ${question.runId} uses the answer.`}`);
+  if ("answered" in answer) out(`answered ${question.id}${answer.running ? "" : `. The run is not running: orc resume ${question.runId} uses the answer.`}`);
   return 0;
 }
 

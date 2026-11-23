@@ -203,12 +203,37 @@ export function decisionOf(answer: unknown): Decision {
   return { decision: "send back", ...(note ? { note } : {}) };
 }
 
-export type AnswerKind = "answer" | "approve" | "send-back";
+/** What a person typed to answer a question: after orc answer, orc approve or orc send-back and
+ *  the question's id, or at the prompt of orc wait in a terminal. */
+export interface Reply {
+  via: "answer" | "approve" | "send-back" | "prompt";
+  text: string;
+  /** orc answer --json: the text is JSON. */
+  json?: boolean;
+}
 
-/** The value a reply gives a question, or what is wrong with the command when it does not fit. */
-export function answerValue(question: Question, kind: AnswerKind, text: string, json = false): { value: unknown } | { usage: string } {
-  if (kind === "approve") return { value: question.breakpoint ? "approve" : question.kind === "confirm" ? true : "approve" };
-  if (kind === "send-back") {
+/**
+ * Answer a question with what a person typed. It writes the answer, or says that the reply stops
+ * the run, or what is wrong with the command. A choice that is not listed, or a confirm that is
+ * not yes or no, throws. A reply typed at a prompt counts only while the question's file is there.
+ */
+export function reply(paths: HomePaths, question: Question, typed: Reply): { answered: true } | { stop: true } | { usage: string } | { gone: true } {
+  if (typed.via === "prompt" && !readQuestion(paths, question.id)) return { gone: true };
+  const meaning = meaningOf(question, typed);
+  if (!("value" in meaning)) return meaning;
+  writeAnswer(paths, question, meaning.value);
+  return { answered: true };
+}
+
+/** The answer a reply gives, a stop, or what is wrong with the command. */
+function meaningOf(question: Question, { via, text, json }: Reply): { value: unknown } | { stop: true } | { usage: string } {
+  if (via === "prompt") {
+    const typed = text.trim();
+    if (!question.breakpoint) return { value: normalizeAnswer(question, typed) };
+    return typed.toLowerCase() === "stop" ? { stop: true } : { value: breakpointValue(typed) };
+  }
+  if (via === "approve") return { value: question.kind === "confirm" && !question.breakpoint ? true : "approve" };
+  if (via === "send-back") {
     if (!question.breakpoint) return { usage: `${question.id} is not a breakpoint. Use orc answer ${question.id} "..."` };
     if (!text) return { usage: `orc send-back ${question.id} "what to change"` };
     return { value: { decision: "send back", note: text } };
@@ -219,6 +244,25 @@ export function answerValue(question: Question, kind: AnswerKind, text: string, 
     return { usage: `answer one of: ${question.choices.join(", ")}` };
   }
   return { value };
+}
+
+/**
+ * How to answer a question. "orc" gives the commands that orc inbox, show and wait print.
+ * "log" gives the commands the run's log prints, which leave out yes or no and the choices.
+ * "prompt" gives what the prompt of orc wait takes.
+ */
+export function hint(question: Question, where: "orc" | "log" | "prompt" = "orc"): string {
+  if (where === "prompt") {
+    if (question.breakpoint) return "approve, stop, or a note to send back";
+    if (question.kind === "confirm") return "yes or no";
+    if (question.kind === "select") return (question.choices ?? []).join(" / ");
+    return "your answer";
+  }
+  if (question.breakpoint) return `orc approve ${question.id}  |  orc send-back ${question.id} "note"  |  orc stop ${question.runId}`;
+  if (where === "log") return `orc answer ${question.id} "..."`;
+  if (question.kind === "confirm") return `orc answer ${question.id} yes|no`;
+  if (question.kind === "select") return `orc answer ${question.id} <one of: ${(question.choices ?? []).join(", ")}>`;
+  return `orc answer ${question.id} "..."`;
 }
 
 function parseJson(text: string): unknown {

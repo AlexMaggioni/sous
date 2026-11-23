@@ -12,7 +12,7 @@ import type { CheckpointCallContext } from "../workflow.js";
 import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";
 import { dropUnchangedWorktrees, runWorktrees } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
-import { ask, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
+import { ask, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
 import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
@@ -182,10 +182,7 @@ async function runOnAccounts(
       return Promise.resolve(value);
     }
     const asked = () => {
-      const how = question.breakpoint
-        ? `orc approve ${id}  |  orc send-back ${id} "note"  |  orc stop ${runId}`
-        : `orc answer ${id} "..."`;
-      log(`${stamp()} question   ${id}: ${oneLine(prompt, 400)}\n           answer with: ${how}`);
+      log(`${stamp()} question   ${id}: ${oneLine(prompt, 400)}\n           answer with: ${hint(question, "log")}`);
       notify(`${record.workflow} asks`, oneLine(prompt, 200), config.notify);
     };
     return ask(paths, question, { signal: waits.signal, pollMs, asked }).then((value) => {

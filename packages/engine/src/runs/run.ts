@@ -9,7 +9,7 @@ import { deleteAccount, DEFAULT, moveRunAccount, setCurrentAccount, type Account
 import type { Harness } from "../agents.js";
 import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
-import { listQuestions, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
+import { listQuestions, readQuestion, removeRunQuestions, reply, type Question, type Reply } from "./inbox.js";
 import { createRun, startWorker, type CreateRunRequest } from "./launch.js";
 import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestStepStop, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
@@ -462,10 +462,17 @@ export function findQuestion(paths: HomePaths, id: string): RunQuestion {
   throw new Error(`no open question "${id}". orc inbox lists them.`);
 }
 
-/** Write the answer. Returns whether the run still runs, so it reads the answer now. */
-export function answerQuestion(paths: HomePaths, question: RunQuestion, value: unknown): boolean {
-  writeAnswer(paths, question, value);
-  return processAlive(findRecord(paths, question.runId)?.pid);
+/** What an answer did. It was written, and `running` says whether the run reads it now or on
+ *  resume. Or it stopped the run, or it does not fit the command, or the prompt's question was
+ *  already closed. */
+export type AnswerOutcome = { answered: true; running: boolean } | { stopped: ReturnType<typeof stopRun> } | { usage: string } | { gone: true };
+
+/** Answer a question with what a person typed. A reply that stops the run stops it as orc stop does. */
+export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply): AnswerOutcome {
+  const result = reply(paths, question, typed);
+  if ("stop" in result) return { stopped: stopRun(paths, question.runId) };
+  if ("answered" in result) return { answered: true, running: processAlive(findRecord(paths, question.runId)?.pid) };
+  return result;
 }
 
 /** A stopped run's worktrees. With `remove`, deletes each branch and folder and calls `deleted`

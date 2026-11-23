@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { HomePaths } from "../../src/runs/home.js";
-import { ask, breakpointValue, decisionOf, normalizeAnswer, standIn, type Question } from "../../src/runs/inbox.js";
+import { ask, breakpointValue, decisionOf, hint, normalizeAnswer, reply, standIn, type Question, type Reply } from "../../src/runs/inbox.js";
 import { createRun } from "../../src/runs/launch.js";
 import { updateRecord } from "../../src/runs/records.js";
 import { runQuestions } from "../../src/runs/run.js";
@@ -147,6 +147,75 @@ describe("ask", () => {
     assert.equal(standIn({ kind: "select", breakpoint: false }), "");
     assert.equal(standIn({ kind: "input", breakpoint: false }), "stand-in answer");
     assert.equal(standIn({ kind: "confirm", breakpoint: false }), true);
+  });
+});
+
+describe("reply", () => {
+  const base: Question = { id: "r1--2", runId: "r1", scope: "r1", callIndex: 2, hash: "h2", workflow: "w", prompt: "?", kind: "input", breakpoint: false, askedAt: "2026-11-23T10:00:00.000Z" };
+  const name: Question = { ...base, kind: "input" };
+  const color: Question = { ...base, kind: "select", choices: ["red", "blue"] };
+  const ship: Question = { ...base, kind: "confirm" };
+  const plan: Question = { ...base, kind: "confirm", breakpoint: true };
+
+  it("writes what each reply means, or says why it does not fit and writes nothing", () => {
+    const cases: Array<[Question, Reply, unknown]> = [
+      [name, { via: "answer", text: "Ann" }, { value: "Ann" }],
+      [name, { via: "answer", text: '{"a":1}', json: true }, { value: { a: 1 } }],
+      [name, { via: "answer", text: "" }, { usage: 'orc answer r1--2 "your answer"' }],
+      [color, { via: "answer", text: "blue" }, { value: "blue" }],
+      [color, { via: "answer", text: '"green"', json: true }, { usage: "answer one of: red, blue" }],
+      [ship, { via: "answer", text: "no" }, { value: false }],
+      [ship, { via: "approve", text: "" }, { value: true }],
+      [name, { via: "send-back", text: "x" }, { usage: 'r1--2 is not a breakpoint. Use orc answer r1--2 "..."' }],
+      [plan, { via: "approve", text: "" }, { value: "approve" }],
+      [plan, { via: "answer", text: "send back: shorter" }, { value: { decision: "send back", note: "shorter" } }],
+      [plan, { via: "send-back", text: "shorter" }, { value: { decision: "send back", note: "shorter" } }],
+      [plan, { via: "send-back", text: "" }, { usage: 'orc send-back r1--2 "what to change"' }],
+      [plan, { via: "prompt", text: " Stop " }, { stop: true }],
+      [plan, { via: "prompt", text: "" }, { value: "approve" }],
+      [color, { via: "prompt", text: "red" }, { value: "red" }],
+    ];
+    for (const [question, typed, expected] of cases) {
+      const { paths } = setup({});
+      writeFileSync(join(paths.inbox, `${question.id}.json`), JSON.stringify(question, null, 2));
+      const result = reply(paths, question, typed);
+      const written = existsSync(answerFile(paths, question.id)) ? JSON.parse(readFileSync(answerFile(paths, question.id), "utf8")) : undefined;
+      const label = `${question.kind}${question.breakpoint ? " breakpoint" : ""} ${JSON.stringify(typed)}`;
+      if ("value" in (expected as object)) {
+        assert.deepEqual(result, { answered: true }, label);
+        assert.equal(written?.hash, question.hash, label);
+        assert.deepEqual(written?.value, (expected as { value: unknown }).value, label);
+      } else {
+        assert.deepEqual(result, expected, label);
+        assert.equal(written, undefined, label);
+      }
+    }
+  });
+
+  it("throws on a choice or a yes or no it cannot read, as orc has always shown it", () => {
+    const { paths } = setup({});
+    assert.throws(() => reply(paths, color, { via: "answer", text: "green" }), /^Error: answer one of: red, blue$/);
+    assert.throws(() => reply(paths, ship, { via: "answer", text: "maybe" }), /^Error: answer yes or no$/);
+    assert.deepEqual(inbox(paths, "r1"), []);
+  });
+
+  it("at the prompt, says the question is gone when it was answered elsewhere", () => {
+    const { paths } = setup({});
+    assert.deepEqual(reply(paths, name, { via: "prompt", text: "Ann" }), { gone: true });
+    assert.deepEqual(inbox(paths, "r1"), []);
+  });
+
+  it("tells how to answer, in orc, in the run's log and at the prompt", () => {
+    assert.equal(hint(name), 'orc answer r1--2 "..."');
+    assert.equal(hint(color), "orc answer r1--2 <one of: red, blue>");
+    assert.equal(hint(ship), "orc answer r1--2 yes|no");
+    assert.equal(hint(plan), 'orc approve r1--2  |  orc send-back r1--2 "note"  |  orc stop r1');
+    assert.equal(hint(ship, "log"), 'orc answer r1--2 "..."');
+    assert.equal(hint(plan, "log"), hint(plan));
+    assert.equal(hint(name, "prompt"), "your answer");
+    assert.equal(hint(color, "prompt"), "red / blue");
+    assert.equal(hint(ship, "prompt"), "yes or no");
+    assert.equal(hint(plan, "prompt"), "approve, stop, or a note to send back");
   });
 });
 

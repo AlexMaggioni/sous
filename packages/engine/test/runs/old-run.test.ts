@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import type { HomePaths } from "../../src/runs/home.js";
-import { answerValue, type Question } from "../../src/runs/inbox.js";
+import type { Question } from "../../src/runs/inbox.js";
 import { loadRecord, type RunRecord } from "../../src/runs/records.js";
 import { answerQuestion, forgetRun, listRuns, pruneRuns, runQuestions } from "../../src/runs/run.js";
 import { tick } from "../../src/runs/service.js";
@@ -112,9 +112,8 @@ describe("a run started by the old code", () => {
 
     const [question] = runQuestions(paths, runId);
     assert.equal(question?.breakpoint, true, "the old question file still reads as a breakpoint");
-    const approve = answerValue(question!, "approve", "");
-    assert.ok("value" in approve);
-    answerQuestion(paths, question!, approve.value);
+    const approve = answerQuestion(paths, question!, { via: "approve", text: "" });
+    assert.deepEqual(approve, { answered: true, running: false });
 
     const { runner, calls } = heldRunner(() => "a new plan");
     const lines: string[] = [];
