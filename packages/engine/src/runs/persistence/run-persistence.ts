@@ -33,7 +33,6 @@ import type {
 } from "../../workflow-result.js";
 import type { AuthErrorContext, CheckpointContext } from "../../errors.js";
 import { WorkflowError, WorkflowErrorCode } from "../../errors.js";
-import type { ReplayReport } from "../../isolation.js";
 import type { RunEnvironmentIdentity } from "../../run-environment.js";
 import { withRunEventsUsingFs, type RunEventPersistence } from "./run-event-persistence.js";
 import { workflowProjectPaths } from "./project-paths.js";
@@ -231,8 +230,6 @@ export interface PersistedRunState {
   nestedWorkflows?: true;
   legacyResume?: true;
   executionMode?: { kind: "isolation"; baselineRunId: string };
-  /** Aggregate isolation report, attached after the terminal manager save. */
-  replayReport?: ReplayReport;
   /** Event-log generation discriminator: 32 lowercase hex characters. New-format journaling
    *  runs mint it with eventSeq: 0. */
   eventStreamId?: string;
