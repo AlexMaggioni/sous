@@ -22,6 +22,8 @@ export interface LedgerCall {
   hash: string;
   inputsHash?: string;
   path?: string;
+  /** An agent with a schema. Without one, an agent's empty text result does not replay. */
+  hasSchema?: boolean;
   /** Fields the kind adds to its call row, after the ones above. */
   fields?: Partial<Omit<WorkflowCallRecord, IdentityField>>;
 }

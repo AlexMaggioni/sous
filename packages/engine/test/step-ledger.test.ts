@@ -73,9 +73,11 @@ describe("step ledger", () => {
     assert.equal(seq, 6);
   });
 
-  it("writes the call row once, with the call's identity first, and returns it on a second settle", () => {
+  it("writes the call row once, with the call's identity first and no schema flag, and returns it on a second settle", () => {
     const { ledger, calls } = setup({});
-    const slot = ledger.open({ kind: "agent", hash: "a", path: "p", inputsHash: "a-in", fields: { label: "A" } });
+    const slot = ledger.open({
+      kind: "agent", hash: "a", path: "p", inputsHash: "a-in", hasSchema: true, fields: { label: "A" },
+    });
     assert.equal(slot.settled, undefined);
     const first = slot.settle({ outcome: "error", origin: "engine", aborted: true });
     const second = slot.settle({ outcome: "result", origin: "runner" });

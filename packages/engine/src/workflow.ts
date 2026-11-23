@@ -51,7 +51,6 @@ import {
   initialPositionalFirstMiss,
   selectPositionalResume,
   selectResumeCandidate,
-  type IndexedResumeSource,
   type ResumeCandidateIndexes,
   type ResumeReportPlan,
 } from "./resume-matcher.js";
@@ -975,21 +974,6 @@ export async function runWorkflow<T = unknown>(
     );
   };
 
-  const enterResumeDecision = async (
-    gate: DecisionTurn,
-    call: { index: number; kind: "agent" | "checkpoint" },
-  ) => {
-    await gate.predecessor;
-    if (!resumeFatalError) return;
-    emitResumeDecision({
-      index: call.index,
-      kind: call.kind,
-      action: "failed",
-      reason: "resume-fatal-latch",
-    });
-    throw resumeFatalError;
-  };
-
   const appendCallRecord = (
     input: Omit<WorkflowCallRecord, "settlementOrdinal" | "scope">,
   ): WorkflowCallRecord => {
@@ -1031,6 +1015,7 @@ export async function runWorkflow<T = unknown>(
         path: call.path,
         inputsHash: call.inputsHash,
         consumed: controller.consumed,
+        hasSchema: call.hasSchema,
       });
       const movedInjectionWithoutSourcePrefix =
         match.action === "replay" &&
@@ -1071,6 +1056,7 @@ export async function runWorkflow<T = unknown>(
         firstMiss: state.firstMiss,
         cached: journaling ? options.resumeJournal?.get(call.index) : undefined,
         sourceCall,
+        hasSchema: call.hasSchema,
       });
       state.firstMiss = match.nextFirstMiss;
       if (match.action === "live") return { action: "live", reason: match.reason };
@@ -1091,17 +1077,20 @@ export async function runWorkflow<T = unknown>(
     },
   });
 
-  // A same-ID resume: the run's own journal row at the call's index, when the hashes agree.
-  // Without sameRunContinuation it replays only up to the first miss.
+  // A same-ID resume: the run's own journal row at the call's index, when the hashes agree and
+  // an agent's row is not empty text. Without sameRunContinuation it replays only up to the
+  // first miss.
   const indexSource: SourceScope = {
     pair(call, accept) {
       const cached = journaling ? options.resumeJournal?.get(call.index) : undefined;
       const hashMatches = cached != null && cached.hash === call.hash;
-      if (hashMatches && (options.sameRunContinuation || call.index < state.firstMiss)) {
+      const miss = !hashMatches ||
+        (call.kind === "agent" && isEmptyTextAgentResult(cached.result, call.hasSchema));
+      if (!miss && (options.sameRunContinuation || call.index < state.firstMiss)) {
         const row: SourceRow = { sourceRunId: runId, recordedIndex: call.index, entry: cached };
         return { action: "replay", row, value: accept(row), match: "index-hash", provenance: true, journaled: true };
       }
-      if (!hashMatches) state.firstMiss = Math.min(state.firstMiss, call.index);
+      if (miss) state.firstMiss = Math.min(state.firstMiss, call.index);
       return { action: "live" };
     },
   };
@@ -1259,38 +1248,31 @@ export async function runWorkflow<T = unknown>(
 
     // Deterministic resume key: assigned at lexical call time, before the limiter,
     // so parallel()/pipeline() fan-out is reproducible for a fixed script.
-    const callIndex = state.callSeq++;
-    const resumeDecisionGate = decisionOrder.reserve();
-    onAllocated(callIndex);
-    reportRootCallAllocated(callIndex);
-
-    let settled: WorkflowCallRecord | undefined;
-    let interrupt: (() => void) | undefined;
-    const settle = (
-      terminal: Omit<
-        WorkflowCallRecord,
-        "index" | "kind" | "hash" | "path" | "inputsHash" | "label" | "modelRequested" | "isolation" | "scope" | "settlementOrdinal"
-      >,
-    ): WorkflowCallRecord => {
-      if (settled) return settled;
-      if (interrupt) {
-        unsettledCallInterruptions.delete(interrupt);
-        noteCallSettled();
-      }
-      settled = appendCallRecord({
-        index: callIndex,
-        kind: "agent",
-        hash: callHash,
-        ...(callPath !== undefined ? { path: callPath } : {}),
-        ...(callInputsHash !== undefined ? { inputsHash: callInputsHash } : {}),
+    const stepSlot = ledger.open({
+      kind: "agent",
+      hash: callHash,
+      ...(callPath !== undefined ? { path: callPath } : {}),
+      ...(callInputsHash !== undefined ? { inputsHash: callInputsHash } : {}),
+      hasSchema: agentOptions.schema !== undefined,
+      fields: {
         label,
         ...(modelSpec !== undefined ? { modelRequested: modelSpec } : {}),
         ...(effectiveMode === undefined ? {} : { modeRequested: effectiveMode }),
         ...(effectiveConfigOptions === undefined ? {} : { configOptionsRequested: { ...effectiveConfigOptions } }),
         ...(resolvedIsolation !== undefined ? { isolation: resolvedIsolation } : {}),
-        ...terminal,
-      });
-      return settled;
+      },
+    });
+    const callIndex = stepSlot.index;
+    onAllocated(callIndex);
+    reportRootCallAllocated(callIndex);
+
+    let interrupt: (() => void) | undefined;
+    const settle = (terminal: SettledCall, entry?: JournalEntry): WorkflowCallRecord => {
+      if (!stepSlot.settled && interrupt) {
+        unsettledCallInterruptions.delete(interrupt);
+        noteCallSettled();
+      }
+      return stepSlot.settle(terminal, entry);
     };
 
     const emitAgentEnd = (
@@ -1335,7 +1317,7 @@ export async function runWorkflow<T = unknown>(
       : undefined;
 
     interrupt = () => {
-      if (settled) return;
+      if (stepSlot.settled) return;
       const error = pauseRequested()
         ? new WorkflowError(
             `agent "${label}" was not started because the workflow paused by host request`,
@@ -1466,7 +1448,7 @@ export async function runWorkflow<T = unknown>(
         slot: AttemptSlots | undefined,
         aborted: boolean,
       ) => {
-        if (settled) return;
+        if (stepSlot.settled) return;
         const errorRecord = projectRecordedError(thrown);
         const workflowError = wrapError(thrown, { agentLabel: label });
         const usage = terminalUsage();
@@ -1704,7 +1686,7 @@ export async function runWorkflow<T = unknown>(
             }
 
             throwIfHalted();
-            if (isEmptyTextAgentResult(result, agentOptions.schema)) {
+            if (isEmptyTextAgentResult(result, agentOptions.schema !== undefined)) {
               throw new WorkflowError("Subagent produced no assistant output", WorkflowErrorCode.AGENT_EMPTY_OUTPUT, {
                 recoverable: true,
                 agentLabel: label,
@@ -1715,6 +1697,28 @@ export async function runWorkflow<T = unknown>(
             const usage = terminalUsage();
             const session = sessionRecord(slot, agentOptions.keepSession === true);
             if (session) state.agentSessions.push(session);
+            const entry = journaling
+              ? deepFreeze({
+                  index: callIndex,
+                  hash: callHash,
+                  result: resultSnapshot,
+                  kind: "agent" as const,
+                  scope: runId,
+                  ...(session ? { session } : {}),
+                  ...(usage ? { usage } : {}),
+                  call: {
+                    kind: "agent" as const,
+                    label,
+                    phase: assignedPhase,
+                    model: slot.modelResolved ?? displayModel,
+                    backendId: session?.backendId,
+                    ...(slot.provenance?.source === "live" &&
+                      slot.provenance.continuation?.reattached === true
+                      ? { continuation: { method: slot.provenance.continuation.method } }
+                      : {}),
+                  },
+                })
+              : undefined;
             const terminalRecord = settle({
               outcome: "result",
               origin: "runner",
@@ -1733,31 +1737,8 @@ export async function runWorkflow<T = unknown>(
                   ? { resumeSafety: "isolated-worktree" as const }
                   : {}),
               ...(slot.provenance ? { provenance: slot.provenance } : {}),
-            });
+            }, entry);
             if (terminalRecord.outcome !== "result") return result;
-            if (journaling) {
-              const entry = deepFreeze({
-                index: callIndex,
-                hash: callHash,
-                result: resultSnapshot,
-                kind: "agent" as const,
-                scope: runId,
-                ...(session ? { session } : {}),
-                ...(usage ? { usage } : {}),
-                call: {
-                  kind: "agent" as const,
-                  label,
-                  phase: assignedPhase,
-                  model: slot.modelResolved ?? displayModel,
-                  backendId: session?.backendId,
-                  ...(slot.provenance?.source === "live" &&
-                    slot.provenance.continuation?.reattached === true
-                    ? { continuation: { method: slot.provenance.continuation.method } }
-                    : {}),
-                },
-              });
-              guardTerminal("onAgentJournal", () => options.onAgentJournal?.(entry));
-            }
             emitAgentEnd({
               label,
               phase: assignedPhase,
@@ -1852,7 +1833,7 @@ export async function runWorkflow<T = unknown>(
         }
         return null;
       } catch (error) {
-        if (!settled) {
+        if (!stepSlot.settled) {
           emitFailure(error, attemptsRan > 0 ? "runner" : "engine", "error", undefined, signal.aborted || pauseRequested());
         }
         throw error;
@@ -1861,25 +1842,21 @@ export async function runWorkflow<T = unknown>(
       }
     });
 
-    const replayPreparedAgent = async (input: {
-      entry: JournalEntry;
-      resultSnapshot: unknown;
-      sourceRunId: string;
-      recordedIndex: number;
-      match: "path-hash" | "unique-hash" | "index-hash";
-      sourceResumeSafety?: WorkflowResumeSafety;
-      rebindSession: boolean;
-      manifestProvenance: boolean;
-      reportJournal?: boolean;
-    }): Promise<unknown> => {
+    const replayAgent = async (pairing: Extract<Pairing<unknown>, { action: "replay" }>): Promise<unknown> => {
+      const { row, value: resultSnapshot } = pairing;
+      // Only a positional reuse pairs by index with another run's journal. It keeps the recorded
+      // session as it was, and the source's resume safety only when this call has the same.
+      const positional = pairing.match === "index-hash" && !pairing.journaled;
+      const recordedSafety = row.call?.resumeSafety;
+      const sourceResumeSafety = positional && recordedSafety !== legacyResumeSafety ? undefined : recordedSafety;
       await Promise.resolve();
       // A halt that lands here must still settle this allocation: nothing downstream will.
       if (signal.aborted || pauseRequested()) interrupt?.();
       throwIfAborted();
       emitAgentStart();
-      const recordedSession = input.entry.session ? cloneTelemetry(input.entry.session) : undefined;
+      const recordedSession = row.entry.session ? cloneTelemetry(row.entry.session) : undefined;
       let cachedSession: AgentSessionRecord | undefined;
-      if (recordedSession && input.rebindSession) {
+      if (recordedSession && !positional) {
         const { phase: _recordedPhase, ...session } = recordedSession;
         cachedSession = deepFreeze({
           ...session,
@@ -1890,31 +1867,12 @@ export async function runWorkflow<T = unknown>(
       } else {
         cachedSession = recordedSession;
       }
-      const cachedUsage = input.entry.usage ? copyValidUsage(input.entry.usage) : undefined;
+      const cachedUsage = row.entry.usage ? copyValidUsage(row.entry.usage) : undefined;
       if (cachedSession) state.agentSessions.push(cachedSession);
-      const terminalRecord = settle({
-        outcome: "result",
-        origin: "journal-replay",
-        ...(cachedUsage ? { usage: cachedUsage } : {}),
-        ...(input.sourceResumeSafety ? { resumeSafety: input.sourceResumeSafety } : {}),
-        ...(input.manifestProvenance
-          ? {
-              replay: {
-                sourceRunId: input.sourceRunId,
-                recordedIndex: input.recordedIndex,
-                match: input.match,
-                ...(input.sourceResumeSafety
-                  ? { sourceResumeSafety: input.sourceResumeSafety }
-                  : {}),
-              },
-            }
-          : {}),
-      });
-      if (terminalRecord.outcome !== "result") return input.resultSnapshot;
       const entry = deepFreeze({
         index: callIndex,
         hash: callHash,
-        result: input.resultSnapshot,
+        result: resultSnapshot,
         kind: "agent" as const,
         scope: runId,
         ...(cachedSession ? { session: cachedSession } : {}),
@@ -1925,229 +1883,91 @@ export async function runWorkflow<T = unknown>(
           phase: assignedPhase,
           model: displayModel,
           backendId: cachedSession?.backendId,
-          ...(input.entry.call?.kind === "agent" && input.entry.call.continuation
-            ? { continuation: input.entry.call.continuation }
+          ...(row.entry.call?.kind === "agent" && row.entry.call.continuation
+            ? { continuation: row.entry.call.continuation }
             : {}),
         },
       });
-      if (input.reportJournal !== false) {
-        guardTerminal("onAgentJournal", () => options.onAgentJournal?.(entry));
-      }
+      const terminalRecord = settle({
+        outcome: "result",
+        origin: "journal-replay",
+        ...(cachedUsage ? { usage: cachedUsage } : {}),
+        ...(sourceResumeSafety ? { resumeSafety: sourceResumeSafety } : {}),
+        ...(pairing.provenance
+          ? {
+              replay: {
+                sourceRunId: row.sourceRunId,
+                recordedIndex: row.recordedIndex,
+                match: pairing.match,
+                ...(sourceResumeSafety ? { sourceResumeSafety } : {}),
+              },
+            }
+          : {}),
+      }, pairing.journaled ? undefined : entry);
+      if (terminalRecord.outcome !== "result") return resultSnapshot;
       emitAgentEnd({
         label,
         phase: assignedPhase,
-        result: input.resultSnapshot,
+        result: resultSnapshot,
         tokens: 0,
         model: displayModel,
         session: cachedSession,
         usage: cachedUsage,
       });
-      return input.resultSnapshot;
+      return resultSnapshot;
     };
 
-    const runPreparedAgent = async (): Promise<unknown> => {
-      const gate = resumeDecisionGate as DecisionTurn;
-      const decisionCall = { index: callIndex, kind: "agent" as const };
-      let delegated = false;
-      try {
-        await enterResumeDecision(gate, decisionCall);
-        let liveReason: Extract<WorkflowResumeCallDecision, { action: "live" }>;
-
-        if (preparedResume?.strategy === "identity-v1") {
-          const match = selectResumeCandidate((identitySeed as ResumeSeedController).indexes, {
-            kind: "agent",
-            hash: callHash,
-            path: callPath,
-            inputsHash: callInputsHash,
-            consumed: (identitySeed as ResumeSeedController).consumed,
-            hasSchema: agentOptions.schema !== undefined,
-          });
-          if (match.action === "replay") {
-            const source = match.source as Extract<IndexedResumeSource, { type: "candidate" }>;
-            const resultSnapshot = strictSnapshot(
-              source.candidate.entry.result,
-              `agent "${label}" replayed result`,
-              label,
-            );
-            commitResumeRemoval(
-              identitySeed as ResumeSeedController,
-              [indexedSourceOccurrence(source)],
-              decisionCall,
-            );
-            emitResumeDecision({
-              index: callIndex,
-              kind: "agent",
-              action: "replayed",
-              sourceRunId: source.candidate.sourceRunId,
-              recordedIndex: source.candidate.recordedIndex,
-              match: match.match,
-            });
-            gate.release();
-            return replayPreparedAgent({
-              entry: source.candidate.entry,
-              resultSnapshot,
-              sourceRunId: source.candidate.sourceRunId,
-              recordedIndex: source.candidate.recordedIndex,
-              match: match.match,
-              sourceResumeSafety: source.candidate.call.resumeSafety,
-              rebindSession: true,
-              manifestProvenance: true,
-            });
-          }
-          if (match.remove) {
-            commitResumeRemoval(
-              identitySeed as ResumeSeedController,
-              [indexedSourceOccurrence(match.remove)],
-              decisionCall,
-            );
-          }
-          liveReason = {
-            index: callIndex,
-            kind: "agent",
-            action: "live",
-            reason: match.reason,
-          };
-        } else if (preparedResume?.strategy === "positional-v1") {
-          const sourceCall = positionalSourceCall(preparedResume, callIndex, "agent", callHash);
-          const match = selectPositionalResume({
-            index: callIndex,
-            kind: "agent",
-            hash: callHash,
-            inputsHash: callInputsHash,
-            eligibility: preparedResume.eligibility,
-            firstMiss: state.firstMiss,
-            cached: journaling ? options.resumeJournal?.get(callIndex) : undefined,
-            sourceCall,
-            hasSchema: agentOptions.schema !== undefined,
-          });
-          state.firstMiss = match.nextFirstMiss;
-          if (match.action === "replay") {
-            const resultSnapshot = strictSnapshot(match.entry.result, `agent "${label}" replayed result`, label);
-            const sourceResumeSafety = sourceCall && sourceCall.resumeSafety === legacyResumeSafety
-              ? sourceCall.resumeSafety
-              : undefined;
-            emitResumeDecision({
-              index: callIndex,
-              kind: "agent",
-              action: "replayed",
-              sourceRunId: preparedResume.sourceRunId,
-              recordedIndex: callIndex,
-              match: match.match,
-            });
-            gate.release();
-            return replayPreparedAgent({
-              entry: match.entry,
-              resultSnapshot,
-              sourceRunId: preparedResume.sourceRunId,
-              recordedIndex: callIndex,
-              match: match.match,
-              sourceResumeSafety,
-              rebindSession: false,
-              manifestProvenance: sourceCall !== undefined,
-            });
-          }
-          liveReason = {
-            index: callIndex,
-            kind: "agent",
-            action: "live",
-            reason: match.reason,
-          };
-        } else {
-          liveReason = {
-            index: callIndex,
-            kind: "agent",
-            action: "live",
-            reason: "strategy-live",
-          };
+    const runPaired = (pairing: Pairing<unknown>): Promise<unknown> => {
+      if (pairing.action === "replay") return replayAgent(pairing);
+      if (legacyResumeSafety === undefined) options.onResumeFilesystemTainted?.();
+      let reason = pairing.reason;
+      // A run that reports decisions opens the step's worktree before it decides, so the
+      // decision can say when the worktree is not isolated.
+      if (preparedResume && resolvedIsolation === "worktree") {
+        emitAgentStart();
+        if (agentOptions.cwd !== undefined && typeof agentOptions.cwd !== "string") {
+          stepSlot.live(reason);
+          throw new WorkflowError(
+            `agent "${label}": options.cwd must be a string`,
+            WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+            { recoverable: false, agentLabel: label },
+          );
         }
-
-        if (legacyResumeSafety === undefined) options.onResumeFilesystemTainted?.();
-
-        if (resolvedIsolation === "worktree") {
-          emitAgentStart();
-          if (agentOptions.cwd !== undefined && typeof agentOptions.cwd !== "string") {
-            emitResumeDecision(liveReason);
-            gate.release();
-            throw new WorkflowError(
-              `agent "${label}": options.cwd must be a string`,
-              WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-              { recoverable: false, agentLabel: label },
-            );
-          }
-          worktreePrepared = true;
-          try {
-            precreatedWorktree = openStepWorktree(callIndex, label);
-          } catch (error) {
-            if (resumeDeclared) options.onResumeFilesystemTainted?.();
-            liveReason = { ...liveReason, reason: "worktree-degraded" };
-            emitResumeDecision(liveReason);
-            gate.release();
-            throw error;
-          }
-          if (!precreatedWorktree.isolated) {
-            log(`isolation ignored for "${label}" (${precreatedWorktree.reason})`);
-          }
-          const worktreeDegraded = !precreatedWorktree.isolated ||
-            (resumeDeclared && agentOptions.cwd !== undefined);
-          if (worktreeDegraded) {
-            if (resumeDeclared) options.onResumeFilesystemTainted?.();
-            liveReason = { ...liveReason, reason: "worktree-degraded" };
-          }
-          preparedRunCwd = precreatedWorktree.isolated
-            ? precreatedWorktree.cwd
-            : resolvePath(baseCwd, agentOptions.cwd ?? ".");
-        }
-
-        emitResumeDecision(liveReason);
-        gate.release();
-        delegated = true;
-        return runLive();
-      } catch (error) {
-        gate.release();
-        if (!delegated) closeStepWorktree(precreatedWorktree);
-        if (!settled) {
-          const errorRecord = projectRecordedError(error);
-          const workflowError = wrapError(error, { agentLabel: label });
-          settle({ outcome: "error", origin: "engine", error: errorRecord });
-          if (agentStartEmitted) {
-            emitAgentEnd({
-              label,
-              phase: assignedPhase,
-              result: null,
-              tokens: 0,
-              model: displayModel,
-              error: workflowError.message,
-              errorCode: workflowError.code,
-              recoverable: workflowError.recoverable,
-              errorRecord,
-            });
-          }
-        }
-        throw error;
-      }
-    };
-
-    const runManualAgent = (): Promise<unknown> => {
-      const cached = journaling ? options.resumeJournal?.get(callIndex) : undefined;
-      const hashMatches = cached != null && cached.hash === callHash;
-      const cachedEmptyOutput = hashMatches && isEmptyTextAgentResult(cached.result, agentOptions.schema);
-      if (hashMatches && !cachedEmptyOutput && (options.sameRunContinuation || callIndex < state.firstMiss)) {
+        worktreePrepared = true;
         try {
-          const resultSnapshot = strictSnapshot(cached.result, `agent "${label}" replayed result`, label);
-          return replayPreparedAgent({
-            entry: cached,
-            resultSnapshot,
-            sourceRunId: runId,
-            recordedIndex: callIndex,
-            match: "index-hash",
-            rebindSession: true,
-            manifestProvenance: true,
-            reportJournal: false,
-          });
+          precreatedWorktree = openStepWorktree(callIndex, label);
         } catch (error) {
-          const errorRecord = projectRecordedError(error);
-          const workflowError = wrapError(error, { agentLabel: label });
-          settle({ outcome: "error", origin: "engine", error: errorRecord });
+          if (resumeDeclared) options.onResumeFilesystemTainted?.();
+          stepSlot.live("worktree-degraded");
+          throw error;
+        }
+        if (!precreatedWorktree.isolated) {
+          log(`isolation ignored for "${label}" (${precreatedWorktree.reason})`);
+        }
+        const worktreeDegraded = !precreatedWorktree.isolated ||
+          (resumeDeclared && agentOptions.cwd !== undefined);
+        if (worktreeDegraded) {
+          if (resumeDeclared) options.onResumeFilesystemTainted?.();
+          reason = "worktree-degraded";
+        }
+        preparedRunCwd = precreatedWorktree.isolated
+          ? precreatedWorktree.cwd
+          : resolvePath(baseCwd, agentOptions.cwd ?? ".");
+      }
+      stepSlot.live(reason);
+      return runLive();
+    };
+
+    // A call that fails before it runs or replays settles as an engine error.
+    const failUnpaired = (error: unknown): never => {
+      stepSlot.release();
+      closeStepWorktree(precreatedWorktree);
+      if (!stepSlot.settled) {
+        const errorRecord = projectRecordedError(error);
+        const workflowError = wrapError(error, { agentLabel: label });
+        settle({ outcome: "error", origin: "engine", error: errorRecord });
+        // A same-ID resume reports the end even before the start, as it always has.
+        if (agentStartEmitted || !preparedResume) {
           emitAgentEnd({
             label,
             phase: assignedPhase,
@@ -2159,17 +1979,29 @@ export async function runWorkflow<T = unknown>(
             recoverable: workflowError.recoverable,
             errorRecord,
           });
-          throw error;
         }
       }
-      if (!hashMatches || cachedEmptyOutput) state.firstMiss = Math.min(state.firstMiss, callIndex);
-      if (!resumeDeclared || (resolvedIsolation === "worktree" && agentOptions.cwd !== undefined)) {
-        options.onResumeFilesystemTainted?.();
-      }
-      return runLive();
+      throw error;
     };
 
-    return preparedResume ? runPreparedAgent() : runManualAgent();
+    const accept = (row: SourceRow) => strictSnapshot(row.entry.result, `agent "${label}" replayed result`, label);
+    // A same-ID resume pairs at once, so its live call starts in this tick.
+    if (!preparedResume) {
+      let pairing: Pairing<unknown>;
+      try {
+        pairing = stepSlot.pair(accept) as Pairing<unknown>;
+      } catch (error) {
+        return failUnpaired(error);
+      }
+      return runPaired(pairing);
+    }
+    return (async () => {
+      try {
+        return runPaired(await stepSlot.pair(accept));
+      } catch (error) {
+        return failUnpaired(error);
+      }
+    })();
   };
 
   const step = (prompt: string, agentOptions: AgentOptions, codeSpec?: ExecSpec): Promise<unknown> => {
@@ -3107,8 +2939,8 @@ function buildAgentInstructions(
   return lines.length ? lines.join("\n\n") : undefined;
 }
 
-function isEmptyTextAgentResult(result: unknown, schema: TSchema | undefined): boolean {
-  return schema === undefined && typeof result === "string" && result.trim().length === 0;
+function isEmptyTextAgentResult(result: unknown, hasSchema: boolean | undefined): boolean {
+  return hasSchema !== true && typeof result === "string" && result.trim().length === 0;
 }
 
 function estimateTokens(value: unknown): number {
