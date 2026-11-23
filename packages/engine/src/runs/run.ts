@@ -6,7 +6,7 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { interruptedReason, type PersistedRunState, type RunStatus } from "./persistence/run-persistence.js";
 import { deleteAccount, DEFAULT, moveRunAccount, setCurrentAccount, type AccountName } from "../accounts.js";
-import type { Harness } from "../agents.js";
+import type { HarnessId } from "@orchestrator/harnesses";
 import { foldStep } from "../display.js";
 import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
@@ -559,7 +559,7 @@ export function useAccount(paths: HomePaths, spec: string, launch: Launcher): Us
 export interface WaitingRun {
   runId: string;
   workflow: string;
-  program: Harness;
+  program: HarnessId;
   /** The account whose limit the run hit. A run from before the record kept the limit names its
    *  own account, or default. */
   account: string;

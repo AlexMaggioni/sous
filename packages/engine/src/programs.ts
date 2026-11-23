@@ -3,13 +3,13 @@
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { createHarness, type FindOptions } from "@orchestrator/harnesses";
+import { createHarness, type FindOptions, type HarnessId } from "@orchestrator/harnesses";
 import { CALLER, currentAccount, DEFAULT, stepAccount } from "./accounts.js";
-import { envFor, HARNESSES, harnessName, loginOf, routeHarness, stepModel, type Harness } from "./agents.js";
+import { envFor, HARNESSES, harnessName, loginOf, routeHarness, stepModel } from "./agents.js";
 import type { HomePaths, OrcConfig } from "./runs/home.js";
 
 /** Where to look for each program: the path config.json gives, then the harness's own order. */
-export function programLookup(config: OrcConfig): (harness: Harness) => FindOptions {
+export function programLookup(config: OrcConfig): (harness: HarnessId) => FindOptions {
   return (harness) => {
     const key = harness === "claude" ? "claudePath" : "codexPath";
     const path = config[key];
@@ -18,7 +18,7 @@ export function programLookup(config: OrcConfig): (harness: Harness) => FindOpti
 }
 
 export interface ProgramReport {
-  program: Harness;
+  program: HarnessId;
   name: string;
   path?: string;
   version?: string;

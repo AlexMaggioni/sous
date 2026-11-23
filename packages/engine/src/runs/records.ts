@@ -6,14 +6,12 @@
 // replaces the whole file, so two writers at once would lose one's change.
 
 import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import type { HarnessId } from "@orchestrator/harnesses";
 import { readJsonFile, writeJsonFile } from "../json-file.js";
 import type { PlaceNotes } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
 import { recordFile, recordFiles, snapshotFile, stopRequestFile } from "./store.js";
-
-/** The programs whose steps a run records: Claude Code and Codex. */
-export type Program = "claude" | "codex";
 
 export interface RunRecord {
   runId: string;
@@ -58,9 +56,9 @@ export interface RunRecord {
   /** The installed Claude Code and Codex the run's steps used, by harness, from its last start. */
   programs?: Record<string, { path: string; version?: string }>;
   /** The account each program's steps use, kept across pauses and resumes (orc's accounts.ts). */
-  accounts?: Partial<Record<Program, RunAccount>>;
+  accounts?: Partial<Record<HarnessId, RunAccount>>;
   /** Set when a step hit a usage limit: whose limit it was. A start or resume clears it. */
-  limit?: { program: Program; account: string; at: string };
+  limit?: { program: HarnessId; account: string; at: string };
 }
 
 export interface RunAccount {

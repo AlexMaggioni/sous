@@ -17,9 +17,9 @@ import {
   planStep,
   removedHarness,
   routeHarness,
-  type Harness,
   type McpLookup,
 } from "../agents.js";
+import type { HarnessId } from "@orchestrator/harnesses";
 import { nextRun, parseCron } from "../runs/cron.js";
 import { loadConfig, loadSecrets, type HomePaths } from "../runs/home.js";
 import { projectWorkflows, resolveWorkflow } from "./dir.js";
@@ -48,7 +48,7 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
   } catch (error) {
     problems.push((error as Error).message);
   }
-  const checkServers = (names: string[], harness: Harness, within: string) => {
+  const checkServers = (names: string[], harness: HarnessId, within: string) => {
     for (const name of names) if (mcp && !mcp.find(name, harness)) problems.push(`${within}${missingServer(name, harness, mcp)}`);
   };
 

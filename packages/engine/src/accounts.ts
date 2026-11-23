@@ -8,8 +8,8 @@
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import type { Account } from "@orchestrator/harnesses";
-import { HARNESSES, harnessName, isHarness, loginOf, type Harness as Program } from "./agents.js";
+import type { Account, HarnessId } from "@orchestrator/harnesses";
+import { HARNESSES, harnessName, isHarness, loginOf } from "./agents.js";
 import { readStrictJsonFile, writeJsonFile } from "./json-file.js";
 import type { HomePaths } from "./runs/home.js";
 import { loadRecord, updateRecord, type RunAccount, type RunRecord } from "./runs/records.js";
@@ -26,8 +26,8 @@ export interface Login {
 
 interface AccountsFile {
   /** The account orc uses for new runs, by program. Missing means default. */
-  current?: Partial<Record<Program, string>>;
-  logins?: Partial<Record<Program, Record<string, Login>>>;
+  current?: Partial<Record<HarnessId, string>>;
+  logins?: Partial<Record<HarnessId, Record<string, Login>>>;
   /** Tokens that runs started with and that are no account of orc's, such as an agent's own, by key. */
   kept?: Record<string, string>;
 }
@@ -35,7 +35,7 @@ interface AccountsFile {
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 export interface AccountName {
-  program: Program;
+  program: HarnessId;
   name: string;
 }
 
@@ -51,7 +51,7 @@ export function parseAccountName(text: string | undefined): AccountName {
 }
 
 /** How the account reads in orc's output: a bare name for Claude Code, codex/<name> for Codex. */
-export function accountLabel(program: Program, name: string): string {
+export function accountLabel(program: HarnessId, name: string): string {
   return program === "claude" ? name : `${program}/${name}`;
 }
 
@@ -67,7 +67,7 @@ function writeFile(paths: HomePaths, file: AccountsFile): void {
 const keyOf = (token: string) => createHash("sha256").update(token).digest("hex").slice(0, 16);
 
 export interface AccountRow {
-  program: Program;
+  program: HarnessId;
   name: string;
   current: boolean;
   addedAt?: string;
@@ -88,7 +88,7 @@ export function listAccounts(paths: HomePaths): AccountRow[] {
 }
 
 /** The account orc uses for the program's new runs. */
-export function currentAccount(paths: HomePaths, program: Program, file = readFile(paths)): string {
+export function currentAccount(paths: HomePaths, program: HarnessId, file = readFile(paths)): string {
   const name = file.current?.[program];
   return name && file.logins?.[program]?.[name] ? name : DEFAULT;
 }
@@ -153,7 +153,7 @@ export function setCurrentAccount(paths: HomePaths, spec: string): AccountName {
 }
 
 /** Give a run another login for a program. The run keeps its settings folder. */
-export function moveRunAccount(paths: HomePaths, runId: string, program: Program, name: string): void {
+export function moveRunAccount(paths: HomePaths, runId: string, program: HarnessId, name: string): void {
   const record = loadRecord(paths, runId);
   if (!record) return;
   const before = record.accounts?.[program];
@@ -171,11 +171,11 @@ export function accountsForRun(
   paths: HomePaths,
   env: Record<string, string | undefined>,
   options: { caller?: boolean; parentRunId?: string } = {},
-): Record<Program, RunAccount> {
+): Record<HarnessId, RunAccount> {
   const parent = options.parentRunId ? loadRecord(paths, options.parentRunId) : undefined;
   if (parent?.accounts?.claude && parent.accounts.codex) return { claude: parent.accounts.claude, codex: parent.accounts.codex };
   const file = readFile(paths);
-  const folder = (program: Program) => loginOf(program, env).value ?? null;
+  const folder = (program: HarnessId) => loginOf(program, env).value ?? null;
   const fromEnv = (name: string): RunAccount => {
     const token = loginOf("claude", env).token;
     if (!token) return { name, folder: folder("claude") };
@@ -194,7 +194,7 @@ export function accountsForRun(
 }
 
 /** Who a step on the program runs as. Throws when the run's login is gone. */
-export function stepAccount(paths: HomePaths, program: Program, account: RunAccount): Account {
+export function stepAccount(paths: HomePaths, program: HarnessId, account: RunAccount): Account {
   // Undefined removes the variable, so the program uses its usual folder.
   const folder = account.folder ?? undefined;
   if (program !== "claude") return { folder };
@@ -210,8 +210,8 @@ export function stepAccount(paths: HomePaths, program: Program, account: RunAcco
 }
 
 /** Each program's account for the run's steps. A run from before accounts has none, and its steps keep the caller's login. */
-export function runAccounts(paths: HomePaths, accounts: RunRecord["accounts"]): Partial<Record<Program, Account>> {
-  const result: Partial<Record<Program, Account>> = {};
+export function runAccounts(paths: HomePaths, accounts: RunRecord["accounts"]): Partial<Record<HarnessId, Account>> {
+  const result: Partial<Record<HarnessId, Account>> = {};
   for (const program of HARNESSES) {
     const account = accounts?.[program];
     if (account) result[program] = stepAccount(paths, program, account);
@@ -222,13 +222,13 @@ export function runAccounts(paths: HomePaths, accounts: RunRecord["accounts"]): 
 const tilde = (path: string) => (path.startsWith(homedir()) ? `~${path.slice(homedir().length)}` : path);
 
 /** The folder a program uses for a run: the recorded one, else its usual folder. */
-export function folderText(program: Program, folder: string | null | undefined): string {
+export function folderText(program: HarnessId, folder: string | null | undefined): string {
   if (folder) return tilde(folder.replace(/^~(?=$|\/)/, homedir()));
   return tilde(loginOf(program, {}).folder);
 }
 
 /** One account in a sentence, such as "work" or "default, Claude Code's own login in ~/.claude". */
-export function describeAccount(program: Program, account: RunAccount | undefined): string {
+export function describeAccount(program: HarnessId, account: RunAccount | undefined): string {
   const name = account?.name ?? DEFAULT;
   const where = folderText(program, account?.folder);
   if (name === DEFAULT) return `default, ${harnessName(program)}'s own login in ${where}`;
