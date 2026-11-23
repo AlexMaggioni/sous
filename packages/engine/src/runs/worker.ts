@@ -12,7 +12,7 @@ import type { CheckpointCallContext } from "../checkpoint-call.js";
 import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";
 import { dropUnchangedWorktrees, runPlaces, runWorktrees } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
-import { ask, decisionOf, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
+import { ask, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
 import { loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
@@ -184,12 +184,6 @@ async function runOnAccounts(
     };
     return ask(paths, question, { signal: waits.signal, pollMs, asked }).then((value) => {
       log(`${stamp()} answered   ${id}: ${oneLine(JSON.stringify(value))}`);
-      // orc stops the run itself now. An answer file that an older orc wrote can still say
-      // stop, and it stops the run the same way.
-      if (question.breakpoint && decisionOf(value).decision === "stop") {
-        onStop();
-        throw new Error(`stopped at breakpoint "${prompt}"`);
-      }
       return value;
     });
   };

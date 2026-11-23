@@ -36,7 +36,6 @@ import { foldStep, preview, recomputeWorkflowSnapshot, type WorkflowSnapshot } f
 import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
-import { isNestedScope } from "./resume-identity.js";
 import { journalRows } from "./resume-rows.js";
 import { continueRows, handedInRows, newRows, reuseRows, reviseRows, type RunRows } from "./run-rows.js";
 import {
@@ -737,10 +736,6 @@ export class WorkflowManager extends EventEmitter {
     }
 
     const calls = Array.isArray(persisted.calls) ? persisted.calls : [];
-    const inputsFormat = isRecord(persisted.runtime) &&
-        isNonNegativeSafeInteger(persisted.runtime.inputsFormat)
-      ? persisted.runtime.inputsFormat
-      : undefined;
     const rootCalls = new Map<number, Record<string, unknown>>();
     for (const value of calls) {
       if (!isRecord(value) || !isNonNegativeSafeInteger(value.index)) continue;
@@ -771,7 +766,6 @@ export class WorkflowManager extends EventEmitter {
         callIndex: index,
         hash: record.hash,
         ...(typeof record.inputsHash === "string" ? { inputsHash: record.inputsHash } : {}),
-        ...(inputsFormat === undefined ? {} : { inputsFormat }),
         sessionRef: joined,
         recordedCwd,
       });
@@ -780,39 +774,21 @@ export class WorkflowManager extends EventEmitter {
     return candidatesByIndex.size === 0 ? undefined : { candidatesByIndex };
   }
 
-  /**
-   * A run saved by engine 0.23 can hold root rows under the id of the run it came from. Such a
-   * row counts as a root row of the source while that run is still saved, and is dropped
-   * otherwise. The saved runs are listed only when a row needs it.
-   */
-  private chainedRows(sourceRunId: string): <T extends { scope?: string }>(rows: T[]) => T[] {
-    let saved: ReadonlySet<string> | undefined;
-    return (rows) => rows.flatMap((row) => {
-      if (row.scope === undefined || row.scope === sourceRunId || isNestedScope(row.scope, sourceRunId)) return [row];
-      saved ??= new Set(this.persistence.list().map((state) => state.runId));
-      return saved.has(row.scope) ? [{ ...row, scope: sourceRunId }] : [];
-    });
-  }
-
   private prepareManagedResume(
     managed: ManagedRun,
     source: PersistedRunState,
   ): WorkflowResume {
     const admission = admitResumeSource({ source, effectiveCwd: managed.effectiveCwd });
-    if (source.resume === undefined || source.legacyResume === true) managed.legacyResume = true;
     if (admission.strategy === "live") {
       managed.rows = reuseRows(managed.runId).rows;
       managed.resumeReporting = startResumeReport({ plan: admission, source, run: managed, predictedReplayablePrefix: 0 });
       return { plan: admission };
     }
 
-    const chained = this.chainedRows(source.runId);
     const started = reuseRows(managed.runId, {
       sourceRunId: source.runId,
-      journal: chained(
-        this.cloneResumeSourceValue([...(source.journal ?? []), ...(source.nestedJournal ?? [])], source.runId),
-      ),
-      calls: chained(this.cloneResumeSourceValue(source.calls ?? [], source.runId)),
+      journal: this.cloneResumeSourceValue([...(source.journal ?? []), ...(source.nestedJournal ?? [])], source.runId),
+      calls: this.cloneResumeSourceValue(source.calls ?? [], source.runId),
       seed: source.resumeSeed,
       key: pairingKey(source.runtime, managed.runtime),
     });
@@ -1823,16 +1799,9 @@ export class WorkflowManager extends EventEmitter {
     if (!persisted.script || olderSave(persisted) !== undefined || persisted.argsUnreplayable) {
       return { accepted: false };
     }
-    // Same-ID recovery keeps its explicit legacy marker.
-    persisted.legacyResume = true;
-    try {
-      if (!this.persistence.validateRunLease(lease)) {
-        throw new Error(`run ${runId} no longer owns its persistence lease`);
-      }
-      this.persistence.save(persisted);
-    } catch (error) {
+    if (!this.persistence.validateRunLease(lease)) {
       throw new WorkflowError(
-        `failed to persist legacy resume marker for ${runId}: ${errorMessage(error)}`,
+        `run ${runId} no longer owns its persistence lease`,
         WorkflowErrorCode.PERSISTENCE_ERROR,
         { recoverable: false },
       );

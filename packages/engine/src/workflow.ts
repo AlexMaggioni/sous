@@ -1257,16 +1257,11 @@ async function runLevel<T>(
 
         let continuationSkipReason: ContinuationSkipReason | undefined;
         if (continuationCandidate) {
-          const comparableInputsHash = continuationCandidate.inputsFormat === undefined ||
-              continuationCandidate.inputsFormat === CALL_INPUTS_FORMAT
-            ? callInputsHash
-            : undefined;
           if (continuationCandidate.hash !== callHash) {
             continuationSkipReason = "hash-mismatch";
           } else if (
             continuationCandidate.inputsHash === undefined ||
-            comparableInputsHash === undefined ||
-            continuationCandidate.inputsHash !== comparableInputsHash
+            continuationCandidate.inputsHash !== callInputsHash
           ) {
             continuationSkipReason = "inputs-mismatch";
           } else if (resolvedIsolation === "worktree") {

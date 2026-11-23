@@ -404,48 +404,15 @@ return { count: args.count, answer }`,
     assert.equal((await started.promise).status, "completed");
   });
 
-  it("rejects isolation artifacts on resume, marks legacy resumes, and persists nested calls under their own scope", async () => {
+  it("persists nested calls under their own scope", async () => {
     const dirs = tempDirs();
     try {
       const persistence = createRunPersistence(dirs.cwd, undefined, { persistenceRoot: dirs.root });
-      const now = new Date().toISOString();
-      persistence.save({
-        runId: "isolation-artifact",
-        workflowName: "artifact",
-        script: script(`return 'x'`, "artifact"),
-        status: "paused",
-        phases: [],
-        agents: [],
-        logs: [],
-        startedAt: now,
-        updatedAt: now,
-        executionMode: { kind: "isolation", baselineRunId: "baseline" },
-      });
       const manager = new WorkflowManager({
         cwd: dirs.cwd,
         persistenceRoot: dirs.root,
         agent: { async run() { return "ok"; } },
       });
-      assert.deepEqual(await manager.resumeInBackground("isolation-artifact"), { accepted: false });
-
-      persistence.save({
-        runId: "legacy",
-        workflowName: "legacy",
-        script: script(`return await agent('x')`, "legacy"),
-        status: "paused",
-        phases: [],
-        agents: [],
-        logs: [],
-        journal: [],
-        startedAt: now,
-        updatedAt: now,
-      });
-      const legacy = await manager.resumeInBackground("legacy");
-      assert.equal(legacy.accepted, true);
-      if (!legacy.accepted) assert.fail("legacy resume should run");
-      await legacy.promise;
-      assert.equal(persistence.load("legacy")?.legacyResume, true);
-
       const child = script(`return await agent('child', { label: 'child' })`, "child");
       const root = await manager.runSync(
         script(`await workflow(${JSON.stringify(child)})\nreturn await agent('root', { label: 'root' })`, "root"),

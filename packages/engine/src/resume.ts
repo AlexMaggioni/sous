@@ -10,8 +10,6 @@ export interface ContinuationCandidate {
   readonly callIndex: number;
   readonly hash: string;
   readonly inputsHash?: string;
-  /** Input fingerprint format used by the interrupted source call. Missing means current format. */
-  readonly inputsFormat?: number;
   readonly sessionRef: AgentSessionRecord;
   readonly recordedCwd: string;
 }

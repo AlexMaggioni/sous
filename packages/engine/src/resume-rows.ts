@@ -175,27 +175,6 @@ export function revisionSeed(input: {
 }
 
 /**
- * The journal rows of a saved run's scopes that have no call rows, moved to the same scopes of
- * the run that resumes it. Such a scope is old data, and pairs by index.
- */
-export function oldDataRows(input: {
-  sourceRunId: string;
-  runId: string;
-  journal: readonly JournalEntry[];
-  calls: readonly WorkflowCallRecord[];
-}): JournalEntry[] {
-  const withCalls = new Set(input.calls.map((call) => call.scope ?? input.sourceRunId));
-  const rows: JournalEntry[] = [];
-  for (const entry of input.journal) {
-    const scope = entry.scope ?? input.sourceRunId;
-    if (withCalls.has(scope)) continue;
-    const mapped = seedScope(scope, input.sourceRunId, input.runId);
-    if (mapped !== undefined) rows.push({ ...entry, scope: mapped });
-  }
-  return rows;
-}
-
-/**
  * A run's journal handed in by index, with no call rows. It is old data, so its calls pair by
  * index and hash.
  */
@@ -257,7 +236,7 @@ function seedRows(seed: PersistedResumeSeed | undefined, runId: string): Map<str
 
 /**
  * The rows of every scope: the run's own rows, then the seed's. Pass the seed through
- * `unusedSeed` first. A scope with journal rows and no call rows is old data, and pairs by index.
+ * `unusedSeed` first.
  */
 export function resumeRows(input: {
   runId: string;
@@ -272,8 +251,7 @@ export function resumeRows(input: {
   const scopes = new Map<string, RecordedScope<ResumeRow>>();
   for (const scope of new Set([...journal.keys(), ...calls.keys(), ...seed.keys()])) {
     const own = ownRows(scope, journal.get(scope) ?? new Map(), calls.get(scope) ?? new Map());
-    const byIndex = !calls.has(scope) && !seed.has(scope);
-    scopes.set(scope, { rows: [...own, ...(seed.get(scope) ?? [])], key: input.key, ...(byIndex ? { byIndex } : {}) });
+    scopes.set(scope, { rows: [...own, ...(seed.get(scope) ?? [])], key: input.key });
   }
   return scopes;
 }

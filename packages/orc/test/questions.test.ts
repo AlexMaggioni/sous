@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, it } from "node:test";
-import { logFile, resumeRun, runQuestions, startRun, type HomePaths, type RunQuestion } from "@orchestrator/engine";
-import { inProcess, testHome, updateRecord, type InnerRunner } from "@orchestrator/engine/testing";
+import { logFile, runQuestions, startRun, type HomePaths, type RunQuestion } from "@orchestrator/engine";
+import { inProcess, testHome, type InnerRunner } from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
 import { capture, orc } from "./orc.js";
 
@@ -332,24 +332,6 @@ return await breakpoint('Check the plan', { show: 'the plan' })`;
     assert.equal(paused?.status, "paused");
     const [question] = runQuestions(paths, record.runId);
     assert.deepEqual(await orc(paths, ["answer", question!.id, "stop"]), { code: 0, out: `stopped ${record.runId}\n` });
-    await stopped(paths, record.runId);
-  });
-
-  it("a stop that an older orc wrote to a paused run's answer file stops the run on resume", async () => {
-    const { paths, projectDir } = testHome({ held });
-    const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "held", projectDir, inputs: {} });
-    const paused = await workers.ended(record.runId);
-    assert.equal(paused?.status, "paused");
-    const [question] = runQuestions(paths, record.runId);
-    writeFileSync(join(paths.inbox, `${question!.id}.answer.json`), `${JSON.stringify({ hash: question!.hash, value: "stop", answeredAt: new Date().toISOString() }, null, 2)}\n`);
-    updateRecord(paths, record.runId, { timeout: undefined });
-    const lines: string[] = [];
-    // A resume that ends in a stop returns no result. The log and orc say how it ended.
-    const watched = inProcess({ inner: runner, log: (line) => lines.push(line.slice(9)) });
-    resumeRun(paths, watched.launch, record.runId);
-    await watched.ended(record.runId);
-    assert.deepEqual(lines.slice(1), [`answered   ${question!.id}: "stop"`, "stopping", "aborted    held"]);
     await stopped(paths, record.runId);
   });
 });

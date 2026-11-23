@@ -354,62 +354,6 @@ return await checkpoint("approve", { })`, "legacy-ancestry"), undefined, {
       dirs.cleanup();
     }
   });
-
-  it("reuses a legacy or unknown-format source by occurrence, and keeps the legacy mark", async () => {
-    const dirs = tempDirs();
-    try {
-      const store = memoryStore(dirs.root);
-      const sourceManager = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
-        agent: { async run(prompt) { return `source:${prompt}`; } },
-      });
-      const identitySource = await recordSafeSource(sourceManager, ["one"]);
-
-      const legacyState = store.persistence.load(identitySource);
-      assert.ok(legacyState);
-      delete legacyState.resume;
-      store.states.set("legacy-source", { ...legacyState, runId: "legacy-source" });
-      const rewrittenLegacy = store.states.get("legacy-source");
-      assert.ok(rewrittenLegacy);
-      rewrittenLegacy.journal = rewrittenLegacy.journal?.map((entry) => ({ ...entry, scope: "legacy-source" }));
-      rewrittenLegacy.calls = rewrittenLegacy.calls?.map((call) => ({ ...call, scope: "legacy-source" }));
-      const legacy = await new WorkflowManager({
-        cwd: dirs.cwd,
-        persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
-        agent: { async run() { assert.fail("a legacy source should replay"); } },
-      }).runSync(safeCalls(["one"]), undefined, {
-        runId: "legacy-target",
-        resumeFromRunId: "legacy-source",
-      });
-      assert.equal(legacy.resumeReport?.strategy, "occurrence-v1");
-      assert.equal(legacy.resumeReport?.replayed, 1);
-      assert.equal(store.persistence.load("legacy-target")?.legacyResume, true);
-
-      const unsupported = { ...legacyState, runId: "unsupported-source", resume: { format: "future" } };
-      unsupported.journal = unsupported.journal?.map((entry) => ({ ...entry, scope: "unsupported-source" }));
-      unsupported.calls = unsupported.calls?.map((call) => ({ ...call, scope: "unsupported-source" }));
-      store.states.set("unsupported-source", unsupported as PersistedRunState);
-      let live = 0;
-      const unsupportedResult = await new WorkflowManager({
-        cwd: dirs.cwd,
-        persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
-        agent: { async run() { live++; return "live"; } },
-      }).runSync(safeCalls(["one"]), undefined, {
-        runId: "unsupported-target",
-        resumeFromRunId: "unsupported-source",
-      });
-      // Nothing reads the format marker for a decision any more. The rows replay by occurrence.
-      assert.equal(live, 0);
-      assert.equal(unsupportedResult.resumeReport?.strategy, "occurrence-v1");
-      assert.equal(unsupportedResult.resumeReport?.replayed, 1);
-    } finally {
-      dirs.cleanup();
-    }
-  });
 });
 
 describe("WorkflowManager durable identity execution", () => {

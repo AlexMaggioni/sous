@@ -231,40 +231,33 @@ describe("run rows", () => {
     assert.deepEqual(rows(live.rows.saved("paused").journal), [[1, "b"]], "a reuse that replays nothing still trims");
   });
 
-  it("starts a reuse from the source's seed and moves its old data", () => {
+  it("starts a reuse from the source's seed", () => {
     const started = reuseRows(RUN, {
       sourceRunId: SOURCE,
-      journal: [fullEntry(0, "a", SOURCE), fullEntry(1, "b", SOURCE), entry(0, "o", `${SOURCE}-nested1`), entry(0, "z", "elsewhere")],
+      journal: [fullEntry(0, "a", SOURCE), fullEntry(1, "b", SOURCE)],
       calls: [full(0, "a", "result", SOURCE), full(1, "b", "result", SOURCE)],
       key: "inputs",
     });
     const saved = started.rows.saved("running");
     assert.deepEqual(rows(saved.journal), [], "a scope with call rows goes in the seed");
-    assert.deepEqual(rows(saved.nestedJournal), [[0, "o", NESTED]], "a scope with no call rows moves to the new run");
     assert.deepEqual(saved.calls, []);
     assert.deepEqual(seedShape(saved.resumeSeed), { sourceRunId: SOURCE, rows: [[SOURCE, 0, "result"], [SOURCE, 1, "result"]] });
     assert.equal(started.prefix, 2);
     assert.deepEqual(started.resume?.get(RUN)?.rows.map((row) => [row.index, row.sourceRunId]), [[0, SOURCE], [1, SOURCE]]);
     assert.equal(started.resume?.get(RUN)?.key, "inputs");
-    assert.deepEqual(started.resume?.get(NESTED)?.rows.map((row) => [row.index, row.hash]), [[0, "o"]]);
-
-    const old = reuseRows(RUN, { sourceRunId: SOURCE, journal: [entry(1, "b", null), entry(0, "a", SOURCE)], calls: [], key: "hash" });
-    assert.deepEqual(rows(old.rows.saved("running").journal), [[0, "a"], [1, "b"]], "a root scope with no call rows moves too");
-    assert.equal(old.prefix, 2);
   });
 
   it("continues from the run's latest saved rows", () => {
-    const legacy = { ...call(0, "a2", "result"), budgetDebit: 1, replay: { sourceRunId: RUN, recordedIndex: 0, match: "index-hash" as const, logicalBudgetDebit: 1 } };
+    const latest = { ...call(0, "a2", "result"), replay: { sourceRunId: RUN, recordedIndex: 0, match: "index-hash" as const } };
     const continued = continueRows(RUN, {
       journal: [entry(0, "a"), entry(0, "a2", null), entry(1, "b", "elsewhere")],
       nestedJournal: [entry(0, "n", NESTED)],
-      calls: [call(0, "a", "error"), legacy, call(0, "n", "result", NESTED)],
+      calls: [call(0, "a", "error"), latest, call(0, "n", "result", NESTED)],
     });
     const saved = continued.rows.saved("running");
     assert.deepEqual(rows(saved.journal), [[0, "a2", undefined]], "the latest row of an index wins");
     assert.deepEqual(rows(saved.nestedJournal), [[0, "n", NESTED]]);
-    assert.deepEqual(saved.calls[0], { ...call(0, "a2", "result"), replay: { sourceRunId: RUN, recordedIndex: 0, match: "index-hash" } },
-      "a call row loses the budget fields of an older engine");
+    assert.deepEqual(saved.calls[0], latest);
     assert.equal(continued.resume.get(RUN)?.key, "hash");
     assert.deepEqual(continued.resume.get(RUN)?.rows.map((row) => [row.index, row.hash, row.own]), [[0, "a2", true]]);
   });
@@ -272,12 +265,11 @@ describe("run rows", () => {
   it("revises a run into a new version with no call rows", () => {
     const revised = reviseRows(RUN, {
       journal: [fullEntry(0, "a"), fullEntry(1, "b")],
-      nestedJournal: [entry(0, "o", NESTED)],
       calls: [full(0, "a", "result"), full(1, "b", "error")],
     }, "inputs");
     const saved = revised.rows.saved("running");
     assert.deepEqual(saved.journal, []);
-    assert.deepEqual(rows(saved.nestedJournal), [[0, "o", NESTED]], "a nested run with no call rows keeps its journal");
+    assert.deepEqual(saved.nestedJournal, []);
     assert.deepEqual(saved.calls, []);
     assert.deepEqual(seedShape(saved.resumeSeed), { sourceRunId: RUN, rows: [[RUN, 0, "result"], [RUN, 1, "failed"]] });
     assert.equal(revised.prefix, 1);

@@ -6,7 +6,7 @@
 // Internal: not exported from index.ts.
 
 import { isNestedScope } from "./resume-identity.js";
-import { isResult, oldDataRows, resumeRows, revisionSeed, unusedSeed, type ResumeRows } from "./resume-rows.js";
+import { isResult, resumeRows, revisionSeed, unusedSeed, type ResumeRows } from "./resume-rows.js";
 import type { PersistedResumeSeed, PersistedRunState, RunStatus } from "./runs/persistence/run-persistence.js";
 import { deepFreeze } from "./strict-json.js";
 import type { JournalEntry, WorkflowCallRecord } from "./workflow-result.js";
@@ -75,25 +75,20 @@ export function handedInRows(runId: string, journal: ReadonlyMap<number, Journal
 }
 
 /**
- * A new run that reuses a saved run. Its seed holds the source's own rows of each scope with call
- * rows, then the rows of the source's seed that the source did not replay. A scope saved with no
- * call rows is old data: its journal rows move to the same scope of the new run, and pair by
- * index. With no source rows, the run replays nothing and starts empty.
+ * A new run that reuses a saved run. Its seed holds the source's own rows, then the rows of the
+ * source's seed that the source did not replay. The new run starts with no rows of its own. With
+ * no source rows, the run replays nothing and starts empty.
  */
 export function reuseRows(runId: string): StartedRows;
 export function reuseRows(runId: string, source: SourceRows): StartedRows & { resume: ResumeRows };
 export function reuseRows(runId: string, source?: SourceRows): StartedRows {
   if (!source) return { rows: createRows({ runId, reuse: true }), prefix: 0 };
-  const { sourceRunId, journal } = source;
-  const calls = source.calls.map(stripLegacyCallBudgetFields);
+  const { sourceRunId, journal, calls } = source;
   const seed = revisionSeed({ runId: sourceRunId, journal, calls, seed: source.seed });
-  const old = oldDataRows({ sourceRunId, runId, journal, calls });
-  const rootJournal = latestRows(old.filter((entry) => entry.scope === runId));
-  const nestedJournal = latestNestedRows(old, runId);
   return {
-    rows: createRows({ runId, journal: rootJournal, nestedJournal, seed, reuse: true }),
-    resume: resumeRows({ runId, journal: [...rootJournal, ...nestedJournal], calls: [], seed, key: source.key }),
-    prefix: seedPrefix(seed, rootJournal),
+    rows: createRows({ runId, seed, reuse: true }),
+    resume: resumeRows({ runId, journal: [], calls: [], seed, key: source.key }),
+    prefix: seedPrefix(seed),
   };
 }
 
@@ -115,9 +110,9 @@ export function continueRows(runId: string, saved: SavedRunRows): { rows: RunRow
 }
 
 /**
- * The same run resumed with a new script. The new version starts with no call rows. Its seed
- * holds the rows of the version before, so a second pause keeps the steps the new version has
- * not reached. A scope saved with no call rows keeps its journal, and pairs by index.
+ * The same run resumed with a new script. The new version starts with no rows. Its seed holds
+ * the rows of the version before, so a second pause keeps the steps the new version has not
+ * reached.
  */
 export function reviseRows(
   runId: string,
@@ -133,8 +128,7 @@ function ownSavedRows(runId: string, saved: SavedRunRows) {
   return {
     journal: latestRootRows(saved.journal ?? [], runId),
     nestedJournal: [...(saved.nestedJournal ?? [])],
-    calls: [...latestRootRows(saved.calls ?? [], runId), ...latestNestedRows(saved.calls ?? [], runId)]
-      .map(stripLegacyCallBudgetFields),
+    calls: [...latestRootRows(saved.calls ?? [], runId), ...latestNestedRows(saved.calls ?? [], runId)],
   };
 }
 
@@ -259,13 +253,12 @@ function trimmed(runId: string, status: RunStatus, rows: SavedRows): SavedRows {
 }
 
 /** The first root steps a seed and the old journal rows can replay, counted from step 0. */
-function seedPrefix(seed: PersistedResumeSeed | undefined, journal: readonly JournalEntry[]): number {
+function seedPrefix(seed: PersistedResumeSeed | undefined): number {
   const available = new Set([
     ...(seed?.candidates ?? [])
       .filter((candidate) => (candidate.call.scope ?? candidate.sourceRunId) === candidate.sourceRunId)
       .map((candidate) => candidate.recordedIndex),
     ...(seed?.checkpointInjections ?? []).map((injection) => injection.recordedIndex),
-    ...journal.map((entry) => entry.index),
   ]);
   let prefix = 0;
   while (available.has(prefix)) prefix++;
@@ -292,15 +285,4 @@ function latestNestedRows<T extends { index: number; scope?: string }>(rows: rea
   }
   return [...latest.values()].sort((a, b) =>
     a.scope === b.scope ? a.index - b.index : (a.scope as string) < (b.scope as string) ? -1 : 1);
-}
-
-/** A call row saved by an engine that counted a budget. */
-function stripLegacyCallBudgetFields(call: WorkflowCallRecord): WorkflowCallRecord {
-  const { budgetDebit: _budgetDebit, ...currentCall } = call as WorkflowCallRecord & {
-    budgetDebit?: unknown;
-  };
-  if (currentCall.replay === undefined) return currentCall;
-  const { logicalBudgetDebit: _logicalBudgetDebit, ...currentReplay } = currentCall.replay as
-    NonNullable<WorkflowCallRecord["replay"]> & { logicalBudgetDebit?: unknown };
-  return { ...currentCall, replay: currentReplay };
 }

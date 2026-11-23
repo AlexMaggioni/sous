@@ -266,7 +266,7 @@ return { first, second };`;
     }
   });
 
-  it("validates seed rows while stripping legacy debit metadata", () => {
+  it("validates seed rows", () => {
     const replayCall = agentRow(0, {
       origin: "journal-replay",
       replay: {
@@ -275,17 +275,9 @@ return { first, second };`;
         match: "unique-hash",
       },
     });
-    const legacyReplayCall = replayCall as WorkflowCallRecord & {
-      budgetDebit: number;
-      replay: NonNullable<WorkflowCallRecord["replay"]> & { logicalBudgetDebit: number };
-    };
-    legacyReplayCall.budgetDebit = 0;
-    legacyReplayCall.replay.logicalBudgetDebit = 13;
-    const cloned = cloneResumeCandidate(SOURCE_RUN_ID, entryFor(legacyReplayCall), legacyReplayCall);
+    const cloned = cloneResumeCandidate(SOURCE_RUN_ID, entryFor(replayCall), replayCall);
     assert.notEqual(cloned?.call, replayCall);
-    assert.equal(Object.hasOwn(cloned ?? {}, "logicalBudgetDebit"), false);
-    assert.equal(Object.hasOwn(cloned?.call ?? {}, "budgetDebit"), false);
-    assert.equal(Object.hasOwn(cloned?.call.replay ?? {}, "logicalBudgetDebit"), false);
+    assert.deepEqual(cloned?.call, replayCall);
 
     const validRetained = candidate(2, { sourceRunId: "older-run", call: { hash: HASH_C, inputsHash: INPUT_C } });
     const kept = normalizeResumeSeed({ sourceRunId: SOURCE_RUN_ID, promoted: [candidate()], retained: [validRetained] });

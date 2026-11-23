@@ -73,17 +73,17 @@ describe("resume rows", () => {
     assert.equal(rows.get(RUN)!.byIndex, undefined);
   });
 
-  it("keeps nested scopes apart, and pairs by index a scope saved with no call rows", () => {
+  it("keeps nested scopes apart", () => {
     const nested = `${RUN}-nested1`;
     const rows = resumeRows({
       runId: RUN,
       journal: [entry(0, "a"), entry(0, "n", nested), entry(0, "z", "other")],
-      calls: [call(0, "a", "result")],
+      calls: [call(0, "a", "result"), call(0, "n", "result", nested)],
       key: "hash",
     });
     assert.deepEqual([...rows.keys()].sort(), [RUN, nested]);
     assert.equal(rows.get(RUN)!.byIndex, undefined);
-    assert.equal(rows.get(nested)!.byIndex, true);
+    assert.equal(rows.get(nested)!.byIndex, undefined);
   });
 
   it("puts the seed's rows after the run's own rows, in recorded order", () => {

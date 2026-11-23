@@ -119,7 +119,6 @@ exit 0
     },
     "eventStreamId": "<eventStreamId>",
     "eventSeq": 29,
-    "legacyResume": true,
     "callsAllocated": 3,
     "limits": {
       "maxAgents": 1000,

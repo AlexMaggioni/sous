@@ -92,7 +92,6 @@ function isReplayProvenance(value: unknown): value is NonNullable<WorkflowCallRe
     "sourceRunId",
     "recordedIndex",
     "match",
-    "logicalBudgetDebit",
     "checkpointHostDecision",
     "checkpointInjected",
   ]);
@@ -107,18 +106,6 @@ function isReplayProvenance(value: unknown): value is NonNullable<WorkflowCallRe
     (value.checkpointInjected !== true || value.checkpointHostDecision === true) &&
     isStrictJson(value)
   );
-}
-
-/** Historical budget fields are accepted as inert JSON input but never copied into a
- * current call record, resume seed, provenance object, or report. */
-function stripLegacyBudgetFields(call: WorkflowCallRecord): WorkflowCallRecord {
-  const { budgetDebit: _budgetDebit, ...currentCall } = call as WorkflowCallRecord & {
-    budgetDebit?: unknown;
-  };
-  if (currentCall.replay === undefined) return currentCall;
-  const { logicalBudgetDebit: _logicalBudgetDebit, ...currentReplay } = currentCall.replay as
-    NonNullable<WorkflowCallRecord["replay"]> & { logicalBudgetDebit?: unknown };
-  return { ...currentCall, replay: currentReplay };
 }
 
 function validateReplayForCall(call: WorkflowCallRecord): boolean {
@@ -224,11 +211,7 @@ function validateCandidate(value: unknown): PersistedResumeCandidate | undefined
   ) {
     return undefined;
   }
-  const { logicalBudgetDebit: _logicalBudgetDebit, ...currentCandidate } = value;
-  return strictClone({
-    ...currentCandidate,
-    call: stripLegacyBudgetFields(value.call),
-  } as PersistedResumeCandidate);
+  return strictClone(value as unknown as PersistedResumeCandidate);
 }
 
 function validateCallBlocker(value: unknown): PersistedResumeCallBlocker | undefined {
@@ -245,10 +228,7 @@ function validateCallBlocker(value: unknown): PersistedResumeCallBlocker | undef
   ) {
     return undefined;
   }
-  return strictClone({
-    ...value,
-    call: stripLegacyBudgetFields(value.call),
-  } as unknown as PersistedResumeCallBlocker);
+  return strictClone(value as unknown as PersistedResumeCallBlocker);
 }
 
 function validateInjection(value: unknown): PersistedCheckpointInjection | undefined {
@@ -289,7 +269,7 @@ export function cloneResumeCandidate(
     sourceRunId,
     recordedIndex: call.index,
     entry,
-    call: stripLegacyBudgetFields(call),
+    call,
   });
 }
 

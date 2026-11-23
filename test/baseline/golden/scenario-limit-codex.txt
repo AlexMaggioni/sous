@@ -118,7 +118,6 @@ exit 0
     },
     "eventStreamId": "<eventStreamId>",
     "eventSeq": 23,
-    "legacyResume": true,
     "fallbacks": [
       {
         "callIndex": 1,
