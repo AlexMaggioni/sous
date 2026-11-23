@@ -17,7 +17,8 @@ import type {
   PersistedResumeCallBlocker,
   PersistedRunState,
 } from "../src/runs/persistence/run-persistence.js";
-import { CALL_INPUTS_FORMAT, CALL_PATH_FORMAT, CHECKPOINT_INPUTS_FORMAT } from "../src/workflow.js";
+import { CALL_INPUTS_FORMAT, CHECKPOINT_INPUTS_FORMAT } from "../src/workflow.js";
+import { CALL_PATH_FORMAT } from "../src/call-path.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 const HASH_A = "a".repeat(64);

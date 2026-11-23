@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { WorkflowCallRecord, WorkflowResumeCallDecision } from "../src/workflow-result.js";
-import { CALL_INPUTS_FORMAT, CALL_PATH_FORMAT, CHECKPOINT_INPUTS_FORMAT, type WorkflowRunOptions } from "../src/workflow.js";
+import { CALL_INPUTS_FORMAT, CHECKPOINT_INPUTS_FORMAT, type WorkflowRunOptions } from "../src/workflow.js";
+import { CALL_PATH_FORMAT } from "../src/call-path.js";
 import type { LiveResume, OccurrenceResume } from "../src/resume.js";
 import type {
   PersistedCheckpointInjection,

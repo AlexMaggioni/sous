@@ -62,9 +62,9 @@ import { hasEventLog, type RunEventLog } from "./runs/persistence/run-event-pers
 import { projectRecordedError } from "./recorded-error.js";
 import { workflowHomeDir } from "./workflow-paths.js";
 import { cloneStrictJsonValue, deepFreeze } from "./strict-json.js";
+import { CALL_PATH_FORMAT } from "./call-path.js";
 import {
   CALL_INPUTS_FORMAT,
-  CALL_PATH_FORMAT,
   CHECKPOINT_INPUTS_FORMAT,
   type CheckpointCallContext,
   type CheckpointOptions,

@@ -60,10 +60,11 @@ import {
 } from "./step-ledger.js";
 import {
   canonicalStrictJson,
-  cloneFrozenStrictJson,
   cloneTelemetry,
   deepFreeze,
+  strictSnapshot,
 } from "./strict-json.js";
+import { captureCallPath } from "./call-path.js";
 import { isPlace, NO_PLACES, type RunPlaces, type Worktree } from "./places/places.js";
 import { nestedArgs } from "./workflows/meta.js";
 import { parseWorkflowScript } from "./workflows/script.js";
@@ -535,10 +536,6 @@ const DETERMINISM_PRELUDE = [
   "}",
 ].join("\n");
 
-/** Observable call-path capture format. Bump when capture semantics change. */
-export const CALL_PATH_FORMAT = 1;
-/** Maximum unambiguous raw stack depth retained for call-path capture. */
-export const CALL_PATH_RAW_FRAMES = 64;
 /** Observable call-input fingerprint format. Bump when its inputs or encoding change. */
 export const CALL_INPUTS_FORMAT = 2;
 /** Observable checkpoint-input fingerprint format. Bump when its inputs or encoding change. */
@@ -935,18 +932,6 @@ async function runLevel<T>(
       slot.interrupt();
       throwIfAborted();
     }
-  };
-
-  const strictSnapshot = (value: unknown, description: string, agentLabel?: string): unknown => {
-    const captured = cloneFrozenStrictJson(value);
-    if (!captured.ok) {
-      throw new WorkflowError(
-        `${description} is not strict JSON at ${captured.path}`,
-        WorkflowErrorCode.AGENT_EXECUTION_ERROR,
-        { recoverable: false, agentLabel },
-      );
-    }
-    return captured.clone;
   };
 
   // One step. An agent step goes to the agent runner. A code step brings its spec and the
@@ -2318,45 +2303,6 @@ function createLimiter(limit: number) {
 
 function defaultAgentLabel(phase: string | undefined, index: number): string {
   return phase ? `${phase} agent ${index}` : `agent ${index}`;
-}
-
-function captureCallPath(vmFilename: string, preludeLines: number): string | undefined {
-  const originalPrepareStackTrace = Error.prepareStackTrace;
-  const originalStackTraceLimit = Error.stackTraceLimit;
-  try {
-    Error.stackTraceLimit = CALL_PATH_RAW_FRAMES + 1;
-    Error.prepareStackTrace = (_error, stack) => stack;
-    const raw = new Error().stack as unknown as NodeJS.CallSite[];
-    if (!Array.isArray(raw) || raw.length === CALL_PATH_RAW_FRAMES + 1) return undefined;
-
-    const selected: NodeJS.CallSite[] = [];
-    let selecting = false;
-    for (const frame of raw) {
-      const selectable = frame.getFileName() === vmFilename && !frame.isAsync();
-      if (!selecting) {
-        if (!selectable) continue;
-        selecting = true;
-      } else if (!selectable) {
-        break;
-      }
-      selected.push(frame);
-    }
-    if (selected.length === 0) return undefined;
-
-    const normalized: string[] = [];
-    for (const frame of selected) {
-      const frameLine = frame.getLineNumber();
-      const column = frame.getColumnNumber();
-      if (frameLine === null || column === null) return undefined;
-      normalized.push(`${frameLine - (preludeLines + 1)}:${column}`);
-    }
-    return normalized.join("<");
-  } catch {
-    return undefined;
-  } finally {
-    Error.prepareStackTrace = originalPrepareStackTrace;
-    Error.stackTraceLimit = originalStackTraceLimit;
-  }
 }
 
 function hashCanonicalStrictJson(value: unknown): string | undefined {

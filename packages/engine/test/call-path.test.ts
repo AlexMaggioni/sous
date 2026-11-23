@@ -3,12 +3,8 @@ import { describe, it } from "node:test";
 import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { TSchema } from "typebox";
-import {
-  CALL_PATH_FORMAT,
-  CALL_PATH_RAW_FRAMES,
-  runWorkflow,
-  sanitizeVmName,
-} from "../src/workflow.js";
+import { CALL_PATH_FORMAT, CALL_PATH_RAW_FRAMES } from "../src/call-path.js";
+import { runWorkflow, sanitizeVmName } from "../src/workflow.js";
 
 async function pathsFor(body: string, meta = "{ name: 'path', description: 'call path' }"): Promise<Array<string | undefined>> {
   const paths: Array<string | undefined> = [];

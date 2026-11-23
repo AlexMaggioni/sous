@@ -1,3 +1,5 @@
+import { WorkflowError, WorkflowErrorCode } from "./errors.js";
+
 const HOST_OBJECT_CONSTRUCTOR_SOURCE = Function.prototype.toString.call(Object);
 
 export type StrictJsonValue =
@@ -141,6 +143,19 @@ export function cloneFrozenStrictJson(value: unknown): StrictJsonCapture {
   const result = cloneStrictJsonValue(value);
   if (result.ok) deepFreeze(result.clone);
   return result;
+}
+
+/** A frozen strict-JSON copy of a step's result or a checkpoint's reply. A value that is not strict JSON fails the step. */
+export function strictSnapshot(value: unknown, description: string, agentLabel?: string): unknown {
+  const captured = cloneFrozenStrictJson(value);
+  if (!captured.ok) {
+    throw new WorkflowError(
+      `${description} is not strict JSON at ${captured.path}`,
+      WorkflowErrorCode.AGENT_EXECUTION_ERROR,
+      { recoverable: false, agentLabel },
+    );
+  }
+  return captured.clone;
 }
 
 function sortCanonical(value: StrictJsonValue): StrictJsonValue {
