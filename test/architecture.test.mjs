@@ -238,7 +238,9 @@ const PINS = [
   ] },
 
   // The library
-  { change: "A reuse run that ends without an engine result lists its call rows in the order they settled", waiting: "The proof says orc reads no result's call rows, so only a direct call shows it." },
+  { change: "A reuse run that ends without an engine result lists its call rows in the order they settled", tests: [
+    ["packages/engine/test/result-observability.test.ts", "a reuse run that fails before its engine returns lists its root call rows in the order they settled"],
+  ] },
   { change: "A caller that passes no places object gets no home to make worktrees in", tests: [
     ["packages/engine/test/places.test.ts", "a step with isolation worktree and no places works in the run's folder, and the log says why"],
     ["packages/engine/test/orchestrator-globals.test.ts", "with no places, a nested place of its own fails and says why, and place folder works in the parent's folder"],
