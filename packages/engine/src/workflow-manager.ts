@@ -377,6 +377,11 @@ function hashScriptText(script: string): string {
   return createHash("sha256").update(script, "utf8").digest("hex");
 }
 
+/** Whether the run's signal was ever aborted. The result and the saved state both take it. */
+function abortSignaledOf(managed: ManagedRun): boolean {
+  return managed.abortSignaled === true || managed.controller.signal.aborted;
+}
+
 function runReason(status: RunStatus, error: WorkflowError | undefined): string | undefined {
   if (status === "completed" || status === "pending" || status === "running") return undefined;
   if (status !== "paused" || isStepFailedPause(error)) return error?.message;
@@ -1129,7 +1134,7 @@ export class WorkflowManager extends EventEmitter {
       ...(managed.resumeReporting ? { replayEligibility: managed.resumeReporting.eligibility() } : {}),
       ...(managed.continuation ? { continuation: managed.continuation } : {}),
       effectiveLimits: engineResult?.effectiveLimits ?? managed.limits,
-      ...(engineResult?.abortSignaled || managed.abortSignaled ? { abortSignaled: true as const } : {}),
+      ...(abortSignaledOf(managed) ? { abortSignaled: true as const } : {}),
       ...(engineResult?.nestedWorkflows || managed.nestedWorkflows ? { nestedWorkflows: true as const } : {}),
     };
   }
@@ -1635,9 +1640,7 @@ export class WorkflowManager extends EventEmitter {
       calls: rows.calls,
       callsAllocated: managed.callsAllocated,
       limits: managed.limits,
-      ...(managed.abortSignaled || managed.controller.signal.aborted
-        ? { abortSignaled: true as const }
-        : {}),
+      ...(abortSignaledOf(managed) ? { abortSignaled: true as const } : {}),
       status: managed.status,
       reason: runReason(managed.status, managed.error),
       errorCode: managed.error?.code,

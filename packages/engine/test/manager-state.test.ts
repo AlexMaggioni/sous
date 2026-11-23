@@ -296,6 +296,47 @@ return { count: args.count, answer }`,
     }
   });
 
+  it("a stopped run's result says its signal was aborted, as its saved state does", async () => {
+    for (const how of ["host signal", "stop"] as const) {
+      const dirs = tempDirs();
+      try {
+        let started!: () => void;
+        const didStart = new Promise<void>((resolve) => { started = resolve; });
+        const controller = new AbortController();
+        const manager = new WorkflowManager({
+          cwd: dirs.cwd,
+          persistenceRoot: dirs.root,
+          agent: {
+            async run(_prompt, options) {
+              started();
+              return await new Promise<string>((_resolve, reject) => {
+                options?.signal?.addEventListener(
+                  "abort",
+                  () => reject(new WorkflowError("aborted", WorkflowErrorCode.WORKFLOW_ABORTED, { recoverable: true })),
+                  { once: true },
+                );
+              });
+            },
+          },
+        });
+        const runId = `stopped-${how === "stop" ? "by-stop" : "by-signal"}`;
+        const pending = manager.runSync(script(`return await agent('wait')`, "stopped-abort"), undefined, {
+          runId,
+          ...(how === "host signal" ? { externalSignal: controller.signal } : {}),
+        });
+        await didStart;
+        if (how === "stop") assert.equal(manager.stop(runId), true);
+        else controller.abort();
+        const result = await pending;
+        assert.equal(result.status, "aborted", how);
+        assert.equal(manager.getPersistence().load(runId)?.abortSignaled, true, how);
+        assert.equal(result.abortSignaled, true, how);
+      } finally {
+        dirs.cleanup();
+      }
+    }
+  });
+
   it("runSync returns the result its paused or failed run kept and saved", async () => {
     const dirs = tempDirs();
     try {
