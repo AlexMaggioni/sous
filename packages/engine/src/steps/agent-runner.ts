@@ -1,7 +1,7 @@
 // The seam between the engine and whatever runs an agent step: the steps module, or a
-// test's fake. The engine calls only run(), and it builds no runner of its own
-// (WorkflowRunOptions.agent is required). Code steps never come here. StepRequest types every
-// field the engine sends, so a renamed field fails the build.
+// test's fake. The engine calls route(), when the runner has one, and run(). It builds no runner
+// of its own (WorkflowRunOptions.agent is required). Code steps never come here. StepRequest
+// types every field the engine sends, so a renamed field fails the build.
 import type { StepRequest } from "./agent-run.js";
 import type { RoutePlan } from "../agents.js";
 
@@ -67,4 +67,12 @@ export interface AgentRunner {
    *    options.confirm callback.
    */
   run(prompt: string, request: StepRequest): Promise<unknown>;
+
+  /**
+   * Where a step goes. It is synchronous and never throws: a step that cannot run gets a route
+   * with a problem, which run() refuses. The engine calls it once per agent call, before it
+   * hashes the call, and sends the route back in the request. A runner without it gets the
+   * engine's agent registry.
+   */
+  route?(ask: StepAsk): StepRoute;
 }

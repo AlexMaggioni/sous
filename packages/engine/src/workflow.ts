@@ -11,7 +11,7 @@ import type {
   AgentUsage,
   PromptImage,
 } from "./steps/agent-run.js";
-import type { AgentRunner } from "./steps/agent-runner.js";
+import type { AgentRunner, StepAsk, StepRoute } from "./steps/agent-runner.js";
 import type {
   AgentSessionRecord,
   AgentSessionRef,
@@ -1102,27 +1102,37 @@ export async function runWorkflow<T = unknown>(
     const requestedLabel = agentOptions.label?.trim();
     const pendingLabel = requestedLabel || defaultAgentLabel(assignedPhase, shared.agentCount + 1);
 
-    // Resolve a named agentType to its bound definition (tools/model/prompt).
-    const agentDef = resolveAgentType(agentOptions.agentType, agentRegistry);
-    if (agentOptions.agentType && !agentDef) {
-      log(`unknown agentType "${agentOptions.agentType}"; using default tools/model`);
+    // The step as the engine knows it. The runner routes it, and the route gives the model the
+    // step asked for, its agent's part of the call hash, its isolation and its agent's prompt.
+    // Model order: the step's own model, its agent's, then the run's model for this step. The
+    // run's model is the phase's route, else meta.model, else the run's default. A tier takes the
+    // run's model's place with its configured model, or with none, and the raw tier goes on to
+    // the runner.
+    const tier = agentOptions.tier;
+    const ask: StepAsk = {
+      label: pendingLabel,
+      agentType: agentOptions.agentType,
+      model: agentOptions.model,
+      effort: agentOptions.effort,
+      skills: agentOptions.skills,
+      mcp: agentOptions.mcp,
+      timeout: agentOptions.timeout,
+      isolation: agentOptions.isolation,
+      runModel: tier
+        ? (modelTierConfig ? resolveTierModel(tier, modelTierConfig) : undefined) || undefined
+        : resolveModelForPhase(assignedPhase, routingConfig) ?? options.defaultModel,
+    };
+    // A code step, and a runner with no route of its own, get the engine's agent registry.
+    const routed = !codeSpec && agentRunner.route !== undefined;
+    let agentDef: AgentDefinition | undefined;
+    if (!routed) {
+      agentDef = resolveAgentType(agentOptions.agentType, agentRegistry);
+      if (agentOptions.agentType && !agentDef) {
+        log(`unknown agentType "${agentOptions.agentType}"; using default tools/model`);
+      }
     }
-
-    // Model precedence: explicit agentOptions.model > agentType.model > resolved tier >
-    // phase/meta route > host-pinned defaultModel > historical runner default. A tier
-    // suppresses phase/default routing; when it has no configured model, leave model
-    // undefined and pass the raw tier through for the runner to route under the same
-    // deterministic rules.
-    const explicitModel = agentOptions.model ?? agentDef?.model;
-    const tierModel =
-      !explicitModel && agentOptions.tier && modelTierConfig
-        ? resolveTierModel(agentOptions.tier, modelTierConfig)
-        : undefined;
-    const phaseModel = agentOptions.tier ? undefined : resolveModelForPhase(assignedPhase, routingConfig);
-    const authoredModel =
-      explicitModel ??
-      (agentOptions.tier ? tierModel || undefined : phaseModel ?? options.defaultModel);
-    const modelSpec = authoredModel;
+    const route = routed ? agentRunner.route!(ask) : registryRoute(ask, agentDef);
+    const modelSpec = route.requested;
     if (modelSpec?.endsWith("/*")) {
       throw new WorkflowError(
         `agent ${JSON.stringify(pendingLabel)} model ${JSON.stringify(modelSpec)} is a discovery selector. Expand that provider with workflow action:"config" and modelFilter, then use an exact model route.`,
@@ -1152,7 +1162,7 @@ export async function runWorkflow<T = unknown>(
     }
     assertNoModelConfigOption(effectiveConfigOptions, pendingLabel);
 
-    const resolvedIsolation = agentOptions.isolation ?? agentDef?.isolation;
+    const resolvedIsolation = route.isolation;
     const retryAttempts =
       agentOptions.retries !== undefined ? normalizeAgentRetries(agentOptions.retries) : runAgentRetries;
     const label = requestedLabel || defaultAgentLabel(assignedPhase, shared.agentCount + 1);
@@ -1165,7 +1175,7 @@ export async function runWorkflow<T = unknown>(
       effectiveMode,
       assignedPhase,
       effectiveAgentOptions,
-      agentDefinitionKey(agentDef),
+      route.agentKey,
     );
     const callPath = captureCallPath(vmFilename, preludeLines);
     const callInputs = {
@@ -1538,14 +1548,16 @@ export async function runWorkflow<T = unknown>(
                     options.instructions,
                     assignedPhase,
                     agentOptions,
-                    agentDef,
+                    route.prompt,
                     resolvedIsolation,
                   ),
                   model: modelSpec,
                   mode: effectiveMode,
                   tier: agentOptions.tier,
-                  toolNames: agentDef?.tools,
-                  disallowedToolNames: agentDef?.disallowedTools,
+                  route,
+                  // A runner with no route of its own gets the agent's default block and the
+                  // step's extras here.
+                  ...(routed ? {} : { toolNames: agentDef?.tools, disallowedToolNames: agentDef?.disallowedTools }),
                   cwd: runCwd,
                   mcpServers: agentOptions.mcpServers,
                   images: agentOptions.images,
@@ -1554,8 +1566,7 @@ export async function runWorkflow<T = unknown>(
                   // Agent({ continue }) sends this step's prompt into the earlier
                   // session. Only a resumed, interrupted turn gets the runner's resume instruction.
                   ...(continueFromSession !== undefined && !resumingTurn ? { continueWithPrompt: true } : {}),
-                  // Per-step extras the orc runner reads.
-                  ...orchestratorRunExtras(agentOptions, agentDef),
+                  ...(routed ? {} : orchestratorRunExtras(agentOptions, agentDef)),
                   callIndex,
                   callHash,
                   callPath,
@@ -3096,6 +3107,21 @@ function hashCheckpoint(promptText: string, options: CheckpointOptions): string 
   return createHash("sha256").update(identity).digest("hex");
 }
 
+/**
+ * The route of a step whose runner has no route() of its own, from the engine's agent registry.
+ * It gives the same model, key, isolation and prompt that routeStep gives from orc's agents.
+ */
+function registryRoute(ask: StepAsk, def: AgentDefinition | undefined): StepRoute {
+  const requested = ask.model ?? def?.model ?? ask.runModel;
+  const isolation = ask.isolation ?? def?.isolation;
+  return {
+    ...(requested === undefined ? {} : { requested }),
+    agentKey: agentDefinitionKey(def),
+    ...(isolation === undefined ? {} : { isolation }),
+    ...(def ? { prompt: def.prompt } : {}),
+  };
+}
+
 function hashAgentCall(
   prompt: string,
   model: string | undefined,
@@ -3159,14 +3185,14 @@ function buildAgentInstructions(
   runInstructions: string | undefined,
   phase: string | undefined,
   options: AgentOptions,
-  def: AgentDefinition | undefined,
+  agentPrompt: string | undefined,
   resolvedIsolation?: "worktree",
 ): string | undefined {
   const lines: string[] = [];
   if (runInstructions) lines.push(runInstructions);
-  // A resolved agentType binds a real role prompt (the definition body). Only
-  // fall back to the prose hint when the agentType named no known definition.
-  if (def?.prompt) lines.push(def.prompt);
+  // A found agent gives its own prompt, the route's. Only fall back to the prose hint when the
+  // agentType named no known agent.
+  if (agentPrompt) lines.push(agentPrompt);
   else if (options.agentType) lines.push(`Act as workflow subagent type: ${options.agentType}`);
   if (phase) lines.push(`Workflow phase: ${phase}`);
   // Use resolvedIsolation so the annotation fires whether isolation came from

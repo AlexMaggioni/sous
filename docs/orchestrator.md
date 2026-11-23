@@ -153,6 +153,19 @@ You review one change. Report what blocks it, then what could be better.
 - A step's own `skills`, `mcp`, `effort`, `timeout` or `model` replaces the agent's, never adds to
   it.
 
+A step asks for the first model in this list that is set:
+
+1. the step's own `model`, or the one `--set <label>.model=` gives it;
+2. its agent's model, from the block of the agent's default harness;
+3. the `model` of the step's phase in `meta.phases`;
+4. `meta.model`;
+5. `orc run --model`, else `defaultModel` in `config.json`.
+
+With none set, the step runs on the default harness with that harness's default model. The run
+record shows the model the step asked for. Change it, and a resumed run runs the step again. A
+step with an agent then follows the rules above. A harness alone picks the agent's block for that
+harness, and a block with no model runs the asked model only when it is on the same harness.
+
 An agent in a harness's own folder runs only on that harness. A step that sends it to another
 harness makes the workflow invalid, and the message says to move the agent to rulesync. An agent
 in both harnesses' folders and not in rulesync gives the default harness's copy. A step that picks

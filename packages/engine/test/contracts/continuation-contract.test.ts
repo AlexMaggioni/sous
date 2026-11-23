@@ -36,7 +36,7 @@ const sessionRef: AgentSessionRef = {
 };
 
 test("continuation shared types JSON-round-trip every additive branch", () => {
-  const options: StepRequest = { continueFromSession: sessionRef };
+  const options: StepRequest = { route: { agentKey: null }, continueFromSession: sessionRef };
   const attempts: ContinuationAttempt[] = [
     { reattached: true, method: "resume" },
     { reattached: true, method: "load" },

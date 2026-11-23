@@ -20,8 +20,9 @@ ESM-only, Node 22+.
 
 ## The one thing you inject: `AgentRunner`
 
-The engine references the backend through a single frozen method. Supply anything that
-matches this shape (from `src/steps/agent-runner.ts`):
+The engine calls the backend's `run` for each agent step. `route` is optional. The steps
+module has one, and the engine asks it where a step goes before it runs the step. Supply
+anything that matches this shape (from `src/steps/agent-runner.ts`):
 
 ```ts
 import type { AgentRunner, StepRequest } from "@orchestrator/engine";

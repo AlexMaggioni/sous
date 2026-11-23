@@ -1,6 +1,6 @@
 // The steps module. It turns a workflow's agent call into one step on Claude Code or Codex.
-// It picks the harness, finds the program once per run, names the MCP servers, takes a slot,
-// sets the time limit and runs the step. A schema answer that does not fit gets repair turns
+// It routes the step with routeStep, finds the program once per run, names the MCP servers, takes
+// a slot, sets the time limit and runs the step. A schema answer that does not fit gets repair turns
 // in the same session. Code steps never come here: the engine runs them.
 // A test or the dry run gives `inner`, a runner of its own, and then no program starts.
 
@@ -23,10 +23,10 @@ import {
 } from "@orchestrator/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
 import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, PlannedRequest, StepRequest } from "./agent-run.js";
-import type { AgentRunner } from "./agent-runner.js";
+import type { AgentRunner, StepAsk, StepRoute } from "./agent-runner.js";
 import type { AgentSessionRef } from "../workflow-result.js";
 import type { McpServerConfig } from "./mcp-config.js";
-import { harnessName, isHarness, missingServer, planStep, removedHarness, routeHarness, type AgentLookup, type McpLookup } from "../agents.js";
+import { harnessName, isHarness, missingServer, routeStep, type AgentLookup, type McpLookup, type RoutePlan } from "../agents.js";
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
 import type { SlotPool } from "../runs/slots.js";
 import { buildPrompt, checkImages, CONTINUATION_INSTRUCTION, extractValidated, REPROMPT_TEXT, toMcpServer, validateValue } from "./answer.js";
@@ -64,18 +64,6 @@ export interface StepsOptions {
   onLimit?: (event: { program: HarnessId; label?: string }) => void;
 }
 
-/** What a step runs with, after its agent is looked up. */
-interface Plan {
-  harness: HarnessId;
-  /** The model spec, such as claude/haiku, or a harness alone. */
-  model?: string;
-  effort?: string;
-  skills?: string[];
-  mcpNames?: string[];
-  tools?: string[];
-  disallowedTools?: string[];
-}
-
 const ADAPTERS: Record<HarnessId, (lookup: FindOptions) => Adapter> = { claude: createClaudeHarness, codex: createCodexHarness };
 
 /** Schema repair turns when the step sets none. */
@@ -111,7 +99,7 @@ const toHistory = (entry: HistoryEntry): AgentHistoryEntry => ({
   timestamp: entry.at,
 });
 
-export function createSteps(options: StepsOptions): AgentRunner & { dispose(): Promise<void>; auth: LoginCheck } {
+export function createSteps(options: StepsOptions): AgentRunner & { route(ask: StepAsk): StepRoute; dispose(): Promise<void>; auth: LoginCheck } {
   const lookup = options.programs ?? (options.inner ? undefined : () => ({}));
   const programs = new Map<HarnessId, Promise<Adapter | { problem: string }>>();
 
@@ -134,37 +122,19 @@ export function createSteps(options: StepsOptions): AgentRunner & { dispose(): P
     return pending;
   }
 
-  function plan(call: StepRequest, stop: (message: string) => WorkflowError): Plan {
-    if (call.agentType && options.agents) {
-      const planned = planStep(options.agents, call.agentType, call.stepGiven, call.model);
-      if ("problem" in planned) throw stop(planned.problem);
-      const { plan } = planned;
-      return { harness: plan.harness, model: plan.model, effort: plan.effort, skills: plan.skills, mcpNames: plan.mcp, tools: plan.tools, disallowedTools: plan.disallowedTools };
-    }
-    const env = options.agents?.settings.env ?? process.env;
-    return {
-      harness: routeHarness(call.model, env) ?? options.agents?.settings.defaultHarness ?? "claude",
-      ...(call.model ? { model: call.model } : {}),
-      effort: call.effort,
-      skills: call.skills,
-      mcpNames: call.mcpNames,
-      tools: call.toolNames,
-      disallowedTools: call.disallowedToolNames,
-    };
-  }
-
   const run = async (prompt: string, call: StepRequest): Promise<unknown> => {
     const stop = (message: string) =>
       new WorkflowError(`step "${call.label ?? "agent"}": ${message}`, WorkflowErrorCode.INVALID_ARGUMENT, { recoverable: false, agentLabel: call.label });
-    const removed = removedHarness(call.model);
-    if (removed) throw stop(removed);
-    const step = plan(call, stop);
+    // The route comes from route() below, which the engine calls before it hashes the step.
+    const { problem, plan: step } = call.route;
+    if (problem) throw stop(problem);
+    if (!step) throw stop("the step has no plan. The engine routes each step with route() before it runs it.");
 
     const program = await programFor(step.harness);
     if (program && "problem" in program) throw stop(program.problem);
 
     const servers: McpServerConfig[] = [...(call.mcpServers ?? [])];
-    for (const name of step.mcpNames ?? []) {
+    for (const name of step.mcp ?? []) {
       const found = options.mcp?.find(name, step.harness);
       if (!found) throw stop(options.mcp ? missingServer(name, step.harness, options.mcp) : `no MCP server "${name}". Add it to .rulesync/mcp.jsonc.`);
       if (!servers.some((existing) => existing.name === found.server.name)) servers.push(found.server);
@@ -178,7 +148,7 @@ export function createSteps(options: StepsOptions): AgentRunner & { dispose(): P
     }
 
     // The step's time limit counts from here, once it holds a slot, not while it waits for one.
-    const timeout = call.timeoutMs ? AbortSignal.timeout(call.timeoutMs) : undefined;
+    const timeout = step.timeoutMs ? AbortSignal.timeout(step.timeoutMs) : undefined;
     const signals = [call.signal, timeout].filter((signal): signal is AbortSignal => signal !== undefined);
     const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
     try {
@@ -190,7 +160,7 @@ export function createSteps(options: StepsOptions): AgentRunner & { dispose(): P
         options.onLimit?.({ program: step.harness, label: call.label });
       }
       if (timeout?.aborted && !call.signal?.aborted) {
-        throw new WorkflowError(`timed out after ${Math.round(call.timeoutMs! / 1000)}s`, WorkflowErrorCode.AGENT_EXECUTION_ERROR, {
+        throw new WorkflowError(`timed out after ${Math.round(step.timeoutMs! / 1000)}s`, WorkflowErrorCode.AGENT_EXECUTION_ERROR, {
           recoverable: true,
           agentLabel: call.label,
         });
@@ -202,6 +172,7 @@ export function createSteps(options: StepsOptions): AgentRunner & { dispose(): P
   };
 
   return {
+    route: (ask) => routeStep(options.agents, ask),
     run,
     // A run paused for a lost login may resume: each step starts its program, which reads the
     // login again. If it is still gone, the step fails the same way and the run pauses again.
@@ -225,14 +196,14 @@ async function runInner(
   inner: InnerRunner,
   prompt: string,
   call: StepRequest,
-  step: Plan,
+  step: RoutePlan,
   given: { signal?: AbortSignal; servers: McpServerConfig[]; account?: Account },
 ): Promise<unknown> {
   const { signal, servers, account } = given;
-  const { timeoutMs: _t, effort: _e, skills: _s, mcpNames: _m, agentType: _a, stepGiven: _g, model: _model, toolNames: _tn, disallowedToolNames: _dn, ...rest } = call;
+  const { route, timeoutMs: _t, effort: _e, skills: _s, mcpNames: _m, agentType: _a, stepGiven: _g, model: _model, toolNames: _tn, disallowedToolNames: _dn, ...rest } = call;
   const resolved = call.onModelResolved;
   const onModelResolved = resolved && ((id: string) => resolved(withHarness(step.harness, id)));
-  if (step.model && step.model !== call.model) onModelResolved?.(step.model);
+  if (step.model && step.model !== route.requested) onModelResolved?.(step.model);
   const request: PlannedRequest = {
     ...rest,
     ...(onModelResolved ? { onModelResolved } : {}),
@@ -253,7 +224,7 @@ async function runOnHarness(
   adapter: Adapter,
   prompt: string,
   call: StepRequest,
-  step: Plan,
+  step: RoutePlan,
   given: { cwd: string; signal?: AbortSignal; servers: McpServerConfig[]; stop: (message: string) => WorkflowError; account?: Account },
 ): Promise<unknown> {
   const { cwd, signal, servers, stop, account } = given;
@@ -342,7 +313,7 @@ async function runOnHarness(
   try {
     // The record names the model, or the harness alone when the step picks none.
     if (model) call.onModelResolved?.(withHarness(harness, model));
-    else if (step.model && step.model !== call.model) call.onModelResolved?.(withHarness(harness, step.model));
+    else if (step.model && step.model !== call.route.requested) call.onModelResolved?.(withHarness(harness, step.model));
     const fresh = { prompt: buildPrompt(prompt, label, schema), ...(images.length ? { images } : {}) };
     let answer: { text: string; value?: unknown; sessionId?: string } | undefined;
     // A schema answer the program refused still has text to read.

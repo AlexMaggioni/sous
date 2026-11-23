@@ -4,6 +4,7 @@ import type { Account } from "@orchestrator/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
 import type { McpServerConfig } from "./mcp-config.js";
 import type { StepGiven } from "../orchestrator-globals.js";
+import type { StepRoute } from "./agent-runner.js";
 import type { AgentSessionRef } from "../workflow-result.js";
 
 /** Real token/cost usage for ONE subagent run. Delivered OUT-OF-BAND via
@@ -175,13 +176,17 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
 
 /** What the engine sends the runner for one agent call. */
 export interface StepRequest<S extends TSchema | undefined = TSchema | undefined> extends EngineFields<S> {
-  /** The model spec the step asked for (`harness/modelId`, a bare `modelId`, or a harness
-   *  alone). It is also hashed. The steps module picks the harness from it. Omitted => the
-   *  harness default. */
+  /** Where the step goes: the runner's own route(), or the engine's agent registry for a runner
+   *  with none. The steps module runs its plan and refuses its problem. */
+  route: StepRoute;
+  /** route.requested, the model spec the step asked for (`harness/modelId`, a bare `modelId`,
+   *  or a harness alone), for runners with no route() of their own. Omitted => the harness
+   *  default. */
   model?: string;
   /** Coarse tier ("small" | "medium" | "big"). No runner reads it. */
   tier?: string;
-  /** Tool allow-list of the agent's default block. */
+  /** The fields below come from the engine's agent registry, and only a runner with no route()
+   *  gets them. Tool allow-list of the agent's default block. */
   toolNames?: string[];
   /** Tool deny-list of the agent's default block, applied after the allow-list. */
   disallowedToolNames?: string[];
