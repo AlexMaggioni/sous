@@ -6,6 +6,7 @@ import test from "node:test";
 
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
+import { eventLog } from "./helpers/event-log.js";
 
 function fixture(runner: AgentRunner) {
   const cwd = mkdtempSync(join(tmpdir(), "same-run-cwd-"));
@@ -49,7 +50,7 @@ return { alpha, beta, marker: args.marker };`;
     });
     assert.equal(first.status, "paused", "the failed step pauses the run");
     assert.equal(first.tokenUsage?.total, 13);
-    const beforeEvents = testRun.manager.getPersistence().readEvents(first.runId, { limit: 1_000 });
+    const beforeEvents = eventLog(testRun.manager).readEvents(first.runId, { limit: 1_000 });
 
     const started = await testRun.manager.resumeInBackground(first.runId);
     assert.equal(started.accepted, true);
@@ -66,7 +67,7 @@ return { alpha, beta, marker: args.marker };`;
     assert.equal(completed.tokenUsage?.total, 20);
     assert.equal(completed.tokenUsage?.cost, 0.2);
     assert.deepEqual(prompts, ["alpha", "beta", "beta"]);
-    const continuationEvents = testRun.manager.getPersistence().readEvents(first.runId, {
+    const continuationEvents = eventLog(testRun.manager).readEvents(first.runId, {
       after: beforeEvents.endCursor,
       limit: 1_000,
       streamId: beforeEvents.streamId,

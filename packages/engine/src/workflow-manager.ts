@@ -64,7 +64,7 @@ import type {
   PreparedContinuation,
   PreparedResume,
 } from "./resume.js";
-import { withRunEvents, type RunEventPersistence } from "./runs/persistence/run-event-persistence.js";
+import { hasEventLog, type RunEventLog } from "./runs/persistence/run-event-persistence.js";
 import { projectRecordedError } from "./recorded-error.js";
 import { workflowHomeDir } from "./workflow-paths.js";
 import { cloneFrozenStrictJson, cloneStrictJsonValue, deepFreeze } from "./strict-json.js";
@@ -337,7 +337,8 @@ export interface WorkflowManagerOptions {
   persistenceRoot?: string;
   /**
    * Custom run persistence implementation. When omitted, the manager constructs
-   * the default filesystem persistence for `cwd` and `persistenceRoot`.
+   * the default filesystem persistence for `cwd` and `persistenceRoot`. The manager keeps
+   * a run's events only when the store has `appendEvent` and `readEvents`.
    */
   persistence?: RunPersistence;
   /** Default non-git environment label for replay provenance diagnostics. */
@@ -556,7 +557,9 @@ export interface WorkflowManager {
 export class WorkflowManager extends EventEmitter {
   private runs = new Map<string, ManagedRun>();
   private agentAttempts = new Map<string, Set<RegisteredAgentAttempt>>();
-  private persistence: RunEventPersistence;
+  private persistence: RunPersistence;
+  /** The store's event log. A store without one, such as a test's in-memory store, keeps no events. */
+  private eventLog?: RunEventLog;
   /** The manager's project directory — keys the persistence store and is the default run cwd. */
   readonly cwd: string;
   private concurrency: number;
@@ -578,8 +581,8 @@ export class WorkflowManager extends EventEmitter {
     this.persistenceRoot = workflowHomeDir({ persistenceRoot: options.persistenceRoot });
     this.environmentKey = options.environmentKey;
     this.persistence = options.persistence
-      ? withRunEvents(options.persistence)
-      : createRunPersistence(this.cwd, undefined, { persistenceRoot: this.persistenceRoot });
+      ?? createRunPersistence(this.cwd, undefined, { persistenceRoot: this.persistenceRoot });
+    if (hasEventLog(this.persistence)) this.eventLog = this.persistence;
   }
 
   override emit(eventName: string | symbol, ...args: unknown[]): boolean {
@@ -1235,8 +1238,7 @@ export class WorkflowManager extends EventEmitter {
       ...(exec.resumeJournal ? { legacyResume: true as const, newRunResume: true as const } : {}),
       background,
       lease: identity.lease,
-      eventStreamId: generateEventStreamId(),
-      eventSeq: 0,
+      ...(this.eventLog ? { eventStreamId: generateEventStreamId(), eventSeq: 0 } : {}),
     };
   }
 
@@ -1283,6 +1285,8 @@ export class WorkflowManager extends EventEmitter {
       eventSeq: snapshot.eventSeq,
       eventLogIncomplete: snapshot.eventLogIncomplete,
     };
+    const log = this.eventLog;
+    if (!log) return state;
 
     if (snapshot.eventStreamId === undefined && snapshot.eventSeq === undefined) {
       state.eventStreamId = generateEventStreamId();
@@ -1299,7 +1303,7 @@ export class WorkflowManager extends EventEmitter {
     if (state.eventLogIncomplete) return state;
 
     try {
-      const tail = this.persistence.readEvents(snapshot.runId).endCursor;
+      const tail = log.readEvents(snapshot.runId).endCursor;
       state.eventSeq = tail;
     } catch (error) {
       state.eventLogIncomplete = true;
@@ -1323,7 +1327,9 @@ export class WorkflowManager extends EventEmitter {
     actions: RunEventPublicationActions = {},
   ): boolean {
     let appendedRecord: RunEventLogRecord | undefined;
+    const log = this.eventLog;
     if (
+      log &&
       isPersistableRunEvent(event) &&
       state.lease &&
       !state.eventLogIncomplete
@@ -1336,7 +1342,7 @@ export class WorkflowManager extends EventEmitter {
           throw new Error(`run ${state.runId} has no event publication watermark`);
         }
         const candidate = state.eventSeq + 1;
-        const record = this.persistence.appendEvent(state.runId, {
+        const record = log.appendEvent(state.runId, {
           seq: candidate,
           timestamp: new Date().toISOString(),
           event,
@@ -2718,13 +2724,15 @@ export class WorkflowManager extends EventEmitter {
 
       const publication = this.prepareEventPublicationState(current, lease);
       let stoppedEventAlreadyDurable = false;
+      const log = this.eventLog;
       if (
+        log &&
         publication.eventStreamId !== undefined &&
         publication.eventSeq !== undefined &&
         publication.eventSeq > 0
       ) {
         try {
-          const tail = this.persistence.readEvents(runId, {
+          const tail = log.readEvents(runId, {
             streamId: publication.eventStreamId,
             after: publication.eventSeq - 1,
             limit: 1,
@@ -2797,7 +2805,7 @@ export class WorkflowManager extends EventEmitter {
   /**
    * Get the persistence layer (for saving workflows).
    */
-  getPersistence(): RunEventPersistence {
+  getPersistence(): RunPersistence {
     return this.persistence;
   }
 }

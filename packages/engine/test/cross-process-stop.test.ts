@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { WorkflowManager } from "../src/workflow-manager.js";
+import { eventLog } from "./helpers/event-log.js";
 
 const SCRIPT = [
   'export const meta = { name: "lease-stop", description: "lease stop" };',
@@ -84,12 +85,12 @@ test("a manager cold-stops a lease-free paused run and appends one durable stopp
     assert.equal(stopped.outcome, "stopped");
     const state = fresh.getPersistence().load(started.runId);
     assert.equal(state?.status, "aborted");
-    const events = fresh.getPersistence().readEvents(started.runId, { streamId: state?.eventStreamId });
+    const events = eventLog(fresh).readEvents(started.runId, { streamId: state?.eventStreamId });
     assert.equal(events.events.filter((record) => record.event.type === "stopped").length, 1);
 
     const retry = fresh.stopPersistedRun(started.runId);
     assert.equal(retry.outcome, "already-terminal");
-    const afterRetry = fresh.getPersistence().readEvents(started.runId, { streamId: state?.eventStreamId });
+    const afterRetry = eventLog(fresh).readEvents(started.runId, { streamId: state?.eventStreamId });
     assert.equal(afterRetry.events.filter((record) => record.event.type === "stopped").length, 1);
     controlled.resolve("cleanup");
     await started.promise.catch(() => undefined);

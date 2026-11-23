@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, unlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,8 +11,10 @@ import { RunEventLogError } from "../src/runs/persistence/run-event-persistence.
 import {
   createRunPersistence,
   type PersistedRunState,
+  type RunPersistence,
 } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
+import { eventLog } from "./helpers/event-log.js";
 
 const script = (body: string, name = "manager-events") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: 'manager event persistence' }\n${body}`;
@@ -75,7 +77,7 @@ test("manager appends dense events before delivery and public emit stays live-on
         return;
       }
       if (payload.message !== "persisted") return;
-      appendObservedBeforeDelivery = manager.getPersistence().readEvents(payload.runId).events.some(
+      appendObservedBeforeDelivery = eventLog(manager).readEvents(payload.runId).events.some(
         (record) => record.event.type === "log" && record.event.message === payload.message,
       );
     });
@@ -85,7 +87,7 @@ test("manager appends dense events before delivery and public emit stays live-on
 
     const result = await manager.runSync(script(`phase('Build')\nlog('persisted')\nreturn await agent('work', { label: 'work' })`));
     const persisted = manager.getPersistence().load(result.runId);
-    const events = manager.getPersistence().readEvents(result.runId, { limit: 1_000 });
+    const events = eventLog(manager).readEvents(result.runId, { limit: 1_000 });
 
     assert.equal(result.status, "completed");
     assert.match(persisted?.eventStreamId ?? "", /^[0-9a-f]{32}$/);
@@ -123,7 +125,7 @@ test("nested workflow observations use the parent stream and child callback scop
     const result = await manager.runSync(script(`return await workflow('child')`, "parent"));
     const childRunId = `${result.runId}-nested1`;
     const persisted = manager.getPersistence().load(result.runId);
-    const childEvents = manager.getPersistence().readEvents(result.runId, { limit: 1_000 }).events
+    const childEvents = eventLog(manager).readEvents(result.runId, { limit: 1_000 }).events
       .filter((record) => record.event.scope === childRunId);
     const childTypes = new Set<string>(childEvents.map((record) => record.event.type));
 
@@ -204,7 +206,7 @@ return await agent('next', { label: 'next' })`),
     assert.equal(paused?.pauseReason, "requested");
     assert.equal(paused?.journal?.length, 1, "the executing call journaled before the pause");
     assert.equal(liveErrors, 0, "a requested pause is not an error");
-    const pausedRecords = manager.getPersistence().readEvents(background.runId, { limit: 1_000 }).events;
+    const pausedRecords = eventLog(manager).readEvents(background.runId, { limit: 1_000 }).events;
     assert.equal(pausedRecords.some((record) => record.event.type === "error"), false);
     const pausedEvent = pausedRecords.find((record) => record.event.type === "paused")?.event;
     assert.equal(pausedEvent?.type === "paused" ? pausedEvent.reason : undefined, "requested");
@@ -218,7 +220,7 @@ return await agent('next', { label: 'next' })`),
 
     assert.equal(manager.stop(background.runId), true);
     const stopped = manager.getPersistence().load(background.runId);
-    const records = manager.getPersistence().readEvents(background.runId, { limit: 1_000 });
+    const records = eventLog(manager).readEvents(background.runId, { limit: 1_000 });
     assert.equal(stopped?.status, "aborted");
     assert.equal(stopped?.eventStreamId, paused?.eventStreamId);
     assert.equal(stopped?.eventSeq, records.endCursor);
@@ -257,7 +259,7 @@ test("a failed step, a stopped step and a time limit pause with the same reason 
       const state = manager.getPersistence().load(background.runId);
       assert.equal(state?.status, "paused", want);
       assert.equal(state?.pauseReason, want);
-      const persisted = manager.getPersistence().readEvents(background.runId, { limit: 1_000 }).events
+      const persisted = eventLog(manager).readEvents(background.runId, { limit: 1_000 }).events
         .filter((record) => record.event.type === "paused")
         .map((record) => (record.event.type === "paused" ? record.event.reason : undefined));
       assert.deepEqual(persisted, [want], "the saved event says what the state says");
@@ -274,7 +276,7 @@ test("automatic error persists without a listener and checkpoint gates republish
       agent: { async run() { return "unused"; } },
     });
     const failed = await failedManager.runSync(script(`throw new Error('boom')`, "failed-events"));
-    const failureRecords = failedManager.getPersistence().readEvents(failed.runId, { limit: 1_000 });
+    const failureRecords = eventLog(failedManager).readEvents(failed.runId, { limit: 1_000 });
     const failure = failureRecords.events.at(-1)?.event;
     assert.equal(failed.status, "failed");
     assert.equal(failure?.type, "error");
@@ -301,7 +303,7 @@ test("automatic error persists without a listener and checkpoint gates republish
     });
     let eventVisibleBeforeGateSave = false;
     cold.on("paused", ({ runId }) => {
-      const records = cold.getPersistence().readEvents(runId, { limit: 1_000 });
+      const records = eventLog(cold).readEvents(runId, { limit: 1_000 });
       eventVisibleBeforeGateSave = records.events.at(-1)?.event.type === "paused";
     });
     const gate = await cold.resumeInBackground(checkpoint.runId);
@@ -310,7 +312,7 @@ test("automatic error persists without a listener and checkpoint gates republish
     await assert.rejects(gate.promise);
 
     const after = cold.getPersistence().load(checkpoint.runId);
-    const records = cold.getPersistence().readEvents(checkpoint.runId, { limit: 1_000 });
+    const records = eventLog(cold).readEvents(checkpoint.runId, { limit: 1_000 });
     assert.equal(eventVisibleBeforeGateSave, true);
     assert.equal(after?.eventStreamId, before?.eventStreamId);
     assert.equal(after?.eventSeq, (before?.eventSeq ?? 0) + 1);
@@ -350,7 +352,7 @@ return { value, decision }`,
     if (!resumed.accepted) assert.fail("replay resume should be accepted");
     assert.equal((await resumed.promise).status, "completed");
 
-    const suffix = second.getPersistence().readEvents(paused.runId, {
+    const suffix = eventLog(second).readEvents(paused.runId, {
       after: before.eventSeq,
       limit: 1_000,
       streamId: before.eventStreamId,
@@ -388,7 +390,7 @@ test("legacy resume upgrades under lease and begins a new event stream at resume
     if (!resumed.accepted) assert.fail("legacy resume should be accepted");
     const result = await resumed.promise;
     const persisted = manager.getPersistence().load(runId);
-    const records = manager.getPersistence().readEvents(runId, { limit: 1_000 });
+    const records = eventLog(manager).readEvents(runId, { limit: 1_000 });
 
     assert.equal(result.status, "completed");
     assert.match(persisted?.eventStreamId ?? "", /^[0-9a-f]{32}$/);
@@ -585,7 +587,7 @@ test("automatic usage_limit and auth_required settlements carry reason + errorRe
     assert.equal(liveUsage.errorRecord.code, WorkflowErrorCode.PROVIDER_USAGE_LIMIT);
     assert.equal("authContext" in liveUsage, false);
 
-    const usagePersisted = usageManager.getPersistence().readEvents(usageResult.runId, { limit: 1_000 }).events.at(-1)?.event;
+    const usagePersisted = eventLog(usageManager).readEvents(usageResult.runId, { limit: 1_000 }).events.at(-1)?.event;
     if (usagePersisted?.type !== "paused" || usagePersisted.reason !== "usage_limit") assert.fail("persisted usage-limit pause missing reason");
     assert.equal(usagePersisted.resetHint, "retry after 17:00 UTC");
     assert.equal(usagePersisted.errorRecord.form, "workflow-error");
@@ -619,7 +621,7 @@ test("automatic usage_limit and auth_required settlements carry reason + errorRe
     assert.equal(liveAuth.errorRecord.code, WorkflowErrorCode.AUTH_REQUIRED);
     assert.equal("resetHint" in liveAuth, false);
 
-    const authPersisted = authManager.getPersistence().readEvents(authResult.runId, { limit: 1_000 }).events.at(-1)?.event;
+    const authPersisted = eventLog(authManager).readEvents(authResult.runId, { limit: 1_000 }).events.at(-1)?.event;
     if (authPersisted?.type !== "paused" || authPersisted.reason !== "auth_required") assert.fail("persisted auth pause missing reason");
     assert.deepEqual(authPersisted.authContext, authContext);
     assert.equal(authPersisted.errorRecord.form, "workflow-error");
@@ -639,4 +641,36 @@ test("typed EventEmitter methods retain arbitrary-event fallbacks", () => {
   manager.on("custom-event", (...args: unknown[]) => assert.deepEqual(args, [1, "two"]));
   assert.equal(manager.emit("custom-event", 1, "two"), true);
   manager.removeListener("log", logListener);
+});
+
+test("a store with no event log gets no events file, no warning and no incomplete mark", async () => {
+  // A test's in-memory store keeps the state alone. The manager then keeps no events for the run.
+  const runsDir = mkdtempSync(join(tmpdir(), "workflow-manager-events-memory-"));
+  const states = new Map<string, PersistedRunState>();
+  const store: RunPersistence = {
+    save: (state) => void states.set(state.runId, structuredClone(state)),
+    load: (runId) => structuredClone(states.get(runId) ?? null),
+    list: () => [...states.values()].map((state) => structuredClone(state)),
+    delete: (runId) => states.delete(runId),
+    acquireRunLease: (runId) => ({ runId, token: "memory" }),
+    releaseRunLease: () => {},
+    getRunsDir: () => runsDir,
+  };
+  const warnings: unknown[][] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => void warnings.push(args);
+  try {
+    const manager = new WorkflowManager({ persistence: store, agent: { run: async () => "ok" } });
+    const result = await manager.runSync(script("return await agent('step', { label: 'step' })"));
+    assert.equal(result.status, "completed");
+    assert.deepEqual(readdirSync(runsDir), []);
+    assert.deepEqual(warnings, []);
+    const saved = states.get(result.runId)!;
+    assert.equal(saved.eventLogIncomplete, undefined);
+    assert.equal(saved.eventSeq, undefined);
+    assert.equal(saved.eventStreamId, undefined);
+  } finally {
+    console.warn = warn;
+    rmSync(runsDir, { recursive: true, force: true });
+  }
 });

@@ -15,14 +15,13 @@ import {
 } from "../../run-events.js";
 import { WorkflowErrorCode } from "../../errors.js";
 import { MAX_OBSERVABILITY_SCALAR_BYTES, projectRunEventForPersistence } from "../../run-observability.js";
-import type { FsLayer, PersistedRunState, RunLease, RunPersistence } from "./run-persistence.js";
+import type { FsLayer, PersistedRunState, RunPersistence } from "./run-persistence.js";
 
 export const RUN_EVENT_MAX_RECORD_BYTES = 65_536;
 export const RUN_EVENT_READ_LIMIT_DEFAULT = 100 as const;
 export const RUN_EVENT_READ_LIMIT_MAX = 1_000 as const;
 
 const STREAM_ID_PATTERN = /^[0-9a-f]{32}$/;
-const RUN_EVENT_WRAPPER = Symbol("orchestrator.runEventPersistence");
 const EVENT_TYPES = new Set([
   "log",
   "phase",
@@ -123,9 +122,19 @@ export interface AppendRunEventInput {
   event: PersistableEngineRunEvent;
 }
 
-export interface RunEventPersistence extends RunPersistence {
+/** A run's event log: `<runsDir>/<runId>.events.jsonl`, one v1 record per line. */
+export interface RunEventLog {
   appendEvent(runId: string, input: AppendRunEventInput): RunEventLogRecord;
   readEvents(runId: string, options?: ReadRunEventsOptions): ReadRunEventsResult;
+}
+
+/** The engine's own run store, which keeps each run's event log next to its state. */
+export interface RunEventPersistence extends RunPersistence, RunEventLog {}
+
+/** Whether a run store keeps an event log. A test's in-memory store has none. */
+export function hasEventLog(store: RunPersistence): store is RunEventPersistence {
+  const candidate = store as Partial<RunEventLog>;
+  return typeof candidate.appendEvent === "function" && typeof candidate.readEvents === "function";
 }
 
 interface ResolvedEventFs {
@@ -610,19 +619,22 @@ function resolveEventFs(fsOverride: Partial<FsLayer> = {}): ResolvedEventFs {
 }
 
 /**
- * Add the event log to a run store. Each read parses the whole log. The writer parses it once
- * per lease, before its first append, and then only counts what it adds.
+ * The event log of the runs in `runsDir`, for createRunPersistence. `load` reads a run's saved
+ * state, which holds the log's stream id and watermark. Each read parses the whole log. The
+ * writer parses it once per lease, before its first append, and then only counts what it adds.
+ * The store calls `forget` when it releases a run's lease and `remove` before it deletes a run.
  */
-export function withRunEvents(persistence: RunPersistence, fsOverride?: Partial<FsLayer>): RunEventPersistence {
-  if ((persistence as RunPersistence & { [RUN_EVENT_WRAPPER]?: boolean })[RUN_EVENT_WRAPPER]) {
-    return persistence as RunEventPersistence;
-  }
+export function createRunEventLog(
+  runsDir: string,
+  load: (runId: string) => PersistedRunState | null,
+  fsOverride?: Partial<FsLayer>,
+): RunEventLog & { forget(runId: string): void; remove(runId: string): void } {
   const fs = resolveEventFs(fsOverride);
   // The next sequence for each run this process appends to. It is set by the first append under
   // a lease and dropped when the lease is released.
   const writers = new Map<string, { streamId: string; nextSeq: number }>();
-  const runsDir = resolve(persistence.getRunsDir());
-  const eventPath = (runId: string) => join(runsDir, `${runId}.events.jsonl`);
+  const dir = resolve(runsDir);
+  const eventPath = (runId: string) => join(dir, `${runId}.events.jsonl`);
 
   const readSidecar = (runId: string): { path: string; present: boolean; buffer: Buffer } => {
     const path = eventPath(runId);
@@ -637,13 +649,13 @@ export function withRunEvents(persistence: RunPersistence, fsOverride?: Partial<
 
   const loadSnapshot = (runId: string): PersistedRunState | null => {
     try {
-      const snapshot = persistence.load(runId);
+      const snapshot = load(runId);
       if (snapshot !== null) return snapshot;
     } catch (cause) {
       if (cause instanceof RunEventLogError) throw cause;
       throw eventError("Unable to load the run snapshot", "IO_ERROR", runId, undefined, undefined, cause);
     }
-    const snapshotPath = join(runsDir, `${runId}.json`);
+    const snapshotPath = join(dir, `${runId}.json`);
     for (const candidate of [snapshotPath, `${snapshotPath}.bak`]) {
       try {
         fs.readFileSync(candidate);
@@ -804,44 +816,19 @@ export function withRunEvents(persistence: RunPersistence, fsOverride?: Partial<
     return record;
   };
 
-  const wrapper = {
-    save(state) {
-      return persistence.save(state);
+  return {
+    appendEvent,
+    readEvents,
+    forget(runId) {
+      writers.delete(runId);
     },
-    load(runId) {
-      return persistence.load(runId);
-    },
-    list() {
-      return persistence.list();
-    },
-    delete(runId) {
+    remove(runId) {
       writers.delete(runId);
       try {
         fs.unlinkSync(eventPath(runId));
       } catch {
-        // Sidecar cleanup is best-effort; the underlying delete result remains authoritative.
+        // Removing the log is best-effort. The store's delete result is the one that counts.
       }
-      return persistence.delete(runId);
     },
-    acquireRunLease(runId) {
-      return persistence.acquireRunLease(runId);
-    },
-    releaseRunLease(lease: RunLease) {
-      writers.delete(lease.runId);
-      return persistence.releaseRunLease(lease);
-    },
-    inspectRunLease(runId: string) {
-      return persistence.inspectRunLease?.(runId) ?? null;
-    },
-    validateRunLease(lease: RunLease) {
-      return persistence.validateRunLease?.(lease) ?? true;
-    },
-    getRunsDir() {
-      return persistence.getRunsDir();
-    },
-    appendEvent,
-    readEvents,
-  } as RunEventPersistence & { [RUN_EVENT_WRAPPER]: true };
-  Object.defineProperty(wrapper, RUN_EVENT_WRAPPER, { value: true });
-  return wrapper;
+  };
 }

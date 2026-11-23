@@ -24,7 +24,7 @@ import {
   RUN_EVENT_READ_LIMIT_DEFAULT,
   RUN_EVENT_READ_LIMIT_MAX,
   RunEventLogError,
-  withRunEvents,
+  hasEventLog,
   type RunEventPersistence,
 } from "../../../src/runs/persistence/run-event-persistence.js";
 import {
@@ -559,7 +559,7 @@ test(
 test(
   "createRunPersistence is already event-capable and default deletion removes its sidecar",
   withPersistence(({ persistence, eventPath }) => {
-    assert.equal(withRunEvents(persistence), persistence);
+    assert.equal(hasEventLog(persistence), true);
     const runId = "delete-order";
     persistence.save(state(runId));
     persistence.appendEvent(runId, { seq: 1, timestamp: TIMESTAMP, event: stopped(runId) });
@@ -651,55 +651,22 @@ test(
   );
 }
 
-test("withRunEvents wraps structural persistence once, delegates it, and deletes the sidecar first", () => {
-  const runsDir = mkdtempSync(join(tmpdir(), "ap-run-events-custom-"));
-  const snapshots = new Map<string, PersistedRunState>();
-  let sidecarPresentWhenDelete: boolean | undefined;
-  let releaseCalls = 0;
-  const custom: RunPersistence & { appendEvent(): never } = {
-    save(snapshot) {
-      snapshots.set(snapshot.runId, structuredClone(snapshot));
-    },
-    load(runId) {
-      const snapshot = snapshots.get(runId);
-      return snapshot === undefined ? null : structuredClone(snapshot);
-    },
-    list() {
-      return [...snapshots.values()].map((snapshot) => structuredClone(snapshot));
-    },
-    delete(runId) {
-      sidecarPresentWhenDelete = existsSync(join(runsDir, `${runId}.events.jsonl`));
-      snapshots.delete(runId);
-      return false;
-    },
-    acquireRunLease(runId) {
-      return { runId, token: "custom" };
-    },
-    releaseRunLease() {
-      releaseCalls++;
-    },
-    getRunsDir() {
-      return runsDir;
-    },
-    appendEvent() {
-      throw new Error("structural lookalike must not be trusted");
-    },
+test("hasEventLog trusts a store as its log only when it has both appendEvent and readEvents", () => {
+  const store: RunPersistence = {
+    save() {},
+    load: () => null,
+    list: () => [],
+    delete: () => false,
+    acquireRunLease: (runId) => ({ runId, token: "store" }),
+    releaseRunLease() {},
+    getRunsDir: () => "/memory/runs",
   };
-  try {
-    const persistence = withRunEvents(custom);
-    assert.notEqual(persistence, custom);
-    assert.equal(withRunEvents(persistence), persistence);
-    const runId = "custom-wrapper";
-    persistence.save(state(runId));
-    assert.equal(persistence.appendEvent(runId, { seq: 1, timestamp: TIMESTAMP, event: stopped(runId) }).seq, 1);
-    persistence.releaseRunLease({ runId, token: "custom" });
-    assert.equal(releaseCalls, 1);
-    assert.equal(persistence.appendEvent(runId, { seq: 2, timestamp: TIMESTAMP, event: stopped(runId) }).seq, 2);
-    assert.equal(persistence.delete(runId), false);
-    assert.equal(sidecarPresentWhenDelete, false);
-  } finally {
-    rmSync(runsDir, { recursive: true, force: true });
-  }
+  const appendEvent = () => {
+    throw new Error("a lookalike's append must not be called");
+  };
+  assert.equal(hasEventLog(store), false);
+  assert.equal(hasEventLog({ ...store, appendEvent } as RunPersistence), false);
+  assert.equal(hasEventLog({ ...store, appendEvent, readEvents: () => ({}) } as RunPersistence), true);
 });
 
 // A read parses the whole log, so its cost grows with the log. This bounds it on a large one.

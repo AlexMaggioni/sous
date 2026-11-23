@@ -32,7 +32,7 @@ import type {
 import type { AuthErrorContext, CheckpointContext } from "../../errors.js";
 import { WorkflowErrorCode } from "../../errors.js";
 import type { RunEnvironmentIdentity } from "../../run-environment.js";
-import { withRunEvents, type RunEventPersistence } from "./run-event-persistence.js";
+import { createRunEventLog, type RunEventPersistence } from "./run-event-persistence.js";
 import { workflowProjectPaths } from "./project-paths.js";
 
 export type RunStatus = "pending" | "running" | "paused" | "completed" | "failed" | "aborted";
@@ -356,6 +356,7 @@ export function createRunPersistence(
 
   const loadState = (runId: string): PersistedRunState | null =>
     loadRunState(runsDir, legacyRunsDir, runId, { existsSync: _existsSync, readFileSync: _readFileSync });
+  const events = createRunEventLog(runsDir, loadState, fsOverride);
 
   const pidIsAlive = (pid: number): boolean => {
     if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -408,7 +409,7 @@ export function createRunPersistence(
     };
   };
 
-  const persistence: RunPersistence = {
+  return {
     save(state: PersistedRunState) {
       ensureDir();
       state.updatedAt = new Date().toISOString();
@@ -458,6 +459,8 @@ export function createRunPersistence(
     },
 
     delete(runId: string): boolean {
+      // The events file goes first, before the state files and the lock.
+      events.remove(runId);
       let deleted = false;
       // Files older engines wrote next to the run: a copy of an inline script and a deleted-run marker.
       for (const old of [inlineScriptPath(runId), lineagePath(runsDir, runId), lineagePath(legacyRunsDir, runId)]) {
@@ -540,6 +543,7 @@ export function createRunPersistence(
     },
 
     releaseRunLease(lease: RunLease): void {
+      events.forget(lease.runId);
       try {
         const existing = readLock(lease.runId);
         if (existing?.token === lease.token) _unlinkSync(primaryLockPath(lease.runId));
@@ -567,8 +571,10 @@ export function createRunPersistence(
     getRunsDir(): string {
       return runsDir;
     },
+
+    appendEvent: events.appendEvent,
+    readEvents: events.readEvents,
   };
-  return withRunEvents(persistence, fsOverride);
 }
 
 /**
