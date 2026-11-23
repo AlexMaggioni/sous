@@ -66,7 +66,7 @@ For process-lifetime background execution, use the returned settlement handle:
 
 ```ts
 const { runId, promise } = manager.startInBackground(script, { topic: "otters" });
-console.log(manager.getSnapshot(runId)?.tokenUsage); // cumulative live usage when known
+console.log(manager.getRun(runId)?.snapshot.tokenUsage); // cumulative live usage when known
 manager.cancelAgentSteps(runId, { label: "review" }); // stop the in-flight "review" steps
 const terminal = await promise; // rejects for pause, failure, or abort
 ```
@@ -77,17 +77,19 @@ manager sorts and copies the exact entries, including journaled checkpoint answe
 before that save. Replay hits do not emit journal callbacks, so this seeding is what makes the child
 run independently resumable after a second pause or process loss. Each later live journal append
 persists the complete inherited prefix plus suffix. A dead owner's persisted `pending` or `running`
-run reconciles under its lease to `paused` with `pauseReason: "interrupted"` during construction or
-a cold list or resume lookup. Live and permission-protected owner PIDs remain untouched.
+run reconciles under its lease to `paused` with `pauseReason: "interrupted"` during a cold resume
+lookup. Live and permission-protected owner PIDs remain untouched.
 Completed current-format crash-journal entries use identity replay; an in-flight unjournaled call
 executes again on resume. Missing terminal-environment capture is diagnostic only.
 
 `cancelAgentSteps(runId, { label, scope })` stops the run's in-flight attempts with that label, or
 all of them, and returns how many it stopped. It aborts each attempt with recoverable
 `AGENT_CANCELLED`, races backend cooperation so an ignored signal still settles, and bypasses
-retries. The script receives `null`; sibling branches continue, the run-level signal and
-`abortSignaled` remain untouched, and no journal result is created. Under `pauseOnFailedStep` the
-run pauses on the stopped step instead, and resume runs it again.
+retries. No journal result is created, and the run-level signal and `abortSignaled` remain
+untouched. The manager always pauses the run on a stopped step, with `pauseReason: "step_stopped"`,
+and a resume runs that step again. A failed step pauses the run the same way, with
+`pauseReason: "step_failed"`. Under bare `runWorkflow` without `pauseOnFailedStep`, the script
+receives `null` and sibling branches continue.
 
 Or call the bare engine function (no manager, no persistence layer):
 
@@ -146,8 +148,8 @@ Otherwise the calls pair by occurrence: the n-th call with a key takes the n-th 
 that key, from the source's own rows first and then its seed's. The key is the kind, the call hash
 and, when the source computed it the same way, the input fingerprint. A call whose row failed or
 never finished runs live, and still counts, so an identical call after it takes the next row. An
-agent call whose recorded text is blank runs live. A call with no row runs live. Same-ID
-`manager.resume(runId)` pairs the same way, on the kind and call hash only. A manual
+agent call whose recorded text is blank runs live. A call with no row runs live. A same-ID
+`manager.resumeInBackground(runId)` pairs the same way, on the kind and call hash only. A manual
 `resumeJournal` has no call rows, so its calls pair by index and hash. A same-run continuation
 given `exec.script` that differs from the persisted text runs that revision against the run's own
 rows (`continuation.scriptRevised`, `scriptRevisions`); a revision must parse.
@@ -217,13 +219,7 @@ invalidate replay or interrupted-turn continuation.
 set `new WorkflowManager({ persistenceRoot: "/absolute/data/root" })`; when omitted,
 `ORCHESTRATOR_PERSISTENCE_ROOT` is used, then the homedir default. The root must be absolute.
 Hosts that own storage can instead pass `new WorkflowManager({ persistence })` with a custom
-`RunPersistence`. Set `journaling: false` on the manager or per `runSync`/`startInBackground`
-call when the host owns transcript storage. That mode writes no engine run-state/log journal
-files and otherwise preserves run results, events, retries, status transitions,
-cross-process leases, and listing of persisted runs written by other executions; resume is
-intentionally unavailable and rejects with `journaling disabled for this run` for those runs.
-The manager-level `journal` event still emits live `{ runId, entry }` observations when file
-journaling is disabled.
+`RunPersistence`. Every run journals, so every run can resume.
 
 Token accounting is observable before settlement. `WorkflowRunOptions.onTokenUsage`, the manager's
 `tokenUsage` event, and `snapshot.tokenUsage` receive fresh cumulative totals after every live agent
@@ -252,15 +248,14 @@ The manager treats `PROVIDER_USAGE_LIMIT`, `AUTH_REQUIRED`, `CHECKPOINT_REQUIRED
 `PAUSE_REQUESTED` as resumable pause conditions rather than failed runs. `pause(runId)` raises the
 last one: agent calls already executing finish and journal, nothing new is admitted, queued calls
 settle as interrupted rows, and the run pauses with `reason:"requested"`. `stop(runId)` interrupts
-in-flight work instead and settles the run as `aborted`; both continue with `resume(runId)`. An authentication pause uses `reason: "auth_required"`
+in-flight work instead and settles the run as `aborted`; both continue with `resumeInBackground(runId)`. An authentication pause uses `reason: "auth_required"`
 and carries only the non-secret `authContext`; complete authentication through the injected runner,
 then resume the same journal. Every unanswered checkpoint persists `reason:"checkpoint_required"`
 and non-secret `checkpointContext`. Answer with a live `confirm` callback on the resuming call. Missing callbacks, `undefined`, non-JSON replies, rejection, and interaction timeout
 pause; script `try/catch` cannot bypass the pending gate. Explicit cancellation interrupts even a
 callback that never resolves. An explicit strict-JSON answer, including `false`, `null`, or an
 empty string, is returned verbatim and journaled for cold replay. Authored `headless` and `default`
-fields are rejected; there is no automatic answer or abort policy. The SDK validator may simulate
-answers with journaling disabled, but those simulations cannot become live approval.
+fields are rejected; there is no automatic answer or abort policy.
 
 When a runner reports `onSessionOpen`, the engine records the non-secret re-attach handle on the
 journal entry and in `WorkflowRunResult.agentSessions`. Auth/usage failures truthfully record
@@ -309,7 +304,7 @@ Lifecycle, call, usage, and authored-log events persist by default; `agentHistor
 UTF-8 bytes including LF, and have no raw-reader bypass. A corrupt, inconsistent, legacy, or marked
 incomplete sidecar raises `RunEventLogError`; snapshot/journal recovery remains independent.
 
-Exactly one writer per run is required. `WorkflowManager` holds the cross-process run lease around publication and deletion; custom/direct callers of `appendEvent()`, `save()`, or `delete()` must provide equivalent exclusion. A host may set `WorkflowManagerOptions.leaseOwnerId` (or `RunPersistenceOptions.leaseOwnerId`) to stamp an opaque process-generation identity. Default persistence exposes `inspectRunLease(runId)` as read-only `{runId,pid,startedAt,ownerId?}` and `validateRunLease(lease)`; manager writes fail closed after token loss. `stopPersistedRun(runId)` acquires rather than steals the lease, reloads under it, and durably cold-stops a nonterminal run with exactly one `stopped` event; it reports `owned-elsewhere` while a live writer holds the lock. `deleteRun()` removes the event sidecar before the snapshot while holding that lease, preventing detached callbacks or a competing process from recreating durable state.
+Exactly one writer per run is required. `WorkflowManager` holds the cross-process run lease around publication; custom/direct callers of `appendEvent()`, `save()`, or `delete()` must provide equivalent exclusion. Default persistence exposes `inspectRunLease(runId)` as read-only `{runId,pid,startedAt}` and `validateRunLease(lease)`; manager writes fail closed after token loss. `stopPersistedRun(runId)` acquires rather than steals the lease, reloads under it, and durably cold-stops a nonterminal run with exactly one `stopped` event; it reports `owned-elsewhere` while a live writer holds the lock. orc deletes a run through `removeEngineRun`, which takes the same lease, so it cannot delete a run while a live writer holds it. A run that loses its lock writes nothing after, so a late callback cannot recreate a deleted run's files.
 
 ## How a run's worker starts
 
