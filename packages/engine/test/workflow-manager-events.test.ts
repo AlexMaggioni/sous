@@ -643,6 +643,28 @@ test("typed EventEmitter methods retain arbitrary-event fallbacks", () => {
   manager.removeListener("log", logListener);
 });
 
+test("a step's history report lands on that step, found by its scope and call index", async () => {
+  await withPersistenceDirs(async ({ cwd, root }) => {
+    const history = [{ role: "assistant" as const, kind: "text" as const, text: "second" }];
+    const manager = new WorkflowManager({
+      cwd,
+      persistenceRoot: root,
+      agent: {
+        async run(prompt, options) {
+          if (prompt === "b") options?.onHistory?.(history);
+          return prompt;
+        },
+      },
+    });
+    const result = await manager.runSync(
+      script(`await agent('a', { label: 'same' })\nreturn await agent('b', { label: 'same' })`, "history-step"),
+    );
+    assert.equal(result.status, "completed");
+    const steps = manager.getRun(result.runId)?.snapshot.agents ?? [];
+    assert.deepEqual(steps.map((step) => [step.callIndex, step.history]), [[0, undefined], [1, history]]);
+  });
+});
+
 test("a store with no event log gets no events file, no warning and no incomplete mark", async () => {
   // A test's in-memory store keeps the state alone. The manager then keeps no events for the run.
   const runsDir = mkdtempSync(join(tmpdir(), "workflow-manager-events-memory-"));

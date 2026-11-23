@@ -1574,44 +1574,23 @@ export class WorkflowManager extends EventEmitter {
         onAgentStart: (event) => {
           if (this.dropPostTerminal(managed, "agentStart")) return;
           foldStep(managed.snapshot.agents, { type: "agentStart", ...event }, new Date().toISOString());
-          publish(this.createRunEvent("agentStart", {
-            runId: managed.runId,
-            ...event,
-            scope: event.scope ?? managed.runId,
-          }));
+          publish(this.createRunEvent("agentStart", { runId: managed.runId, ...event }));
           progress();
         },
         onAgentEnd: (event) => {
           if (this.dropPostTerminal(managed, "agentEnd")) return;
           foldStep(managed.snapshot.agents, { type: "agentEnd", ...event, resultPreview: preview(event.result) }, new Date().toISOString());
-          publish(this.createRunEvent("agentEnd", {
-            runId: managed.runId,
-            ...event,
-            scope: event.scope ?? managed.runId,
-          }));
+          publish(this.createRunEvent("agentEnd", { runId: managed.runId, ...event }));
           this.completeAgentCancellation(managed, event);
           progress();
         },
         onAgentHistory: (event) => {
           if (this.dropPostTerminal(managed, "agentHistory")) return;
-          const agentSnapshot = event.callIndex === undefined
-            ? [...managed.snapshot.agents]
-                .reverse()
-                .find((a) => a.label === event.label && a.status === "running")
-            : managed.snapshot.agents.find(
-                (a) =>
-                  a.scope === event.scope &&
-                  a.callIndex === event.callIndex &&
-                  a.status === "running",
-              );
-          if (agentSnapshot) {
-            agentSnapshot.history = event.history;
-          }
-          publish(this.createRunEvent("agentHistory", {
-            runId: managed.runId,
-            ...event,
-            scope: event.scope ?? managed.runId,
-          }));
+          const agentSnapshot = managed.snapshot.agents.find(
+            (a) => a.scope === event.scope && a.callIndex === event.callIndex && a.status === "running",
+          );
+          if (agentSnapshot) agentSnapshot.history = event.history;
+          publish(this.createRunEvent("agentHistory", { runId: managed.runId, ...event }));
           progress();
         },
         onTokenUsage: (usage, context) => {
