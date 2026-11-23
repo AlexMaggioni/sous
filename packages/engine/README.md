@@ -1,316 +1,68 @@
 # @orchestrator/engine
 
-The deterministic core that runs a workflow script. It is a **vm-realm script runtime**
-plus a small DSL (`agent()`, `parallel()`, `pipeline()`, …), a resume journal,
-and optional git-worktree isolation. Each agent step goes through one `AgentRunner` seam.
-The steps module in `src/steps/` is the real runner. It plans the step, then runs it on Claude
-Code or Codex through `@orchestrator/harnesses`. A test or the dry run gives a runner of its own.
+The engine behind `orc`. It runs saved workflows. Each run has a worker process that runs the
+workflow script, keeps the run's record and journal under the orc home, asks its questions
+through the inbox and pauses when a step fails. Each agent step runs on Claude Code or Codex
+through `@orchestrator/harnesses`.
 
-> **orc is the host most users want.** It parses the command line, prints, and calls the engine,
-> so `agent()` talks to a real coding agent. Reach for `@orchestrator/engine` directly only to
-> build your own host.
+orc is the only caller. The entry, `src/index.ts`, exports only the names orc imports, and the
+architecture test fails when it exports one that orc does not. Everything else is internal and
+changes freely. [`docs/orchestrator.md`](../../docs/orchestrator.md) is the guide for people who
+write and run workflows.
 
-## Install
+ESM only, Node 22 or later.
 
-```bash
-npm install @orchestrator/engine
-```
+## The entry
 
-ESM-only, Node 22+.
+The names come in three groups, in the same order as `src/index.ts`.
 
-## The one thing you inject: `AgentRunner`
+- **Runs.** The home and its config (`homePaths`, `ensureHome`, `loadConfig`), the run requests
+  (`startRun`, `resumeRun`, `rerunRun`, `stopRun`, `stopStep`, `pauseRun`, `answerQuestion`), the
+  reads (`listRuns`, `readRun`, `runDetail`, `runQuestions`, `readLog`, `waitForRun`), the clean-up
+  (`discardRun`, `gcRuns`, `pruneRuns`), the schedules and the service (`daemonMain`), and the
+  worker's own entry (`workerMain`).
+- **Saved workflows.** `projectWorkflows` and `resolveWorkflow` find them, `checkWorkflow` checks
+  one without running it, and `dryRun` runs one with stand-in agents.
+- **Accounts, agents and the installed programs.** What `orc account`, `orc doctor` and the agent
+  lookup need.
 
-The engine calls the backend's `run` for each agent step. `route` is optional. The steps
-module has one, and the engine asks it where a step goes before it runs the step. Supply
-anything that matches this shape (from `src/steps/agent-runner.ts`):
-
-```ts
-import type { AgentRunner, StepRequest } from "@orchestrator/engine";
-
-// Minimal stand-in. A real runner starts an agent, as the engine's steps module does.
-// With no `schema` the return is the assistant's text;
-// with a typebox `schema` it is the parsed, validated object. Usage is reported
-// out-of-band via request.onUsage — never in the return value.
-const myRunner: AgentRunner = {
-  async run(prompt: string, _request: StepRequest): Promise<unknown> {
-    return `(stub) ${prompt}`;
-  },
-};
-```
-
-## Minimal use
-
-A workflow is a script whose **first statement** is `export const meta = {...}`; the rest
-of the body runs inside the vm realm with the DSL injected as globals.
+Each operation takes the home's paths first, so a test can point it at a temp folder. A request
+that starts a worker also takes a launcher (see below):
 
 ```ts
-const script = `
-export const meta = { name: "greet", description: "Summarize a topic" };
-const draft = await agent(\`Write three bullet points about \${args.topic}.\`);
-return draft;
-`;
+import { homePaths, startRun, waitForRun, workerProcess } from "@orchestrator/engine";
+
+const paths = homePaths(); // ~/.orchestrator, or $ORC_HOME
+const launch = workerProcess(() => "/path/to/orc/dist/cli.js");
+const record = startRun(paths, launch, { workflow: "ticket", projectDir: process.cwd(), inputs: { ticket: "Add a --json flag" } });
+const end = await waitForRun(paths, record.runId, { log: (text) => process.stdout.write(text) });
+// end.code is orc wait's exit code: 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer.
 ```
-
-Run it through the manager (background tracking, pause/resume, terminal status):
-
-```ts
-import { WorkflowManager } from "@orchestrator/engine";
-
-const manager = new WorkflowManager({ agent: myRunner });
-const result = await manager.runSync(script, { topic: "otters" });
-// result.status is always terminal: "completed" | "paused" | "failed" | "aborted"
-console.log(result.status, result.result, result.tokenUsage);
-```
-
-For process-lifetime background execution, use the returned settlement handle:
-
-```ts
-const { runId, promise } = manager.startInBackground(script, { topic: "otters" });
-console.log(manager.getRun(runId)?.snapshot.tokenUsage); // cumulative live usage when known
-manager.cancelAgentSteps(runId, { label: "review" }); // stop the in-flight "review" steps
-const terminal = await promise; // rejects for pause, failure, or abort
-```
-
-`startInBackground()` returns only after lease acquisition and its fail-fast initial save; it is
-detached from the caller, not from the Node process. If `ExecOptions.resumeJournal` is supplied, the
-manager sorts and copies the exact entries, including journaled checkpoint answers, into the new run
-before that save. Replay hits do not emit journal callbacks, so this seeding is what makes the child
-run independently resumable after a second pause or process loss. Each later live journal append
-persists the complete inherited prefix plus suffix. A dead owner's persisted `pending` or `running`
-run reconciles under its lease to `paused` with `pauseReason: "interrupted"` during a cold resume
-lookup. Live and permission-protected owner PIDs remain untouched.
-Completed current-format crash-journal entries use identity replay; an in-flight unjournaled call
-executes again on resume. Missing terminal-environment capture is diagnostic only.
-
-`cancelAgentSteps(runId, { label, scope })` stops the run's in-flight attempts with that label, or
-all of them, and returns how many it stopped. It aborts each attempt with recoverable
-`AGENT_CANCELLED`, races backend cooperation so an ignored signal still settles, and bypasses
-retries. No journal result is created, and the run-level signal and `abortSignaled` remain
-untouched. The manager always pauses the run on a stopped step, with `pauseReason: "step_stopped"`,
-and a resume runs that step again. A failed step pauses the run the same way, with
-`pauseReason: "step_failed"`. Bare `runWorkflow` pauses the same way: it rejects with
-`PAUSE_REQUESTED`, and steps already running finish first.
-
-Or call the bare engine function (no manager, no persistence layer):
-
-```ts
-import { runWorkflow } from "@orchestrator/engine";
-
-const run = await runWorkflow(script, { agent: myRunner, args: { topic: "otters" } });
-console.log(run.result, run.agentCount, run.durationMs);
-```
-
-`runWorkflow` returns the `EngineRunResult` (meta / result / logs / phases / agentCount /
-durationMs / runId / tokenUsage / resolved `effectiveLimits` / optional `agentSessions`, `fallbacks`, and `checkpointsTaken`). `WorkflowManager` stamps the terminal
-`status` / `reason` / `resetHint` on top to produce a `WorkflowRunResult`.
 
 ## The script DSL
 
-Inside a workflow body these are available as globals (no imports):
+A workflow is a script whose first statement is `export const meta = {...}`. The engine runs the
+rest in its own `vm` realm, with these globals:
 
-- `agent(prompt, opts?)` — run one subagent. `opts` includes `label`, `phase`, `schema`
-  (typebox → validated object), `model`, `mode`, `agentType`,
-  `isolation: "worktree"`, legacy replay-neutral `resume: { filesystem: "read-only" }`, `cwd`, `mcpServers`, `images`, `meta`, `promptMeta`,
-  `keepSession`, `retries`. The single call into your `AgentRunner`.
-- `parallel([() => agent(...), ...])` — run thunks concurrently (bounded by the run's
-  concurrency limiter).
-- `pipeline(items, stage1, stage2, ...)` — map each item through ordered stages.
-- `workflow(nameOrScript, args?)` — run a saved/inline workflow inline (one level deep),
-  sharing the parent run's caps.
-- `checkpoint(prompt, opts?)` — a deterministic, journaled human gate. It requires an explicit
-  host reply; without one it pauses durably. Options are `kind`, `choices`, and `timeoutMs`.
-- Combinators built on the above: `retry` and `gate`. A fulfilled `gate` returns
-  `{ ok, value, verdict, attempts }`, where `value` is the final producer result and
-  `verdict` is the exact last validator return. Its inner `agent()` calls are journaled;
-  the aggregate gate result is not a separate journal entry.
-- `phase(title)`, `log(msg)`, and the read-only `args`, `cwd`.
+- Agent steps: `agent(prompt, options)`.
+- Code steps: `sh`, `js`, `py`, `run` and `waitUntil`. The engine runs them itself, so they get
+  the journal, resume, retries and events of any step.
+- Flow: `parallel`, `pipeline`, `retry`, `gate`, `phase` and `log`.
+- People: `ask`, `breakpoint` and `checkpoint`.
+- Other workflows: `workflow(name, args)` runs a saved workflow inside this one, and `choose` lets
+  an agent pick the next step or workflow.
+- The read-only `args` and `cwd`.
 
-The realm is hardened for determinism: `Math.random()`, `Date.now()`, and `new Date()`
-throw, so a re-run reproduces the journaled values. Pass any timestamps/randomness in via
-`args`.
+[`docs/orchestrator.md`](../../docs/orchestrator.md#a-workflow) gives each one's options.
 
-## Resume & run limits
-
-Every `agent()` / `checkpoint()` result is journaled by a deterministic call index. For
-edited-script/current-args resume, name a completed, failed, paused, or aborted persisted source on
-a **new** manager run:
-
-```ts
-const first = await manager.runSync(script, { topic: "otters" });
-const again = await manager.runSync(script, { topic: "otters", expanded: true }, {
-  resumeFromRunId: first.runId,
-});
-console.log(again.replayEligibility, again.resumeReport);
-```
-
-The manager runs every call live when the source run has not ended or ran in another folder.
-Otherwise the calls pair by occurrence: the n-th call with a key takes the n-th recorded row with
-that key, from the source's own rows first and then its seed's. The key is the kind, the call hash
-and, when the source computed it the same way, the input fingerprint. A call whose row failed or
-never finished runs live, and still counts, so an identical call after it takes the next row. An
-agent call whose recorded text is blank runs live. A call with no row runs live. A same-ID
-`manager.resumeInBackground(runId)` pairs the same way, on the kind and call hash only. A manual
-`resumeJournal` has no call rows, so its calls pair by index and hash. A same-run continuation
-given `exec.script` that differs from the persisted text runs that revision against the run's own
-rows (`continuation.scriptRevised`, `scriptRevisions`); a revision must parse.
-
-Effective model, mode, and config options enter call identity and durable call records
-(`modelRequested`, `modeRequested`, and `configOptionsRequested`). Supported SDK journal eras retain
-their separate contracts.
-
-Every execution/reuse path checks explicit checkpoint provenance. Checkpoint input fingerprints
-use format 2, binding explicit-answer semantics and `timeoutMs`; prompt, kind, and choices remain
-the checkpoint identity. Checkpoint journal results, result call records, and injected decisions
-carry `checkpointDecision:"explicit-v1"`. Historical automatic or ambiguous answers fail with
-`checkpoint-provenance-incompatible` and a fresh-run instruction, including replay by index and
-isolation. Historical data remains available through read-only APIs; no answer is inferred or
-migrated.
-
-The call identity hashes authored behavior; the separate input fingerprint covers label, per-call
-cwd/isolation/session/tool inputs, metadata, and approved backends. Host `agentRetries` and
-`concurrency`, plus per-call `retries`, are operational and enter
-neither hash. Captured start/terminal environment values, current environment, Node, and V8 are
-provenance only and never gate matching. Reporting compares the recorded terminal environment (or
-start environment when no terminal capture exists) with the current environment. A current-format crash snapshot reconciled to
-`paused` / `interrupted` uses its identity manifest even without terminal environment capture.
-A source whose input-fingerprint format is below 2 runs live.
-Positional resume keeps ancestor-scoped prefixes carried by ≤0.23 resume
-hops when the ancestor run is still persisted. The persisted producing engine version is diagnostic only. The saved run and its
-terminal result expose the same eligibility strategy, predicted/observed
-prefix, first non-replay, version formats, runtime/environment provenance changes, and operational differences.
-
-Separately from replay correspondence, the manager builds a `PreparedContinuation` from a
-usage/auth-paused snapshot's coherent root `calls[]` × `agents[]` join. Both new-run and same-ID
-resume paths thread it to the live boundary. On attempt one, an exact call-index/hash/input/cwd
-match that is not worktree-isolated passes the recorded session ref to the runner; every failed
-gate runs fresh and emits a guarded `kind: "continuation"` notice with its exact reason. Candidates
-carry their persisted input format. A candidate from another format, or with changed semantic
-inputs, runs fresh. Candidates
-are rebuilt per execution, so multiple new-run consumers may independently reopen the same paused
-source session. Nested workflows receive no continuation channel.
-
-Inside a script, a compact journal-replay fan-out looks like:
-
-```js
-const [audit, experiment] = await parallel([
-  () => agent("Audit src/api without changing files.", {
-    label: "audit:api",
-  }),
-  () => agent("Try the worker fix in isolation; return a unified diff.", {
-    label: "try:worker", isolation: "worktree",
-  }),
-]);
-```
-
-The worktree and its edits are discarded; return the diff as data. Both calls replay from matching
-journal rows without a filesystem-safety declaration.
-
-`maxAgents`, `concurrency`, and `agentRetries` bound the run. `phase(title)` groups subsequent calls
-under a named phase. Agent attempts have no elapsed-time or idle budget and remain live until they
-complete, fail, or the host explicitly cancels the call or run. Fixed protocol startup,
-cancellation-grace, cleanup, lease, and transport bounds remain internal safety controls. Exported
-caps are `MAX_AGENTS_PER_RUN`, `MAX_CONCURRENCY`, and `MAX_AGENT_RETRIES`.
-
-New resume executions resolve limits from their own `ExecOptions`; they do not inherit the source
-run's values. Pass operational bounds again when constructing a resume; changing them does not
-invalidate replay or interrupted-turn continuation.
-
-`WorkflowManager` persists run state under `~/.orchestrator/engine` by default. Hosts can
-set `new WorkflowManager({ persistenceRoot: "/absolute/data/root" })`; when omitted,
-`ORCHESTRATOR_PERSISTENCE_ROOT` is used, then the homedir default. The root must be absolute.
-Hosts that own storage can instead pass `new WorkflowManager({ persistence })` with a custom
-`RunPersistence`. Every run journals, so every run can resume.
-
-Token accounting is observable before settlement. `WorkflowRunOptions.onTokenUsage`, the manager's
-`tokenUsage` event, and `snapshot.tokenUsage` receive fresh cumulative totals after every live agent
-attempt, including retry failures and terminal pause/failure attempts. Provider usage fields are
-reported when available; `total` uses the established prompt/result estimate fallback otherwise.
-Replayed calls emit/add nothing. Successful completion keeps the final callback, so an unchanged
-last value may be emitted twice, and persistence records the latest cumulative snapshot at journal
-and terminal writes.
-
-Successful journal writes now include optional replay-neutral `JournalEntry.call` attribution.
-Agent entries record the final label/phase/resolved model/actual backend; checkpoint entries
-record checkpoint kind/label/phase. Old entries remain readable and hashes
-are unchanged. Terminal persisted states retain a safe run-level `reason` and `errorCode` on the saved
-run. Every paused, failed, or aborted `WorkflowRunResult` has a redacted final-20 `logTail`
-(present even when empty); completed results omit it and preserve the full raw `logs` array.
-
-Two optional terminal audit arrays are persisted alongside that state. `fallbacks` records
-continuation reattach/skip outcomes. Model selection emits no entries because harness errors
-propagate through the existing agent-error path.
-`checkpointsTaken` records each checkpoint
-that resolved in this execution with its journaled decision and source: `live`, `journal-replay`,
-or `injected` when an older saved resume seed carries the answer. Pausing checkpoints are omitted. Both
-arrays are absent when empty and stay outside call hashes.
-
-The manager treats `PROVIDER_USAGE_LIMIT`, `AUTH_REQUIRED`, `CHECKPOINT_REQUIRED`, and
-`PAUSE_REQUESTED` as resumable pause conditions rather than failed runs. `pause(runId)` raises the
-last one: agent calls already executing finish and journal, nothing new is admitted, queued calls
-settle as interrupted rows, and the run pauses with `reason:"requested"`. `stop(runId)` interrupts
-in-flight work instead and settles the run as `aborted`; both continue with `resumeInBackground(runId)`. An authentication pause uses `reason: "auth_required"`
-and carries only the non-secret `authContext`; complete authentication through the injected runner,
-then resume the same journal. Every unanswered checkpoint persists `reason:"checkpoint_required"`
-and non-secret `checkpointContext`. Answer with a live `confirm` callback on the resuming call. Missing callbacks, `undefined`, non-JSON replies, rejection, and interaction timeout
-pause; script `try/catch` cannot bypass the pending gate. Explicit cancellation interrupts even a
-callback that never resolves. An explicit strict-JSON answer, including `false`, `null`, or an
-empty string, is returned verbatim and journaled for cold replay. Authored `headless` and `default`
-fields are rejected; there is no automatic answer or abort policy.
-
-When a runner reports `onSessionOpen`, the engine records the non-secret re-attach handle on the
-journal entry and in `WorkflowRunResult.agentSessions`. Auth/usage failures truthfully record
-`keptOpen: true` even without authored `keepSession`. A successful managed continuation journals
-the reattach method as diagnostic metadata, preserves it across replay/event projection, and debits
-only the continuation turn's reported usage. Scripts still cannot request reattach; the manager owns
-the resume directive and custom runners may decline it by running fresh.
-
-## Durable run-event log
-
-Journaling runs use the existing project-scoped `runsDir` and one structured sidecar:
-
-```text
-<runsDir>/<runId>.json          # atomic resumable snapshot
-<runsDir>/<runId>.json.bak      # best-effort snapshot backup
-<runsDir>/<runId>.log           # unstructured engine log
-<runsDir>/<runId>.events.jsonl  # bounded, redacted run events
-```
-
-`createRunPersistence()` and `manager.getPersistence()` return `RunEventPersistence`, an additive
-subtype of `RunPersistence`. A snapshot carries `eventStreamId` plus the highest reflected
-`eventSeq`; read the snapshot, then read the suffix after that watermark while pinning the same
-stream generation:
-
-```ts
-const persistence = manager.getPersistence();
-const snapshot = persistence.load(runId);
-if (!snapshot?.eventStreamId || snapshot.eventSeq === undefined) {
-  throw new Error("run has no durable event stream");
-}
-
-const page = persistence.readEvents(runId, {
-  streamId: snapshot.eventStreamId,
-  after: snapshot.eventSeq,
-  limit: 100,
-});
-for (const record of page.events) consume(record);
-```
-
-`readEvents()` returns `{ events, streamId, cursor, endCursor, hasMore }` (default limit 100,
-maximum 1000). Every later read must pass the prior stream ID so delete/recreate of the same `runId`
-fails with `STREAM_MISMATCH` instead of joining generations.
-
-Lifecycle, call, usage, and authored-log events persist by default; `agentHistory` and the
-`agentEvent` stream remain live-only. Records are projected at write time, capped at 65,536
-UTF-8 bytes including LF, and have no raw-reader bypass. A corrupt, inconsistent, legacy, or marked
-incomplete sidecar raises `RunEventLogError`; snapshot/journal recovery remains independent.
-
-Exactly one writer per run is required. `WorkflowManager` holds the cross-process run lease around publication; custom/direct callers of `appendEvent()`, `save()`, or `delete()` must provide equivalent exclusion. Default persistence exposes `inspectRunLease(runId)` as read-only `{runId,pid,startedAt}` and `validateRunLease(lease)`; manager writes fail closed after token loss. `stopPersistedRun(runId)` acquires rather than steals the lease, reloads under it, and durably cold-stops a nonterminal run with exactly one `stopped` event; it reports `owned-elsewhere` while a live writer holds the lock. orc deletes a run through `removeEngineRun`, which takes the same lease, so it cannot delete a run while a live writer holds it. A run that loses its lock writes nothing after, so a late callback cannot recreate a deleted run's files.
+`Math.random()`, `Date.now()` and `new Date()` with no argument throw. A resumed run replays its
+journal, and a value that changes between runs would send it down another path. Pass a time or a
+random value through `args` instead.
 
 ## How a run's worker starts
 
 Each orc run has a worker, which runs its workflow. `startRun`, `resumeRun`, `rerunRun`,
-`useAccount`, `tick` and `daemonMain` take a `Launcher`, and call it each time a run needs a
-worker:
+`useAccount` and `daemonMain` take a `Launcher`, and call it each time a run needs a worker:
 
 ```ts
 type Launcher = (paths: HomePaths, runId: string, mode: "start" | "resume") => void;
@@ -348,36 +100,17 @@ orc's tests pass the same launcher to `main`, so `orc run`, `orc resume` and `or
 workers in the test. The kit also exports the engine parts that orc's tests use and orc's code
 does not, such as `createRun` for a run that needs no worker.
 
-## Key exports
+## Inside
 
-From `@orchestrator/engine` (see `src/index.ts`):
-
-- **Engine** — `runWorkflow`, `parseWorkflowScript`; types `EngineRunResult`,
-  `WorkflowRunOptions`, `AgentOptions`, `CheckpointOptions`, `WorkflowAgentOptions`,
-  `WorkflowAgentAttemptControl`, `SharedRuntime`; `RESUME_FALLBACK_REASONS`, `RESUME_DISABLED_REASONS`,
-  `RESUME_CALL_LIVE_REASONS`, `RESUME_CALL_FAILED_REASONS`, `PreparedContinuation`,
-  `ContinuationCandidate`, and the resume policy/report/replay-eligibility types.
-- **Manager & persistence** — `WorkflowManager` (`WorkflowManagerOptions`, `ExecOptions`,
-  `ManagedRun`, `WorkflowAgentCallCancellation`, `PersistedRunStopResult`); `createRunPersistence`, `generateRunId`, and
-  types `RunPersistence`, `RunEventPersistence`, `RunLease`, `RunLeaseOwner`, `RunStatus`, `PersistedRunState`,
-  `PersistedAgentState`, `FsLayer`; `readEvents()` options/results/errors; and the
-  `WorkflowLogTail` contract.
-- **Saved workflows** — `openWorkflowDir` and the `WorkflowDir` / `WorkflowDirEntry` /
-  `OpenWorkflowDirOptions` types.
-- **Errors** — `WorkflowError`, `WorkflowErrorCode`, `isWorkflowError`, `wrapError`,
-  `isProviderUsageLimit`, `isAuthRequired`, `isAbortError`, `isTimeoutError`,
-  `ProviderUsageLimitContext`, `AuthErrorContext`, and `CheckpointContext`.
-- **Config caps** — `MAX_AGENTS_PER_RUN`, `MAX_CONCURRENCY`, `MAX_AGENT_RETRIES`.
-- **Worktree isolation** — `createWorktree`, `removeWorktree`, type `Worktree`.
-- **Display / snapshots** — `preview`, `renderWorkflowText`, `renderWorkflowLines`,
-  `createWorkflowSnapshot`, `recomputeWorkflowSnapshot`, `statusIcon`, `shorten`.
-- **Paths / logger** — `workflowProjectPaths`, `workflowHomeDir`,
-  `workflowProjectKey`, `ORCHESTRATOR_PERSISTENCE_ROOT_ENV`,
-  `createWorkflowLogger`.
-- **Seam types** (from `src/steps/` and the run records): `AgentRunner`, `StepRequest`,
-  `AgentResult`, `AgentUsage`, `WorkflowMeta`, `WorkflowRunResult`, `WorkflowRunFallback`,
-  `WorkflowCheckpointTaken`, `WorkflowCheckpointSource`, `JournalEntry`,
-  `TokenUsage`, …
+| Path | What it holds |
+| --- | --- |
+| `src/runs/` | The orc home, run records, the worker, the inbox, schedules and the service. `run.ts` has one function per orc command. `rule.ts` decides what a run's state means. |
+| `src/workflow.ts` | Runs one workflow script in its realm: the globals, the journal and the limits. |
+| `src/workflow-manager.ts` | One run's manager: resume, pause, the run's state and its events. |
+| `src/steps/` | One agent step. `agent-runner.ts` is the seam the engine calls, and `steps.ts` runs the step on a harness. |
+| `src/places/` | Where a run works: a worktree, the project folder or a scratch folder. |
+| `src/workflows/` | Saved workflows: the folders that hold them, the check and the dry run. |
+| `src/accounts.ts`, `src/agents.ts`, `src/programs.ts` | Accounts, the agent lookup and the installed programs. |
 
 ## License
 
