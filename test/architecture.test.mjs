@@ -240,7 +240,7 @@ const NEVER_REACH = [
  * A title that the source builds from a template stays as the source writes it, ${...} included,
  * and a third part names the case of the file that the title stands for. A change with no test
  * yet has `waiting` in place of `tests`, and the test run lists it as todo. A later commit adds
- * its tests. docs/test-plan/pins.tsv says what each test holds, and where the hold is partial.
+ * its tests. A comment on a change says where its tests hold it only in part.
  *
  * A test that holds a change keeps its file and its title. A cut or a merge keeps them too.
  */
@@ -323,6 +323,7 @@ const PINS = [
   { change: "On a resume, an agent step that returned a blank result with no schema runs again", tests: [
     ["packages/engine/test/incremental-engine-resume.test.ts", "runs live a step whose recorded text is blank, unless the step has a schema"],
   ] },
+  // Both tests read the saved state with readState. No test reads it from orc show --json.
   { change: "orc show --json shows the strategy occurrence-v1 and the match occurrence", tests: [
     ["packages/orc/test/resume.test.ts", "with --latest and step 1 edited, keeps the steps after it"],
     ["packages/orc/test/resume.test.ts", "reuses the steps of a resumed run after an edited first step"],
@@ -376,6 +377,7 @@ const PINS = [
     ["packages/engine/test/auth-pause.test.ts", "cold resume of an auth pause runs the step again, and the run completes once the login is back"],
     ["packages/engine/test/checkpoint.test.ts", "durable checkpoint: cold resume without a reply or live confirm pauses again at the same question"],
   ] },
+  // The requests reach the worker through the file, but no test reads the file's text.
   { change: "The file of step stop requests holds one JSON object per line", tests: [
     ["packages/orc/test/runs.test.ts", "stopping a step by its name stops only that step, not a nested step with the same label"],
   ] },
