@@ -407,6 +407,9 @@ const MEMBER_CAPS = [
   { file: "packages/engine/src/workflow.ts", fieldsOf: "AgentOptions", cap: 18 },
 ];
 
+/** The README whose "Inside" table names each top-level file and folder of the package's src. */
+const INSIDE = { readme: "packages/engine/README.md", src: "packages/engine/src" };
+
 // ── The breaks of today. They can only go. ──────────────────────────────────────────────────────
 
 const BREAKS = {
@@ -973,6 +976,22 @@ function scriptBreaks({ dirs }) {
   return found;
 }
 
+/** Each `src/` path in the first column of the Inside table exists, and names every top-level entry. */
+function insideBreaks() {
+  const text = readFileSync(join(ROOT, INSIDE.readme), "utf8");
+  const table = text.slice(text.indexOf("\n## Inside\n")).split("\n## ")[1] ?? "";
+  const named = new Set();
+  for (const line of table.split("\n").filter((l) => l.startsWith("| `"))) {
+    for (const [, path] of line.split(" | ")[0].matchAll(/`src\/([^`]+?)\/?`/g)) named.add(path);
+  }
+  const found = [];
+  for (const path of named) if (!existsSync(join(ROOT, INSIDE.src, path))) found.push(`${INSIDE.readme} names src/${path}, which is gone. Fix its row.`);
+  for (const entry of readdirSync(join(ROOT, INSIDE.src))) {
+    if (!named.has(entry)) found.push(`src/${entry} has no row in the Inside table of ${INSIDE.readme}. Say what it holds.`);
+  }
+  return found.sort();
+}
+
 // ── The tests ───────────────────────────────────────────────────────────────────────────────────
 
 const state = collect();
@@ -989,6 +1008,7 @@ const now = {
   sizes: sizeBreaks(lineCounts(state)),
   members: memberBreaks(),
   machine: machineBreaks(state),
+  inside: insideBreaks(),
   ...unusedExportBreaks(state),
 };
 
@@ -1028,6 +1048,7 @@ test("each package runs its tests on a temporary home", () => compareList("scrip
 test("each exported value has an importer", () => compareList("unused"));
 test("each exported value has an importer in the source, not only in tests", () => compareList("forTests"));
 test("each file and function stays under its line cap", () => assert.equal(now.sizes.join("\n"), "", now.sizes.join("\n")));
+test("the engine README names each top-level file and folder of its src", () => assert.equal(now.inside.join("\n"), "", now.inside.join("\n")));
 test("the manager's methods and the run's options stay at their caps", () => assert.equal(now.members.join("\n"), "", now.members.join("\n")));
 
 test("each behavior change keeps the test that holds it", () => {
