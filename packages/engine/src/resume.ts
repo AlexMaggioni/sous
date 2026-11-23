@@ -31,8 +31,14 @@ export type PreparedResume =
       disabledReason: WorkflowResumeDisabledReason;
     }
   | {
-      /** The calls pair by occurrence with the rows in the run's `resumeRows`. */
+      /** The calls pair by occurrence with the rows of the run's resume. */
       strategy: "occurrence-v1";
       sourceRunId: string;
       requestedPolicy: ResumePolicy;
     };
+
+/** A prepared resume that runs every call live. */
+export type LiveResume = Extract<PreparedResume, { strategy: "live" }>;
+
+/** A prepared resume that pairs calls by occurrence with recorded rows. */
+export type OccurrenceResume = Extract<PreparedResume, { strategy: "occurrence-v1" }>;

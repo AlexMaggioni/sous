@@ -249,7 +249,6 @@ return agent('same', { label: 'a', configOptions: { zeta: 'last', alpha: true } 
       agent: runner,
       persistLogs: false,
       resumeJournal,
-      resumeFromRunId: "source",
     });
     assert.equal(replayed.result, "ran:same");
     assert.equal(calls, 0, "sorted-key equivalent options replay from the journal");
@@ -258,7 +257,6 @@ return agent('same', { label: 'a', configOptions: { zeta: 'last', alpha: true } 
       agent: runner,
       persistLogs: false,
       resumeJournal,
-      resumeFromRunId: "source",
     });
     assert.equal(missed.result, "live");
     assert.equal(calls, 1, "changed option value runs live");

@@ -80,6 +80,8 @@ export function handedInRows(runId: string, journal: ReadonlyMap<number, Journal
  * call rows is old data: its journal rows move to the same scope of the new run, and pair by
  * index. With no source rows, the run replays nothing and starts empty.
  */
+export function reuseRows(runId: string): StartedRows;
+export function reuseRows(runId: string, source: SourceRows): StartedRows & { resume: ResumeRows };
 export function reuseRows(runId: string, source?: SourceRows): StartedRows {
   if (!source) return { rows: createRows({ runId, reuse: true }), prefix: 0 };
   const { sourceRunId, journal } = source;
@@ -117,7 +119,11 @@ export function continueRows(runId: string, saved: SavedRunRows): { rows: RunRow
  * holds the rows of the version before, so a second pause keeps the steps the new version has
  * not reached. A scope saved with no call rows keeps its journal, and pairs by index.
  */
-export function reviseRows(runId: string, saved: SavedRunRows, key: SourceRows["key"]): StartedRows {
+export function reviseRows(
+  runId: string,
+  saved: SavedRunRows,
+  key: SourceRows["key"],
+): StartedRows & { resume: ResumeRows } {
   const { journal, nestedJournal, calls } = ownSavedRows(runId, saved);
   return reuseRows(runId, { sourceRunId: runId, journal: [...journal, ...nestedJournal], calls, seed: saved.resumeSeed, key });
 }

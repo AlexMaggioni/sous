@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { WorkflowCallRecord, WorkflowResumeCallDecision } from "../src/workflow-result.js";
 import { CALL_INPUTS_FORMAT, CALL_PATH_FORMAT, CHECKPOINT_INPUTS_FORMAT, type WorkflowRunOptions } from "../src/workflow.js";
-import type { PreparedResume } from "../src/resume.js";
+import type { LiveResume, OccurrenceResume } from "../src/resume.js";
 import type {
   PersistedCheckpointInjection,
   PersistedResumeCandidate,
@@ -56,12 +56,12 @@ const format: PersistedResumeFormat = {
   format: "identity-v1",
   terminalEnvironment: { git: { head: HASH, dirtyDigest: HASH } },
 };
-const occurrencePrepared: PreparedResume = {
+const occurrencePrepared: OccurrenceResume = {
   strategy: "occurrence-v1",
   sourceRunId: "source-run",
   requestedPolicy: "auto",
 };
-const livePrepared: PreparedResume = {
+const livePrepared: LiveResume = {
   strategy: "live",
   sourceRunId: "source-run",
   requestedPolicy: "auto",
@@ -79,7 +79,7 @@ const allocations: number[] = [];
 let filesystemTainted = false;
 const runOptions: WorkflowRunOptions = {
   agent: runner,
-  preparedResume: occurrencePrepared,
+  resume: { rows: new Map(), plan: occurrencePrepared },
   onResumeFilesystemTainted: () => {
     filesystemTainted = true;
   },
@@ -137,7 +137,7 @@ test("persisted and prepared resume declaration fixtures cover every branch", ()
   assert.equal(identityState.runtime?.checkpointInputsFormat, 2);
   assert.equal(occurrencePrepared.strategy, "occurrence-v1");
   assert.equal(livePrepared.disabledReason, "cwd-mismatch");
-  assert.equal(runOptions.preparedResume?.sourceRunId, "source-run");
+  assert.equal(runOptions.resume?.plan?.sourceRunId, "source-run");
   runOptions.onResumeFilesystemTainted?.();
   runOptions.onResumeActivity?.(1);
   runOptions.onResumeCallAllocated?.(1);

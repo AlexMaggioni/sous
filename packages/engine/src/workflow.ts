@@ -44,7 +44,7 @@ import { createWorkflowLogger } from "./runs/persistence/logger.js";
 import { parseModelRoutingFromMeta, resolveModelForPhase } from "./model-routing.js";
 import { projectRecordedError } from "./recorded-error.js";
 import { registerRunTripwire } from "./rejection-tripwire.js";
-import type { PreparedContinuation, PreparedResume } from "./resume.js";
+import type { LiveResume, OccurrenceResume, PreparedContinuation } from "./resume.js";
 import { buildResumeReport } from "./resume-report.js";
 import { nestedRunId } from "./resume-identity.js";
 import { createPairing, type RecordedScope } from "./resume-pairing.js";
@@ -180,6 +180,30 @@ export interface WorkflowAgentAttemptControl {
   controller: AbortController;
 }
 
+/**
+ * What a resumed run starts from. Rows go with no plan or an "occurrence-v1" one. A "live" plan
+ * goes with no rows.
+ */
+export type WorkflowResume = {
+  /** The interrupted calls a live call can go on from, by call index. */
+  continuation?: PreparedContinuation;
+} & (
+  | {
+      /**
+       * The recorded rows of the run and of its nested runs, by scope. A call takes the next row
+       * with its key.
+       */
+      rows: ResumeRows;
+      /** The manager's plan. With one, the run reports a decision for each call. */
+      plan?: OccurrenceResume;
+    }
+  | {
+      rows?: undefined;
+      /** The manager's plan: every call runs live, and the run reports each decision. */
+      plan?: LiveResume;
+    }
+);
+
 export interface WorkflowRunOptions extends WorkflowAgentOptions {
   args?: unknown;
   /**
@@ -207,21 +231,14 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   runId?: string;
   /**
    * Resume: a journal with no call rows, by call index. A call replays the row at its own index
-   * when the hashes agree. Goes with no resumeRows and no preparedResume.
+   * when the hashes agree. Goes with no resume rows and no resume plan.
    */
   resumeJournal?: Map<number, JournalEntry>;
-  /** Resume: the run being resumed (informational; enables resume mode). */
-  resumeFromRunId?: string;
   /**
-   * Internal (manager): the recorded rows of the run and of its nested runs, by scope. A call
-   * takes the next row with its key. Goes with no preparedResume or with one of strategy
-   * "occurrence-v1".
+   * Internal (manager): what the run resumes from. A live call goes on only in a session of the
+   * plan's source run, or of this run when there is no plan.
    */
-  resumeRows?: ResumeRows;
-  /** Manager-prepared resume state. An "occurrence-v1" one needs resumeRows. */
-  preparedResume?: PreparedResume;
-  /** Manager-prepared interrupted calls, consulted only at the live boundary. */
-  preparedContinuation?: PreparedContinuation;
+  resume?: WorkflowResume;
   /** Legacy diagnostic latch used only to decide whether a non-git terminal environment
    *  snapshot is meaningful. It never affects journal admission or call matching. */
   onResumeFilesystemTainted?: () => void;
@@ -558,17 +575,9 @@ export async function runWorkflow<T = unknown>(
 ): Promise<EngineRunResult<T>> {
   const started = Date.now();
   const { meta, body } = parseWorkflowScript(script);
-  if (options.resumeJournal && (options.resumeRows || options.preparedResume)) {
+  if (options.resumeJournal && (options.resume?.rows || options.resume?.plan)) {
     throw new WorkflowError(
-      "resumeJournal goes with no resumeRows and no preparedResume",
-      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-      { recoverable: false },
-    );
-  }
-  const occurrencePrepared = options.preparedResume?.strategy === "occurrence-v1";
-  if (options.resumeRows ? options.preparedResume && !occurrencePrepared : occurrencePrepared) {
-    throw new WorkflowError(
-      "resumeRows goes with no preparedResume or an occurrence-v1 one, and an occurrence-v1 one needs resumeRows",
+      "resumeJournal goes with no resume rows and no resume plan",
       WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
       { recoverable: false },
     );
@@ -582,7 +591,7 @@ export async function runWorkflow<T = unknown>(
     agentRetries: runAgentRetries,
   } = effectiveLimits;
   const runId = options.runId ?? `run-${started.toString(36)}`;
-  const resumeRows = options.resumeRows ?? (options.resumeJournal ? journalRows(runId, options.resumeJournal) : undefined);
+  const resumeRows = options.resume?.rows ?? (options.resumeJournal ? journalRows(runId, options.resumeJournal) : undefined);
   assertExplicitCheckpointProvenance({
     journal: resumeRows
       ? [...resumeRows.values()].flatMap((scope) => scope.rows.flatMap((row) => (row.entry ? [row.entry] : [])))
@@ -802,11 +811,11 @@ export async function runWorkflow<T = unknown>(
     }
   };
 
-  const preparedResume = options.preparedResume;
-  const preparedContinuation = options.preparedContinuation;
-  // A prepared resume reports a decision for each call, in the order calls were opened.
+  const resumePlan = options.resume?.plan;
+  const preparedContinuation = options.resume?.continuation;
+  // A resume plan reports a decision for each call, in the order calls were opened.
   const decisionLog = createDecisionLog({
-    reports: preparedResume !== undefined,
+    reports: resumePlan !== undefined,
     onDecision: (decision) => guardTerminal("onResumeDecision", () => options.onResumeDecision?.(decision)),
   });
   const appendCallRecord = (
@@ -863,7 +872,7 @@ export async function runWorkflow<T = unknown>(
   const ledger = createStepLedger({
     source: resumeRows
       ? occurrenceSource(resumeRows.get(runId))
-      : preparedResume?.strategy === "live"
+      : resumePlan?.strategy === "live"
         ? { pair: () => ({ action: "live", reason: "strategy-live" }) }
         : undefined,
     log: decisionLog,
@@ -1700,8 +1709,8 @@ export async function runWorkflow<T = unknown>(
       if (pairing.action === "replay") return replayAgent(pairing);
       // Pairing by occurrence goes on only in the session of the failed row this call took. The
       // sessions are those of the run this one resumes from.
-      if (options.resumeRows) {
-        continuationIndex = pairing.failed?.sourceRunId === (options.resumeFromRunId ?? runId)
+      if (options.resume?.rows) {
+        continuationIndex = pairing.failed?.sourceRunId === (resumePlan?.sourceRunId ?? runId)
           ? pairing.failed.recordedIndex
           : undefined;
       }
@@ -1709,7 +1718,7 @@ export async function runWorkflow<T = unknown>(
       let reason = pairing.reason;
       // A run that reports decisions opens the step's worktree before it decides, so the
       // decision can say when the worktree is not isolated.
-      if (preparedResume && resolvedIsolation === "worktree") {
+      if (resumePlan && resolvedIsolation === "worktree") {
         emitAgentStart();
         try {
           checkCwdOption();
@@ -1741,7 +1750,7 @@ export async function runWorkflow<T = unknown>(
         const workflowError = wrapError(error, { agentLabel: label });
         stepSlot.settle({ outcome: "error", origin: "engine", error: errorRecord });
         // A same-ID resume reports the end even before the start, as it always has.
-        if (agentStartEmitted || !preparedResume) {
+        if (agentStartEmitted || !resumePlan) {
           emitAgentEnd({
             label,
             phase: assignedPhase,
@@ -1875,11 +1884,10 @@ export async function runWorkflow<T = unknown>(
         signal,
         sharedRuntime: shared,
         nestingDepth: ownDepth + 1,
-        // A nested run finds its rows in resumeRows by its run id, never in the parent's journal.
+        // A nested run finds its rows in the same resume rows by its run id, never in the parent's
+        // journal. It has no plan and no interrupted calls.
         resumeJournal: undefined,
-        resumeFromRunId: undefined,
-        preparedResume: undefined,
-        preparedContinuation: undefined,
+        resume: options.resume?.rows ? { rows: options.resume.rows } : undefined,
         onResumeCallAllocated: undefined,
         onResumeDecision: undefined,
         runId: childRunId,
@@ -2046,12 +2054,12 @@ export async function runWorkflow<T = unknown>(
         return strictSnapshot(row.entry.result, `checkpoint "${promptText}" replayed reply`);
       });
       if (pairing.action === "replay") return replayCheckpoint(pairing);
-      if (preparedResume && options.confirm) options.onResumeFilesystemTainted?.();
+      if (resumePlan && options.confirm) options.onResumeFilesystemTainted?.();
       slot.live(pairing.reason);
     } catch (error) {
       slot.settle({
         outcome: "error",
-        origin: preparedResume ? "engine" : "journal-replay",
+        origin: resumePlan ? "engine" : "journal-replay",
         error: projectRecordedError(error),
       });
       throw error;
@@ -2075,7 +2083,7 @@ export async function runWorkflow<T = unknown>(
     );
     try {
       if (!options.confirm) throw waiting();
-      if (!preparedResume) options.onResumeFilesystemTainted?.();
+      if (!resumePlan) options.onResumeFilesystemTainted?.();
       let reply: unknown;
       let timeout: ReturnType<typeof setTimeout> | undefined;
       let onAbort: (() => void) | undefined;
@@ -2278,8 +2286,8 @@ export async function runWorkflow<T = unknown>(
     ...(state.checkpointsTaken.length === 0 ? {} : { checkpointsTaken: state.checkpointsTaken }),
     calls: Object.freeze([...state.calls]) as WorkflowCallRecord[],
     callsAllocated: state.callSeq,
-    ...(preparedResume
-      ? { resumeReport: buildResumeReport(preparedResume, decisionLog.decisions()) }
+    ...(resumePlan
+      ? { resumeReport: buildResumeReport(resumePlan, decisionLog.decisions()) }
       : {}),
     effectiveLimits,
     ...(abortSignaled ? { abortSignaled: true as const } : {}),

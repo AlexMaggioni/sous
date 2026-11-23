@@ -36,7 +36,6 @@ import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
 import { isNestedScope } from "./resume-identity.js";
-import type { ResumeRows } from "./resume-rows.js";
 import { continueRows, handedInRows, newRows, reuseRows, reviseRows, type RunRows } from "./run-rows.js";
 import {
   createRunPersistence,
@@ -54,8 +53,8 @@ import { admitResumeSource } from "./resume-matcher.js";
 import { startResumeReport, type ResumeReporting } from "./resume-report.js";
 import type {
   ContinuationCandidate,
+  OccurrenceResume,
   PreparedContinuation,
-  PreparedResume,
 } from "./resume.js";
 import { hasEventLog, type RunEventLog } from "./runs/persistence/run-event-persistence.js";
 import { projectRecordedError } from "./recorded-error.js";
@@ -69,6 +68,7 @@ import {
   type CheckpointOptions,
   type EngineRunResult,
   type WorkflowAgentAttemptControl,
+  type WorkflowResume,
   type WorkflowRunOptions,
   isStepFailedPause,
   resolveWorkflowRunLimits,
@@ -141,8 +141,6 @@ export interface ManagedRun {
   legacyResume?: true;
   /** Immediate resumeFromRunId ancestor, fixed when the new run is admitted. */
   readonly resumeSourceRunId?: string;
-  /** Resume-only interrupted root calls eligible for live session continuation. */
-  preparedContinuation?: PreparedContinuation;
   /** The resume report, kept current as the engine decides each call. Only a resumed run has one. */
   resumeReporting?: ResumeReporting;
   /** Cross-process execution lease for this run, when it is actively executing. */
@@ -160,18 +158,9 @@ interface RunEventPublicationActions {
   afterLive?: () => void;
 }
 
-/** A resume that pairs by occurrence with the rows of its source. */
-type OccurrenceResume = Extract<PreparedResume, { strategy: "occurrence-v1" }>;
-
-interface ManagerResumeExecution {
-  preparedResume?: PreparedResume;
-  /** The rows the run pairs with, by scope. */
-  resumeRows?: ResumeRows;
-}
-
 interface InitializedRun {
   managed: ManagedRun;
-  resumeExecution?: ManagerResumeExecution;
+  resume?: WorkflowResume;
 }
 
 /** Durable acknowledgement for one host-cancelled agent call. */
@@ -737,14 +726,14 @@ export class WorkflowManager extends EventEmitter {
   private prepareManagedResume(
     managed: ManagedRun,
     source: PersistedRunState,
-  ): ManagerResumeExecution {
+  ): WorkflowResume {
     const admission = admitResumeSource({ source, effectiveCwd: managed.effectiveCwd });
     if (source.resume === undefined || source.legacyResume === true) managed.legacyResume = true;
-    managed.preparedContinuation = this.buildPreparedContinuation(source);
+    const preparedContinuation = this.buildPreparedContinuation(source);
     if (admission.strategy === "live") {
       managed.rows = reuseRows(managed.runId).rows;
       managed.resumeReporting = startResumeReport({ plan: admission, source, run: managed, predictedReplayablePrefix: 0 });
-      return { preparedResume: admission };
+      return { plan: admission, ...(preparedContinuation ? { continuation: preparedContinuation } : {}) };
     }
 
     const chained = this.chainedRows(source.runId);
@@ -764,7 +753,7 @@ export class WorkflowManager extends EventEmitter {
       run: managed,
       predictedReplayablePrefix: started.prefix,
     });
-    return { preparedResume: admission, resumeRows: started.resume };
+    return { rows: started.resume, plan: admission, ...(preparedContinuation ? { continuation: preparedContinuation } : {}) };
   }
 
   private initializeRun(
@@ -780,7 +769,7 @@ export class WorkflowManager extends EventEmitter {
     try {
       identity = this.acquireNewRunIdentity(exec.runId);
       const managed = this.createManaged(script, args, exec, identity);
-      const resumeExecution = source
+      const resume = source
         ? this.prepareManagedResume(managed, source.source)
         : undefined;
       this.runs.set(managed.runId, managed);
@@ -789,7 +778,7 @@ export class WorkflowManager extends EventEmitter {
       } else {
         this.persistRun(managed);
       }
-      return { managed, resumeExecution };
+      return { managed, resume };
     } catch (error) {
       if (identity) this.persistence.releaseRunLease(identity.lease);
       if (identity) this.runs.delete(identity.runId);
@@ -813,7 +802,7 @@ export class WorkflowManager extends EventEmitter {
     args?: unknown,
     exec: ExecOptions = {},
   ): { runId: string; promise: Promise<WorkflowRunResult> } {
-    const { managed, resumeExecution } = this.initializeRun(script, args, exec);
+    const { managed, resume } = this.initializeRun(script, args, exec);
 
     // Attach a side-channel catch to prevent Node.js unhandled-rejection crashes
     // when a workflow is aborted/paused/stopped — executeRun()'s catch block
@@ -821,7 +810,7 @@ export class WorkflowManager extends EventEmitter {
     // The original promise is returned so callers can await it in try/catch.
     const promise = new Promise<WorkflowRunResult>((resolve, reject) => {
       setImmediate(() => {
-        this.executeRun(managed, script, exec, resumeExecution).then(resolve, reject);
+        this.executeRun(managed, script, exec, resume).then(resolve, reject);
       });
     });
     promise.catch(() => {});
@@ -838,9 +827,9 @@ export class WorkflowManager extends EventEmitter {
    * `run.status` with no try/catch.
    */
   async runSync(script: string, args?: unknown, exec: ExecOptions = {}): Promise<WorkflowRunResult> {
-    const { managed, resumeExecution } = this.initializeRun(script, args, exec);
+    const { managed, resume } = this.initializeRun(script, args, exec);
     try {
-      return await this.executeRun(managed, script, exec, resumeExecution);
+      return await this.executeRun(managed, script, exec, resume);
     } catch (error) {
       // executeRun settled the run, kept its result, saved it and released the lease before it
       // threw. Return that result, so it agrees with the saved state.
@@ -1133,7 +1122,7 @@ export class WorkflowManager extends EventEmitter {
     managed: ManagedRun,
     script: string,
     exec: ExecOptions = {},
-    resumeExecution?: ManagerResumeExecution,
+    resume?: WorkflowResume,
   ): Promise<WorkflowRunResult> {
     const {
       maxAgents,
@@ -1145,9 +1134,6 @@ export class WorkflowManager extends EventEmitter {
       onNestedWorkflow,
     } = exec;
     const resumeJournal = exec.resumeJournal;
-    const resumeRows = resumeExecution?.resumeRows;
-    const preparedResume = resumeExecution?.preparedResume;
-    const preparedContinuation = managed.preparedContinuation;
     const resolvedConcurrency = concurrency ?? this.concurrency;
     const resolvedAgentRetries = agentRetries ?? this.defaultAgentRetries;
     // Sync the derived counters (agentCount/runningCount/doneCount/errorCount) from the
@@ -1195,8 +1181,7 @@ export class WorkflowManager extends EventEmitter {
         ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
         persistenceRoot: this.persistenceRoot,
         resumeJournal,
-        ...(resumeRows ? { resumeRows } : {}),
-        resumeFromRunId: preparedResume?.sourceRunId ?? (resumeJournal || resumeRows ? managed.runId : undefined),
+        ...(resume ? { resume } : {}),
         tokenUsageBaseline: managed.sameRunContinuation
           ? {
               input: managed.snapshot.tokenUsage?.input ?? 0,
@@ -1207,8 +1192,6 @@ export class WorkflowManager extends EventEmitter {
               cacheWrite: managed.snapshot.tokenUsage?.cacheWrite ?? 0,
             }
           : undefined,
-        preparedResume,
-        preparedContinuation,
         runId: managed.runId,
         onResumeFilesystemTainted: () => {
           managed.resumeFilesystemTainted = true;
@@ -2009,7 +1992,7 @@ export class WorkflowManager extends EventEmitter {
       eventSeq: publication.eventSeq,
       eventLogIncomplete: publication.eventLogIncomplete,
     };
-    managed.preparedContinuation = this.buildPreparedContinuation(persisted);
+    const preparedContinuation = this.buildPreparedContinuation(persisted);
     const generation = (persisted.continuation?.generation ?? 0) + 1;
 
     let occurrenceResume: OccurrenceResume | undefined;
@@ -2054,7 +2037,11 @@ export class WorkflowManager extends EventEmitter {
       onNestedWorkflow: exec.onNestedWorkflow,
       ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
       ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
-    }, { resumeRows: started.resume, ...(occurrenceResume ? { preparedResume: occurrenceResume } : {}) });
+    }, {
+      rows: started.resume,
+      ...(occurrenceResume ? { plan: occurrenceResume } : {}),
+      ...(preparedContinuation ? { continuation: preparedContinuation } : {}),
+    });
     promise.catch(() => {});
     return { accepted: true, runId, continuation, promise };
   }

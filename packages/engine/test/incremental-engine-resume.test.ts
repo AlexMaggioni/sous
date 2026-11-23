@@ -12,10 +12,9 @@ import {
   cloneResumeCandidate,
   normalizeResumeSeed,
 } from "../src/resume-matcher.js";
-import { resumeRows, type ResumeRows } from "../src/resume-rows.js";
-import type { PreparedResume } from "../src/resume.js";
+import { resumeRows } from "../src/resume-rows.js";
 import type { PersistedResumeSeed } from "../src/runs/persistence/run-persistence.js";
-import { runWorkflow } from "../src/workflow.js";
+import { runWorkflow, type WorkflowResume } from "../src/workflow.js";
 import type { RunPlaces } from "../src/places/places.js";
 import { tempPlaces } from "./helpers/places.js";
 
@@ -103,10 +102,12 @@ return await parallel(items.map((item, index) => () => agent(item, {
 function occurrence(
   seed: PersistedResumeSeed,
   runId: string,
-): { preparedResume: PreparedResume; resumeRows: ResumeRows } {
+): { resume: WorkflowResume } {
   return {
-    preparedResume: { strategy: "occurrence-v1", sourceRunId: seed.sourceRunId, requestedPolicy: "auto" },
-    resumeRows: resumeRows({ runId, journal: [], calls: [], seed, key: "inputs" }),
+    resume: {
+      rows: resumeRows({ runId, journal: [], calls: [], seed, key: "inputs" }),
+      plan: { strategy: "occurrence-v1", sourceRunId: seed.sourceRunId, requestedPolicy: "auto" },
+    },
   };
 }
 

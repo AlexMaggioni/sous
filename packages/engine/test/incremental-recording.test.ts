@@ -8,7 +8,7 @@ import { describe, it } from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import type { PreparedResume } from "../src/resume.js";
+import type { OccurrenceResume } from "../src/resume.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { runsDir } from "./helpers/run-files.js";
 import { normalizeResumeSeed } from "../src/resume-matcher.js";
@@ -153,14 +153,13 @@ return { safe, unsafe, empty }`),
       retained: [{ sourceRunId: "source", recordedIndex: 0, entry: journal, call: source }],
     });
     assert.ok(seed);
-    const prepared: PreparedResume = { strategy: "occurrence-v1", sourceRunId: "source", requestedPolicy: "auto" };
+    const prepared: OccurrenceResume = { strategy: "occurrence-v1", sourceRunId: "source", requestedPolicy: "auto" };
     const replayed = await runWorkflow(
       script(`return await agent("safe", { resume: { filesystem: "read-only" } })`),
       {
         runId: "target",
         agent: { async run() { throw new Error("must replay"); } },
-        resumeRows: resumeRows({ runId: "target", journal: [], calls: [], seed, key: "inputs" }),
-        preparedResume: prepared,
+        resume: { rows: resumeRows({ runId: "target", journal: [], calls: [], seed, key: "inputs" }), plan: prepared },
         persistLogs: false,
       },
     );

@@ -150,7 +150,7 @@ describe("live-boundary continuation", () => {
         cwd: fixture.cwd,
         persistLogs: false,
         agent: continuedRunner(source.candidate),
-        preparedContinuation: prepared(source.candidate),
+        resume: { continuation: prepared(source.candidate) },
         onFallback: (fallback) => {
           fallbacks.push(fallback);
           throw new Error("observer failure must be isolated");
@@ -218,7 +218,7 @@ describe("live-boundary continuation", () => {
           cwd: item.cwd,
           places: home.places("live"),
           persistLogs: false,
-          preparedContinuation: prepared(item.candidate),
+          resume: { continuation: prepared(item.candidate) },
           agent: {
             async run(_prompt, options) {
               calls += 1;
@@ -264,7 +264,7 @@ describe("live-boundary continuation", () => {
         await runWorkflow(item.script, {
           cwd: fixture.cwd,
           persistLogs: false,
-          preparedContinuation: prepared(source.candidate),
+          resume: { continuation: prepared(source.candidate) },
           agent: {
             async run(_prompt, options) {
               assert.equal(options.continueFromSession, undefined, item.name);
@@ -292,7 +292,7 @@ describe("live-boundary continuation", () => {
         const result = await runWorkflow(item.script, {
           cwd: fixture.cwd,
           persistLogs: false,
-          preparedContinuation: prepared(source.candidate),
+          resume: { continuation: prepared(source.candidate) },
           agent: continuedRunner(source.candidate),
         });
         assert.equal(result.result, "continued", item.name);
@@ -316,7 +316,7 @@ describe("live-boundary continuation", () => {
       const unchanged = await runWorkflow(sourceScript, {
         cwd: fixture.cwd,
         persistLogs: false,
-        preparedContinuation: prepared(legacyCandidate),
+        resume: { continuation: prepared(legacyCandidate) },
         agent: {
           async run(_prompt, options) {
             assert.equal(options.continueFromSession, undefined);
@@ -337,7 +337,7 @@ describe("live-boundary continuation", () => {
         {
           cwd: fixture.cwd,
           persistLogs: false,
-          preparedContinuation: prepared(legacyCandidate),
+          resume: { continuation: prepared(legacyCandidate) },
           agent: {
             async run(_prompt, options) {
               assert.equal(options.continueFromSession, undefined);
@@ -367,7 +367,7 @@ describe("live-boundary continuation", () => {
         await runWorkflow(workflow(), {
           cwd: fixture.cwd,
           persistLogs: false,
-          preparedContinuation: prepared(source.candidate),
+          resume: { continuation: prepared(source.candidate) },
           agent: continuedRunner(source.candidate, { reattached: false, reason }),
           onFallback: (fallback) => fallbacks.push(fallback),
         });
@@ -378,7 +378,7 @@ describe("live-boundary continuation", () => {
       await runWorkflow(workflow(), {
         cwd: fixture.cwd,
         persistLogs: false,
-        preparedContinuation: prepared(source.candidate),
+        resume: { continuation: prepared(source.candidate) },
         agent: {
           async run(_prompt, options) {
             assert.ok(options.continueFromSession);
@@ -406,7 +406,7 @@ describe("live-boundary continuation", () => {
         cwd: fixture.cwd,
         persistLogs: false,
         signal: controller.signal,
-        preparedContinuation: prepared(source.candidate),
+        resume: { continuation: prepared(source.candidate) },
         agent: {
           async run(_prompt, options) {
             assert.ok(options.continueFromSession);
@@ -424,7 +424,7 @@ describe("live-boundary continuation", () => {
         cwd: fixture.cwd,
         persistLogs: false,
         signal: gateController.signal,
-        preparedContinuation: prepared({ ...source.candidate, hash: "changed" }),
+        resume: { continuation: prepared({ ...source.candidate, hash: "changed" }) },
         agent: {
           async run() {
             gateController.abort();
@@ -454,7 +454,7 @@ describe("live-boundary continuation", () => {
       const result = await runWorkflow(retryScript, {
         cwd: fixture.cwd,
         persistLogs: false,
-        preparedContinuation: prepared(source.candidate),
+        resume: { continuation: prepared(source.candidate) },
         agent: {
           async run(_prompt, options) {
             attempt += 1;
@@ -494,7 +494,7 @@ return await agent("task", { label: "worker" })\`)`;
       const result = await runWorkflow(nested, {
         cwd: fixture.cwd,
         persistLogs: false,
-        preparedContinuation: prepared(source.candidate),
+        resume: { continuation: prepared(source.candidate) },
         agent: {
           async run(_prompt, options) {
             assert.equal(options.continueFromSession, undefined);
@@ -557,7 +557,7 @@ return [first, second]`);
       const result = await runWorkflow(script, {
         cwd: fixture.cwd,
         persistLogs: false,
-        preparedContinuation: prepared(candidate),
+        resume: { continuation: prepared(candidate) },
         agent: {
           async run(_prompt, options) {
             directives.push([options.callIndex, options.continueFromSession !== undefined]);
@@ -588,7 +588,7 @@ return [first, second]`);
         runId: "continued-source",
         cwd: fixture.cwd,
         persistLogs: false,
-        preparedContinuation: prepared(source.candidate),
+        resume: { continuation: prepared(source.candidate) },
         agent: continuedRunner(source.candidate),
         onAgentJournal: (entry) => continuedJournal.push(entry),
         onCallRecord: (call) => continuedCalls.push(call),
@@ -611,8 +611,10 @@ return [first, second]`);
         cwd: fixture.cwd,
         persistLogs: false,
         agent: { async run() { throw new Error("must replay"); } },
-        preparedResume: { strategy: "occurrence-v1", sourceRunId: "continued-source", requestedPolicy: "auto" },
-        resumeRows: resumeRows({ runId: "replay-target", journal: [], calls: [], seed, key: "inputs" }),
+        resume: {
+          rows: resumeRows({ runId: "replay-target", journal: [], calls: [], seed, key: "inputs" }),
+          plan: { strategy: "occurrence-v1", sourceRunId: "continued-source", requestedPolicy: "auto" },
+        },
         onAgentJournal: (entry) => replayedJournal.push(entry),
       });
       assert.deepEqual(
@@ -624,12 +626,14 @@ return [first, second]`);
       await runWorkflow(workflow(), {
         cwd: fixture.cwd,
         persistLogs: false,
-        preparedContinuation: prepared(source.candidate),
-        preparedResume: {
-          strategy: "live",
-          sourceRunId: "paused-source",
-          requestedPolicy: "auto",
-          disabledReason: "resume-metadata-missing",
+        resume: {
+          continuation: prepared(source.candidate),
+          plan: {
+            strategy: "live",
+            sourceRunId: "paused-source",
+            requestedPolicy: "auto",
+            disabledReason: "resume-metadata-missing",
+          },
         },
         agent: {
           async run(_prompt, options) {
