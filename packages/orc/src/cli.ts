@@ -7,9 +7,8 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { answerQuestion, answerValue, breakpointValue, busyWorktrees, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, pruneRuns, readLogFrom, readQuestion, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workflowDirs, type AnswerKind, type Answers, type HomePaths, type Place, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
+import { answerQuestion, answerValue, breakpointValue, busyWorktrees, checkWorkflow, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, pruneRuns, readLogFrom, readQuestion, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workflowDirs, type AnswerKind, type Answers, type HomePaths, type Place, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
-import { checkWorkflow } from "./check.js";
 import { doctor } from "./doctor.js";
 
 class Usage extends Error {}

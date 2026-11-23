@@ -8,7 +8,6 @@ export {
   findProjectDir,
   homePaths,
   loadConfig,
-  loadSecrets,
   rememberProject,
   workflowDirs,
   type HomePaths,
@@ -43,10 +42,9 @@ export {
 } from "./runs/run.js";
 export { gcWorktrees, isPlace } from "./places/places.js";
 
-// ── Saved workflows: the folders that hold them, their checked meta, the names a script refers to, and the dry run ──
+// ── Saved workflows: the folders that hold them, the check and the dry run ──
 export { openWorkflowDir, resolveWorkflow } from "./workflows/dir.js";
-export { checkInputs } from "./workflows/meta.js";
-export { readWorkflowScript, type ScriptRefs } from "./workflows/script.js";
+export { checkWorkflow } from "./workflows/check.js";
 export { dryRun, type Answers } from "./workflows/dry-run.js";
 
 // ── Accounts, agents and the installed programs ──
@@ -63,19 +61,5 @@ export {
   removeAccount,
   useAccount,
 } from "./accounts.js";
-export {
-  HARNESSES,
-  harnessName,
-  isHarness,
-  loginOf,
-  lookupAgents,
-  lookupMcpServers,
-  lookupSettings,
-  missingServer,
-  planStep,
-  removedHarness,
-  routeHarness,
-  type Harness,
-  type McpLookup,
-} from "./agents.js";
+export { HARNESSES, harnessName, isHarness, loginOf } from "./agents.js";
 export { checkPrograms, setupTokenProgram } from "./programs.js";

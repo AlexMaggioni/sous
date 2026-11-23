@@ -7,30 +7,24 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import {
-  checkInputs,
   HARNESSES,
   harnessName,
   isHarness,
-  loadConfig,
-  loadSecrets,
   lookupAgents,
   lookupMcpServers,
   lookupSettings,
   missingServer,
-  nextRun,
-  openWorkflowDir,
-  parseCron,
   planStep,
-  readWorkflowScript,
   removedHarness,
-  resolveWorkflow,
   routeHarness,
-  workflowDirs,
   type Harness,
-  type HomePaths,
   type McpLookup,
-  type ScriptRefs,
-} from "@orchestrator/engine";
+} from "../agents.js";
+import { nextRun, parseCron } from "../runs/cron.js";
+import { loadConfig, loadSecrets, workflowDirs, type HomePaths } from "../runs/home.js";
+import { openWorkflowDir, resolveWorkflow } from "./dir.js";
+import { checkInputs } from "./meta.js";
+import { readWorkflowScript, type ScriptRefs } from "./script.js";
 
 export interface CheckResult {
   workflow: string;
