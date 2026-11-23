@@ -3,7 +3,7 @@ import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { HomePaths } from "../../src/runs/home.js";
-import { normalizeAnswer, type Question } from "../../src/runs/inbox.js";
+import { breakpointValue, decisionOf, normalizeAnswer, type Question } from "../../src/runs/inbox.js";
 import { createRun } from "../../src/runs/launch.js";
 import { updateRecord } from "../../src/runs/records.js";
 import { runQuestions } from "../../src/runs/run.js";
@@ -17,6 +17,50 @@ describe("questions", () => {
     assert.equal(normalizeAnswer(base, "yes"), true);
     assert.equal(normalizeAnswer(base, "no"), false);
     assert.equal(normalizeAnswer({ ...base, kind: "input" }, "blue"), "blue");
+  });
+});
+
+describe("a breakpoint's decision", () => {
+  it("reads every answer a breakpoint can get", () => {
+    const cases: Array<[unknown, unknown]> = [
+      ["approve", { decision: "approve" }],
+      [" Approve ", { decision: "approve" }],
+      ["yes", { decision: "approve" }],
+      ["", { decision: "approve" }],
+      // Only a typed "ok" approves. An answer of "ok" is a note.
+      ["ok", { decision: "send back", note: "ok" }],
+      ["stop", { decision: "stop" }],
+      [" STOP ", { decision: "stop" }],
+      ["send back: shorter", { decision: "send back", note: "shorter" }],
+      ["Send-back shorter", { decision: "send back", note: "shorter" }],
+      ["send back", { decision: "send back" }],
+      ["shorter please", { decision: "send back", note: "shorter please" }],
+      [true, { decision: "approve" }],
+      [false, { decision: "stop" }],
+      [{ decision: "approve" }, { decision: "approve" }],
+      [{ decision: "Approve", note: " fine " }, { decision: "approve", note: "fine" }],
+      [{ decision: "stop", note: "wrong plan" }, { decision: "stop", note: "wrong plan" }],
+      [{ decision: "send back", note: " shorter " }, { decision: "send back", note: "shorter" }],
+      [{ decision: "send-back", note: "" }, { decision: "send back" }],
+      [{ decision: "later" }, { decision: "approve" }],
+      [42, { decision: "approve" }],
+      [null, { decision: "approve" }],
+      [undefined, { decision: "approve" }],
+    ];
+    for (const [answer, decision] of cases) assert.deepEqual(decisionOf(answer), decision, JSON.stringify(answer));
+  });
+
+  it("reads back each typed reply as the decision it names", () => {
+    const cases: Array<[string, unknown]> = [
+      ["", { decision: "approve" }],
+      ["OK", { decision: "approve" }],
+      ["yes", { decision: "approve" }],
+      [" Stop ", { decision: "stop" }],
+      ["send back: shorter", { decision: "send back", note: "shorter" }],
+      ["shorter", { decision: "send back", note: "shorter" }],
+      ["send-back", { decision: "send back" }],
+    ];
+    for (const [typed, decision] of cases) assert.deepEqual(decisionOf(breakpointValue(typed)), decision, typed);
   });
 });
 

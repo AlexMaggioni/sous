@@ -5,6 +5,7 @@
 
 import type { ExecSpec } from "./code-steps.js";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
+import { decisionOf } from "./runs/inbox.js";
 
 export const DEFAULT_MAX_NESTING_DEPTH = 5;
 
@@ -137,24 +138,6 @@ export function createOrchestratorGlobals(deps: OrchestratorGlobalDeps) {
     return typeof reply === "string" ? reply : reply === undefined || reply === null ? "" : JSON.stringify(reply);
   };
 
-  const normalizeDecision = (reply: unknown): { decision: "approve" | "send back" | "stop"; note?: string } => {
-    if (reply && typeof reply === "object") {
-      const record = reply as { decision?: unknown; note?: unknown };
-      const decision = String(record.decision ?? "").toLowerCase();
-      const note = typeof record.note === "string" && record.note.trim() ? record.note.trim() : undefined;
-      if (decision === "approve" || decision === "stop") return { decision, ...(note ? { note } : {}) };
-      if (decision === "send back" || decision === "send-back") return { decision: "send back", ...(note ? { note } : {}) };
-    }
-    if (reply === true) return { decision: "approve" };
-    if (reply === false) return { decision: "stop" };
-    const text = typeof reply === "string" ? reply.trim() : "";
-    const lower = text.toLowerCase();
-    if (lower === "approve" || lower === "yes" || lower === "") return { decision: "approve" };
-    if (lower === "stop") return { decision: "stop" };
-    const note = text.replace(/^send[ -]back\s*:?\s*/i, "").trim();
-    return { decision: "send back", ...(note ? { note } : {}) };
-  };
-
   /**
    * Stop for a person to check the run. They approve, stop the run, or send the step back
    * with a note. With a step function, the function runs, its result is shown, and a send
@@ -170,7 +153,7 @@ export function createOrchestratorGlobals(deps: OrchestratorGlobalDeps) {
     const prompt = (shown: unknown) =>
       `Breakpoint: ${title}\n${shown === undefined ? "" : `\n${render(shown)}\n`}\nReply approve, stop, or send back with a note.`;
     const decide = async (shown: unknown) => {
-      const decision = normalizeDecision(await deps.breakpointCheckpoint(prompt(shown), { kind: "input" }));
+      const decision = decisionOf(await deps.breakpointCheckpoint(prompt(shown), { kind: "input" }));
       if (decision.decision === "stop") {
         throw new WorkflowError(`Stopped at breakpoint "${title}"${decision.note ? `: ${decision.note}` : ""}`, WorkflowErrorCode.WORKFLOW_ABORTED, {
           recoverable: false,

@@ -110,12 +110,46 @@ export function normalizeAnswer(question: Question, raw: unknown): unknown {
   return raw;
 }
 
-/** A reply to a breakpoint: approve, stop, or a note that sends the work back. */
+/** What a person decides at a breakpoint. */
+export interface Decision {
+  decision: "approve" | "send back" | "stop";
+  note?: string;
+}
+
+/** The words that approve a breakpoint, trimmed and in lower case. */
+const APPROVE = ["approve", "yes", ""];
+/** "send back: shorter" and "send-back shorter" both send the step back with "shorter". */
+const SEND_BACK = /^send[ -]back\s*:?\s*/i;
+
+/** A reply to a breakpoint: approve, stop, or a note that sends the work back. A typed "ok" approves too. */
 export function breakpointValue(reply: string): unknown {
   const lower = reply.trim().toLowerCase();
-  if (lower === "" || lower === "approve" || lower === "yes" || lower === "ok") return "approve";
+  if (APPROVE.includes(lower) || lower === "ok") return "approve";
   if (lower === "stop") return "stop";
-  return { decision: "send back", note: reply.replace(/^send[ -]back\s*:?\s*/i, "").trim() };
+  return { decision: "send back", note: reply.replace(SEND_BACK, "").trim() };
+}
+
+/**
+ * Read a breakpoint's answer as a decision. It reads what breakpointValue writes, the answer
+ * files of older runs, and what a library caller's confirm returns: a decision object, true,
+ * false, or text. Anything else approves.
+ */
+export function decisionOf(answer: unknown): Decision {
+  if (answer && typeof answer === "object") {
+    const record = answer as { decision?: unknown; note?: unknown };
+    const decision = String(record.decision ?? "").toLowerCase();
+    const note = typeof record.note === "string" && record.note.trim() ? record.note.trim() : undefined;
+    if (decision === "approve" || decision === "stop") return { decision, ...(note ? { note } : {}) };
+    if (decision === "send back" || decision === "send-back") return { decision: "send back", ...(note ? { note } : {}) };
+  }
+  if (answer === true) return { decision: "approve" };
+  if (answer === false) return { decision: "stop" };
+  const text = typeof answer === "string" ? answer.trim() : "";
+  const lower = text.toLowerCase();
+  if (APPROVE.includes(lower)) return { decision: "approve" };
+  if (lower === "stop") return { decision: "stop" };
+  const note = text.replace(SEND_BACK, "").trim();
+  return { decision: "send back", ...(note ? { note } : {}) };
 }
 
 export type AnswerKind = "answer" | "approve" | "send-back";
