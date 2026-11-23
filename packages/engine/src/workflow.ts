@@ -1136,6 +1136,36 @@ export async function runWorkflow<T = unknown>(
       throwIfAborted();
     }
 
+    // options.cwd, when given, must be a string.
+    const checkCwdOption = () => {
+      if (agentOptions.cwd !== undefined && typeof agentOptions.cwd !== "string") {
+        throw new WorkflowError(
+          `agent "${label}": options.cwd must be a string`,
+          WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+          { recoverable: false, agentLabel: label },
+        );
+      }
+    };
+    // Opens the step's worktree. A declared resume is tainted when the open fails or the
+    // worktree is not isolated.
+    const openWorktree = (): StepWorktree => {
+      let opened: StepWorktree;
+      try {
+        opened = openStepWorktree(callIndex, label);
+      } catch (error) {
+        if (resumeDeclared) options.onResumeFilesystemTainted?.();
+        throw error;
+      }
+      if (!opened.isolated) {
+        log(`isolation ignored for "${label}" (${opened.reason})`);
+        if (resumeDeclared) options.onResumeFilesystemTainted?.();
+      }
+      return opened;
+    };
+    // The cwd the runner gets: the worktree when it is isolated, else options.cwd under the base.
+    const stepCwd = (worktree: StepWorktree | undefined): string =>
+      worktree?.isolated ? worktree.cwd : resolvePath(baseCwd, agentOptions.cwd ?? ".");
+
     // The recorded call whose session a live call can go on in: the one at its own index.
     let continuationIndex: number | undefined = callIndex;
     const runLive = () => limiter(async () => {
@@ -1289,24 +1319,9 @@ export async function runWorkflow<T = unknown>(
       try {
         emitAgentStart();
 
-        if (agentOptions.cwd !== undefined && typeof agentOptions.cwd !== "string") {
-          throw new WorkflowError(
-            `agent "${label}": options.cwd must be a string`,
-            WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-            { recoverable: false, agentLabel: label },
-          );
-        }
-        if (resolvedIsolation === "worktree" && !worktreePrepared) {
-          try {
-            worktree = openStepWorktree(callIndex, label);
-          } catch (error) {
-            if (resumeDeclared) options.onResumeFilesystemTainted?.();
-            throw error;
-          }
-          if (!worktree.isolated) log(`isolation ignored for "${label}" (${worktree.reason})`);
-          if (resumeDeclared && !worktree.isolated) options.onResumeFilesystemTainted?.();
-        }
-        runCwd = worktree?.isolated ? worktree.cwd : resolvePath(baseCwd, agentOptions.cwd ?? ".");
+        checkCwdOption();
+        if (resolvedIsolation === "worktree" && !worktreePrepared) worktree = openWorktree();
+        runCwd = stepCwd(worktree);
 
         let continuationSkipReason: ContinuationSkipReason | undefined;
         if (continuationCandidate) {
@@ -1688,34 +1703,23 @@ export async function runWorkflow<T = unknown>(
       // decision can say when the worktree is not isolated.
       if (preparedResume && resolvedIsolation === "worktree") {
         emitAgentStart();
-        if (agentOptions.cwd !== undefined && typeof agentOptions.cwd !== "string") {
+        try {
+          checkCwdOption();
+        } catch (error) {
           stepSlot.live(reason);
-          throw new WorkflowError(
-            `agent "${label}": options.cwd must be a string`,
-            WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-            { recoverable: false, agentLabel: label },
-          );
+          throw error;
         }
         worktreePrepared = true;
         try {
-          precreatedWorktree = openStepWorktree(callIndex, label);
+          precreatedWorktree = openWorktree();
         } catch (error) {
-          if (resumeDeclared) options.onResumeFilesystemTainted?.();
           stepSlot.live("worktree-degraded");
           throw error;
         }
-        if (!precreatedWorktree.isolated) {
-          log(`isolation ignored for "${label}" (${precreatedWorktree.reason})`);
-        }
-        const worktreeDegraded = !precreatedWorktree.isolated ||
-          (resumeDeclared && agentOptions.cwd !== undefined);
-        if (worktreeDegraded) {
-          if (resumeDeclared) options.onResumeFilesystemTainted?.();
+        if (!precreatedWorktree.isolated || (resumeDeclared && agentOptions.cwd !== undefined)) {
           reason = "worktree-degraded";
         }
-        preparedRunCwd = precreatedWorktree.isolated
-          ? precreatedWorktree.cwd
-          : resolvePath(baseCwd, agentOptions.cwd ?? ".");
+        preparedRunCwd = stepCwd(precreatedWorktree);
       }
       stepSlot.live(reason);
       return runLive();
