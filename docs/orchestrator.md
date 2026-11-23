@@ -364,9 +364,10 @@ the notices off.
   person's run goes before a scheduled one.
 - A loop's rounds are the workflow's to cap, usually with an input such as `rounds`.
 - A workflow's `timeout` limits each start and each resume of a run. When it is reached, the
-  running agent steps stop and the run pauses on them, shown as `paused: time limit`. `orc resume`
-  runs them again with the whole limit, and `orc stop` ends the run. With no agent step running,
-  the run pauses as `orc pause` does, once its code steps end.
+  running steps stop, code steps such as `sh` as well as agent steps, and the run pauses on them,
+  shown as `paused: time limit`. `orc resume` runs them again with the whole limit, and `orc stop`
+  ends the run. With no step running, as when the run waits for an answer, the run pauses as
+  `orc pause` does.
 
 ### Places
 
