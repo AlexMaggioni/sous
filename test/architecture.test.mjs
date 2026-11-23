@@ -143,10 +143,71 @@ const HOMES = [
 /** The engine exports only what orc calls, and the harnesses only what the engine calls. */
 const CALLERS = { engine: "orc", harnesses: "engine" };
 
+/** The node modules that touch the machine: files, processes, the system, the network and vm. */
+const MACHINE = /^(node:)?(fs|fs\/promises|child_process|os|vm|net|http|https|worker_threads)$/;
+
+/**
+ * The only source files that import a MACHINE module. Every other file is pure, so a new file
+ * starts pure until a commit adds it here.
+ */
+const TOUCHES_MACHINE = [
+  "packages/engine/src/accounts.ts",
+  "packages/engine/src/agents.ts",
+  "packages/engine/src/code-steps.ts",
+  "packages/engine/src/json-file.ts",
+  "packages/engine/src/places/places.ts",
+  "packages/engine/src/programs.ts",
+  "packages/engine/src/run-environment.ts",
+  "packages/engine/src/runs/home.ts",
+  "packages/engine/src/runs/inbox.ts",
+  "packages/engine/src/runs/launch.ts",
+  "packages/engine/src/runs/notify.ts",
+  "packages/engine/src/runs/persistence/logger.ts",
+  "packages/engine/src/runs/persistence/run-event-persistence.ts",
+  "packages/engine/src/runs/persistence/run-persistence.ts",
+  "packages/engine/src/runs/records.ts",
+  "packages/engine/src/runs/run.ts",
+  "packages/engine/src/runs/service.ts",
+  "packages/engine/src/runs/slots.ts",
+  "packages/engine/src/runs/store.ts",
+  "packages/engine/src/runs/worker.ts",
+  "packages/engine/src/testing.ts",
+  "packages/engine/src/workflow-paths.ts",
+  "packages/engine/src/workflow.ts",
+  "packages/engine/src/workflows/check.ts",
+  "packages/engine/src/workflows/dir.ts",
+  "packages/engine/src/workflows/dry-run.ts",
+  "packages/harnesses/src/claude/program.ts",
+  "packages/harnesses/src/codex/program.ts",
+  "packages/harnesses/src/codex/rpc.ts",
+  "packages/harnesses/src/codex/run.ts",
+  "packages/harnesses/src/lookup.ts",
+  "packages/orc/src/account-cli.ts",
+  "packages/orc/src/cli.ts",
+];
+
+/** The rule modules decide from what they are given. They read no file and start no process. */
+const RULE_MODULES = [
+  "packages/engine/src/checkpoint-call.ts",
+  "packages/engine/src/failed-attempt.ts",
+  "packages/engine/src/resume-matcher.ts",
+  "packages/engine/src/resume-pairing.ts",
+  "packages/engine/src/resume-report.ts",
+  "packages/engine/src/resume-rows.ts",
+  "packages/engine/src/run-rows.ts",
+  "packages/engine/src/runs/cron.ts",
+  "packages/engine/src/runs/rule.ts",
+  "packages/engine/src/step-ledger.ts",
+  "packages/engine/src/steps/answer.ts",
+];
+
+/** The workflow core. It runs one workflow, and the worker around it handles the run. */
+const CORE = ["packages/engine/src/workflow.ts", "packages/engine/src/workflow-manager.ts", "packages/engine/src/orchestrator-globals.ts", "packages/engine/src/steps/"];
+
 /**
  * Files that never reach certain files of their package at run time, through their own imports
  * or through the files they import. Importing a type is fine. A path that ends in "/" names a
- * folder.
+ * folder. `except` names files of `never` that may be reached.
  */
 const NEVER_REACH = [
   {
@@ -154,6 +215,14 @@ const NEVER_REACH = [
     // picks a home or writes the run record.
     from: ["packages/engine/src/workflow.ts", "packages/engine/src/workflow-manager.ts", "packages/engine/src/places/"],
     never: ["packages/engine/src/runs/records.ts", "packages/engine/src/runs/home.ts"],
+  },
+  { from: RULE_MODULES, never: TOUCHES_MACHINE },
+  {
+    // The persistence folder writes what it is handed. It knows nothing of the rest of runs, of
+    // the core or of the saved workflows.
+    from: ["packages/engine/src/runs/persistence/"],
+    never: ["packages/engine/src/runs/", ...CORE, "packages/engine/src/workflows/"],
+    except: ["packages/engine/src/runs/persistence/"],
   },
 ];
 
@@ -343,6 +412,7 @@ const MEMBER_CAPS = [
 const BREAKS = {
   packages: [],
   imports: [],
+  cycles: [],
   homes: [],
   reach: [],
   exports: {},
@@ -383,7 +453,13 @@ function role(dir) {
  * Imports of one file: the specifier, the names it takes, and whether it takes only types, read
  * from the parsed file.
  */
+const imported = new Map();
 function importsOf(file) {
+  if (!imported.has(file)) imported.set(file, readImports(file));
+  return imported.get(file);
+}
+
+function readImports(file) {
   const text = readFileSync(file, "utf8");
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   const found = [];
@@ -524,23 +600,35 @@ function homeBreaks({ files }) {
   return [...found].sort();
 }
 
+/** Whether a path is one of the places, where a place that ends in "/" is a folder. */
+const within = (path, places) => places.some((place) => (place.endsWith("/") ? path.startsWith(place) : path === place));
+
+/** The source files a file imports at run time: every import of ours that is not type-only. */
+function runTimeImports(file, known) {
+  const out = [];
+  for (const { spec, typeOnly } of importsOf(file)) {
+    if (typeOnly || !spec.startsWith(".")) continue;
+    const target = rel(resolve(dirname(file), spec)).replace(/\.js$/, ".ts");
+    if (known.has(target)) out.push(target);
+  }
+  return out;
+}
+
 function reachBreaks({ files }) {
   const found = new Set();
   const known = new Map(files.map(({ file, path }) => [path, file]));
-  for (const { from, never } of NEVER_REACH) {
-    const starts = [...known.keys()].filter((path) => from.some((place) => (place.endsWith("/") ? path.startsWith(place) : path === place)));
+  for (const { from, never, except = [] } of NEVER_REACH) {
+    const starts = [...known.keys()].filter((path) => within(path, from));
     for (const start of starts) {
       // Each file this one reaches at run time, and the file that imports it on the way.
       const importer = new Map([[start, undefined]]);
       const queue = [start];
       while (queue.length) {
         const path = queue.shift();
-        for (const { spec, typeOnly } of importsOf(known.get(path))) {
-          if (typeOnly || !spec.startsWith(".")) continue;
-          const target = rel(resolve(dirname(known.get(path)), spec)).replace(/\.js$/, ".ts");
-          if (!known.has(target) || importer.has(target)) continue;
+        for (const target of runTimeImports(known.get(path), known)) {
+          if (importer.has(target)) continue;
           importer.set(target, path);
-          if (!never.includes(target)) queue.push(target);
+          if (!within(target, never) || within(target, except)) queue.push(target);
           else if (path === start) found.add(`${start} imports ${target}`);
           else found.add(`${start} reaches ${target} through ${path}`);
         }
@@ -548,6 +636,46 @@ function reachBreaks({ files }) {
     }
   }
   return [...found].sort();
+}
+
+/**
+ * Each loop of run-time imports between source files, from its first file in sort order. A
+ * dynamic import counts, as it does for the reach rule.
+ */
+function cycleBreaks({ files }) {
+  const known = new Map(files.map(({ file, path }) => [path, file]));
+  const found = new Set();
+  const done = new Set();
+  const stack = [];
+  const visit = (path) => {
+    stack.push(path);
+    for (const target of runTimeImports(known.get(path), known)) {
+      const at = stack.indexOf(target);
+      if (at >= 0) {
+        const loop = stack.slice(at);
+        const first = loop.indexOf([...loop].sort()[0]);
+        found.add([...loop.slice(first), ...loop.slice(0, first), loop[first]].join(" imports "));
+      } else if (!done.has(target)) visit(target);
+    }
+    stack.pop();
+    done.add(path);
+  };
+  for (const path of [...known.keys()].sort()) if (!done.has(path)) visit(path);
+  return [...found].sort();
+}
+
+/** Each file that imports a MACHINE module and is not listed, and each listed file that does not. */
+function machineBreaks({ files }) {
+  const found = [];
+  const paths = new Set(files.map(({ path }) => path));
+  for (const { file, path } of files) {
+    const touched = [...new Set(importsOf(file).map(({ spec }) => spec).filter((spec) => MACHINE.test(spec)))];
+    const listed = TOUCHES_MACHINE.includes(path);
+    if (touched.length && !listed) found.push(`${path} imports ${touched.join(", ")}. Keep it pure, or add it to TOUCHES_MACHINE in a commit of its own.`);
+    if (!touched.length && listed) found.push(`${path} is pure now. Remove it from TOUCHES_MACHINE.`);
+  }
+  for (const path of TOUCHES_MACHINE) if (!paths.has(path)) found.push(`${path} is gone. Remove it from TOUCHES_MACHINE.`);
+  return found.sort();
 }
 
 /** One type-checked program per package, from its public entry and the files MEMBER_CAPS names. */
@@ -757,6 +885,7 @@ const state = collect();
 const now = {
   packages: packageBreaks(state),
   imports: importBreaks(state),
+  cycles: cycleBreaks(state),
   homes: homeBreaks(state),
   reach: reachBreaks(state),
   exports: exportBreaks(state),
@@ -765,6 +894,7 @@ const now = {
   scripts: scriptBreaks(state),
   sizes: sizeBreaks(lineCounts(state)),
   members: memberBreaks(),
+  machine: machineBreaks(state),
 };
 
 if (process.env.ARCH_PRINT) console.log(JSON.stringify(now, null, 2));
@@ -783,6 +913,8 @@ function compareList(rule) {
 
 test("only the table's packages exist, under our scope", () => compareList("packages"));
 test("each package imports only what the table allows", () => compareList("imports"));
+test("no source file imports itself at run time through others", () => compareList("cycles"));
+test("only the files the table lists touch the machine", () => assert.equal(now.machine.join("\n"), "", now.machine.join("\n")));
 test("each idea lives in its one home", () => compareList("homes"));
 test("no file reaches at run time what the table keeps from it", () => compareList("reach"));
 test("each package exports only what its caller imports", () => {
