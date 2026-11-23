@@ -67,3 +67,43 @@ test("manager persists checkpoint observability and replay-only executions omit 
     rmSync(persistenceRoot, { recursive: true, force: true });
   }
 });
+
+test("a reuse run that fails before its engine returns lists its root call rows in the order they settled", async () => {
+  const persistenceRoot = mkdtempSync(join(tmpdir(), "orchestrator-result-settled-"));
+  const cwd = mkdtempSync(join(tmpdir(), "orchestrator-result-settled-cwd-"));
+  try {
+    const source = await new WorkflowManager({ cwd, persistenceRoot, agent: { run: async () => "source" } }).runSync(
+      `export const meta = { name: 'settled', description: 'settled' }\nreturn await agent('source')`,
+    );
+    assert.equal(source.status, "completed");
+
+    let fastDone!: () => void;
+    const fastSettled = new Promise<void>((resolve) => { fastDone = resolve; });
+    const manager = new WorkflowManager({
+      cwd,
+      persistenceRoot,
+      agent: {
+        run: async (prompt: string) => {
+          if (prompt === "slow") await fastSettled;
+          else fastDone();
+          return prompt;
+        },
+      },
+    });
+    const reuse = await manager.runSync(
+      `export const meta = { name: 'settled', description: 'settled' }
+await Promise.all([agent('slow'), agent('fast')])
+throw new Error('stop after both steps')`,
+      undefined,
+      { resumeFromRunId: source.runId },
+    );
+
+    assert.equal(reuse.status, "failed");
+    assert.deepEqual(reuse.calls?.map((row) => row.index), [1, 0], "the fast step at index 1 settled first");
+    const saved = manager.getPersistence().load(reuse.runId);
+    assert.deepEqual(saved?.calls?.map((row) => row.index), [0, 1], "the saved state keeps its rows by index");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(persistenceRoot, { recursive: true, force: true });
+  }
+});

@@ -244,8 +244,8 @@ Each change below has a test.
 These reach a program that calls the engine itself. orc's output does not change.
 
 - A reuse run that ends without an engine result, such as one stopped before its script ran, lists
-  its result's root call rows in the order they settled. A save sorted them by index first. This
-  one has no test, since orc reads no result's call rows.
+  its result's root call rows in the order they settled. A save sorted them by index first. orc
+  reads no result's call rows.
 - A caller that passes no places object gets no home to make worktrees in. A step with
   `isolation: "worktree"` works in the run's folder, and the log says why. A nested run can ask
   only for place "folder".
