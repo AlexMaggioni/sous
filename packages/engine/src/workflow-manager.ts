@@ -44,11 +44,11 @@ import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
 import { isNestedScope, isRunEnvironmentIdentity } from "./resume-identity.js";
-import { isResult, oldDataRows, resumeRows as buildResumeRows, revisionSeed, unusedSeed, type ResumeRows } from "./resume-rows.js";
+import type { ResumeRows } from "./resume-rows.js";
+import { continueRows, handedInRows, newRows, reuseRows, reviseRows, type RunRows } from "./run-rows.js";
 import {
   createRunPersistence,
   generateRunId,
-  type PersistedResumeSeed,
   type PersistedResumeFormat,
   type PersistedRunState,
   type RunLease,
@@ -113,14 +113,11 @@ export interface ManagedRun {
   cwd?: string;
   /** Parsed meta, kept so a terminal (paused/failed) result can still report it. */
   meta?: WorkflowMeta;
-  /** Accumulated agent results for resume (deterministic call index -> result). */
-  journal: JournalEntry[];
-  /** Results of nested runs' calls, each under its child run id (entry.scope). */
-  nestedJournal?: JournalEntry[];
+  /** The run's journal, call rows and resume seed: what a resume replays. */
+  rows: RunRows;
   /** Result-only observability collected during this execution. */
   fallbacks: WorkflowRunFallback[];
   checkpointsTaken: WorkflowCheckpointTaken[];
-  calls: WorkflowCallRecord[];
   effectiveCwd: string;
   runtime: {
     engineVersion: string;
@@ -147,15 +144,8 @@ export interface ManagedRun {
   defaultModel?: string;
   nestedWorkflows?: true;
   legacyResume?: true;
-  /** A fresh run seeded from another execution; terminal saves replace inherited rows. */
-  newRunResume?: true;
   /** Immediate resumeFromRunId ancestor, fixed when the new run is admitted. */
   readonly resumeSourceRunId?: string;
-  /** Manager-owned remaining correspondence state for a new-run resume. */
-  resumeSeed?: PersistedResumeSeed;
-  /** A same-ID resume's journal and call rows as the resume started. A replay that moves one of
-   *  them to another index takes it from its old index. */
-  resumedRows?: ReadonlySet<JournalEntry | WorkflowCallRecord>;
   /** Resume-only interrupted root calls eligible for live session continuation. */
   preparedContinuation?: PreparedContinuation;
   /** Manager-owned report, incrementally updated while the engine is executing. */
@@ -358,24 +348,6 @@ function runtimeIdentity(): ManagedRun["runtime"] {
   };
 }
 
-function contiguousIndexes(indexes: Iterable<number>): number {
-  const available = new Set(indexes);
-  let prefix = 0;
-  while (available.has(prefix)) prefix++;
-  return prefix;
-}
-
-/** The first root steps a seed and the old journal rows can replay, counted from step 0. */
-function seedPrefix(seed: PersistedResumeSeed | undefined, journal: readonly JournalEntry[]): number {
-  return contiguousIndexes([
-    ...(seed?.candidates ?? [])
-      .filter((candidate) => (candidate.call.scope ?? candidate.sourceRunId) === candidate.sourceRunId)
-      .map((candidate) => candidate.recordedIndex),
-    ...(seed?.checkpointInjections ?? []).map((injection) => injection.recordedIndex),
-    ...journal.map((entry) => entry.index),
-  ]);
-}
-
 /** A saved run whose inputs hashes this build computes the same way pairs on them too. */
 function pairingKey(saved: PersistedRunState["runtime"], current: ManagedRun["runtime"]): "inputs" | "hash" {
   return saved?.inputsFormat === current.inputsFormat &&
@@ -390,40 +362,6 @@ function displayOperationalValue(value: number | null): string {
 
 function displayProvenanceValue(value: string | null): string {
   return value === null ? "unavailable" : value;
-}
-
-function latestRootRows<T extends { index: number; scope?: string }>(rows: T[], runId: string): T[] {
-  const latest = new Map<number, T>();
-  for (const row of rows) {
-    if (row.scope === undefined || row.scope === runId) latest.set(row.index, row);
-  }
-  return [...latest.values()].sort((a, b) => a.index - b.index);
-}
-
-/** The latest call row of each nested run's index, by scope and then index. */
-function latestNestedRows<T extends { index: number; scope?: string }>(rows: T[], runId: string): T[] {
-  const latest = new Map<string, T>();
-  for (const row of rows) {
-    if (isNestedScope(row.scope, runId)) latest.set(`${row.scope}\u0000${row.index}`, row);
-  }
-  return [...latest.values()].sort((a, b) =>
-    a.scope === b.scope ? a.index - b.index : (a.scope as string) < (b.scope as string) ? -1 : 1);
-}
-
-function stripLegacyCallBudgetFields(call: WorkflowCallRecord): WorkflowCallRecord {
-  const { budgetDebit: _budgetDebit, ...currentCall } = call as WorkflowCallRecord & {
-    budgetDebit?: unknown;
-  };
-  if (currentCall.replay === undefined) return currentCall;
-  const { logicalBudgetDebit: _logicalBudgetDebit, ...currentReplay } = currentCall.replay as
-    NonNullable<WorkflowCallRecord["replay"]> & { logicalBudgetDebit?: unknown };
-  return { ...currentCall, replay: currentReplay };
-}
-
-function latestRows<T extends { index: number }>(rows: T[]): T[] {
-  const latest = new Map<number, T>();
-  for (const row of rows) latest.set(row.index, row);
-  return [...latest.values()].sort((a, b) => a.index - b.index);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1037,38 +975,27 @@ export class WorkflowManager extends EventEmitter {
     source: PersistedRunState,
   ): ManagerResumeExecution {
     const admission = admitResumeSource({ source, effectiveCwd: managed.effectiveCwd });
-    managed.newRunResume = true;
     if (source.resume === undefined || source.legacyResume === true) managed.legacyResume = true;
     managed.preparedContinuation = this.buildPreparedContinuation(source);
     if (admission.strategy === "live") {
+      managed.rows = reuseRows(managed.runId).rows;
       this.initializeResumeReporting(managed, source, admission, 0);
       return { preparedResume: admission };
     }
 
-    // The new run's seed holds the source's own rows of each scope with call rows, then the rows
-    // of the source's seed that the source did not replay. A scope saved with no call rows is old
-    // data: its journal rows move to the same scope of the new run, and pair by index.
     const chained = this.chainedRows(source.runId);
-    const journal = chained(
-      this.cloneResumeSourceValue([...(source.journal ?? []), ...(source.nestedJournal ?? [])], source.runId),
-    );
-    const calls = chained(this.cloneResumeSourceValue(source.calls ?? [], source.runId)).map(stripLegacyCallBudgetFields);
-    managed.resumeSeed = revisionSeed({ runId: source.runId, journal, calls, seed: source.resumeSeed });
-    const old = oldDataRows({ sourceRunId: source.runId, runId: managed.runId, journal, calls });
-    managed.journal = latestRows(old.filter((entry) => entry.scope === managed.runId));
-    const nestedJournal = latestNestedRows(old, managed.runId);
-    if (nestedJournal.length > 0) managed.nestedJournal = nestedJournal;
-    this.initializeResumeReporting(managed, source, admission, seedPrefix(managed.resumeSeed, managed.journal));
-    return {
-      preparedResume: admission,
-      resumeRows: buildResumeRows({
-        runId: managed.runId,
-        journal: [...managed.journal, ...(managed.nestedJournal ?? [])],
-        calls: [],
-        seed: managed.resumeSeed,
-        key: pairingKey(source.runtime, managed.runtime),
-      }),
-    };
+    const started = reuseRows(managed.runId, {
+      sourceRunId: source.runId,
+      journal: chained(
+        this.cloneResumeSourceValue([...(source.journal ?? []), ...(source.nestedJournal ?? [])], source.runId),
+      ),
+      calls: chained(this.cloneResumeSourceValue(source.calls ?? [], source.runId)),
+      seed: source.resumeSeed,
+      key: pairingKey(source.runtime, managed.runtime),
+    });
+    managed.rows = started.rows;
+    this.initializeResumeReporting(managed, source, admission, started.prefix);
+    return { preparedResume: admission, resumeRows: started.resume };
   }
 
   private initializeRun(
@@ -1088,9 +1015,6 @@ export class WorkflowManager extends EventEmitter {
       const resumeExecution = source
         ? this.prepareManagedResume(managed, source.source)
         : undefined;
-      if (!source && exec.resumeJournal) {
-        managed.journal = latestRows([...exec.resumeJournal.values()]);
-      }
       this.runs.set(managed.runId, managed);
       if (source || exec.resumeJournal) {
         this.persistRunOrThrow(managed);
@@ -1208,10 +1132,11 @@ export class WorkflowManager extends EventEmitter {
       argsSnapshotOk: capturedArgs.ok,
       ...(!capturedArgs.ok ? { argsUnreplayable: true as const } : {}),
       meta,
-      journal: [],
+      rows: exec.resumeJournal
+        ? handedInRows(identity.runId, exec.resumeJournal)
+        : newRows(identity.runId),
       fallbacks: [],
       checkpointsTaken: [],
-      calls: [],
       effectiveCwd,
       runtime: runtimeIdentity(),
       environment: captureRunEnvironment(effectiveCwd, exec.environmentKey ?? this.environmentKey),
@@ -1229,7 +1154,7 @@ export class WorkflowManager extends EventEmitter {
       }),
       defaultModel: exec.defaultModel,
       ...(exec.resumeFromRunId ? { resumeSourceRunId: exec.resumeFromRunId } : {}),
-      ...(exec.resumeJournal ? { legacyResume: true as const, newRunResume: true as const } : {}),
+      ...(exec.resumeJournal ? { legacyResume: true as const } : {}),
       background,
       lease: identity.lease,
       ...(this.eventLog ? { eventStreamId: generateEventStreamId(), eventSeq: 0 } : {}),
@@ -1426,7 +1351,7 @@ export class WorkflowManager extends EventEmitter {
         managed.snapshot.agents.map((a) => a.session).filter((s): s is NonNullable<typeof s> => s != null),
       ...(fallbacks.length === 0 ? {} : { fallbacks }),
       ...(checkpointsTaken.length === 0 ? {} : { checkpointsTaken }),
-      calls: engineResult?.calls ?? managed.calls.filter((row) => !isNestedScope(row.scope, managed.runId)),
+      calls: engineResult?.calls ?? managed.rows.resultCalls(),
       callsAllocated: engineResult?.callsAllocated ?? managed.callsAllocated,
       ...(engineResult?.resumeReport ?? managed.resumeReport
         ? { resumeReport: engineResult?.resumeReport ?? managed.resumeReport }
@@ -1605,7 +1530,7 @@ export class WorkflowManager extends EventEmitter {
       });
 
       managed.executionSettled = true;
-      managed.calls = [...(engineResult.calls ?? []), ...latestNestedRows(managed.calls, managed.runId)];
+      managed.rows.completed(engineResult.calls ?? []);
       managed.callsAllocated = engineResult.callsAllocated;
       if (engineResult.resumeReport && managed.resumeReportPlan) {
         managed.resumeReport = buildResumeReport(
@@ -1778,19 +1703,9 @@ export class WorkflowManager extends EventEmitter {
 
   private recordJournalEntry(managed: ManagedRun, entry: JournalEntry): void {
     if (this.dropPostTerminal(managed, "journal")) return;
+    managed.rows.journal(entry);
     const rootScope = entry.scope === undefined || entry.scope === managed.runId;
-    if (rootScope) {
-      managed.journal = managed.journal.filter((e) => e.index !== entry.index);
-      managed.journal.push(entry);
-      if (entry.kind === "checkpoint") this.persistRunOrThrow(managed);
-    } else {
-      // Any other scope is a nested run's. Keep its results too, so a resumed run replays
-      // finished child steps.
-      managed.nestedJournal = (managed.nestedJournal ?? []).filter(
-        (e) => !(e.scope === entry.scope && e.index === entry.index),
-      );
-      managed.nestedJournal.push(entry);
-    }
+    if (rootScope && entry.kind === "checkpoint") this.persistRunOrThrow(managed);
     this.publishRunEvent(
       managed,
       this.createRunEvent("journal", {
@@ -1805,55 +1720,8 @@ export class WorkflowManager extends EventEmitter {
 
   private recordCallRecord(managed: ManagedRun, record: WorkflowCallRecord): void {
     if (this.dropPostTerminal(managed, "callRecord")) return;
-    this.dropMovedRow(managed, record);
+    managed.rows.call(record, managed.snapshot.currentPhase);
     const rootScope = record.scope === undefined || record.scope === managed.runId;
-    if (rootScope) {
-      if (record.origin === "journal-replay" && record.outcome === "result") {
-        const source = managed.journal.find(
-          (entry) => entry.index === record.index && entry.hash === record.hash,
-        );
-        if (source) {
-          const phase = record.kind === "checkpoint" ? managed.snapshot.currentPhase : source.call?.phase;
-          const label = record.kind === "agent" ? record.label ?? source.call?.label ?? "agent" : "checkpoint";
-          const rebound = deepFreeze({
-            ...source,
-            kind: record.kind,
-            scope: managed.runId,
-            ...(source.session
-              ? {
-                  session: {
-                    ...source.session,
-                    callIndex: record.index,
-                    label,
-                    ...(phase === undefined ? {} : { phase }),
-                  },
-                }
-              : {}),
-            call: record.kind === "agent"
-              ? {
-                  ...source.call,
-                  kind: "agent" as const,
-                  label,
-                  ...(phase === undefined ? {} : { phase }),
-                }
-              : {
-                  kind: "checkpoint" as const,
-                  label: "checkpoint" as const,
-                  phase,
-                },
-          } satisfies JournalEntry);
-          managed.journal = latestRows([
-            ...managed.journal.filter((entry) => entry.index !== record.index),
-            rebound,
-          ]);
-        }
-      }
-      managed.calls = managed.calls.filter((row) => isNestedScope(row.scope, managed.runId) || row.index !== record.index);
-      managed.calls.push(record);
-    } else {
-      managed.calls = managed.calls.filter((row) => !(row.scope === record.scope && row.index === record.index));
-      managed.calls.push(record);
-    }
     this.publishRunEvent(
       managed,
       this.createRunEvent("callRecord", {
@@ -1864,22 +1732,6 @@ export class WorkflowManager extends EventEmitter {
       () => this.persistRun(managed),
       rootScope ? { beforeLive: () => this.persistRun(managed) } : undefined,
     );
-  }
-
-  /**
-   * A same-ID resume can replay one of the run's own rows at another index, when steps open in
-   * another order. The row then lives at the new index, so drop it from the old one. Otherwise a
-   * later resume reads it twice, and gives a call that never ran the other call's result.
-   */
-  private dropMovedRow(managed: ManagedRun, record: WorkflowCallRecord): void {
-    const from = record.replay;
-    const scope = record.scope ?? managed.runId;
-    if (!managed.resumedRows || from?.sourceRunId !== scope || from.recordedIndex === record.index) return;
-    const stale = (row: JournalEntry | WorkflowCallRecord) =>
-      managed.resumedRows!.has(row) && (row.scope ?? managed.runId) === scope && row.index === from.recordedIndex;
-    managed.journal = managed.journal.filter((row) => !stale(row));
-    if (managed.nestedJournal) managed.nestedJournal = managed.nestedJournal.filter((row) => !stale(row));
-    managed.calls = managed.calls.filter((row) => !stale(row));
   }
 
   private registerAgentAttempt(
@@ -1998,45 +1850,9 @@ export class WorkflowManager extends EventEmitter {
     return true;
   }
 
-  private prepareTerminalResumeState(managed: ManagedRun): void {
+  /** At the first terminal save, record the folder's state, so a reuse can tell whether it changed. */
+  private recordTerminalEnvironment(managed: ManagedRun): void {
     if (managed.status === "running" || managed.status === "pending") return;
-    if (managed.newRunResume) {
-      const rootCalls = latestRows(managed.calls.filter((row) => row.scope === managed.runId));
-      managed.calls = [...rootCalls, ...latestNestedRows(managed.calls, managed.runId)];
-      const callAt = new Map(rootCalls.map((row) => [row.index, row] as const));
-      // A journal row stays while it is a result. A row with no call at its index is one: it comes
-      // from a run saved before call rows, at a step this run did not reach yet.
-      managed.journal = latestRows(
-        managed.journal.filter((entry) => entry.scope === managed.runId && isResult(entry, callAt.get(entry.index))),
-      );
-      // The seed keeps the rows the run did not replay, for the run that resumes it.
-      managed.resumeSeed = unusedSeed(managed.resumeSeed, managed.calls, managed.runId);
-      if (managed.status !== "completed" && managed.resumeSeed) {
-        managed.resumeSeed = deepFreeze({
-          ...managed.resumeSeed,
-          sourceRunId: managed.runId,
-        });
-      }
-      if (managed.resumeSeed?.checkpointInjections) {
-        const checkpointKeys = new Set(
-          rootCalls
-            .filter((row) => row.kind === "checkpoint")
-            .map((row) => `${row.hash}\u0000${row.inputsHash ?? ""}`),
-        );
-        const checkpointInjections = managed.resumeSeed.checkpointInjections.filter(
-          (injection) => !checkpointKeys.has(`${injection.hash}\u0000${injection.inputsHash}`),
-        );
-        if (checkpointInjections.length !== managed.resumeSeed.checkpointInjections.length) {
-          const { checkpointInjections: _discarded, ...remainingSeed } = managed.resumeSeed;
-          managed.resumeSeed = deepFreeze({
-            ...remainingSeed,
-            ...(checkpointInjections.length === 0 ? {} : { checkpointInjections }),
-          });
-        }
-      }
-    }
-    // A completed run has no later steps to replay, whether or not it started as a reuse.
-    if (managed.status === "completed") managed.resumeSeed = undefined;
     if (managed.resumeTerminalFinalized) return;
     managed.resumeTerminalFinalized = true;
     if (!managed.resume) return;
@@ -2051,7 +1867,8 @@ export class WorkflowManager extends EventEmitter {
   }
 
   private persistedState(managed: ManagedRun): PersistedRunState {
-    this.prepareTerminalResumeState(managed);
+    this.recordTerminalEnvironment(managed);
+    const rows = managed.rows.saved(managed.status);
     return {
       runId: managed.runId,
       workflowName: managed.snapshot.name,
@@ -2069,7 +1886,7 @@ export class WorkflowManager extends EventEmitter {
       environment: managed.environment,
       ...(managed.resume ? { resume: managed.resume } : {}),
       ...(managed.resumeSourceRunId ? { resumeSourceRunId: managed.resumeSourceRunId } : {}),
-      ...(managed.resumeSeed ? { resumeSeed: managed.resumeSeed } : {}),
+      ...(rows.resumeSeed ? { resumeSeed: rows.resumeSeed } : {}),
       ...(managed.resumeReport ? { resumeReport: managed.resumeReport } : {}),
       ...(managed.replayEligibility ? { replayEligibility: managed.replayEligibility } : {}),
       ...(managed.continuation ? { continuation: managed.continuation } : {}),
@@ -2079,11 +1896,11 @@ export class WorkflowManager extends EventEmitter {
       eventLogIncomplete: managed.eventLogIncomplete,
       nestedWorkflows: managed.nestedWorkflows,
       legacyResume: managed.legacyResume,
-      journal: managed.journal,
-      ...(managed.nestedJournal?.length ? { nestedJournal: managed.nestedJournal } : {}),
+      journal: rows.journal,
+      ...(rows.nestedJournal.length ? { nestedJournal: rows.nestedJournal } : {}),
       ...(managed.fallbacks.length === 0 ? {} : { fallbacks: managed.fallbacks }),
       ...(managed.checkpointsTaken.length === 0 ? {} : { checkpointsTaken: managed.checkpointsTaken }),
-      calls: managed.calls,
+      calls: rows.calls,
       callsAllocated: managed.callsAllocated,
       limits: managed.limits,
       ...(managed.abortSignaled || managed.controller.signal.aborted
@@ -2398,6 +2215,13 @@ export class WorkflowManager extends EventEmitter {
     }
     const capturedArgs = snapshotArgs(persisted.args);
     const effectiveCwd = persisted.effectiveCwd ?? persisted.cwd ?? this.cwd;
+    const runtime = runtimeIdentity();
+    // The run pairs with its own rows, then with the rows its seed still holds. Without a
+    // revision the key is the kind and call hash.
+    const revised = revision === undefined
+      ? undefined
+      : reviseRows(runId, persisted, pairingKey(persisted.runtime, runtime));
+    const started = revised ?? continueRows(runId, persisted);
     const managed: ManagedRun = {
       runId,
       status: "running",
@@ -2433,16 +2257,11 @@ export class WorkflowManager extends EventEmitter {
       ...(persisted.argsUnreplayable || !capturedArgs.ok ? { argsUnreplayable: true as const } : {}),
       cwd: persisted.cwd,
       meta,
-      journal: latestRootRows(persisted.journal ?? [], runId),
-      ...(persisted.nestedJournal?.length ? { nestedJournal: [...persisted.nestedJournal] } : {}),
+      rows: started.rows,
       fallbacks: persisted.fallbacks ?? [],
       checkpointsTaken: [],
-      calls: [
-        ...latestRootRows(persisted.calls ?? [], runId),
-        ...latestNestedRows(persisted.calls ?? [], runId),
-      ].map(stripLegacyCallBudgetFields),
       effectiveCwd,
-      runtime: runtimeIdentity(),
+      runtime,
       environment: persisted.environment,
       ...(persisted.legacyResume ? { legacyResume: true as const } : {}),
       ...(persisted.resume ? { resume: { format: "identity-v1" as const } } : {}),
@@ -2469,51 +2288,18 @@ export class WorkflowManager extends EventEmitter {
     managed.preparedContinuation = this.buildPreparedContinuation(persisted);
     const generation = (persisted.continuation?.generation ?? 0) + 1;
 
-    // The run pairs with its own rows, then with the rows its seed still holds. Without a
-    // revision the key is the kind and call hash.
-    const recordedJournal = managed.journal;
-    let resumeRows: ResumeRows;
     let occurrenceResume: OccurrenceResume | undefined;
-    if (revision === undefined) {
-      managed.resumeSeed = unusedSeed(persisted.resumeSeed, managed.calls, runId);
-      managed.resumedRows = new Set([...managed.journal, ...(managed.nestedJournal ?? []), ...managed.calls]);
-      resumeRows = buildResumeRows({
-        runId,
-        journal: [...managed.journal, ...(managed.nestedJournal ?? [])],
-        calls: managed.calls,
-        seed: managed.resumeSeed,
-        key: "hash",
-      });
-    } else {
-      // The new version starts with no call rows. Its seed holds the rows of the version before,
-      // so a second pause keeps the steps the new version has not reached. A scope saved with no
-      // call rows keeps its journal, and pairs by index.
-      const journal = [...managed.journal, ...(managed.nestedJournal ?? [])];
-      managed.resumeSeed = revisionSeed({ runId, journal, calls: managed.calls, seed: persisted.resumeSeed });
-      const old = oldDataRows({ sourceRunId: runId, runId, journal, calls: managed.calls });
-      managed.journal = latestRows(old.filter((entry) => entry.scope === runId));
-      const nestedJournal = latestNestedRows(old, runId);
-      if (nestedJournal.length > 0) managed.nestedJournal = nestedJournal;
-      else delete managed.nestedJournal;
-      managed.calls = [];
+    if (revised && revision !== undefined) {
       managed.scriptRevisions = [
         ...(persisted.scriptRevisions ?? []),
         { generation, scriptHash: hashScriptText(revision), revisedAt: new Date().toISOString() },
       ];
-      managed.newRunResume = true;
       occurrenceResume = { strategy: "occurrence-v1", sourceRunId: runId, requestedPolicy: "auto" };
-      this.initializeResumeReporting(managed, persisted, occurrenceResume, seedPrefix(managed.resumeSeed, managed.journal));
-      resumeRows = buildResumeRows({
-        runId,
-        journal: [...managed.journal, ...(managed.nestedJournal ?? [])],
-        calls: [],
-        seed: managed.resumeSeed,
-        key: pairingKey(persisted.runtime, managed.runtime),
-      });
+      this.initializeResumeReporting(managed, persisted, occurrenceResume, revised.prefix);
     }
     const continuation: WorkflowContinuationResult = deepFreeze({
       generation,
-      replayedPrefix: contiguousJournalPrefix(recordedJournal, runId),
+      replayedPrefix: contiguousJournalPrefix(persisted.journal ?? [], runId),
       ...(revision === undefined ? {} : { scriptRevised: true as const }),
     });
     managed.continuation = continuation;
@@ -2539,7 +2325,7 @@ export class WorkflowManager extends EventEmitter {
       onNestedWorkflow: exec.onNestedWorkflow,
       ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
       ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
-    }, { resumeRows, ...(occurrenceResume ? { preparedResume: occurrenceResume } : {}) });
+    }, { resumeRows: started.resume, ...(occurrenceResume ? { preparedResume: occurrenceResume } : {}) });
     promise.catch(() => {});
     return { accepted: true, runId, continuation, promise };
   }

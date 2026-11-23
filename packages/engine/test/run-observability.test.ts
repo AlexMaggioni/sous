@@ -115,7 +115,7 @@ test("a checkpoint call is attributed in the journal and a completed run has no 
     'return "done";',
   ].join("\n");
   const started = manager.startInBackground(script);
-  await waitUntil(() => (manager.getRun(started.runId)?.journal.length ?? 0) === 1);
+  await waitUntil(() => (manager.getRun(started.runId)?.rows.saved("running").journal.length ?? 0) === 1);
 
   held.resolve({ answer: "done" });
   const completed = await started.promise;

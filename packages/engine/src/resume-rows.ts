@@ -56,7 +56,7 @@ export function isResult(entry: JournalEntry, call: WorkflowCallRecord | undefin
 /**
  * One scope's own rows, by index. A journal row that is a result gives a result row. Any other
  * call row is a failed row: the call failed or stopped, or its result was never saved. A replay
- * that moved a row to another index took it from its old index already, in the manager.
+ * that moved a row to another index took it from its old index already, in the run's rows.
  */
 function ownRows(scope: string, journal: Map<number, JournalEntry>, calls: Map<number, WorkflowCallRecord>): ResumeRow[] {
   const rows: ResumeRow[] = [];
