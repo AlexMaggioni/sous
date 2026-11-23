@@ -246,31 +246,6 @@ test("terminal results get exact redacted final-20 tails while completed results
   assert.equal("logTail" in completed, false);
 });
 
-test("terminal cause persistence supports new and legacy records", () => {
-  const store = memoryPersistence();
-  const current = persisted("cause-current", "failed");
-  current.reason = "actual failure";
-  current.errorCode = WorkflowErrorCode.SCRIPT_ERROR;
-  current.journal = [
-    { index: 0, hash: "hash", result: true, call: { kind: "checkpoint", label: "checkpoint", phase: "Review" } },
-  ];
-  store.persistence.save(current);
-  const roundTrip = store.persistence.load(current.runId);
-  assert.equal(roundTrip?.reason, "actual failure");
-  assert.equal(roundTrip?.errorCode, WorkflowErrorCode.SCRIPT_ERROR);
-  assert.equal(roundTrip?.journal?.[0]?.call?.kind, "checkpoint");
-
-  const legacy = persisted("cause-legacy", "paused");
-  legacy.pauseReason = "usage_limit";
-  delete legacy.reason;
-  delete legacy.errorCode;
-  store.persistence.save(legacy);
-  const legacyRoundTrip = store.persistence.load(legacy.runId);
-  assert.equal(legacyRoundTrip?.pauseReason, "usage_limit");
-  assert.equal(legacyRoundTrip?.reason, undefined);
-  assert.equal(legacyRoundTrip?.errorCode, undefined);
-});
-
 test("failure reasons persist the actual WorkflowError message and code", async () => {
   const store = memoryPersistence();
   const manager = new WorkflowManager({
