@@ -43,6 +43,10 @@ and [`docs/proof/refactor.md`](docs/proof/refactor.md) shows the result.
 baseline. It needs no credentials and starts no real agent. The steps run on the fake programs in
 `test/fakes`. The proofs in `test/proofs` run on the real programs, by hand.
 
+orc's own tests run their workers in the test's process, with a fake runner, through the test
+kit at `@orchestrator/engine/testing`. The [engine's README](packages/engine/README.md#the-test-kit)
+describes it.
+
 ## License
 
 Apache-2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). This repository started from

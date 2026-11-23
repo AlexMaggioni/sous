@@ -311,6 +311,48 @@ incomplete sidecar raises `RunEventLogError`; snapshot/journal recovery remains 
 
 Exactly one writer per run is required. `WorkflowManager` holds the cross-process run lease around publication and deletion; custom/direct callers of `appendEvent()`, `save()`, or `delete()` must provide equivalent exclusion. A host may set `WorkflowManagerOptions.leaseOwnerId` (or `RunPersistenceOptions.leaseOwnerId`) to stamp an opaque process-generation identity. Default persistence exposes `inspectRunLease(runId)` as read-only `{runId,pid,startedAt,ownerId?}` and `validateRunLease(lease)`; manager writes fail closed after token loss. `stopPersistedRun(runId)` acquires rather than steals the lease, reloads under it, and durably cold-stops a nonterminal run with exactly one `stopped` event; it reports `owned-elsewhere` while a live writer holds the lock. `deleteRun()` removes the event sidecar before the snapshot while holding that lease, preventing detached callbacks or a competing process from recreating durable state.
 
+## How a run's worker starts
+
+Each orc run has a worker, which runs its workflow. `startRun`, `resumeRun`, `rerunRun`,
+`useAccount`, `tick` and `daemonMain` take a `Launcher`, and call it each time a run needs a
+worker:
+
+```ts
+type Launcher = (paths: HomePaths, runId: string, mode: "start" | "resume") => void;
+```
+
+`workerProcess(cliFile)` gives the launcher orc uses. It runs `node <cli file> _worker <run id>
+<mode>` as a detached process, sends its output to the run's log, and notes its pid in the run's
+record. It calls `cliFile` only when a worker starts. orc's `main(argv, { launch })` passes a
+given launcher to `run`, `resume`, `rerun`, `account use` and `daemon run`.
+
+## The test kit
+
+`@orchestrator/engine/testing` is for this repo's tests. The published package leaves it out.
+
+- `testHome(workflows, config)` makes a home and a project folder in the temp folder.
+- `plantState(paths, state, events)` writes a run's state, and its event log if given, as the
+  engine leaves them.
+- `fakeRunner(answer)` stands in for Claude Code and Codex. It notes each step in `calls`.
+- `inProcess({ inner })` gives a launcher that runs each worker in the test's own process, with
+  `inner` as the runner. The worker writes the run's log, as a worker process does.
+  `ended(runId)` gives the result of the run's last worker.
+
+```ts
+import { startRun } from "@orchestrator/engine";
+import { fakeRunner, inProcess, testHome } from "@orchestrator/engine/testing";
+
+const { paths, projectDir } = testHome({ one: "export const meta = { name: 'one', description: 'one step' }\nreturn await agent('go')" });
+const { runner, calls } = fakeRunner(() => "done");
+const workers = inProcess({ inner: runner });
+const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+const result = await workers.ended(record.runId); // result.status is "completed"
+```
+
+orc's tests pass the same launcher to `main`, so `orc run`, `orc resume` and `orc rerun` run their
+workers in the test. The kit also exports the engine parts that orc's tests use and orc's code
+does not, such as `createRun` for a run that needs no worker.
+
 ## Key exports
 
 From `@orchestrator/engine` (see `src/index.ts`):
