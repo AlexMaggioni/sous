@@ -311,7 +311,10 @@ async function runOnAccounts(
   if (!pause || stopping) removeRunQuestions(paths, runId);
   updateRecord(paths, runId, { pid: undefined });
   const reason = state?.pauseReason ? ` (${state.pauseReason}${state.resetHint ? `, ${state.resetHint}` : ""})` : "";
-  const error = status === "paused" ? why : status === "failed" ? (result?.reason ?? state?.reason) : undefined;
+  // A paused resume rejects with its error. A paused start resolves, and the state saves the
+  // error's message as its reason when the message says more than the pause reason does.
+  const pausedWhy = why ?? (state?.reason !== state?.pauseReason ? state?.reason : undefined);
+  const error = status === "paused" ? pausedWhy : status === "failed" ? (result?.reason ?? state?.reason) : undefined;
   log(`${stamp()} ${status.padEnd(10)} ${record.workflow}${reason}${error ? `: ${oneLine(String(error), 400)}` : ""}`);
   const atLimit = pause?.reason === "usage_limit" && !stopping;
   const limitText = atLimit ? limitNotice(paths, loadRecord(paths, runId) ?? record, pause?.resetAt) : undefined;
