@@ -202,13 +202,13 @@ export interface GcResult {
  * Remove orc's worktrees whose branch is merged into the project's current branch and has no
  * uncommitted changes. Everything else stays, and so does each worktree in `busy`.
  */
-export function gcWorktrees(paths: HomePaths, projectDirs: string[], options: { dryRun?: boolean; busy?: Set<string> } = {}): GcResult {
+export function gcWorktrees(paths: HomePaths, projectDirs: string[], options: { dryRun?: boolean; busy: Set<string> }): GcResult {
   const result: GcResult = { removed: [], kept: [] };
   if (!existsSync(paths.worktrees)) return result;
   // Git reports real paths, so /var/... on macOS shows as /private/var/....
   const root = realpathSync(paths.worktrees);
   const real = (dir: string) => (existsSync(dir) ? realpathSync(dir) : dir);
-  const busy = new Set([...(options.busy ?? [])].map(real));
+  const busy = new Set([...options.busy].map(real));
   const seen = new Set<string>();
   for (const projectDir of projectDirs) {
     if (!isGitRepo(projectDir)) continue;

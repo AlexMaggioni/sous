@@ -18,11 +18,12 @@ export { answerValue, breakpointValue, normalizeAnswer, readQuestion, type Answe
 export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
 export { InputProblems, logFile } from "./runs/launch.js";
 export { workerMain } from "./runs/worker.js";
-export { busyWorktrees, daemonMain, daemonPid, fileSchedules, loadSchedules, saveSchedules, type Schedule } from "./runs/service.js";
+export { daemonMain, daemonPid, fileSchedules, loadSchedules, saveSchedules, type Schedule } from "./runs/service.js";
 export {
   answerQuestion,
   discardRun,
   findQuestion,
+  gcRuns,
   listRuns,
   pauseRun,
   pruneRuns,
@@ -43,7 +44,7 @@ export {
   type RunQuestion,
   type RunView,
 } from "./runs/run.js";
-export { gcWorktrees, isPlace } from "./places/places.js";
+export { isPlace } from "./places/places.js";
 
 // ── Saved workflows: the folders that hold them, the check and the dry run ──
 export { openWorkflowDir, resolveWorkflow } from "./workflows/dir.js";

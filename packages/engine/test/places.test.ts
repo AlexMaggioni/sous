@@ -8,7 +8,7 @@ import { gcWorktrees, makeStepWorktree, removeStepWorktree } from "../src/places
 import { ensureHome, homePaths, type HomePaths } from "../src/runs/home.js";
 import { createRun } from "../src/runs/launch.js";
 import { loadRecord } from "../src/runs/records.js";
-import { busyWorktrees } from "../src/runs/service.js";
+import { busyWorktrees } from "../src/runs/run.js";
 import { runWorker } from "../src/runs/worker.js";
 import { runWorkflow } from "../src/workflow.js";
 import { heldRunner, setup, until } from "./runs/fixture.js";

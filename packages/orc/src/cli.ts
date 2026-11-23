@@ -7,7 +7,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { answerQuestion, answerValue, breakpointValue, busyWorktrees, checkWorkflow, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, pruneRuns, readLog, readQuestion, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workflowDirs, type AnswerKind, type Answers, type HomePaths, type Place, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
+import { answerQuestion, answerValue, breakpointValue, checkWorkflow, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, gcRuns, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, pruneRuns, readLog, readQuestion, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workflowDirs, type AnswerKind, type Answers, type HomePaths, type Place, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { doctor } from "./doctor.js";
 
@@ -637,9 +637,7 @@ async function cmdDaemon(parsed: Parsed): Promise<number> {
 
 function cmdGc(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
-  const runs = listRuns(paths);
-  const projects = [...new Set(runs.map((run) => run.record.projectDir))];
-  const result = gcWorktrees(paths, projects, { dryRun: parsed.flags["dry-run"] === true, busy: busyWorktrees(paths, runs) });
+  const result = gcRuns(paths, { dryRun: parsed.flags["dry-run"] === true });
   for (const item of result.removed) out(`${parsed.flags["dry-run"] ? "would remove" : "removed"} ${item.dir} (${item.branch}): ${item.reason}`);
   for (const item of result.kept) out(`kept ${item.dir} (${item.branch}): ${item.reason}`);
   if (!result.removed.length && !result.kept.length) out("no worktrees");

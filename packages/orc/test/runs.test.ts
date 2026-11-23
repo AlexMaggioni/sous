@@ -6,12 +6,11 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import {
   answerQuestion,
-  busyWorktrees,
   checkWorkflow,
   dryRun,
   ensureHome,
   fileSchedules,
-  gcWorktrees,
+  gcRuns,
   homePaths,
   listRecords,
   loadRecord,
@@ -649,7 +648,7 @@ describe("places and reruns", () => {
     const dry = await orc(paths, ["gc", "--dry-run"]);
     assert.deepEqual(dry, { code: 0, out: `would remove ${realpathSync(writer.worktree!)} (${writer.branch}): merged\n${waitingLine}` });
     assert.equal(existsSync(writer.worktree!), true, "a dry run removes nothing");
-    const result = gcWorktrees(paths, [projectDir], { busy: busyWorktrees(paths) });
+    const result = gcRuns(paths);
     assert.deepEqual(result.removed.map((r) => r.reason), ["merged"]);
     assert.equal(existsSync(writer.worktree!), false);
     assert.equal(existsSync(waiting.worktree!), true);
@@ -902,7 +901,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
     // A paused run keeps its nested worktrees, merged or not.
     git(projectDir, "merge", "-q", trees[1]!.branch);
     toOldShape();
-    const paused = gcWorktrees(paths, [projectDir], { busy: busyWorktrees(paths) });
+    const paused = gcRuns(paths);
     assert.deepEqual(paused.removed, []);
     assert.deepEqual(
       paused.kept.filter((k) => k.branch.startsWith(`orc/${runId}-nested`)).map((k) => [k.branch, k.reason]),
@@ -919,7 +918,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
     // Once the run ended, gc removes each merged nested worktree.
     commit(projectDir, "merge", "-q", "--no-edit", trees[0]!.branch);
     toOldShape();
-    const ended = gcWorktrees(paths, [projectDir], { busy: busyWorktrees(paths) });
+    const ended = gcRuns(paths);
     assert.deepEqual(
       ended.removed.filter((r) => r.branch.startsWith(`orc/${runId}-nested`)).map((r) => [r.branch, r.reason]),
       trees.map((tree) => [tree.branch, "merged"]),

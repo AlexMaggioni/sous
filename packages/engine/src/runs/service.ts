@@ -11,14 +11,13 @@
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { openWorkflowDir } from "../workflows/dir.js";
-import { gcWorktrees, runWorktrees } from "../places/places.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
 import { createRun, startWorker } from "./launch.js";
 import { notify } from "./notify.js";
 import { processAlive } from "./records.js";
 import { readState } from "./store.js";
-import { changedWorkflows, listRuns, pruneRuns, startedAndUnfinished, workerRuns } from "./run.js";
+import { changedWorkflows, gcRuns, listRuns, pruneRuns, startedAndUnfinished, workerRuns } from "./run.js";
 
 export interface Schedule {
   name: string;
@@ -218,8 +217,7 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
   if (!state.lastGc || now.getTime() - Date.parse(state.lastGc) > 3600_000) {
     state.lastGc = now.toISOString();
     try {
-      const projects = [...new Set(runs.map((run) => run.record.projectDir))];
-      const { removed } = gcWorktrees(paths, projects, { busy: busyWorktrees(paths, runs) });
+      const { removed } = gcRuns(paths, { runs });
       for (const entry of removed) log(`removed worktree ${entry.dir} (${entry.reason})`);
     } catch (error) {
       log(`worktree cleanup failed: ${(error as Error).message}`);
@@ -227,17 +225,6 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
   }
 
   writeJson(paths.daemonState, state);
-}
-
-/** The worktrees of the runs that have not finished, borrowed ones included. gc keeps these. */
-export function busyWorktrees(paths: HomePaths, runs = listRuns(paths)): Set<string> {
-  const dirs = new Set<string>();
-  for (const { record, unfinished } of runs) {
-    if (!unfinished) continue;
-    if (record.worktree) dirs.add(record.worktree);
-    for (const tree of runWorktrees(record)) dirs.add(tree.dir);
-  }
-  return dirs;
 }
 
 export function daemonPid(paths: HomePaths): number | undefined {

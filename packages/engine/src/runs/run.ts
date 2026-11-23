@@ -7,7 +7,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 import type { PersistedRunState, RunStatus } from "./persistence/run-persistence.js";
 import { deleteAccount, DEFAULT, moveRunAccount, setCurrentAccount, type AccountName } from "../accounts.js";
 import type { Harness } from "../agents.js";
-import { removeWorktree, runWorktrees } from "../places/places.js";
+import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
 import { listQuestions, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
 import { createRun, logFile, startWorker, type CreateRunRequest } from "./launch.js";
@@ -511,6 +511,27 @@ export function pruneRuns(paths: HomePaths, days: number, now = new Date()): str
     removed.push(record.runId);
   }
   return removed;
+}
+
+/** The worktrees of the runs that have not finished, borrowed ones included. gc keeps these. */
+export function busyWorktrees(paths: HomePaths, runs = listRuns(paths)): Set<string> {
+  const dirs = new Set<string>();
+  for (const { record, unfinished } of runs) {
+    if (!unfinished) continue;
+    if (record.worktree) dirs.add(record.worktree);
+    for (const tree of runWorktrees(record)) dirs.add(tree.dir);
+  }
+  return dirs;
+}
+
+/**
+ * Remove orc's merged worktrees in each project a run used, and keep those of the runs that have
+ * not finished. The service passes the scan it already made as `runs`.
+ */
+export function gcRuns(paths: HomePaths, options: { dryRun?: boolean; runs?: RunView[] } = {}): GcResult {
+  const runs = options.runs ?? listRuns(paths);
+  const projects = [...new Set(runs.map((run) => run.record.projectDir))];
+  return gcWorktrees(paths, projects, { dryRun: options.dryRun, busy: busyWorktrees(paths, runs) });
 }
 
 // ── Accounts ──
