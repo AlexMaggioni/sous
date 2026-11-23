@@ -1,6 +1,6 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import { RUN_EVENT_LOG_VERSION } from "../../src/run-events.js";
+// Type checks only. pnpm typecheck compiles this file, and it fails when a run-event type drifts
+// from the lists below. No test runs it, so its name has no .test.
+
 import type {
   EngineRunEvent,
   EngineRunEventName,
@@ -91,6 +91,7 @@ function exhaustiveEngineName(event: EngineRunEvent): EngineRunEventName {
 function assertNever(value: never): never {
   throw new Error(`unexpected event: ${String(value)}`);
 }
+void exhaustiveEngineName;
 
 function pausedSubtypeFixtures(error: WorkflowError, errorRecord: WorkflowRecordedError): void {
   const usage: RunPausedPayload = {
@@ -148,22 +149,3 @@ function requiredStreamIdFixture(record: Omit<RunEventLogRecord, "streamId">): v
   void missingStreamId;
 }
 void requiredStreamIdFixture;
-
-test("run-event contract exposes all engine branches", () => {
-  const event: EngineRunEvent = { type: "log", runId: "run-1", scope: "run-1", message: "hello" };
-  assert.equal(exhaustiveEngineName(event), "log");
-  assert.equal(RUN_EVENT_LOG_VERSION, 1);
-});
-
-test("RunEventLogRecord carries a generation-shaped stream id", () => {
-  const record: RunEventLogRecord = {
-    version: RUN_EVENT_LOG_VERSION,
-    streamId: "0123456789abcdef0123456789abcdef",
-    runId: "run-1",
-    seq: 1,
-    timestamp: "2026-07-15T00:00:00.000Z",
-    event: { type: "stopped", runId: "run-1", scope: "run-1" },
-    projection: { redacted: false, truncated: false },
-  };
-  assert.match(record.streamId, /^[0-9a-f]{32}$/);
-});
