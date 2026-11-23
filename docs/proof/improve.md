@@ -12,16 +12,16 @@ most two real runs went at once.
 
 | | Before | After |
 | --- | --- | --- |
-| Engine source lines | 21,395 | 17,289 |
+| Engine source lines | 21,395 | 17,358 |
 | orc source lines | 1,197 | 1,021 |
 | Harnesses source lines | 4,128 | 4,134 |
-| Engine test lines | 23,217 | 23,486 |
-| orc test lines | 1,387 | 2,964 |
+| Engine test lines | 23,217 | 24,580 |
+| orc test lines | 1,387 | 3,008 |
 | Engine exports | 93 | 72 |
 | Public methods of the run manager | 29 | 10 |
-| `workflow-manager.ts` lines | 4,076 | 2,813 |
-| `workflow.ts` lines | 3,618 | 2,751 |
-| Tests: architecture, harnesses, engine, orc | 5, 59, 729, 44 | 5, 59, 806, 87 |
+| `workflow-manager.ts` lines | 4,076 | 2,216 |
+| `workflow.ts` lines | 3,618 | 2,716 |
+| Tests: architecture, harnesses, engine, orc | 5, 59, 729, 44 | 6, 59, 866, 88 |
 
 The harnesses lines count the 2,400 lines of generated Codex types on both sides. The engine's
 tests grew while its source shrank. The tests of removed features went. New tests pin today's
@@ -102,18 +102,63 @@ goldens. No golden changed. Each commit on the branch passed `pnpm build`, `pnpm
 
 ### The real proofs
 
-`test/proofs/run.mjs` ran the eight proofs on the real programs, and `test/proofs/compare.mjs`
-compared them with `test/proofs/baseline`. All eight completed. The comparison finds 19
-differences, all of them in three proofs, and none of them from this branch:
+`test/proofs/run.mjs` ran the eight proofs on the real programs at 52bdcc74, in two processes of
+four, and `test/proofs/compare.mjs` compared them with `test/proofs/baseline`. All eight
+completed. The comparison finds 33 differences, all of them in three proofs, and none of them from
+this branch:
 
 - installed and shared differ as [the refactor's proof](refactor.md#the-real-proofs) explains.
   The baseline dates from before the refactor.
-- ticket: the reviewer asked for changes in round 2, so the ticket took 3 rounds instead of 2. The
-  workflow, the agents and the prompts are the same files. The number of rounds varies from run to
-  run.
+- ticket: the reviewer asked for changes in each round of the second ticket, so the ticket stopped
+  after 3 rounds, not approved and with no commit. Each round, the reviewer read the new diff,
+  found the fix correct and the tests passing, and asked for one more test case. The workflow, the
+  agents and the prompts are the same files. The number of rounds varies from run to run. An
+  earlier run on this branch, at efb641e1, approved the same ticket in round 3.
 
 The emails proof also ran on its own after the question changes, and matches the baseline.
 Neither `~/.claude/settings.json` nor `~/.codex/config.toml` changed during the runs.
+
+## Failure cases
+
+A script outside the repository ran five failure cases on the built orc at 52bdcc74, one at a
+time, each with a scratch `ORC_HOME`. Three ran on the real Claude Code with haiku, and two on the
+fake. All five passed, 41 checks in all. Then all five ran on the fake Claude Code, and passed too.
+
+- Stop a step, then resume. `orc stop --step slow` paused the run on that step, and `orc wait`
+  exited 2. `orc resume` ran the slow step again and the run completed. The first step kept its
+  answer and its session, and the log shows it ran once and replayed once.
+- Kill the worker with SIGKILL during a step. `orc wait` exited 2, and `orc show` said
+  interrupted and listed the finished first step as done. `orc resume` completed the run, and the
+  first step kept its answer without running again.
+- Edit the workflow after a code step failed. `orc resume` refused and named `--latest` and
+  `--same`. `orc resume --latest` completed the run, and the first step kept its answer and its
+  session.
+- Stop at a breakpoint, on the fake. `orc wait --json` exited 4 at the breakpoint and `orc inbox`
+  listed the question. `orc answer <q> stop` stopped the run, `orc wait` exited 3, and the step
+  after the breakpoint never ran.
+- A usage limit, on the fake. The run paused and `orc show` gave the advice to run
+  `orc account use`. `orc account use spare` resumed the run on the other account, and the resumed
+  step ran with that account's login.
+
+## A clean install
+
+The branch at 52bdcc74 was cloned into a scratch folder, then `pnpm install --frozen-lockfile` and
+`pnpm build` ran with exit 0. Then:
+
+- `orc doctor` exits 0. It finds Claude Code 2.1.330 in `~/.local/bin` and Codex 0.169.0 in
+  `/opt/homebrew/bin`, skips a wrapper script of each, and both programs talk and list their
+  models.
+- `node_modules` holds no `claude` or `codex` program. The only package named after one is
+  `@anthropic-ai/claude-agent-sdk`, without a platform binary. The only executable over 1 MB is
+  esbuild's. The lockfile has no mention of `agentclientprotocol`, `codex-acp`,
+  `claude-agent-acp` or `@openai/codex`.
+- With a Codex that reports 0.150.0, `orc doctor` exits 1 and says:
+
+```
+Codex 0.150.0
+  program   <scratch>/codex-0.150, from its variable
+  version   Codex 0.150.0 is not a version the adapter supports. It needs 0.169.x. Install it with `npm install -g @openai/codex@0.169`.
+```
 
 ## Behavior that changed
 
