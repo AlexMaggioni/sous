@@ -109,10 +109,11 @@ describe("forget and prune on today's files", () => {
     }
   });
 
-  it("forgetRun leaves the run's open question in the inbox", () => {
+  it("forgetRun removes the run's open question from the inbox", () => {
     const { paths } = setup({});
     const record = plantTodayRun(paths, { question: true });
+    assert.ok(layout(paths, record.runId, record.cwd).includes("home/inbox/<id>--1.json"));
     forgetRun(paths, record);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, lineage, "home/inbox/<id>--1.json"].sort());
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, lineage].sort());
   });
 });

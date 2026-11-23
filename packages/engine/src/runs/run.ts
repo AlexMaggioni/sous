@@ -483,10 +483,11 @@ export function discardRun(paths: HomePaths, runId: string, options: { remove?: 
   return trees;
 }
 
-/** Delete a run's saved state, record, workflow snapshot and logs. Its worktrees stay. */
+/** Delete a run's saved state, record, workflow snapshot, logs and open questions. Its worktrees stay. */
 export function forgetRun(paths: HomePaths, record: RunRecord): void {
   removeEngineRun(paths, record.runId);
   removeRunFiles(paths, record);
+  removeRunQuestions(paths, record.runId);
 }
 
 /** A schedule waits for its last run, and prune keeps a run, while the run is unfinished. Here a
