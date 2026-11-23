@@ -14,7 +14,7 @@ import { dropUnchangedWorktrees, runWorktrees } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
 import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuestion, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
-import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, updateRecord, type RunRecord } from "./records.js";
+import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
@@ -117,6 +117,8 @@ async function runOnAccounts(
   const config = loadConfig(paths);
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
   updateRecord(paths, runId, { pid: process.pid, limit: undefined });
+  // A step stop the last worker never took names a step of that worker, not this one.
+  takeStepStops(paths, runId);
 
   // The environment with the run's accounts on it, for code steps and the agent lookup.
   const base = envFor("codex", accounts.codex, envFor("claude", accounts.claude, process.env));
@@ -238,12 +240,9 @@ async function runOnAccounts(
     log(`${stamp()} pausing`);
     manager.pause(runId);
   };
-  // `orc stop --step` writes the steps to the record, then sends SIGUSR2.
+  // `orc stop --step` writes its request, then sends SIGUSR2.
   const onStopSteps = () => {
-    const asked = loadRecord(paths, runId)?.stopSteps ?? [];
-    if (!asked.length) return;
-    updateRecord(paths, runId, { stopSteps: undefined });
-    for (const name of asked) {
+    for (const name of takeStepStops(paths, runId)) {
       let stopped = 0;
       for (const scope of new Set([...prefixes.keys(), ...Object.keys(loadRecord(paths, runId)?.nested ?? {})])) {
         const prefix = from(scope);

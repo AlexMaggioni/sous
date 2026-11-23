@@ -1,10 +1,14 @@
 // What orc knows about a run beyond the engine's own state: which workflow, where it works,
 // who started it and which process runs it. One JSON file per root run in records/.
+//
+// While a worker runs a run, only the worker writes its record, apart from the pid the launcher
+// notes as the worker starts. A command writes a record only when no worker runs it. A save
+// replaces the whole file, so two writers at once would lose one's change.
 
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
-import { recordFile, recordFiles, snapshotFile } from "./store.js";
+import { recordFile, recordFiles, snapshotFile, stopRequestFile } from "./store.js";
 
 /** The programs whose steps a run records: Claude Code and Codex. */
 export type Program = "claude" | "codex";
@@ -49,8 +53,6 @@ export interface RunRecord {
   stepWorktrees?: Array<{ dir: string; branch: string }>;
   /** Set by `orc resume --latest`: the next resume takes the edited workflows. */
   resumeLatest?: boolean;
-  /** Steps `orc stop --step` asked the worker to stop, by the name the log gives them. */
-  stopSteps?: string[];
   /** The installed Claude Code and Codex the run's steps used, by harness, from its last start. */
   programs?: Record<string, { path: string; version?: string }>;
   /** The account each program's steps use, kept across pauses and resumes (orc's accounts.ts). */
@@ -150,6 +152,29 @@ export function loadRecord(paths: HomePaths, runId: string): RunRecord | undefin
   const file = recordFile(paths, runId);
   if (!existsSync(file)) return undefined;
   return readRecord(file);
+}
+
+/**
+ * Ask the worker to stop a step, by the name the log gives it. The request goes to a file of its
+ * own, not the record the worker writes. Each request is one appended line, so two at once both land.
+ */
+export function requestStepStop(paths: HomePaths, runId: string, step: string): void {
+  appendFileSync(stopRequestFile(paths, runId), `${JSON.stringify(step)}\n`);
+}
+
+/** The steps asked to stop since the last take. The file moves aside before the read, so a request
+ *  that lands meanwhile starts a new file and waits for the next take. */
+export function takeStepStops(paths: HomePaths, runId: string): string[] {
+  const file = stopRequestFile(paths, runId);
+  const taken = `${file}.${process.pid}.taken`;
+  try {
+    renameSync(file, taken);
+  } catch {
+    return [];
+  }
+  const lines = readFileSync(taken, "utf8").split("\n").filter(Boolean);
+  unlinkSync(taken);
+  return lines.map((line) => JSON.parse(line) as string);
 }
 
 export function updateRecord(paths: HomePaths, runId: string, change: Partial<RunRecord>): RunRecord | undefined {

@@ -40,6 +40,11 @@ export function snapshotFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.workflows`);
 }
 
+/** The steps `orc stop --step` asked a running run to stop, one per line, until the worker takes them. */
+export function stopRequestFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.stop`);
+}
+
 /** Every record file, in the order the folder lists them. */
 export function recordFiles(paths: HomePaths): string[] {
   if (!existsSync(paths.records)) return [];
@@ -159,11 +164,11 @@ export function removeEngineRun(paths: HomePaths, runId: string): boolean {
   }
 }
 
-/** Delete a run's record, workflow snapshot and logs. removeEngineRun deletes the engine's files. */
+/** Delete a run's record, workflow snapshot, step stop requests and logs. removeEngineRun deletes the engine's files. */
 export function removeRunFiles(paths: HomePaths, record: RunRecord): void {
   // The engine keeps its own copy of the log, in a folder named after where the run worked.
   const engineLogs = workflowProjectPaths(record.cwd, { persistenceRoot: paths.runs });
-  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
+  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
   for (const file of files) {
     try {
       unlinkSync(file);

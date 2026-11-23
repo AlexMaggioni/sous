@@ -25,11 +25,12 @@ import {
 import { WorkflowError, WorkflowErrorCode } from "../../engine/dist/errors.js";
 import { createRun } from "../../engine/dist/runs/launch.js";
 import { knownProjects } from "../../engine/dist/runs/home.js";
-import { updateRecord } from "../../engine/dist/runs/records.js";
+import { requestStepStop, saveRecord, updateRecord } from "../../engine/dist/runs/records.js";
 import { tick } from "../../engine/dist/runs/service.js";
 import { workflowProjectPaths } from "../../engine/dist/runs/persistence/project-paths.js";
 import type { PersistedRunState } from "../../engine/dist/runs/persistence/run-persistence.js";
-import { readState } from "../../engine/dist/runs/store.js";
+import { stopStep } from "../../engine/dist/runs/run.js";
+import { readState, stopRequestFile } from "../../engine/dist/runs/store.js";
 import { runWorker } from "../../engine/dist/runs/worker.js";
 import type { AgentRunner } from "../../engine/dist/steps/agent-runner.js";
 import { main } from "../src/cli.js";
@@ -335,13 +336,62 @@ return { first, built }`,
     assert.equal(state?.status, "paused");
     assert.equal(state?.pauseReason, "step_stopped");
     assert.match(readFileSync(file, "utf8"), /stopping   ticket A: build/);
-    assert.equal(loadRecord(paths, record.runId)?.stopSteps, undefined);
+    assert.equal(existsSync(stopRequestFile(paths, record.runId)), false, "the worker took the request");
 
     hang = false;
     const done = await runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), { first: "first done", built: "build done" });
     assert.deepEqual(calls.map((c) => c.label), ["first", "build", "build"], "first is not run again");
+  });
+
+  it("a step stop survives the worker saving a record it read before the request", async () => {
+    const { paths, projectDir } = setup({
+      one: `export const meta = { name: 'one', description: 'one' }\nreturn await agent('build it', { label: 'build' })`,
+    });
+    const { runner, calls } = fakeRunner((call) =>
+      new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted")))),
+    );
+    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    const file = logFile(paths, record.runId);
+    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: (line: string) => appendFileSync(file, `${line}\n`), handleSignals: true });
+    for (let i = 0; i < 500 && !calls.some((c) => c.label === "build"); i++) await new Promise((r) => setTimeout(r, 10));
+
+    // The worker writes the record while it runs, for a nested run or a step's worktree. Here it
+    // saves one it read just before `orc stop --step`, in the same tick, before the signal lands.
+    const before = loadRecord(paths, record.runId)!;
+    assert.equal(stopStep(paths, record.runId, "build"), true);
+    saveRecord(paths, before);
+
+    const ended = await Promise.race([running.then(() => "ended"), new Promise((r) => setTimeout(() => r("waiting"), 3000))]);
+    if (ended === "waiting") {
+      process.kill(process.pid, "SIGTERM");
+      await running;
+      assert.fail("the step was not stopped");
+    }
+    assert.equal(readState(paths, record.runId)?.pauseReason, "step_stopped");
+    assert.match(readFileSync(file, "utf8"), /stopping   build/);
+  });
+
+  it("a step stop left by a worker that ended is dropped when the next worker starts", async () => {
+    const { paths, projectDir } = setup({
+      one: `export const meta = { name: 'one', description: 'one' }\nreturn await agent('build it', { label: 'build' })`,
+    });
+    const { runner, calls } = fakeRunner((call) =>
+      new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted")))),
+    );
+    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    requestStepStop(paths, record.runId, "build");
+    const file = logFile(paths, record.runId);
+    const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: (line: string) => appendFileSync(file, `${line}\n`), handleSignals: true });
+    for (let i = 0; i < 500 && !calls.some((c) => c.label === "build"); i++) await new Promise((r) => setTimeout(r, 10));
+
+    process.kill(process.pid, "SIGUSR2");
+    await new Promise((r) => setTimeout(r, 200));
+    assert.doesNotMatch(readFileSync(file, "utf8"), /stopping/);
+    assert.equal(stopStep(paths, record.runId, "build"), true);
+    await running;
+    assert.equal(readState(paths, record.runId)?.pauseReason, "step_stopped");
   });
 
   it("a workflow's time limit stops the running steps and pauses the run, and resume runs them again", async () => {

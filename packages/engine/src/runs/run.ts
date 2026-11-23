@@ -11,7 +11,7 @@ import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../pla
 import type { HomePaths, Place } from "./home.js";
 import { listQuestions, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
 import { createRun, startWorker, type CreateRunRequest } from "./launch.js";
-import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, scopePrefix, updateRecord, type RunRecord } from "./records.js";
+import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestStepStop, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
 import { logFile, readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
 import { currentWorkflows, stopColdRun } from "./worker.js";
@@ -350,7 +350,7 @@ export function stopStep(paths: HomePaths, runId: string, step: string): boolean
     const now = running.length ? `Running now: ${running.map((name) => `"${name}"`).join(", ")}.` : "No step runs now.";
     throw new Error(`no step named "${step}" runs in ${record.runId}. ${now}`);
   }
-  updateRecord(paths, record.runId, { stopSteps: [...(record.stopSteps ?? []), step] });
+  requestStepStop(paths, record.runId, step);
   process.kill(record.pid!, "SIGUSR2");
   return true;
 }
