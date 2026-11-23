@@ -1,9 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { RUN_EVENT_LOG_VERSION } from "../../src/run-events.js";
 import type {
   EngineRunEvent,
@@ -170,15 +166,4 @@ test("RunEventLogRecord carries a generation-shaped stream id", () => {
     projection: { redacted: false, truncated: false },
   };
   assert.match(record.streamId, /^[0-9a-f]{32}$/);
-});
-
-test("tsc type-checks the run-event compile fixtures", () => {
-  const require = createRequire(import.meta.url);
-  const tsc = require.resolve("typescript/lib/tsc.js");
-  // The contract tests, and the engine files they import.
-  const project = join(dirname(fileURLToPath(import.meta.url)), "tsconfig.test.json");
-  const result = spawnSync(process.execPath, [tsc, "-p", project, "--noEmit"], {
-    encoding: "utf8",
-  });
-  assert.equal(result.status, 0, `tsc found type errors:\n${result.stdout}${result.stderr}`);
 });

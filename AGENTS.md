@@ -23,5 +23,5 @@ The code and its tests are the current state. When prose and code disagree, fix 
 
 - Node.js 22 or newer and pnpm 10. Run commands from the repository root.
 - `pnpm install`, then `pnpm build`.
-- While iterating, run one package's tests, for example `pnpm --filter @orchestrator/engine test`.
-- Before pushing, run `pnpm build`, `pnpm typecheck` and `pnpm test`.
+- While iterating, run one package's tests, for example `pnpm --filter @orchestrator/engine test`. That does not type-check. `pnpm typecheck` does.
+- Before pushing, run `pnpm test`. It builds every package, type-checks them, then runs every test.

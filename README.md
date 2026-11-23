@@ -39,9 +39,9 @@ and [`docs/proof/refactor.md`](docs/proof/refactor.md) shows the result.
 
 ## Tests
 
-`pnpm test` builds every package, runs the architecture test, the tests of every package, then the
-baseline. It needs no credentials and starts no real agent. The steps run on the fake programs in
-`test/fakes`. The proofs in `test/proofs` run on the real programs, by hand.
+`pnpm test` builds every package, type-checks them, runs the architecture test, the tests of every
+package, then the baseline. It needs no credentials and starts no real agent. The steps run on the
+fake programs in `test/fakes`. The proofs in `test/proofs` run on the real programs, by hand.
 
 orc's own tests run their workers in the test's process, with a fake runner, through the test
 kit at `@orchestrator/engine/testing`. The [engine's README](packages/engine/README.md#the-test-kit)
