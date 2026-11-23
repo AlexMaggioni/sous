@@ -71,8 +71,8 @@ export interface AgentRunner {
   /**
    * Where a step goes. It is synchronous and never throws: a step that cannot run gets a route
    * with a problem, which run() refuses. The engine calls it once per agent call, before it
-   * hashes the call, and sends the route back in the request. A runner without it gets the
-   * engine's agent registry.
+   * hashes the call, and sends the route back in the request. A runner without it gets a route
+   * with no agent, and the agent's name as a hint in the instructions.
    */
   route?(ask: StepAsk): StepRoute;
 }

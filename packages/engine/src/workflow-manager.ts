@@ -84,7 +84,6 @@ import {
   runWorkflow,
 } from "./workflow.js";
 import { parseWorkflowScript } from "./workflows/script.js";
-import type { AgentRegistry } from "./agent-registry.js";
 import { createWorkflowLogTail } from "./run-observability.js";
 import { assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
 import type { CodeStepEnv } from "./code-steps.js";
@@ -343,11 +342,6 @@ export interface WorkflowManagerOptions {
   /** Default retry attempts after recoverable agent failures. */
   defaultAgentRetries?: number;
   /**
-   * Load the `agentType` definitions for a run's folder. Without it, a run has no
-   * definitions. orc looks agents up in rulesync and in each harness's own folders.
-   */
-  loadAgents?: (cwd: string) => AgentRegistry;
-  /**
    * Absolute workflow persistence root. Precedence is this explicit option >
    * ORCHESTRATOR_PERSISTENCE_ROOT > `~/.orchestrator/engine`.
    */
@@ -596,7 +590,6 @@ export class WorkflowManager extends EventEmitter {
   private orchestratorOptions: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "home" | "pauseOnFailedStep">;
   private agent?: AgentRunner;
   private defaultAgentRetries: number;
-  private loadAgents?: (cwd: string) => AgentRegistry;
   private persistenceRoot: string;
   private journaling: boolean;
   private environmentKey?: string;
@@ -609,7 +602,6 @@ export class WorkflowManager extends EventEmitter {
     this.orchestratorOptions = options.orchestrator ?? {};
     this.agent = options.agent;
     this.defaultAgentRetries = options.defaultAgentRetries ?? 0;
-    this.loadAgents = options.loadAgents;
     this.persistenceRoot = workflowHomeDir({ persistenceRoot: options.persistenceRoot });
     this.journaling = options.journaling ?? true;
     this.environmentKey = options.environmentKey;
@@ -1706,7 +1698,6 @@ export class WorkflowManager extends EventEmitter {
         args: argsForVm,
         agent,
         defaultModel: managed.defaultModel,
-        ...(this.loadAgents ? { agentRegistry: this.loadAgents(managed.effectiveCwd) } : {}),
         signal: managed.controller.signal,
         pauseSignal: (managed.pauseController ??= new AbortController()).signal,
         concurrency: resolvedConcurrency,

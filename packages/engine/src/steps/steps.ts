@@ -200,7 +200,7 @@ async function runInner(
   given: { signal?: AbortSignal; servers: McpServerConfig[]; account?: Account },
 ): Promise<unknown> {
   const { signal, servers, account } = given;
-  const { route, timeoutMs: _t, effort: _e, skills: _s, mcpNames: _m, agentType: _a, stepGiven: _g, model: _model, toolNames: _tn, disallowedToolNames: _dn, ...rest } = call;
+  const { route, model: _model, callIndex: _index, callHash: _hash, callPath: _path, callInputsHash: _inputs, ...rest } = call;
   const resolved = call.onModelResolved;
   const onModelResolved = resolved && ((id: string) => resolved(withHarness(step.harness, id)));
   if (step.model && step.model !== route.requested) onModelResolved?.(step.model);

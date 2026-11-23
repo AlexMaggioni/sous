@@ -1,14 +1,9 @@
 /**
- * Named workflow subagent definitions ("agentType" registry).
+ * An agent's definition, as its default harness block gives it, and its part of the call hash.
  *
- * A workflow script can route an agent() call to a reusable, named definition:
- *
- *   agent("audit this dir", { agentType: "security-auditor" })
- *
- * The host builds the registry and passes it as the `agentRegistry` run option.
- * orc reads agent files with its own parser. A definition binds the subagent's
- * tools, model, and a body prompt. This mirrors Claude Code's `.claude/agents`
- * registry: agentType is a real binding of tools+model+system-prompt, not a prose hint.
+ * A workflow script names an agent with `agent("audit this dir", { agentType: "security-auditor" })`.
+ * orc reads agent files with its own parser, and routeStep (agents.ts) turns the default block
+ * into a definition only to hash it. A definition binds the subagent's tools, model, and a body prompt.
  *
  * Bound: `tools` (allowlist), `disallowedTools` (denylist), `model`, and the
  * markdown body (`prompt`). `skills`, `mcp`, `effort` and `timeout` are defaults that
@@ -43,14 +38,6 @@ export interface AgentDefinition {
   prompt: string;
   /** Where the definition was loaded from (project wins over user). */
   source: "project" | "user";
-}
-
-export type AgentRegistry = Map<string, AgentDefinition>;
-
-/** Resolve an agentType name to its definition, or undefined if not registered. */
-export function resolveAgentType(name: string | undefined, registry: AgentRegistry): AgentDefinition | undefined {
-  if (!name) return undefined;
-  return registry.get(name);
 }
 
 /**

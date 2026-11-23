@@ -37,7 +37,7 @@ return agent("mock-branch", { model: "opencode/provider/model" });`, {
   ]);
 });
 
-test("routing resolves definitions, tiers, phase defaults, and backend-only routes", async () => {
+test("routing resolves tiers, phase defaults, and backend-only routes", async () => {
   const routes: Array<string | undefined> = [];
   const previousHome = process.env.HOME;
   const home = mkdtempSync(join(tmpdir(), "explicit-routing-home-"));
@@ -47,7 +47,6 @@ test("routing resolves definitions, tiers, phase defaults, and backend-only rout
   try {
     await runWorkflow(`export const meta = { name: "route-sources", description: "Effective route sources", model: "codex", phases: [{ title: "General" }, { title: "Review", model: "claude" }] };
 await agent("workflow default");
-await agent("definition", { agentType: "reviewer" });
 await agent("tier", { tier: "small" });
 await agent("tier fallback", { tier: "big" });
 phase("Review");
@@ -55,14 +54,13 @@ await agent("phase");
 return agent("explicit", { model: "opencode" });`, {
       agent: { async run(_prompt, options) { routes.push(options.model); return "ok"; } },
       persistLogs: false,
-      agentRegistry: new Map([["reviewer", { name: "reviewer", prompt: "Review", source: "project", model: "claude/defined" }]]),
     });
   } finally {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
     rmSync(home, { recursive: true, force: true });
   }
-  assert.deepEqual(routes, ["codex", "claude/defined", "pi/provider/small", undefined, "claude", "opencode"]);
+  assert.deepEqual(routes, ["codex", "pi/provider/small", undefined, "claude", "opencode"]);
 });
 
 test("routing through the steps module resolves definitions, phase defaults and explicit routes", async () => {

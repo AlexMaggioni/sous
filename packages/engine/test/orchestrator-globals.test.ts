@@ -8,7 +8,6 @@ import type { TSchema } from "typebox";
 import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner, StepAsk, StepRoute } from "../src/steps/agent-runner.js";
 import type { JournalEntry } from "../src/workflow-result.js";
-import type { AgentDefinition, AgentRegistry } from "../src/agent-registry.js";
 import { parseDurationSeconds } from "../src/orchestrator-globals.js";
 import { runWorkflow } from "../src/workflow.js";
 import { createSteps } from "../src/steps/steps.js";
@@ -196,83 +195,7 @@ return 'went on'`;
 });
 
 describe("agent options", () => {
-  it("pass timeout, effort, skills and MCP names to the runner, with the step's lists replacing the definition's", async () => {
-    const def: AgentDefinition = {
-      name: "reviewer",
-      model: "haiku",
-      skills: ["review", "tdd"],
-      mcp: ["linear"],
-      effort: "high",
-      timeout: "10m",
-      prompt: "You review code.",
-      source: "user",
-    };
-    const registry: AgentRegistry = new Map([["reviewer", def]]);
-    const { runner, calls } = recordingRunner(() => "ok");
-    const script = `export const meta = { name: 'opts', description: 'opts' }
-await agent('review A', { label: 'a', agentType: 'reviewer' })
-await agent('review B', { label: 'b', agentType: 'reviewer', skills: ['security'], mcp: [], effort: 'low', timeout: 30 })
-return 1`;
-    await runWorkflow(script, { agent: runner, persistLogs: false, agentRegistry: registry });
-    const [a, b] = calls;
-    assert.equal(a!.options.timeoutMs, 600_000);
-    assert.equal(a!.options.effort, "high");
-    assert.deepEqual(a!.options.skills, ["review", "tdd"]);
-    assert.deepEqual(a!.options.mcpNames, ["linear"]);
-    assert.equal(a!.options.agentType, "reviewer");
-    assert.equal(b!.options.timeoutMs, 30_000);
-    assert.equal(b!.options.effort, "low");
-    assert.deepEqual(b!.options.skills, ["security"]);
-    assert.deepEqual(b!.options.mcpNames, []);
-    // The host tells the step's own values from the definition's.
-    assert.deepEqual(a!.options.stepGiven, {});
-    assert.deepEqual(b!.options.stepGiven, { effort: "low", skills: ["security"], mcp: [] });
-  });
-
-  it("pass the name of an agent no definition has, so the host can stop the step", async () => {
-    const { runner, calls } = recordingRunner(() => "ok");
-    const script = `export const meta = { name: 'ghost', description: 'ghost' }
-await agent('go', { label: 'g', agentType: 'nobody', model: 'codex' })
-return 1`;
-    await runWorkflow(script, { agent: runner, persistLogs: false, agentRegistry: new Map() });
-    assert.equal(calls[0]!.options.agentType, "nobody");
-    assert.deepEqual(calls[0]!.options.stepGiven, { model: "codex" });
-  });
-
-  it("take the host's agents from loadAgents, for the run's folder", async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "load-agents-"));
-    const asked: string[] = [];
-    const def: AgentDefinition = { name: "reviewer", model: "claude/haiku", prompt: "Answer FROM-HOST.", source: "user" };
-    // No session ref: a stored run checks a ref's fields, and this test is about the agents.
-    const calls: Call[] = [];
-    const runner: AgentRunner = {
-      async run(prompt, options) {
-        calls.push({ prompt, options: { ...(options ?? {}) } as Record<string, unknown> });
-        return "ok" as never;
-      },
-    };
-    try {
-      const manager = new WorkflowManager({
-        cwd,
-        persistenceRoot: join(cwd, "store"),
-        agent: runner,
-        loadAgents: (folder) => {
-          asked.push(folder);
-          return new Map([["reviewer", def]]);
-        },
-      });
-      const run = await manager.runSync(`export const meta = { name: "host-agents", description: "host agents" };
-return await agent("review", { agentType: "reviewer" });`);
-      assert.equal(run.status, "completed");
-      assert.equal(calls[0]!.options.model, "claude/haiku");
-      assert.match(String(calls[0]!.options.instructions), /Answer FROM-HOST\./);
-      assert.ok(asked.length > 0 && asked.every((folder) => folder === cwd));
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
-  // The same through the steps module: the agent comes from an agent file, and createSteps routes the step.
+  // The agent comes from an agent file, and createSteps routes the step.
   it("route timeout, effort, skills and MCP names through the steps module, with the step's lists replacing the agent's", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "agent-options-"));
     mkdirSync(join(cwd, ".rulesync", "subagents"), { recursive: true });

@@ -3,7 +3,6 @@
 // Code steps (sh, js, py, run, waitUntil) go to the engine's code() as a spec. The engine runs
 // them itself, so they get the journal, resume, retries, limits and events of any step.
 
-import type { AgentDefinition } from "./agent-registry.js";
 import type { ExecSpec } from "./code-steps.js";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
 
@@ -19,54 +18,6 @@ export function parseDurationSeconds(value: unknown): number | undefined {
   const unit = (match[2] ?? "s").toLowerCase();
   const seconds = unit === "ms" ? amount / 1000 : unit === "m" ? amount * 60 : unit === "h" ? amount * 3600 : amount;
   return seconds > 0 ? seconds : undefined;
-}
-
-interface ExtraOptions {
-  timeout?: number | string;
-  effort?: string;
-  skills?: string[];
-  mcp?: string[];
-  agentType?: string;
-  model?: string;
-}
-
-/** The values a step set itself, apart from its agent definition's. */
-export interface StepGiven {
-  model?: string;
-  effort?: string;
-  skills?: string[];
-  mcp?: string[];
-}
-
-/**
- * The per-step extras the steps module reads from the step request. A step's list replaces the
- * definition's list. Nothing here is set when neither the step nor the definition has it.
- * `agentType` is the name the step asked for, also when no definition has it, so the host can
- * stop the step. `stepGiven` lets the host tell the step's own values from the definition's.
- */
-export function orchestratorRunExtras(
-  options: ExtraOptions,
-  def: AgentDefinition | undefined,
-): { timeoutMs?: number; effort?: string; skills?: string[]; mcpNames?: string[]; agentType?: string; stepGiven?: StepGiven } {
-  const timeout = parseDurationSeconds(options.timeout ?? def?.timeout);
-  const effort = options.effort ?? def?.effort;
-  const skills = options.skills ?? def?.skills;
-  const mcpNames = options.mcp ?? def?.mcp;
-  const agentType = typeof options.agentType === "string" ? options.agentType : def?.name;
-  const given: StepGiven = {
-    ...(typeof options.model === "string" ? { model: options.model } : {}),
-    ...(options.effort === undefined ? {} : { effort: options.effort }),
-    ...(options.skills === undefined ? {} : { skills: [...options.skills] }),
-    ...(options.mcp === undefined ? {} : { mcp: [...options.mcp] }),
-  };
-  return {
-    ...(timeout === undefined ? {} : { timeoutMs: Math.round(timeout * 1000) }),
-    ...(effort === undefined ? {} : { effort }),
-    ...(skills === undefined ? {} : { skills: [...skills] }),
-    ...(mcpNames === undefined ? {} : { mcpNames: [...mcpNames] }),
-    ...(agentType === undefined ? {} : { agentType }),
-    ...(agentType === undefined ? {} : { stepGiven: given }),
-  };
 }
 
 type AgentFn = (prompt: string, options?: Record<string, unknown>) => Promise<unknown>;

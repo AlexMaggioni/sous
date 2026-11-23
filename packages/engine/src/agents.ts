@@ -9,8 +9,8 @@ import { homedir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import { createClaudeHarness, createCodexHarness, type Account } from "@orchestrator/harnesses";
 import type { McpServerConfig } from "./steps/mcp-config.js";
-import { agentDefinitionKey, type AgentDefinition, type AgentRegistry } from "./agent-registry.js";
-import { parseDurationSeconds, type StepGiven } from "./orchestrator-globals.js";
+import { agentDefinitionKey, type AgentDefinition } from "./agent-registry.js";
+import { parseDurationSeconds } from "./orchestrator-globals.js";
 import type { StepAsk, StepRoute } from "./steps/agent-runner.js";
 import { loadConfig, type HomePaths, type OrcConfig } from "./runs/home.js";
 import { parse as parseToml } from "smol-toml";
@@ -406,9 +406,9 @@ export function definitionOf(agent: FoundAgent): AgentDefinition {
   };
 }
 
-/** The engine's registry: every agent that can be used as it is. */
-export function registryOf(lookup: AgentLookup): AgentRegistry {
-  const out: AgentRegistry = new Map();
+/** Every agent that can be used as it is, by name. */
+export function registryOf(lookup: AgentLookup): Map<string, AgentDefinition> {
+  const out = new Map<string, AgentDefinition>();
   for (const agent of lookup.agents.values()) out.set(agent.name, definitionOf(agent));
   return out;
 }
@@ -423,6 +423,14 @@ export function missingAgent(lookup: AgentLookup, name: string): string {
 export function wrongHarness(agent: FoundAgent, harness: Harness): string {
   const from = agent.from as Harness;
   return `agent "${agent.name}" comes from ${agent.file}, a ${HARNESS_NAME[from]} folder, so it runs only on ${HARNESS_NAME[from]}, and this step sends it to ${HARNESS_NAME[harness]}. ${moveHint(agent.name)}`;
+}
+
+/** The values a step set itself, apart from its agent's. */
+export interface StepGiven {
+  model?: string;
+  effort?: string;
+  skills?: string[];
+  mcp?: string[];
 }
 
 export interface StepPlan {

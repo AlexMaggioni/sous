@@ -5,7 +5,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import type { WorkflowRunResult } from "../workflow-result.js";
 import { limitNotice, runAccounts } from "../accounts.js";
-import { envFor, lookupAgents, lookupMcpServers, lookupSettings, registryOf } from "../agents.js";
+import { envFor, lookupAgents, lookupMcpServers, lookupSettings } from "../agents.js";
 import { parseDurationSeconds } from "../orchestrator-globals.js";
 import type { PersistedRunState } from "./persistence/run-persistence.js";
 import { openWorkflowDir } from "../workflows/dir.js";
@@ -70,8 +70,6 @@ export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<
     // Run state is keyed to the manager's folder, so every orc manager uses the home folder.
     cwd: paths.home,
     persistenceRoot: paths.runs,
-    // Agents come from rulesync and the harnesses' own folders, looked up from the run's project.
-    loadAgents: () => registryOf(lookupAgents(lookupSettings(paths, projectDir))),
     defaultAgentRetries: loadConfig(paths).retries,
     loadSavedWorkflow: (name) => dirs.resolve(name),
     orchestrator: {
@@ -157,7 +155,6 @@ async function runOnAccounts(
   const snapshot = loadSnapshot(paths, runId);
   const live = openWorkflowDir(workflowDirs(record.projectDir, paths));
   const manager = managerFor(paths, record.projectDir, {
-    loadAgents: () => registryOf(agents),
     loadSavedWorkflow: (name) => snapshot[name] ?? live.resolve(name),
   });
 

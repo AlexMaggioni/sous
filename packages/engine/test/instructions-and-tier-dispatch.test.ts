@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { AgentDefinition, AgentRegistry } from "../src/agent-registry.js";
 import { lookupAgents } from "../src/agents.js";
 import { createSteps } from "../src/steps/steps.js";
 import { runWorkflow } from "../src/workflow.js";
@@ -37,37 +36,6 @@ async function withModelTiers<T>(
     rmSync(home, { recursive: true, force: true });
   }
 }
-
-test("run-level instructions are prepended to composed subagent instructions", async () => {
-  const seen: string[] = [];
-  const registry: AgentRegistry = new Map([
-    [
-      "reviewer",
-      {
-        name: "reviewer",
-        prompt: "Act as the reviewer.",
-        source: "project",
-      } as AgentDefinition,
-    ],
-  ]);
-  const script = `export const meta = { name: 'i', description: 'instructions' }
-phase('Review')
-return await agent('check', { label: 'a', agentType: 'reviewer' })`;
-
-  await runWorkflow(script, {
-    agent: capturingRunner((options) => seen.push(String(options.instructions))),
-    agentRegistry: registry,
-    instructions: "Run-level guidance.",
-    persistLogs: false,
-  });
-
-  assert.equal(seen.length, 1);
-  assert.ok(
-    seen[0].startsWith("Run-level guidance.\n\nAct as the reviewer."),
-    "run instructions should be prepended before agentType guidance",
-  );
-  assert.ok(seen[0].includes("Workflow phase: Review"), "existing composed instructions are preserved");
-});
 
 test("run-level instructions are prepended to the instructions of an agent the steps module routes", async () => {
   const seen: string[] = [];

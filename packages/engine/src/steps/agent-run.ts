@@ -3,7 +3,6 @@ import type { Static, TSchema } from "typebox";
 import type { Account } from "@orchestrator/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
 import type { McpServerConfig } from "./mcp-config.js";
-import type { StepGiven } from "../orchestrator-globals.js";
 import type { StepRoute } from "./agent-runner.js";
 import type { AgentSessionRef } from "../workflow-result.js";
 
@@ -176,8 +175,8 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
 
 /** What the engine sends the runner for one agent call. */
 export interface StepRequest<S extends TSchema | undefined = TSchema | undefined> extends EngineFields<S> {
-  /** Where the step goes: the runner's own route(), or the engine's agent registry for a runner
-   *  with none. The steps module runs its plan and refuses its problem. */
+  /** Where the step goes: the runner's own route(), or the engine's route with no agent for a
+   *  runner with none. The steps module runs its plan and refuses its problem. */
   route: StepRoute;
   /** route.requested, the model spec the step asked for (`harness/modelId`, a bare `modelId`,
    *  or a harness alone), for runners with no route() of their own. Omitted => the harness
@@ -185,25 +184,11 @@ export interface StepRequest<S extends TSchema | undefined = TSchema | undefined
   model?: string;
   /** Coarse tier ("small" | "medium" | "big"). No runner reads it. */
   tier?: string;
-  /** The fields below come from the engine's agent registry, and only a runner with no route()
-   *  gets them. Tool allow-list of the agent's default block. */
-  toolNames?: string[];
-  /** Tool deny-list of the agent's default block, applied after the allow-list. */
-  disallowedToolNames?: string[];
-  /** The step's time limit, else its agent's. The steps module counts it once the step holds a slot. */
-  timeoutMs?: number;
-  /** The step's effort, skills and MCP server names, else its agent's default block's. */
-  effort?: string;
-  skills?: string[];
-  mcpNames?: string[];
-  /** The agent the step names, also when no agent has that name, so the runner can refuse it. */
-  agentType?: string;
-  /** The values the step set itself, apart from its agent's. Set with `agentType`. */
-  stepGiven?: StepGiven;
 }
 
-/** What a test's or the dry run's runner gets once the steps module has planned the step. */
-export interface PlannedRequest extends EngineFields {
+/** What a test's or the dry run's runner gets once the steps module has planned the step. It
+ *  gets no call identity: no stand-in reads it. */
+export interface PlannedRequest extends Omit<EngineFields, "callIndex" | "callHash" | "callPath" | "callInputsHash"> {
   /** The model spec that runs, with its harness. */
   model?: string;
   effort?: string;

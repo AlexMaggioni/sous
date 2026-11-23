@@ -27,12 +27,6 @@ import type {
 import type { McpServerConfig } from "./steps/mcp-config.js";
 import type { WorkflowRecordedError } from "./errors.js";
 import {
-  type AgentDefinition,
-  type AgentRegistry,
-  agentDefinitionKey,
-  resolveAgentType,
-} from "./agent-registry.js";
-import {
   MAX_AGENT_RETRIES,
   MAX_AGENTS_PER_RUN,
   MAX_CONCURRENCY,
@@ -77,7 +71,7 @@ import { parseWorkflowScript } from "./workflows/script.js";
 import {
   createOrchestratorGlobals,
   DEFAULT_MAX_NESTING_DEPTH,
-  orchestratorRunExtras,
+  parseDurationSeconds,
   type CodeStepOptions,
 } from "./orchestrator-globals.js";
 import { EXEC_MODEL, EXEC_RESULT_SCHEMA, runCodeStep, type CodeStepEnv, type ExecSpec } from "./code-steps.js";
@@ -192,11 +186,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
    * calls only its run() method and builds no runner of its own.
    */
   agent: AgentRunner;
-  /**
-   * Named subagent definitions for `agent({ agentType })`, built by the host.
-   * Snapshotted once per run for determinism. Defaults to an empty registry.
-   */
-  agentRegistry?: AgentRegistry;
   concurrency?: number;
   /** Retry attempts after a recoverable agent failure. Default 0. */
   agentRetries?: number;
@@ -414,10 +403,9 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    *  @deprecated Replay is determined by recorded call correspondence, not world state. */
   resume?: { filesystem: "read-only" };
   /**
-   * Name of a subagent definition in the run's `agentRegistry`. Binds that definition's tool allow/denylist, model, and body prompt
-   * to this agent. An explicit `model` overrides the definition's model; the
-   * definition's model overrides `tier`/phase. An unknown name logs a warning
-   * and falls back to default tools/model (with the name as a prose hint).
+   * Name of an agent. The runner's route() finds it and binds its tools, model and prompt. An
+   * explicit `model` overrides the agent's model, and the agent's model overrides the run's.
+   * A runner with no route() gets the name as a prose hint in the instructions.
    */
   agentType?: string;
   /** Retry attempts after a recoverable failure for this specific agent. */
@@ -639,9 +627,6 @@ export async function runWorkflow<T = unknown>(
   const home = options.home ?? homePaths();
   const vmFilename = `${sanitizeVmName(meta.name)}.js`;
   const preludeLines = DETERMINISM_PRELUDE.split("\n").length;
-  // The host snapshots the agentType registry once per run, so two agent() calls
-  // can't observe a mid-run edit (determinism); a later resume re-reads it.
-  const agentRegistry: AgentRegistry = options.agentRegistry ?? new Map();
 
   // Initialize logger
   const logger = createWorkflowLogger({
@@ -1122,16 +1107,8 @@ export async function runWorkflow<T = unknown>(
         ? (modelTierConfig ? resolveTierModel(tier, modelTierConfig) : undefined) || undefined
         : resolveModelForPhase(assignedPhase, routingConfig) ?? options.defaultModel,
     };
-    // A code step, and a runner with no route of its own, get the engine's agent registry.
-    const routed = !codeSpec && agentRunner.route !== undefined;
-    let agentDef: AgentDefinition | undefined;
-    if (!routed) {
-      agentDef = resolveAgentType(agentOptions.agentType, agentRegistry);
-      if (agentOptions.agentType && !agentDef) {
-        log(`unknown agentType "${agentOptions.agentType}"; using default tools/model`);
-      }
-    }
-    const route = routed ? agentRunner.route!(ask) : registryRoute(ask, agentDef);
+    // A code step, and a runner with no route of its own, get the engine's route, which has no agent.
+    const route = !codeSpec && agentRunner.route ? agentRunner.route(ask) : unroutedStep(ask);
     const modelSpec = route.requested;
     if (modelSpec?.endsWith("/*")) {
       throw new WorkflowError(
@@ -1539,7 +1516,7 @@ export async function runWorkflow<T = unknown>(
                   ...options.codeEnv,
                   cwd: runCwd,
                   signal: attemptSignal,
-                  timeoutMs: orchestratorRunExtras(agentOptions, agentDef).timeoutMs,
+                  timeoutMs: millis(agentOptions.timeout),
                 }) : agentRunner.run(prompt, {
                   label,
                   schema: agentOptions.schema,
@@ -1555,9 +1532,6 @@ export async function runWorkflow<T = unknown>(
                   mode: effectiveMode,
                   tier: agentOptions.tier,
                   route,
-                  // A runner with no route of its own gets the agent's default block and the
-                  // step's extras here.
-                  ...(routed ? {} : { toolNames: agentDef?.tools, disallowedToolNames: agentDef?.disallowedTools }),
                   cwd: runCwd,
                   mcpServers: agentOptions.mcpServers,
                   images: agentOptions.images,
@@ -1566,7 +1540,6 @@ export async function runWorkflow<T = unknown>(
                   // Agent({ continue }) sends this step's prompt into the earlier
                   // session. Only a resumed, interrupted turn gets the runner's resume instruction.
                   ...(continueFromSession !== undefined && !resumingTurn ? { continueWithPrompt: true } : {}),
-                  ...(routed ? {} : orchestratorRunExtras(agentOptions, agentDef)),
                   callIndex,
                   callHash,
                   callPath,
@@ -3107,19 +3080,20 @@ function hashCheckpoint(promptText: string, options: CheckpointOptions): string 
   return createHash("sha256").update(identity).digest("hex");
 }
 
-/**
- * The route of a step whose runner has no route() of its own, from the engine's agent registry.
- * It gives the same model, key, isolation and prompt that routeStep gives from orc's agents.
- */
-function registryRoute(ask: StepAsk, def: AgentDefinition | undefined): StepRoute {
-  const requested = ask.model ?? def?.model ?? ask.runModel;
-  const isolation = ask.isolation ?? def?.isolation;
+/** The route of a code step, or of a step whose runner has no route() of its own. It has no agent. */
+function unroutedStep(ask: StepAsk): StepRoute {
+  const requested = ask.model ?? ask.runModel;
   return {
     ...(requested === undefined ? {} : { requested }),
-    agentKey: agentDefinitionKey(def),
-    ...(isolation === undefined ? {} : { isolation }),
-    ...(def ? { prompt: def.prompt } : {}),
+    agentKey: null,
+    ...(ask.isolation === undefined ? {} : { isolation: ask.isolation }),
   };
+}
+
+/** A step's time limit in milliseconds, from "90s", "10m" or a number of seconds. */
+function millis(value: number | string | undefined): number | undefined {
+  const seconds = parseDurationSeconds(value);
+  return seconds === undefined ? undefined : Math.round(seconds * 1000);
 }
 
 function hashAgentCall(

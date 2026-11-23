@@ -4,28 +4,12 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import {
-  type AgentDefinition,
-  type AgentRegistry,
-  agentDefinitionKey,
-  resolveAgentType,
-} from "../src/agent-registry.js";
+import { type AgentDefinition, agentDefinitionKey } from "../src/agent-registry.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
 import { homePaths } from "../src/runs/home.js";
 import { lookupAgents } from "../src/agents.js";
 import { createSteps, type InnerRunner } from "../src/steps/steps.js";
-
-describe("resolveAgentType", () => {
-  const reg: AgentRegistry = new Map([
-    ["a", { name: "a", description: "A agent", prompt: "be a", source: "project" } as AgentDefinition],
-  ]);
-  it("resolves a known name and returns undefined otherwise", () => {
-    assert.equal(resolveAgentType("a", reg)?.name, "a");
-    assert.equal(resolveAgentType("missing", reg), undefined);
-    assert.equal(resolveAgentType(undefined, reg), undefined);
-  });
-});
 
 describe("agentDefinitionKey", () => {
   it("is null for undefined and stable for the same def", () => {
@@ -77,9 +61,9 @@ describe("agentDefinitionKey", () => {
   });
 });
 
-// ── runtime integration: agentType binds tools/model/prompt via runWorkflow ──
-// The injected runner is the frozen AgentRunner seam (run(prompt, options)); the
-// engine calls it once per agent() and forwards model/tier/toolNames/instructions/cwd.
+// ── agentType through runWorkflow ──
+// capturingAgent's runner stands in for the program. Under createSteps it is the inner runner and
+// gets the planned model, tools, instructions and folder. Alone it is a runner with no route().
 
 function capturingAgent() {
   const seen: Array<{
@@ -108,181 +92,20 @@ function capturingAgent() {
   return { seen, runner };
 }
 
-const registry: AgentRegistry = new Map([
-  [
-    "security-auditor",
-    {
-      name: "security-auditor",
-      description: "sec",
-      model: "vendor/auditor-model",
-      tools: ["read", "grep"],
-      disallowedTools: ["write", "bash"],
-      prompt: "You are a security auditor.",
-      source: "project",
-    } as AgentDefinition,
-  ],
-]);
-
-describe("agentType binding through runWorkflow", () => {
-  it("binds tools, model, and the body prompt for a known agentType", async () => {
+describe("agentType with a runner that has no route of its own", () => {
+  it("passes an agentType on as a prose hint, and binds no tools or model", async () => {
     const { seen, runner } = capturingAgent();
-    const script = `export const meta = { name: 'at', description: 'agentType' }
-const r = await agent('audit', { label: 'a', agentType: 'security-auditor' })
-return r`;
-    await runWorkflow(script, { agent: runner, persistLogs: false, agentRegistry: registry });
-
-    assert.equal(seen.length, 1);
-    assert.equal(seen[0].model, "vendor/auditor-model", "agentType model is applied");
-    assert.deepEqual(seen[0].toolNames, ["read", "grep"], "allowlist forwarded");
-    assert.deepEqual(seen[0].disallowedToolNames, ["write", "bash"], "denylist forwarded");
-    assert.ok(seen[0].instructions?.includes("You are a security auditor."), "body prompt injected");
-  });
-
-  it("explicit opts.model beats the agentType model", async () => {
-    const { seen, runner } = capturingAgent();
-    const script = `export const meta = { name: 'at', description: 'agentType' }
-await agent('audit', { label: 'a', agentType: 'security-auditor', model: 'explicit/model' })
-return {}`;
-    await runWorkflow(script, { agent: runner, persistLogs: false, agentRegistry: registry });
-    assert.equal(seen[0].model, "explicit/model");
-  });
-
-  it("agentType model beats a tier (model passed, tier still forwarded)", async () => {
-    const { seen, runner } = capturingAgent();
-    const script = `export const meta = { name: 'at', description: 'agentType' }
-await agent('audit', { label: 'a', agentType: 'security-auditor', tier: 'small' })
-return {}`;
-    await runWorkflow(script, { agent: runner, persistLogs: false, agentRegistry: registry });
-    assert.equal(seen[0].model, "vendor/auditor-model", "definition model wins over tier");
-  });
-
-  it("agentType isolation: worktree runs the agent in an isolated cwd", async () => {
-    const repo = mkdtempSync(join(tmpdir(), "ap-agent-isolation-"));
-    const home = homePaths(mkdtempSync(join(tmpdir(), "ap-agent-isolation-home-")));
-    const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
-    try {
-      git("init", "-q");
-      git("config", "user.email", "t@t.t");
-      git("config", "user.name", "t");
-      writeFileSync(join(repo, "file.txt"), "base\n");
-      git("add", ".");
-      git("commit", "-q", "-m", "init");
-
-      const isolatedRegistry: AgentRegistry = new Map([
-        [
-          "isolated-auditor",
-          {
-            name: "isolated-auditor",
-            prompt: "Run isolated.",
-            isolation: "worktree",
-            source: "project",
-          } as AgentDefinition,
-        ],
-      ]);
-      const { seen, runner } = capturingAgent();
-      const script = `export const meta = { name: 'isolated', description: 'agentType isolation' }
-await agent('audit', { label: 'a', agentType: 'isolated-auditor' })
-return {}`;
-
-      await runWorkflow(script, {
-        cwd: repo,
-        runId: "iso-test",
-        agent: runner,
-        persistLogs: false,
-        agentRegistry: isolatedRegistry,
-        home,
-      });
-
-      assert.equal(seen.length, 1);
-      assert.ok(seen[0].cwd, "isolated agent should receive a cwd");
-      assert.notEqual(seen[0].cwd, repo, "agent cwd should not be the base repo");
-      assert.equal(seen[0].cwd, join(home.worktrees, "iso-test-0-a"), "isolated cwd is under the home's worktrees folder");
-      assert.equal(seen[0].cwdExists, true, "worktree cwd should exist while the agent runs");
-      assert.ok(seen[0].instructions?.includes("Requested isolation: worktree"));
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-      rmSync(home.home, { recursive: true, force: true });
-    }
-  });
-
-  it("unknown agentType logs a fallback and binds no tools/model", async () => {
-    const { seen, runner } = capturingAgent();
-    const logs: string[] = [];
     const script = `export const meta = { name: 'at', description: 'agentType' }
 await agent('do it', { label: 'a', agentType: 'nope' })
 return {}`;
-    await runWorkflow(script, {
-      agent: runner,
-      persistLogs: false,
-      agentRegistry: registry,
-      onLog: (m) => logs.push(m),
-    });
+    await runWorkflow(script, { agent: runner, persistLogs: false });
     assert.equal(seen[0].model, undefined, "no model bound");
     assert.equal(seen[0].toolNames, undefined, "no tool allowlist bound");
     assert.ok(seen[0].instructions?.includes("nope"), "falls back to the prose hint");
-    assert.ok(
-      logs.some((l) => /unknown agentType/i.test(l)),
-      "warns about the unknown agentType",
-    );
-  });
-
-  it("editing a definition invalidates the resume cache for that call", async () => {
-    // First run journals the call under the original definition's hash.
-    const journal: JournalEntry[] = [];
-    const first = capturingAgent();
-    const script = `export const meta = { name: 'at', description: 'agentType' }
-const r = await agent('audit', { label: 'a', agentType: 'security-auditor' })
-return r`;
-    await runWorkflow(script, {
-      agent: first.runner,
-      persistLogs: false,
-      agentRegistry: registry,
-      onAgentJournal: (e) => journal.push(e),
-    });
-    assert.equal(first.seen.length, 1);
-
-    // Resume with an EDITED definition (different model) → cache must miss → re-run.
-    const securityAuditor = registry.get("security-auditor");
-    assert.ok(securityAuditor, "security-auditor definition should be loaded");
-    const editedRegistry: AgentRegistry = new Map([
-      ["security-auditor", { ...securityAuditor, model: "vendor/changed-model" }],
-    ]);
-    const second = capturingAgent();
-    await runWorkflow(script, {
-      agent: second.runner,
-      persistLogs: false,
-      agentRegistry: editedRegistry,
-      resumeJournal: new Map(journal.map((e) => [e.index, e])),
-    });
-    assert.equal(second.seen.length, 1, "edited definition busts the cache and re-runs live");
-    assert.equal(second.seen[0].model, "vendor/changed-model");
-  });
-
-  it("resume cache HITS when the definition is unchanged", async () => {
-    const journal: JournalEntry[] = [];
-    const first = capturingAgent();
-    const script = `export const meta = { name: 'at', description: 'agentType' }
-const r = await agent('audit', { label: 'a', agentType: 'security-auditor' })
-return r`;
-    await runWorkflow(script, {
-      agent: first.runner,
-      persistLogs: false,
-      agentRegistry: registry,
-      onAgentJournal: (e) => journal.push(e),
-    });
-    const second = capturingAgent();
-    await runWorkflow(script, {
-      agent: second.runner,
-      persistLogs: false,
-      agentRegistry: registry,
-      resumeJournal: new Map(journal.map((e) => [e.index, e])),
-    });
-    assert.equal(second.seen.length, 0, "unchanged definition → cache hit → no live run");
   });
 });
 
-// ── The same through the steps module: the agent comes from an agent file, and createSteps routes the step ──
-// capturingAgent's runner stands in for the program, as createSteps' inner runner.
+// ── Through the steps module: the agent comes from an agent file, and createSteps routes the step ──
 
 const AUDITOR = "---\nname: security-auditor\ndescription: sec\nclaudecode:\n  model: auditor-model\n  tools: [read, grep]\n  disallowedTools: [write, bash]\n---\nYou are a security auditor.\n";
 
@@ -331,6 +154,15 @@ await agent('audit', { label: 'a', agentType: 'security-auditor' })
 return {}`;
     await runWorkflow(script, { agent: agentFiles({ "security-auditor": AUDITOR }).steps(runner), persistLogs: false, defaultModel: "codex/gpt-run" });
     assert.equal(seen[0].model, "claude/auditor-model", "definition model wins over the run's model");
+  });
+
+  it("agentType model beats a tier (model passed, tier still forwarded)", async () => {
+    const { seen, runner } = capturingAgent();
+    const script = `export const meta = { name: 'at', description: 'agentType' }
+await agent('audit', { label: 'a', agentType: 'security-auditor', tier: 'small' })
+return {}`;
+    await runWorkflow(script, { agent: agentFiles({ "security-auditor": AUDITOR }).steps(runner), persistLogs: false });
+    assert.equal(seen[0].model, "claude/auditor-model", "definition model wins over tier");
   });
 
   it("agentType isolation: worktree runs the agent in an isolated cwd", async () => {

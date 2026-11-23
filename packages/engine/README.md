@@ -333,8 +333,6 @@ From `@orchestrator/engine` (see `src/index.ts`):
 - **Model routing / tiers** — `parseModelRoutingFromMeta`, `resolveModelForPhase`,
   `buildDefaultTierConfig`, `loadModelTierConfig`, `saveModelTierConfig`,
   `resolveTierModel`, `sortedTierNames`, `getModelTierConfigPath`.
-- **Agent registry** (`agentType` definitions) — `resolveAgentType`, `applyToolPolicy`,
-  `agentDefinitionKey`, `listAgentTypes`.
 - **Worktree isolation** — `createWorktree`, `removeWorktree`, type `Worktree`.
 - **Display / snapshots** — `preview`, `renderWorkflowText`, `renderWorkflowLines`,
   `createWorkflowSnapshot`, `recomputeWorkflowSnapshot`, `statusIcon`, `shorten`.
