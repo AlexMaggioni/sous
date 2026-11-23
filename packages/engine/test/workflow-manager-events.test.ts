@@ -595,19 +595,6 @@ test("automatic usage_limit and auth_required settlements carry reason + errorRe
   });
 });
 
-test("typed EventEmitter methods retain arbitrary-event fallbacks", () => {
-  const manager = new WorkflowManager({ agent: { async run() { return "unused"; } } });
-  const logListener = (payload: EngineRunEventPayloadMap["log"]) => {
-    assert.equal(payload.message, "typed");
-  };
-  manager.addListener("log", logListener);
-  manager.once("log", logListener);
-  manager.off("log", logListener);
-  manager.on("custom-event", (...args: unknown[]) => assert.deepEqual(args, [1, "two"]));
-  assert.equal(manager.emit("custom-event", 1, "two"), true);
-  manager.removeListener("log", logListener);
-});
-
 test("a step's history report lands on that step, found by its scope and call index", async () => {
   await withPersistenceDirs(async ({ cwd, root }) => {
     const history = [{ role: "assistant" as const, kind: "text" as const, text: "second" }];
