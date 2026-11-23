@@ -262,7 +262,6 @@ test(
       limits: { maxAgents: 10, concurrency: 2, agentRetries: 1 },
       abortSignaled: true,
       nestedWorkflows: true,
-      legacyResume: true,
       executionMode: { kind: "isolation", baselineRunId: "baseline" },
       startedAt: "2024-01-01T00:00:00.000Z",
       updatedAt: "2024-01-01T00:00:00.000Z",

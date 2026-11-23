@@ -208,7 +208,6 @@ export interface PersistedRunState {
   /** Host-pinned fallback used by otherwise unmodelled agent calls in this run. */
   defaultModel?: string;
   nestedWorkflows?: true;
-  legacyResume?: true;
   executionMode?: { kind: "isolation"; baselineRunId: string };
   /** Event-log generation discriminator: 32 lowercase hex characters. New-format journaling
    *  runs mint it with eventSeq: 0. */

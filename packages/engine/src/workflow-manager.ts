@@ -131,7 +131,6 @@ export interface ManagedRun {
   /** Host-pinned fallback for otherwise unmodelled agent calls in this execution. */
   defaultModel?: string;
   nestedWorkflows?: true;
-  legacyResume?: true;
   /** Immediate resumeFromRunId ancestor, fixed when the new run is admitted. */
   readonly resumeSourceRunId?: string;
   /** The resume report, kept current as the engine decides each call. Only a resumed run has one. */
@@ -1524,7 +1523,6 @@ export class WorkflowManager extends EventEmitter {
       eventSeq: managed.eventSeq,
       eventLogIncomplete: managed.eventLogIncomplete,
       nestedWorkflows: managed.nestedWorkflows,
-      legacyResume: managed.legacyResume,
       journal: rows.journal,
       ...(rows.nestedJournal.length ? { nestedJournal: rows.nestedJournal } : {}),
       ...(managed.fallbacks.length === 0 ? {} : { fallbacks: managed.fallbacks }),
@@ -1791,7 +1789,6 @@ export class WorkflowManager extends EventEmitter {
       fallbacks: persisted.fallbacks ?? [],
       effectiveCwd,
       environment: persisted.environment,
-      ...(persisted.legacyResume ? { legacyResume: true as const } : {}),
       ...(persisted.resume ? { resume: { format: "identity-v1" as const } } : {}),
       ...(persisted.resumeSourceRunId ? { resumeSourceRunId: persisted.resumeSourceRunId } : {}),
       limits: resolveWorkflowRunLimits({

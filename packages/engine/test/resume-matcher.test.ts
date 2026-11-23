@@ -172,7 +172,6 @@ describe("incremental resume admission", () => {
     const cases: Array<[string, PersistedRunState]> = [
       ["current", sourceState()],
       ["legacy recording", legacy],
-      ["legacy resume", sourceState(undefined, { legacyResume: true })],
       ["failed call", sourceState([failedCall])],
       ["interrupted call", sourceState([blocker().call])],
       ["nested", sourceState(undefined, { nestedWorkflows: true })],
