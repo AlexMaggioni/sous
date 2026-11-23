@@ -15,6 +15,7 @@ import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { type AgentSessionRecord, type AgentSessionRef } from "../src/workflow-result.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { isStepFailedPause, runWorkflow } from "../src/workflow.js";
+import { journalResume } from "./helpers/journal-resume.js";
 
 interface SeenCall {
   prompt: string;
@@ -98,7 +99,7 @@ describe("agent session records (result.agentSessions)", () => {
     const resumed = await runWorkflow(twoCalls, {
       agent: untouched,
       persistLogs: false,
-      resumeJournal: new Map(journal.map((e) => [e.index, e])),
+      ...journalResume(journal),
       onAgentEnd: (event) => sessions.push(event.session?.sessionId),
     });
     // vm-realm arrays have realm-local prototypes; compare by JSON like the journal does.

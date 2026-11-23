@@ -36,6 +36,7 @@ import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
 import { isNestedScope } from "./resume-identity.js";
+import { journalRows } from "./resume-rows.js";
 import { continueRows, handedInRows, newRows, reuseRows, reviseRows, type RunRows } from "./run-rows.js";
 import {
   createRunPersistence,
@@ -1133,7 +1134,8 @@ export class WorkflowManager extends EventEmitter {
       confirm,
       onNestedWorkflow,
     } = exec;
-    const resumeJournal = exec.resumeJournal;
+    // A journal handed in pairs by index with the run's own calls.
+    const runResume = resume ?? (exec.resumeJournal ? { rows: journalRows(managed.runId, exec.resumeJournal) } : undefined);
     const resolvedConcurrency = concurrency ?? this.concurrency;
     const resolvedAgentRetries = agentRetries ?? this.defaultAgentRetries;
     // Sync the derived counters (agentCount/runningCount/doneCount/errorCount) from the
@@ -1180,8 +1182,7 @@ export class WorkflowManager extends EventEmitter {
         ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
         ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
         persistenceRoot: this.persistenceRoot,
-        resumeJournal,
-        ...(resume ? { resume } : {}),
+        ...(runResume ? { resume: runResume } : {}),
         tokenUsageBaseline: managed.sameRunContinuation
           ? {
               input: managed.snapshot.tokenUsage?.input ?? 0,

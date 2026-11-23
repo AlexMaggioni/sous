@@ -6,6 +6,7 @@ import type { AgentSessionRef } from "../src/workflow-result.js";
 import type { StepRequest } from "../src/steps/agent-run.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
+import { journalResume } from "./helpers/journal-resume.js";
 
 // hashAgentCall() is module-private, but every live agent() emits its call hash on the
 // JournalEntry (workflow.ts: onAgentJournal({ index, hash, result })). The resume
@@ -248,7 +249,7 @@ return agent('same', { label: 'a', configOptions: { zeta: 'last', alpha: true } 
     const replayed = await runWorkflow(reordered, {
       agent: runner,
       persistLogs: false,
-      resumeJournal,
+      ...journalResume(resumeJournal),
     });
     assert.equal(replayed.result, "ran:same");
     assert.equal(calls, 0, "sorted-key equivalent options replay from the journal");
@@ -256,7 +257,7 @@ return agent('same', { label: 'a', configOptions: { zeta: 'last', alpha: true } 
     const missed = await runWorkflow(changed, {
       agent: runner,
       persistLogs: false,
-      resumeJournal,
+      ...journalResume(resumeJournal),
     });
     assert.equal(missed.result, "live");
     assert.equal(calls, 1, "changed option value runs live");

@@ -48,7 +48,7 @@ import type { LiveResume, OccurrenceResume, PreparedContinuation } from "./resum
 import { buildResumeReport } from "./resume-report.js";
 import { nestedRunId } from "./resume-identity.js";
 import { createPairing, type RecordedScope } from "./resume-pairing.js";
-import { journalRows, type ResumeRow, type ResumeRows } from "./resume-rows.js";
+import type { ResumeRow, ResumeRows } from "./resume-rows.js";
 import {
   createDecisionLog,
   createStepLedger,
@@ -229,11 +229,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   persistenceRoot?: string;
   /** Run ID for persistence. Auto-generated if not provided. */
   runId?: string;
-  /**
-   * Resume: a journal with no call rows, by call index. A call replays the row at its own index
-   * when the hashes agree. Goes with no resume rows and no resume plan.
-   */
-  resumeJournal?: Map<number, JournalEntry>;
   /**
    * Internal (manager): what the run resumes from. A live call goes on only in a session of the
    * plan's source run, or of this run when there is no plan.
@@ -575,13 +570,6 @@ export async function runWorkflow<T = unknown>(
 ): Promise<EngineRunResult<T>> {
   const started = Date.now();
   const { meta, body } = parseWorkflowScript(script);
-  if (options.resumeJournal && (options.resume?.rows || options.resume?.plan)) {
-    throw new WorkflowError(
-      "resumeJournal goes with no resume rows and no resume plan",
-      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-      { recoverable: false },
-    );
-  }
   // Per-phase model routing from meta.phases[].model, with meta.model as the default.
   const routingConfig = parseModelRoutingFromMeta(meta.phases, meta.model);
   const effectiveLimits = resolveWorkflowRunLimits(options);
@@ -591,7 +579,7 @@ export async function runWorkflow<T = unknown>(
     agentRetries: runAgentRetries,
   } = effectiveLimits;
   const runId = options.runId ?? `run-${started.toString(36)}`;
-  const resumeRows = options.resume?.rows ?? (options.resumeJournal ? journalRows(runId, options.resumeJournal) : undefined);
+  const resumeRows = options.resume?.rows;
   assertExplicitCheckpointProvenance({
     journal: resumeRows
       ? [...resumeRows.values()].flatMap((scope) => scope.rows.flatMap((row) => (row.entry ? [row.entry] : [])))
@@ -1884,9 +1872,8 @@ export async function runWorkflow<T = unknown>(
         signal,
         sharedRuntime: shared,
         nestingDepth: ownDepth + 1,
-        // A nested run finds its rows in the same resume rows by its run id, never in the parent's
-        // journal. It has no plan and no interrupted calls.
-        resumeJournal: undefined,
+        // A nested run finds its rows in the same resume rows by its run id. It has no plan and no
+        // interrupted calls.
         resume: options.resume?.rows ? { rows: options.resume.rows } : undefined,
         onResumeCallAllocated: undefined,
         onResumeDecision: undefined,

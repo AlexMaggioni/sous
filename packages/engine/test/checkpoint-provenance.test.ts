@@ -8,6 +8,7 @@ import { assertExplicitCheckpointProvenance } from "../src/checkpoint-provenance
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { runWorkflow } from "../src/workflow.js";
+import { journalResume } from "./helpers/journal-resume.js";
 
 const script = `export const meta = { name: "explicit-checkpoint", description: "checkpoint provenance" }
 const answer = await checkpoint("Approve?")
@@ -27,7 +28,7 @@ test("manual journal replay refuses an unmarked historical decision before any l
   delete journal.get(0)!.checkpointDecision;
   let asked = false;
   await assert.rejects(runWorkflow(script, {
-    agent: noopAgent, persistLogs: false, resumeJournal: journal,
+    agent: noopAgent, persistLogs: false, ...journalResume(journal),
     confirm: async () => { asked = true; return true; },
   }), incompatible);
   assert.equal(asked, false, "an incompatible source must not silently fall back to a fresh approval");

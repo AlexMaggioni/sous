@@ -14,6 +14,7 @@ import { homePaths } from "../src/runs/home.js";
 import { placesIn } from "./helpers/places.js";
 import { lookupAgents, lookupMcpServers } from "../src/agents.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
+import { journalResume } from "./helpers/journal-resume.js";
 
 // Code steps, questions, breakpoints, choose(), and the per-step options.
 
@@ -146,7 +147,7 @@ return a.stdout.trim()`;
       agent: runner,
       cwd,
       persistLogs: false,
-      resumeJournal: new Map(journal.map((e) => [e.index, e])),
+      ...journalResume(journal),
     });
     assert.equal(run2.result, "1", "the replay reuses the recorded result");
     assert.equal(readFileSync(join(cwd, "marker"), "utf8"), "ran\n", "the step ran once");

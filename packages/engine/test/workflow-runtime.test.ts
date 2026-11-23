@@ -6,6 +6,7 @@ import type { AgentUsage, StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { isStepFailedPause, type JournalEntry, runWorkflow } from "../src/workflow.js";
 import type { WorkflowCallRecord } from "../src/workflow-result.js";
+import { journalResume } from "./helpers/journal-resume.js";
 
 /** Agent runner that counts real invocations and echoes a per-call result. */
 function countingAgent() {
@@ -543,7 +544,7 @@ test("resume replays cached results without re-running agents", async () => {
   const r2 = await runWorkflow(resumeScript, {
     agent: second.runner,
     persistLogs: false,
-    resumeJournal: new Map(journal.map((e) => [e.index, e])),
+    ...journalResume(journal),
   });
   assert.equal(second.state.calls, 0, "no live runs on a full cache hit");
   assert.equal(JSON.stringify(r2.result), JSON.stringify(r1.result));
@@ -563,7 +564,7 @@ test("resume re-runs only the changed call (hash mismatch)", async () => {
   await runWorkflow(editedScript, {
     agent: second.runner,
     persistLogs: false,
-    resumeJournal: new Map(journal.map((e) => [e.index, e])),
+    ...journalResume(journal),
   });
   assert.equal(second.state.calls, 1, "only the edited call re-runs");
 });
@@ -591,7 +592,7 @@ test("resume re-runs the changed middle call and replays the unchanged call afte
   const resumed = await runWorkflow(editedScript, {
     agent: second.runner,
     persistLogs: false,
-    resumeJournal: new Map(journal.map((e) => [e.index, e])),
+    ...journalResume(journal),
   });
   assert.equal(second.state.calls, 1, "only the edited call (1) runs; 0 and 2 replay");
   assert.deepEqual(resumed.calls?.map((call) => call.origin), ["journal-replay", "runner", "journal-replay"]);
@@ -653,7 +654,7 @@ test("actual effective configuration controls replay identity, and only the chan
     const replay = await runWorkflow(configuredResumeScript(selectedConfiguration), {
       agent: replayAgent.runner,
       persistLogs: false,
-      resumeJournal,
+      ...journalResume(resumeJournal),
     });
     assert.deepEqual(replayAgent.prompts, [], `${label} effective selections must not dispatch the runner`);
     assert.deepEqual(
@@ -709,7 +710,7 @@ test("actual effective configuration controls replay identity, and only the chan
     const changed = await runWorkflow(configuredResumeScript(selectedConfiguration), {
       agent: liveAgent.runner,
       persistLogs: false,
-      resumeJournal,
+      ...journalResume(resumeJournal),
     });
 
     assert.deepEqual(
@@ -766,7 +767,7 @@ test("resume with a raised args-controlled cap replays the unchanged prefix", as
     agent: second.runner,
     args: { maxRounds: 8 },
     persistLogs: false,
-    resumeJournal: new Map(journal.map((entry) => [entry.index, entry])),
+    ...journalResume(journal),
   });
   const rounds = (resumed.result as { rounds: string[] }).rounds;
   assert.equal(second.state.calls, 2, "only the two newly reachable rounds run live");
@@ -798,7 +799,7 @@ return { a, b, c }`;
     agent: second.runner,
     args: { middle: "B-edited" },
     persistLogs: false,
-    resumeJournal: new Map(journal.map((entry) => [entry.index, entry])),
+    ...journalResume(journal),
   });
   assert.equal(second.state.calls, 1, "only the changed middle call runs live");
   assert.deepEqual(JSON.parse(JSON.stringify(resumed.result)), {
@@ -832,7 +833,7 @@ test("resume in parallel(): editing one thunk re-runs that thunk only", async ()
   const resumed = await runWorkflow(script("x-edited"), {
     agent: second.runner,
     persistLogs: false,
-    resumeJournal: new Map(journal.map((e) => [e.index, e])),
+    ...journalResume(journal),
   });
   assert.equal(second.state.calls, 1, "only the changed thunk (index 1) runs; 0 and 2 replay");
   assert.deepEqual(
@@ -1430,7 +1431,7 @@ return await gate(
       },
     },
     persistLogs: false,
-    resumeJournal: new Map(journal.map((entry) => [entry.index, entry])),
+    ...journalResume(journal),
   });
 
   assert.equal(liveCalls, 0);

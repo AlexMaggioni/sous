@@ -11,6 +11,7 @@ import { projectRunEventForPersistence } from "../src/run-observability.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
+import { journalResume } from "./helpers/journal-resume.js";
 
 const noopAgent = {
   async run() {
@@ -236,7 +237,7 @@ return { r }`;
   const second = await runWorkflow<{ r: string }>(script, {
     agent: noopAgent,
     persistLogs: false,
-    resumeJournal: journal,
+    ...journalResume(journal),
     confirm: async () => {
       calledAgain = true;
       return "DIFFERENT";

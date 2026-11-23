@@ -8,6 +8,7 @@ import type { AgentUsage, StepRequest } from "../src/steps/agent-run.js";
 import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { isStepFailedPause, runWorkflow } from "../src/workflow.js";
+import { journalResume } from "./helpers/journal-resume.js";
 
 const meta = (name: string, body: string) =>
   `export const meta = { name: ${JSON.stringify(name)}, description: 'manifest test' }\n${body}`;
@@ -153,9 +154,8 @@ return { a, c }`,
     assert.equal(first.calls?.length, 2);
 
     const replay = await runWorkflow(script, {
-      runId: "replay",
       agent: { async run() { throw new Error("must not run"); } },
-      resumeJournal: new Map(journal.map((entry) => [entry.index, entry])),
+      ...journalResume(journal, "replay"),
       persistLogs: false,
     });
     assert.deepEqual(replay.calls?.map((row) => row.origin), ["journal-replay", "journal-replay"]);

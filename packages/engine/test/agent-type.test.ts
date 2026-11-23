@@ -11,6 +11,7 @@ import { homePaths } from "../src/runs/home.js";
 import { placesIn } from "./helpers/places.js";
 import { createSteps, type InnerRunner } from "../src/steps/steps.js";
 import type { PlannedRequest } from "../src/steps/agent-run.js";
+import { journalResume } from "./helpers/journal-resume.js";
 
 describe("agentDefinitionKey", () => {
   it("is null for undefined and stable for the same def", () => {
@@ -223,7 +224,7 @@ return r`;
     await runWorkflow(script, {
       agent: files.steps(second.runner),
       persistLogs: false,
-      resumeJournal: new Map(journal.map((e) => [e.index, e])),
+      ...journalResume(journal),
     });
     assert.equal(second.seen.length, 1, "edited definition busts the cache and re-runs live");
     assert.equal(second.seen[0].model, "claude/changed-model");
@@ -241,7 +242,7 @@ return r`;
     await runWorkflow(script, {
       agent: files.steps(second.runner),
       persistLogs: false,
-      resumeJournal: new Map(journal.map((e) => [e.index, e])),
+      ...journalResume(journal),
     });
     assert.equal(second.seen.length, 0, "unchanged definition → cache hit → no live run");
   });
