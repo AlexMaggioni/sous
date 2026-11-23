@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import type { HomePaths } from "../../src/runs/home.js";
 import { answerValue, type Question } from "../../src/runs/inbox.js";
-import { loadRecord } from "../../src/runs/records.js";
-import { answerQuestion, listRuns, runQuestions } from "../../src/runs/run.js";
+import { loadRecord, type RunRecord } from "../../src/runs/records.js";
+import { answerQuestion, forgetRun, listRuns, pruneRuns, runQuestions } from "../../src/runs/run.js";
 import { tick } from "../../src/runs/service.js";
 import { readEventsAfter, readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
 import type { PersistedRunState } from "../../src/runs/persistence/run-persistence.js";
-import { heldRunner, NO_CLI, plantState, setup } from "./fixture.js";
+import { heldRunner, layout, NO_CLI, plantState, setup } from "./fixture.js";
 
 // A run the code before step 4 started. Its sh and js steps went to the steps module as agent
 // calls with model "exec" and finished; its agent step failed, so the run paused. The fixture
@@ -170,5 +170,58 @@ describe("a run started by the old code", () => {
     assert.equal(result?.status, "completed", lines.join("\n"));
     assert.equal(result?.result, "one two");
     assert.deepEqual(calls.map((call) => call.label), ["second"], "the finished step did not run again");
+  });
+});
+
+describe("forget, prune and resume on an old run's files", () => {
+  /** The run's own files and the engine's project folders, by the names layout gives them. */
+  const runFiles = (paths: HomePaths, record: RunRecord) => layout(paths, record.runId, record.cwd).filter((line) => line.includes("<"));
+  // Thirty days after the dead run started.
+  const later = new Date(Date.parse("2026-11-23T04:27:15.896Z") + 30 * 86_400_000);
+
+  it("forgetRun removes every file of a run whose worker died, but the home's project.json and the run's .lineage", () => {
+    const { paths, runId } = plantOldRun(DEAD);
+    const record = loadRecord(paths, runId)!;
+    assert.deepEqual(runFiles(paths, record), [
+      "home/records/<id>.json",
+      "home/records/<id>.workflows",
+      "home/runs/projects/<home key>/",
+      "home/runs/projects/<home key>/runs/",
+      "home/runs/projects/<home key>/runs/<id>.events.jsonl",
+      "home/runs/projects/<home key>/runs/<id>.json",
+      "home/runs/projects/<home key>/runs/<id>.lock",
+    ]);
+    forgetRun(paths, record);
+    assert.deepEqual(runFiles(paths, record), [
+      "home/runs/projects/<home key>/",
+      "home/runs/projects/<home key>/project.json",
+      "home/runs/projects/<home key>/runs/",
+      "home/runs/projects/<home key>/runs/<id>.lineage",
+    ]);
+  });
+
+  it("pruneRuns keeps a run whose worker died, since the run did not finish", () => {
+    const { paths, runId } = plantOldRun(DEAD);
+    const record = loadRecord(paths, runId)!;
+    const before = runFiles(paths, record);
+    assert.deepEqual(pruneRuns(paths, 7, later), []);
+    assert.deepEqual(runFiles(paths, record), before);
+  });
+
+  it("resumes a run next to a .script.js and a .lineage the old code left, and the leftovers do no harm", async () => {
+    const { paths, runId } = plantOldRun(FAILED_STEP);
+    const { runsDir } = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
+    const state = JSON.parse(readFileSync(join(runsDir, `${runId}.json`), "utf8")) as PersistedRunState;
+    writeFileSync(join(runsDir, `${runId}.script.js`), state.script);
+    // The tombstone an earlier forget of the same id writes.
+    writeFileSync(join(runsDir, `${runId}.lineage`), `${JSON.stringify({ runId, deletedAt: "2026-11-23T06:21:32.519Z" }, null, 2)}\n`);
+
+    const { runner, calls } = heldRunner(() => "two");
+    const lines: string[] = [];
+    const result = await runWorker(runId, "resume", { paths, inner: runner, pollMs: 20, log: (line) => lines.push(line.slice(9)) });
+    assert.equal(result?.status, "completed", lines.join("\n"));
+    assert.equal(result?.result, "one two");
+    assert.deepEqual(calls.map((call) => call.label), ["second"], "the finished step did not run again");
+    assert.equal(existsSync(join(runsDir, `${runId}.lineage`)), false, "saving the state removed the old .lineage");
   });
 });

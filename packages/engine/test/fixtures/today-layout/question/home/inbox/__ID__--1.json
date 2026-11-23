@@ -1,0 +1,12 @@
+{
+  "id": "__ID__--1",
+  "runId": "__ID__",
+  "scope": "__ID__",
+  "callIndex": 1,
+  "hash": "472939e4d205d721aa0c7d5c4257cb9cad770801abb2c898828b4a23ba8f4bdd",
+  "workflow": "today",
+  "prompt": "Breakpoint: Check the plan\n\nthe plan\n\nReply approve, stop, or send back with a note.",
+  "kind": "input",
+  "breakpoint": true,
+  "askedAt": "2026-11-23T06:21:32.565Z"
+}

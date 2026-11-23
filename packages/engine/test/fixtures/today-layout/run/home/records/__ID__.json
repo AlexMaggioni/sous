@@ -1,0 +1,22 @@
+{
+  "runId": "__ID__",
+  "workflow": "today",
+  "file": "__ROOT__/project/.orchestrator/workflows/today.js",
+  "args": {},
+  "place": "folder",
+  "cwd": "__CWD__",
+  "projectDir": "__ROOT__/project",
+  "priority": "user",
+  "origin": "cli",
+  "createdAt": "2026-11-23T06:21:32.322Z",
+  "accounts": {
+    "claude": {
+      "name": "default",
+      "folder": "__ROOT__/claude"
+    },
+    "codex": {
+      "name": "default",
+      "folder": "__ROOT__/codex"
+    }
+  }
+}

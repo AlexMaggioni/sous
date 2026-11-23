@@ -1,0 +1,91 @@
+{
+  "runId": "__ID__",
+  "workflowName": "today",
+  "script": "export const meta = { name: 'today', description: 'one step' }\nreturn await agent('build it', { label: 'build' })\n",
+  "scriptOrigin": {
+    "kind": "inline"
+  },
+  "args": {},
+  "cwd": "__CWD__",
+  "effectiveCwd": "__CWD__",
+  "runtime": {
+    "engineVersion": "4.0.5",
+    "node": "v24.2.0",
+    "v8": "13.6.233.10-node.17",
+    "pathFormat": 1,
+    "inputsFormat": 2,
+    "checkpointInputsFormat": 2
+  },
+  "resume": {
+    "format": "identity-v1"
+  },
+  "eventStreamId": "020e9d3bc5f50d52547c1fb88d5a471c",
+  "eventSeq": 8,
+  "journal": [
+    {
+      "index": 0,
+      "hash": "8608caec66ba899da62b035c56ce6c8c61d1055b2dd99fd29cadefaa5b29f1e0",
+      "result": "build done",
+      "kind": "agent",
+      "scope": "__ID__",
+      "call": {
+        "kind": "agent",
+        "label": "build"
+      }
+    }
+  ],
+  "calls": [
+    {
+      "index": 0,
+      "kind": "agent",
+      "hash": "8608caec66ba899da62b035c56ce6c8c61d1055b2dd99fd29cadefaa5b29f1e0",
+      "path": "2:14<4:3",
+      "inputsHash": "11c7dfb0bab6b1786d781eb3bd0edb2f37e49639d224c20ec8d4287886719fad",
+      "label": "build",
+      "outcome": "result",
+      "origin": "runner",
+      "attempts": 1,
+      "resolvedCwd": "__ROOT__/project",
+      "settlementOrdinal": 1,
+      "scope": "__ID__"
+    }
+  ],
+  "callsAllocated": 1,
+  "limits": {
+    "maxAgents": 1000,
+    "concurrency": 8,
+    "agentRetries": 2
+  },
+  "status": "completed",
+  "phases": [],
+  "agents": [
+    {
+      "id": 1,
+      "label": "build",
+      "prompt": "build it",
+      "status": "done",
+      "callIndex": 0,
+      "scope": "__ID__",
+      "startedAt": "2026-11-23T06:21:32.360Z",
+      "resultPreview": "build done",
+      "tokens": 6,
+      "endedAt": "2026-11-23T06:21:32.478Z"
+    }
+  ],
+  "logs": [
+    "Logs persisted to __ROOT__/home/runs/projects/__CWD_KEY__/runs/__ID__.log"
+  ],
+  "result": "build done",
+  "tokenUsage": {
+    "input": 0,
+    "output": 0,
+    "total": 6,
+    "cost": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0
+  },
+  "startedAt": "2026-11-23T06:21:32.339Z",
+  "updatedAt": "2026-11-23T06:21:32.502Z",
+  "completedAt": "2026-11-23T06:21:32.502Z",
+  "durationMs": 127
+}

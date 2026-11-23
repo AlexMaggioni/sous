@@ -4,17 +4,15 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { daemonLog, logFile } from "../../src/index.js";
-import type { HomePaths } from "../../src/runs/home.js";
 import { createRun } from "../../src/runs/launch.js";
 import { createRunPersistence } from "../../src/runs/persistence/run-persistence.js";
 import { loadRecord } from "../../src/runs/records.js";
 import { forgetRun } from "../../src/runs/run.js";
 import { runWorker } from "../../src/runs/worker.js";
-import { heldRunner, setup } from "./fixture.js";
+import { heldRunner, layout, projectKey, setup } from "./fixture.js";
 
 const quiet = () => {};
 
@@ -29,34 +27,6 @@ return await agent('child step', { label: 'inner' })`;
 const single = `export const meta = { name: 'top', description: 'top' }
 // the top workflow
 return await agent('build it', { label: 'build' })`;
-
-/** The engine names a project's folder after the folder's name and a hash of its path. */
-function projectKey(dir: string): string {
-  return `${basename(dir)}-${createHash("sha256").update(dir).digest("hex").slice(0, 12)}`;
-}
-
-/** Every file and folder under the test's root, folders ending in "/", without the workflows
- *  the test wrote. The run id and the two project keys are replaced, so the list is the same on
- *  every run. */
-function layout(paths: HomePaths, runId: string, cwd: string): string[] {
-  const root = dirname(paths.home);
-  const out: string[] = [];
-  const walk = (dir: string) => {
-    for (const name of readdirSync(dir)) {
-      const path = join(dir, name);
-      const rel = relative(root, path);
-      if (rel.startsWith(join("project", ".orchestrator", "workflows") + "/")) continue;
-      if (statSync(path).isDirectory()) {
-        out.push(`${rel}/`);
-        walk(path);
-      } else out.push(rel);
-    }
-  };
-  walk(root);
-  return out
-    .map((line) => line.split(runId).join("<id>").split(projectKey(paths.home)).join("<home key>").split(projectKey(cwd)).join("<cwd key>"))
-    .sort();
-}
 
 const home = [
   "home/",
