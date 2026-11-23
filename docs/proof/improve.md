@@ -12,15 +12,15 @@ most two real runs went at once.
 
 | | Before | After |
 | --- | --- | --- |
-| Engine source lines | 21,395 | 17,358 |
+| Engine source lines | 21,395 | 17,445 |
 | orc source lines | 1,197 | 1,021 |
 | Harnesses source lines | 4,128 | 4,134 |
-| Engine test lines | 23,217 | 24,580 |
+| Engine test lines | 23,217 | 24,582 |
 | orc test lines | 1,387 | 3,008 |
 | Engine exports | 93 | 72 |
 | Public methods of the run manager | 29 | 10 |
-| `workflow-manager.ts` lines | 4,076 | 2,216 |
-| `workflow.ts` lines | 3,618 | 2,716 |
+| `workflow-manager.ts` lines | 4,076 | 2,214 |
+| `workflow.ts` lines | 3,618 | 2,406 |
 | Tests: architecture, harnesses, engine, orc | 5, 59, 729, 44 | 6, 59, 866, 88 |
 
 The harnesses lines count the 2,400 lines of generated Codex types on both sides. The engine's
@@ -89,6 +89,12 @@ package, and passes.
   stop clears, and one builder makes what each execution of a run starts with.
 - **The step stop.** `orc stop --step` sends the worker each call that runs under the name, with
   its run or nested run and its call index. The worker matched labels before.
+- **The checkpoint call.** `checkpoint-call.ts` holds a `checkpoint()` question with its hash, its
+  checks and the format of its inputs. The run builds one object with the 15 things a question
+  needs from it, and `workflow.ts` went from 2,716 lines to 2,406. The agent step stays in the run,
+  since it needs about 40.
+- **A test that failed under load.** The wait step test made its file on a timer and failed when
+  the first check took over a second to start. Now the first check makes the file.
 
 [The engine README](../../packages/engine/README.md) describes the result.
 
@@ -102,25 +108,26 @@ goldens. No golden changed. Each commit on the branch passed `pnpm build`, `pnpm
 
 ### The real proofs
 
-`test/proofs/run.mjs` ran the eight proofs on the real programs at 52bdcc74, in two processes of
+`test/proofs/run.mjs` ran the eight proofs on the real programs at d3fa8a03, in two processes of
 four, and `test/proofs/compare.mjs` compared them with `test/proofs/baseline`. All eight
-completed. The comparison finds 33 differences, all of them in three proofs, and none of them from
+completed. The comparison finds 27 differences, all of them in three proofs, and none of them from
 this branch:
 
 - installed and shared differ as [the refactor's proof](refactor.md#the-real-proofs) explains.
-  The baseline dates from before the refactor.
-- ticket: the reviewer asked for changes in each round of the second ticket, so the ticket stopped
-  after 3 rounds, not approved and with no commit. Each round, the reviewer read the new diff,
-  found the fix correct and the tests passing, and asked for one more test case. The workflow, the
-  agents and the prompts are the same files. The number of rounds varies from run to run. An
-  earlier run on this branch, at efb641e1, approved the same ticket in round 3.
+  The baseline dates from before the refactor. Their differences are the same lines at 52bdcc74
+  and at d3fa8a03.
+- ticket: the reviewer asked for changes in round 2 of the second ticket and approved it in round
+  3, where the baseline approved it in round 2. The workflow, the agents and the prompts are the
+  same files, and the number of rounds varies from run to run. At 52bdcc74, the reviewer asked for
+  one more test case in each of the 3 rounds, so the ticket stopped not approved and with no
+  commit. At efb641e1, it approved in round 3.
 
 The emails proof also ran on its own after the question changes, and matches the baseline.
 Neither `~/.claude/settings.json` nor `~/.codex/config.toml` changed during the runs.
 
 ## Failure cases
 
-A script outside the repository ran five failure cases on the built orc at 52bdcc74, one at a
+A script outside the repository ran five failure cases on the built orc at d3fa8a03, one at a
 time, each with a scratch `ORC_HOME`. Three ran on the real Claude Code with haiku, and two on the
 fake. All five passed, 41 checks in all. Then all five ran on the fake Claude Code, and passed too.
 
@@ -142,7 +149,7 @@ fake. All five passed, 41 checks in all. Then all five ran on the fake Claude Co
 
 ## A clean install
 
-The branch at 52bdcc74 was cloned into a scratch folder, then `pnpm install --frozen-lockfile` and
+The branch at d3fa8a03 was cloned into a scratch folder, then `pnpm install --frozen-lockfile` and
 `pnpm build` ran with exit 0. Then:
 
 - `orc doctor` exits 0. It finds Claude Code 2.1.330 in `~/.local/bin` and Codex 0.169.0 in
@@ -282,8 +289,10 @@ These are choices for the owner, not bugs the branch left.
   upgrade.
 - The paused event and the manager's pause rule each have a case per pause reason. A module for
   the pause would hold both. It is worth it when a new pause reason is planned.
-- The steps of a run are closures inside `runWorkflow`, and code steps go through the agent path.
-  A module per step kind pays once a third kind comes, or once code steps need their own records.
+- The agent step is still a closure inside the run, and code steps go through its path. A module
+  for it would take about 40 inputs. Code steps could become a kind of their own once they get
+  their own records, which changes their hash for saved runs. A module per step kind pays once a
+  third kind comes.
 - Agents don't get `secrets.env`. Code steps and MCP servers do.
 - In a dry run, `ORC_PROJECT` names the real project folder, so a code step that writes there
   changes the project. The emails example reads its input through it.

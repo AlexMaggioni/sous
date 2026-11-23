@@ -105,7 +105,7 @@ does not, such as `createRun` for a run that needs no worker.
 | Path | What it holds |
 | --- | --- |
 | `src/runs/` | The orc home, run records, the worker, the inbox, schedules and the service. `run.ts` has one function per orc command. `rule.ts` decides what a run's state means. |
-| `src/workflow.ts`, `src/failed-attempt.ts` | Runs one workflow script in its realm: the globals, the journal and the limits. `failed-attempt.ts` says what a step does after an attempt fails: retry, pause the run, return null or throw. |
+| `src/workflow.ts`, `src/checkpoint-call.ts`, `src/failed-attempt.ts` | Runs one workflow script in its realm: the globals, the journal and the limits. `checkpoint-call.ts` asks one `checkpoint()` question and records its answer. `failed-attempt.ts` says what a step does after an attempt fails: retry, pause the run, return null or throw. |
 | `src/workflow-manager.ts` | One run's manager: resume, pause, the run's state and its events. |
 | `src/run-rows.ts` | A run's journal, its call rows and its resume seed. The manager hands it each row and saves what it returns. |
 | `src/resume-pairing.ts`, `src/resume-rows.ts`, `src/step-ledger.ts`, `src/resume-report.ts` | The resume: which recorded call a resumed call takes, the rows it pairs with, the ledger that serves each call its row and interrupts the calls still open when a run halts, and the report `orc show --json` prints. |
