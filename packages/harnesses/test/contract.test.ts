@@ -9,7 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createHarness } from "../src/index.js";
-import type { Account, Harness, HarnessFailure, HarnessId, Step, Usage } from "../src/index.js";
+import type { Account, Harness, HarnessFailure, HarnessId, HistoryEntry, Step, Usage } from "../src/index.js";
 
 const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../test/fakes");
 
@@ -42,6 +42,7 @@ const KITS: Kit[] = [
 
 /** One line of the fakes' request log. */
 interface LogLine {
+  argv: string[];
   sessionId: string;
   resume: boolean;
   schema: unknown;
@@ -49,7 +50,10 @@ interface LogLine {
   mcpServers: Array<{ name: string; transport: string }>;
   disallowedTools?: string[];
   disabledTools?: Record<string, string[]>;
-  /** Codex: the client's answer to the request the fake sent, as the client gave it. */
+  /** Codex: what the turn was started with. */
+  approvalPolicy?: string;
+  sandboxPolicy?: string;
+  /** The client's answer to the request the fake sent, as the client gave it. */
   approval?: unknown;
 }
 
@@ -263,6 +267,95 @@ for (const kit of KITS) {
     });
   });
 }
+
+const CLAUDE = KITS.find((kit) => kit.id === "claude")!;
+const CODEX = KITS.find((kit) => kit.id === "codex")!;
+
+describe("the claude adapter's permission mode", () => {
+  /** The flags a step with this mode starts the program with, of the two that carry it. */
+  const MODES: Array<{ title: string; mode: string | undefined; flags: string[]; note?: RegExp }> = [
+    { title: "passes the mode on to the program", mode: "plan", flags: ["--permission-mode=plan"] },
+    { title: "lets bypassPermissions skip the permission checks", mode: "bypassPermissions", flags: ["--permission-mode=bypassPermissions", "--allow-dangerously-skip-permissions"] },
+    { title: "names a mode it does not know and keeps the user's default", mode: "yolo", flags: [], note: /no permission mode yolo/ },
+    { title: "leaves the user's default when the step names no mode", mode: undefined, flags: [] },
+  ];
+  for (const row of MODES) {
+    test(row.title, async () => {
+      const c = newCase(CLAUDE);
+      const result = await c.harness.run(c.step({ prompt: "hello", ...(row.mode ? { mode: row.mode } : {}) }));
+      const got = c.lines()[0]!.argv.filter((arg) => arg.startsWith("--permission-mode") || arg === "--allow-dangerously-skip-permissions");
+      assert.deepEqual(got, row.flags);
+      if (row.note) assert.match(result.notes?.join("\n") ?? "", row.note);
+      else assert.equal(result.notes, undefined);
+    });
+  }
+});
+
+describe("the codex adapter's mode", () => {
+  const MODES: Array<{ title: string; mode: string; approvalPolicy: string; sandboxPolicy: string; note?: RegExp }> = [
+    { title: "runs a read-only step in the read-only sandbox", mode: "read-only", approvalPolicy: "on-request", sandboxPolicy: "readOnly" },
+    { title: "runs an agent-full-access step with no sandbox and no approvals", mode: "agent-full-access", approvalPolicy: "never", sandboxPolicy: "dangerFullAccess" },
+    { title: "names a mode it does not know and runs in agent mode", mode: "yolo", approvalPolicy: "on-request", sandboxPolicy: "workspaceWrite", note: /no mode yolo.*agent mode/ },
+  ];
+  for (const row of MODES) {
+    test(row.title, async () => {
+      const c = newCase(CODEX);
+      const result = await c.harness.run(c.step({ prompt: "hello", mode: row.mode }));
+      const line = c.lines()[0]!;
+      assert.deepEqual({ approvalPolicy: line.approvalPolicy, sandboxPolicy: line.sandboxPolicy }, { approvalPolicy: row.approvalPolicy, sandboxPolicy: row.sandboxPolicy });
+      if (row.note) assert.match(result.notes?.join("\n") ?? "", row.note);
+      else assert.equal(result.notes, undefined);
+    });
+  }
+});
+
+describe("the codex adapter's answers to requests in the middle of a turn", () => {
+  const DENIED_MESSAGE = "No one answers questions during a step. Ask the question in your answer instead.";
+  const ACCEPTED = { action: "accept", content: null, _meta: null };
+  const DECLINED = { action: "decline", content: null, _meta: null };
+  const GRANT = { decision: "accept" };
+  const REFUSE = { decision: "decline" };
+
+  /** The fake asks `ask`, the step has `tools`, and the adapter must answer `answer`. A refusal also says why in the history. */
+  const REQUESTS: Array<{ title: string; ask: string | object; tools?: Step["tools"]; answer: unknown; refused?: { tool: string; why: string } }> = [
+    { title: "runs a command no list refuses", ask: "git status", answer: GRANT },
+    { title: "declines a command the allow list leaves out", ask: "git push", tools: { allow: ["Read"] }, answer: REFUSE, refused: { tool: "Bash", why: "Bash is not on the step's allow list." } },
+    { title: "applies a file change no list refuses", ask: { kind: "fileChange" }, answer: GRANT },
+    { title: "declines a file change when Edit is on the deny list", ask: { kind: "fileChange" }, tools: { deny: ["Edit"] }, answer: REFUSE, refused: { tool: "Edit", why: "Edit is on the step's deny list (Edit)." } },
+    { title: "declines a file change when Write is on the deny list", ask: { kind: "fileChange" }, tools: { deny: ["Write"] }, answer: REFUSE, refused: { tool: "Edit", why: "Write is on the step's deny list (Write)." } },
+    { title: "grants a network right for the turn", ask: { kind: "permissions", network: { enabled: true } }, answer: { permissions: { network: { enabled: true } }, scope: "turn" } },
+    {
+      title: "grants file rights for the turn, since the lists act on the actions and not on the rights",
+      ask: { kind: "permissions", fileSystem: { read: ["/data"], write: ["/out"] } },
+      tools: { deny: ["Bash", "Edit"] },
+      answer: { permissions: { fileSystem: { read: ["/data"], write: ["/out"] } }, scope: "turn" },
+    },
+    { title: "grants nothing when the request asks for nothing", ask: { kind: "permissions" }, answer: { permissions: {}, scope: "turn" } },
+    { title: "runs an MCP tool no list refuses", ask: { kind: "mcp", server: "demo", tool: "lookup" }, answer: ACCEPTED },
+    {
+      title: "declines an MCP tool on the deny list, named from the tool the server runs",
+      ask: { kind: "mcp", server: "demo", tool: "secret" },
+      tools: { deny: ["mcp__demo__secret"] },
+      answer: DECLINED,
+      refused: { tool: "mcp__demo__secret", why: "mcp__demo__secret is on the step's deny list (mcp__demo__secret)." },
+    },
+    { title: "declines a question from an MCP server, since no one is there to answer", ask: { kind: "form" }, answer: DECLINED },
+    { title: "answers the model's own question with an error that tells it to ask in its answer", ask: { kind: "question" }, answer: { error: { code: -32000, message: DENIED_MESSAGE } } },
+  ];
+
+  for (const row of REQUESTS) {
+    test(row.title, async () => {
+      const c = newCase(CODEX);
+      c.rules([{ approval: row.ask }]);
+      const history: HistoryEntry[] = [];
+      await c.harness.run(c.step({ prompt: "ask first", ...(row.tools ? { tools: row.tools } : {}) }), { history: (entry) => history.push(entry) });
+      assert.deepEqual(c.lines()[0]?.approval, row.answer);
+      const declined = history.filter((entry) => entry.text.startsWith("Declined: ")).map(({ role, kind, text, toolName, isError }) => ({ role, kind, text, toolName, isError }));
+      const expected = row.refused ? [{ role: "tool", kind: "toolResult", text: `Declined: ${row.refused.why}`, toolName: row.refused.tool, isError: true }] : [];
+      assert.deepEqual(declined, expected);
+    });
+  }
+});
 
 describe("the login variables", () => {
   const claude = createHarness("claude", { env: {} });
