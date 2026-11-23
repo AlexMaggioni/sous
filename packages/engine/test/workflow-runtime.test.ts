@@ -340,57 +340,42 @@ test("runWorkflow falls back to an estimate when provider reports total === 0", 
   assert.equal(result.tokenUsage?.cost, 0);
 });
 
-test("agents default to the first declared phase when the script omits phase()", async () => {
-  // Regression for the "(no phase) has agents, declared phase 0/0" bug: a script
-  // that declares meta.phases but never calls phase() should still group its
-  // agents under the first declared phase, not an orphan "(no phase)" bucket.
-  const phases: Array<string | undefined> = [];
-  const noop = {
-    async run() {
-      return "ok";
-    },
-  };
-  await runWorkflow(
+// The phase an agent starts under. One script per row, and the phase that onAgentStart reports.
+const PHASE_ROWS: Array<[title: string, script: string, expected: Array<string | undefined>]> = [
+  [
+    "agents default to the first declared phase when the script omits phase()",
+    // Regression for the "(no phase) has agents, declared phase 0/0" bug: a script that declares
+    // meta.phases but never calls phase() should still group its agents under the first declared
+    // phase, not an orphan "(no phase)" bucket.
     `export const meta = { name: 'p', description: 'd', phases: [{ title: 'Research' }, { title: 'Synthesize' }] }
      await agent('a', { label: 'x' })
      return {}`,
-    { agent: noop, persistLogs: false, onAgentStart: (e) => phases.push(e.phase) },
-  );
-  assert.deepEqual(phases, ["Research"]);
-});
-
-test("explicit phase() overrides the default first phase", async () => {
-  const phases: Array<string | undefined> = [];
-  const noop = {
-    async run() {
-      return "ok";
-    },
-  };
-  await runWorkflow(
+    ["Research"],
+  ],
+  [
+    "explicit phase() overrides the default first phase",
     `export const meta = { name: 'p', description: 'd', phases: [{ title: 'A' }, { title: 'B' }] }
      phase('B')
      await agent('a', { label: 'x' })
      return {}`,
-    { agent: noop, persistLogs: false, onAgentStart: (e) => phases.push(e.phase) },
-  );
-  assert.deepEqual(phases, ["B"]);
-});
-
-test("no declared phases => agent phase stays undefined (no synthetic phase)", async () => {
-  const phases: Array<string | undefined> = [];
-  const noop = {
-    async run() {
-      return "ok";
-    },
-  };
-  await runWorkflow(
+    ["B"],
+  ],
+  [
+    "no declared phases => agent phase stays undefined (no synthetic phase)",
     `export const meta = { name: 'p', description: 'd' }
      await agent('a', { label: 'x' })
      return {}`,
-    { agent: noop, persistLogs: false, onAgentStart: (e) => phases.push(e.phase) },
-  );
-  assert.deepEqual(phases, [undefined]);
-});
+    [undefined],
+  ],
+];
+
+for (const [title, script, expected] of PHASE_ROWS) {
+  test(title, async () => {
+    const phases: Array<string | undefined> = [];
+    await runWorkflow(script, { agent: noopAgent, persistLogs: false, onAgentStart: (e) => phases.push(e.phase) });
+    assert.deepEqual(phases, expected);
+  });
+}
 
 test("runWorkflow routes models: explicit opts.model > phase model > host-pinned default", async () => {
   const seen: Array<string | undefined> = [];
