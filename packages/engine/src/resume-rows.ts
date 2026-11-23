@@ -45,11 +45,18 @@ function byScope<T extends { index: number; scope?: string }>(rows: readonly T[]
 }
 
 /**
- * One scope's own rows, by index. A journal row is a result while the call row at its index
- * returned it, or while its index has no call row. Any other call row is a failed row: the call
- * failed or stopped, or its result was never saved. A journal row under it is stale, since a
- * later call took its index. A replay that moved a row to another index took it from its old
- * index already, in the manager.
+ * Whether a journal row is a result. It is while the call row at its index returned it, or while
+ * its index has no call row: a run saved before call rows wrote it, and a resume replays it. Under
+ * any other call row it is stale, since a later call took its index.
+ */
+export function isResult(entry: JournalEntry, call: WorkflowCallRecord | undefined): boolean {
+  return call === undefined || (call.outcome === "result" && call.hash === entry.hash);
+}
+
+/**
+ * One scope's own rows, by index. A journal row that is a result gives a result row. Any other
+ * call row is a failed row: the call failed or stopped, or its result was never saved. A replay
+ * that moved a row to another index took it from its old index already, in the manager.
  */
 function ownRows(scope: string, journal: Map<number, JournalEntry>, calls: Map<number, WorkflowCallRecord>): ResumeRow[] {
   const rows: ResumeRow[] = [];
@@ -57,7 +64,7 @@ function ownRows(scope: string, journal: Map<number, JournalEntry>, calls: Map<n
   for (const index of indexes) {
     const entry = journal.get(index);
     const call = calls.get(index);
-    const result = entry !== undefined && (!call || (call.outcome === "result" && call.hash === entry.hash));
+    const result = entry !== undefined && isResult(entry, call);
     if (call && !result) {
       rows.push({
         index, kind: call.kind, hash: call.hash,
@@ -141,7 +148,7 @@ export function revisionSeed(input: {
     for (const call of [...calls.values()].sort((a, b) => a.index - b.index)) {
       const entry = journal.get(scope)?.get(call.index);
       if (call.outcome === "result") {
-        if (entry?.hash !== call.hash) continue;
+        if (entry === undefined || !isResult(entry, call)) continue;
         const candidate = cloneResumeCandidate(runId, { ...entry, scope }, { ...call, scope });
         if (candidate) candidates.push(candidate);
       } else {

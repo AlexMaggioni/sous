@@ -44,7 +44,7 @@ import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
 import { isNestedScope, isRunEnvironmentIdentity } from "./resume-identity.js";
-import { oldDataRows, resumeRows as buildResumeRows, revisionSeed, unusedSeed, type ResumeRows } from "./resume-rows.js";
+import { isResult, oldDataRows, resumeRows as buildResumeRows, revisionSeed, unusedSeed, type ResumeRows } from "./resume-rows.js";
 import {
   createRunPersistence,
   generateRunId,
@@ -2004,16 +2004,10 @@ export class WorkflowManager extends EventEmitter {
       const rootCalls = latestRows(managed.calls.filter((row) => row.scope === managed.runId));
       managed.calls = [...rootCalls, ...latestNestedRows(managed.calls, managed.runId)];
       const callAt = new Map(rootCalls.map((row) => [row.index, row] as const));
-      // A journal row stays while the call at its index returned it. A row with no call at its
-      // index stays too: it comes from a run saved before call rows, at a step this run did not
-      // reach yet, and a resume of this run replays it.
+      // A journal row stays while it is a result. A row with no call at its index is one: it comes
+      // from a run saved before call rows, at a step this run did not reach yet.
       managed.journal = latestRows(
-        managed.journal.filter((entry) => {
-          if (entry.scope !== managed.runId) return false;
-          const row = callAt.get(entry.index);
-          if (row === undefined) return true;
-          return row.outcome === "result" && entry.kind === row.kind && entry.hash === row.hash;
-        }),
+        managed.journal.filter((entry) => entry.scope === managed.runId && isResult(entry, callAt.get(entry.index))),
       );
       // The seed keeps the rows the run did not replay, for the run that resumes it.
       managed.resumeSeed = unusedSeed(managed.resumeSeed, managed.calls, managed.runId);
