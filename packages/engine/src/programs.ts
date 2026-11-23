@@ -7,6 +7,7 @@ import { createClaudeHarness, createCodexHarness, type FindOptions, type Harness
 import { CALLER, currentAccount, DEFAULT, stepAccount } from "./accounts.js";
 import { envFor, HARNESSES, harnessName, loginOf, routeHarness, type Harness } from "./agents.js";
 import type { HomePaths, OrcConfig } from "./runs/home.js";
+import { stepModel } from "./steps/steps.js";
 
 const ADAPTERS: Record<Harness, (lookup: FindOptions) => Adapter> = { claude: createClaudeHarness, codex: createCodexHarness };
 
@@ -85,7 +86,8 @@ export async function checkPrograms(paths: HomePaths, config: OrcConfig, options
       report.talkError = message(error);
     }
     if (!options.live || !report.talks || (asked && asked !== program)) continue;
-    const model = asked ? options.model!.split("/").slice(1).join("/") || undefined : undefined;
+    // The model as a step would take it: a bare name, such as haiku, runs on its own.
+    const model = stepModel(options.model);
     const live: NonNullable<ProgramReport["live"]> = { model: asked ? options.model! : `${program}/default` };
     try {
       const result = await adapter.run({ prompt: "Answer with the single word OK.", cwd, ...(account ? { account } : {}), ...(model ? { model } : {}), signal: AbortSignal.timeout(300_000) });
