@@ -96,116 +96,91 @@ const [b, c] = await parallel([() => agent('B', { label: 'b' }), () => agent('C'
 const d = await agent('D', { label: 'd' })
 return [a, b, c, d]`;
 
+const loop = (last: string) => `export const meta = { name: 'loop', description: 'a loop' }
+const out = []
+for (let i = 0; i < 3; i++) out.push(await agent('check', { label: 'check' }))
+out.push(await agent('${last}', { label: 'last' }))
+return out`;
+
 const asks = (a: string) => `export const meta = { name: 'asks', description: 'asks' }
 const a = await agent('${a}', { label: 'a' })
 const name = await checkpoint('Name it', { kind: 'input' })
 return await agent('Build ' + name, { label: 'build' })`;
 
-/** Pause `three` with C failed, edit it, and resume it with --latest. Returns the prompts of the resume. */
-async function latest(edited: string, before?: (paths: HomePaths, runId: string) => void) {
-  const { paths, projectDir } = setup({ three: three("A") });
+/** Pause the workflow with the prompt `fails` failing, apply the edits, and resume it as `orc resume` does.
+ *  Returns the prompts of the first run and of the resume. */
+async function resumed(options: {
+  workflows: Record<string, string>;
+  workflow: string;
+  fails: string;
+  edits?: Record<string, string>;
+  mode?: "latest" | "same";
+  before?: (paths: HomePaths, runId: string) => void;
+}) {
+  const { paths, projectDir } = setup(options.workflows);
   let broken = true;
-  const agent = fake((prompt) => (broken && prompt === "C" ? boom() : undefined));
-  const record = start(paths, projectDir, "three", agent);
+  const agent = fake((prompt) => (broken && prompt === options.fails ? boom() : undefined));
+  const record = start(paths, projectDir, options.workflow, agent);
   assert.equal((await agent.ended(record.runId))?.status, "paused");
-  before?.(paths, record.runId);
-  edit(projectDir, "three", edited);
+  const first = agent.since(0);
+  options.before?.(paths, record.runId);
+  for (const [name, script] of Object.entries(options.edits ?? {})) edit(projectDir, name, script);
   broken = false;
-  const done = await resume(paths, record.runId, agent, "latest");
+  const done = await resume(paths, record.runId, agent, options.mode);
   assert.equal(done?.status, "completed");
-  return { live: agent.since(3), done, state: readState(paths, record.runId)! };
+  return { first, live: agent.since(first.length), done, state: readState(paths, record.runId)! };
 }
 
+/** Pause `three` with C failed, edit it, and resume it with --latest. */
+const latest = (edited: string, before?: (paths: HomePaths, runId: string) => void) =>
+  resumed({ workflows: { three: three("A") }, workflow: "three", fails: "C", edits: { three: edited }, mode: "latest", before });
+
+const NESTED = { child: child("X"), parent: parent("A") };
+
+/** One row per case. A step fails, the workflow may change, and the run resumes in one mode.
+ *  `first` is what the first run called, `live` what the resume calls again. */
+const RESUMES: Array<{
+  title: string;
+  workflows: Record<string, string>;
+  workflow: string;
+  fails: string;
+  edits?: Record<string, string>;
+  mode?: "latest" | "same";
+  first: string[];
+  live: string[];
+  result?: unknown;
+}> = [
+  { title: "keeps a parallel sibling that finished after the failed step", workflows: { par: par() }, workflow: "par", fails: "B", first: ["A", "B", "C"], live: ["B", "D"] },
+  { title: "replays a loop of identical steps", workflows: { loop: loop("L") }, workflow: "loop", fails: "L", first: ["check", "check", "check", "L"], live: ["L"] },
+  { title: "replays the steps of a nested workflow", workflows: NESTED, workflow: "parent", fails: "C", first: ["A", "X", "Y", "C"], live: ["C"] },
+  {
+    title: "with --latest and only a nested step edited, runs the edited step and the failed one",
+    workflows: NESTED, workflow: "parent", fails: "C", edits: { child: child("X2") }, mode: "latest", first: ["A", "X", "Y", "C"], live: ["X2", "C"],
+  },
+  {
+    title: "with --latest and a root step edited, keeps the nested workflow's steps",
+    workflows: NESTED, workflow: "parent", fails: "C", edits: { parent: parent("A2") }, mode: "latest", first: ["A", "X", "Y", "C"], live: ["A2", "C"],
+  },
+  {
+    title: "without --latest, goes on with the version the run started with",
+    workflows: { three: three("A") }, workflow: "three", fails: "C", edits: { three: three("A2") }, mode: "same", first: ["A", "B", "C"], live: ["C"],
+    result: ["A done", "B done", "C done"],
+  },
+  {
+    title: "with --latest and a comment-only edit, keeps a parallel sibling that finished after the failed step",
+    workflows: { par: par() }, workflow: "par", fails: "B", edits: { par: par("\n// a comment") }, mode: "latest", first: ["A", "B", "C"], live: ["B", "D"],
+  },
+];
+
 describe("resume", () => {
-  it("keeps a parallel sibling that finished after the failed step", async () => {
-    const { paths, projectDir } = setup({
-      par: `export const meta = { name: 'par', description: 'parallel' }
-const a = await agent('A', { label: 'a' })
-const [b, c] = await parallel([() => agent('B', { label: 'b' }), () => agent('C', { label: 'c' })])
-const d = await agent('D', { label: 'd' })
-return [a, b, c, d]`,
+  for (const { title, result, first, live, ...row } of RESUMES) {
+    it(title, async () => {
+      const resumedRun = await resumed(row);
+      assert.deepEqual(resumedRun.first, first);
+      assert.deepEqual(resumedRun.live, live);
+      if (result !== undefined) assert.deepEqual(JSON.parse(JSON.stringify(resumedRun.done?.result)), result);
     });
-    let broken = true;
-    const agent = fake((prompt) => (broken && prompt === "B" ? boom() : undefined));
-    const record = start(paths, projectDir, "par", agent);
-    assert.equal((await agent.ended(record.runId))?.status, "paused");
-    assert.deepEqual(agent.since(0), ["A", "B", "C"]);
-    broken = false;
-    const done = await resume(paths, record.runId, agent);
-    assert.equal(done?.status, "completed");
-    assert.deepEqual(agent.since(3), ["B", "D"]);
-  });
-
-  it("replays a loop of identical steps", async () => {
-    const { paths, projectDir } = setup({
-      loop: `export const meta = { name: 'loop', description: 'a loop' }
-const out = []
-for (let i = 0; i < 3; i++) out.push(await agent('check', { label: 'check' }))
-out.push(await agent('L', { label: 'last' }))
-return out`,
-    });
-    let broken = true;
-    const agent = fake((prompt) => (broken && prompt === "L" ? boom() : undefined));
-    const record = start(paths, projectDir, "loop", agent);
-    await agent.ended(record.runId);
-    broken = false;
-    const done = await resume(paths, record.runId, agent);
-    assert.equal(done?.status, "completed");
-    assert.deepEqual(agent.since(4), ["L"]);
-  });
-
-  it("replays the steps of a nested workflow", async () => {
-    const { paths, projectDir } = setup({ child: child("X"), parent: parent("A") });
-    let broken = true;
-    const agent = fake((prompt) => (broken && prompt === "C" ? boom() : undefined));
-    const record = start(paths, projectDir, "parent", agent);
-    await agent.ended(record.runId);
-    assert.deepEqual(agent.since(0), ["A", "X", "Y", "C"]);
-    broken = false;
-    const done = await resume(paths, record.runId, agent);
-    assert.equal(done?.status, "completed");
-    assert.deepEqual(agent.since(4), ["C"]);
-  });
-
-  it("with --latest and only a nested step edited, runs the edited step and the failed one", async () => {
-    const { paths, projectDir } = setup({ child: child("X"), parent: parent("A") });
-    let broken = true;
-    const agent = fake((prompt) => (broken && prompt === "C" ? boom() : undefined));
-    const record = start(paths, projectDir, "parent", agent);
-    await agent.ended(record.runId);
-    edit(projectDir, "child", child("X2"));
-    broken = false;
-    const done = await resume(paths, record.runId, agent, "latest");
-    assert.equal(done?.status, "completed");
-    assert.deepEqual(agent.since(4), ["X2", "C"]);
-  });
-
-  it("with --latest and a root step edited, keeps the nested workflow's steps", async () => {
-    const { paths, projectDir } = setup({ child: child("X"), parent: parent("A") });
-    let broken = true;
-    const agent = fake((prompt) => (broken && prompt === "C" ? boom() : undefined));
-    const record = start(paths, projectDir, "parent", agent);
-    await agent.ended(record.runId);
-    edit(projectDir, "parent", parent("A2"));
-    broken = false;
-    const done = await resume(paths, record.runId, agent, "latest");
-    assert.equal(done?.status, "completed");
-    assert.deepEqual(agent.since(4), ["A2", "C"]);
-  });
-
-  it("without --latest, goes on with the version the run started with", async () => {
-    const { paths, projectDir } = setup({ three: three("A") });
-    let broken = true;
-    const agent = fake((prompt) => (broken && prompt === "C" ? boom() : undefined));
-    const record = start(paths, projectDir, "three", agent);
-    await agent.ended(record.runId);
-    edit(projectDir, "three", three("A2"));
-    broken = false;
-    const done = await resume(paths, record.runId, agent, "same");
-    assert.equal(done?.status, "completed");
-    assert.deepEqual(agent.since(3), ["C"]);
-    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["A done", "B done", "C done"]);
-  });
+  }
 
   it("replays an answered question, and asks no new one", async () => {
     const { paths, projectDir } = setup({
@@ -327,19 +302,6 @@ return await agent('Build ' + name, { label: 'build' })`,
     const inserted = three("A").replace("const a =", "const z = await agent('Z', { label: 'z' })\nconst a =");
     const { live } = await latest(inserted);
     assert.deepEqual(live, ["Z", "C"]);
-  });
-
-  it("with --latest and a comment-only edit, keeps a parallel sibling that finished after the failed step", async () => {
-    const { paths, projectDir } = setup({ par: par() });
-    let broken = true;
-    const agent = fake((prompt) => (broken && prompt === "B" ? boom() : undefined));
-    const record = start(paths, projectDir, "par", agent);
-    assert.equal((await agent.ended(record.runId))?.status, "paused");
-    edit(projectDir, "par", par("\n// a comment"));
-    broken = false;
-    const done = await resume(paths, record.runId, agent, "latest");
-    assert.equal(done?.status, "completed");
-    assert.deepEqual(agent.since(3), ["B", "D"]);
   });
 
   it("with --latest, replays a question answered after the edited step", async () => {
