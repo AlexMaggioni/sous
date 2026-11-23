@@ -47,21 +47,6 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve };
 }
 
-function resultRow(overrides: Partial<WorkflowCallRecord> = {}): WorkflowCallRecord {
-  return {
-    index: 0,
-    kind: "agent",
-    hash: "a".repeat(64),
-    outcome: "result",
-    origin: "runner",
-    scope: "source",
-    ...overrides,
-  };
-}
-
-describe("resume authoring declaration and safety recording", () => {
-});
-
 describe("checkpoint input recording and byte compatibility", () => {
   it("captures option getters once and records fingerprints on resolved and waiting checkpoints", async () => {
     let seenOptions: unknown;
