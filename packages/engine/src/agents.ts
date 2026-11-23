@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import { createHarness, type Account } from "@orchestrator/harnesses";
 import type { McpServerConfig } from "./steps/mcp-config.js";
-import { parseDurationSeconds } from "./orchestrator-globals.js";
+import { parseDurationSeconds } from "./duration.js";
 import type { StepAsk, StepRoute } from "./steps/agent-runner.js";
 import { loadConfig, type HomePaths, type OrcConfig } from "./runs/home.js";
 import { parse as parseToml } from "smol-toml";

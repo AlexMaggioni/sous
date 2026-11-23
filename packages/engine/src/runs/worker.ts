@@ -6,7 +6,7 @@ import { readFileSync, existsSync } from "node:fs";
 import type { WorkflowRunResult } from "../workflow-result.js";
 import { limitNotice, runAccounts } from "../accounts.js";
 import { envFor, lookupAgents, lookupMcpServers, lookupSettings } from "../agents.js";
-import { parseDurationSeconds } from "../orchestrator-globals.js";
+import { parseDurationSeconds } from "../duration.js";
 import { openWorkflowDir } from "../workflows/dir.js";
 import type { CheckpointCallContext } from "../workflow.js";
 import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";

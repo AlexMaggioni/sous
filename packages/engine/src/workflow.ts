@@ -70,9 +70,9 @@ import { parseWorkflowScript } from "./workflows/script.js";
 import {
   createOrchestratorGlobals,
   DEFAULT_MAX_NESTING_DEPTH,
-  parseDurationSeconds,
   type CodeStepOptions,
 } from "./orchestrator-globals.js";
+import { parseDurationSeconds } from "./duration.js";
 import { EXEC_MODEL, EXEC_RESULT_SCHEMA, runCodeStep, type CodeStepEnv, type ExecSpec } from "./code-steps.js";
 
 // WorkflowMeta / WorkflowMetaPhase / JournalEntry / WorkflowRunResult are the

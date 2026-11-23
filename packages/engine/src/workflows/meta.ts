@@ -16,7 +16,7 @@
 // `orc run ticket --ticket "Add a --json flag"` turns the flags into the run's args.
 // workflowExtras reads these fields from the parsed meta once, into a typed WorkflowExtras.
 
-import { parseDurationSeconds } from "../orchestrator-globals.js";
+import { parseDurationSeconds } from "../duration.js";
 import { isPlace } from "../places/places.js";
 import type { Place } from "../runs/home.js";
 import { parseCron } from "../runs/cron.js";

@@ -8,7 +8,6 @@ import type { TSchema } from "typebox";
 import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner, StepAsk, StepRoute } from "../src/steps/agent-runner.js";
 import type { JournalEntry } from "../src/workflow-result.js";
-import { parseDurationSeconds } from "../src/orchestrator-globals.js";
 import { runWorkflow } from "../src/workflow.js";
 import { createSteps } from "../src/steps/steps.js";
 import { homePaths } from "../src/runs/home.js";
@@ -478,18 +477,6 @@ return { given, missing, wrong, unknown, plain }`;
       unknown: 'workflow("child"): unknown input --colour. This workflow takes: --task, --rounds, --test',
       plain: "as is",
     });
-  });
-});
-
-describe("parseDurationSeconds", () => {
-  it("reads numbers and units", () => {
-    assert.equal(parseDurationSeconds(90), 90);
-    assert.equal(parseDurationSeconds("90s"), 90);
-    assert.equal(parseDurationSeconds("10m"), 600);
-    assert.equal(parseDurationSeconds("2h"), 7200);
-    assert.equal(parseDurationSeconds("500ms"), 0.5);
-    assert.equal(parseDurationSeconds("soon"), undefined);
-    assert.equal(parseDurationSeconds(-1), undefined);
   });
 });
 
