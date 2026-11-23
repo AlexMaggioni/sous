@@ -1,21 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { loadRecord, logFile, type HomePaths } from "@orchestrator/engine";
 import { fakeRunner, inProcess, testHome } from "@orchestrator/engine/testing";
 import { orc } from "./orc.js";
+import "./harness-home.js";
 
 // orc run, orc resume and orc rerun, through main, with a launcher that runs each worker in this
 // process. They start their workers the way they do for a user, with a fake runner for the steps.
 
-// The agent lookup reads the harnesses' home folders. These tests give it empty ones.
-const harnessHome = mkdtempSync(join(tmpdir(), "orc-harness-home-"));
-process.env.CLAUDE_CONFIG_DIR = join(harnessHome, ".claude");
-process.env.CODEX_HOME = join(harnessHome, ".codex");
-process.env.XDG_CONFIG_HOME = join(harnessHome, ".config");
-delete process.env.AGENTPRISM_DEFAULT_BACKEND;
 // orc run asks the environment who starts it. These runs start as from a user's terminal.
 for (const name of ["CLAUDECODE", "ORC_RUN_ID", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) delete process.env[name];
 

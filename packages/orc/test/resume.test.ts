@@ -1,22 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { rerunRun, resumeRun, runQuestions, startRun, type HomePaths, type RunRecord } from "@orchestrator/engine";
 import { fakeRunner, inProcess, plantState, readState, testHome, writeAnswer, WorkflowError, WorkflowErrorCode } from "@orchestrator/engine/testing";
 import { orc, waitFor } from "./orc.js";
+import "./harness-home.js";
 
 // Which steps run again when a run resumes. Each test pauses a run with a fake agent, resumes it
 // as `orc resume` does, and checks the prompts the fake gets on the resume. A failed step,
 // `orc stop --step` and the time limit each rerun only their step: runs.test.ts pins those three.
 
-// The agent lookup reads the harnesses' home folders. These tests give it empty ones.
-const harnessHome = mkdtempSync(join(tmpdir(), "orc-harness-home-"));
-process.env.CLAUDE_CONFIG_DIR = join(harnessHome, ".claude");
-process.env.CODEX_HOME = join(harnessHome, ".codex");
-process.env.XDG_CONFIG_HOME = join(harnessHome, ".config");
-delete process.env.AGENTPRISM_DEFAULT_BACKEND;
 
 const setup = (workflows: Record<string, string>) => testHome(workflows, { retries: 0 });
 
@@ -198,12 +192,7 @@ describe("resume", () => {
   }
 
   it("replays an answered question, and asks no new one", async () => {
-    const { paths, projectDir } = setup({
-      asks: `export const meta = { name: 'asks', description: 'asks' }
-const a = await agent('A', { label: 'a' })
-const name = await checkpoint('Name it', { kind: 'input' })
-return await agent('Build ' + name, { label: 'build' })`,
-    });
+    const { paths, projectDir } = setup({ asks: asks("A") });
     let broken = true;
     const agent = fake((prompt) => (broken && prompt.startsWith("Build") ? boom() : undefined));
     const record = start(paths, projectDir, "asks", agent);
@@ -225,12 +214,7 @@ return await agent('Build ' + name, { label: 'build' })`,
   });
 
   it("takes an answer given while the run waited, by the question's id", async () => {
-    const { paths, projectDir } = setup({
-      asks: `export const meta = { name: 'asks', description: 'asks' }
-const a = await agent('A', { label: 'a' })
-const name = await checkpoint('Name it', { kind: 'input' })
-return await agent('Build ' + name, { label: 'build' })`,
-    });
+    const { paths, projectDir } = setup({ asks: asks("A") });
     const agent = fake(undefined, true);
     const record = start(paths, projectDir, "asks", agent);
     const running = agent.ended(record.runId);

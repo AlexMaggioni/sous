@@ -8,14 +8,11 @@ import { ensureHome, homePaths, type HomePaths } from "@orchestrator/engine";
 import { readState, tick, workflowProjectPaths } from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
 import { capture, orc, waitFor } from "./orc.js";
+import "./harness-home.js";
 
 // orc's reads write nothing. The home below is planted with raw writes, the way the worker and
 // the engine leave it, so the test also shows that orc reads today's files.
 
-const harnessHome = mkdtempSync(join(tmpdir(), "orc-reads-harness-"));
-process.env.CLAUDE_CONFIG_DIR = join(harnessHome, ".claude");
-process.env.CODEX_HOME = join(harnessHome, ".codex");
-process.env.XDG_CONFIG_HOME = join(harnessHome, ".config");
 delete process.env.ORC_RUN_ID;
 delete process.env.CLAUDECODE;
 

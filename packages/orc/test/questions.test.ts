@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, it } from "node:test";
@@ -8,15 +7,11 @@ import { logFile, runQuestions, startRun, type HomePaths, type RunQuestion } fro
 import { inProcess, testHome, type InnerRunner } from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
 import { capture, orc, waitFor } from "./orc.js";
+import "./harness-home.js";
 
 // How orc shows a question, takes a reply and writes the answer, through its commands and the
 // prompt of `orc wait` in a terminal.
 
-const harnessHome = mkdtempSync(join(tmpdir(), "orc-harness-home-"));
-process.env.CLAUDE_CONFIG_DIR = join(harnessHome, ".claude");
-process.env.CODEX_HOME = join(harnessHome, ".codex");
-process.env.XDG_CONFIG_HOME = join(harnessHome, ".config");
-delete process.env.AGENTPRISM_DEFAULT_BACKEND;
 
 /** These workflows ask and run no agent. */
 const runner = { run: async () => "unused" } as unknown as InnerRunner;

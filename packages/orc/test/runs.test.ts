@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -39,15 +38,10 @@ import {
 } from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
 import { orc, waitFor } from "./orc.js";
+import "./harness-home.js";
 
 // Whole runs in this process, with a fake agent runner, the way `orc run` drives them.
 
-// The agent lookup reads the harnesses' home folders. These tests give it empty ones.
-const harnessHome = mkdtempSync(join(tmpdir(), "orc-harness-home-"));
-process.env.CLAUDE_CONFIG_DIR = join(harnessHome, ".claude");
-process.env.CODEX_HOME = join(harnessHome, ".codex");
-process.env.XDG_CONFIG_HOME = join(harnessHome, ".config");
-delete process.env.AGENTPRISM_DEFAULT_BACKEND;
 
 function write(file: string, content: string): void {
   mkdirSync(dirname(file), { recursive: true });
@@ -70,6 +64,9 @@ async function answerWhenAsked(paths: HomePaths, runId: string, reply: (prompt: 
 }
 
 const quiet = () => {};
+
+const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+const commit = (cwd: string, ...args: string[]) => git(cwd, "-c", "user.email=t@example.com", "-c", "user.name=t", ...args);
 
 describe("runs", () => {
   it("an agent asks a question, the answer comes through the inbox, and the same session goes on", async () => {
@@ -579,11 +576,10 @@ await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness 
 });
 
 describe("places and reruns", () => {
-  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   const gitProject = (workflows: Record<string, string>) => {
     const made = testHome(workflows, { defaultPlace: "worktree" });
     git(made.projectDir, "init", "-q", "-b", "main");
-    git(made.projectDir, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "start");
+    commit(made.projectDir, "commit", "-q", "--allow-empty", "-m", "start");
     return made;
   };
 
@@ -613,7 +609,7 @@ describe("places and reruns", () => {
     // removes a finished run's worktree once its branch is merged.
     const waiting = createRun(paths, { workflow: "look", projectDir, inputs: {} });
     git(writer.worktree!, "add", "new.txt");
-    git(writer.worktree!, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "work");
+    commit(writer.worktree!, "commit", "-q", "-m", "work");
     git(projectDir, "merge", "-q", writer.branch!);
     // orc gc prints the folders as git names them, so /var/... on macOS shows as /private/var/....
     const waitingLine = `kept ${realpathSync(waiting.worktree!)} (${waiting.branch}): its run has not finished\n`;
@@ -668,8 +664,6 @@ describe("places and reruns", () => {
 });
 
 describe("the run tree", () => {
-  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-  const commit = (cwd: string, ...args: string[]) => git(cwd, "-c", "user.email=t@example.com", "-c", "user.name=t", ...args);
 
   /** Run one orc command on this home, and keep what it prints. */
   async function orc(paths: HomePaths, ...args: string[]): Promise<{ code: number; out: string; err: string }> {
@@ -964,12 +958,11 @@ describe("service", () => {
 });
 
 describe("dry runs", () => {
-  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   const gitProject = (workflows: Record<string, string>) => {
     const made = testHome(workflows, { defaultPlace: "folder" });
     git(made.projectDir, "init", "-q", "-b", "main");
     git(made.projectDir, "add", "-A");
-    git(made.projectDir, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "start");
+    commit(made.projectDir, "commit", "-q", "-m", "start");
     return made;
   };
   const review = `export const meta = { name: 'review', description: 'loops with a reviewer', inputs: { rounds: { type: 'number', default: 3 } } }
