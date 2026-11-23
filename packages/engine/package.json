@@ -43,7 +43,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.test.json",
-    "test": "HOME=\"$(mktemp -d)\" tsx --test \"test/**/*.test.ts\"",
+    "test": "node ../../test/with-temp-home.mjs tsx --test \"test/**/*.test.ts\"",
     "prepublishOnly": "tsc -b"
   },
   "dependencies": {

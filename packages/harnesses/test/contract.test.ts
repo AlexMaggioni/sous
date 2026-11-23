@@ -13,8 +13,9 @@ import type { Account, Harness, HarnessFailure, HarnessId, HistoryEntry, Step, U
 
 const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../test/fakes");
 
-// The package script gives a temporary HOME. Run alone, the test makes one.
-if (!process.env.HOME || process.env.HOME === userInfo().homedir) process.env.HOME = mkdtempSync(join(tmpdir(), "harness-contract-home-"));
+// The package script gives a temporary HOME. Run alone, or on a HOME that does not exist, the test
+// makes one.
+if (!process.env.HOME || process.env.HOME === userInfo().homedir || !existsSync(process.env.HOME)) process.env.HOME = mkdtempSync(join(tmpdir(), "harness-contract-home-"));
 const ROOT = mkdtempSync(join(process.env.HOME, "contract-"));
 delete process.env.FAKE_VERSION;
 
