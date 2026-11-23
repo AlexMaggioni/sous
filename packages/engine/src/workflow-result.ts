@@ -378,7 +378,7 @@ export interface WorkflowReplayFirstNonReplay {
     | WorkflowResumeCallFailedReason
     | WorkflowResumeDisabledReason
     | WorkflowResumeFallbackReason;
-  /** Safe diagnostic naming the differing admission or operational value when known. */
+  /** A safe diagnostic that says why the call did not replay, when known. */
   detail?: string;
 }
 

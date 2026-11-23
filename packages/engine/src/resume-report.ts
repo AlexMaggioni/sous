@@ -31,7 +31,7 @@ export interface ResumingRun {
 
 /** A resumed run's report. Each decision replaces the decision of the same index. */
 export interface ResumeReporting {
-  /** Take the engine's decision for a call. Both parts are rebuilt. */
+  /** Take the engine's decision for a call, and rebuild both parts. */
   decide(decision: WorkflowResumeCallDecision): void;
   /** The calls decided so far, by index, with their counts. */
   report(): WorkflowResumeReport;
@@ -264,20 +264,8 @@ function buildReplayEligibility(
   let replayedPrefix = 0;
   while (byIndex.get(replayedPrefix)?.action === "replayed") replayedPrefix++;
   const firstDecision = decisions.find((decision) => decision.action !== "replayed");
-  const operationalDetail = plan.operationalChanges.map((change) => change.detail).join("; ");
   const firstNonReplay: WorkflowReplayFirstNonReplay | undefined = firstDecision
-    ? {
-        index: firstDecision.index,
-        action: firstDecision.action,
-        reason: firstDecision.reason,
-        ...(
-          operationalDetail.length > 0 &&
-          firstDecision.action === "live" &&
-          firstDecision.reason === "inputs-changed"
-            ? { detail: operationalDetail }
-            : {}
-        ),
-      }
+    ? { index: firstDecision.index, action: firstDecision.action, reason: firstDecision.reason }
     : plan.initialFirstNonReplay;
   const summary = {
     sourceRunId: plan.sourceRunId,

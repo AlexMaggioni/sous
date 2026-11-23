@@ -303,4 +303,18 @@ describe("what differs between the source run and this one", () => {
     }).eligibility();
     assert.deepEqual(unrecorded.operationalChanges, []);
   });
+
+  it("the operational changes never explain why a call ran live", () => {
+    // agentRetries and concurrency enter neither the call hash nor the input fingerprint, so they
+    // cannot be why a call's inputs changed.
+    const reporting = startResumeReport({
+      plan: OCCURRENCE,
+      source: source(),
+      run: run({ limits: { ...LIMITS, concurrency: 8 } }),
+      predictedReplayablePrefix: 3,
+    });
+    reporting.decide({ index: 0, kind: "agent", action: "live", reason: "inputs-changed" });
+    assert.equal(reporting.eligibility().operationalChanges.length, 1);
+    assert.deepEqual(reporting.eligibility().firstNonReplay, { index: 0, action: "live", reason: "inputs-changed" });
+  });
 });
