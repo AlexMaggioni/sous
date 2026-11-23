@@ -1,16 +1,14 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { loadRecord } from "@orchestrator/engine";
 import { createRun, testHome, updateRecord } from "@orchestrator/engine/testing";
 import { describe, it } from "node:test";
 import { orc } from "./orc.js";
+import { git } from "./helpers/git.js";
 
 // orc list: how many runs it shows, and the place column. The runs here never start, since the
 // list reads only their records.
 
 const ONE_STEP = `export const meta = { name: 'one', description: 'one step' }\nreturn await agent('go', { label: 'go' })`;
-
-const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
 /** The ids of the rows `orc list` prints, in order. */
 const rows = (out: string) => out.split("\n").filter((line) => /^\S+ +one /.test(line)).map((line) => line.split(" ")[0]!);

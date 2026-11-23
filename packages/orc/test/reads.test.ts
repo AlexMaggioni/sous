@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { appendFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -8,6 +7,7 @@ import { ensureHome, homePaths, type HomePaths } from "@orchestrator/engine";
 import { readState, tick, workflowProjectPaths } from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
 import { capture, orc, waitFor } from "./orc.js";
+import { deadPid } from "./helpers/process.js";
 
 // orc's reads write nothing. The home below is planted with raw writes, the way the worker and
 // the engine leave it, so the test also shows that orc reads today's files.
@@ -17,11 +17,6 @@ delete process.env.CLAUDECODE;
 
 function writeJson(file: string, value: unknown): void {
   writeFileSync(file, JSON.stringify(value, null, 2));
-}
-
-/** A pid that no process has now: a child that already ended. */
-function deadPid(): number {
-  return spawnSync(process.execPath, ["-e", ""]).pid!;
 }
 
 interface Planted {

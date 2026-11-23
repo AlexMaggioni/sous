@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
@@ -38,6 +37,7 @@ import {
 } from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
 import { orc, waitFor } from "./orc.js";
+import { git } from "./helpers/git.js";
 
 // Whole runs in this process, with a fake agent runner, the way `orc run` drives them.
 
@@ -64,7 +64,6 @@ async function answerWhenAsked(paths: HomePaths, runId: string, reply: (prompt: 
 
 const quiet = () => {};
 
-const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 const commit = (cwd: string, ...args: string[]) => git(cwd, "-c", "user.email=t@example.com", "-c", "user.name=t", ...args);
 
 describe("runs", () => {

@@ -1,19 +1,17 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { daemonLog, daemonPid, type HomePaths } from "@orchestrator/engine";
 import { processAlive, testHome } from "@orchestrator/engine/testing";
 import { cliFile } from "../src/cli.js";
 import { orc, waitFor } from "./orc.js";
+import { deadPid } from "./helpers/process.js";
 
 // orc daemon start, stop and status. The commands that need no process run in this process, on a
 // pid file that names a stand-in. One test starts the real service from the built orc.
 
 const plant = (paths: HomePaths, pid: number) => writeFileSync(paths.daemonPid, JSON.stringify({ pid, since: "2026-11-23T10:00:00.000Z" }));
-
-/** A pid that no process has now: a child that already ended. */
-const deadPid = () => spawnSync(process.execPath, ["-e", ""]).pid!;
 
 /** A process that does nothing until it gets a signal, and how it ended. */
 function standIn() {
