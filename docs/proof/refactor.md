@@ -131,7 +131,7 @@ plan. It found 12 candidates. Here is each candidate of the first review, agains
 | 4. One workflow definition | Closed | The cold review raises nothing about meta, check or the dry run. |
 | 5. A step is one typed thing | Partly closed | Code steps run in the engine. A step's own fields still travel in an untyped bag that the steps module casts back. |
 | 6. Places and nested runs | Closed | The cold review calls the places module deep and leaves it as it is. |
-| 7. Shrink the engine to what orc calls | Partly closed | Exports went from 281 to 93. WorkflowManager still has 30 public methods, of which production calls 10, and the old model-tier chain still runs before the step plan. |
+| 7. Shrink the engine to what orc calls | Partly closed | Exports went from 281 to 93. WorkflowManager still has 30 public methods, of which production calls 10. |
 
 The cold review also found work the plan did not cover, all inside the engine: one resume module,
 splitting `runWorkflow`, one place that folds run events into steps, and a few engine verbs with
@@ -191,7 +191,6 @@ These come from replacing the ACP layer in step 3.
   covers a configured server of another transport on the fake Codex only.
 - `--same` is not saved on the run record. A run resumed with `--same` that later waits at a usage
   limit is not resumed by the service while its file differs. The service says so once.
-- The engine still reads `~/.agentprism/workflows/model-tiers.json` when it exists, and still
-  knows the old `.agentprism/workflows/runs` and `saved` folders of a project, as before the
-  refactor.
+- The engine still knows the old `.agentprism/workflows/runs` and `saved` folders of a project,
+  as before the refactor.
 - On Codex, the adapter does not retry an interrupt. It waits 10 seconds, then closes the server.

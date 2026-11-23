@@ -306,8 +306,8 @@ export interface ExecOptions {
   /** Max concurrent agents for this execution. */
   concurrency?: number;
   /**
-   * Host-pinned model/backend for agent calls with no authored model, agentType model,
-   * tier, or phase/meta route. Persisted with the run and included in call identity.
+   * Host-pinned model/backend for agent calls with no authored model, agentType model or
+   * phase/meta route. Persisted with the run and included in call identity.
    */
   defaultModel?: string;
   /** Retry attempts after recoverable agent failures for this execution. */

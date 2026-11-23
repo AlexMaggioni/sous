@@ -86,67 +86,20 @@ return await agent('plain', { label: 'a' })`,
   assert.equal(instructions, undefined);
 });
 
-test("agent tier resolves to the configured model before phase routing", async () => {
+test("a tier is refused, also when the old tier file names a model for it", async () => {
   await withModelTiers({ small: "vendor/small-model" }, async () => {
-    const seen: Array<{ model?: string; tier?: string }> = [];
+    let calls = 0;
     const script = `export const meta = {
   name: 'tiered', description: 'tiered', phases: [{ title: 'A', model: 'phase/model' }]
 }
 phase('A')
 await agent('tier beats phase', { label: 'tiered', tier: 'small' })
-await agent('explicit beats tier', { label: 'explicit', tier: 'small', model: 'explicit/model' })
 return {}`;
 
-    await runWorkflow(script, {
-      agent: capturingRunner((options) =>
-        seen.push({ model: options.model as string | undefined, tier: options.tier as string | undefined }),
-      ),
-      persistLogs: false,
-    });
-
-    assert.deepEqual(seen[0], { model: "vendor/small-model", tier: "small" });
-    assert.deepEqual(seen[1], { model: "explicit/model", tier: "small" });
-  });
-});
-
-test("a tier missing from the config leaves the model undefined and passes the raw tier", async () => {
-  await withModelTiers({ medium: "vendor/medium-model" }, async () => {
-    const seen: Array<{ model?: string; tier?: string }> = [];
-    await runWorkflow(
-      `export const meta = { name: 'tier-missing', description: 'tier missing from config' }
-return await agent('work', { label: 'a', tier: 'small' })`,
-      {
-        agent: capturingRunner((options) =>
-          seen.push({ model: options.model as string | undefined, tier: options.tier as string | undefined }),
-        ),
-        persistLogs: false,
-      },
+    await assert.rejects(
+      runWorkflow(script, { agent: capturingRunner(() => calls++), persistLogs: false }),
+      { message: 'tier is gone. Set the model with model, such as "claude/haiku", or name an agent with agentType.' },
     );
-
-    assert.deepEqual(seen, [{ model: undefined, tier: "small" }]);
-  });
-});
-
-test("model tier config is loaded once per workflow run", async () => {
-  await withModelTiers({ small: "vendor/initial-small" }, async (configPath) => {
-    const seen: Array<string | undefined> = [];
-    let calls = 0;
-    const script = `export const meta = { name: 'tier-once', description: 'tier config snapshot' }
-await agent('first', { label: 'a', tier: 'small' })
-await agent('second', { label: 'b', tier: 'small' })
-return {}`;
-
-    await runWorkflow(script, {
-      agent: capturingRunner((options) => {
-        calls++;
-        seen.push(options.model as string | undefined);
-        if (calls === 1) {
-          writeFileSync(configPath, JSON.stringify({ tiers: { small: "vendor/changed-small" } }), "utf-8");
-        }
-      }),
-      persistLogs: false,
-    });
-
-    assert.deepEqual(seen, ["vendor/initial-small", "vendor/initial-small"]);
+    assert.equal(calls, 0, "a step with a tier never reaches the runner");
   });
 });

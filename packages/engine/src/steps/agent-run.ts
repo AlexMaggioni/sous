@@ -182,8 +182,6 @@ export interface StepRequest<S extends TSchema | undefined = TSchema | undefined
    *  or a harness alone), for runners with no route() of their own. Omitted => the harness
    *  default. */
   model?: string;
-  /** Coarse tier ("small" | "medium" | "big"). No runner reads it. */
-  tier?: string;
 }
 
 /** What a test's or the dry run's runner gets once the steps module has planned the step. It

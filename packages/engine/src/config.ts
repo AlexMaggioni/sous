@@ -16,6 +16,3 @@ export const WORKFLOW_RUNS_DIR = ".agentprism/workflows/runs";
 
 /** Legacy project-relative directory for saved workflow commands. New writes use workflowProjectPaths(). */
 export const WORKFLOW_SAVED_DIR = ".agentprism/workflows/saved";
-
-/** User-level model tiers config file, relative to the home directory. */
-export const MODEL_TIERS_FILE = ".agentprism/workflows/model-tiers.json";

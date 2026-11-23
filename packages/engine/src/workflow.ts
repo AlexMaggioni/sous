@@ -41,7 +41,6 @@ import {
 } from "./errors.js";
 import { createWorkflowLogger } from "./runs/persistence/logger.js";
 import { parseModelRoutingFromMeta, resolveModelForPhase } from "./model-routing.js";
-import { loadModelTierConfig, resolveTierModel } from "./model-tier-config.js";
 import { projectRecordedError } from "./recorded-error.js";
 import { registerRunTripwire } from "./rejection-tripwire.js";
 import type { PreparedContinuation, PreparedResume } from "./resume.js";
@@ -104,7 +103,7 @@ export interface WorkflowAgentOptions {
   /** Extra system guidance prepended to every subagent task. */
   instructions?: string;
   /**
-   * Host-pinned model/backend for calls that author no model, agentType model, tier, or
+   * Host-pinned model/backend for calls that author no model and have no agentType model or
    * phase/meta route. Unlike a runner's ambient default, this participates in the call
    * identity hash and therefore stays deterministic throughout the run and its nested workflows.
    */
@@ -347,7 +346,6 @@ const AGENT_OPTION_KEYS = [
   "model",
   "mode",
   "configOptions",
-  "tier",
   "isolation",
   "resume",
   "agentType",
@@ -389,13 +387,6 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    * in ascending option-id order, so old journals keep replaying.
    */
   configOptions?: Record<string, string | boolean>;
-  /**
-   * Coarse model tier ("small" | "medium" | "big"), resolved from the user's
-   * model-tiers config. An explicit `model` takes precedence; a tier takes
-   * precedence over the phase model. When the tier has no configured entry it
-   * falls back to the session's main model.
-   */
-  tier?: string;
   isolation?: "worktree";
   /** Legacy replay-safety assertion retained for source and journal compatibility.
    *  It is recorded as diagnostic provenance but does not enable, disable, or otherwise
@@ -612,9 +603,6 @@ export async function runWorkflow<T = unknown>(
   }
   // Per-phase model routing from meta.phases[].model, with meta.model as the default.
   const routingConfig = parseModelRoutingFromMeta(meta.phases, meta.model);
-  // Snapshot tier routing once per run. A missing/unparseable file preserves the
-  // historical runner-default behavior.
-  const modelTierConfig = loadModelTierConfig();
   const effectiveLimits = resolveWorkflowRunLimits(options);
   const {
     maxAgents,
@@ -1090,10 +1078,7 @@ export async function runWorkflow<T = unknown>(
     // The step as the engine knows it. The runner routes it, and the route gives the model the
     // step asked for, its agent's part of the call hash, its isolation and its agent's prompt.
     // Model order: the step's own model, its agent's, then the run's model for this step. The
-    // run's model is the phase's route, else meta.model, else the run's default. A tier takes the
-    // run's model's place with its configured model, or with none, and the raw tier goes on to
-    // the runner.
-    const tier = agentOptions.tier;
+    // run's model is the phase's route, else meta.model, else the run's default.
     const ask: StepAsk = {
       label: pendingLabel,
       agentType: agentOptions.agentType,
@@ -1103,9 +1088,7 @@ export async function runWorkflow<T = unknown>(
       mcp: agentOptions.mcp,
       timeout: agentOptions.timeout,
       isolation: agentOptions.isolation,
-      runModel: tier
-        ? (modelTierConfig ? resolveTierModel(tier, modelTierConfig) : undefined) || undefined
-        : resolveModelForPhase(assignedPhase, routingConfig) ?? options.defaultModel,
+      runModel: resolveModelForPhase(assignedPhase, routingConfig) ?? options.defaultModel,
     };
     // A code step, and a runner with no route of its own, get the engine's route, which has no agent.
     const route = !codeSpec && agentRunner.route ? agentRunner.route(ask) : unroutedStep(ask);
@@ -1356,7 +1339,7 @@ export async function runWorkflow<T = unknown>(
           callIndex,
           label,
           ...(assignedPhase === undefined ? {} : { phase: assignedPhase }),
-          requestedSpec: modelSpec ?? agentOptions.tier ?? "(default)",
+          requestedSpec: modelSpec ?? "(default)",
           ...(continuationCandidate?.sessionRef.backendId === undefined
             ? {}
             : { backendId: continuationCandidate.sessionRef.backendId }),
@@ -1530,7 +1513,6 @@ export async function runWorkflow<T = unknown>(
                   ),
                   model: modelSpec,
                   mode: effectiveMode,
-                  tier: agentOptions.tier,
                   route,
                   cwd: runCwd,
                   mcpServers: agentOptions.mcpServers,
@@ -2998,14 +2980,22 @@ function validateAgentOptions(
     if (prototype !== null && prototype !== Object.prototype && prototype !== realmObjectPrototype) {
       throw new Error("wrong prototype");
     }
-    const unknown = Reflect.ownKeys(options).filter(
-      (key): boolean => typeof key !== "string" || !AGENT_OPTION_KEY_SET.has(key),
-    );
-    if (unknown.length === 0) return;
     const labelDescriptor = Reflect.getOwnPropertyDescriptor(options, "label");
     const label = labelDescriptor && "value" in labelDescriptor && typeof labelDescriptor.value === "string"
       ? labelDescriptor.value.trim()
       : "";
+    // tier read a model table from AgentPrism's home folder, and dropped the run's model when set.
+    if (Reflect.getOwnPropertyDescriptor(options, "tier") !== undefined) {
+      throw new WorkflowError(
+        'tier is gone. Set the model with model, such as "claude/haiku", or name an agent with agentType.',
+        WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+        { recoverable: false, ...(label ? { agentLabel: label } : {}) },
+      );
+    }
+    const unknown = Reflect.ownKeys(options).filter(
+      (key): boolean => typeof key !== "string" || !AGENT_OPTION_KEY_SET.has(key),
+    );
+    if (unknown.length === 0) return;
     const rendered = unknown.map((key) => typeof key === "symbol" ? key.toString() : JSON.stringify(key)).join(", ");
     throw new WorkflowError(
       `agent${label ? ` ${JSON.stringify(label)}` : ""} options contain unknown ${unknown.length === 1 ? "key" : "keys"} ${rendered}; ` +
@@ -3113,7 +3103,9 @@ function hashAgentCall(
     // calls — an unconditional `mode: null` key would cache-miss every old journal.
     ...(mode !== undefined ? { mode } : {}),
     ...(configOptions ? { configOptions } : {}),
-    tier: options.tier ?? null,
+    // tier is gone, and a step that sets it is refused. The key stays, always null, so every
+    // call keeps the hash it had.
+    tier: null,
     phase: phase ?? null,
     agentType: options.agentType ?? null,
     // Resolved definition (tools/model/prompt) so editing an agent .md invalidates

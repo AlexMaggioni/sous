@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 // AgentUsage is part of the seam contract, which lives in src/steps/agent-run.ts.
 import type { AgentRunner } from "../src/steps/agent-runner.js";
@@ -385,7 +382,7 @@ test("meta.model is parsed and routes as the default model for agents", async ()
 await agent('x', { label: 'x' })
 return 1`;
   await runWorkflow(script, { agent: recorder, persistLogs: false });
-  assert.equal(seenModel, "meta/default-model", "an agent with no model/tier/phase route uses meta.model");
+  assert.equal(seenModel, "meta/default-model", "an agent with no model or phase route uses meta.model");
 });
 
 test("runWorkflow falls back to an estimate when provider reports total === 0", async () => {
@@ -481,46 +478,35 @@ test("runWorkflow routes models: explicit opts.model > phase model > host-pinned
   assert.deepEqual(seen, ["explicit-model", "phase-a-model", "host/default-backend"]);
 });
 
-test("runWorkflow plumbs opts.tier through to the agent with correct precedence", async () => {
-  // Regression guard: tier must reach WorkflowAgent.run() (it was previously
-  // dropped). Precedence: explicit model > tier > phase model.
-  const previousHome = process.env.HOME;
-  const emptyHome = mkdtempSync(join(tmpdir(), "orchestrator-empty-tier-home-"));
-  const seen: Array<{ model?: string; tier?: string }> = [];
+test("runWorkflow refuses opts.tier, with or without a model, and names model and agentType", async () => {
+  let calls = 0;
   const capturingAgent = {
-    async run(_prompt: string, options: { model?: string; tier?: string }) {
-      seen.push({ model: options.model, tier: options.tier });
+    async run() {
+      calls++;
       return "ok";
     },
   };
-
-  const script = `export const meta = {
+  for (const [label, options] of [["t", "{ label: 't', tier: 'small' }"], ["e", "{ label: 'e', tier: 'small', model: 'explicit-model' }"]]) {
+    const script = `export const meta = {
     name: 'tier_routing', description: 'tier routing',
     phases: [{ title: 'A', model: 'phase-a-model' }]
   }
   phase('A')
-  await agent('tier beats phase', { label: 't', tier: 'small' })
-  await agent('explicit beats tier', { label: 'e', tier: 'small', model: 'explicit-model' })
+  await agent('tier step', ${options})
   return {}`;
-
-  try {
-    process.env.HOME = emptyHome;
-    await runWorkflow(script, {
-      agent: capturingAgent,
-      defaultModel: "host/default-backend",
-      persistLogs: false,
-    });
-  } finally {
-    if (previousHome === undefined) delete process.env.HOME;
-    else process.env.HOME = previousHome;
-    rmSync(emptyHome, { recursive: true, force: true });
+    await assert.rejects(
+      runWorkflow(script, { agent: capturingAgent, defaultModel: "host/default-backend", persistLogs: false }),
+      (error: unknown) => {
+        assert.ok(error instanceof WorkflowError);
+        assert.equal(error.code, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR);
+        assert.equal(error.recoverable, false);
+        assert.equal(error.agentLabel, label);
+        assert.equal(error.message, 'tier is gone. Set the model with model, such as "claude/haiku", or name an agent with agentType.');
+        return true;
+      },
+    );
   }
-
-  // 1) tier set, no explicit model: model is left undefined so the tier (resolved
-  //    inside run()) wins over both the phase model and host-pinned default; tier is forwarded.
-  assert.deepEqual(seen[0], { model: undefined, tier: "small" });
-  // 2) explicit model + tier: explicit model is forwarded and still wins.
-  assert.deepEqual(seen[1], { model: "explicit-model", tier: "small" });
+  assert.equal(calls, 0, "a step with a tier never reaches the runner");
 });
 
 test("runWorkflow threads the engine runId into the agent run options (correlation id)", async () => {

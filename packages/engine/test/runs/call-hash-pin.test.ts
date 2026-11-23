@@ -163,7 +163,7 @@ return 'done'`,
     assert.deepEqual([by("meta model").model, by("phase route").model], ["claude/sonnet", "codex/gpt-phase"]);
   });
 
-  it("keeps its bytes for a step with a tier", async () => {
+  it("refuses a step with a tier, so no call keeps a hash for it", async () => {
     const run = await runOne(
       "tiered",
       `export const meta = { name: 'tiered', description: 'a tier' }
@@ -171,11 +171,10 @@ await agent('Tier step', { label: 'tier', tier: 'small' })
 return 'done'`,
       { defaultModel: "codex/gpt-run" },
     );
-    assert.equal(run.result?.status, "completed");
-    assert.deepEqual(pins(run.paths, run.projectDir, run.record.runId), {
-      tier: { hash: "eb973014bc738e9e4b73e0960b8ae57e88288a5dc00cdd95af566150a02b9cf0", model: null, inputs: "675cfda55702306e7fd0382e3b903ba4bb70e32a883da26d30b48c24602dc815" },
-    });
-    // A tier drops the run's model, so the step runs on the harness's own default.
-    assert.equal(run.seen[0]!.model, undefined);
+    // tier is gone. The hash still holds "tier": null, so the pins above keep their bytes.
+    assert.equal(run.result?.status, "failed");
+    assert.equal(run.result?.reason, 'tier is gone. Set the model with model, such as "claude/haiku", or name an agent with agentType.');
+    assert.deepEqual(pins(run.paths, run.projectDir, run.record.runId), {});
+    assert.equal(run.seen.length, 0, "a step with a tier never reaches the runner");
   });
 });

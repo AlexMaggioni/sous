@@ -12,8 +12,8 @@ import { runWorkflow } from "../src/workflow.js";
 // contract is "replay a cached result iff cached.hash === hash", so this hash is the
 // load-bearing resume key: it MUST be byte-stable for a fixed call identity and MUST
 // change when any identity input (prompt / model / mode-when-set / configOptions-when-non-empty /
-// tier / phase / agentType / agentDef / schema) changes. These tests pin that through the
-// observable journal.
+// phase / agentType / agentDef / schema) changes. tier stays in the identity as a constant null,
+// so old journals keep their keys. These tests pin that through the observable journal.
 
 const echo = {
   async run(prompt: string) {
@@ -175,17 +175,12 @@ return { a, b }`;
     assert.notEqual(before[1].hash, after[1].hash, "index 1 (changed prompt) gets a different hash");
   });
 
-  it("folds tier into the identity (tier change => different hash, same prompt/index)", async () => {
-    const noTier = `export const meta = { name: 'h3', description: 'hash' }
-const a = await agent('same', { label: 'a' })
-return a`;
+  it("refuses a tier, so no call journals one", async () => {
     const withTier = `export const meta = { name: 'h3', description: 'hash' }
 const a = await agent('same', { label: 'a', tier: 'small' })
 return a`;
 
-    const [plain] = await journalOf(noTier);
-    const [tiered] = await journalOf(withTier);
-    assert.notEqual(plain.hash, tiered.hash, "adding a tier changes the resume key even for an identical prompt");
+    await assert.rejects(journalOf(withTier), { message: 'tier is gone. Set the model with model, such as "claude/haiku", or name an agent with agentType.' });
   });
 
   it("folds mode into the identity (mode change => different hash, same prompt/index)", async () => {

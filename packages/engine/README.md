@@ -107,7 +107,7 @@ durationMs / runId / tokenUsage / resolved `effectiveLimits` / optional `agentSe
 Inside a workflow body these are available as globals (no imports):
 
 - `agent(prompt, opts?)` — run one subagent. `opts` includes `label`, `phase`, `schema`
-  (typebox → validated object), `model`, `mode`, `tier`, `agentType`,
+  (typebox → validated object), `model`, `mode`, `agentType`,
   `isolation: "worktree"`, legacy replay-neutral `resume: { filesystem: "read-only" }`, `cwd`, `mcpServers`, `images`, `meta`, `promptMeta`,
   `keepSession`, `retries`. The single call into your `AgentRunner`.
 - `parallel([() => agent(...), ...])` — run thunks concurrently (bounded by the run's
@@ -330,9 +330,6 @@ From `@orchestrator/engine` (see `src/index.ts`):
   `isProviderUsageLimit`, `isAuthRequired`, `isAbortError`, `isTimeoutError`,
   `ProviderUsageLimitContext`, `AuthErrorContext`, and `CheckpointContext`.
 - **Config caps** — `MAX_AGENTS_PER_RUN`, `MAX_CONCURRENCY`, `MAX_AGENT_RETRIES`.
-- **Model routing / tiers** — `parseModelRoutingFromMeta`, `resolveModelForPhase`,
-  `buildDefaultTierConfig`, `loadModelTierConfig`, `saveModelTierConfig`,
-  `resolveTierModel`, `sortedTierNames`, `getModelTierConfigPath`.
 - **Worktree isolation** — `createWorktree`, `removeWorktree`, type `Worktree`.
 - **Display / snapshots** — `preview`, `renderWorkflowText`, `renderWorkflowLines`,
   `createWorkflowSnapshot`, `recomputeWorkflowSnapshot`, `statusIcon`, `shorten`.

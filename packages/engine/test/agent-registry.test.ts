@@ -68,7 +68,6 @@ describe("agentDefinitionKey", () => {
 function capturingAgent() {
   const seen: Array<{
     model?: string;
-    tier?: string;
     toolNames?: string[];
     disallowedToolNames?: string[];
     instructions?: string;
@@ -79,7 +78,6 @@ function capturingAgent() {
     async run(_prompt: string, options: Record<string, unknown>) {
       seen.push({
         model: options.model as string | undefined,
-        tier: options.tier as string | undefined,
         toolNames: options.toolNames as string[] | undefined,
         disallowedToolNames: options.disallowedToolNames as string[] | undefined,
         instructions: options.instructions as string | undefined,
@@ -156,13 +154,13 @@ return {}`;
     assert.equal(seen[0].model, "claude/auditor-model", "definition model wins over the run's model");
   });
 
-  it("agentType model beats a tier (model passed, tier still forwarded)", async () => {
+  it("refuses a tier, also with an agentType", async () => {
     const { seen, runner } = capturingAgent();
     const script = `export const meta = { name: 'at', description: 'agentType' }
 await agent('audit', { label: 'a', agentType: 'security-auditor', tier: 'small' })
 return {}`;
-    await runWorkflow(script, { agent: agentFiles({ "security-auditor": AUDITOR }).steps(runner), persistLogs: false });
-    assert.equal(seen[0].model, "claude/auditor-model", "definition model wins over tier");
+    await assert.rejects(runWorkflow(script, { agent: agentFiles({ "security-auditor": AUDITOR }).steps(runner), persistLogs: false }), { message: 'tier is gone. Set the model with model, such as "claude/haiku", or name an agent with agentType.' });
+    assert.equal(seen.length, 0, "a step with a tier never reaches the runner");
   });
 
   it("agentType isolation: worktree runs the agent in an isolated cwd", async () => {

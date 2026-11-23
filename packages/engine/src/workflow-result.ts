@@ -40,7 +40,7 @@ export interface WorkflowMeta {
   name: string;
   description: string;
   phases?: WorkflowMetaPhase[];
-  /** Default model for agents whose phase has no route and that set no model/tier. */
+  /** Default model for agents whose phase has no route and that set no model. */
   model?: string;
   /** Backends the script declares, by name. Checked for shape, never run. */
   backends?: Record<string, WorkflowBackendConfig>;
@@ -119,7 +119,7 @@ export interface WorkflowRunFallback {
   callIndex: number;
   label: string;
   phase?: string;
-  /** For continuation: the model/tier spec the engine asked the runner to serve on the continued
+  /** For continuation: the model spec the engine asked the runner to serve on the continued
    *  call (identical to the interrupted call's — the hash proves it). */
   requestedSpec: string;
   /** Actual backend that opened the session, when the runner reported one. */
@@ -183,7 +183,7 @@ export interface JournalEntry {
   /** Required on checkpoint results; absent/older provenance cannot authorize replay. */
   checkpointDecision?: "explicit-v1";
   index: number;
-  /** sha256 of the call identity (prompt + model + tier + phase + agentType + agentDef + schema). */
+  /** sha256 of the call identity (prompt + model + phase + agentType + agentDef + schema, and a tier that is always null). */
   hash: string;
   result: unknown;
   /** The call's session record, when one was opened live. ADDITIVE: absent on

@@ -37,30 +37,17 @@ return agent("mock-branch", { model: "opencode/provider/model" });`, {
   ]);
 });
 
-test("routing resolves tiers, phase defaults, and backend-only routes", async () => {
+test("routing resolves phase defaults and backend-only routes", async () => {
   const routes: Array<string | undefined> = [];
-  const previousHome = process.env.HOME;
-  const home = mkdtempSync(join(tmpdir(), "explicit-routing-home-"));
-  mkdirSync(join(home, ".agentprism", "workflows"), { recursive: true });
-  writeFileSync(join(home, ".agentprism", "workflows", "model-tiers.json"), JSON.stringify({ tiers: { small: "pi/provider/small" } }));
-  process.env.HOME = home;
-  try {
-    await runWorkflow(`export const meta = { name: "route-sources", description: "Effective route sources", model: "codex", phases: [{ title: "General" }, { title: "Review", model: "claude" }] };
+  await runWorkflow(`export const meta = { name: "route-sources", description: "Effective route sources", model: "codex", phases: [{ title: "General" }, { title: "Review", model: "claude" }] };
 await agent("workflow default");
-await agent("tier", { tier: "small" });
-await agent("tier fallback", { tier: "big" });
 phase("Review");
 await agent("phase");
 return agent("explicit", { model: "opencode" });`, {
-      agent: { async run(_prompt, options) { routes.push(options.model); return "ok"; } },
-      persistLogs: false,
-    });
-  } finally {
-    if (previousHome === undefined) delete process.env.HOME;
-    else process.env.HOME = previousHome;
-    rmSync(home, { recursive: true, force: true });
-  }
-  assert.deepEqual(routes, ["codex", "pi/provider/small", undefined, "claude", "opencode"]);
+    agent: { async run(_prompt, options) { routes.push(options.model); return "ok"; } },
+    persistLogs: false,
+  });
+  assert.deepEqual(routes, ["codex", "claude", "opencode"]);
 });
 
 test("routing through the steps module resolves definitions, phase defaults and explicit routes", async () => {
