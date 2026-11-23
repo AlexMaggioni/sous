@@ -399,7 +399,7 @@ test("legacy resume upgrades under lease and begins a new event stream at resume
   });
 });
 
-test("stale recovery reloads under lease and never saves the pre-lease listing copy", () => {
+test("listing a stale run reloads it under lease and never saves the pre-lease listing copy", () => {
   const runsDir = mkdtempSync(join(tmpdir(), "workflow-manager-recovery-"));
   try {
     const source = legacyState("stale-recovery", script(`return 1`));
@@ -433,7 +433,9 @@ test("stale recovery reloads under lease and never saves the pre-lease listing c
       },
     };
 
-    new WorkflowManager({ persistence, agent: { async run() { return "unused"; } } });
+    const manager = new WorkflowManager({ persistence, agent: { async run() { return "unused"; } } });
+    assert.equal(releases, 0, "construction takes no lease");
+    manager.listRuns();
     assert.deepEqual(saved, []);
     assert.equal(current.status, "completed");
     assert.equal(current.result, "won elsewhere");

@@ -60,9 +60,6 @@ function managerFor(paths: HomePaths, projectDir: string, extra: Partial<Constru
   const dirs = openWorkflowDir(workflowDirs(projectDir, paths));
   return new WorkflowManager({
     ...managerStore(paths),
-    // The manager leaves other runs' files alone. The pause rule names a run whose worker died,
-    // and a resume repairs its own run.
-    scanStaleRuns: false,
     defaultAgentRetries: loadConfig(paths).retries,
     loadSavedWorkflow: (name) => dirs.resolve(name),
     orchestrator: {

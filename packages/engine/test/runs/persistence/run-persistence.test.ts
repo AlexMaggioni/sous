@@ -1322,7 +1322,7 @@ test(
 );
 
 test(
-  "WorkflowManager reconciles a stale 'running' run to 'paused' on construction",
+  "WorkflowManager reconciles a stale 'running' run to 'paused' when it lists runs",
   withTempCwd(async (cwd) => {
     const rp = createRunPersistence(cwd);
     const state: PersistedRunState = {
@@ -1372,8 +1372,10 @@ test(
       }),
       "utf8",
     );
-    // A fresh manager (the previous process died) should recover the orphan.
-    new WorkflowManager({ cwd });
+    // A fresh manager (the previous process died) recovers the orphan when it lists runs.
+    const manager = new WorkflowManager({ cwd });
+    assert.equal(rp.load("stale")?.status, "running", "construction leaves saved runs alone");
+    manager.listRuns();
     const recovered = rp.load("stale");
     assert.equal(recovered?.status, "paused", "stale running -> paused (journal preserved for resume)");
     assert.equal(recovered?.pauseReason, "interrupted");
