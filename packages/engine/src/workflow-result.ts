@@ -225,8 +225,6 @@ export type WorkflowResumeCallLiveReason =
   | "ambiguous-content"
   | "candidate-consumed"
   | "empty-output"
-  | "safety-changed"
-  | "unsafe-suffix"
   | "worktree-degraded";
 
 export type WorkflowResumeCallFailedReason =
