@@ -34,6 +34,24 @@ export function recordFiles(paths: HomePaths): string[] {
     .map((name) => join(paths.records, name));
 }
 
+/** A question a run waits on. */
+export function questionFile(paths: HomePaths, id: string): string {
+  return join(paths.inbox, `${id}.json`);
+}
+
+/** The answer to a question, next to it. */
+export function answerFile(paths: HomePaths, id: string): string {
+  return join(paths.inbox, `${id}.answer.json`);
+}
+
+/** Every question file, answered or not, in the order the folder lists them. Answer files are left out. */
+export function questionFiles(paths: HomePaths): string[] {
+  if (!existsSync(paths.inbox)) return [];
+  return readdirSync(paths.inbox)
+    .filter((name) => name.endsWith(".json") && !name.endsWith(".answer.json"))
+    .map((name) => join(paths.inbox, name));
+}
+
 /** The run's worker log. The worker's output goes there. */
 export function logFile(paths: HomePaths, runId: string): string {
   return join(paths.logs, `${runId}.log`);

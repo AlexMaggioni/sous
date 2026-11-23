@@ -2,9 +2,9 @@
 // inbox/. The answer is a second file next to it. A question's id stays the same when the
 // run pauses and resumes, so an answer given while the run was paused is used on resume.
 
-import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import type { HomePaths } from "./home.js";
+import { answerFile, questionFile, questionFiles } from "./store.js";
 
 export interface Question {
   id: string;
@@ -48,25 +48,25 @@ function readJson<T>(file: string): T | undefined {
 }
 
 export function writeQuestion(paths: HomePaths, question: Question): void {
-  writeAtomic(join(paths.inbox, `${question.id}.json`), question);
+  writeAtomic(questionFile(paths, question.id), question);
 }
 
 export function readQuestion(paths: HomePaths, id: string): Question | undefined {
-  return readJson<Question>(join(paths.inbox, `${id}.json`));
+  return readJson<Question>(questionFile(paths, id));
 }
 
 export function readAnswer(paths: HomePaths, id: string): Answer | undefined {
-  return readJson<Answer>(join(paths.inbox, `${id}.answer.json`));
+  return readJson<Answer>(answerFile(paths, id));
 }
 
 export function writeAnswer(paths: HomePaths, question: Question, value: unknown): void {
-  writeAtomic(join(paths.inbox, `${question.id}.answer.json`), { hash: question.hash, value, answeredAt: new Date().toISOString() } satisfies Answer);
+  writeAtomic(answerFile(paths, question.id), { hash: question.hash, value, answeredAt: new Date().toISOString() } satisfies Answer);
 }
 
 export function removeQuestion(paths: HomePaths, id: string): void {
-  for (const name of [`${id}.json`, `${id}.answer.json`]) {
+  for (const file of [questionFile(paths, id), answerFile(paths, id)]) {
     try {
-      unlinkSync(join(paths.inbox, name));
+      unlinkSync(file);
     } catch {
       // already gone
     }
@@ -75,11 +75,9 @@ export function removeQuestion(paths: HomePaths, id: string): void {
 
 /** Open questions, oldest first, optionally for one run. Answered ones are left out. */
 export function listQuestions(paths: HomePaths, runId?: string): Question[] {
-  if (!existsSync(paths.inbox)) return [];
   const out: Question[] = [];
-  for (const name of readdirSync(paths.inbox)) {
-    if (!name.endsWith(".json") || name.endsWith(".answer.json")) continue;
-    const question = readJson<Question>(join(paths.inbox, name));
+  for (const file of questionFiles(paths)) {
+    const question = readJson<Question>(file);
     if (!question || (runId && question.runId !== runId)) continue;
     if (readAnswer(paths, question.id)?.hash === question.hash) continue;
     out.push(question);
