@@ -28,7 +28,8 @@ export interface CallToPair {
   inputsHash?: string;
 }
 
-export type Pairing<Row extends RecordedCall> =
+/** How a call pairs with the recorded rows. A source scope turns it into the step ledger's `Pairing`. */
+export type RowPairing<Row extends RecordedCall> =
   | { action: "replay"; row: Row }
   | { action: "live"; row?: Row };
 
@@ -48,7 +49,7 @@ export interface RecordedScope<Row extends RecordedCall> {
 }
 
 /** Pair calls one at a time, in the order the script makes them. */
-export function createPairing<Row extends RecordedCall>(scope: RecordedScope<Row>): (call: CallToPair) => Pairing<Row> {
+export function createPairing<Row extends RecordedCall>(scope: RecordedScope<Row>): (call: CallToPair) => RowPairing<Row> {
   if (scope.byIndex) {
     const byIndex = new Map(scope.rows.map((row) => [row.index, row] as const));
     return (call) => {
@@ -76,7 +77,7 @@ export function createPairing<Row extends RecordedCall>(scope: RecordedScope<Row
 }
 
 /** Pair a whole list of calls. */
-export function pairCalls<Row extends RecordedCall>(scope: RecordedScope<Row>, calls: readonly CallToPair[]): Pairing<Row>[] {
+export function pairCalls<Row extends RecordedCall>(scope: RecordedScope<Row>, calls: readonly CallToPair[]): RowPairing<Row>[] {
   const pair = createPairing(scope);
   return calls.map(pair);
 }

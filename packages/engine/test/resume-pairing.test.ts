@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { type CallToPair, pairCalls, type Pairing, type RecordedCall } from "../src/resume-pairing.js";
+import { type CallToPair, pairCalls, type RecordedCall, type RowPairing } from "../src/resume-pairing.js";
 
 // The pairing function on its own. Each case gives a scope's recorded calls and the calls a
 // resumed script makes, and checks what each call does: "replay <index>", "live" or
@@ -18,7 +18,7 @@ function call(index: number, hash: string, kind: Kind = "agent"): CallToPair {
   return { index, kind, hash, inputsHash: `${hash}-in` };
 }
 
-function show(pairings: Pairing<RecordedCall>[]): string[] {
+function show(pairings: RowPairing<RecordedCall>[]): string[] {
   return pairings.map((pairing) =>
     pairing.action === "replay" ? `replay ${pairing.row.index}` : pairing.row ? `live ${pairing.row.index}` : "live");
 }
