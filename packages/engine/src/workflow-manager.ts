@@ -1689,6 +1689,11 @@ export class WorkflowManager extends EventEmitter {
     };
   }
 
+  /**
+   * Saves the run's state, and goes on when the write fails. Use it where the run should keep
+   * going even when the disk does not take the save. It does nothing without a valid lease, and
+   * it logs a failed write.
+   */
   private persistRun(managed: ManagedRun) {
     if (!managed.lease || !this.persistence.validateRunLease(managed.lease)) return;
     try {
@@ -1698,6 +1703,12 @@ export class WorkflowManager extends EventEmitter {
     }
   }
 
+  /**
+   * Saves the run's state, or throws. Use it where the run must not go on unless the state is
+   * on disk: when a resumed run is admitted, at a root checkpoint, before a cancellation is
+   * acknowledged, and when a continuation starts. It throws PERSISTENCE_ERROR without a valid
+   * lease or when the write fails.
+   */
   private persistRunOrThrow(managed: ManagedRun): void {
     const leaseFailure = !managed.lease
       ? "the lease is missing"
