@@ -64,6 +64,15 @@ package, and passes.
 - **The run manager.** It runs one way, the way the worker sets it up: it always journals, and a
   failed or stopped step always pauses the run. Its options for other ways and the methods only
   tests called went.
+- **A run's rows.** `run-rows.ts` holds a run's journal, its call rows and its resume seed. One
+  rule says when a journal row holds a call's result, where three copies said it before.
+- **Places.** The workflow core gets a places object and knows nothing of the home or the run
+  record. `runs/` makes it with `runPlaces(paths, notes)`.
+- **The resume report.** `resume-report.ts` builds the report and the replay eligibility that
+  `orc show --json` prints. The manager hands it each decision the engine makes.
+- **Smaller fixes.** One reader for the home's JSON files, one interrupted reason, a check that
+  each pause reason has a row in the rule, and a run store interface with only what the manager
+  calls.
 
 [The engine README](../../packages/engine/README.md) describes the result.
 
@@ -113,6 +122,8 @@ Each change below has a test.
   the worker saves the record at the same moment. A stale request no longer stops a step of the
   same name after a resume.
 - `orc doctor --live --model haiku` runs haiku. It ran the default model.
+- The worker's last log line for a run that paused on a failed step says why the step failed, on
+  a start as on a resume. A start's line said only "(step_failed)".
 - The run's log gets a `note` line when a program could not do what a step asked, such as skills
   on Codex.
 - An MCP server of a type a step cannot start says "which a step cannot start". It named the old
@@ -150,9 +161,24 @@ Each change below has a test.
 
 - `orc list`, `show`, `wait`, `inbox`, `log` and `account list` write nothing. They used to save
   each dead run as paused.
-- While a run is live, `orc show --json` gives a step the same fields a saved step has.
+- While a run is live, `orc show --json` gives a step the prompt, the model, the usage, the error
+  code, the recoverable flag and the provenance a saved step has. Its result preview and its
+  session come once the state saves.
+- `orc show` lists the steps that finished before a worker was killed as done. It listed the steps
+  as the state last saved them, so a finished step could read as running.
 - `orc log -f` prints the "no run" error if the run's record is deleted within 400 ms after its
   worker ends.
+
+### The library
+
+These reach a program that calls the engine itself. orc's output does not change.
+
+- A reuse run that ends without an engine result, such as one stopped before its script ran, lists
+  its result's root call rows in the order they settled. A save sorted them by index first. This
+  one has no test, since orc reads no result's call rows.
+- A caller that passes no places object gets no home to make worktrees in. A step with
+  `isolation: "worktree"` works in the run's folder, and the log says why. A nested run can ask
+  only for place "folder".
 
 ## Still open
 
@@ -177,3 +203,8 @@ These are choices for the owner, not bugs the branch left.
 - In a dry run, `ORC_PROJECT` names the real project folder, so a code step that writes there
   changes the project. The emails example reads its input through it.
 - orc accepts `--priority` and never reads it.
+- `orc account use` writes the run's record from `accounts.ts`, not through `runs/`.
+- With no persistence root, the manager saves its state under `~/.orchestrator/engine`. orc always
+  passes one.
+- A nested run gets each option of its parent but the root's resume inputs, so a new option
+  reaches nested runs unless someone clears it there.

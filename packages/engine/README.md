@@ -107,10 +107,14 @@ does not, such as `createRun` for a run that needs no worker.
 | `src/runs/` | The orc home, run records, the worker, the inbox, schedules and the service. `run.ts` has one function per orc command. `rule.ts` decides what a run's state means. |
 | `src/workflow.ts` | Runs one workflow script in its realm: the globals, the journal and the limits. |
 | `src/workflow-manager.ts` | One run's manager: resume, pause, the run's state and its events. |
+| `src/run-rows.ts` | A run's journal, its call rows and its resume seed. The manager hands it each row and saves what it returns. |
+| `src/resume-pairing.ts`, `src/resume-rows.ts`, `src/step-ledger.ts`, `src/resume-report.ts` | The resume: which recorded call a resumed call takes, the rows it pairs with, the ledger that serves each call its row, and the report `orc show --json` prints. |
+| `src/run-events.ts`, `src/run-observability.ts`, `src/display.ts` | A run's events and what the event log saves of them. `display.ts` has the fold that turns step events into the step list. |
 | `src/steps/` | One agent step. `agent-runner.ts` is the seam the engine calls, and `steps.ts` runs the step on a harness. |
-| `src/places/` | Where a run works: a worktree, the project folder or a scratch folder. |
+| `src/places/` | Where a run works: a worktree, the project folder or a scratch folder. `runPlaces(paths, notes)` gives the workflow core the places of one run tree. |
 | `src/workflows/` | Saved workflows: the folders that hold them, the check and the dry run. |
 | `src/accounts.ts`, `src/agents.ts`, `src/programs.ts` | Accounts, the agent lookup and the installed programs. |
+| `src/json-file.ts` | The reads and writes of the home's JSON files. A write replaces a file whole. |
 
 ## License
 
