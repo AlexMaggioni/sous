@@ -216,6 +216,13 @@ const NEVER_REACH = [
     from: ["packages/engine/src/workflow.ts", "packages/engine/src/workflow-manager.ts", "packages/engine/src/places/"],
     never: ["packages/engine/src/runs/records.ts", "packages/engine/src/runs/home.ts"],
   },
+  {
+    // The core runs a workflow on what it is handed. It knows nothing of runs other than the
+    // persistence folder and the cron parser.
+    from: CORE,
+    never: ["packages/engine/src/runs/"],
+    except: ["packages/engine/src/runs/persistence/", "packages/engine/src/runs/cron.ts"],
+  },
   { from: RULE_MODULES, never: TOUCHES_MACHINE },
   {
     // The persistence folder writes what it is handed. It knows nothing of the rest of runs, of
@@ -424,7 +431,11 @@ const BREAKS = {
   imports: [],
   cycles: [],
   homes: [],
-  reach: [],
+  reach: [
+    "packages/engine/src/orchestrator-globals.ts imports packages/engine/src/runs/inbox.ts",
+    // Already there at bf2bf6a5. The plan missed it.
+    "packages/engine/src/steps/steps.ts reaches packages/engine/src/runs/home.ts through packages/engine/src/agents.ts",
+  ],
   exports: {},
   contract: [],
   tests: [],
@@ -670,9 +681,12 @@ function reachBreaks({ files }) {
         for (const target of runTimeImports(known.get(path), known)) {
           if (importer.has(target)) continue;
           importer.set(target, path);
-          if (!within(target, never) || within(target, except)) queue.push(target);
-          else if (path === start) found.add(`${start} imports ${target}`);
-          else found.add(`${start} reaches ${target} through ${path}`);
+          if (within(target, never) && !within(target, except)) {
+            found.add(path === start ? `${start} imports ${target}` : `${start} reaches ${target} through ${path}`);
+          } else if (!within(target, from)) {
+            // A file of `from` is a start of its own, so its breaks show once, under its name.
+            queue.push(target);
+          }
         }
       }
     }
