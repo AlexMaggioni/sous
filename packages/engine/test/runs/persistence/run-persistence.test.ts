@@ -248,42 +248,6 @@ test(
 );
 
 test(
-  "pre-contract run fixture loads, lists, and resumes with additive fields absent",
-  withTempCwd(async (cwd) => {
-    const persistenceRoot = mkdtempSync(join(tmpdir(), "ap-dw-old-fixture-"));
-    try {
-      const fixture = JSON.parse(
-        readFileSync(join(import.meta.dirname, "..", "..", "fixtures", "pre-contract-run.json"), "utf8"),
-      ) as PersistedRunState;
-      const persistence = createRunPersistence(cwd, undefined, { persistenceRoot });
-      persistence.save(fixture);
-      const loaded = persistence.load(fixture.runId);
-      assert.equal(loaded?.calls, undefined);
-      assert.equal(loaded?.limits, undefined);
-      assert.equal(loaded?.runtime, undefined);
-      assert.equal(loaded?.resume, undefined);
-      assert.equal(persistence.list().some((run) => run.runId === fixture.runId), true);
-
-      const manager = new WorkflowManager({
-        cwd,
-        persistenceRoot,
-        agent: { async run() { return "fresh"; } },
-      });
-      const resumed = await manager.resumeInBackground(fixture.runId);
-      assert.equal(resumed.accepted, true);
-      if (!resumed.accepted) assert.fail("old fixture remains resumable");
-      const result = await resumed.promise;
-      assert.equal(result.status, "completed");
-      assert.equal(result.result, "fresh");
-      assert.equal(persistence.load(fixture.runId)?.legacyResume, true);
-      assert.equal(persistence.load(fixture.runId)?.resume, undefined);
-    } finally {
-      rmSync(persistenceRoot, { recursive: true, force: true });
-    }
-  }),
-);
-
-test(
   "run persistence round-trips every PR3 run and agent field",
   withTempCwd(async (cwd) => {
     const persistence = createRunPersistence(cwd);

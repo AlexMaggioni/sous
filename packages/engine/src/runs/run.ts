@@ -13,6 +13,7 @@ import type { HomePaths, Place } from "./home.js";
 import { listQuestions, readQuestion, removeRunQuestions, reply, type Question, type Reply } from "./inbox.js";
 import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
 import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestStepStop, scopePrefix, updateRecord, type RunRecord } from "./records.js";
+import { olderSave } from "../older-save.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
 import { logFile, readEventsAfter, readState, readStates, removeDeletedRunMarkers, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
 import { currentWorkflows, stopColdRun } from "./worker.js";
@@ -73,7 +74,7 @@ function savedFacts(shown: PersistedRunState): SavedFacts {
 
 /** The view of one run. The rule counts the questions only while the worker runs. */
 function viewOf(record: RunRecord, state: PersistedRunState | undefined, questions: RunQuestion[], alive = processAlive(record.pid)): { view: RunView; shown: PersistedRunState | undefined } {
-  const verdict = judge({ state, alive, openQuestions: alive ? questions.length : 0 });
+  const verdict = judge({ state, alive, openQuestions: alive ? questions.length : 0, older: state !== undefined && olderSave(state) !== undefined });
   const shown = shownState(record, state, verdict);
   return { view: { runId: record.runId, record, ...verdict, questions, ...(shown ? { saved: savedFacts(shown) } : {}) }, shown };
 }
@@ -366,6 +367,7 @@ const RESUME_REFUSALS: Record<ResumeRefusal, (runId: string) => string> = {
   "never-started": (runId) => `${runId} never started. orc rerun ${runId} starts it fresh.`,
   completed: (runId) => `${runId} completed. orc rerun ${runId} runs it again.`,
   stopped: (runId) => `${runId} was stopped. orc rerun ${runId} starts it again.`,
+  older: (runId) => `${runId} was saved by an older orc, and this orc cannot resume it. orc rerun ${runId} starts it again, and orc stop ${runId} ends it.`,
 };
 
 /**
@@ -395,6 +397,7 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, cho
 const REUSE_REFUSALS: Record<ReuseRefusal, (runId: string) => string> = {
   running: (runId) => `${runId} is still running. orc stop ${runId} first.`,
   paused: (runId) => `${runId} is paused. orc resume ${runId} takes your edits and keeps the finished steps.`,
+  older: (runId) => `${runId} was saved by an older orc, and this orc cannot reuse its steps. orc rerun ${runId} without --reuse starts it again.`,
 };
 
 export interface RerunRequest {

@@ -78,6 +78,7 @@ import { parseWorkflowScript } from "./workflows/script.js";
 import type { RunPlaces } from "./places/places.js";
 import { createWorkflowLogTail } from "./run-observability.js";
 import { assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
+import { assertCurrentSave, olderSave } from "./older-save.js";
 import type { CodeStepEnv } from "./code-steps.js";
 
 const ENGINE_VERSION = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
@@ -685,6 +686,7 @@ export class WorkflowManager extends EventEmitter {
       if (source.status === "paused" || source.status === "pending" || source.status === "running") {
         throw this.scriptValidationError(`resume source ${runId} is ${source.status}. Resume it under its own id.`);
       }
+      assertCurrentSave(source, "seed a new run");
       return { lease, source };
     } catch (error) {
       this.persistence.releaseRunLease(lease);
@@ -1817,8 +1819,8 @@ export class WorkflowManager extends EventEmitter {
     if (!persisted) return { accepted: false };
     assertExplicitCheckpointProvenance(persisted);
     if (persisted.status === "completed") return { accepted: false };
-    // Older engines marked isolation runs with executionMode. Such a run never resumes.
-    if (!persisted.script || persisted.executionMode || persisted.argsUnreplayable) {
+    // A run older code saved never resumes. orc refuses it before it starts a worker.
+    if (!persisted.script || olderSave(persisted) !== undefined || persisted.argsUnreplayable) {
       return { accepted: false };
     }
     // Same-ID recovery keeps its explicit legacy marker.

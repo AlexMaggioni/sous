@@ -32,11 +32,14 @@ export interface RunFacts {
   /** The worker's pid is alive. The worker judges its own run at its end with false. */
   alive: boolean;
   openQuestions: number;
+  /** Older code saved the state in a shape today's code no longer reads. Such a run shows, and
+   *  never resumes or seeds a new run. */
+  older?: boolean;
 }
 
 /** Why resume or reuse says no. */
-export type ResumeRefusal = "running" | "never-started" | "completed" | "stopped";
-export type ReuseRefusal = "running" | "paused";
+export type ResumeRefusal = "running" | "never-started" | "completed" | "stopped" | "older";
+export type ReuseRefusal = "running" | "paused" | "older";
 
 export interface Verdict {
   status: ViewStatus;
@@ -116,9 +119,22 @@ const WORKER_RUNS: Pick<Row, "exit" | "unfinished" | "resume" | "reuse"> = { unf
 /** What the facts mean. */
 export function judge(facts: RunFacts): Verdict {
   const row: Row = ROWS[keyOf(facts)];
-  const pause = pauseOf(facts.state) ?? (row.pause ? { reason: row.pause } : undefined);
+  const saved = pauseOf(facts.state) ?? (row.pause ? { reason: row.pause } : undefined);
   const word = row.word.replace("<text>", () => facts.state?.pauseReason ?? "?");
-  const { exit, unfinished, resume, reuse } = facts.alive && row.worker === "any" ? WORKER_RUNS : row;
+  const answers = facts.alive && row.worker === "any" ? WORKER_RUNS : row;
+  const { exit, unfinished } = answers;
+  let { resume, reuse } = answers;
+  let pause = saved;
+  // An older save with no live worker. A run that may go on says why it cannot, and the service
+  // never resumes it, so its pause has no resumeAt.
+  if (facts.older && !facts.alive) {
+    if (resume.ok) resume = no("older");
+    reuse = no("older");
+    if (saved?.resumeAt) {
+      const { resumeAt: _resumeAt, ...rest } = saved;
+      pause = rest;
+    }
+  }
   return { status: row.status, word, ...(exit === undefined ? {} : { exit }), unfinished, ...(pause ? { pause } : {}), resume, reuse };
 }
 

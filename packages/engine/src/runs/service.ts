@@ -158,6 +158,8 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
       delete state.told[record.runId];
       continue;
     }
+    // A run older code saved never goes on, so the service neither tells of it nor resumes it.
+    if (!run.resume.ok && run.resume.why === "older") continue;
     if (pause.reason === "interrupted") {
       // A run cut off by a crash or a restart never starts again on its own.
       if (!state.told[record.runId]) {

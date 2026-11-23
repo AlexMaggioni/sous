@@ -8,11 +8,10 @@ import { loadRecord } from "../../src/runs/records.js";
 import { readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
-import { plantState, setup } from "./fixture.js";
+import { setup } from "./fixture.js";
 
-// A reuse run that pauses, then resumes. Its source's steps after the pause replay on the resume,
-// whether the source was saved with call rows or before them. A source with call rows keeps its
-// rows in the seed. A source saved before call rows keeps them in the reuse run's journal.
+// A reuse run that pauses, then resumes. Its source's steps after the pause wait in the seed, and
+// replay on the resume.
 
 const three = (b: string) => `export const meta = { name: 'three', description: 'three steps' }
 const a = await agent('A', { label: 'a' })
@@ -23,7 +22,7 @@ return [a, b, c]`;
 const boom = () => new WorkflowError("boom", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true });
 const quiet = () => {};
 
-async function pauseThenResume(oldSource: boolean): Promise<{ first: string[]; journal: string[]; second: string[] }> {
+async function pauseThenResume(): Promise<{ first: string[]; journal: string[]; second: string[] }> {
   const { paths, projectDir } = setup({ three: three("B") }, { retries: 0 });
   let failB2 = true;
   const prompts: string[] = [];
@@ -37,12 +36,6 @@ async function pauseThenResume(oldSource: boolean): Promise<{ first: string[]; j
   const source = createRun(paths, { workflow: "three", projectDir, inputs: {} });
   await runWorker(source.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
   assert.equal(readState(paths, source.runId)?.status, "completed");
-  if (oldSource) {
-    // The source now looks like a run saved before call rows.
-    const { calls: _calls, resumeSeed: _seed, ...state } = readState(paths, source.runId)!;
-    plantState(paths, state);
-    assert.equal(readState(paths, source.runId)?.calls, undefined);
-  }
 
   writeFileSync(join(projectDir, ".orchestrator", "workflows", "three.js"), three("B2"));
   const reuse = createRun(paths, { workflow: "three", projectDir, inputs: {}, reuseFrom: loadRecord(paths, source.runId)! });
@@ -60,15 +53,8 @@ async function pauseThenResume(oldSource: boolean): Promise<{ first: string[]; j
 }
 
 it("a paused reuse of a source with call rows replays the source's later step on resume", async () => {
-  const { first, journal, second } = await pauseThenResume(false);
+  const { first, journal, second } = await pauseThenResume();
   assert.deepEqual(first, ["B2"]);
   assert.deepEqual(journal, ["0:A done"], "C waits in the seed");
   assert.deepEqual(second, ["B2"]);
-});
-
-it("a paused reuse of a source saved before call rows replays the source's later step on resume", async () => {
-  const { first, journal, second } = await pauseThenResume(true);
-  assert.deepEqual(first, ["B2"], "A replays from the old journal");
-  assert.deepEqual(journal, ["0:A done", "2:C done"], "C stays in the journal, since the run did not reach it");
-  assert.deepEqual(second, ["B2"], "C replays");
 });
