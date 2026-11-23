@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { RunOptions } from "../src/steps/agent-run.js";
 import type { EngineRunEventName, EngineRunEventPayloadMap } from "../src/run-events.js";
 import { WorkflowError, WorkflowErrorCode, type AuthErrorContext } from "../src/errors.js";
 import { RunEventLogError } from "../src/runs/persistence/run-event-persistence.js";
@@ -224,6 +225,46 @@ return await agent('next', { label: 'next' })`),
     assert.equal(stopped?.eventSeq, records.endCursor);
     assert.equal(records.events.at(-1)?.event.type, "stopped");
   });
+});
+
+test("a failed step, a stopped step and a time limit pause with the same reason in the event as in the state", async () => {
+  const cases: Array<{ want: string; stop?: { label?: string; pauseReason?: "time_limit"; message?: string } }> = [
+    { want: "step_failed" },
+    { want: "step_stopped", stop: { label: "held" } },
+    { want: "time_limit", stop: { pauseReason: "time_limit", message: "the run reached its time limit" } },
+  ];
+  for (const { want, stop } of cases) {
+    await withPersistenceDirs(async ({ cwd, root }) => {
+      const entered = deferred<void>();
+      const runner: AgentRunner = {
+        async run(_prompt: string, options: RunOptions): Promise<unknown> {
+          if (!stop) throw new Error("the build is broken");
+          entered.resolve();
+          return await new Promise((_resolve, reject) => {
+            options.signal?.addEventListener("abort", () => reject(options.signal?.reason), { once: true });
+          });
+        },
+      };
+      const manager = new WorkflowManager({ cwd, persistenceRoot: root, agent: runner, orchestrator: { pauseOnFailedStep: true } });
+      const live: string[] = [];
+      manager.on("paused", (payload) => live.push(payload.reason));
+      const background = manager.startInBackground(script(`return await agent('held', { label: 'held', retries: 0 })`));
+      if (stop) {
+        await entered.promise;
+        assert.equal(manager.cancelAgentSteps(background.runId, stop), 1);
+      }
+      await assert.rejects(background.promise);
+
+      const state = manager.getPersistence().load(background.runId);
+      assert.equal(state?.status, "paused", want);
+      assert.equal(state?.pauseReason, want);
+      const persisted = manager.getPersistence().readEvents(background.runId, { limit: 1_000 }).events
+        .filter((record) => record.event.type === "paused")
+        .map((record) => (record.event.type === "paused" ? record.event.reason : undefined));
+      assert.deepEqual(persisted, [want], "the saved event says what the state says");
+      assert.deepEqual(live, [want], "the live event says what the state says");
+    });
+  }
 });
 
 test("automatic error persists without a listener and checkpoint gates republish paused", async () => {

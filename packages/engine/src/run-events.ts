@@ -82,9 +82,21 @@ export interface RunCallRecordPayload extends RunEventOrigin {
   record: WorkflowCallRecord;
 }
 
-/** A host asked for a pause: executing calls finished and journaled, nothing new was admitted. */
+/**
+ * The reasons a pause in the "requested" shape gives. "requested": a host asked for the pause.
+ * The others come from pauseOnFailedStep: a step failed, a host stopped a step, or the worker
+ * stopped the run at its time limit. Event logs written before the last three say "requested".
+ */
+export const REQUESTED_PAUSE_REASONS = ["requested", "step_failed", "step_stopped", "time_limit"] as const;
+export type RequestedPauseReason = (typeof REQUESTED_PAUSE_REASONS)[number];
+
+export function isRequestedPauseReason(value: unknown): value is RequestedPauseReason {
+  return (REQUESTED_PAUSE_REASONS as readonly unknown[]).includes(value);
+}
+
+/** A pause where executing calls finished and journaled, and nothing new was admitted. */
 export interface RunRequestedPausedPayload extends RunEventOrigin {
-  reason: "requested";
+  reason: RequestedPauseReason;
   error: WorkflowError;
   errorRecord: WorkflowRecordedError;
   resetHint?: never;
@@ -125,6 +137,9 @@ export type RunPausedPayload =
   | RunUsageLimitPausedPayload
   | RunAuthPausedPayload
   | RunCheckpointPausedPayload;
+
+/** Why a run paused. The state's pauseReason and the paused event give the same one. */
+export type RunPauseReason = RunPausedPayload["reason"];
 
 export interface RunErrorPayload extends RunEventOrigin {
   error: WorkflowError;
@@ -253,7 +268,7 @@ export interface PersistedRunUnreasonedPausedPayload extends RunEventOrigin {
 }
 
 export interface PersistedRunRequestedPausedPayload extends RunEventOrigin {
-  reason: "requested";
+  reason: RequestedPauseReason;
   errorRecord: RunEventErrorProjection;
 }
 

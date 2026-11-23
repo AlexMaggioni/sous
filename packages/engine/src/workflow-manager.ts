@@ -36,6 +36,8 @@ import type {
   EngineRunEventName,
   EngineRunEventPayloadMap,
   PersistableEngineRunEvent,
+  RequestedPauseReason,
+  RunPauseReason,
 } from "./run-events.js";
 import type { RunEventLogRecord } from "./run-events.js";
 import { preview, recomputeWorkflowSnapshot, type WorkflowSnapshot } from "./display.js";
@@ -502,13 +504,27 @@ function hashScriptText(script: string): string {
 
 function runReason(status: RunStatus, error: WorkflowError | undefined): string | undefined {
   if (status === "completed" || status === "pending" || status === "running") return undefined;
-  if (status !== "paused") return error?.message;
-  if (error?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT) return "usage_limit";
-  if (error?.code === WorkflowErrorCode.AUTH_REQUIRED) return "auth_required";
-  if (error?.code === WorkflowErrorCode.CHECKPOINT_REQUIRED) return "checkpoint_required";
-  if (isStepFailedPause(error)) return error?.message;
-  if (error?.code === WorkflowErrorCode.PAUSE_REQUESTED) return "requested";
-  return error?.message;
+  if (status !== "paused" || isStepFailedPause(error)) return error?.message;
+  return pauseReasonOf(error) ?? error?.message;
+}
+
+/**
+ * Why a run paused on this error, or undefined when the error does not pause a run. The state's
+ * pauseReason, its reason and the paused event all take it, so they cannot disagree.
+ */
+function pauseReasonOf(error: WorkflowError | undefined): RunPauseReason | undefined {
+  switch (error?.code) {
+    case WorkflowErrorCode.PROVIDER_USAGE_LIMIT:
+      return "usage_limit";
+    case WorkflowErrorCode.AUTH_REQUIRED:
+      return "auth_required";
+    case WorkflowErrorCode.CHECKPOINT_REQUIRED:
+      return "checkpoint_required";
+    case WorkflowErrorCode.PAUSE_REQUESTED:
+      return isStepFailedPause(error) ? stepPauseReason(error.details) : "requested";
+    default:
+      return undefined;
+  }
 }
 
 function interruptedRunReason(ownerPid: number | undefined): string {
@@ -1940,23 +1956,16 @@ export class WorkflowManager extends EventEmitter {
       //  - PROVIDER_USAGE_LIMIT: a provider quota refills over time.
       //  - AUTH_REQUIRED: a host completes an auth step.
       //  - CHECKPOINT_REQUIRED: a host supplies the pending durable checkpoint decision.
-      //  - PAUSE_REQUESTED: a host asked for the pause and resumes when it is ready.
+      //  - PAUSE_REQUESTED: a host asked for the pause, or a step failed or was stopped under
+      //    pauseOnFailedStep, and the run resumes when the cause is fixed.
       // All are recoverable:false, so the retry ladder skips them.
-      const authPaused =
-        !managed.controller.signal.aborted && workflowError.code === WorkflowErrorCode.AUTH_REQUIRED;
-      const usageLimitPaused =
-        !managed.controller.signal.aborted && workflowError.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT;
-      const checkpointPaused =
-        !managed.controller.signal.aborted && workflowError.code === WorkflowErrorCode.CHECKPOINT_REQUIRED;
-      const requestPaused =
-        !managed.controller.signal.aborted && workflowError.code === WorkflowErrorCode.PAUSE_REQUESTED;
-      const paused = usageLimitPaused || authPaused || checkpointPaused || requestPaused;
+      const pauseReason = managed.controller.signal.aborted ? undefined : pauseReasonOf(workflowError);
       if (managed.controller.signal.aborted) {
         // Intentional stop (host signal) — preserve the status set by stop()
         if (managed.status === "running") {
           managed.status = "aborted";
         }
-      } else if (paused) {
+      } else if (pauseReason !== undefined) {
         managed.status = "paused";
         managed.pausedAt = new Date().toISOString();
       } else {
@@ -1966,9 +1975,9 @@ export class WorkflowManager extends EventEmitter {
       this.finalizeResumeReport(managed);
       managed.result = this.composeResult(managed, workflowError);
 
-      if (paused) {
+      if (pauseReason !== undefined) {
         const errorRecord = projectRecordedError(workflowError);
-        const pausedEvent = authPaused
+        const pausedEvent = pauseReason === "auth_required"
           ? this.createRunEvent("paused", {
               runId: managed.runId,
               scope: managed.runId,
@@ -1977,7 +1986,7 @@ export class WorkflowManager extends EventEmitter {
               errorRecord,
               authContext: workflowError.authContext,
             })
-          : checkpointPaused
+          : pauseReason === "checkpoint_required"
             ? this.createRunEvent("paused", {
                 runId: managed.runId,
                 scope: managed.runId,
@@ -1986,21 +1995,21 @@ export class WorkflowManager extends EventEmitter {
                 errorRecord,
                 checkpointContext: workflowError.checkpointContext,
               })
-            : requestPaused
+            : pauseReason === "usage_limit"
               ? this.createRunEvent("paused", {
-                  runId: managed.runId,
-                  scope: managed.runId,
-                  reason: "requested",
-                  error: workflowError,
-                  errorRecord,
-                })
-              : this.createRunEvent("paused", {
                   runId: managed.runId,
                   scope: managed.runId,
                   reason: "usage_limit",
                   error: workflowError,
                   errorRecord,
                   resetHint: workflowError.resetHint,
+                })
+              : this.createRunEvent("paused", {
+                  runId: managed.runId,
+                  scope: managed.runId,
+                  reason: pauseReason,
+                  error: workflowError,
+                  errorRecord,
                 });
         publish(pausedEvent, {
           beforeLive: () => {
@@ -2367,24 +2376,9 @@ export class WorkflowManager extends EventEmitter {
       status: managed.status,
       reason: runReason(managed.status, managed.error),
       errorCode: managed.error?.code,
-      // Why a pause happened, so the navigator / a future cold start can show it and
-      // re-arm resume (§2.12). Selector switches on the paused run's error code:
-      // AUTH_REQUIRED -> "auth_required", PROVIDER_USAGE_LIMIT -> "usage_limit",
-      // CHECKPOINT_REQUIRED -> "checkpoint_required", PAUSE_REQUESTED -> "requested".
-      pauseReason:
-        managed.status === "paused"
-          ? managed.error?.code === WorkflowErrorCode.AUTH_REQUIRED
-            ? "auth_required"
-            : managed.error?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT
-              ? "usage_limit"
-              : managed.error?.code === WorkflowErrorCode.CHECKPOINT_REQUIRED
-                ? "checkpoint_required"
-                : managed.error?.code === WorkflowErrorCode.PAUSE_REQUESTED
-                  ? isStepFailedPause(managed.error)
-                    ? stepPauseReason(managed.error.details)
-                    : "requested"
-                  : undefined
-          : undefined,
+      // Why a pause happened, so a later read can show it and a cold start can re-arm resume.
+      // The paused event gives the same reason.
+      pauseReason: managed.status === "paused" ? pauseReasonOf(managed.error) : undefined,
       // resetHint and resetAt stay usage-limit-only.
       resetHint:
         managed.status === "paused" && managed.error?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT
@@ -2866,7 +2860,7 @@ export class WorkflowManager extends EventEmitter {
    */
   cancelAgentSteps(
     runId: string,
-    select: { label?: string; scope?: string; pauseReason?: string; message?: string } = {},
+    select: { label?: string; scope?: string; pauseReason?: "time_limit"; message?: string } = {},
   ): number {
     const managed = this.runs.get(runId);
     if (!managed || managed.status !== "running") return 0;
@@ -2884,7 +2878,7 @@ export class WorkflowManager extends EventEmitter {
   private requestAgentCancellation(
     attempt: RegisteredAgentAttempt,
     message?: string,
-    pauseReason?: string,
+    pauseReason?: "time_limit",
   ): Promise<WorkflowAgentCallCancellation> {
     if (!attempt.cancellation) {
       let resolve!: (result: WorkflowAgentCallCancellation) => void;
@@ -3151,8 +3145,8 @@ function contiguousJournalPrefix(entries: readonly JournalEntry[], runId: string
 }
 
 /** The pause reason of a step that failed or was stopped under pauseOnFailedStep. */
-function stepPauseReason(details: unknown): string {
+function stepPauseReason(details: unknown): Exclude<RequestedPauseReason, "requested"> {
   const { code, pauseReason } = (details ?? {}) as { code?: unknown; pauseReason?: unknown };
-  if (typeof pauseReason === "string") return pauseReason;
+  if (pauseReason === "time_limit") return pauseReason;
   return code === WorkflowErrorCode.AGENT_CANCELLED ? "step_stopped" : "step_failed";
 }

@@ -5,13 +5,14 @@ import type {
   WorkflowCallRecord,
   WorkflowLogTail,
 } from "./workflow-result.js";
-import type {
-  PersistableEngineRunEvent,
-  PersistedRunEvent,
-  RunEventCheckpointProjection,
-  RunEventErrorProjection,
-  RunEventLogRecord,
-  RunEventValueProjection,
+import {
+  isRequestedPauseReason,
+  type PersistableEngineRunEvent,
+  type PersistedRunEvent,
+  type RunEventCheckpointProjection,
+  type RunEventErrorProjection,
+  type RunEventLogRecord,
+  type RunEventValueProjection,
 } from "./run-events.js";
 import { redactText, truncateUtf8 } from "./redact.js";
 
@@ -456,11 +457,11 @@ export function projectRunEventForPersistence(
       projected = { type: "callRecord", ...origin(), record: projectCallRecord(event.record, state) };
       break;
     case "paused":
-      if (event.reason === "requested") {
+      if (isRequestedPauseReason(event.reason)) {
         projected = {
           type: "paused",
           ...origin(),
-          reason: "requested",
+          reason: event.reason,
           errorRecord: projectRecordedError(event.errorRecord, state),
         };
       } else if (event.reason === "usage_limit") {

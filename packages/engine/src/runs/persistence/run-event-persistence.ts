@@ -9,6 +9,7 @@ import {
 import { join, resolve } from "node:path";
 import {
   RUN_EVENT_LOG_VERSION,
+  isRequestedPauseReason,
   type PersistableEngineRunEvent,
   type RunEventLogRecord,
 } from "../../run-events.js";
@@ -547,7 +548,7 @@ function isPersistableInputEvent(value: unknown): value is PersistableEngineRunE
       if (!hasOwn(value, "reason")) {
         return hasNone(value, ["error", "errorRecord", "resetHint", "authContext", "checkpointContext"]);
       }
-      if (value.reason === "requested") {
+      if (isRequestedPauseReason(value.reason)) {
         return value.error instanceof WorkflowError && hasRequired(value, "errorRecord", (candidate) => isRecordedError(candidate, false)) && hasNone(value, ["resetHint", "authContext", "checkpointContext"]);
       }
       if (value.reason === "usage_limit") {
@@ -633,7 +634,7 @@ function isPersistedEvent(value: unknown): boolean {
       if (!hasOwn(value, "reason")) {
         return hasNone(value, ["errorRecord", "resetHint", "authContext", "checkpointContext"]);
       }
-      if (value.reason === "requested") {
+      if (isRequestedPauseReason(value.reason)) {
         return hasRequired(value, "errorRecord", (candidate) => isRecordedError(candidate, true)) && hasNone(value, ["resetHint", "authContext", "checkpointContext"]);
       }
       if (value.reason === "usage_limit") {
