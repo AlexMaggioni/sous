@@ -60,7 +60,7 @@ const runFiles = [
 ];
 
 describe("where a run leaves its files", () => {
-  it("a finished run with a nested run leaves its files in records and in two project folders, and the nested run leaves none", async () => {
+  it("a finished run with a nested run leaves its files in records and in two project folders, each workflow's text in its files, and the nested run leaves none", async () => {
     const { paths, projectDir } = setup({ top, child });
     const { runner } = heldRunner(() => "ok");
     const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
@@ -71,31 +71,6 @@ describe("where a run leaves its files", () => {
     assert.deepEqual(loadRecord(paths, record.runId)?.nested, {
       [`${record.runId}-nested1`]: { parent: record.runId, workflow: "child", label: "c" },
     });
-  });
-
-  it("a run paused on a failed step leaves the same files as a finished run", async () => {
-    const { paths, projectDir } = setup({ top: single });
-    const { runner } = heldRunner(() => new Error("boom"));
-    const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
-    const result = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
-    assert.equal(result?.status, "paused");
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...home, ...runFiles].sort());
-  });
-
-  it("a forgotten run leaves only the home's folders", async () => {
-    const { paths, projectDir } = setup({ top, child });
-    const { runner } = heldRunner(() => "ok");
-    const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
-    await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
-    forgetRun(paths, loadRecord(paths, record.runId)!);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...home].sort());
-  });
-
-  it("the top workflow's text sits in four files and the nested workflow's text in two", async () => {
-    const { paths, projectDir } = setup({ top, child });
-    const { runner } = heldRunner(() => "ok");
-    const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
-    await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     const runs = join(paths.runs, "projects", projectKey(paths.home), "runs");
     const snapshot = JSON.parse(readFileSync(join(paths.records, `${record.runId}.workflows`), "utf8"));
     const state = JSON.parse(readFileSync(join(runs, `${record.runId}.json`), "utf8"));
@@ -123,6 +98,24 @@ describe("where a run leaves its files", () => {
       "project/.orchestrator/workflows/top.js",
     ]);
     assert.deepEqual(holders("// the child workflow"), ["home/records/<id>.workflows", "project/.orchestrator/workflows/child.js"]);
+  });
+
+  it("a run paused on a failed step leaves the same files as a finished run", async () => {
+    const { paths, projectDir } = setup({ top: single });
+    const { runner } = heldRunner(() => new Error("boom"));
+    const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
+    const result = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    assert.equal(result?.status, "paused");
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...home, ...runFiles].sort());
+  });
+
+  it("a forgotten run leaves only the home's folders", async () => {
+    const { paths, projectDir } = setup({ top, child });
+    const { runner } = heldRunner(() => "ok");
+    const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
+    await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
+    forgetRun(paths, loadRecord(paths, record.runId)!);
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...home].sort());
   });
 
   it("a run's worker log and the service's log sit in the home's logs folder", () => {
