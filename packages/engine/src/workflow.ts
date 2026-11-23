@@ -155,7 +155,6 @@ export interface SharedRuntime {
   limiter: <T>(fn: () => Promise<T>) => Promise<T>;
   agentCount: number;
   tokenUsage: { input: number; output: number; total: number; cost: number; cacheRead: number; cacheWrite: number };
-  depth: number;
   /** Root-run-wide workflow() invocation ordinal. Monotonic and never decremented. */
   nestedSeq: number;
   /** Root-execution activity shared by nested workflow engines. */
@@ -634,7 +633,6 @@ export async function runWorkflow<T = unknown>(
     limiter: createLimiter(concurrency),
     agentCount: 0,
     tokenUsage: copyTokenUsageBaseline(options.tokenUsageBaseline),
-    depth: 0,
     nestedSeq: 0,
     ...(options.pauseSignal ? { pauseSignal: options.pauseSignal } : {}),
   };
@@ -1861,31 +1859,26 @@ export async function runWorkflow<T = unknown>(
     const place = nestedOptions?.place;
     if (place !== undefined && !isPlace(place)) throw new Error(`place must be worktree, folder or none, got "${String(place)}"`);
     const childCwd = place !== undefined ? places.nestedPlace(childRunId, place, baseCwd) : options.cwd;
-    shared.depth++;
-    try {
-      const child = await runWorkflow(childScript, {
-        ...options,
-        args,
-        cwd: childCwd,
-        // The COMBINED signal, so a parent-side fault/abort cancels the child's agents too
-        // (the child layers its own fault controller on top of this).
-        signal,
-        sharedRuntime: shared,
-        nestingDepth: ownDepth + 1,
-        // A nested run finds its rows in the same resume rows by its run id. It has no plan and no
-        // interrupted calls.
-        resume: options.resume?.rows ? { rows: options.resume.rows } : undefined,
-        onResumeCallAllocated: undefined,
-        onResumeDecision: undefined,
-        runId: childRunId,
-        persistLogs: false,
-      });
-      state.fallbacks.push(...(child.fallbacks ?? []));
-      state.checkpointsTaken.push(...(child.checkpointsTaken ?? []));
-      return child.result;
-    } finally {
-      shared.depth--;
-    }
+    const child = await runWorkflow(childScript, {
+      ...options,
+      args,
+      cwd: childCwd,
+      // The COMBINED signal, so a parent-side fault/abort cancels the child's agents too
+      // (the child layers its own fault controller on top of this).
+      signal,
+      sharedRuntime: shared,
+      nestingDepth: ownDepth + 1,
+      // A nested run finds its rows in the same resume rows by its run id. It has no plan and no
+      // interrupted calls.
+      resume: options.resume?.rows ? { rows: options.resume.rows } : undefined,
+      onResumeCallAllocated: undefined,
+      onResumeDecision: undefined,
+      runId: childRunId,
+      persistLogs: false,
+    });
+    state.fallbacks.push(...(child.fallbacks ?? []));
+    state.checkpointsTaken.push(...(child.checkpointsTaken ?? []));
+    return child.result;
   };
 
   const workflowFn = (nameOrScript: string, childArgs?: unknown, nestedOptions?: { place?: string; label?: string }): Promise<unknown> => {
