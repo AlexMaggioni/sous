@@ -281,6 +281,18 @@ const LINE_CAPS = {
   "packages/engine/src/workflow.ts: runLive": 446,
 };
 
+/**
+ * Caps on the ways into a run: the public methods of a class, or the fields of a type with the
+ * ones it inherits. A public method is one with no private or protected mark, a getter, a setter,
+ * or a public field that holds a function. A count only goes down. The test fails when it is over
+ * its cap, and when it is under it, with the number to lower it to.
+ */
+const MEMBER_CAPS = [
+  { file: "packages/engine/src/workflow-manager.ts", methodsOf: "WorkflowManager", cap: 11 },
+  { file: "packages/engine/src/workflow.ts", fieldsOf: "WorkflowRunOptions", cap: 36 },
+  { file: "packages/engine/src/workflow.ts", fieldsOf: "AgentOptions", cap: 18 },
+];
+
 // ── The breaks of today. They can only go. ──────────────────────────────────────────────────────
 
 const BREAKS = {
@@ -493,11 +505,21 @@ function reachBreaks({ files }) {
   return [...found].sort();
 }
 
+/** One type-checked program per package, from its public entry and the files MEMBER_CAPS names. */
+const programs = new Map();
+function programOf(dir) {
+  if (!programs.has(dir)) {
+    const roots = [join(ROOT, "packages", dir, "src", "index.ts"), ...MEMBER_CAPS.filter(({ file }) => file.startsWith(`packages/${dir}/`)).map(({ file }) => join(ROOT, file))];
+    programs.set(dir, ts.createProgram(roots.filter((root) => existsSync(root)), { allowJs: false, noEmit: true, skipLibCheck: true, module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext, target: ts.ScriptTarget.ES2022 }));
+  }
+  return programs.get(dir);
+}
+
 /** Each exported name of a package's public entry, read by the type checker. */
 function exportedNames(dir) {
   const entry = join(ROOT, "packages", dir, "src", "index.ts");
   if (!existsSync(entry)) return [];
-  const program = ts.createProgram([entry], { allowJs: false, noEmit: true, skipLibCheck: true, module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext, target: ts.ScriptTarget.ES2022 });
+  const program = programOf(dir);
   const checker = program.getTypeChecker();
   const symbol = checker.getSymbolAtLocation(program.getSourceFile(entry));
   return symbol ? checker.getExportsOfModule(symbol).map((s) => s.getName()).sort() : [];
@@ -641,6 +663,39 @@ function sizeBreaks(counts) {
   return found.sort();
 }
 
+/** The count of each MEMBER_CAPS row, or undefined when its class or type is gone. */
+function memberCount({ file, methodsOf, fieldsOf }) {
+  const program = programOf(file.split("/")[1]);
+  const source = program.getSourceFile(join(ROOT, file));
+  const declaration = source?.statements.find((node) => node.name?.text === (methodsOf ?? fieldsOf) && (fieldsOf || ts.isClassDeclaration(node)));
+  if (!declaration) return undefined;
+  if (fieldsOf) {
+    const checker = program.getTypeChecker();
+    return checker.getPropertiesOfType(checker.getTypeAtLocation(declaration.name)).length;
+  }
+  const hidden = ts.ModifierFlags.Private | ts.ModifierFlags.Protected;
+  const methods = new Set();
+  for (const member of declaration.members ?? []) {
+    if (!member.name || ts.isPrivateIdentifier(member.name) || ts.getCombinedModifierFlags(member) & hidden) continue;
+    const callable = ts.isMethodDeclaration(member) || ts.isAccessor(member)
+      || (ts.isPropertyDeclaration(member) && member.initializer && (ts.isArrowFunction(member.initializer) || ts.isFunctionExpression(member.initializer)));
+    if (callable) methods.add(member.name.getText());
+  }
+  return methods.size;
+}
+
+function memberBreaks() {
+  const found = [];
+  for (const row of MEMBER_CAPS) {
+    const what = row.methodsOf ? `${row.methodsOf} in ${row.file} has %s public methods` : `${row.fieldsOf} in ${row.file} has %s fields`;
+    const count = memberCount(row);
+    if (count === undefined) found.push(`${row.methodsOf ?? row.fieldsOf} is gone from ${row.file}. Remove its row from MEMBER_CAPS.`);
+    else if (count > row.cap) found.push(`${what.replace("%s", count)}, more than its cap of ${row.cap}.`);
+    else if (count < row.cap) found.push(`${what.replace("%s", count)}, fewer than its cap of ${row.cap}. Lower it to ${count}.`);
+  }
+  return found;
+}
+
 function scriptBreaks({ dirs }) {
   const found = [];
   if (!existsSync(join(ROOT, TEST_RUNNER))) found.push(`${TEST_RUNNER} is missing`);
@@ -664,6 +719,7 @@ const now = {
   tests: testBreaks(state),
   scripts: scriptBreaks(state),
   sizes: sizeBreaks(lineCounts(state)),
+  members: memberBreaks(),
 };
 
 if (process.env.ARCH_PRINT) console.log(JSON.stringify(now, null, 2));
@@ -698,6 +754,7 @@ test("both adapters exist and pass one contract test", () => compareList("contra
 test("each test file imports a run-time value of the code it tests", () => compareList("tests"));
 test("each package runs its tests on a temporary home", () => compareList("scripts"));
 test("each file and function stays under its line cap", () => assert.equal(now.sizes.join("\n"), "", now.sizes.join("\n")));
+test("the manager's methods and the run's options stay at their caps", () => assert.equal(now.members.join("\n"), "", now.members.join("\n")));
 
 test("each behavior change keeps the test that holds it", () => {
   assert.equal(PINS.length, 36, "docs/proof/improve.md lists 36 behavior changes, and the table holds one row for each");
