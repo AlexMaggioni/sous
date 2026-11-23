@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
 
 const HOST_OBJECT_CONSTRUCTOR_SOURCE = Function.prototype.toString.call(Object);
@@ -177,6 +178,12 @@ function sortCanonical(value: StrictJsonValue): StrictJsonValue {
 export function canonicalStrictJson(value: unknown): string | undefined {
   const result = cloneStrictJsonValue(value);
   return result.ok ? JSON.stringify(sortCanonical(result.clone)) : undefined;
+}
+
+/** The sha256 of a value's canonical strict JSON, or undefined when it is not strict JSON. */
+export function hashCanonicalStrictJson(value: unknown): string | undefined {
+  const canonical = canonicalStrictJson(value);
+  return canonical === undefined ? undefined : createHash("sha256").update(canonical).digest("hex");
 }
 
 export function cloneTelemetry<T>(value: T): T | undefined {

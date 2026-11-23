@@ -8,7 +8,7 @@ import { limitNotice, runAccounts } from "../accounts.js";
 import { envFor, lookupAgents, lookupMcpServers, lookupSettings } from "../agents.js";
 import { parseDurationSeconds } from "../duration.js";
 import { projectWorkflows } from "../workflows/dir.js";
-import type { CheckpointCallContext } from "../workflow.js";
+import type { CheckpointCallContext } from "../checkpoint-call.js";
 import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";
 import { dropUnchangedWorktrees, runPlaces, runWorktrees } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";

@@ -4,8 +4,8 @@ import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry } from "../src/workflow-result.js";
 import type { TSchema } from "typebox";
+import type { CheckpointCallContext } from "../src/checkpoint-call.js";
 import {
-  type CheckpointCallContext,
   type WorkflowRunOptions,
   runWorkflow,
 } from "../src/workflow.js";

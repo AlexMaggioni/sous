@@ -63,11 +63,9 @@ import { projectRecordedError } from "./recorded-error.js";
 import { workflowHomeDir } from "./workflow-paths.js";
 import { cloneStrictJsonValue, deepFreeze } from "./strict-json.js";
 import { CALL_PATH_FORMAT } from "./call-path.js";
+import { CHECKPOINT_INPUTS_FORMAT, type CheckpointCallContext, type CheckpointOptions } from "./checkpoint-call.js";
 import {
   CALL_INPUTS_FORMAT,
-  CHECKPOINT_INPUTS_FORMAT,
-  type CheckpointCallContext,
-  type CheckpointOptions,
   type EngineRunResult,
   type WorkflowAgentAttemptControl,
   type WorkflowResume,

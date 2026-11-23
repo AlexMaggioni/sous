@@ -15,10 +15,9 @@ import { normalizeResumeSeed } from "../src/resume-matcher.js";
 import { resumeRows } from "../src/resume-rows.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { tempPlaces } from "./helpers/places.js";
+import { CHECKPOINT_INPUTS_FORMAT, hashCheckpointInputs } from "../src/checkpoint-call.js";
 import {
   CALL_INPUTS_FORMAT,
-  CHECKPOINT_INPUTS_FORMAT,
-  hashCheckpointInputs,
   isStepFailedPause,
   runWorkflow,
 } from "../src/workflow.js";
