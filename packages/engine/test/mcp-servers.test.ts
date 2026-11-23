@@ -6,6 +6,7 @@ import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry } from "../src/workflow-result.js";
 import type { McpServerConfig } from "../src/steps/mcp-config.js";
 import { runWorkflow } from "../src/workflow.js";
+import { toMcpServer } from "../src/steps/answer.js";
 
 // (#5) agent({ mcpServers }) is an ADDITIVE run input: the engine must thread it through to
 // the runner opts (so the harness gets them for the step), but it must NOT enter
@@ -94,5 +95,30 @@ return a`;
       withoutServers.hash,
       "adding mcpServers must keep the resume key byte-identical (it is not part of the identity)",
     );
+  });
+});
+
+describe("toMcpServer", () => {
+  it("turns a command into a stdio server and a url into an http one", () => {
+    assert.deepEqual(toMcpServer({ ...STDIO_SERVER, env: [{ name: "A", value: "1" }] }), {
+      name: "fs",
+      type: "stdio",
+      command: "mcp-fs",
+      args: [],
+      env: { A: "1" },
+    });
+    assert.deepEqual(toMcpServer({ type: "sse", name: "web", url: "https://example.test/mcp", headers: [] }), {
+      name: "web",
+      type: "http",
+      url: "https://example.test/mcp",
+      headers: {},
+    });
+  });
+
+  it("names the server and its type when a step cannot start it", () => {
+    const server = { type: "acp", name: "inbox", id: "x" } as unknown as McpServerConfig;
+    assert.deepEqual(toMcpServer(server), {
+      problem: 'MCP server "inbox" is of type acp, which a step cannot start. Give it a command or a url.',
+    });
   });
 });

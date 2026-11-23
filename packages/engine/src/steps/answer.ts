@@ -105,5 +105,5 @@ export function toMcpServer(server: McpServerConfig): McpServer | { problem: str
     const remote = server as { name: string; url: string; headers?: { name: string; value: string }[] };
     return { name: remote.name, type: "http", url: remote.url, headers: record(remote.headers) };
   }
-  return { problem: `MCP server "${server.name}" is of type ${type}, which only the ACP runner had. Give it a command or a url.` };
+  return { problem: `MCP server "${server.name}" is of type ${type}, which a step cannot start. Give it a command or a url.` };
 }
