@@ -44,20 +44,10 @@ import { parseModelRoutingFromMeta, resolveModelForPhase } from "./model-routing
 import { projectRecordedError } from "./recorded-error.js";
 import { registerRunTripwire } from "./rejection-tripwire.js";
 import type { PreparedContinuation, PreparedResume } from "./resume.js";
-import {
-  buildResumeCandidateIndexes,
-  buildResumeReport,
-  indexedSourceOccurrence,
-  initialPositionalFirstMiss,
-  selectPositionalResume,
-  selectResumeCandidate,
-  type ResumeCandidateIndexes,
-  type ResumeReportPlan,
-} from "./resume-matcher.js";
-import type { PersistedCheckpointInjection, PersistedResumeSeed } from "./runs/persistence/run-persistence.js";
+import { buildResumeReport } from "./resume-matcher.js";
 import { nestedRunId } from "./resume-identity.js";
 import { createPairing, type RecordedScope } from "./resume-pairing.js";
-import type { ResumeRow, ResumeRows } from "./resume-rows.js";
+import { journalRows, type ResumeRow, type ResumeRows } from "./resume-rows.js";
 import {
   createDecisionOrder,
   createStepLedger,
@@ -219,18 +209,20 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
    * When false, resume inputs are rejected instead of being silently ignored.
    */
   journaling?: boolean;
-  /** Resume: cached agent results keyed by deterministic call index. */
+  /**
+   * Resume: a journal with no call rows, by call index. A call replays the row at its own index
+   * when the hashes agree. Goes with no resumeRows and no preparedResume.
+   */
   resumeJournal?: Map<number, JournalEntry>;
   /** Resume: the run being resumed (informational; enables resume mode). */
   resumeFromRunId?: string;
   /**
    * Internal (manager): the recorded rows of the run and of its nested runs, by scope. A call
-   * takes the next row with its key. Excludes resumeJournal, and goes with no preparedResume or
-   * with one of strategy "occurrence-v1".
+   * takes the next row with its key. Goes with no preparedResume or with one of strategy
+   * "occurrence-v1".
    */
   resumeRows?: ResumeRows;
-  /** Manager-prepared resume state. Mutually exclusive with a caller-authored
-   *  resumeJournal except for strategy "positional-v1", where that map is the cache. */
+  /** Manager-prepared resume state. An "occurrence-v1" one needs resumeRows. */
   preparedResume?: PreparedResume;
   /** Manager-prepared interrupted calls, consulted only at the live boundary. */
   preparedContinuation?: PreparedContinuation;
@@ -265,11 +257,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   nestingDepth?: number;
   /** Resolve a saved-workflow name to its script, enabling `workflow('name', args)`. */
   loadSavedWorkflow?: (name: string) => string | undefined;
-  /**
-   * Journals of nested runs to replay on resume, keyed by the child's run id. A child numbers its
-   * own workflow() calls in call order, so its id is the same on every replay.
-   */
-  nestedResumeJournals?: ReadonlyMap<string, Map<number, JournalEntry>>;
   /** Per-run changes to steps, by label, such as { reviewer: { model: "haiku" } }. */
   stepOverrides?: Record<string, Record<string, unknown>>;
   /** The environment code steps run with. Nested runs get the same. */
@@ -299,8 +286,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
     options: CheckpointOptions,
     context?: CheckpointCallContext,
   ) => Promise<unknown>;
-  /** Internal same-run continuation latch. Replays every exact index/hash journal hit. */
-  sameRunContinuation?: boolean;
   /** Internal cumulative usage seed restored before a same-run continuation executes. */
   tokenUsageBaseline?: Readonly<SharedRuntime["tokenUsage"]>;
   onLog?: (message: string, context?: WorkflowCallbackContext) => void;
@@ -502,12 +487,6 @@ interface RuntimeState {
   phases: string[];
   /** Monotonic, assigned at lexical agent() call time — the stable resume key. */
   callSeq: number;
-  /**
-   * Index of the first call that missed the resume journal (changed or new).
-   * Longest-unchanged-prefix resume: a cached result is replayed only while
-   * callIndex < firstMiss; once a call misses, it AND everything after run live.
-   */
-  firstMiss: number;
   /** Session records for every session the run observed (live via onSessionOpen,
    *  replayed via JournalEntry.session), in completion order -> result.agentSessions. */
   agentSessions: AgentSessionRecord[];
@@ -517,13 +496,6 @@ interface RuntimeState {
   calls: WorkflowCallRecord[];
   /** Run-local terminal transition ordinal. */
   settlementSeq: number;
-}
-
-interface ResumeSeedController {
-  seed: PersistedResumeSeed;
-  indexes: ResumeCandidateIndexes;
-  consumed: Set<string>;
-  commitSeed: (remaining: PersistedResumeSeed) => void;
 }
 
 /**
@@ -597,37 +569,22 @@ export async function runWorkflow<T = unknown>(
   const started = Date.now();
   const { meta, body } = parseWorkflowScript(script);
   const journaling = options.journaling ?? true;
-  const resumeSeed = options.preparedResume?.strategy === "identity-v1"
-    ? options.preparedResume.seed
-    : undefined;
-  assertExplicitCheckpointProvenance({
-    journal: options.resumeJournal
-      ? [...options.resumeJournal.values()]
-      : options.resumeRows
-        ? [...options.resumeRows.values()].flatMap((scope) => scope.rows.flatMap((row) => (row.entry ? [row.entry] : [])))
-        : undefined,
-    resumeSeed,
-  });
   if (!journaling && (options.resumeJournal || options.resumeFromRunId || options.preparedResume || options.resumeRows)) {
     throw new WorkflowError("journaling disabled for this run", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
       recoverable: false,
     });
   }
-  if (options.resumeJournal && options.preparedResume && options.preparedResume.strategy !== "positional-v1") {
+  if (options.resumeJournal && (options.resumeRows || options.preparedResume)) {
     throw new WorkflowError(
-      "resumeJournal is compatible only with a prepared positional resume",
+      "resumeJournal goes with no resumeRows and no preparedResume",
       WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
       { recoverable: false },
     );
   }
   const occurrencePrepared = options.preparedResume?.strategy === "occurrence-v1";
-  if (
-    options.resumeRows
-      ? options.resumeJournal || (options.preparedResume && !occurrencePrepared)
-      : occurrencePrepared
-  ) {
+  if (options.resumeRows ? options.preparedResume && !occurrencePrepared : occurrencePrepared) {
     throw new WorkflowError(
-      "resumeRows excludes resumeJournal, and goes with no preparedResume or an occurrence-v1 one",
+      "resumeRows goes with no preparedResume or an occurrence-v1 one, and an occurrence-v1 one needs resumeRows",
       WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
       { recoverable: false },
     );
@@ -641,6 +598,12 @@ export async function runWorkflow<T = unknown>(
     agentRetries: runAgentRetries,
   } = effectiveLimits;
   const runId = options.runId ?? `run-${started.toString(36)}`;
+  const resumeRows = options.resumeRows ?? (options.resumeJournal ? journalRows(runId, options.resumeJournal) : undefined);
+  assertExplicitCheckpointProvenance({
+    journal: resumeRows
+      ? [...resumeRows.values()].flatMap((scope) => scope.rows.flatMap((row) => (row.entry ? [row.entry] : [])))
+      : undefined,
+  });
   const callbackContext: WorkflowCallbackContext = { scope: runId };
   const baseCwd = options.cwd ?? process.cwd();
   const home = options.home ?? homePaths();
@@ -665,9 +628,6 @@ export async function runWorkflow<T = unknown>(
     phases: meta.phases?.[0]?.title ? [meta.phases[0].title] : [],
     currentPhase: meta.phases?.[0]?.title,
     callSeq: 0,
-    firstMiss: options.preparedResume?.strategy === "positional-v1"
-      ? initialPositionalFirstMiss(options.preparedResume.eligibility)
-      : Number.POSITIVE_INFINITY,
     agentSessions: [],
     fallbacks: [],
     checkpointsTaken: [],
@@ -864,146 +824,11 @@ export async function runWorkflow<T = unknown>(
 
   const preparedResume = options.preparedResume;
   const preparedContinuation = options.preparedContinuation;
-  const resumeReportPlan: ResumeReportPlan | undefined = preparedResume
-    ? preparedResume.strategy === "identity-v1"
-      ? {
-          strategy: preparedResume.strategy,
-          sourceRunId: preparedResume.sourceRunId,
-          requestedPolicy: preparedResume.requestedPolicy,
-        }
-      : preparedResume.strategy === "positional-v1"
-        ? {
-            strategy: preparedResume.strategy,
-            sourceRunId: preparedResume.sourceRunId,
-            requestedPolicy: preparedResume.requestedPolicy,
-            fallbackReason: preparedResume.fallbackReason,
-            eligibility: preparedResume.eligibility,
-          }
-        : preparedResume.strategy === "live"
-          ? {
-              strategy: preparedResume.strategy,
-              sourceRunId: preparedResume.sourceRunId,
-              requestedPolicy: preparedResume.requestedPolicy,
-              disabledReason: preparedResume.disabledReason,
-            }
-          : {
-              strategy: preparedResume.strategy,
-              sourceRunId: preparedResume.sourceRunId,
-              requestedPolicy: preparedResume.requestedPolicy,
-            }
-    : undefined;
   // A prepared resume reports a decision for each call, in the order calls were opened.
   const decisionOrder = createDecisionOrder({
     ordered: preparedResume !== undefined,
     onDecision: (decision) => guardTerminal("onResumeDecision", () => options.onResumeDecision?.(decision)),
   });
-  const emitResumeDecision = decisionOrder.decide;
-  let resumeFatalError: WorkflowError | undefined;
-
-  const createResumeSeedController = (
-    seed: PersistedResumeSeed,
-    commitSeed: (remaining: PersistedResumeSeed) => void,
-  ): ResumeSeedController => {
-    const indexes = buildResumeCandidateIndexes(seed);
-    return { seed, indexes, consumed: new Set(), commitSeed };
-  };
-
-  const identitySeed = preparedResume?.strategy === "identity-v1"
-    ? createResumeSeedController(preparedResume.seed, preparedResume.commitSeed)
-    : undefined;
-
-  const resumePersistenceError = (error: unknown): WorkflowError =>
-    error instanceof WorkflowError && error.code === WorkflowErrorCode.PERSISTENCE_ERROR
-      ? error
-      : new WorkflowError(
-          `failed to persist resume seed: ${errorMessage(error)}`,
-          WorkflowErrorCode.PERSISTENCE_ERROR,
-          { recoverable: false, details: error },
-        );
-
-  const failResumePersistence = (
-    error: unknown,
-    call?: { index: number; kind: "agent" | "checkpoint" },
-  ): WorkflowError => {
-    const failure = resumePersistenceError(error);
-    if (call) {
-      emitResumeDecision({
-        index: call.index,
-        kind: call.kind,
-        action: "failed",
-        reason: "seed-persistence-error",
-      });
-    }
-    resumeFatalError = failure;
-    return failure;
-  };
-
-  const remainingResumeSeed = (controller: ResumeSeedController): PersistedResumeSeed => {
-    const callBlockers = (controller.seed.callBlockers ?? []).filter((blocker) =>
-      !controller.consumed.has(indexedSourceOccurrence({ type: "blocker", blocker })),
-    );
-    const checkpointInjections = (controller.seed.checkpointInjections ?? []).filter((injection) =>
-      !controller.consumed.has(indexedSourceOccurrence({ type: "injection", injection })),
-    );
-    const next = {
-      format: "identity-v1" as const,
-      sourceRunId: controller.seed.sourceRunId,
-      candidates: controller.seed.candidates.filter((candidate) =>
-        !controller.consumed.has(indexedSourceOccurrence({ type: "candidate", candidate })),
-      ),
-      ...(callBlockers.length === 0 ? {} : { callBlockers }),
-      ...(checkpointInjections.length === 0 ? {} : { checkpointInjections }),
-    };
-    const captured = cloneFrozenStrictJson(next);
-    if (!captured.ok) throw new TypeError(`remaining resume seed is not strict JSON at ${captured.path}`);
-    return captured.clone as unknown as PersistedResumeSeed;
-  };
-
-  const commitResumeRemoval = (
-    controller: ResumeSeedController,
-    occurrences: readonly string[],
-    call?: { index: number; kind: "agent" | "checkpoint" },
-  ) => {
-    let changed = false;
-    for (const occurrence of occurrences) {
-      if (controller.consumed.has(occurrence)) continue;
-      controller.consumed.add(occurrence);
-      changed = true;
-    }
-    if (!changed) return;
-    try {
-      controller.commitSeed(remainingResumeSeed(controller));
-    } catch (error) {
-      throw failResumePersistence(error, call);
-    }
-  };
-
-  const sourcePrefixReplayed = (
-    controller: ResumeSeedController,
-    injection: PersistedCheckpointInjection,
-  ): boolean => {
-    const priorCandidates = controller.seed.candidates.filter((candidate) =>
-      candidate.sourceRunId === injection.sourceRunId &&
-      candidate.recordedIndex < injection.recordedIndex
-    );
-    const hasPriorNonResult = (controller.seed.callBlockers ?? []).some((blocker) =>
-      blocker.sourceRunId === injection.sourceRunId &&
-      blocker.recordedIndex < injection.recordedIndex
-    );
-    const hasPriorPendingReply = (controller.seed.checkpointInjections ?? []).some((candidate) =>
-      candidate.sourceRunId === injection.sourceRunId &&
-      candidate.recordedIndex < injection.recordedIndex
-    );
-    if (hasPriorNonResult || hasPriorPendingReply) return false;
-    return priorCandidates.every((candidate) =>
-      decisionOrder.decisions().some((decision) =>
-        decision.action === "replayed" &&
-        decision.sourceRunId === candidate.sourceRunId &&
-        decision.recordedIndex === candidate.recordedIndex
-      )
-    );
-  };
-
   const appendCallRecord = (
     input: Omit<WorkflowCallRecord, "settlementOrdinal" | "scope">,
   ): WorkflowCallRecord => {
@@ -1015,114 +840,6 @@ export async function runWorkflow<T = unknown>(
     state.calls.push(record);
     guardTerminal("onCallRecord", () => options.onCallRecord?.(record));
     return record;
-  };
-
-  // Today's three rules, each as a source the ledger pairs through.
-  const injectionRow = (injection: PersistedCheckpointInjection): SourceRow => ({
-    sourceRunId: injection.sourceRunId,
-    recordedIndex: injection.recordedIndex,
-    entry: {
-      checkpointDecision: injection.checkpointDecision,
-      index: injection.recordedIndex,
-      hash: injection.hash,
-      result: injection.decision,
-      kind: "checkpoint",
-    },
-    injected: true,
-  });
-
-  // A reuse whose source passed admission: rows found by path, hash and inputs in its seed.
-  const identitySource = (controller: ResumeSeedController): SourceScope => ({
-    pair(call, accept) {
-      const decisionCall = { index: call.index, kind: call.kind };
-      if (resumeFatalError) {
-        emitResumeDecision({ ...decisionCall, action: "failed", reason: "resume-fatal-latch" });
-        throw resumeFatalError;
-      }
-      const match = selectResumeCandidate(controller.indexes, {
-        kind: call.kind,
-        hash: call.hash,
-        path: call.path,
-        inputsHash: call.inputsHash,
-        consumed: controller.consumed,
-        hasSchema: call.hasSchema,
-      });
-      const movedInjectionWithoutSourcePrefix =
-        match.action === "replay" &&
-        match.source.type === "injection" &&
-        match.match === "unique-hash" &&
-        !sourcePrefixReplayed(controller, match.source.injection);
-      if (match.action === "replay" && !movedInjectionWithoutSourcePrefix) {
-        const row: SourceRow = match.source.type === "candidate"
-          ? {
-              sourceRunId: match.source.candidate.sourceRunId,
-              recordedIndex: match.source.candidate.recordedIndex,
-              entry: match.source.candidate.entry,
-              call: match.source.candidate.call,
-            }
-          : injectionRow(match.source.injection);
-        const value = accept(row);
-        commitResumeRemoval(controller, [indexedSourceOccurrence(match.source)], decisionCall);
-        return { action: "replay", row, value, match: match.match, provenance: true, journaled: false };
-      }
-      if (match.action === "live" && match.remove) {
-        commitResumeRemoval(controller, [indexedSourceOccurrence(match.remove)], decisionCall);
-      }
-      return { action: "live", reason: match.action === "live" ? match.reason : "not-recorded" };
-    },
-  });
-
-  // A reuse of a source that failed admission's identity checks: the source's rows by index,
-  // up to the first miss.
-  const positionalSource = (prepared: Extract<PreparedResume, { strategy: "positional-v1" }>): SourceScope => ({
-    pair(call, accept) {
-      const sourceCall = positionalSourceCall(prepared, call.index, call.kind, call.hash);
-      const match = selectPositionalResume({
-        index: call.index,
-        kind: call.kind,
-        hash: call.hash,
-        inputsHash: call.inputsHash,
-        eligibility: prepared.eligibility,
-        firstMiss: state.firstMiss,
-        cached: journaling ? options.resumeJournal?.get(call.index) : undefined,
-        sourceCall,
-        hasSchema: call.hasSchema,
-      });
-      state.firstMiss = match.nextFirstMiss;
-      if (match.action === "live") return { action: "live", reason: match.reason };
-      const row: SourceRow = {
-        sourceRunId: prepared.sourceRunId,
-        recordedIndex: call.index,
-        entry: match.entry,
-        ...(sourceCall ? { call: sourceCall } : {}),
-      };
-      return {
-        action: "replay",
-        row,
-        value: accept(row),
-        match: match.match,
-        provenance: sourceCall !== undefined,
-        journaled: false,
-      };
-    },
-  });
-
-  // A same-ID resume: the run's own journal row at the call's index, when the hashes agree and
-  // an agent's row is not empty text. Without sameRunContinuation it replays only up to the
-  // first miss.
-  const indexSource: SourceScope = {
-    pair(call, accept) {
-      const cached = journaling ? options.resumeJournal?.get(call.index) : undefined;
-      const hashMatches = cached != null && cached.hash === call.hash;
-      const miss = !hashMatches ||
-        (call.kind === "agent" && isEmptyTextAgentResult(cached.result, call.hasSchema));
-      if (!miss && (options.sameRunContinuation || call.index < state.firstMiss)) {
-        const row: SourceRow = { sourceRunId: runId, recordedIndex: call.index, entry: cached };
-        return { action: "replay", row, value: accept(row), match: "index-hash", provenance: true, journaled: true };
-      }
-      if (miss) state.firstMiss = Math.min(state.firstMiss, call.index);
-      return { action: "live" };
-    },
   };
 
   // A resume that pairs by occurrence: the n-th call with a key takes the n-th recorded row with
@@ -1157,7 +874,6 @@ export async function runWorkflow<T = unknown>(
           row: sourceRow,
           value: accept(sourceRow),
           match: scope?.byIndex ? "index-hash" : "occurrence",
-          provenance: true,
           journaled: row.own === true && row.index === call.index,
         };
       },
@@ -1165,15 +881,11 @@ export async function runWorkflow<T = unknown>(
   };
 
   const ledger = createStepLedger({
-    source: options.resumeRows
-      ? occurrenceSource(options.resumeRows.get(runId))
-      : !preparedResume
-      ? indexSource
-      : preparedResume.strategy === "identity-v1"
-        ? identitySource(identitySeed as ResumeSeedController)
-        : preparedResume.strategy === "positional-v1"
-          ? positionalSource(preparedResume)
-          : { pair: () => ({ action: "live", reason: "strategy-live" }) },
+    source: resumeRows
+      ? occurrenceSource(resumeRows.get(runId))
+      : preparedResume?.strategy === "live"
+        ? { pair: () => ({ action: "live", reason: "strategy-live" }) }
+        : undefined,
     order: decisionOrder,
     counter: { next: () => state.callSeq++ },
     sink: {
@@ -1919,19 +1631,16 @@ export async function runWorkflow<T = unknown>(
 
     const replayAgent = async (pairing: Extract<Pairing<unknown>, { action: "replay" }>): Promise<unknown> => {
       const { row, value: resultSnapshot } = pairing;
-      // Only a positional reuse pairs by index with another run's journal. It keeps the recorded
-      // session as it was, and the source's resume safety only when this call has the same.
-      const positional = pairing.match === "index-hash" && !pairing.journaled;
-      const recordedSafety = row.call?.resumeSafety;
-      const sourceResumeSafety = positional && recordedSafety !== legacyResumeSafety ? undefined : recordedSafety;
+      const sourceResumeSafety = row.call?.resumeSafety;
       await Promise.resolve();
       // A halt that lands here must still settle this allocation: nothing downstream will.
       if (signal.aborted || pauseRequested()) interrupt?.();
       throwIfAborted();
       emitAgentStart();
-      const recordedSession = row.entry.session ? cloneTelemetry(row.entry.session) : undefined;
+      // The recorded session, moved to this call's index, label and phase.
       let cachedSession: AgentSessionRecord | undefined;
-      if (recordedSession && !positional) {
+      const recordedSession = cloneTelemetry(row.entry.session);
+      if (recordedSession) {
         const { phase: _recordedPhase, ...session } = recordedSession;
         cachedSession = deepFreeze({
           ...session,
@@ -1939,8 +1648,6 @@ export async function runWorkflow<T = unknown>(
           label,
           ...(assignedPhase === undefined ? {} : { phase: assignedPhase }),
         });
-      } else {
-        cachedSession = recordedSession;
       }
       const cachedUsage = row.entry.usage ? copyValidUsage(row.entry.usage) : undefined;
       if (cachedSession) state.agentSessions.push(cachedSession);
@@ -1968,16 +1675,12 @@ export async function runWorkflow<T = unknown>(
         origin: "journal-replay",
         ...(cachedUsage ? { usage: cachedUsage } : {}),
         ...(sourceResumeSafety ? { resumeSafety: sourceResumeSafety } : {}),
-        ...(pairing.provenance
-          ? {
-              replay: {
-                sourceRunId: row.sourceRunId,
-                recordedIndex: row.recordedIndex,
-                match: pairing.match,
-                ...(sourceResumeSafety ? { sourceResumeSafety } : {}),
-              },
-            }
-          : {}),
+        replay: {
+          sourceRunId: row.sourceRunId,
+          recordedIndex: row.recordedIndex,
+          match: pairing.match,
+          ...(sourceResumeSafety ? { sourceResumeSafety } : {}),
+        },
       }, pairing.journaled ? undefined : entry);
       if (terminalRecord.outcome !== "result") return resultSnapshot;
       emitAgentEnd({
@@ -2171,7 +1874,6 @@ export async function runWorkflow<T = unknown>(
     if (resumeGate) {
       try {
         await resumeGate.predecessor;
-        if (resumeFatalError) throw resumeFatalError;
       } finally {
         resumeGate.release();
       }
@@ -2214,9 +1916,8 @@ export async function runWorkflow<T = unknown>(
         signal,
         sharedRuntime: shared,
         nestingDepth: ownDepth + 1,
-        // A nested run is its own script; never reuse the parent's resume journal.
-        // It replays its own journal, recorded under its run id.
-        resumeJournal: options.nestedResumeJournals?.get(childRunId),
+        // A nested run finds its rows in resumeRows by its run id, never in the parent's journal.
+        resumeJournal: undefined,
         resumeFromRunId: undefined,
         preparedResume: undefined,
         preparedContinuation: undefined,
@@ -2382,17 +2083,13 @@ export async function runWorkflow<T = unknown>(
         outcome: "result",
         origin: "journal-replay",
         checkpointDecision: "explicit-v1",
-        ...(pairing.provenance
-          ? {
-              replay: {
-                sourceRunId: row.sourceRunId,
-                recordedIndex: row.recordedIndex,
-                match: pairing.match,
-                ...(checkpointHostDecision ? { checkpointHostDecision: true as const } : {}),
-                ...(row.injected ? { checkpointInjected: true as const } : {}),
-              },
-            }
-          : {}),
+        replay: {
+          sourceRunId: row.sourceRunId,
+          recordedIndex: row.recordedIndex,
+          match: pairing.match,
+          ...(checkpointHostDecision ? { checkpointHostDecision: true as const } : {}),
+          ...(row.injected ? { checkpointInjected: true as const } : {}),
+        },
       }, pairing.journaled ? undefined : journalEntry(resultSnapshot));
       if (terminalRecord.outcome !== "result") return resultSnapshot;
       const checkpointTaken: WorkflowCheckpointTaken = deepFreeze({
@@ -2660,8 +2357,8 @@ export async function runWorkflow<T = unknown>(
     ...(state.checkpointsTaken.length === 0 ? {} : { checkpointsTaken: state.checkpointsTaken }),
     calls: Object.freeze([...state.calls]) as WorkflowCallRecord[],
     callsAllocated: state.callSeq,
-    ...(resumeReportPlan
-      ? { resumeReport: buildResumeReport(resumeReportPlan, decisionOrder.decisions()) }
+    ...(preparedResume
+      ? { resumeReport: buildResumeReport(preparedResume, decisionOrder.decisions()) }
       : {}),
     effectiveLimits,
     ...(abortSignaled ? { abortSignaled: true as const } : {}),
@@ -2898,19 +2595,6 @@ function validateResumeDeclaration(
       { recoverable: false },
     );
   }
-}
-
-function positionalSourceCall(
-  prepared: PreparedResume | undefined,
-  index: number,
-  kind: "agent" | "checkpoint",
-  hash: string,
-): WorkflowCallRecord | undefined {
-  if (prepared?.strategy !== "positional-v1") return undefined;
-  const source = prepared.sourceCalls.get(index);
-  return source?.index === index && source.kind === kind && source.hash === hash && source.outcome === "result"
-    ? source
-    : undefined;
 }
 
 /** Stable identity hash for a checkpoint() call — a cache miss on resume when anything changes. */

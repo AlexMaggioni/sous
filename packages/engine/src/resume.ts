@@ -3,9 +3,7 @@ import type {
   ResumePolicy,
   WorkflowCallRecord,
   WorkflowResumeDisabledReason,
-  WorkflowResumeFallbackReason,
 } from "./workflow-result.js";
-import type { PersistedResumeSeed } from "./runs/persistence/run-persistence.js";
 
 /** One interrupted root agent occurrence that may be continued at its live boundary. */
 export interface ContinuationCandidate {
@@ -59,28 +57,7 @@ export function validateResumeSafetyMarker(
 /** Manager-prepared, engine-internal execution input. */
 export type PreparedResume =
   | {
-      strategy: "identity-v1";
-      sourceRunId: string;
-      requestedPolicy: ResumePolicy;
-      seed: PersistedResumeSeed;
-      /** Synchronously replace the durable remaining seed. Throws PERSISTENCE_ERROR
-       *  on failure; the engine must not expose a replay/live decision first. */
-      commitSeed: (remaining: PersistedResumeSeed) => void;
-    }
-  | {
-      strategy: "positional-v1";
-      sourceRunId: string;
-      requestedPolicy: ResumePolicy;
-      fallbackReason: WorkflowResumeFallbackReason;
-      /** "legacy" is the exact historical matcher. "safe-prefix" permits
-       *  integrity-checked new-format prefix hits. "all-live" is retained for
-       *  compatibility and initializes firstMiss to 0. */
-      eligibility: "legacy" | "safe-prefix" | "all-live";
-      /** Root source manifest by source index when available; empty for pre-manifest legacy
-       *  sources. Used to validate inputs and carry diagnostic provenance. */
-      sourceCalls: ReadonlyMap<number, WorkflowCallRecord>;
-    }
-  | {
+      /** Every call runs live. */
       strategy: "live";
       sourceRunId: string;
       requestedPolicy: ResumePolicy;

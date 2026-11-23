@@ -56,27 +56,16 @@ const format: PersistedResumeFormat = {
   format: "identity-v1",
   terminalEnvironment: { git: { head: HASH, dirtyDigest: HASH } },
 };
-const committedSeeds: PersistedResumeSeed[] = [];
-const identityPrepared: PreparedResume = {
-  strategy: "identity-v1",
+const occurrencePrepared: PreparedResume = {
+  strategy: "occurrence-v1",
   sourceRunId: "source-run",
   requestedPolicy: "auto",
-  seed,
-  commitSeed: (remaining) => committedSeeds.push(remaining),
-};
-const positionalPrepared: PreparedResume = {
-  strategy: "positional-v1",
-  sourceRunId: "source-run",
-  requestedPolicy: "auto",
-  fallbackReason: "unsafe-recording",
-  eligibility: "safe-prefix",
-  sourceCalls: new Map([[sourceCall.index, sourceCall]]),
 };
 const livePrepared: PreparedResume = {
   strategy: "live",
   sourceRunId: "source-run",
   requestedPolicy: "auto",
-  disabledReason: "runtime-mismatch",
+  disabledReason: "cwd-mismatch",
 };
 
 const runner: AgentRunner = {
@@ -90,7 +79,7 @@ const allocations: number[] = [];
 let filesystemTainted = false;
 const runOptions: WorkflowRunOptions = {
   agent: runner,
-  preparedResume: identityPrepared,
+  preparedResume: occurrencePrepared,
   onResumeFilesystemTainted: () => {
     filesystemTainted = true;
   },
@@ -146,11 +135,9 @@ test("persisted and prepared resume declaration fixtures cover every branch", ()
   assert.equal(identityState.resume?.terminalEnvironment?.git?.head, HASH);
   assert.equal(identityState.resumeSeed?.checkpointInjections?.[0]?.recordedIndex, 4);
   assert.equal(identityState.runtime?.checkpointInputsFormat, 2);
-  assert.equal(identityPrepared.strategy, "identity-v1");
-  assert.equal(positionalPrepared.eligibility, "safe-prefix");
-  assert.equal(livePrepared.disabledReason, "runtime-mismatch");
+  assert.equal(occurrencePrepared.strategy, "occurrence-v1");
+  assert.equal(livePrepared.disabledReason, "cwd-mismatch");
   assert.equal(runOptions.preparedResume?.sourceRunId, "source-run");
-  identityPrepared.commitSeed(seed);
   runOptions.onResumeFilesystemTainted?.();
   runOptions.onResumeActivity?.(1);
   runOptions.onResumeCallAllocated?.(1);
@@ -160,7 +147,6 @@ test("persisted and prepared resume declaration fixtures cover every branch", ()
     action: "live",
     reason: "not-recorded",
   });
-  assert.equal(committedSeeds[0], seed);
   assert.equal(filesystemTainted, true);
   assert.deepEqual(activities, [1]);
   assert.deepEqual(allocations, [1]);

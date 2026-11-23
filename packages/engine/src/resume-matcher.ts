@@ -1,17 +1,14 @@
 import type {
   AgentSessionRecord,
   JournalEntry,
-  ResumePolicy,
   WorkflowCallRecord,
   WorkflowResumeCallDecision,
-  WorkflowResumeCallLiveReason,
-  WorkflowResumeDisabledReason,
-  WorkflowResumeFallbackReason,
   WorkflowResumeReport,
   WorkflowResumeSafety,
 } from "./workflow-result.js";
 import type { AgentUsage } from "./steps/agent-run.js";
-import { assertExplicitCheckpointDecision, assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
+import { assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
+import type { PreparedResume } from "./resume.js";
 import {
   type PersistedCheckpointInjection,
   type PersistedResumeCandidate,
@@ -19,190 +16,13 @@ import {
   type PersistedResumeSeed,
   type PersistedRunState,
 } from "./runs/persistence/run-persistence.js";
-import {
-  appendIndexValue,
-  buildResumeExactIndex,
-  isNestedScope,
-  resumeContentKey,
-  resumeExactKey,
-  resumeOccurrenceKey,
-  type ResumeContentKey,
-  type ResumeExactKey,
-} from "./resume-identity.js";
+import { isNestedScope, resumeOccurrenceKey } from "./resume-identity.js";
 import { cloneFrozenStrictJson, cloneStrictJsonValue, deepFreeze } from "./strict-json.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const TERMINAL_STATUSES = new Set(["completed", "paused", "failed", "aborted"]);
 const RESUME_MATCHES = new Set(["path-hash", "unique-hash", "index-hash", "occurrence"]);
 const RESUME_SAFETY = new Set(["declared-read-only", "isolated-worktree"]);
-
-export interface ResumeFormatIdentity {
-  pathFormat: number;
-  inputsFormat: number;
-  checkpointInputsFormat: number;
-}
-
-export interface ResumeAdmissionInput {
-  source: PersistedRunState;
-  requestedPolicy: ResumePolicy;
-  current: {
-    effectiveCwd: string;
-    runtime: ResumeFormatIdentity;
-  };
-}
-
-export interface ResumeAdmissionFacts {
-  allCallsRepresented: boolean;
-}
-
-export type ResumeAdmissionDecision =
-  | {
-      strategy: "identity-v1";
-      sourceRunId: string;
-      requestedPolicy: ResumePolicy;
-      seed: PersistedResumeSeed;
-      facts: ResumeAdmissionFacts;
-    }
-  | {
-      strategy: "positional-v1";
-      sourceRunId: string;
-      requestedPolicy: ResumePolicy;
-      fallbackReason: WorkflowResumeFallbackReason;
-      eligibility: "legacy" | "safe-prefix" | "all-live";
-      facts?: ResumeAdmissionFacts;
-    }
-  | {
-      strategy: "live";
-      sourceRunId: string;
-      requestedPolicy: ResumePolicy;
-      disabledReason: WorkflowResumeDisabledReason;
-      facts?: ResumeAdmissionFacts;
-    };
-
-export type IndexedResumeSource =
-  | { type: "candidate"; candidate: PersistedResumeCandidate }
-  | { type: "blocker"; blocker: PersistedResumeCallBlocker }
-  | { type: "injection"; injection: PersistedCheckpointInjection };
-
-type ReplayableIndexedResumeSource = Exclude<IndexedResumeSource, { type: "blocker" }>;
-
-export interface ResumeCandidateIndexes {
-  readonly exact: ReadonlyMap<ResumeExactKey, readonly IndexedResumeSource[]>;
-  readonly content: Readonly<
-    Record<"agent" | "checkpoint", ReadonlyMap<ResumeContentKey, readonly IndexedResumeSource[]>>
-  >;
-  readonly hash: Readonly<
-    Record<"agent" | "checkpoint", ReadonlyMap<string, readonly IndexedResumeSource[]>>
-  >;
-}
-
-export interface ResumeMatchInput {
-  kind: "agent" | "checkpoint";
-  hash: string;
-  path?: string;
-  inputsHash?: string;
-  consumed: ReadonlySet<string>;
-  hasSchema?: boolean;
-}
-
-export type ResumeMatchDecision =
-  | {
-      action: "replay";
-      source: ReplayableIndexedResumeSource;
-      match: "path-hash" | "unique-hash";
-    }
-  | {
-      action: "live";
-      reason: Extract<
-        WorkflowResumeCallLiveReason,
-        | "not-recorded"
-        | "path-missing"
-        | "inputs-missing"
-        | "inputs-changed"
-        | "ambiguous-identity"
-        | "ambiguous-content"
-        | "candidate-consumed"
-        | "empty-output"
-      >;
-      remove?: IndexedResumeSource;
-    };
-
-export interface PositionalResumeMatchInput {
-  index: number;
-  kind: "agent" | "checkpoint";
-  hash: string;
-  inputsHash?: string;
-  eligibility: "legacy" | "safe-prefix" | "all-live";
-  firstMiss: number;
-  cached?: JournalEntry;
-  sourceCall?: WorkflowCallRecord;
-  hasSchema?: boolean;
-}
-
-export type PositionalResumeMatchDecision =
-  | {
-      action: "replay";
-      entry: JournalEntry;
-      match: "index-hash";
-      nextFirstMiss: number;
-    }
-  | {
-      action: "live";
-      reason: "positional-miss" | "positional-suffix";
-      nextFirstMiss: number;
-    };
-
-type ValidatedManifest = {
-  calls: WorkflowCallRecord[];
-  journalByIndex: Map<number, JournalEntry>;
-};
-
-type ValidatedSeed = {
-  candidates: PersistedResumeCandidate[];
-  blockers: PersistedResumeCallBlocker[];
-  injections: PersistedCheckpointInjection[];
-};
-
-class ImmutableMapView<K, V> implements ReadonlyMap<K, V> {
-  readonly #map: Map<K, V>;
-
-  constructor(map: Map<K, V>) {
-    this.#map = map;
-    Object.freeze(this);
-  }
-
-  get size(): number {
-    return this.#map.size;
-  }
-
-  get(key: K): V | undefined {
-    return this.#map.get(key);
-  }
-
-  has(key: K): boolean {
-    return this.#map.has(key);
-  }
-
-  entries(): MapIterator<[K, V]> {
-    return this.#map.entries();
-  }
-
-  keys(): MapIterator<K> {
-    return this.#map.keys();
-  }
-
-  values(): MapIterator<V> {
-    return this.#map.values();
-  }
-
-  forEach(callbackfn: (value: V, key: K, map: ReadonlyMap<K, V>) => void, thisArg?: unknown): void {
-    this.#map.forEach((value, key) => callbackfn.call(thisArg, value, key, this));
-  }
-
-  [Symbol.iterator](): MapIterator<[K, V]> {
-    return this.entries();
-  }
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -393,55 +213,6 @@ function validateJournalEntry(value: unknown, sourceRunId: string): value is Jou
   );
 }
 
-function validateManifest(source: PersistedRunState, sourceRunId: string): ValidatedManifest | undefined {
-  const calls = source.calls as unknown[];
-  const journal = source.journal as unknown[];
-  const allocated = source.callsAllocated as number;
-  const callsByIndex = new Map<number, WorkflowCallRecord>();
-  for (const value of calls) {
-    if (!validateBasicCall(value, sourceRunId)) return undefined;
-    // A nested run's row is not part of the root manifest.
-    if (value.scope !== sourceRunId) continue;
-    if (callsByIndex.has(value.index)) return undefined;
-    callsByIndex.set(value.index, value);
-  }
-  if (callsByIndex.size !== allocated) return undefined;
-  for (let index = 0; index < allocated; index++) {
-    if (!callsByIndex.has(index)) return undefined;
-  }
-
-  const journalByIndex = new Map<number, JournalEntry>();
-  for (const value of journal) {
-    if (
-      !validateJournalEntry(value, sourceRunId) ||
-      value.scope !== sourceRunId ||
-      journalByIndex.has(value.index)
-    ) {
-      return undefined;
-    }
-    journalByIndex.set(value.index, value);
-  }
-
-  for (const call of callsByIndex.values()) {
-    const entry = journalByIndex.get(call.index);
-    if (call.outcome === "result") {
-      if (!entry || entry.hash !== call.hash || entry.kind !== call.kind) return undefined;
-    } else if (entry) {
-      return undefined;
-    }
-  }
-  for (const entry of journalByIndex.values()) {
-    const call = callsByIndex.get(entry.index);
-    if (!call || call.outcome !== "result" || call.hash !== entry.hash || call.kind !== entry.kind) {
-      return undefined;
-    }
-  }
-  return {
-    calls: [...callsByIndex.values()].sort((left, right) => left.index - right.index),
-    journalByIndex,
-  };
-}
-
 /** A seed row's occurrence: its run and index, with the nested run's id for a nested row. */
 function seedRowOccurrenceKey(row: PersistedResumeCandidate | PersistedResumeCallBlocker): string {
   return resumeOccurrenceKey(row.call.scope ?? row.sourceRunId, row.recordedIndex);
@@ -509,50 +280,6 @@ function validateInjection(value: unknown): PersistedCheckpointInjection | undef
     return undefined;
   }
   return strictClone(value as unknown as PersistedCheckpointInjection);
-}
-
-function validateSeed(source: PersistedRunState, sourceRunId: string): ValidatedSeed | undefined {
-  if (source.resumeSeed === undefined) return { candidates: [], blockers: [], injections: [] };
-  const seed = source.resumeSeed as unknown;
-  if (
-    !isRecord(seed) ||
-    seed.format !== "identity-v1" ||
-    seed.sourceRunId !== sourceRunId ||
-    !Array.isArray(seed.candidates) ||
-    (seed.callBlockers !== undefined && !Array.isArray(seed.callBlockers)) ||
-    (seed.checkpointInjections !== undefined && !Array.isArray(seed.checkpointInjections))
-  ) {
-    return undefined;
-  }
-  const candidates: PersistedResumeCandidate[] = [];
-  const blockers: PersistedResumeCallBlocker[] = [];
-  const injections: PersistedCheckpointInjection[] = [];
-  const occurrences = new Set<string>();
-  for (const value of seed.candidates) {
-    const candidate = validateCandidate(value);
-    if (!candidate) return undefined;
-    const key = seedRowOccurrenceKey(candidate);
-    if (occurrences.has(key)) return undefined;
-    occurrences.add(key);
-    candidates.push(candidate);
-  }
-  for (const value of seed.callBlockers ?? []) {
-    const blocker = validateCallBlocker(value);
-    if (!blocker) return undefined;
-    const key = seedRowOccurrenceKey(blocker);
-    if (occurrences.has(key)) return undefined;
-    occurrences.add(key);
-    blockers.push(blocker);
-  }
-  for (const value of seed.checkpointInjections ?? []) {
-    const injection = validateInjection(value);
-    if (!injection) return undefined;
-    const key = resumeOccurrenceKey(injection.sourceRunId, injection.recordedIndex);
-    if (occurrences.has(key)) return undefined;
-    occurrences.add(key);
-    injections.push(injection);
-  }
-  return { candidates, blockers, injections };
 }
 
 export function cloneResumeCandidate(
@@ -637,339 +364,26 @@ export function normalizeResumeSeed(input: {
   });
 }
 
-function liveDecision(
-  sourceRunId: string,
-  requestedPolicy: ResumePolicy,
-  disabledReason: Extract<ResumeAdmissionDecision, { strategy: "live" }>["disabledReason"],
-  facts?: ResumeAdmissionFacts,
-): ResumeAdmissionDecision {
-  return {
-    strategy: "live",
-    sourceRunId,
-    requestedPolicy,
-    disabledReason,
-    ...(facts ? { facts } : {}),
-  };
-}
-
-export function admitResumeSource(input: ResumeAdmissionInput): ResumeAdmissionDecision {
-  const { source, requestedPolicy, current } = input;
+/**
+ * Whether a reuse may replay the saved run's steps. A run that has not ended, or that ran in
+ * another folder, replays nothing. Any other run pairs by occurrence.
+ */
+export function admitResumeSource(input: { source: PersistedRunState; effectiveCwd: string }): PreparedResume {
+  const { source, effectiveCwd } = input;
   assertExplicitCheckpointProvenance(source);
-  const sourceRunId = typeof source?.runId === "string" ? source.runId : "";
-  const markerAbsent = !isRecord(source) || !hasOwn(source, "resume") || source.resume === undefined;
-  if (!markerAbsent && (!isRecord(source.resume) || source.resume.format !== "identity-v1")) {
-    return liveDecision(sourceRunId, requestedPolicy, "unsupported-format");
-  }
+  const base = { sourceRunId: source.runId, requestedPolicy: "auto" as const };
   if (!TERMINAL_STATUSES.has(String(source.status))) {
-    return liveDecision(sourceRunId, requestedPolicy, "source-not-terminal");
+    return { strategy: "live", ...base, disabledReason: "source-not-terminal" };
   }
-  if (source.executionMode !== undefined) {
-    return liveDecision(sourceRunId, requestedPolicy, "isolation-recording");
+  if (typeof source.effectiveCwd === "string" && source.effectiveCwd !== effectiveCwd) {
+    return { strategy: "live", ...base, disabledReason: "cwd-mismatch" };
   }
-  if (markerAbsent || source.legacyResume === true) {
-    return {
-      strategy: "positional-v1",
-      sourceRunId,
-      requestedPolicy,
-      fallbackReason: markerAbsent ? "legacy-recording" : "legacy-resume",
-      eligibility: "legacy",
-    };
-  }
-
-  if (
-    !isNonEmptyString(sourceRunId) ||
-    typeof source.effectiveCwd !== "string" ||
-    !isRecord(source.runtime) ||
-    !Number.isSafeInteger(source.runtime.pathFormat) ||
-    !Number.isSafeInteger(source.runtime.inputsFormat) ||
-    !Number.isSafeInteger(source.runtime.checkpointInputsFormat) ||
-    !Array.isArray(source.journal) ||
-    !Array.isArray(source.calls) ||
-    !isNonNegativeSafeInteger(source.callsAllocated)
-  ) {
-    return liveDecision(sourceRunId, requestedPolicy, "resume-metadata-missing");
-  }
-  if (source.effectiveCwd !== current.effectiveCwd) {
-    return liveDecision(sourceRunId, requestedPolicy, "cwd-mismatch");
-  }
-  if (
-    source.runtime.pathFormat !== current.runtime.pathFormat ||
-    source.runtime.inputsFormat !== current.runtime.inputsFormat ||
-    source.runtime.checkpointInputsFormat !== current.runtime.checkpointInputsFormat
-  ) {
-    return liveDecision(sourceRunId, requestedPolicy, "runtime-mismatch");
-  }
-
-  const manifest = validateManifest(source, sourceRunId);
-  if (!manifest) {
-    return liveDecision(sourceRunId, requestedPolicy, "manifest-invalid");
-  }
-  if (!manifest.calls.every(validateCallFacts)) {
-    return liveDecision(sourceRunId, requestedPolicy, "manifest-invalid");
-  }
-  const retained = validateSeed(source, sourceRunId);
-  if (!retained) {
-    return liveDecision(sourceRunId, requestedPolicy, "resume-seed-invalid");
-  }
-
-  const promotedBlockers = manifest.calls
-    .filter((call) => call.outcome !== "result")
-    .map((call) => cloneResumeCallBlocker(sourceRunId, call))
-    .filter((blocker): blocker is PersistedResumeCallBlocker => blocker !== undefined);
-  const blockerIndexes = new Set(promotedBlockers.map((blocker) => blocker.recordedIndex));
-
-  const allCallsRepresented = manifest.calls.every((call) =>
-    call.outcome === "result" || blockerIndexes.has(call.index),
-  );
-  const facts: ResumeAdmissionFacts = { allCallsRepresented };
-
-  if (!allCallsRepresented) {
-    return {
-      strategy: "positional-v1",
-      sourceRunId,
-      requestedPolicy,
-      fallbackReason: "unsafe-recording",
-      eligibility: "safe-prefix",
-      facts,
-    };
-  }
-  const promoted: PersistedResumeCandidate[] = [];
-  for (const call of manifest.calls) {
-    if (call.outcome !== "result") continue;
-    const candidate = cloneResumeCandidate(
-      sourceRunId,
-      manifest.journalByIndex.get(call.index) as JournalEntry,
-      call,
-    );
-    if (candidate) promoted.push(candidate);
-  }
-  const seed = normalizeResumeSeed({
-    sourceRunId,
-    promoted,
-    promotedBlockers,
-    retained: retained.candidates,
-    retainedBlockers: retained.blockers,
-    retainedInjections: retained.injections,
-  });
-  if (!seed) {
-    return liveDecision(sourceRunId, requestedPolicy, "resume-seed-invalid", facts);
-  }
-  return {
-    strategy: "identity-v1",
-    sourceRunId,
-    requestedPolicy,
-    seed,
-    facts,
-  };
+  return { strategy: "occurrence-v1", ...base };
 }
 
-function indexedSourceFacts(source: IndexedResumeSource): {
-  kind: "agent" | "checkpoint";
-  hash: string;
-  path: string;
-  inputsHash: string;
-} {
-  if (source.type === "injection") {
-    return { kind: "checkpoint", ...source.injection };
-  }
-  if (source.type === "blocker") {
-    return {
-      kind: source.blocker.call.kind,
-      hash: source.blocker.call.hash,
-      path: source.blocker.call.path as string,
-      inputsHash: source.blocker.call.inputsHash as string,
-    };
-  }
-  return {
-    kind: source.candidate.call.kind,
-    hash: source.candidate.call.hash,
-    path: source.candidate.call.path as string,
-    inputsHash: source.candidate.call.inputsHash as string,
-  };
-}
-
-export function buildResumeCandidateIndexes(seed: PersistedResumeSeed): ResumeCandidateIndexes {
-  const sources: IndexedResumeSource[] = [
-    ...seed.candidates.map((candidate) => ({ type: "candidate" as const, candidate })),
-    ...(seed.callBlockers ?? []).map((blocker) => ({ type: "blocker" as const, blocker })),
-    ...(seed.checkpointInjections ?? []).map((injection) => ({ type: "injection" as const, injection })),
-  ];
-  const exact = buildResumeExactIndex(sources, indexedSourceFacts);
-  const content = {
-    agent: new Map<ResumeContentKey, IndexedResumeSource[]>(),
-    checkpoint: new Map<ResumeContentKey, IndexedResumeSource[]>(),
-  };
-  const hash = {
-    agent: new Map<string, IndexedResumeSource[]>(),
-    checkpoint: new Map<string, IndexedResumeSource[]>(),
-  };
-  for (const source of sources) {
-    const facts = indexedSourceFacts(source);
-    appendIndexValue(content[facts.kind], resumeContentKey(facts.hash, facts.inputsHash), source);
-    appendIndexValue(hash[facts.kind], facts.hash, source);
-  }
-  for (const values of [
-    ...exact.values(),
-    ...content.agent.values(),
-    ...content.checkpoint.values(),
-    ...hash.agent.values(),
-    ...hash.checkpoint.values(),
-  ]) Object.freeze(values);
-  return Object.freeze({
-    exact: new ImmutableMapView(exact),
-    content: Object.freeze({
-      agent: new ImmutableMapView(content.agent),
-      checkpoint: new ImmutableMapView(content.checkpoint),
-    }),
-    hash: Object.freeze({
-      agent: new ImmutableMapView(hash.agent),
-      checkpoint: new ImmutableMapView(hash.checkpoint),
-    }),
-  });
-}
-
-export function indexedSourceOccurrence(source: IndexedResumeSource): string {
-  const value = source.type === "candidate"
-    ? source.candidate
-    : source.type === "blocker"
-      ? source.blocker
-      : source.injection;
-  return resumeOccurrenceKey(value.sourceRunId, value.recordedIndex);
-}
-
-function selectedSource(
-  indexes: ResumeCandidateIndexes,
-  input: ResumeMatchInput,
-): {
-  source?: IndexedResumeSource;
-  match?: "path-hash" | "unique-hash";
-  reason?: ResumeMatchDecision & { action: "live" };
-} {
-  const exact = indexes.exact.get(resumeExactKey(input.kind, input.path as string, input.hash)) ?? [];
-  if (exact.length > 1) return { reason: { action: "live", reason: "ambiguous-identity" } };
-  if (exact.length === 1) {
-    const source = exact[0];
-    if (indexedSourceFacts(source).inputsHash !== input.inputsHash) {
-      return { reason: { action: "live", reason: "inputs-changed" } };
-    }
-    if (input.consumed.has(indexedSourceOccurrence(source))) {
-      return { reason: { action: "live", reason: "candidate-consumed" } };
-    }
-    return { source, match: "path-hash" };
-  }
-  const content = indexes.content[input.kind].get(
-    resumeContentKey(input.hash, input.inputsHash as string),
-  ) ?? [];
-  if (content.length > 1) return { reason: { action: "live", reason: "ambiguous-content" } };
-  if (content.length === 0) {
-    const hashRows = indexes.hash[input.kind].get(input.hash) ?? [];
-    return { reason: { action: "live", reason: hashRows.length === 0 ? "not-recorded" : "inputs-changed" } };
-  }
-  const source = content[0];
-  if (input.consumed.has(indexedSourceOccurrence(source))) {
-    return { reason: { action: "live", reason: "candidate-consumed" } };
-  }
-  return { source, match: "unique-hash" };
-}
-
-export function initialPositionalFirstMiss(
-  eligibility: PositionalResumeMatchInput["eligibility"],
-): number {
-  return eligibility === "all-live" ? 0 : Number.POSITIVE_INFINITY;
-}
-
-export function selectPositionalResume(
-  input: PositionalResumeMatchInput,
-): PositionalResumeMatchDecision {
-  if (input.kind === "checkpoint" && input.cached) {
-    assertExplicitCheckpointDecision(input.cached);
-    if (input.sourceCall) assertExplicitCheckpointProvenance({ calls: [input.sourceCall] });
-  }
-  const firstMiss = input.eligibility === "all-live" ? 0 : input.firstMiss;
-  if (input.index >= firstMiss) {
-    return { action: "live", reason: "positional-suffix", nextFirstMiss: firstMiss };
-  }
-  const hashMatches = input.cached !== undefined && input.cached.hash === input.hash;
-  const emptyAgent =
-    hashMatches &&
-    input.kind === "agent" &&
-    input.hasSchema !== true &&
-    typeof input.cached?.result === "string" &&
-    input.cached.result.trim().length === 0;
-  let safePrefixMatches = true;
-  if (input.eligibility === "safe-prefix") {
-    const source = input.sourceCall;
-    safePrefixMatches =
-      source !== undefined &&
-      source.index === input.index &&
-      source.kind === input.kind &&
-      source.hash === input.hash &&
-      source.outcome === "result" &&
-      isHash(source.inputsHash) &&
-      source.inputsHash === input.inputsHash;
-  }
-  if (!hashMatches || emptyAgent || !safePrefixMatches) {
-    return { action: "live", reason: "positional-miss", nextFirstMiss: input.index };
-  }
-  return {
-    action: "replay",
-    entry: input.cached as JournalEntry,
-    match: "index-hash",
-    nextFirstMiss: firstMiss,
-  };
-}
-
-export function selectResumeCandidate(
-  indexes: ResumeCandidateIndexes,
-  input: ResumeMatchInput,
-): ResumeMatchDecision {
-  if (!isPath(input.path)) return { action: "live", reason: "path-missing" };
-  if (!isHash(input.inputsHash)) return { action: "live", reason: "inputs-missing" };
-  const selected = selectedSource(indexes, input);
-  if (selected.reason) return selected.reason;
-  const source = selected.source as IndexedResumeSource;
-  if (source.type === "blocker") {
-    return {
-      action: "live",
-      reason: "not-recorded",
-      remove: source,
-    };
-  }
-  if (input.kind === "checkpoint") {
-    assertExplicitCheckpointDecision(source.type === "candidate" ? source.candidate.entry : source.injection);
-    if (source.type === "candidate") assertExplicitCheckpointProvenance({ calls: [source.candidate.call] });
-  }
-  if (
-    input.kind === "agent" &&
-    source.type === "candidate" &&
-    input.hasSchema !== true &&
-    typeof source.candidate.entry.result === "string" &&
-    source.candidate.entry.result.trim().length === 0
-  ) {
-    return { action: "live", reason: "empty-output", remove: source };
-  }
-  return { action: "replay", source, match: selected.match as "path-hash" | "unique-hash" };
-}
-
-export type ResumeReportPlan =
-  | { strategy: "identity-v1"; sourceRunId: string; requestedPolicy: ResumePolicy }
-  | {
-      strategy: "positional-v1";
-      sourceRunId: string;
-      requestedPolicy: ResumePolicy;
-      fallbackReason: WorkflowResumeFallbackReason;
-      eligibility: "legacy" | "safe-prefix" | "all-live";
-    }
-  | {
-      strategy: "live";
-      sourceRunId: string;
-      requestedPolicy: ResumePolicy;
-      disabledReason: Extract<ResumeAdmissionDecision, { strategy: "live" }>["disabledReason"];
-    }
-  | { strategy: "occurrence-v1"; sourceRunId: string; requestedPolicy: ResumePolicy };
-
+/** The resume report of a run: what `plan` says about the run, then its calls by index. */
 export function buildResumeReport(
-  plan: ResumeReportPlan,
+  plan: PreparedResume,
   decisions: readonly WorkflowResumeCallDecision[],
 ): WorkflowResumeReport {
   const indexes = new Set<number>();
@@ -988,11 +402,7 @@ export function buildResumeReport(
     live: calls.filter((decision) => decision.action === "live").length,
     failed: calls.filter((decision) => decision.action === "failed").length,
     calls,
-    ...(plan.strategy === "positional-v1"
-      ? { fallbackReason: plan.fallbackReason, eligibility: plan.eligibility }
-      : plan.strategy === "live"
-        ? { disabledReason: plan.disabledReason }
-        : {}),
+    ...(plan.strategy === "live" ? { disabledReason: plan.disabledReason } : {}),
   };
   const cloned = cloneFrozenStrictJson(report);
   if (!cloned.ok) throw new TypeError(`resume report is not strict JSON at ${cloned.path}`);

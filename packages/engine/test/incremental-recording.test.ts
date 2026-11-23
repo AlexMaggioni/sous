@@ -10,6 +10,8 @@ import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { validateResumeSafetyMarker, type PreparedResume } from "../src/resume.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
+import { normalizeResumeSeed } from "../src/resume-matcher.js";
+import { resumeRows } from "../src/resume-rows.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import {
   CALL_INPUTS_FORMAT,
@@ -109,7 +111,7 @@ return await agent("null", { resume: nullProto })`),
     }
   });
 
-  it("records occurrence safety and propagates only validated positional source markers", async () => {
+  it("records occurrence safety and carries only a validated source marker into a replay", async () => {
     const rows: WorkflowCallRecord[] = [];
     const live = await runWorkflow(
       script(`
@@ -140,20 +142,18 @@ return { safe, unsafe, empty }`),
       inputsHash: rows[0].inputsHash,
       resumeSafety: "declared-read-only",
     });
-    const prepared: PreparedResume = {
-      strategy: "positional-v1",
+    const seed = normalizeResumeSeed({
       sourceRunId: "source",
-      requestedPolicy: "auto",
-      fallbackReason: "unsafe-recording",
-      eligibility: "safe-prefix",
-      sourceCalls: new Map([[0, source]]),
-    };
+      retained: [{ sourceRunId: "source", recordedIndex: 0, entry: journal, call: source }],
+    });
+    assert.ok(seed);
+    const prepared: PreparedResume = { strategy: "occurrence-v1", sourceRunId: "source", requestedPolicy: "auto" };
     const replayed = await runWorkflow(
       script(`return await agent("safe", { resume: { filesystem: "read-only" } })`),
       {
         runId: "target",
         agent: { async run() { throw new Error("must replay"); } },
-        resumeJournal: new Map([[0, journal]]),
+        resumeRows: resumeRows({ runId: "target", journal: [], calls: [], seed, key: "inputs" }),
         preparedResume: prepared,
         persistLogs: false,
       },
@@ -171,22 +171,16 @@ return { safe, unsafe, empty }`),
       },
     );
 
-    source.resumeSafety = "isolated-worktree";
-    source.isolation = "worktree";
-    source.worktree = false;
-    const malformed = await runWorkflow(
-      script(`return await agent("safe", { isolation: "worktree", resume: { filesystem: "read-only" } })`),
-      {
-        runId: "malformed-target",
-        cwd: mkdtempSync(join(tmpdir(), "malformed-source-")),
-        agent: { async run() { throw new Error("must replay"); } },
-        resumeJournal: new Map([[0, journal]]),
-        preparedResume: prepared,
-        persistLogs: false,
-      },
+    // A worktree marker on a call that had no worktree is malformed. The seed that holds it fails
+    // validation, so the marker never reaches a replay.
+    const malformed = { ...source, resumeSafety: "isolated-worktree" as const, isolation: "worktree" as const, worktree: false };
+    assert.equal(
+      normalizeResumeSeed({
+        sourceRunId: "source",
+        retained: [{ sourceRunId: "source", recordedIndex: 0, entry: journal, call: malformed as WorkflowCallRecord }],
+      }),
+      undefined,
     );
-    assert.equal(malformed.calls?.[0].resumeSafety, undefined);
-    assert.equal(malformed.calls?.[0].replay?.sourceResumeSafety, undefined);
   });
 
   it("pins every persisted safety-marker combination", () => {
@@ -654,11 +648,11 @@ describe("managed identity-v1 persistence", () => {
     }
   });
 
-  it("compacts fresh positional runs to current-scope result bijections and drops inherited suffixes", async () => {
+  it("compacts a run fed a journal to its own result rows and drops inherited suffixes", async () => {
     const dirs = tempDirs();
     try {
       const sourceJournal: JournalEntry[] = [];
-      const source = await runWorkflow(
+      await runWorkflow(
         script(`await agent("first")\nreturn await agent("second")`, "compaction-source"),
         {
           runId: "source",
@@ -677,7 +671,6 @@ describe("managed identity-v1 persistence", () => {
         undefined,
         {
           resumeJournal: new Map(sourceJournal.map((entry) => [entry.index, entry] as const)),
-          resumeCalls: source.calls,
         },
       );
       const persisted = manager.getPersistence().load(resumed.runId);

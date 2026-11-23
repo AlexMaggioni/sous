@@ -12,6 +12,7 @@ import {
   cloneResumeCandidate,
   normalizeResumeSeed,
 } from "../src/resume-matcher.js";
+import { resumeRows, type ResumeRows } from "../src/resume-rows.js";
 import type { PreparedResume } from "../src/resume.js";
 import type { PersistedResumeSeed } from "../src/runs/persistence/run-persistence.js";
 import { runWorkflow } from "../src/workflow.js";
@@ -94,21 +95,18 @@ return await parallel(items.map((item, index) => () => agent(item, {
 })))`, worktree ? "worktree-fanout" : "reader-fanout");
 }
 
-function identityPrepared(
+/** A reuse of the recording by the run `runId`: its calls pair by occurrence with the seed's rows. */
+function occurrence(
   seed: PersistedResumeSeed,
-  commits: PersistedResumeSeed[],
-  commitSeed: ((remaining: PersistedResumeSeed) => void) | undefined = undefined,
-): PreparedResume {
+  runId: string,
+): { preparedResume: PreparedResume; resumeRows: ResumeRows } {
   return {
-    strategy: "identity-v1",
-    sourceRunId: seed.sourceRunId,
-    requestedPolicy: "auto",
-    seed,
-    commitSeed: commitSeed ?? ((remaining) => commits.push(remaining)),
+    preparedResume: { strategy: "occurrence-v1", sourceRunId: seed.sourceRunId, requestedPolicy: "auto" },
+    resumeRows: resumeRows({ runId, journal: [], calls: [], seed, key: "inputs" }),
   };
 }
 
-describe("PreparedResume identity engine integration", () => {
+describe("PreparedResume occurrence engine integration", () => {
   it("replays moved calls, re-journals current indexes, rebinds sessions, and keeps usage observational", async () => {
     const sourceRunner: AgentRunner = {
       async run(prompt: string, options: StepRequest) {
@@ -129,7 +127,6 @@ const values = await parallel([
 ])
 return values`), { runner: sourceRunner });
     const originalSessions = recording.journal.map((entry) => entry.session);
-    const commits: PersistedResumeSeed[] = [];
     const decisions: WorkflowResumeCallDecision[] = [];
     const currentJournal: JournalEntry[] = [];
     const runnerPrompts: string[] = [];
@@ -148,7 +145,7 @@ return { values }`), {
           return `live:${prompt}`;
         },
       },
-      preparedResume: identityPrepared(seedFor(recording), commits),
+      ...occurrence(seedFor(recording), "resume-target"),
       persistLogs: false,
       onAgentJournal: (entry) => currentJournal.push(entry),
       onResumeDecision: (decision) => decisions.push(decision),
@@ -160,7 +157,7 @@ return { values }`), {
     });
     assert.equal(result.tokenUsage?.total, 7);
     assert.deepEqual(result.resumeReport, {
-      strategy: "identity-v1",
+      strategy: "occurrence-v1",
       sourceRunId: "resume-source",
       requestedPolicy: "auto",
       replayed: 2,
@@ -174,8 +171,7 @@ return { values }`), {
       [2, "replayed"],
     ]);
     assert.deepEqual(decisions.slice(1).map((decision) =>
-      decision.action === "replayed" ? decision.match : undefined), ["unique-hash", "unique-hash"]);
-    assert.deepEqual(commits.map((seed) => seed.candidates.length), [1, 0]);
+      decision.action === "replayed" ? decision.match : undefined), ["occurrence", "occurrence"]);
     assert.deepEqual(currentJournal.map((entry) => [entry.index, entry.scope]), [
       [0, "resume-target"],
       [1, "resume-target"],
@@ -200,7 +196,6 @@ return { values }`), {
 const first = await agent("first", { label: "first", resume: { filesystem: "read-only" } })
 const second = await agent("second", { label: "second", resume: { filesystem: "read-only" } })
 return { first, second }`));
-    const commits: PersistedResumeSeed[] = [];
     const runnerPrompts: string[] = [];
     const result = await runWorkflow(source(`
 const first = await agent("changed", { label: "first" })
@@ -213,7 +208,7 @@ return { first, second }`), {
           return `live:${prompt}`;
         },
       },
-      preparedResume: identityPrepared(seedFor(recording), commits),
+      ...occurrence(seedFor(recording), "unsafe-target"),
       persistLogs: false,
     });
 
@@ -222,42 +217,6 @@ return { first, second }`), {
       decision.action === "live" ? decision.reason : decision.action), [
       "not-recorded",
       "replayed",
-    ]);
-    assert.deepEqual(commits.map((seed) => seed.candidates.length), [1]);
-  });
-
-  it("latches critical seed persistence failures across errors caught by workflow code", async () => {
-    const recording = await record(source(`
-return await agent("cached", { label: "cached", resume: { filesystem: "read-only" } })`));
-    let runnerCalls = 0;
-    let commitCalls = 0;
-    const result = await runWorkflow(source(`
-const codes = []
-try { await agent("cached", { label: "cached", resume: { filesystem: "read-only" } }) } catch (error) { codes.push(error.code) }
-try { await agent("later", { label: "later", resume: { filesystem: "read-only" } }) } catch (error) { codes.push(error.code) }
-return codes`), {
-      runId: "fatal-target",
-      agent: { async run() { runnerCalls += 1; return "live"; } },
-      preparedResume: identityPrepared(seedFor(recording), [], () => {
-        commitCalls += 1;
-        throw new Error("disk full");
-      }),
-      persistLogs: false,
-    });
-
-    assert.deepEqual(JSON.parse(JSON.stringify(result.result)), [
-      WorkflowErrorCode.PERSISTENCE_ERROR,
-      WorkflowErrorCode.PERSISTENCE_ERROR,
-    ]);
-    assert.equal(commitCalls, 1);
-    assert.equal(runnerCalls, 0);
-    assert.deepEqual(result.resumeReport?.calls, [
-      { index: 0, kind: "agent", action: "failed", reason: "seed-persistence-error" },
-      { index: 1, kind: "agent", action: "failed", reason: "resume-fatal-latch" },
-    ]);
-    assert.deepEqual(result.calls?.map((call) => [call.index, call.outcome, call.origin]), [
-      [0, "error", "engine"],
-      [1, "error", "engine"],
     ]);
   });
 });
@@ -269,12 +228,11 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
     changed[5] = "reader-5-changed";
     changed[20] = "reader-20-changed";
     const recording = await record(fanout(original, false));
-    const commits: PersistedResumeSeed[] = [];
     const runnerPrompts: string[] = [];
     const result = await runWorkflow(fanout(changed, false), {
       runId: "reader-fanout-target",
       agent: { async run(prompt) { runnerPrompts.push(prompt); return `live:${prompt}`; } },
-      preparedResume: identityPrepared(seedFor(recording), commits),
+      ...occurrence(seedFor(recording), "reader-fanout-target"),
       persistLogs: false,
     });
 
@@ -282,27 +240,17 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
     assert.equal(result.resumeReport?.replayed, 38);
     assert.equal(result.resumeReport?.live, 2);
     assert.equal(result.resumeReport?.failed, 0);
-    assert.equal(commits.at(-1)?.candidates.length, 2);
   });
 
-  it("replays an unannotated 40-reader recording under positional safe-prefix", async () => {
+  it("replays an unannotated 40-reader recording", async () => {
     const items = Array.from({ length: 40 }, (_value, index) => `unsafe-reader-${index}`);
     const recording = await record(fanout(items, false, false));
     assert.equal(recording.calls.every((call) => call.resumeSafety === undefined), true);
-    const prepared: PreparedResume = {
-      strategy: "positional-v1",
-      sourceRunId: recording.runId,
-      requestedPolicy: "auto",
-      fallbackReason: "unsafe-recording",
-      eligibility: "safe-prefix",
-      sourceCalls: new Map(recording.calls.map((call) => [call.index, call])),
-    };
     let runnerCalls = 0;
     const result = await runWorkflow(fanout(items, false, false), {
       runId: "unsafe-reader-target",
       agent: { async run(prompt) { runnerCalls += 1; return `live:${prompt}`; } },
-      resumeJournal: new Map(recording.journal.map((entry) => [entry.index, entry])),
-      preparedResume: prepared,
+      ...occurrence(seedFor(recording), "unsafe-reader-target"),
       persistLogs: false,
     });
     assert.equal(runnerCalls, 0);
@@ -325,7 +273,6 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       });
       assert.equal(recording.calls.every((call) => call.resumeSafety === "isolated-worktree"), true);
 
-      const commits: PersistedResumeSeed[] = [];
       const runnerPrompts: string[] = [];
       const orderedDecisions: number[] = [];
       const result = await runWorkflow(fanout(changed, true), {
@@ -339,7 +286,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
             return `live:${prompt}`;
           },
         },
-        preparedResume: identityPrepared(seedFor(recording), commits),
+        ...occurrence(seedFor(recording), "worktree-success"),
         persistLogs: false,
         onResumeDecision: (decision) => orderedDecisions.push(decision.index),
       });
@@ -351,14 +298,13 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       execFileSync("git", ["-C", repository.cwd, "branch", "orc/degrade-0-item-0"]);
       const degraded = [...original];
       degraded[0] = "worktree-0-changed";
-      const degradedCommits: PersistedResumeSeed[] = [];
       const degradedPrompts: string[] = [];
       const degradedResult = await runWorkflow(fanout(degraded, true), {
         runId: "degrade",
         cwd: repository.cwd,
         concurrency: 4,
         agent: { async run(prompt) { degradedPrompts.push(prompt); return `live:${prompt}`; } },
-        preparedResume: identityPrepared(seedFor(recording), degradedCommits),
+        ...occurrence(seedFor(recording), "degrade"),
         persistLogs: false,
       });
       assert.deepEqual(degradedPrompts, ["worktree-0-changed"]);
@@ -369,7 +315,6 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
         "worktree-degraded",
         "replayed",
       ]);
-      assert.equal(degradedCommits.at(-1)?.candidates.length, 1);
 
       const unsafeRecording = await record(fanout(original, true, false), {
         runId: "unsafe-worktree-source",
@@ -377,22 +322,13 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
         concurrency: 1,
       });
       assert.equal(unsafeRecording.calls.every((call) => call.resumeSafety === undefined), true);
-      const unsafePrepared: PreparedResume = {
-        strategy: "positional-v1",
-        sourceRunId: unsafeRecording.runId,
-        requestedPolicy: "auto",
-        fallbackReason: "unsafe-recording",
-        eligibility: "safe-prefix",
-        sourceCalls: new Map(unsafeRecording.calls.map((call) => [call.index, call])),
-      };
       let unsafeRunnerCalls = 0;
       const unsafeResult = await runWorkflow(fanout(original, true, false), {
         runId: "unsafe-worktree-target",
         cwd: repository.cwd,
         concurrency: 4,
         agent: { async run() { unsafeRunnerCalls += 1; return "live"; } },
-        resumeJournal: new Map(unsafeRecording.journal.map((entry) => [entry.index, entry])),
-        preparedResume: unsafePrepared,
+        ...occurrence(seedFor(unsafeRecording), "unsafe-worktree-target"),
         persistLogs: false,
       });
       assert.equal(unsafeRunnerCalls, 0);
@@ -405,53 +341,42 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
 
   it("keeps root replay correspondence across a live nested workflow", async () => {
     const child = source(`return await agent("child", { label: "child" })`, "nested-child");
-    const identityRecording = await record(source(`
+    const beforeRecording = await record(source(`
 return await agent("parent", { label: "parent", resume: { filesystem: "read-only" } })`, "nested-parent"));
-    const identityCommits: PersistedResumeSeed[] = [];
-    const identityPrompts: string[] = [];
-    const identityResult = await runWorkflow(source(`
+    const beforePrompts: string[] = [];
+    const beforeResult = await runWorkflow(source(`
 await workflow(${JSON.stringify(child)})
 return await agent("parent", { label: "parent", resume: { filesystem: "read-only" } })`, "nested-parent"), {
-      runId: "identity-nested-target",
+      runId: "before-nested-target",
       agent: {
         async run(prompt) {
-          identityPrompts.push(prompt);
+          beforePrompts.push(prompt);
           return `live:${prompt}`;
         },
       },
-      preparedResume: identityPrepared(seedFor(identityRecording), identityCommits),
+      ...occurrence(seedFor(beforeRecording), "before-nested-target"),
       persistLogs: false,
     });
-    assert.deepEqual(identityPrompts, ["child"]);
-    assert.equal(identityResult.resumeReport?.calls[0]?.action, "replayed");
-    assert.equal(identityCommits.at(-1)?.candidates.length, 0);
+    assert.deepEqual(beforePrompts, ["child"]);
+    assert.equal(beforeResult.resumeReport?.calls[0]?.action, "replayed");
 
-    const positionalRecording = await record(source(`
+    const betweenRecording = await record(source(`
 const first = await agent("first", { label: "first", resume: { filesystem: "read-only" } })
 const second = await agent("second", { label: "second", resume: { filesystem: "read-only" } })
-return { first, second }`, "nested-positional"));
-    const positionalPrepared: PreparedResume = {
-      strategy: "positional-v1",
-      sourceRunId: positionalRecording.runId,
-      requestedPolicy: "auto",
-      fallbackReason: "unsafe-recording",
-      eligibility: "safe-prefix",
-      sourceCalls: new Map(positionalRecording.calls.map((call) => [call.index, call])),
-    };
-    const positionalPrompts: string[] = [];
-    const positionalResult = await runWorkflow(source(`
+return { first, second }`, "nested-between"));
+    const betweenPrompts: string[] = [];
+    const betweenResult = await runWorkflow(source(`
 const first = await agent("first", { label: "first", resume: { filesystem: "read-only" } })
 await workflow(${JSON.stringify(child)})
 const second = await agent("second", { label: "second", resume: { filesystem: "read-only" } })
-return { first, second }`, "nested-positional"), {
-      runId: "positional-nested-target",
-      agent: { async run(prompt) { positionalPrompts.push(prompt); return `live:${prompt}`; } },
-      resumeJournal: new Map(positionalRecording.journal.map((entry) => [entry.index, entry])),
-      preparedResume: positionalPrepared,
+return { first, second }`, "nested-between"), {
+      runId: "between-nested-target",
+      agent: { async run(prompt) { betweenPrompts.push(prompt); return `live:${prompt}`; } },
+      ...occurrence(seedFor(betweenRecording), "between-nested-target"),
       persistLogs: false,
     });
-    assert.deepEqual(positionalPrompts, ["child"]);
-    assert.deepEqual(positionalResult.resumeReport?.calls.map((decision) => decision.action), [
+    assert.deepEqual(betweenPrompts, ["child"]);
+    assert.deepEqual(betweenResult.resumeReport?.calls.map((decision) => decision.action), [
       "replayed",
       "replayed",
     ]);
@@ -464,7 +389,6 @@ describe("PreparedResume checkpoint integration", () => {
 return await checkpoint("approve", { kind: "confirm", timeoutMs: 50 })`), {
       confirm: async () => ({ approved: true }),
     });
-    const commits: PersistedResumeSeed[] = [];
     const journal: JournalEntry[] = [];
     let confirms = 0;
     const result = await runWorkflow(source(`
@@ -473,7 +397,7 @@ return await checkpoint("approve", { kind: "confirm", timeoutMs: 50 })`), {
       runId: "checkpoint-target",
       agent: { async run() { return "inserted"; } },
       confirm: async () => { confirms += 1; return false; },
-      preparedResume: identityPrepared(seedFor(recording), commits),
+      ...occurrence(seedFor(recording), "checkpoint-target"),
       persistLogs: false,
       onAgentJournal: (entry) => journal.push(entry),
     });
@@ -488,7 +412,7 @@ return await checkpoint("approve", { kind: "confirm", timeoutMs: 50 })`), {
         action: "replayed",
         sourceRunId: "resume-source",
         recordedIndex: 0,
-        match: "unique-hash",
+        match: "occurrence",
       },
     ]);
     assert.equal(result.calls?.[1].replay?.checkpointHostDecision, true);
@@ -496,16 +420,14 @@ return await checkpoint("approve", { kind: "confirm", timeoutMs: 50 })`), {
       [0, "agent", "checkpoint-target"],
       [1, "checkpoint", "checkpoint-target"],
     ]);
-    assert.equal(commits.at(-1)?.candidates.length, 0);
   });
 
-  it("keeps later candidates after an explicit answer and while an unanswered checkpoint pauses", async () => {
+  it("keeps later rows after an explicit answer and while an unanswered checkpoint pauses", async () => {
     const recording = await record(source(`
 const decision = await checkpoint("source-decision", {})
 const later = await agent("later", { label: "later", resume: { filesystem: "read-only" } })
 return { decision, later }`), { confirm: async () => true });
 
-    const confirmCommits: PersistedResumeSeed[] = [];
     const confirmResult = await runWorkflow(source(`
 const decision = await checkpoint("changed-decision", {})
 const later = await agent("later", { label: "later", resume: { filesystem: "read-only" } })
@@ -515,14 +437,12 @@ return { decision, later }`), {
       confirm: async () => {
         return false;
       },
-      preparedResume: identityPrepared(seedFor(recording), confirmCommits),
+      ...occurrence(seedFor(recording), "confirm-barrier-target"),
       persistLogs: false,
     });
     assert.deepEqual(confirmResult.resumeReport?.calls.map((decision) =>
       decision.action === "live" ? decision.reason : decision.action), ["not-recorded", "replayed"]);
-    assert.equal(confirmCommits.at(-1)?.candidates.length, 1);
 
-    const waitingCommits: PersistedResumeSeed[] = [];
     const waitingSeed = seedFor(recording);
     let waitingRunnerCalls = 0;
     await assert.rejects(runWorkflow(source(`
@@ -531,41 +451,31 @@ const later = await agent("later", { label: "later", resume: { filesystem: "read
 return { decision, later }`), {
       runId: "waiting-target",
       agent: { async run() { waitingRunnerCalls += 1; return "must-not-run"; } },
-      preparedResume: identityPrepared(waitingSeed, waitingCommits),
+      ...occurrence(waitingSeed, "waiting-target"),
       persistLogs: false,
     }), (error: unknown) => error instanceof WorkflowError && error.code === WorkflowErrorCode.CHECKPOINT_REQUIRED);
     assert.equal(waitingRunnerCalls, 0);
-    assert.deepEqual(waitingCommits, [], "waiting consumes no retained candidates");
     assert.equal(waitingSeed.candidates.length, 2);
-
   });
 });
 
-describe("PreparedResume positional eligibility", () => {
-  it("initializes all-live at index zero and reports positional-suffix without a synthetic miss", async () => {
-    const recording = await record(source(`
-return await agent("same", { label: "same", resume: { filesystem: "read-only" } })`));
-    let runnerCalls = 0;
-    const prepared: PreparedResume = {
-      strategy: "positional-v1",
-      sourceRunId: recording.runId,
-      requestedPolicy: "auto",
-      fallbackReason: "nested-workflows",
-      eligibility: "all-live",
-      sourceCalls: new Map(recording.calls.map((call) => [call.index, call])),
-    };
-    const result = await runWorkflow(source(`
-return await agent("same", { label: "same", resume: { filesystem: "read-only" } })`), {
-      runId: "all-live-target",
-      agent: { async run() { runnerCalls += 1; return "live"; } },
-      resumeJournal: new Map(recording.journal.map((entry) => [entry.index, entry])),
-      preparedResume: prepared,
+describe("PreparedResume empty output", () => {
+  it("runs live a step whose recorded text is blank, unless the step has a schema", async () => {
+    const script = source(`
+const plain = await agent("plain", { label: "plain" })
+const shaped = await agent("shaped", { label: "shaped", schema: { type: "string" } })
+return { plain, shaped }`);
+    const recording = await record(script);
+    for (const entry of recording.journal) entry.result = "  \n";
+    const prompts: string[] = [];
+    const result = await runWorkflow(script, {
+      runId: "blank-target",
+      agent: { async run(prompt) { prompts.push(prompt); return `live:${prompt}`; } },
+      ...occurrence(seedFor(recording), "blank-target"),
       persistLogs: false,
     });
-    assert.equal(result.result, "live");
-    assert.equal(runnerCalls, 1);
-    assert.deepEqual(result.resumeReport?.calls, [
-      { index: 0, kind: "agent", action: "live", reason: "positional-suffix" },
-    ]);
+    assert.deepEqual(prompts, ["plain"]);
+    assert.deepEqual(result.resumeReport?.calls.map((decision) =>
+      decision.action === "live" ? decision.reason : decision.action), ["empty-output", "replayed"]);
   });
 });

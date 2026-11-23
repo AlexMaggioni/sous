@@ -586,7 +586,7 @@ const b = await agent('B', { label: 'b' })
 const c = await agent('C', { label: 'c' })
 return { a, b, c }`;
 
-test("resume re-runs the changed call AND everything after it (longest-unchanged-prefix)", async () => {
+test("resume re-runs the changed middle call and replays the unchanged call after it", async () => {
   const first = countingAgent();
   const journal: JournalEntry[] = [];
   await runWorkflow(threeCallScript, {
@@ -596,17 +596,17 @@ test("resume re-runs the changed call AND everything after it (longest-unchanged
   });
   assert.equal(first.state.calls, 3);
 
-  // Edit the MIDDLE call (index 1). Index 0 is an unchanged prefix → cache hit.
-  // Index 1 changed → re-run; index 2 is unchanged but AFTER the first miss, so
-  // it must re-run too (the bug was serving it stale from the journal).
+  // Edit the middle call, index 1. Each call pairs with the journal row at its index when the
+  // hashes agree, so index 0 and index 2 replay and only index 1 runs.
   const editedScript = threeCallScript.replace("'B'", "'B-edited'");
   const second = countingAgent();
-  await runWorkflow(editedScript, {
+  const resumed = await runWorkflow(editedScript, {
     agent: second.runner,
     persistLogs: false,
     resumeJournal: new Map(journal.map((e) => [e.index, e])),
   });
-  assert.equal(second.state.calls, 2, "edited call (1) + its suffix (2) re-run; only the prefix (0) is cached");
+  assert.equal(second.state.calls, 1, "only the edited call (1) runs; 0 and 2 replay");
+  assert.deepEqual(resumed.calls?.map((call) => call.origin), ["journal-replay", "runner", "journal-replay"]);
 });
 
 const configuredResumeSelection = {
@@ -638,7 +638,7 @@ function markedAgent(marker: string): { prompts: string[]; runner: AgentRunner }
   return { prompts, runner };
 }
 
-test("actual effective configuration controls replay identity and unchanged-prefix invalidation", async () => {
+test("actual effective configuration controls replay identity, and only the changed call runs", async () => {
   const baselineAgent = markedAgent("baseline");
   const journal: JournalEntry[] = [];
   const baseline = await runWorkflow(configuredResumeScript(), {
@@ -726,25 +726,21 @@ test("actual effective configuration controls replay identity and unchanged-pref
 
     assert.deepEqual(
       liveAgent.prompts,
-      ["selected", "suffix"],
-      `${label} must replay only the unchanged prefix and execute the changed call plus suffix`,
+      ["selected"],
+      `${label} must run only the changed call, and replay the unchanged calls before and after it`,
     );
     const changedHashes = callHashes(changed);
     const baselineHashes = callHashes(baseline);
     assert.equal(changedHashes.length, 3);
-    assert.equal(changedHashes[0], baselineHashes[0], "the unchanged prefix keeps its identity");
+    assert.equal(changedHashes[0], baselineHashes[0], "the unchanged first call keeps its identity");
     assert.notEqual(changedHashes[1], baselineHashes[1], `${label} must change selected-call identity`);
-    assert.equal(
-      changedHashes[2],
-      baselineHashes[2],
-      "the unchanged suffix retains its own identity even though correspondence requires live execution",
-    );
+    assert.equal(changedHashes[2], baselineHashes[2], "the unchanged last call keeps its identity, so it replays");
     assert.equal(
       JSON.stringify(changed.result),
       JSON.stringify({
         prefix: "baseline:prefix",
         selected: `live-${label}:selected`,
-        suffix: `live-${label}:suffix`,
+        suffix: "baseline:suffix",
       }),
     );
   }
@@ -794,7 +790,7 @@ test("resume with a raised args-controlled cap replays the unchanged prefix", as
   );
 });
 
-test("an args-caused middle prompt change invalidates that call and the complete suffix", async () => {
+test("an args-caused middle prompt change re-runs that call only", async () => {
   const script = `export const meta = { name: 'args-prefix', description: 'args-driven prefix resume' }
 const a = await agent('A', { label: 'a' })
 const b = await agent(String(args.middle), { label: 'b' })
@@ -816,17 +812,18 @@ return { a, b, c }`;
     persistLogs: false,
     resumeJournal: new Map(journal.map((entry) => [entry.index, entry])),
   });
-  assert.equal(second.state.calls, 2, "the changed middle call and unchanged-looking final call run live");
+  assert.equal(second.state.calls, 1, "only the changed middle call runs live");
   assert.deepEqual(JSON.parse(JSON.stringify(resumed.result)), {
     a: journal[0].result,
     b: "ran:B-edited",
-    c: "ran:C",
+    c: journal[2].result,
   });
+  assert.deepEqual(resumed.calls?.map((call) => call.origin), ["journal-replay", "runner", "journal-replay"]);
 });
 
-test("resume in parallel(): editing one thunk re-runs that index and every later one", async () => {
-  // Three identical-prompt thunks; editing the middle one must invalidate it and
-  // the same-or-later index, not just the single changed call.
+test("resume in parallel(): editing one thunk re-runs that thunk only", async () => {
+  // Three thunks, the first and last with the same prompt. Editing the middle one re-runs it, and
+  // each of the others replays the journal row at its own index.
   const script = (mid: string) => `export const meta = { name: 'par_prefix', description: 'parallel prefix' }
   const xs = await parallel([
     () => agent('x', { label: 'p0' }),
@@ -844,12 +841,16 @@ test("resume in parallel(): editing one thunk re-runs that index and every later
   assert.equal(first.state.calls, 3);
 
   const second = countingAgent();
-  await runWorkflow(script("x-edited"), {
+  const resumed = await runWorkflow(script("x-edited"), {
     agent: second.runner,
     persistLogs: false,
     resumeJournal: new Map(journal.map((e) => [e.index, e])),
   });
-  assert.equal(second.state.calls, 2, "changed thunk (index 1) + later index (2) re-run; index 0 cached");
+  assert.equal(second.state.calls, 1, "only the changed thunk (index 1) runs; 0 and 2 replay");
+  assert.deepEqual(
+    [...(resumed.calls ?? [])].sort((a, b) => a.index - b.index).map((call) => call.origin),
+    ["journal-replay", "runner", "journal-replay"],
+  );
 });
 
 test("callSeq is deterministic under parallel()", async () => {

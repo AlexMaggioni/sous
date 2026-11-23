@@ -141,15 +141,16 @@ const again = await manager.runSync(script, { topic: "otters", expanded: true },
 console.log(again.replayEligibility, again.resumeReport);
 ```
 
-The manager admits exact cwd plus compatible format/metadata/manifest state, persists the candidate seed, and
-then matches completed results by exact path/hash or unique hash+input fingerprint. Allocated calls that
-halt without a result are persisted as engine interruption rows; non-result seed blockers make those
-occurrences run live without letting an identical result sibling become spuriously unique. Any
-uncertain, ambiguous, or mismatched call runs live. Same-ID `manager.resume(runId)` and
-manual `resumeJournal` remain permanently legacy positional paths. A same-run continuation given
-`exec.script` that differs from the persisted text runs that revision through the identity matcher
-against the run's own terminal state (`continuation.scriptRevised`, `scriptRevisions`); a revision
-must parse.
+The manager runs every call live when the source run has not ended or ran in another folder.
+Otherwise the calls pair by occurrence: the n-th call with a key takes the n-th recorded row with
+that key, from the source's own rows first and then its seed's. The key is the kind, the call hash
+and, when the source computed it the same way, the input fingerprint. A call whose row failed or
+never finished runs live, and still counts, so an identical call after it takes the next row. An
+agent call whose recorded text is blank runs live. A call with no row runs live. Same-ID
+`manager.resume(runId)` pairs the same way, on the kind and call hash only. A manual
+`resumeJournal` has no call rows, so its calls pair by index and hash. A same-run continuation
+given `exec.script` that differs from the persisted text runs that revision against the run's own
+rows (`continuation.scriptRevised`, `scriptRevisions`); a revision must parse.
 
 Effective model, mode, and config options enter call identity and durable call records
 (`modelRequested`, `modeRequested`, and `configOptionsRequested`). Supported SDK journal eras retain
@@ -159,7 +160,7 @@ Every execution/reuse path checks explicit checkpoint provenance. Checkpoint inp
 use format 2, binding explicit-answer semantics and `timeoutMs`; prompt, kind, and choices remain
 the checkpoint identity. Checkpoint journal results, result call records, and injected decisions
 carry `checkpointDecision:"explicit-v1"`. Historical automatic or ambiguous answers fail with
-`checkpoint-provenance-incompatible` and a fresh-run instruction, including positional replay and
+`checkpoint-provenance-incompatible` and a fresh-run instruction, including replay by index and
 isolation. Historical data remains available through read-only APIs; no answer is inferred or
 migrated.
 

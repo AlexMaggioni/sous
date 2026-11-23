@@ -14,7 +14,9 @@ import type {
 } from "../src/workflow-result.js";
 import type { ContinuationAttempt } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import type { ContinuationCandidate, PreparedContinuation, PreparedResume } from "../src/resume.js";
+import type { ContinuationCandidate, PreparedContinuation } from "../src/resume.js";
+import { normalizeResumeSeed } from "../src/resume-matcher.js";
+import { resumeRows } from "../src/resume-rows.js";
 import { runWorkflow } from "../src/workflow.js";
 
 const workflow = (options = "", body = "return await agent('task', { label: 'worker' })") =>
@@ -569,28 +571,36 @@ return [first, second]`);
     try {
       const source = await recordInterrupted(fixture.cwd);
       const continuedJournal: JournalEntry[] = [];
+      const continuedCalls: WorkflowCallRecord[] = [];
       await runWorkflow(workflow(), {
+        runId: "continued-source",
         cwd: fixture.cwd,
         persistLogs: false,
         preparedContinuation: prepared(source.candidate),
         agent: continuedRunner(source.candidate),
         onAgentJournal: (entry) => continuedJournal.push(entry),
+        onCallRecord: (call) => continuedCalls.push(call),
       });
-      const replayedJournal: JournalEntry[] = [];
-      const positional: PreparedResume = {
-        strategy: "positional-v1",
+      // Another run replays the continued row from its seed, and writes it to its own journal.
+      // The rows go through JSON, as they do when the run is saved.
+      const seed = normalizeResumeSeed({
         sourceRunId: "continued-source",
-        requestedPolicy: "auto",
-        fallbackReason: "legacy-resume",
-        eligibility: "legacy",
-        sourceCalls: new Map(),
-      };
+        retained: [{
+          sourceRunId: "continued-source",
+          recordedIndex: 0,
+          entry: JSON.parse(JSON.stringify(continuedJournal[0])) as JournalEntry,
+          call: JSON.parse(JSON.stringify(continuedCalls[0])) as WorkflowCallRecord,
+        }],
+      });
+      assert.ok(seed);
+      const replayedJournal: JournalEntry[] = [];
       await runWorkflow(workflow(), {
+        runId: "replay-target",
         cwd: fixture.cwd,
         persistLogs: false,
         agent: { async run() { throw new Error("must replay"); } },
-        preparedResume: positional,
-        resumeJournal: new Map([[0, continuedJournal[0] as JournalEntry]]),
+        preparedResume: { strategy: "occurrence-v1", sourceRunId: "continued-source", requestedPolicy: "auto" },
+        resumeRows: resumeRows({ runId: "replay-target", journal: [], calls: [], seed, key: "inputs" }),
         onAgentJournal: (entry) => replayedJournal.push(entry),
       });
       assert.deepEqual(

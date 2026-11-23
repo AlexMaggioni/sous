@@ -52,14 +52,12 @@ export type Pairing<T> =
       /** What `accept` made of the row. */
       value: T;
       match: WorkflowResumeMatch;
-      /** The call row names the row it replayed. */
-      provenance: boolean;
       /** The row is in this run's journal already. */
       journaled: boolean;
     }
   | {
       action: "live";
-      /** Absent when the source reports no decisions. */
+      /** Absent when the scope has no source. */
       reason?: WorkflowResumeCallLiveReason;
       /** The recorded call that failed, when the call took one. Its session can go on. */
       failed?: { sourceRunId: string; recordedIndex: number };

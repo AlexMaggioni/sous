@@ -23,7 +23,7 @@ function plantedSource(rows: Record<string, SourceRow>, seen: OpenedCall[] = [])
       seen.push(call);
       const row = rows[call.hash];
       if (!row) return { action: "live", reason: "not-recorded" };
-      return { action: "replay", row, value: accept(row), match: "path-hash", provenance: true, journaled: false };
+      return { action: "replay", row, value: accept(row), match: "path-hash", journaled: false };
     },
   };
 }
