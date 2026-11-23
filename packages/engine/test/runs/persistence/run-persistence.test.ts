@@ -115,7 +115,7 @@ function memoryPersistence(): {
 }
 
 test(
-  "createRunPersistence creates runs directory on first save",
+  "createRunPersistence creates runs directory on first save, with the state's .bak and no .tmp",
   withTempCwd(async (cwd) => {
     const rp = createRunPersistence(cwd);
     const runsDir = workflowProjectPaths(cwd).runsDir;
@@ -133,6 +133,8 @@ test(
     });
     assert.ok(existsSync(runsDir), "dir should be created");
     assert.ok(existsSync(join(runsDir, "test-1.json")), "run file should exist");
+    assert.ok(existsSync(join(runsDir, "test-1.json.bak")), ".bak written");
+    assert.equal(existsSync(join(runsDir, "test-1.json.tmp")), false, "no leftover .tmp");
     assert.equal(existsSync(join(cwd, WORKFLOW_RUNS_DIR)), false, "legacy project runs dir should not be created");
   }),
 );
@@ -442,39 +444,6 @@ test(
 );
 
 test(
-  "createRunPersistence save and load round-trips correctly",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    const state: PersistedRunState = {
-      runId: "roundtrip-1",
-      workflowName: "test-wf",
-      script: "export const meta = { name: 't', description: 't' }",
-      args: { key: "value" },
-      status: "running",
-      phases: ["Scan", "Report"],
-      currentPhase: "Scan",
-      agents: [{ id: 1, label: "agent-1", prompt: "do it", status: "running" }],
-      logs: ["started", "phase: Scan"],
-      startedAt: "2024-01-01T00:00:00.000Z",
-      updatedAt: "2024-01-01T00:01:00.000Z",
-    };
-    rp.save(state);
-
-    const loaded = rp.load("roundtrip-1");
-    assert.ok(loaded, "should load saved state");
-    assert.equal(loaded?.runId, "roundtrip-1");
-    assert.equal(loaded?.workflowName, "test-wf");
-    assert.equal(loaded?.status, "running");
-    assert.deepEqual(loaded?.phases, ["Scan", "Report"]);
-    assert.equal(loaded?.currentPhase, "Scan");
-    assert.equal(loaded?.agents.length, 1);
-    assert.equal(loaded?.agents[0].label, "agent-1");
-    assert.deepEqual(loaded?.logs, ["started", "phase: Scan"]);
-    assert.deepEqual(loaded?.args, { key: "value" });
-  }),
-);
-
-test(
   "createRunPersistence save updates updatedAt",
   withTempCwd(async (cwd) => {
     const rp = createRunPersistence(cwd);
@@ -686,58 +655,6 @@ test(
 );
 
 test(
-  "createRunPersistence round-trips terminal cause and enriched journals while loading legacy shapes",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    const state: PersistedRunState = {
-      runId: "journal-test",
-      workflowName: "wf",
-      script: "export const meta = { name: 'w', description: 'w' }",
-      status: "paused",
-      reason: "checkpoint_required",
-      errorCode: WorkflowErrorCode.CHECKPOINT_REQUIRED,
-      phases: [],
-      agents: [],
-      logs: [],
-      journal: [
-        { index: 0, hash: "abc123", result: { ok: true } },
-        {
-          index: 1,
-          hash: "def456",
-          result: { value: 42 },
-          call: { kind: "agent", label: "review", phase: "Review", model: "provider/model", backendId: "provider" },
-        },
-        { index: 2, hash: "ghi789", result: true, call: { kind: "checkpoint", label: "checkpoint", phase: "Review" } },
-      ],
-      startedAt: "2024-01-01T00:00:00.000Z",
-      updatedAt: "2024-01-01T00:00:00.000Z",
-    };
-    rp.save(state);
-    const loaded = rp.load("journal-test");
-    assert.equal(loaded?.journal?.length, 3);
-    assert.equal(loaded?.journal?.[0].index, 0);
-    assert.equal(loaded?.journal?.[0].hash, "abc123");
-    assert.deepEqual(loaded?.journal?.[0].result, { ok: true });
-    assert.equal(loaded?.journal?.[0].call, undefined, "pre-change entries stay valid");
-    assert.equal(loaded?.journal?.[1].call?.kind, "agent");
-    assert.equal(loaded?.journal?.[2].call?.kind, "checkpoint");
-    assert.equal(loaded?.reason, "checkpoint_required");
-    assert.equal(loaded?.errorCode, WorkflowErrorCode.CHECKPOINT_REQUIRED);
-
-    const legacy: PersistedRunState = {
-      ...state,
-      runId: "journal-legacy",
-      journal: [{ index: 0, hash: "legacy", result: true }],
-    };
-    delete legacy.reason;
-    delete legacy.errorCode;
-    rp.save(legacy);
-    assert.equal(rp.load(legacy.runId)?.reason, undefined);
-    assert.equal(rp.load(legacy.runId)?.errorCode, undefined);
-  }),
-);
-
-test(
   "WorkflowManager persists complete session records for cold restart and journal replay",
   withTempCwd(async (cwd) => {
     const ref: AgentSessionRef = {
@@ -815,50 +732,6 @@ test(
   }),
 );
 
-test(
-  "createRunPersistence save and load preserves token usage",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    rp.save({
-      runId: "tokens",
-      workflowName: "wf",
-      script: "export const meta = { name: 'w', description: 'w' }",
-      status: "completed",
-      phases: [],
-      agents: [],
-      logs: [],
-      tokenUsage: { input: 100, output: 50, total: 150 },
-      startedAt: "2024-01-01T00:00:00.000Z",
-      updatedAt: "2024-01-01T00:00:00.000Z",
-    });
-    const loaded = rp.load("tokens");
-    assert.deepEqual(loaded?.tokenUsage, { input: 100, output: 50, total: 150 });
-  }),
-);
-
-test(
-  "createRunPersistence save and load preserves completedAt and durationMs",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    rp.save({
-      runId: "timing",
-      workflowName: "wf",
-      script: "export const meta = { name: 'w', description: 'w' }",
-      status: "completed",
-      phases: [],
-      agents: [],
-      logs: [],
-      startedAt: "2024-01-01T00:00:00.000Z",
-      updatedAt: "2024-01-01T00:00:00.000Z",
-      completedAt: "2024-01-01T00:01:00.000Z",
-      durationMs: 60000,
-    });
-    const loaded = rp.load("timing");
-    assert.equal(loaded?.completedAt, "2024-01-01T00:01:00.000Z");
-    assert.equal(loaded?.durationMs, 60000);
-  }),
-);
-
 test("generateRunId returns a string with timestamp and random parts", () => {
   const id = generateRunId();
   assert.equal(typeof id, "string");
@@ -900,73 +773,7 @@ test(
   }),
 );
 
-test(
-  "createRunPersistence concurrent save and load returns consistent data",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-
-    const state: PersistedRunState = {
-      runId: "concurrent-test",
-      workflowName: "test-wf",
-      script: "export const meta = { name: 't', description: 't' }",
-      args: { items: [1, 2, 3] },
-      status: "running",
-      phases: ["Scan", "Analyze", "Report"],
-      currentPhase: "Analyze",
-      agents: [
-        { id: 1, label: "agent-a", prompt: "scan", status: "done", result: { found: true } },
-        { id: 2, label: "agent-b", prompt: "analyze", status: "running" },
-      ],
-      logs: ["started", "phase: Scan", "phase: Analyze"],
-      tokenUsage: { input: 500, output: 200, total: 700 },
-      journal: [{ index: 0, hash: "abc", result: { ok: true } }],
-      startedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      completedAt: undefined,
-    };
-
-    rp.save(state);
-    const loaded = rp.load("concurrent-test");
-
-    assert.ok(loaded, "should load immediately after save");
-    assert.equal(loaded.runId, state.runId);
-    assert.equal(loaded.workflowName, state.workflowName);
-    assert.equal(loaded.status, "running");
-    assert.equal(loaded.currentPhase, "Analyze");
-    assert.deepEqual(loaded.args, { items: [1, 2, 3] });
-    assert.deepEqual(loaded.phases, ["Scan", "Analyze", "Report"]);
-    assert.equal(loaded.agents.length, 2);
-    assert.deepEqual(loaded.agents[0].result, { found: true });
-    assert.equal(loaded.agents[1].status, "running");
-    assert.deepEqual(loaded.logs, ["started", "phase: Scan", "phase: Analyze"]);
-    assert.deepEqual(loaded.tokenUsage, { input: 500, output: 200, total: 700 });
-    assert.deepEqual(loaded.journal, [{ index: 0, hash: "abc", result: { ok: true } }]);
-  }),
-);
-
 // ─── crash-safe durable resume ───────────────────────────────────────────────
-
-test(
-  "save writes the primary plus a .bak (atomic temp+rename leaves no .tmp)",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    rp.save({
-      runId: "r1",
-      workflowName: "w",
-      script: "export const meta = { name: 'w', description: 'w' }",
-      status: "running",
-      phases: [],
-      agents: [],
-      logs: [],
-      startedAt: "2024-01-01T00:00:00.000Z",
-      updatedAt: "2024-01-01T00:00:00.000Z",
-    });
-    const runsDir = workflowProjectPaths(cwd).runsDir;
-    assert.ok(existsSync(join(runsDir, "r1.json")), "primary written");
-    assert.ok(existsSync(join(runsDir, "r1.json.bak")), ".bak written");
-    assert.equal(existsSync(join(runsDir, "r1.json.tmp")), false, "no leftover .tmp");
-  }),
-);
 
 test(
   "load recovers from .bak when the primary is corrupt",
@@ -987,29 +794,6 @@ test(
     writeFileSync(join(workflowProjectPaths(cwd).runsDir, "r1.json"), "{ truncated", "utf-8");
     const loaded = rp.load("r1");
     assert.equal(loaded?.runId, "r1", "load falls back to the intact .bak");
-  }),
-);
-
-test(
-  "persistence round-trips cost and cache fields in tokenUsage",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    rp.save({
-      runId: "tu",
-      workflowName: "w",
-      script: "export const meta = { name: 'w', description: 'w' }",
-      status: "completed",
-      phases: [],
-      agents: [],
-      logs: [],
-      startedAt: "2024-01-01T00:00:00.000Z",
-      updatedAt: "2024-01-01T00:00:00.000Z",
-      tokenUsage: { input: 1, output: 2, total: 3, cost: 0.5, cacheRead: 9, cacheWrite: 4 },
-    });
-    const loaded = rp.load("tu");
-    assert.equal(loaded?.tokenUsage?.cost, 0.5, "cost survives reload");
-    assert.equal(loaded?.tokenUsage?.cacheRead, 9, "cacheRead survives reload");
-    assert.equal(loaded?.tokenUsage?.cacheWrite, 4, "cacheWrite survives reload");
   }),
 );
 
@@ -1420,62 +1204,72 @@ const checkpointPersistContext = {
   default: "hold",
 };
 
-test(
-  "PersistedRunState.checkpointContext round-trips through the real fs persistence layer",
-  withTempCwd(async (cwd) => {
-    const persistence = createRunPersistence(cwd);
-    const runId = generateRunId();
-    const now = new Date().toISOString();
-    persistence.save({
-      runId,
-      workflowName: "checkpoint_persist_demo",
-      script: oneAgentAuthScript,
+// ─── Round trips: save writes the state as JSON and load reads it back ────────────────────────
+
+// Each case is one saved state that load must return as it was. save stamps updatedAt on the
+// object it is given, so the state compares with the load as it stands after the save.
+const roundTrips: Array<[title: string, fields: Partial<PersistedRunState>]> = [
+  [
+    "a running run's args, phases, current phase, agents and logs",
+    {
+      args: { items: [1, 2, 3] },
+      status: "running",
+      phases: ["Scan", "Analyze", "Report"],
+      currentPhase: "Analyze",
+      agents: [
+        { id: 1, label: "agent-a", prompt: "scan", status: "done", result: { found: true } },
+        { id: 2, label: "agent-b", prompt: "analyze", status: "running" },
+      ],
+      logs: ["started", "phase: Scan", "phase: Analyze"],
+    },
+  ],
+  [
+    "a terminal cause and journal entries with and without call metadata",
+    {
       status: "paused",
-      pauseReason: "checkpoint_required",
-      checkpointContext: checkpointPersistContext,
-      phases: [],
-      agents: [],
-      logs: [],
-      journal: [],
-      startedAt: now,
-      updatedAt: now,
-    });
+      reason: "checkpoint_required",
+      errorCode: WorkflowErrorCode.CHECKPOINT_REQUIRED,
+      journal: [
+        { index: 0, hash: "abc123", result: { ok: true } },
+        {
+          index: 1,
+          hash: "def456",
+          result: { value: 42 },
+          call: { kind: "agent", label: "review", phase: "Review", model: "provider/model", backendId: "provider" },
+        },
+        { index: 2, hash: "ghi789", result: true, call: { kind: "checkpoint", label: "checkpoint", phase: "Review" } },
+      ],
+    },
+  ],
+  ["token usage", { tokenUsage: { input: 100, output: 50, total: 150 } }],
+  ["token usage with cost and cache fields", { tokenUsage: { input: 1, output: 2, total: 3, cost: 0.5, cacheRead: 9, cacheWrite: 4 } }],
+  ["completedAt and durationMs", { completedAt: "2024-01-01T00:01:00.000Z", durationMs: 60_000 }],
+  ["a checkpoint pause and the context of its question", { status: "paused", pauseReason: "checkpoint_required", checkpointContext: checkpointPersistContext }],
+  ["an auth pause and its non-secret context", { status: "paused", pauseReason: "auth_required", authContext: authPersistContext }],
+];
 
-    const loaded = persistence.load(runId);
-    assert.equal(loaded?.status, "paused");
-    assert.equal(loaded?.pauseReason, "checkpoint_required");
-    assert.deepEqual(loaded?.checkpointContext, checkpointPersistContext);
-  }),
-);
-
-test(
-  "PersistedRunState.authContext round-trips through the real fs persistence layer (§2.12)",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    const runId = generateRunId();
-    const now = new Date().toISOString();
-    rp.save({
-      runId,
-      workflowName: "auth_persist_demo",
-      script: oneAgentAuthScript,
-      status: "paused",
-      pauseReason: "auth_required",
-      authContext: authPersistContext,
-      phases: [],
-      agents: [],
-      logs: [],
-      journal: [],
-      startedAt: now,
-      updatedAt: now,
-    });
-
-    const loaded = rp.load(runId);
-    assert.equal(loaded?.status, "paused");
-    assert.equal(loaded?.pauseReason, "auth_required");
-    assert.equal(loaded?.resetHint, undefined);
-    assert.deepEqual(loaded?.authContext, authPersistContext, "the non-secret authContext survives save/load");
-  }),
-);
+for (const [title, fields] of roundTrips) {
+  test(
+    `createRunPersistence round-trips ${title}`,
+    withTempCwd(async (cwd) => {
+      const rp = createRunPersistence(cwd);
+      const state: PersistedRunState = {
+        runId: "round-trip",
+        workflowName: "wf",
+        script: "export const meta = { name: 'w', description: 'w' }",
+        status: "completed",
+        phases: [],
+        agents: [],
+        logs: [],
+        startedAt: "2024-01-01T00:00:00.000Z",
+        updatedAt: "2024-01-01T00:00:00.000Z",
+        ...fields,
+      };
+      rp.save(state);
+      assert.deepEqual(rp.load(state.runId), state);
+    }),
+  );
+}
 
 test(
   "a disk-saved auth pause cold-resumes to completion",
