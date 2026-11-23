@@ -13,6 +13,7 @@ import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/pe
 import { normalizeResumeSeed } from "../src/resume-matcher.js";
 import { resumeRows } from "../src/resume-rows.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
+import { tempPlaces } from "./helpers/places.js";
 import {
   CALL_INPUTS_FORMAT,
   CHECKPOINT_INPUTS_FORMAT,
@@ -189,6 +190,7 @@ return { safe, unsafe, empty }`),
 
   it("records isolated-worktree only for an annotated checkout derived from the run cwd", async () => {
     const dirs = tempDirs();
+    const home = tempPlaces();
     try {
       initGitRepo(dirs.cwd);
       const taints: string[] = [];
@@ -197,6 +199,7 @@ return { safe, unsafe, empty }`),
         {
           runId: "isolated-safe",
           cwd: dirs.cwd,
+          places: home.places("isolated-safe"),
           agent: { async run(_prompt, options) { return options?.cwd ?? "missing"; } },
           persistLogs: false,
           onResumeFilesystemTainted: () => taints.push("tainted"),
@@ -212,6 +215,7 @@ return { safe, unsafe, empty }`),
         {
           runId: "isolated-unsafe",
           cwd: dirs.cwd,
+          places: home.places("isolated-unsafe"),
           agent: { async run() { return "live"; } },
           persistLogs: false,
           onResumeFilesystemTainted: () => taints.push("unsafe-isolated"),
@@ -225,6 +229,7 @@ return { safe, unsafe, empty }`),
         {
           runId: "isolated-external",
           cwd: dirs.cwd,
+          places: home.places("isolated-external"),
           agent: { async run() { return "live"; } },
           persistLogs: false,
           onResumeFilesystemTainted: () => taints.push("external-base"),
@@ -237,6 +242,7 @@ return { safe, unsafe, empty }`),
         script(`return await agent("degraded", { isolation: "worktree", resume: { filesystem: "read-only" } })`),
         {
           cwd: mkdtempSync(join(tmpdir(), "degraded-worktree-")),
+          places: home.places("degraded"),
           agent: { async run() { return "live"; } },
           persistLogs: false,
           onResumeFilesystemTainted: () => taints.push("degraded"),
@@ -247,6 +253,7 @@ return { safe, unsafe, empty }`),
       assert.deepEqual(taints, ["unsafe-isolated", "external-base", "degraded"]);
     } finally {
       dirs.cleanup();
+      home.cleanup();
     }
   });
 });

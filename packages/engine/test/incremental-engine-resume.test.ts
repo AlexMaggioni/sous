@@ -16,6 +16,8 @@ import { resumeRows, type ResumeRows } from "../src/resume-rows.js";
 import type { PreparedResume } from "../src/resume.js";
 import type { PersistedResumeSeed } from "../src/runs/persistence/run-persistence.js";
 import { runWorkflow } from "../src/workflow.js";
+import type { RunPlaces } from "../src/places/places.js";
+import { tempPlaces } from "./helpers/places.js";
 
 const source = (body: string, name = "incremental-engine-resume") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: "engine resume integration" }\n${body}`;
@@ -56,6 +58,7 @@ async function record(
     confirm?: NonNullable<Parameters<typeof runWorkflow>[1]["confirm"]>;
     cwd?: string;
     concurrency?: number;
+    places?: RunPlaces;
   } = {},
 ): Promise<Recording> {
   const calls: WorkflowCallRecord[] = [];
@@ -67,6 +70,7 @@ async function record(
     confirm: options.confirm,
     cwd: options.cwd,
     concurrency: options.concurrency,
+    places: options.places,
     persistLogs: false,
     onCallRecord: (call) => calls.push(call),
     onAgentJournal: (entry) => journal.push(entry),
@@ -261,6 +265,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
 
   it("replays matching worktrees without making degradation a suffix barrier", async () => {
     const repository = initGitRepo();
+    const home = tempPlaces();
     try {
       const original = Array.from({ length: 40 }, (_value, index) => `worktree-${index}`);
       const changed = [...original];
@@ -270,6 +275,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
         runId: "worktree-source",
         cwd: repository.cwd,
         concurrency: 1,
+        places: home.places("worktree-source"),
       });
       assert.equal(recording.calls.every((call) => call.resumeSafety === "isolated-worktree"), true);
 
@@ -279,6 +285,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
         runId: "worktree-success",
         cwd: repository.cwd,
         concurrency: 4,
+        places: home.places("worktree-success"),
         agent: {
           async run(prompt, options) {
             assert.notEqual(options.cwd, repository.cwd);
@@ -303,6 +310,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
         runId: "degrade",
         cwd: repository.cwd,
         concurrency: 4,
+        places: home.places("degrade"),
         agent: { async run(prompt) { degradedPrompts.push(prompt); return `live:${prompt}`; } },
         ...occurrence(seedFor(recording), "degrade"),
         persistLogs: false,
@@ -320,6 +328,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
         runId: "unsafe-worktree-source",
         cwd: repository.cwd,
         concurrency: 1,
+        places: home.places("unsafe-worktree-source"),
       });
       assert.equal(unsafeRecording.calls.every((call) => call.resumeSafety === undefined), true);
       let unsafeRunnerCalls = 0;
@@ -327,6 +336,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
         runId: "unsafe-worktree-target",
         cwd: repository.cwd,
         concurrency: 4,
+        places: home.places("unsafe-worktree-target"),
         agent: { async run() { unsafeRunnerCalls += 1; return "live"; } },
         ...occurrence(seedFor(unsafeRecording), "unsafe-worktree-target"),
         persistLogs: false,
@@ -336,6 +346,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       assert.equal(unsafeResult.resumeReport?.live, 0);
     } finally {
       repository.cleanup();
+      home.cleanup();
     }
   });
 

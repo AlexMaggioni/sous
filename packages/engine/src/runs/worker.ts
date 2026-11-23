@@ -10,11 +10,11 @@ import { parseDurationSeconds } from "../duration.js";
 import { projectWorkflows } from "../workflows/dir.js";
 import type { CheckpointCallContext } from "../workflow.js";
 import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";
-import { dropUnchangedWorktrees, runWorktrees } from "../places/places.js";
+import { dropUnchangedWorktrees, runPlaces, runWorktrees } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
 import { ask, decisionOf, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
-import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
+import { loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
@@ -70,8 +70,9 @@ function managerFor(paths: HomePaths, projectDir: string, extra: Partial<Constru
           .list()
           .filter((entry) => entry.extras && entry.extras.startedBy !== "people")
           .map((entry) => ({ name: entry.name, ...(entry.meta?.description ? { description: entry.meta.description } : {}) })),
-      // Nested runs and step worktrees go on this home's records and under its worktrees folder.
-      home: paths,
+      // A run tree's nested runs and step worktrees go under this home's worktrees folder, and its
+      // root run's record names them.
+      places: (rootRunId) => runPlaces(paths, placeNotes(paths, rootRunId)),
     },
     ...extra,
   });

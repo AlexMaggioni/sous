@@ -81,6 +81,7 @@ import {
   runWorkflow,
 } from "./workflow.js";
 import { parseWorkflowScript } from "./workflows/script.js";
+import type { RunPlaces } from "./places/places.js";
 import { createWorkflowLogTail } from "./run-observability.js";
 import { assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
 import type { CodeStepEnv } from "./code-steps.js";
@@ -299,13 +300,19 @@ export interface ExecOptions {
   codeEnv?: CodeStepEnv;
 }
 
+/** Options every run of a manager gets. */
+export interface OrchestratorOptions extends Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows"> {
+  /** The places of a run tree, from its root run's id. A run without them has none. */
+  places?: (rootRunId: string) => RunPlaces;
+}
+
 export interface WorkflowManagerOptions {
   cwd?: string;
   concurrency?: number;
   /** Resolve a saved-workflow name to its script, enabling nested `workflow('name')`. */
   loadSavedWorkflow?: (name: string) => string | undefined;
   /** Options every run gets, such as the nesting limit and nested places. */
-  orchestrator?: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "home">;
+  orchestrator?: OrchestratorOptions;
   /**
    * The injected agent backend (the frozen AgentRunner seam). May be overridden
    * per-run via ExecOptions.agent. The engine depends on this injection and never
@@ -496,7 +503,7 @@ export class WorkflowManager extends EventEmitter {
   readonly cwd: string;
   private concurrency: number;
   private loadSavedWorkflow?: (name: string) => string | undefined;
-  private orchestratorOptions: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "home">;
+  private orchestratorOptions: OrchestratorOptions;
   private agent?: AgentRunner;
   private defaultAgentRetries: number;
   private persistenceRoot: string;
@@ -1406,6 +1413,7 @@ export class WorkflowManager extends EventEmitter {
       const agent = this.resolveAgent(exec);
       const vmArgsSnapshot = managed.argsSnapshotOk ? snapshotArgs(managed.args) : { ok: false as const };
       const argsForVm = vmArgsSnapshot.ok ? vmArgsSnapshot.clone : managed.args;
+      const { places, ...orchestrator } = this.orchestratorOptions;
       const engineResult = await runWorkflow(script, {
         cwd: managed.effectiveCwd,
         args: argsForVm,
@@ -1422,7 +1430,9 @@ export class WorkflowManager extends EventEmitter {
           onNestedWorkflow?.(ordinal, childRunId);
         },
         loadSavedWorkflow: this.loadSavedWorkflow,
-        ...this.orchestratorOptions,
+        ...orchestrator,
+        // This run is the root of its run tree, so its places are noted under its id.
+        ...(places ? { places: places(managed.runId) } : {}),
         ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
         ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
         persistenceRoot: this.persistenceRoot,

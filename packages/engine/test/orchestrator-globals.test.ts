@@ -11,6 +11,7 @@ import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js
 import { isStepFailedPause, runWorkflow } from "../src/workflow.js";
 import { createSteps } from "../src/steps/steps.js";
 import { homePaths } from "../src/runs/home.js";
+import { placesIn } from "./helpers/places.js";
 import { lookupAgents, lookupMcpServers } from "../src/agents.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
@@ -428,7 +429,7 @@ return await workflow('child', {}, { place: 'worktree' })`;
         persistLogs: false,
         cwd: repo,
         runId: "parent-run",
-        home,
+        places: placesIn(home, "parent-run"),
         loadSavedWorkflow: (name) => (name === "child" ? child : undefined),
       });
       // The places module makes the worktree, named after the child run.
@@ -452,6 +453,29 @@ return await workflow('child', {}, { place: 'cloud' })`;
       runWorkflow(script, { agent: runner, persistLogs: false, loadSavedWorkflow: (name) => (name === "child" ? child : undefined) }),
       /place must be worktree, folder or none, got "cloud"/,
     );
+  });
+
+  it("with no places, a nested place of its own fails and says why, and place folder works in the parent's folder", async () => {
+    const { runner } = recordingRunner(() => "ok");
+    const child = `export const meta = { name: 'child', description: 'c' }
+return cwd`;
+    const dir = mkdtempSync(join(tmpdir(), "orc-nested-noplaces-"));
+    const run = (place: string) =>
+      runWorkflow<string>(`export const meta = { name: 'parent', description: 'p' }
+return await workflow('child', {}, { place: '${place}' })`, {
+        agent: runner,
+        persistLogs: false,
+        cwd: dir,
+        loadSavedWorkflow: (name) => (name === "child" ? child : undefined),
+      });
+    try {
+      for (const place of ["worktree", "none"]) {
+        await assert.rejects(run(place), new RegExp(`place "${place}" needs a home for its folder, and this run has none. Use place "folder".`));
+      }
+      assert.equal((await run("folder")).result, dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

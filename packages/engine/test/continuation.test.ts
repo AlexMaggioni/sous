@@ -18,6 +18,8 @@ import type { ContinuationCandidate, PreparedContinuation } from "../src/resume.
 import { normalizeResumeSeed } from "../src/resume-matcher.js";
 import { resumeRows } from "../src/resume-rows.js";
 import { runWorkflow } from "../src/workflow.js";
+import type { RunPlaces } from "../src/places/places.js";
+import { tempPlaces } from "./helpers/places.js";
 
 const workflow = (options = "", body = "return await agent('task', { label: 'worker' })") =>
   `export const meta = { name: "continuation", description: "continuation tests" }
@@ -49,12 +51,14 @@ async function recordInterrupted(
   cwd: string,
   script = workflow(),
   code: WorkflowErrorCode = WorkflowErrorCode.PROVIDER_USAGE_LIMIT,
+  places?: RunPlaces,
 ): Promise<InterruptedRecording> {
   const calls: WorkflowCallRecord[] = [];
   let session: AgentSessionRecord | undefined;
   await assert.rejects(runWorkflow(script, {
     runId: "paused-source",
     cwd,
+    places,
     persistLogs: false,
     agent: {
       async run(_prompt, options) {
@@ -180,13 +184,19 @@ describe("live-boundary continuation", () => {
   it("emits every engine-gate reason before running fresh", async () => {
     const fixture = tempCwd();
     const git = initGitCwd();
+    const home = tempPlaces();
     try {
       const source = await recordInterrupted(fixture.cwd);
       const missing = join(fixture.cwd, "removed-cwd");
       mkdirSync(missing);
       const missingSource = await recordInterrupted(fixture.cwd, workflow("cwd: 'removed-cwd'"));
       rmSync(missing, { recursive: true, force: true });
-      const worktreeSource = await recordInterrupted(git.cwd, workflow("isolation: 'worktree'"));
+      const worktreeSource = await recordInterrupted(
+        git.cwd,
+        workflow("isolation: 'worktree'"),
+        WorkflowErrorCode.PROVIDER_USAGE_LIMIT,
+        home.places("paused-source"),
+      );
       const cases: Array<{
         reason: "hash-mismatch" | "inputs-mismatch" | "cwd-mismatch" | "cwd-missing" | "worktree-isolated";
         script: string;
@@ -206,6 +216,7 @@ describe("live-boundary continuation", () => {
         let calls = 0;
         const result = await runWorkflow(item.script, {
           cwd: item.cwd,
+          places: home.places("live"),
           persistLogs: false,
           preparedContinuation: prepared(item.candidate),
           agent: {
@@ -225,6 +236,7 @@ describe("live-boundary continuation", () => {
     } finally {
       fixture.cleanup();
       git.cleanup();
+      home.cleanup();
     }
   });
 

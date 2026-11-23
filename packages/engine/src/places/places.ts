@@ -1,14 +1,14 @@
 // Where a run works. A worktree (the default) is a new branch orc/<name> in its own folder under
 // the home's worktrees folder, kept after the run so the work can be reviewed and merged. A folder
 // run works in the project itself. A run with no place gets an empty scratch folder. A nested run
-// and a step with `isolation: "worktree"` get their worktrees here too, named the same way. A
-// step's worktree goes when the step ends.
+// and a step with `isolation: "worktree"` get their worktrees here too, named the same way, through
+// `runPlaces`. A step's worktree goes when the step ends.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { HomePaths, Place } from "../runs/home.js";
-import { noteNested, noteStepWorktree, type RunRecord } from "../runs/records.js";
+import type { NestedRun, RunRecord } from "../runs/records.js";
 
 export interface PreparedPlace {
   cwd: string;
@@ -89,57 +89,89 @@ export function preparePlace(paths: HomePaths, place: Place, runId: string, base
   return planned;
 }
 
-/**
- * Make the place a nested run asked for, and return its cwd. The root run's record names the
- * place before it is made, so no crash leaves a worktree that no record names.
- */
-export function nestedPlace(paths: HomePaths, rootRunId: string, childRunId: string, place: unknown, baseDir: string): string {
-  if (!isPlace(place)) throw new Error(`place must be worktree, folder or none, got "${String(place)}"`);
-  const planned = planPlace(paths, place, childRunId, baseDir);
-  noteNested(paths, rootRunId, childRunId, { cwd: planned.cwd, ...(planned.branch ? { branch: planned.branch } : {}) });
-  makePlace(baseDir, planned);
-  return planned.cwd;
-}
-
 /** Lower case letters, digits and dashes, safe in a folder and a branch name. */
 function slug(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-/**
- * Make the worktree of a step with `isolation: "worktree"`, named for its run, its call index and
- * its label. The root run's record names it first, so gc keeps it while the run is unfinished and
- * still finds it after a crash. Returns the reason when the step cannot have one.
- */
-export function makeStepWorktree(
-  paths: HomePaths,
-  rootRunId: string,
-  baseDir: string,
-  step: { runId: string; index: number; label: string },
-): { tree: Worktree } | { reason: string } {
-  if (!isGitRepo(baseDir)) return { reason: "not a git repository" };
-  const tree = worktreeAt(paths, `${slug(step.runId)}-${step.index}-${slug(step.label).slice(0, 32) || "agent"}`);
-  const leftover = existsSync(tree.dir);
-  noteStepWorktree(paths, rootRunId, tree, true);
-  try {
-    makeWorktree(baseDir, tree, false);
-    return { tree };
-  } catch (error) {
-    // A worktree a crash left behind stays named, for gc.
-    if (!leftover) noteStepWorktree(paths, rootRunId, tree, false);
-    return { reason: (error as Error).message };
-  }
+/** Where a run tree's places are written down. In orc, the root run's record. */
+export interface PlaceNotes {
+  nested(childRunId: string, change: Partial<NestedRun>): void;
+  stepWorktree(tree: Worktree, exists: boolean): void;
 }
 
-/** Remove a step's worktree and its branch when the step ends. One that stays stays named, for gc. */
-export function removeStepWorktree(paths: HomePaths, rootRunId: string, repoDir: string, tree: Worktree): void {
-  try {
-    removeWorktree(repoDir, tree.dir, tree.branch);
-  } catch {
-    // Left for gc.
-  }
-  if (!existsSync(tree.dir)) noteStepWorktree(paths, rootRunId, tree, false);
+/**
+ * The places of one run tree: its nested runs' places and its steps' worktrees. The workflow core
+ * gets this and knows nothing of the home or the record. Each place is noted before it is made, so
+ * no crash leaves a worktree that no note names, and gc can find it.
+ */
+export interface RunPlaces {
+  /** Note a nested run before it starts. */
+  noteNested(childRunId: string, run: { parent: string; workflow: string; label?: string }): void;
+  /** Make the place a nested run asked for, and return its cwd. */
+  nestedPlace(childRunId: string, place: Place, baseDir: string): string;
+  /**
+   * Make the worktree of a step with `isolation: "worktree"`, named for its run, its call index and
+   * its label. Returns the reason when the step cannot have one.
+   */
+  makeStepWorktree(baseDir: string, step: { runId: string; index: number; label: string }): { tree: Worktree } | { reason: string };
+  /** Remove a step's worktree and its branch when the step ends. */
+  removeStepWorktree(baseDir: string, tree: Worktree): void;
 }
+
+/** The places of one run tree under this home, noted in `notes`. */
+export function runPlaces(paths: HomePaths, notes: PlaceNotes): RunPlaces {
+  return {
+    noteNested: (childRunId, run) => notes.nested(childRunId, run),
+
+    // Calling it again for the same child returns the same place, so a resumed run finds its worktree.
+    nestedPlace(childRunId, place, baseDir) {
+      const planned = planPlace(paths, place, childRunId, baseDir);
+      notes.nested(childRunId, { cwd: planned.cwd, ...(planned.branch ? { branch: planned.branch } : {}) });
+      makePlace(baseDir, planned);
+      return planned.cwd;
+    },
+
+    makeStepWorktree(baseDir, step) {
+      if (!isGitRepo(baseDir)) return { reason: "not a git repository" };
+      const tree = worktreeAt(paths, `${slug(step.runId)}-${step.index}-${slug(step.label).slice(0, 32) || "agent"}`);
+      const leftover = existsSync(tree.dir);
+      notes.stepWorktree(tree, true);
+      try {
+        makeWorktree(baseDir, tree, false);
+        return { tree };
+      } catch (error) {
+        // A worktree a crash left behind stays named, for gc.
+        if (!leftover) notes.stepWorktree(tree, false);
+        return { reason: (error as Error).message };
+      }
+    },
+
+    // One that stays stays named, for gc.
+    removeStepWorktree(baseDir, tree) {
+      try {
+        removeWorktree(baseDir, tree.dir, tree.branch);
+      } catch {
+        // Left for gc.
+      }
+      if (!existsSync(tree.dir)) notes.stepWorktree(tree, false);
+    },
+  };
+}
+
+/**
+ * A run with no home: `runWorkflow` called without places. A step works in the run's folder, and a
+ * nested run can only work in its parent's folder.
+ */
+export const NO_PLACES: RunPlaces = {
+  noteNested: () => {},
+  nestedPlace(_childRunId, place, baseDir) {
+    if (place === "folder") return baseDir;
+    throw new Error(`place "${place}" needs a home for its folder, and this run has none. Use place "folder".`);
+  },
+  makeStepWorktree: () => ({ reason: "no home for worktrees" }),
+  removeStepWorktree: () => {},
+};
 
 /**
  * True when the run in this worktree changed no file: nothing uncommitted, and the branch has not

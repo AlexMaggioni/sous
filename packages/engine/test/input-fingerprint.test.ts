@@ -9,6 +9,7 @@ import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { TSchema } from "typebox";
 import { CALL_INPUTS_FORMAT, type WorkflowRunOptions, runWorkflow } from "../src/workflow.js";
+import { tempPlaces } from "./helpers/places.js";
 
 type RunOverrides = Omit<WorkflowRunOptions, "agent">;
 
@@ -132,6 +133,7 @@ return await agent('same-prompt')`,
 
   it("uses pre-resolution isolation inputs while exposing the actual worktree cwd", async () => {
     const repo = mkdtempSync(join(tmpdir(), "ap-inputs-git-"));
+    const home = tempPlaces();
     const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
     const fingerprints: Array<string | undefined> = [];
     const resolvedCwds: string[] = [];
@@ -156,8 +158,8 @@ return await agent('same-prompt', { label: 'fixed', isolation: 'worktree' })`;
       git("add", ".");
       git("commit", "-q", "-m", "init");
 
-      await runWorkflow(script, { runId: "worktree-a", cwd: repo, agent: runner, persistLogs: false });
-      await runWorkflow(script, { runId: "worktree-b", cwd: repo, agent: runner, persistLogs: false });
+      await runWorkflow(script, { runId: "worktree-a", cwd: repo, agent: runner, persistLogs: false, places: home.places("worktree-a") });
+      await runWorkflow(script, { runId: "worktree-b", cwd: repo, agent: runner, persistLogs: false, places: home.places("worktree-b") });
 
       assert.equal(fingerprints[0], fingerprints[1]);
       assert.equal(resolvedCwds.length, 2);
@@ -168,6 +170,7 @@ return await agent('same-prompt', { label: 'fixed', isolation: 'worktree' })`;
       assert.match(resolvedCwds[1], /worktree-b-0-fixed$/);
     } finally {
       rmSync(repo, { recursive: true, force: true });
+      home.cleanup();
     }
   });
 

@@ -7,6 +7,7 @@
 
 import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { writeJsonFile } from "../json-file.js";
+import type { PlaceNotes } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
 import { recordFile, recordFiles, snapshotFile, stopRequestFile } from "./store.js";
@@ -98,21 +99,26 @@ export function scopePrefix(runId: string, scope: string | undefined, nested: Re
   return `${names.join(" / ")}: `;
 }
 
-/** Note a nested run on its root run's record. */
-export function noteNested(paths: HomePaths, rootRunId: string, childRunId: string, change: Partial<NestedRun>): void {
-  const record = loadRecord(paths, rootRunId);
-  if (!record) return;
-  const next = { ...record.nested?.[childRunId], ...change } as NestedRun;
-  saveRecord(paths, { ...record, nested: { ...record.nested, [childRunId]: next } });
-}
-
-/** Note a step's worktree on the root run's record when it is made, and drop it when it is gone. */
-export function noteStepWorktree(paths: HomePaths, rootRunId: string, tree: { dir: string; branch: string }, exists: boolean): void {
-  const record = loadRecord(paths, rootRunId);
-  if (!record) return;
-  const others = (record.stepWorktrees ?? []).filter((known) => known.dir !== tree.dir);
-  const stepWorktrees = exists ? [...others, tree] : others;
-  saveRecord(paths, { ...record, stepWorktrees });
+/**
+ * The root run's record as the notes of its run tree's places: its nested runs, and its steps'
+ * worktrees while they exist. gc reads them there. A run with no record notes nothing.
+ */
+export function placeNotes(paths: HomePaths, rootRunId: string): PlaceNotes {
+  return {
+    nested(childRunId, change) {
+      const record = loadRecord(paths, rootRunId);
+      if (!record) return;
+      const next = { ...record.nested?.[childRunId], ...change } as NestedRun;
+      saveRecord(paths, { ...record, nested: { ...record.nested, [childRunId]: next } });
+    },
+    stepWorktree(tree, exists) {
+      const record = loadRecord(paths, rootRunId);
+      if (!record) return;
+      const others = (record.stepWorktrees ?? []).filter((known) => known.dir !== tree.dir);
+      const stepWorktrees = exists ? [...others, tree] : others;
+      saveRecord(paths, { ...record, stepWorktrees });
+    },
+  };
 }
 
 export function saveSnapshot(paths: HomePaths, runId: string, scripts: Record<string, string>): void {

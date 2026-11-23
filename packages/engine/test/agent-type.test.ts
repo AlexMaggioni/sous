@@ -8,6 +8,7 @@ import { type AgentDefinition, agentDefinitionKey, lookupAgents } from "../src/a
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
 import { homePaths } from "../src/runs/home.js";
+import { placesIn } from "./helpers/places.js";
 import { createSteps, type InnerRunner } from "../src/steps/steps.js";
 import type { PlannedRequest } from "../src/steps/agent-run.js";
 
@@ -181,7 +182,7 @@ return {}`;
 await agent('audit', { label: 'a', agentType: 'isolated-auditor' })
 return {}`;
 
-      await runWorkflow(script, { cwd: repo, runId: "iso-test", agent: files.steps(runner), persistLogs: false, home });
+      await runWorkflow(script, { cwd: repo, runId: "iso-test", agent: files.steps(runner), persistLogs: false, places: placesIn(home, "iso-test") });
 
       assert.equal(seen.length, 1);
       assert.ok(seen[0].cwd, "isolated agent should receive a cwd");

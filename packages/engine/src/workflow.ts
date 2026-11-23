@@ -62,9 +62,7 @@ import {
   cloneTelemetry,
   deepFreeze,
 } from "./strict-json.js";
-import { makeStepWorktree, nestedPlace, removeStepWorktree, type Worktree } from "./places/places.js";
-import { homePaths, type HomePaths } from "./runs/home.js";
-import { noteNested } from "./runs/records.js";
+import { isPlace, NO_PLACES, type RunPlaces, type Worktree } from "./places/places.js";
 import { nestedArgs } from "./workflows/meta.js";
 import { parseWorkflowScript } from "./workflows/script.js";
 import {
@@ -167,8 +165,6 @@ export interface SharedRuntime {
   depth: number;
   /** Root-run-wide workflow() invocation ordinal. Monotonic and never decremented. */
   nestedSeq: number;
-  /** The root run's id. Its record holds the run tree and the step worktrees. */
-  rootRunId?: string;
   /** Root-execution activity shared by nested workflow engines. */
   resumeActivity?: {
     active: number;
@@ -273,10 +269,11 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   /** Names of the saved workflows an agent may pick with choose({ any: true }). */
   listSavedWorkflows?: () => Array<{ name: string; description?: string }>;
   /**
-   * The orc home. Its worktrees folder holds the worktrees of nested runs and of steps, and the
-   * root run's record there notes them. Default: $ORC_HOME, else ~/.orchestrator.
+   * The places of the run tree: where nested runs and steps with `isolation: "worktree"` get their
+   * worktrees, and where those are noted. Nested runs get the same object. Without it, a step works
+   * in the run's folder and a nested run can only ask for place "folder".
    */
-  home?: HomePaths;
+  places?: RunPlaces;
   /**
    * Ask the human a checkpoint() question and resolve to their explicit reply.
    * Missing, rejected, timed-out, or unanswered interactions durably pause the run.
@@ -600,7 +597,7 @@ export async function runWorkflow<T = unknown>(
   });
   const callbackContext: WorkflowCallbackContext = { scope: runId };
   const baseCwd = options.cwd ?? process.cwd();
-  const home = options.home ?? homePaths();
+  const places = options.places ?? NO_PLACES;
   const vmFilename = `${sanitizeVmName(meta.name)}.js`;
   const preludeLines = DETERMINISM_PRELUDE.split("\n").length;
 
@@ -649,7 +646,6 @@ export async function runWorkflow<T = unknown>(
     tokenUsage: copyTokenUsageBaseline(options.tokenUsageBaseline),
     depth: 0,
     nestedSeq: 0,
-    rootRunId: runId,
     ...(options.pauseSignal ? { pauseSignal: options.pauseSignal } : {}),
   };
   const pauseSignal = shared.pauseSignal;
@@ -661,15 +657,13 @@ export async function runWorkflow<T = unknown>(
   };
   shared.resumeActivity = resumeActivity;
   const limiter = shared.limiter;
-  // The root run's record holds the run tree and the step worktrees.
-  const rootRunId = shared.rootRunId ?? runId;
   // A step with isolation "worktree" works in a worktree of its own, which places makes and removes.
   const openStepWorktree = (callIndex: number, label: string): StepWorktree => {
-    const made = makeStepWorktree(home, rootRunId, baseCwd, { runId, index: callIndex, label });
+    const made = places.makeStepWorktree(baseCwd, { runId, index: callIndex, label });
     return "tree" in made ? { isolated: true, cwd: made.tree.dir, tree: made.tree } : { isolated: false, cwd: baseCwd, reason: made.reason };
   };
   const closeStepWorktree = (worktree: StepWorktree | undefined): void => {
-    if (worktree?.tree) removeStepWorktree(home, rootRunId, baseCwd, worktree.tree);
+    if (worktree?.tree) places.removeStepWorktree(baseCwd, worktree.tree);
   };
   let nestedWorkflows = false;
   // This run's own workflow() count, taken in call order.
@@ -1860,12 +1854,13 @@ export async function runWorkflow<T = unknown>(
     const childScript = resolved ?? String(nameOrScript);
     const childName = resolved ? String(nameOrScript) : "inline";
     const label = typeof nestedOptions?.label === "string" ? nestedOptions.label : undefined;
-    noteNested(home, rootRunId, childRunId, { parent: runId, workflow: childName, ...(label ? { label } : {}) });
+    places.noteNested(childRunId, { parent: runId, workflow: childName, ...(label ? { label } : {}) });
     // The child gets its declared defaults, as it would started on its own.
     const args = nestedArgs(childName, parseWorkflowScript(childScript).meta, childArgs);
     // A nested workflow can ask for its own place (a worktree, a folder, none).
     const place = nestedOptions?.place;
-    const childCwd = place !== undefined ? nestedPlace(home, rootRunId, childRunId, place, baseCwd) : options.cwd;
+    if (place !== undefined && !isPlace(place)) throw new Error(`place must be worktree, folder or none, got "${String(place)}"`);
+    const childCwd = place !== undefined ? places.nestedPlace(childRunId, place, baseCwd) : options.cwd;
     shared.depth++;
     try {
       const child = await runWorkflow(childScript, {
