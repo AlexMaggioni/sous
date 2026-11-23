@@ -199,8 +199,9 @@ describe("orc's reads", () => {
       following.stdout.on("data", (chunk) => (out += String(chunk)));
       following.stderr.on("data", (chunk) => (out += String(chunk)));
       const ended = new Promise<number | null>((done) => following.on("close", done));
+      // Starting orc through tsx took 11 seconds once under the full suite's load, so wait up to a minute.
       const printed = async (text: string) => {
-        for (let i = 0; i < 400 && !out.includes(text); i++) await new Promise((done) => setTimeout(done, 25));
+        for (let i = 0; i < 2400 && !out.includes(text); i++) await new Promise((done) => setTimeout(done, 25));
       };
 
       await printed("build\n");
