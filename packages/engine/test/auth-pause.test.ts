@@ -70,8 +70,8 @@ function memoryPersistence(): {
       releaseRunLease(lease) {
         released.push(lease.runId);
       },
-      getRunsDir() {
-        return "/memory/runs";
+      validateRunLease() {
+        return true;
       },
     },
   };

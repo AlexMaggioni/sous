@@ -316,7 +316,7 @@ return { count: args.count, answer }`,
         return { runId, token: runId };
       },
       releaseRunLease(lease) { held.delete(lease.runId); },
-      getRunsDir() { return "/memory"; },
+      validateRunLease() { return true; },
     };
     let finish!: (value: string) => void;
     const runner = { async run() { return await new Promise<string>((resolve) => { finish = resolve; }); } };

@@ -248,12 +248,8 @@ export interface RunPersistence {
   acquireRunLease(runId: string): RunLease | null;
   /** Release a lease previously returned by acquireRunLease(). */
   releaseRunLease(lease: RunLease): void;
-  /** Read the current cross-process owner without acquiring or mutating the lease. */
-  inspectRunLease?(runId: string): RunLeaseOwner | null;
   /** Confirm that a previously acquired lease token still owns the on-disk lock. */
-  validateRunLease?(lease: RunLease): boolean;
-  /** Get runs directory path. */
-  getRunsDir(): string;
+  validateRunLease(lease: RunLease): boolean;
 }
 
 export interface RunLease {
@@ -261,12 +257,6 @@ export interface RunLease {
   token: string;
   /** PID recorded by a dead lock owner replaced while acquiring this lease. */
   recoveredOwnerPid?: number;
-}
-
-export interface RunLeaseOwner {
-  runId: string;
-  pid: number;
-  startedAt: string;
 }
 
 interface LockFile {
@@ -560,24 +550,10 @@ export function createRunPersistence(
       }
     },
 
-    inspectRunLease(runId: string): RunLeaseOwner | null {
-      const existing = readLock(runId);
-      if (!validLockOwner(existing, runId, primaryRunPath(runId))) return null;
-      return {
-        runId,
-        pid: existing.pid,
-        startedAt: existing.startedAt,
-      };
-    },
-
     validateRunLease(lease: RunLease): boolean {
       const existing = readLock(lease.runId);
       return validLockOwner(existing, lease.runId, primaryRunPath(lease.runId)) &&
         existing.token === lease.token;
-    },
-
-    getRunsDir(): string {
-      return runsDir;
     },
 
     appendEvent: events.appendEvent,

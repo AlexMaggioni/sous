@@ -562,7 +562,7 @@ export class WorkflowManager extends EventEmitter {
       ) {
         return current;
       }
-      if (this.persistence.validateRunLease?.(lease) === false) return current;
+      if (!this.persistence.validateRunLease(lease)) return current;
       const reconciled: PersistedRunState = {
         ...current,
         status: "paused",
@@ -1175,7 +1175,7 @@ export class WorkflowManager extends EventEmitter {
   }
 
   private savePersistedState(state: PersistedRunState, publication: EventPublicationState): boolean {
-    if (!publication.lease || this.persistence.validateRunLease?.(publication.lease) === false) return false;
+    if (!publication.lease || !this.persistence.validateRunLease(publication.lease)) return false;
     try {
       this.persistence.save(state);
       return true;
@@ -1263,7 +1263,7 @@ export class WorkflowManager extends EventEmitter {
       !state.eventLogIncomplete
     ) {
       try {
-        if (this.persistence.validateRunLease?.(state.lease) === false) {
+        if (!this.persistence.validateRunLease(state.lease)) {
           throw new Error(`run ${state.runId} no longer owns its persistence lease`);
         }
         if (state.eventStreamId === undefined || state.eventSeq === undefined) {
@@ -1964,7 +1964,7 @@ export class WorkflowManager extends EventEmitter {
   }
 
   private persistRun(managed: ManagedRun) {
-    if (!managed.lease || this.persistence.validateRunLease?.(managed.lease) === false) return;
+    if (!managed.lease || !this.persistence.validateRunLease(managed.lease)) return;
     try {
       this.persistence.save(this.persistedState(managed));
     } catch (err) {
@@ -1975,7 +1975,7 @@ export class WorkflowManager extends EventEmitter {
   private persistRunOrThrow(managed: ManagedRun): void {
     const leaseFailure = !managed.lease
       ? "the lease is missing"
-      : this.persistence.validateRunLease?.(managed.lease) === false
+      : !this.persistence.validateRunLease(managed.lease)
         ? "the lease is no longer owned"
         : undefined;
     if (leaseFailure) {
@@ -2085,7 +2085,7 @@ export class WorkflowManager extends EventEmitter {
     // Same-ID recovery keeps its explicit legacy marker.
     persisted.legacyResume = true;
     try {
-      if (this.persistence.validateRunLease?.(lease) === false) {
+      if (!this.persistence.validateRunLease(lease)) {
         throw new Error(`run ${runId} no longer owns its persistence lease`);
       }
       this.persistence.save(persisted);
@@ -2531,7 +2531,7 @@ export class WorkflowManager extends EventEmitter {
   getRun(runId: string): ManagedRun | undefined {
     const managed = this.runs.get(runId);
     if (!managed) return managed;
-    if (managed.lease && this.persistence.validateRunLease?.(managed.lease) !== false) return managed;
+    if (managed.lease && this.persistence.validateRunLease(managed.lease)) return managed;
     const persisted = this.persistence.load(runId);
     if (!persisted) return managed;
     // A failed terminal save leaves this generation's earlier active snapshot on disk.

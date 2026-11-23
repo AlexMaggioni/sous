@@ -27,6 +27,7 @@ import {
   hasEventLog,
   type RunEventPersistence,
 } from "../../../src/runs/persistence/run-event-persistence.js";
+import { workflowProjectPaths } from "../../../src/runs/persistence/project-paths.js";
 import {
   createRunPersistence,
   type FsLayer,
@@ -76,6 +77,7 @@ function withPersistence(
     persistence: RunEventPersistence;
     cwd: string;
     root: string;
+    runsDir: string;
     eventPath: (runId: string) => string;
   }) => void | Promise<void>,
   fsOverride?: Partial<FsLayer>,
@@ -84,12 +86,14 @@ function withPersistence(
     const cwd = mkdtempSync(join(tmpdir(), "ap-run-events-cwd-"));
     const root = mkdtempSync(join(tmpdir(), "ap-run-events-root-"));
     const persistence = createRunPersistence(cwd, fsOverride, { persistenceRoot: root });
+    const runsDir = workflowProjectPaths(cwd, { persistenceRoot: root }).runsDir;
     try {
       await fn({
         persistence,
         cwd,
         root,
-        eventPath: (runId) => join(persistence.getRunsDir(), `${runId}.events.jsonl`),
+        runsDir,
+        eventPath: (runId) => join(runsDir, `${runId}.events.jsonl`),
       });
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -305,13 +309,13 @@ test(
 
 test(
   "read validation uses the exact option and snapshot classification precedence",
-  withPersistence(({ persistence, eventPath }) => {
+  withPersistence(({ persistence, runsDir, eventPath }) => {
     expectCode(() => persistence.readEvents("missing", { after: -1, limit: 0, streamId: "bad" }), "INVALID_CURSOR");
     expectCode(() => persistence.readEvents("missing", { after: 0, limit: 0, streamId: "bad" }), "INVALID_LIMIT");
     expectCode(() => persistence.readEvents("missing", { after: 0, limit: 1, streamId: "bad" }), "INVALID_STREAM_ID");
     expectCode(() => persistence.readEvents("missing"), "RUN_NOT_FOUND");
 
-    mkdirSync(persistence.getRunsDir(), { recursive: true });
+    mkdirSync(runsDir, { recursive: true });
     writeFileSync(eventPath("orphan"), "partial");
     const orphan = expectCode(() => persistence.readEvents("orphan"), "ORPHANED_LOG");
     assert.equal(orphan.path, eventPath("orphan"));
@@ -571,14 +575,14 @@ test(
 
 test(
   "list() surfaces the snapshot run but never its .events.jsonl sidecar",
-  withPersistence(({ persistence, eventPath }) => {
+  withPersistence(({ persistence, runsDir, eventPath }) => {
     const runId = "sidecar-excluded";
     persistence.save(state(runId));
     persistence.appendEvent(runId, { seq: 1, timestamp: TIMESTAMP, event: stopped(runId) });
 
     // The sidecar is genuinely on disk beside the snapshot.
     assert.equal(statSync(eventPath(runId)).isFile(), true);
-    assert.equal(readdirSync(persistence.getRunsDir()).includes(`${runId}.events.jsonl`), true);
+    assert.equal(readdirSync(runsDir).includes(`${runId}.events.jsonl`), true);
 
     // list() reads the directory back through the public API. The implementation filters on
     // `.endsWith(".json")`, which the `.jsonl` sidecar fails, so exactly the snapshot run appears
@@ -659,7 +663,7 @@ test("hasEventLog trusts a store as its log only when it has both appendEvent an
     delete: () => false,
     acquireRunLease: (runId) => ({ runId, token: "store" }),
     releaseRunLease() {},
-    getRunsDir: () => "/memory/runs",
+    validateRunLease: () => true,
   };
   const appendEvent = () => {
     throw new Error("a lookalike's append must not be called");

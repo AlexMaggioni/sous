@@ -67,8 +67,8 @@ function memoryStore(root: string): MemoryStore {
     releaseRunLease(lease: RunLease) {
       leases.delete(lease.runId);
     },
-    getRunsDir() {
-      return root;
+    validateRunLease() {
+      return true;
     },
   };
   return {

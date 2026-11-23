@@ -107,8 +107,8 @@ function memoryPersistence(): {
       releaseRunLease(lease) {
         released.push(lease.runId);
       },
-      getRunsDir() {
-        return "/memory/runs";
+      validateRunLease() {
+        return true;
       },
     },
   };
@@ -714,14 +714,6 @@ test(
     const rp = createRunPersistence(cwd);
     const deleted = rp.delete("no-such-run");
     assert.equal(deleted, false);
-  }),
-);
-
-test(
-  "createRunPersistence getRunsDir returns the runs directory path",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    assert.equal(rp.getRunsDir(), workflowProjectPaths(cwd).runsDir);
   }),
 );
 
@@ -1436,8 +1428,8 @@ test("WorkflowManager recovery reloads under the lease so concurrent completion 
     releaseRunLease() {
       releaseCalls++;
     },
-    getRunsDir() {
-      return "/memory/runs";
+    validateRunLease() {
+      return true;
     },
   };
 

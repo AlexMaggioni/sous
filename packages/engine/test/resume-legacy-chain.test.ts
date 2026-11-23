@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { PersistedRunState } from "../src/runs/persistence/run-persistence.js";
+import { runsDir } from "./helpers/run-files.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 const FIXTURE = new URL("./fixtures/legacy-0.23-chained.json", import.meta.url);
@@ -93,7 +94,7 @@ test("a markerless 0.23 chained journal accepts persisted ancestors but excludes
       false,
     );
     assert.equal(Object.hasOwn(persisted?.limits ?? {}, "tokenBudget"), false);
-    const rewritten = readFileSync(join(persistence.getRunsDir(), "legacy-chain-target.json"), "utf8");
+    const rewritten = readFileSync(join(runsDir(cwd, persistenceRoot), "legacy-chain-target.json"), "utf8");
     assert.doesNotMatch(rewritten, /"tokenBudget"|"budgetDebit"|"logicalBudgetDebit"/);
 
     assert.equal(persistence.delete(ancestorRunId), true);

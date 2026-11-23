@@ -32,8 +32,8 @@ function memoryPersistence() {
       return { runId, token: `${runId}-lease` };
     },
     releaseRunLease() {},
-    getRunsDir() {
-      return "/memory/runs";
+    validateRunLease() {
+      return true;
     },
   };
   return { persistence, states, saves };

@@ -10,6 +10,7 @@ import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PreparedResume } from "../src/resume.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
+import { runsDir } from "./helpers/run-files.js";
 import { normalizeResumeSeed } from "../src/resume-matcher.js";
 import { resumeRows } from "../src/resume-rows.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
@@ -423,7 +424,7 @@ describe("managed identity-v1 persistence", () => {
       const started = manager.startInBackground(
         script(`return await agent("safe", { resume: { filesystem: "read-only" } })`, "json-fixture"),
       );
-      const runFile = join(manager.getPersistence().getRunsDir(), `${started.runId}.json`);
+      const runFile = join(runsDir(dirs.cwd, dirs.root), `${started.runId}.json`);
       const initial = JSON.parse(readFileSync(runFile, "utf8")) as PersistedRunState;
       const initialFixture = JSON.parse(
         readFileSync(join(import.meta.dirname, "fixtures", "identity-v1-initial.json"), "utf8"),
@@ -663,7 +664,7 @@ describe("critical legacy marking", () => {
         return { runId, token: runId };
       },
       releaseRunLease(lease: RunLease) { leases.delete(lease.runId); },
-      getRunsDir() { return root; },
+      validateRunLease() { return true; },
     };
     return { persistence, states, failSave: (value) => { failing = value; } };
   }

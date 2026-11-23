@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { eventLog } from "./helpers/event-log.js";
+import { lockOwnerPid } from "./helpers/run-files.js";
 
 const SCRIPT = [
   'export const meta = { name: "lease-stop", description: "lease stop" };',
@@ -50,8 +51,7 @@ test("the lease shows the live owner's pid and a second manager cannot cold-stop
     const started = owner.startInBackground(SCRIPT, undefined, { runId: "live-owner" });
     await controlled.ready;
 
-    const leaseOwner = observer.getPersistence().inspectRunLease?.(started.runId);
-    assert.equal(leaseOwner?.pid, process.pid);
+    assert.equal(lockOwnerPid(cwd, persistenceRoot, started.runId), process.pid);
 
     const refused = observer.stopPersistedRun(started.runId);
     assert.equal(refused.outcome, "owned-elsewhere");

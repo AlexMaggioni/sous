@@ -6,6 +6,7 @@ import test from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import { WorkflowErrorCode } from "../src/errors.js";
 import { createRunPersistence, inlineScriptFile, type PersistedRunState, type RunPersistence } from "../src/runs/persistence/run-persistence.js";
+import { runsDir } from "./helpers/run-files.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 const runner: AgentRunner = { async run() { return "unused"; } };
@@ -26,7 +27,7 @@ test("an inline run records its origin and writes no script copy, and delete rem
     const source = script("inline");
     const run = await manager.runSync(source);
     const persistence = manager.getPersistence();
-    const location = inlineScriptFile(persistence.getRunsDir(), run.runId);
+    const location = inlineScriptFile(runsDir(paths.cwd, paths.persistenceRoot), run.runId);
     assert.deepEqual(persistence.load(run.runId)?.scriptOrigin, { kind: "inline" }, "runs default to an inline origin");
     assert.equal(persistence.load(run.runId)?.script, source);
     assert.equal(existsSync(location), false, "the state holds the script, so no copy is written");
@@ -47,7 +48,7 @@ test("a path origin records the caller's file, writes no copy, and delete never 
     const run = await manager.runSync(source, undefined, { scriptOrigin: { kind: "path", path: scriptPath } });
     const persistence = manager.getPersistence();
     assert.deepEqual(persistence.load(run.runId)?.scriptOrigin, { kind: "path", path: scriptPath });
-    assert.equal(existsSync(inlineScriptFile(persistence.getRunsDir(), run.runId)), false, "a path run has no store copy");
+    assert.equal(existsSync(inlineScriptFile(runsDir(paths.cwd, paths.persistenceRoot), run.runId)), false, "a path run has no store copy");
     writeFileSync(scriptPath, `${source}\n// edited in place`);
     assert.equal(persistence.load(run.runId)?.script, source, "the admitted record is untouched by the edit");
     assert.equal(persistence.delete(run.runId), true);
@@ -85,7 +86,7 @@ test("a failed initial save rejects and leaves no script file", async () => {
     const source = await manager.runSync(script("source"));
     failSave = true;
     await assert.rejects(manager.runSync(script("orphan"), undefined, { runId: "orphan", resumeFromRunId: source.runId }), /failed to persist/);
-    assert.deepEqual(readdirSync(disk.getRunsDir()).filter((name) => name.endsWith(".script.js")), []);
+    assert.deepEqual(readdirSync(runsDir(paths.cwd, paths.persistenceRoot)).filter((name) => name.endsWith(".script.js")), []);
   });
 });
 
@@ -99,7 +100,7 @@ test("a custom persistence records the origin, and the manager touches no file o
       delete(runId) { return records.delete(runId); },
       acquireRunLease(runId) { return { runId, token: runId }; },
       releaseRunLease() {},
-      getRunsDir() { return join(paths.root, "never-created"); },
+      validateRunLease() { return true; },
     };
     const manager = new WorkflowManager({ agent: runner, persistence: custom });
     const { promise, runId } = manager.startInBackground(script("memory"), undefined, {});

@@ -15,6 +15,7 @@ import {
 } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { eventLog } from "./helpers/event-log.js";
+import { runsDir } from "./helpers/run-files.js";
 
 const script = (body: string, name = "manager-events") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: 'manager event persistence' }\n${body}`;
@@ -136,7 +137,7 @@ test("nested workflow observations use the parent stream and child callback scop
     assert.ok(childEvents.every((record) => record.runId === result.runId));
     assert.deepEqual(persisted?.journal, []);
     assert.deepEqual(persisted?.calls?.map((row) => [row.scope, row.index, row.outcome]), [[childRunId, 0, "result"]]);
-    assert.equal(existsSync(join(manager.getPersistence().getRunsDir(), `${childRunId}.events.jsonl`)), false);
+    assert.equal(existsSync(join(runsDir(cwd, root), `${childRunId}.events.jsonl`)), false);
   });
 });
 
@@ -417,11 +418,11 @@ test("a running run whose lock another owner took and deleted never recreates it
     const background = manager.startInBackground(script(`return await agent('hold', { label: 'hold' })`));
     await entered.promise;
     const persistence = manager.getPersistence();
-    const eventPath = join(persistence.getRunsDir(), `${background.runId}.events.jsonl`);
+    const eventPath = join(runsDir(cwd, root), `${background.runId}.events.jsonl`);
     assert.equal(existsSync(eventPath), true);
 
     // The lock file goes away, so another owner takes the lease and deletes the run, as orc's delete does.
-    unlinkSync(join(persistence.getRunsDir(), `${background.runId}.lock`));
+    unlinkSync(join(runsDir(cwd, root), `${background.runId}.lock`));
     const other = persistence.acquireRunLease(background.runId);
     assert.ok(other, "another owner takes the free lease");
     assert.equal(persistence.delete(background.runId), true);
@@ -676,7 +677,7 @@ test("a store with no event log gets no events file, no warning and no incomplet
     delete: (runId) => states.delete(runId),
     acquireRunLease: (runId) => ({ runId, token: "memory" }),
     releaseRunLease: () => {},
-    getRunsDir: () => runsDir,
+    validateRunLease: () => true,
   };
   const warnings: unknown[][] = [];
   const warn = console.warn;

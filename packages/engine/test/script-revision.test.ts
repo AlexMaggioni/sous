@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
+import { lockOwnerPid } from "./helpers/run-files.js";
 
 /** Every run() call gets its own deferred result, resolved by call order. */
 function perCallRunner() {
@@ -158,7 +159,7 @@ test(
     const invalid = await manager.resumeInBackground(runId, { script: "not a workflow script" });
     assert.deepEqual(invalid, { accepted: false });
     assert.equal(manager.getPersistence().load(runId)?.script, before!.script, "a refused revision keeps the persisted script");
-    assert.equal(manager.getPersistence().inspectRunLease?.(runId), null, "the lease is released");
+    assert.equal(lockOwnerPid(cwd, root, runId), undefined, "the lease is released");
 
     const same = await manager.resumeInBackground(runId, { script: before!.script });
     assert.equal(same.accepted, true);
