@@ -1,0 +1,273 @@
+{
+  "note": "The failed-step run, saved with inputs format 1. Its inputs hashes differ from what the code computes now. Written by hand from the failed-step run.",
+  "writtenBy": "b21cd2c4",
+  "project": {
+    "three": "export const meta = { name: 'three', description: 'three steps' }\nconst a = await agent('A', { label: 'a' })\nconst b = await agent('B', { label: 'b' })\nconst c = await agent('C', { label: 'c' })\nreturn [a, b, c]"
+  },
+  "runs": [
+    {
+      "record": {
+        "runId": "mwsup4kz-ccc319",
+        "workflow": "three",
+        "file": "__ROOT__/project/.orchestrator/workflows/three.js",
+        "args": {},
+        "place": "folder",
+        "cwd": "__ROOT__/project",
+        "projectDir": "__ROOT__/project",
+        "priority": "user",
+        "origin": "cli",
+        "createdAt": "2026-11-23T05:54:18.611Z",
+        "accounts": {
+          "claude": {
+            "name": "default",
+            "folder": "__ROOT__/.claude"
+          },
+          "codex": {
+            "name": "default",
+            "folder": "__ROOT__/.codex"
+          }
+        }
+      },
+      "workflows": {
+        "three": "export const meta = { name: 'three', description: 'three steps' }\nconst a = await agent('A', { label: 'a' })\nconst b = await agent('B', { label: 'b' })\nconst c = await agent('C', { label: 'c' })\nreturn [a, b, c]"
+      },
+      "state": {
+        "runId": "mwsup4kz-ccc319",
+        "workflowName": "three",
+        "script": "export const meta = { name: 'three', description: 'three steps' }\nconst a = await agent('A', { label: 'a' })\nconst b = await agent('B', { label: 'b' })\nconst c = await agent('C', { label: 'c' })\nreturn [a, b, c]",
+        "scriptOrigin": {
+          "kind": "inline"
+        },
+        "args": {},
+        "cwd": "__ROOT__/project",
+        "effectiveCwd": "__ROOT__/project",
+        "runtime": {
+          "engineVersion": "4.0.5",
+          "node": "v24.2.0",
+          "v8": "13.6.233.10-node.17",
+          "pathFormat": 1,
+          "inputsFormat": 1,
+          "checkpointInputsFormat": 2
+        },
+        "resume": {
+          "format": "identity-v1"
+        },
+        "eventStreamId": "52dc1b087d17911109fd9c67269c87fd",
+        "eventSeq": 17,
+        "journal": [
+          {
+            "index": 0,
+            "hash": "72c4b5a9cee96ca4e589ef8a7e14d07c10c3d31369b52da78127820d25a1380c",
+            "result": "A done",
+            "kind": "agent",
+            "scope": "mwsup4kz-ccc319",
+            "session": {
+              "sessionId": "s1",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 0,
+              "label": "a",
+              "keptOpen": false
+            },
+            "call": {
+              "kind": "agent",
+              "label": "a",
+              "backendId": "claude"
+            }
+          },
+          {
+            "index": 1,
+            "hash": "c54e953b5652e787f8681e347c8a688f69c1b4e7202ad0ff51065fa0f63fdb2c",
+            "result": "B done",
+            "kind": "agent",
+            "scope": "mwsup4kz-ccc319",
+            "session": {
+              "sessionId": "s2",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 1,
+              "label": "b",
+              "keptOpen": false
+            },
+            "call": {
+              "kind": "agent",
+              "label": "b",
+              "backendId": "claude"
+            }
+          }
+        ],
+        "calls": [
+          {
+            "index": 0,
+            "kind": "agent",
+            "hash": "72c4b5a9cee96ca4e589ef8a7e14d07c10c3d31369b52da78127820d25a1380c",
+            "path": "2:17<6:3",
+            "inputsHash": "9c2ba6f585148412e73ed95d0eec39ce29ad8b9eba590788565ce5d662c03a10",
+            "label": "a",
+            "outcome": "result",
+            "origin": "runner",
+            "attempts": 1,
+            "backendId": "claude",
+            "resolvedCwd": "__ROOT__/project",
+            "settlementOrdinal": 1,
+            "scope": "mwsup4kz-ccc319"
+          },
+          {
+            "index": 1,
+            "kind": "agent",
+            "hash": "c54e953b5652e787f8681e347c8a688f69c1b4e7202ad0ff51065fa0f63fdb2c",
+            "path": "3:17",
+            "inputsHash": "0007dac606a76c57b3ac1147a745cb8c4a480b7472746167958241f1c9c03e66",
+            "label": "b",
+            "outcome": "result",
+            "origin": "runner",
+            "attempts": 1,
+            "backendId": "claude",
+            "resolvedCwd": "__ROOT__/project",
+            "settlementOrdinal": 2,
+            "scope": "mwsup4kz-ccc319"
+          },
+          {
+            "index": 2,
+            "kind": "agent",
+            "hash": "0e51262a1004c808192e0dd2230f16d8f1d46453df0a977cd90cf2270ca72724",
+            "path": "4:17",
+            "inputsHash": "e213e33ba3b1bf558cf75cc6502c57f96c8b69d342d474fd74b308b7447deab8",
+            "label": "c",
+            "outcome": "error",
+            "origin": "runner",
+            "error": {
+              "form": "workflow-error",
+              "message": "boom",
+              "code": "AGENT_EXECUTION_ERROR",
+              "recoverable": true
+            },
+            "attempts": 1,
+            "backendId": "claude",
+            "resolvedCwd": "__ROOT__/project",
+            "settlementOrdinal": 3,
+            "scope": "mwsup4kz-ccc319"
+          }
+        ],
+        "callsAllocated": 3,
+        "limits": {
+          "maxAgents": 1000,
+          "concurrency": 8,
+          "agentRetries": 0
+        },
+        "status": "paused",
+        "reason": "step \"c\" failed after 1 try: boom",
+        "errorCode": "PAUSE_REQUESTED",
+        "pauseReason": "step_failed",
+        "pausedAt": "2026-11-23T05:54:18.671Z",
+        "phases": [],
+        "agents": [
+          {
+            "id": 1,
+            "label": "a",
+            "prompt": "A",
+            "status": "done",
+            "callIndex": 0,
+            "scope": "mwsup4kz-ccc319",
+            "startedAt": "2026-11-23T05:54:18.631Z",
+            "resultPreview": "A done",
+            "tokens": 3,
+            "session": {
+              "sessionId": "s1",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 0,
+              "label": "a",
+              "keptOpen": false
+            },
+            "endedAt": "2026-11-23T05:54:18.642Z"
+          },
+          {
+            "id": 2,
+            "label": "b",
+            "prompt": "B",
+            "status": "done",
+            "callIndex": 1,
+            "scope": "mwsup4kz-ccc319",
+            "startedAt": "2026-11-23T05:54:18.645Z",
+            "resultPreview": "B done",
+            "tokens": 3,
+            "session": {
+              "sessionId": "s2",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 1,
+              "label": "b",
+              "keptOpen": false
+            },
+            "endedAt": "2026-11-23T05:54:18.657Z"
+          },
+          {
+            "id": 3,
+            "label": "c",
+            "prompt": "C",
+            "status": "error",
+            "callIndex": 2,
+            "scope": "mwsup4kz-ccc319",
+            "startedAt": "2026-11-23T05:54:18.658Z",
+            "resultPreview": "null",
+            "error": "boom",
+            "errorCode": "AGENT_EXECUTION_ERROR",
+            "recoverable": true,
+            "tokens": 2,
+            "session": {
+              "sessionId": "s3",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 2,
+              "label": "c",
+              "keptOpen": false
+            },
+            "endedAt": "2026-11-23T05:54:18.669Z"
+          }
+        ],
+        "logs": [
+          "agent c attempt 1/1 failed: boom",
+          "step \"c\" failed after 1 try: boom. The run pauses: fix the cause and resume it."
+        ],
+        "tokenUsage": {
+          "input": 0,
+          "output": 0,
+          "total": 8,
+          "cost": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "startedAt": "2026-11-23T05:54:18.617Z",
+        "updatedAt": "2026-11-23T05:54:18.685Z",
+        "durationMs": 54
+      },
+      "events": "{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":1,\"timestamp\":\"2026-11-23T05:54:18.631Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"label\":\"a\",\"prompt\":\"A\",\"callIndex\":0,\"path\":\"2:17<6:3\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":2,\"timestamp\":\"2026-11-23T05:54:18.637Z\",\"event\":{\"type\":\"tokenUsage\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"usage\":{\"input\":0,\"output\":0,\"total\":3,\"cost\":0,\"cacheRead\":0,\"cacheWrite\":0}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":3,\"timestamp\":\"2026-11-23T05:54:18.638Z\",\"event\":{\"type\":\"callRecord\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"record\":{\"index\":0,\"kind\":\"agent\",\"hash\":\"72c4b5a9cee96ca4e589ef8a7e14d07c10c3d31369b52da78127820d25a1380c\",\"path\":\"2:17<6:3\",\"inputsHash\":\"c53e3fa476bb190e3154dfbc812195b19f400e6d71451bb2adb9e64bbfd1a2a0\",\"label\":\"a\",\"outcome\":\"result\",\"origin\":\"runner\",\"attempts\":1,\"backendId\":\"claude\",\"resolvedCwd\":\"[REDACTED]\",\"settlementOrdinal\":1,\"scope\":\"mwsup4kz-ccc319\"}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":4,\"timestamp\":\"2026-11-23T05:54:18.639Z\",\"event\":{\"type\":\"journal\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"entry\":{\"index\":0,\"hash\":\"72c4b5a9cee96ca4e589ef8a7e14d07c10c3d31369b52da78127820d25a1380c\",\"result\":{\"preview\":\"\\\"A done\\\"\",\"redacted\":false,\"truncated\":false},\"call\":{\"kind\":\"agent\",\"label\":\"a\",\"backendId\":\"claude\"},\"kind\":\"agent\",\"scope\":\"mwsup4kz-ccc319\"}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":5,\"timestamp\":\"2026-11-23T05:54:18.642Z\",\"event\":{\"type\":\"agentEnd\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"label\":\"a\",\"result\":{\"preview\":\"\\\"A done\\\"\",\"redacted\":false,\"truncated\":false},\"tokens\":3,\"worktree\":\"[REDACTED]\",\"callIndex\":0,\"backendId\":\"claude\"},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":6,\"timestamp\":\"2026-11-23T05:54:18.645Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"label\":\"b\",\"prompt\":\"B\",\"callIndex\":1,\"path\":\"3:17\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":7,\"timestamp\":\"2026-11-23T05:54:18.649Z\",\"event\":{\"type\":\"tokenUsage\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"usage\":{\"input\":0,\"output\":0,\"total\":6,\"cost\":0,\"cacheRead\":0,\"cacheWrite\":0}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":8,\"timestamp\":\"2026-11-23T05:54:18.650Z\",\"event\":{\"type\":\"callRecord\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"record\":{\"index\":1,\"kind\":\"agent\",\"hash\":\"c54e953b5652e787f8681e347c8a688f69c1b4e7202ad0ff51065fa0f63fdb2c\",\"path\":\"3:17\",\"inputsHash\":\"cde1bef2e9625ad1b720466c55ee1108ec398a0a5396c09be1f22a16df27302b\",\"label\":\"b\",\"outcome\":\"result\",\"origin\":\"runner\",\"attempts\":1,\"backendId\":\"claude\",\"resolvedCwd\":\"[REDACTED]\",\"settlementOrdinal\":2,\"scope\":\"mwsup4kz-ccc319\"}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":9,\"timestamp\":\"2026-11-23T05:54:18.653Z\",\"event\":{\"type\":\"journal\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"entry\":{\"index\":1,\"hash\":\"c54e953b5652e787f8681e347c8a688f69c1b4e7202ad0ff51065fa0f63fdb2c\",\"result\":{\"preview\":\"\\\"B done\\\"\",\"redacted\":false,\"truncated\":false},\"call\":{\"kind\":\"agent\",\"label\":\"b\",\"backendId\":\"claude\"},\"kind\":\"agent\",\"scope\":\"mwsup4kz-ccc319\"}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":10,\"timestamp\":\"2026-11-23T05:54:18.657Z\",\"event\":{\"type\":\"agentEnd\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"label\":\"b\",\"result\":{\"preview\":\"\\\"B done\\\"\",\"redacted\":false,\"truncated\":false},\"tokens\":3,\"worktree\":\"[REDACTED]\",\"callIndex\":1,\"backendId\":\"claude\"},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":11,\"timestamp\":\"2026-11-23T05:54:18.658Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"label\":\"c\",\"prompt\":\"C\",\"callIndex\":2,\"path\":\"4:17\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":12,\"timestamp\":\"2026-11-23T05:54:18.663Z\",\"event\":{\"type\":\"log\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"message\":\"agent c attempt 1/1 failed: boom\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":13,\"timestamp\":\"2026-11-23T05:54:18.664Z\",\"event\":{\"type\":\"tokenUsage\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"usage\":{\"input\":0,\"output\":0,\"total\":8,\"cost\":0,\"cacheRead\":0,\"cacheWrite\":0}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":14,\"timestamp\":\"2026-11-23T05:54:18.665Z\",\"event\":{\"type\":\"log\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"message\":\"step \\\"c\\\" failed after 1 try: boom. The run pauses: fix the cause and resume it.\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":15,\"timestamp\":\"2026-11-23T05:54:18.667Z\",\"event\":{\"type\":\"callRecord\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"record\":{\"index\":2,\"kind\":\"agent\",\"hash\":\"0e51262a1004c808192e0dd2230f16d8f1d46453df0a977cd90cf2270ca72724\",\"path\":\"4:17\",\"inputsHash\":\"de569904e5f7a50698af0208c385fc9a88082e5159b57a7ee9a6999b832a8885\",\"label\":\"c\",\"outcome\":\"error\",\"origin\":\"runner\",\"error\":{\"form\":\"workflow-error\",\"message\":\"boom\",\"code\":\"AGENT_EXECUTION_ERROR\",\"recoverable\":true},\"attempts\":1,\"backendId\":\"claude\",\"resolvedCwd\":\"[REDACTED]\",\"settlementOrdinal\":3,\"scope\":\"mwsup4kz-ccc319\"}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":16,\"timestamp\":\"2026-11-23T05:54:18.669Z\",\"event\":{\"type\":\"agentEnd\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"label\":\"c\",\"result\":{\"preview\":\"null\",\"redacted\":false,\"truncated\":false},\"tokens\":2,\"worktree\":\"[REDACTED]\",\"error\":\"boom\",\"errorCode\":\"AGENT_EXECUTION_ERROR\",\"recoverable\":true,\"callIndex\":2,\"backendId\":\"claude\",\"errorRecord\":{\"form\":\"workflow-error\",\"message\":\"boom\",\"code\":\"AGENT_EXECUTION_ERROR\",\"recoverable\":true}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"52dc1b087d17911109fd9c67269c87fd\",\"runId\":\"mwsup4kz-ccc319\",\"seq\":17,\"timestamp\":\"2026-11-23T05:54:18.671Z\",\"event\":{\"type\":\"paused\",\"runId\":\"mwsup4kz-ccc319\",\"scope\":\"mwsup4kz-ccc319\",\"reason\":\"step_failed\",\"errorRecord\":{\"form\":\"workflow-error\",\"message\":\"step \\\"c\\\" failed after 1 try: boom\",\"code\":\"PAUSE_REQUESTED\",\"recoverable\":false,\"agentLabel\":\"c\",\"details\":{\"preview\":\"{\\\"stepFailed\\\":true,\\\"code\\\":\\\"AGENT_EXECUTION_ERROR\\\"}\",\"redacted\":false,\"truncated\":false}}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n"
+    }
+  ]
+}

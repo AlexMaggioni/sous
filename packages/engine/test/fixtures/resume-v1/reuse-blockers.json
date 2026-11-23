@@ -1,0 +1,685 @@
+{
+  "note": "A, B, C and D. The first run was stopped while D ran. B was then edited to B2, and a run that reuses the first one replayed A, failed at B2 and paused. Its seed holds the first run's B and C as candidates and D as a blocker.",
+  "writtenBy": "b21cd2c4",
+  "project": {
+    "four": "export const meta = { name: 'four', description: 'four steps' }\nconst a = await agent('A', { label: 'a' })\nconst b = await agent('B2', { label: 'b' })\nconst c = await agent('C', { label: 'c' })\nconst d = await agent('D', { label: 'd' })\nreturn [a, b, c, d]"
+  },
+  "runs": [
+    {
+      "record": {
+        "runId": "mwsup4c8-kyuyae",
+        "workflow": "four",
+        "file": "__ROOT__/project/.orchestrator/workflows/four.js",
+        "args": {},
+        "place": "folder",
+        "cwd": "__ROOT__/project",
+        "projectDir": "__ROOT__/project",
+        "priority": "user",
+        "origin": "cli",
+        "createdAt": "2026-11-23T05:54:18.296Z",
+        "accounts": {
+          "claude": {
+            "name": "default",
+            "folder": "__ROOT__/.claude"
+          },
+          "codex": {
+            "name": "default",
+            "folder": "__ROOT__/.codex"
+          }
+        }
+      },
+      "workflows": {
+        "four": "export const meta = { name: 'four', description: 'four steps' }\nconst a = await agent('A', { label: 'a' })\nconst b = await agent('B', { label: 'b' })\nconst c = await agent('C', { label: 'c' })\nconst d = await agent('D', { label: 'd' })\nreturn [a, b, c, d]"
+      },
+      "state": {
+        "runId": "mwsup4c8-kyuyae",
+        "workflowName": "four",
+        "script": "export const meta = { name: 'four', description: 'four steps' }\nconst a = await agent('A', { label: 'a' })\nconst b = await agent('B', { label: 'b' })\nconst c = await agent('C', { label: 'c' })\nconst d = await agent('D', { label: 'd' })\nreturn [a, b, c, d]",
+        "scriptOrigin": {
+          "kind": "inline"
+        },
+        "args": {},
+        "cwd": "__ROOT__/project",
+        "effectiveCwd": "__ROOT__/project",
+        "runtime": {
+          "engineVersion": "4.0.5",
+          "node": "v24.2.0",
+          "v8": "13.6.233.10-node.17",
+          "pathFormat": 1,
+          "inputsFormat": 2,
+          "checkpointInputsFormat": 2
+        },
+        "resume": {
+          "format": "identity-v1"
+        },
+        "eventStreamId": "821fe20fece7c6c33df542cd2d719100",
+        "eventSeq": 19,
+        "journal": [
+          {
+            "index": 0,
+            "hash": "72c4b5a9cee96ca4e589ef8a7e14d07c10c3d31369b52da78127820d25a1380c",
+            "result": "A done",
+            "kind": "agent",
+            "scope": "mwsup4c8-kyuyae",
+            "session": {
+              "sessionId": "s1",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 0,
+              "label": "a",
+              "keptOpen": false
+            },
+            "call": {
+              "kind": "agent",
+              "label": "a",
+              "backendId": "claude"
+            }
+          },
+          {
+            "index": 1,
+            "hash": "c54e953b5652e787f8681e347c8a688f69c1b4e7202ad0ff51065fa0f63fdb2c",
+            "result": "B done",
+            "kind": "agent",
+            "scope": "mwsup4c8-kyuyae",
+            "session": {
+              "sessionId": "s2",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 1,
+              "label": "b",
+              "keptOpen": false
+            },
+            "call": {
+              "kind": "agent",
+              "label": "b",
+              "backendId": "claude"
+            }
+          },
+          {
+            "index": 2,
+            "hash": "0e51262a1004c808192e0dd2230f16d8f1d46453df0a977cd90cf2270ca72724",
+            "result": "C done",
+            "kind": "agent",
+            "scope": "mwsup4c8-kyuyae",
+            "session": {
+              "sessionId": "s3",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 2,
+              "label": "c",
+              "keptOpen": false
+            },
+            "call": {
+              "kind": "agent",
+              "label": "c",
+              "backendId": "claude"
+            }
+          }
+        ],
+        "calls": [
+          {
+            "index": 0,
+            "kind": "agent",
+            "hash": "72c4b5a9cee96ca4e589ef8a7e14d07c10c3d31369b52da78127820d25a1380c",
+            "path": "2:17<7:3",
+            "inputsHash": "c53e3fa476bb190e3154dfbc812195b19f400e6d71451bb2adb9e64bbfd1a2a0",
+            "label": "a",
+            "outcome": "result",
+            "origin": "runner",
+            "attempts": 1,
+            "backendId": "claude",
+            "resolvedCwd": "__ROOT__/project",
+            "settlementOrdinal": 1,
+            "scope": "mwsup4c8-kyuyae"
+          },
+          {
+            "index": 1,
+            "kind": "agent",
+            "hash": "c54e953b5652e787f8681e347c8a688f69c1b4e7202ad0ff51065fa0f63fdb2c",
+            "path": "3:17",
+            "inputsHash": "cde1bef2e9625ad1b720466c55ee1108ec398a0a5396c09be1f22a16df27302b",
+            "label": "b",
+            "outcome": "result",
+            "origin": "runner",
+            "attempts": 1,
+            "backendId": "claude",
+            "resolvedCwd": "__ROOT__/project",
+            "settlementOrdinal": 2,
+            "scope": "mwsup4c8-kyuyae"
+          },
+          {
+            "index": 2,
+            "kind": "agent",
+            "hash": "0e51262a1004c808192e0dd2230f16d8f1d46453df0a977cd90cf2270ca72724",
+            "path": "4:17",
+            "inputsHash": "de569904e5f7a50698af0208c385fc9a88082e5159b57a7ee9a6999b832a8885",
+            "label": "c",
+            "outcome": "result",
+            "origin": "runner",
+            "attempts": 1,
+            "backendId": "claude",
+            "resolvedCwd": "__ROOT__/project",
+            "settlementOrdinal": 3,
+            "scope": "mwsup4c8-kyuyae"
+          },
+          {
+            "index": 3,
+            "kind": "agent",
+            "hash": "7b69119af0f1d3392e34596e2bab2fb8edb3d1622102b01915c1af325e865c5f",
+            "path": "5:17",
+            "inputsHash": "7c38a30cd9b66a4d497f4c8a47f0f6bc4ab69de5c8404a2751b5d0c4de8d85d3",
+            "label": "d",
+            "outcome": "error",
+            "origin": "engine",
+            "error": {
+              "form": "workflow-error",
+              "message": "agent \"d\" interrupted because workflow execution halted",
+              "code": "WORKFLOW_ABORTED",
+              "recoverable": true,
+              "agentLabel": "d"
+            },
+            "aborted": true,
+            "settlementOrdinal": 4,
+            "scope": "mwsup4c8-kyuyae"
+          }
+        ],
+        "callsAllocated": 4,
+        "limits": {
+          "maxAgents": 1000,
+          "concurrency": 8,
+          "agentRetries": 0
+        },
+        "abortSignaled": true,
+        "status": "aborted",
+        "phases": [],
+        "agents": [
+          {
+            "id": 1,
+            "label": "a",
+            "prompt": "A",
+            "status": "done",
+            "callIndex": 0,
+            "scope": "mwsup4c8-kyuyae",
+            "startedAt": "2026-11-23T05:54:18.317Z",
+            "resultPreview": "A done",
+            "tokens": 3,
+            "session": {
+              "sessionId": "s1",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 0,
+              "label": "a",
+              "keptOpen": false
+            },
+            "endedAt": "2026-11-23T05:54:18.328Z"
+          },
+          {
+            "id": 2,
+            "label": "b",
+            "prompt": "B",
+            "status": "done",
+            "callIndex": 1,
+            "scope": "mwsup4c8-kyuyae",
+            "startedAt": "2026-11-23T05:54:18.329Z",
+            "resultPreview": "B done",
+            "tokens": 3,
+            "session": {
+              "sessionId": "s2",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 1,
+              "label": "b",
+              "keptOpen": false
+            },
+            "endedAt": "2026-11-23T05:54:18.341Z"
+          },
+          {
+            "id": 3,
+            "label": "c",
+            "prompt": "C",
+            "status": "done",
+            "callIndex": 2,
+            "scope": "mwsup4c8-kyuyae",
+            "startedAt": "2026-11-23T05:54:18.342Z",
+            "resultPreview": "C done",
+            "tokens": 3,
+            "session": {
+              "sessionId": "s3",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 2,
+              "label": "c",
+              "keptOpen": false
+            },
+            "endedAt": "2026-11-23T05:54:18.354Z"
+          },
+          {
+            "id": 4,
+            "label": "d",
+            "prompt": "D",
+            "status": "error",
+            "callIndex": 3,
+            "scope": "mwsup4c8-kyuyae",
+            "startedAt": "2026-11-23T05:54:18.355Z",
+            "resultPreview": "null",
+            "error": "agent \"d\" interrupted because workflow execution halted",
+            "errorCode": "WORKFLOW_ABORTED",
+            "recoverable": true,
+            "tokens": 0,
+            "endedAt": "2026-11-23T05:54:18.366Z"
+          }
+        ],
+        "logs": [],
+        "tokenUsage": {
+          "input": 0,
+          "output": 0,
+          "total": 9,
+          "cost": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "startedAt": "2026-11-23T05:54:18.302Z",
+        "updatedAt": "2026-11-23T05:54:18.370Z"
+      },
+      "events": "{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":1,\"timestamp\":\"2026-11-23T05:54:18.317Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"label\":\"a\",\"prompt\":\"A\",\"callIndex\":0,\"path\":\"2:17<7:3\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":2,\"timestamp\":\"2026-11-23T05:54:18.322Z\",\"event\":{\"type\":\"tokenUsage\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"usage\":{\"input\":0,\"output\":0,\"total\":3,\"cost\":0,\"cacheRead\":0,\"cacheWrite\":0}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":3,\"timestamp\":\"2026-11-23T05:54:18.323Z\",\"event\":{\"type\":\"callRecord\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"record\":{\"index\":0,\"kind\":\"agent\",\"hash\":\"72c4b5a9cee96ca4e589ef8a7e14d07c10c3d31369b52da78127820d25a1380c\",\"path\":\"2:17<7:3\",\"inputsHash\":\"c53e3fa476bb190e3154dfbc812195b19f400e6d71451bb2adb9e64bbfd1a2a0\",\"label\":\"a\",\"outcome\":\"result\",\"origin\":\"runner\",\"attempts\":1,\"backendId\":\"claude\",\"resolvedCwd\":\"[REDACTED]\",\"settlementOrdinal\":1,\"scope\":\"mwsup4c8-kyuyae\"}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":4,\"timestamp\":\"2026-11-23T05:54:18.325Z\",\"event\":{\"type\":\"journal\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"entry\":{\"index\":0,\"hash\":\"72c4b5a9cee96ca4e589ef8a7e14d07c10c3d31369b52da78127820d25a1380c\",\"result\":{\"preview\":\"\\\"A done\\\"\",\"redacted\":false,\"truncated\":false},\"call\":{\"kind\":\"agent\",\"label\":\"a\",\"backendId\":\"claude\"},\"kind\":\"agent\",\"scope\":\"mwsup4c8-kyuyae\"}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":5,\"timestamp\":\"2026-11-23T05:54:18.328Z\",\"event\":{\"type\":\"agentEnd\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"label\":\"a\",\"result\":{\"preview\":\"\\\"A done\\\"\",\"redacted\":false,\"truncated\":false},\"tokens\":3,\"worktree\":\"[REDACTED]\",\"callIndex\":0,\"backendId\":\"claude\"},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":6,\"timestamp\":\"2026-11-23T05:54:18.329Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"label\":\"b\",\"prompt\":\"B\",\"callIndex\":1,\"path\":\"3:17\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":7,\"timestamp\":\"2026-11-23T05:54:18.333Z\",\"event\":{\"type\":\"tokenUsage\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"usage\":{\"input\":0,\"output\":0,\"total\":6,\"cost\":0,\"cacheRead\":0,\"cacheWrite\":0}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":8,\"timestamp\":\"2026-11-23T05:54:18.334Z\",\"event\":{\"type\":\"callRecord\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"record\":{\"index\":1,\"kind\":\"agent\",\"hash\":\"c54e953b5652e787f8681e347c8a688f69c1b4e7202ad0ff51065fa0f63fdb2c\",\"path\":\"3:17\",\"inputsHash\":\"cde1bef2e9625ad1b720466c55ee1108ec398a0a5396c09be1f22a16df27302b\",\"label\":\"b\",\"outcome\":\"result\",\"origin\":\"runner\",\"attempts\":1,\"backendId\":\"claude\",\"resolvedCwd\":\"[REDACTED]\",\"settlementOrdinal\":2,\"scope\":\"mwsup4c8-kyuyae\"}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":9,\"timestamp\":\"2026-11-23T05:54:18.337Z\",\"event\":{\"type\":\"journal\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"entry\":{\"index\":1,\"hash\":\"c54e953b5652e787f8681e347c8a688f69c1b4e7202ad0ff51065fa0f63fdb2c\",\"result\":{\"preview\":\"\\\"B done\\\"\",\"redacted\":false,\"truncated\":false},\"call\":{\"kind\":\"agent\",\"label\":\"b\",\"backendId\":\"claude\"},\"kind\":\"agent\",\"scope\":\"mwsup4c8-kyuyae\"}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":10,\"timestamp\":\"2026-11-23T05:54:18.341Z\",\"event\":{\"type\":\"agentEnd\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"label\":\"b\",\"result\":{\"preview\":\"\\\"B done\\\"\",\"redacted\":false,\"truncated\":false},\"tokens\":3,\"worktree\":\"[REDACTED]\",\"callIndex\":1,\"backendId\":\"claude\"},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":11,\"timestamp\":\"2026-11-23T05:54:18.342Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"label\":\"c\",\"prompt\":\"C\",\"callIndex\":2,\"path\":\"4:17\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":12,\"timestamp\":\"2026-11-23T05:54:18.346Z\",\"event\":{\"type\":\"tokenUsage\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"usage\":{\"input\":0,\"output\":0,\"total\":9,\"cost\":0,\"cacheRead\":0,\"cacheWrite\":0}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":13,\"timestamp\":\"2026-11-23T05:54:18.347Z\",\"event\":{\"type\":\"callRecord\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"record\":{\"index\":2,\"kind\":\"agent\",\"hash\":\"0e51262a1004c808192e0dd2230f16d8f1d46453df0a977cd90cf2270ca72724\",\"path\":\"4:17\",\"inputsHash\":\"de569904e5f7a50698af0208c385fc9a88082e5159b57a7ee9a6999b832a8885\",\"label\":\"c\",\"outcome\":\"result\",\"origin\":\"runner\",\"attempts\":1,\"backendId\":\"claude\",\"resolvedCwd\":\"[REDACTED]\",\"settlementOrdinal\":3,\"scope\":\"mwsup4c8-kyuyae\"}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":14,\"timestamp\":\"2026-11-23T05:54:18.351Z\",\"event\":{\"type\":\"journal\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"entry\":{\"index\":2,\"hash\":\"0e51262a1004c808192e0dd2230f16d8f1d46453df0a977cd90cf2270ca72724\",\"result\":{\"preview\":\"\\\"C done\\\"\",\"redacted\":false,\"truncated\":false},\"call\":{\"kind\":\"agent\",\"label\":\"c\",\"backendId\":\"claude\"},\"kind\":\"agent\",\"scope\":\"mwsup4c8-kyuyae\"}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":15,\"timestamp\":\"2026-11-23T05:54:18.354Z\",\"event\":{\"type\":\"agentEnd\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"label\":\"c\",\"result\":{\"preview\":\"\\\"C done\\\"\",\"redacted\":false,\"truncated\":false},\"tokens\":3,\"worktree\":\"[REDACTED]\",\"callIndex\":2,\"backendId\":\"claude\"},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":16,\"timestamp\":\"2026-11-23T05:54:18.355Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"label\":\"d\",\"prompt\":\"D\",\"callIndex\":3,\"path\":\"5:17\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":17,\"timestamp\":\"2026-11-23T05:54:18.363Z\",\"event\":{\"type\":\"callRecord\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"record\":{\"index\":3,\"kind\":\"agent\",\"hash\":\"7b69119af0f1d3392e34596e2bab2fb8edb3d1622102b01915c1af325e865c5f\",\"path\":\"5:17\",\"inputsHash\":\"7c38a30cd9b66a4d497f4c8a47f0f6bc4ab69de5c8404a2751b5d0c4de8d85d3\",\"label\":\"d\",\"outcome\":\"error\",\"origin\":\"engine\",\"error\":{\"form\":\"workflow-error\",\"message\":\"agent \\\"d\\\" interrupted because workflow execution halted\",\"code\":\"WORKFLOW_ABORTED\",\"recoverable\":true,\"agentLabel\":\"d\"},\"aborted\":true,\"settlementOrdinal\":4,\"scope\":\"mwsup4c8-kyuyae\"}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":18,\"timestamp\":\"2026-11-23T05:54:18.366Z\",\"event\":{\"type\":\"agentEnd\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\",\"label\":\"d\",\"result\":{\"preview\":\"null\",\"redacted\":false,\"truncated\":false},\"tokens\":0,\"error\":\"agent \\\"d\\\" interrupted because workflow execution halted\",\"errorCode\":\"WORKFLOW_ABORTED\",\"recoverable\":true,\"callIndex\":3,\"errorRecord\":{\"form\":\"workflow-error\",\"message\":\"agent \\\"d\\\" interrupted because workflow execution halted\",\"code\":\"WORKFLOW_ABORTED\",\"recoverable\":true,\"agentLabel\":\"d\"}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"821fe20fece7c6c33df542cd2d719100\",\"runId\":\"mwsup4c8-kyuyae\",\"seq\":19,\"timestamp\":\"2026-11-23T05:54:18.368Z\",\"event\":{\"type\":\"stopped\",\"runId\":\"mwsup4c8-kyuyae\",\"scope\":\"mwsup4c8-kyuyae\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n"
+    },
+    {
+      "record": {
+        "runId": "mwsup4eh-3h8hyr",
+        "workflow": "four",
+        "file": "__ROOT__/project/.orchestrator/workflows/four.js",
+        "args": {},
+        "place": "folder",
+        "cwd": "__ROOT__/project",
+        "projectDir": "__ROOT__/project",
+        "priority": "user",
+        "origin": "cli",
+        "createdAt": "2026-11-23T05:54:18.377Z",
+        "reuseFrom": "mwsup4c8-kyuyae",
+        "accounts": {
+          "claude": {
+            "name": "default",
+            "folder": "__ROOT__/.claude"
+          },
+          "codex": {
+            "name": "default",
+            "folder": "__ROOT__/.codex"
+          }
+        }
+      },
+      "workflows": {
+        "four": "export const meta = { name: 'four', description: 'four steps' }\nconst a = await agent('A', { label: 'a' })\nconst b = await agent('B2', { label: 'b' })\nconst c = await agent('C', { label: 'c' })\nconst d = await agent('D', { label: 'd' })\nreturn [a, b, c, d]"
+      },
+      "state": {
+        "runId": "mwsup4eh-3h8hyr",
+        "workflowName": "four",
+        "script": "export const meta = { name: 'four', description: 'four steps' }\nconst a = await agent('A', { label: 'a' })\nconst b = await agent('B2', { label: 'b' })\nconst c = await agent('C', { label: 'c' })\nconst d = await agent('D', { label: 'd' })\nreturn [a, b, c, d]",
+        "scriptOrigin": {
+          "kind": "inline"
+        },
+        "args": {},
+        "cwd": "__ROOT__/project",
+        "effectiveCwd": "__ROOT__/project",
+        "runtime": {
+          "engineVersion": "4.0.5",
+          "node": "v24.2.0",
+          "v8": "13.6.233.10-node.17",
+          "pathFormat": 1,
+          "inputsFormat": 2,
+          "checkpointInputsFormat": 2
+        },
+        "resume": {
+          "format": "identity-v1"
+        },
+        "resumeSourceRunId": "mwsup4c8-kyuyae",
+        "resumeSeed": {
+          "format": "identity-v1",
+          "sourceRunId": "mwsup4eh-3h8hyr",
+          "candidates": [
+            {
+              "sourceRunId": "mwsup4c8-kyuyae",
+              "recordedIndex": 1,
+              "entry": {
+                "index": 1,
+                "hash": "c54e953b5652e787f8681e347c8a688f69c1b4e7202ad0ff51065fa0f63fdb2c",
+                "result": "B done",
+                "kind": "agent",
+                "scope": "mwsup4c8-kyuyae",
+                "session": {
+                  "sessionId": "s2",
+                  "backendId": "claude",
+                  "cwd": "__ROOT__/project",
+                  "reopen": {
+                    "load": true,
+                    "resume": true,
+                    "list": true
+                  },
+                  "callIndex": 1,
+                  "label": "b",
+                  "keptOpen": false
+                },
+                "call": {
+                  "kind": "agent",
+                  "label": "b",
+                  "backendId": "claude"
+                }
+              },
+              "call": {
+                "index": 1,
+                "kind": "agent",
+                "hash": "c54e953b5652e787f8681e347c8a688f69c1b4e7202ad0ff51065fa0f63fdb2c",
+                "path": "3:17",
+                "inputsHash": "cde1bef2e9625ad1b720466c55ee1108ec398a0a5396c09be1f22a16df27302b",
+                "label": "b",
+                "outcome": "result",
+                "origin": "runner",
+                "attempts": 1,
+                "backendId": "claude",
+                "resolvedCwd": "__ROOT__/project",
+                "settlementOrdinal": 2,
+                "scope": "mwsup4c8-kyuyae"
+              }
+            },
+            {
+              "sourceRunId": "mwsup4c8-kyuyae",
+              "recordedIndex": 2,
+              "entry": {
+                "index": 2,
+                "hash": "0e51262a1004c808192e0dd2230f16d8f1d46453df0a977cd90cf2270ca72724",
+                "result": "C done",
+                "kind": "agent",
+                "scope": "mwsup4c8-kyuyae",
+                "session": {
+                  "sessionId": "s3",
+                  "backendId": "claude",
+                  "cwd": "__ROOT__/project",
+                  "reopen": {
+                    "load": true,
+                    "resume": true,
+                    "list": true
+                  },
+                  "callIndex": 2,
+                  "label": "c",
+                  "keptOpen": false
+                },
+                "call": {
+                  "kind": "agent",
+                  "label": "c",
+                  "backendId": "claude"
+                }
+              },
+              "call": {
+                "index": 2,
+                "kind": "agent",
+                "hash": "0e51262a1004c808192e0dd2230f16d8f1d46453df0a977cd90cf2270ca72724",
+                "path": "4:17",
+                "inputsHash": "de569904e5f7a50698af0208c385fc9a88082e5159b57a7ee9a6999b832a8885",
+                "label": "c",
+                "outcome": "result",
+                "origin": "runner",
+                "attempts": 1,
+                "backendId": "claude",
+                "resolvedCwd": "__ROOT__/project",
+                "settlementOrdinal": 3,
+                "scope": "mwsup4c8-kyuyae"
+              }
+            }
+          ],
+          "callBlockers": [
+            {
+              "sourceRunId": "mwsup4c8-kyuyae",
+              "recordedIndex": 3,
+              "call": {
+                "index": 3,
+                "kind": "agent",
+                "hash": "7b69119af0f1d3392e34596e2bab2fb8edb3d1622102b01915c1af325e865c5f",
+                "path": "5:17",
+                "inputsHash": "7c38a30cd9b66a4d497f4c8a47f0f6bc4ab69de5c8404a2751b5d0c4de8d85d3",
+                "label": "d",
+                "outcome": "error",
+                "origin": "engine",
+                "error": {
+                  "form": "workflow-error",
+                  "message": "agent \"d\" interrupted because workflow execution halted",
+                  "code": "WORKFLOW_ABORTED",
+                  "recoverable": true,
+                  "agentLabel": "d"
+                },
+                "aborted": true,
+                "settlementOrdinal": 4,
+                "scope": "mwsup4c8-kyuyae"
+              }
+            }
+          ]
+        },
+        "resumeReport": {
+          "strategy": "identity-v1",
+          "sourceRunId": "mwsup4c8-kyuyae",
+          "requestedPolicy": "auto",
+          "replayed": 1,
+          "live": 1,
+          "failed": 0,
+          "calls": [
+            {
+              "index": 0,
+              "kind": "agent",
+              "action": "replayed",
+              "sourceRunId": "mwsup4c8-kyuyae",
+              "recordedIndex": 0,
+              "match": "path-hash"
+            },
+            {
+              "index": 1,
+              "kind": "agent",
+              "action": "live",
+              "reason": "not-recorded"
+            }
+          ]
+        },
+        "replayEligibility": {
+          "sourceRunId": "mwsup4c8-kyuyae",
+          "strategy": "identity-v1",
+          "predictedReplayablePrefix": 3,
+          "replayedPrefix": 1,
+          "replayed": 1,
+          "live": 1,
+          "failed": 0,
+          "firstNonReplay": {
+            "index": 1,
+            "action": "live",
+            "reason": "not-recorded"
+          },
+          "sourceEngineVersion": "4.0.5",
+          "currentEngineVersion": "4.0.5",
+          "engineVersionComparison": "same",
+          "sourceInputsFormat": 2,
+          "currentInputsFormat": 2,
+          "provenanceChanges": [],
+          "operationalChanges": []
+        },
+        "eventStreamId": "270bb9907a3beb40f3d3f37c85ebd7c7",
+        "eventSeq": 11,
+        "journal": [
+          {
+            "index": 0,
+            "hash": "72c4b5a9cee96ca4e589ef8a7e14d07c10c3d31369b52da78127820d25a1380c",
+            "result": "A done",
+            "kind": "agent",
+            "scope": "mwsup4eh-3h8hyr",
+            "session": {
+              "sessionId": "s1",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 0,
+              "label": "a",
+              "keptOpen": false
+            },
+            "call": {
+              "kind": "agent",
+              "label": "a",
+              "backendId": "claude"
+            }
+          }
+        ],
+        "calls": [
+          {
+            "index": 0,
+            "kind": "agent",
+            "hash": "72c4b5a9cee96ca4e589ef8a7e14d07c10c3d31369b52da78127820d25a1380c",
+            "path": "2:17<7:3",
+            "inputsHash": "c53e3fa476bb190e3154dfbc812195b19f400e6d71451bb2adb9e64bbfd1a2a0",
+            "label": "a",
+            "outcome": "result",
+            "origin": "journal-replay",
+            "replay": {
+              "sourceRunId": "mwsup4c8-kyuyae",
+              "recordedIndex": 0,
+              "match": "path-hash"
+            },
+            "settlementOrdinal": 1,
+            "scope": "mwsup4eh-3h8hyr"
+          },
+          {
+            "index": 1,
+            "kind": "agent",
+            "hash": "a48b16ba34dfea966c81ed65b29f50d0343c51633d6dadb274cce2fd70282c4f",
+            "path": "3:17",
+            "inputsHash": "cde1bef2e9625ad1b720466c55ee1108ec398a0a5396c09be1f22a16df27302b",
+            "label": "b",
+            "outcome": "error",
+            "origin": "runner",
+            "error": {
+              "form": "workflow-error",
+              "message": "boom",
+              "code": "AGENT_EXECUTION_ERROR",
+              "recoverable": true
+            },
+            "attempts": 1,
+            "backendId": "claude",
+            "resolvedCwd": "__ROOT__/project",
+            "settlementOrdinal": 2,
+            "scope": "mwsup4eh-3h8hyr"
+          }
+        ],
+        "callsAllocated": 2,
+        "limits": {
+          "maxAgents": 1000,
+          "concurrency": 8,
+          "agentRetries": 0
+        },
+        "status": "paused",
+        "reason": "step \"b\" failed after 1 try: boom",
+        "errorCode": "PAUSE_REQUESTED",
+        "pauseReason": "step_failed",
+        "pausedAt": "2026-11-23T05:54:18.436Z",
+        "phases": [],
+        "agents": [
+          {
+            "id": 1,
+            "label": "a",
+            "prompt": "A",
+            "status": "done",
+            "callIndex": 0,
+            "scope": "mwsup4eh-3h8hyr",
+            "startedAt": "2026-11-23T05:54:18.406Z",
+            "resultPreview": "A done",
+            "tokens": 0,
+            "session": {
+              "sessionId": "s1",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 0,
+              "label": "a",
+              "keptOpen": false
+            },
+            "endedAt": "2026-11-23T05:54:18.415Z"
+          },
+          {
+            "id": 2,
+            "label": "b",
+            "prompt": "B2",
+            "status": "error",
+            "callIndex": 1,
+            "scope": "mwsup4eh-3h8hyr",
+            "startedAt": "2026-11-23T05:54:18.418Z",
+            "resultPreview": "null",
+            "error": "boom",
+            "errorCode": "AGENT_EXECUTION_ERROR",
+            "recoverable": true,
+            "tokens": 2,
+            "session": {
+              "sessionId": "s1",
+              "backendId": "claude",
+              "cwd": "__ROOT__/project",
+              "reopen": {
+                "load": true,
+                "resume": true,
+                "list": true
+              },
+              "callIndex": 1,
+              "label": "b",
+              "keptOpen": false
+            },
+            "endedAt": "2026-11-23T05:54:18.434Z"
+          }
+        ],
+        "logs": [
+          "agent b attempt 1/1 failed: boom",
+          "step \"b\" failed after 1 try: boom. The run pauses: fix the cause and resume it."
+        ],
+        "tokenUsage": {
+          "input": 0,
+          "output": 0,
+          "total": 2,
+          "cost": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "startedAt": "2026-11-23T05:54:18.383Z",
+        "updatedAt": "2026-11-23T05:54:18.451Z",
+        "durationMs": 53
+      },
+      "events": "{\"version\":1,\"streamId\":\"270bb9907a3beb40f3d3f37c85ebd7c7\",\"runId\":\"mwsup4eh-3h8hyr\",\"seq\":1,\"timestamp\":\"2026-11-23T05:54:18.407Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsup4eh-3h8hyr\",\"scope\":\"mwsup4eh-3h8hyr\",\"label\":\"a\",\"prompt\":\"A\",\"callIndex\":0,\"path\":\"2:17<7:3\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"270bb9907a3beb40f3d3f37c85ebd7c7\",\"runId\":\"mwsup4eh-3h8hyr\",\"seq\":2,\"timestamp\":\"2026-11-23T05:54:18.409Z\",\"event\":{\"type\":\"callRecord\",\"runId\":\"mwsup4eh-3h8hyr\",\"scope\":\"mwsup4eh-3h8hyr\",\"record\":{\"index\":0,\"kind\":\"agent\",\"hash\":\"72c4b5a9cee96ca4e589ef8a7e14d07c10c3d31369b52da78127820d25a1380c\",\"path\":\"2:17<7:3\",\"inputsHash\":\"c53e3fa476bb190e3154dfbc812195b19f400e6d71451bb2adb9e64bbfd1a2a0\",\"label\":\"a\",\"outcome\":\"result\",\"origin\":\"journal-replay\",\"settlementOrdinal\":1,\"scope\":\"mwsup4eh-3h8hyr\"}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"270bb9907a3beb40f3d3f37c85ebd7c7\",\"runId\":\"mwsup4eh-3h8hyr\",\"seq\":3,\"timestamp\":\"2026-11-23T05:54:18.412Z\",\"event\":{\"type\":\"journal\",\"runId\":\"mwsup4eh-3h8hyr\",\"scope\":\"mwsup4eh-3h8hyr\",\"entry\":{\"index\":0,\"hash\":\"72c4b5a9cee96ca4e589ef8a7e14d07c10c3d31369b52da78127820d25a1380c\",\"result\":{\"preview\":\"\\\"A done\\\"\",\"redacted\":false,\"truncated\":false},\"call\":{\"kind\":\"agent\",\"label\":\"a\",\"backendId\":\"claude\"},\"kind\":\"agent\",\"scope\":\"mwsup4eh-3h8hyr\"}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"270bb9907a3beb40f3d3f37c85ebd7c7\",\"runId\":\"mwsup4eh-3h8hyr\",\"seq\":4,\"timestamp\":\"2026-11-23T05:54:18.415Z\",\"event\":{\"type\":\"agentEnd\",\"runId\":\"mwsup4eh-3h8hyr\",\"scope\":\"mwsup4eh-3h8hyr\",\"label\":\"a\",\"result\":{\"preview\":\"\\\"A done\\\"\",\"redacted\":false,\"truncated\":false},\"tokens\":0,\"callIndex\":0},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"270bb9907a3beb40f3d3f37c85ebd7c7\",\"runId\":\"mwsup4eh-3h8hyr\",\"seq\":5,\"timestamp\":\"2026-11-23T05:54:18.418Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsup4eh-3h8hyr\",\"scope\":\"mwsup4eh-3h8hyr\",\"label\":\"b\",\"prompt\":\"B2\",\"callIndex\":1,\"path\":\"3:17\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"270bb9907a3beb40f3d3f37c85ebd7c7\",\"runId\":\"mwsup4eh-3h8hyr\",\"seq\":6,\"timestamp\":\"2026-11-23T05:54:18.424Z\",\"event\":{\"type\":\"log\",\"runId\":\"mwsup4eh-3h8hyr\",\"scope\":\"mwsup4eh-3h8hyr\",\"message\":\"agent b attempt 1/1 failed: boom\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"270bb9907a3beb40f3d3f37c85ebd7c7\",\"runId\":\"mwsup4eh-3h8hyr\",\"seq\":7,\"timestamp\":\"2026-11-23T05:54:18.425Z\",\"event\":{\"type\":\"tokenUsage\",\"runId\":\"mwsup4eh-3h8hyr\",\"scope\":\"mwsup4eh-3h8hyr\",\"usage\":{\"input\":0,\"output\":0,\"total\":2,\"cost\":0,\"cacheRead\":0,\"cacheWrite\":0}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"270bb9907a3beb40f3d3f37c85ebd7c7\",\"runId\":\"mwsup4eh-3h8hyr\",\"seq\":8,\"timestamp\":\"2026-11-23T05:54:18.429Z\",\"event\":{\"type\":\"log\",\"runId\":\"mwsup4eh-3h8hyr\",\"scope\":\"mwsup4eh-3h8hyr\",\"message\":\"step \\\"b\\\" failed after 1 try: boom. The run pauses: fix the cause and resume it.\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"270bb9907a3beb40f3d3f37c85ebd7c7\",\"runId\":\"mwsup4eh-3h8hyr\",\"seq\":9,\"timestamp\":\"2026-11-23T05:54:18.431Z\",\"event\":{\"type\":\"callRecord\",\"runId\":\"mwsup4eh-3h8hyr\",\"scope\":\"mwsup4eh-3h8hyr\",\"record\":{\"index\":1,\"kind\":\"agent\",\"hash\":\"a48b16ba34dfea966c81ed65b29f50d0343c51633d6dadb274cce2fd70282c4f\",\"path\":\"3:17\",\"inputsHash\":\"cde1bef2e9625ad1b720466c55ee1108ec398a0a5396c09be1f22a16df27302b\",\"label\":\"b\",\"outcome\":\"error\",\"origin\":\"runner\",\"error\":{\"form\":\"workflow-error\",\"message\":\"boom\",\"code\":\"AGENT_EXECUTION_ERROR\",\"recoverable\":true},\"attempts\":1,\"backendId\":\"claude\",\"resolvedCwd\":\"[REDACTED]\",\"settlementOrdinal\":2,\"scope\":\"mwsup4eh-3h8hyr\"}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"270bb9907a3beb40f3d3f37c85ebd7c7\",\"runId\":\"mwsup4eh-3h8hyr\",\"seq\":10,\"timestamp\":\"2026-11-23T05:54:18.434Z\",\"event\":{\"type\":\"agentEnd\",\"runId\":\"mwsup4eh-3h8hyr\",\"scope\":\"mwsup4eh-3h8hyr\",\"label\":\"b\",\"result\":{\"preview\":\"null\",\"redacted\":false,\"truncated\":false},\"tokens\":2,\"worktree\":\"[REDACTED]\",\"error\":\"boom\",\"errorCode\":\"AGENT_EXECUTION_ERROR\",\"recoverable\":true,\"callIndex\":1,\"backendId\":\"claude\",\"errorRecord\":{\"form\":\"workflow-error\",\"message\":\"boom\",\"code\":\"AGENT_EXECUTION_ERROR\",\"recoverable\":true}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"270bb9907a3beb40f3d3f37c85ebd7c7\",\"runId\":\"mwsup4eh-3h8hyr\",\"seq\":11,\"timestamp\":\"2026-11-23T05:54:18.436Z\",\"event\":{\"type\":\"paused\",\"runId\":\"mwsup4eh-3h8hyr\",\"scope\":\"mwsup4eh-3h8hyr\",\"reason\":\"step_failed\",\"errorRecord\":{\"form\":\"workflow-error\",\"message\":\"step \\\"b\\\" failed after 1 try: boom\",\"code\":\"PAUSE_REQUESTED\",\"recoverable\":false,\"agentLabel\":\"b\",\"details\":{\"preview\":\"{\\\"stepFailed\\\":true,\\\"code\\\":\\\"AGENT_EXECUTION_ERROR\\\"}\",\"redacted\":false,\"truncated\":false}}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n"
+    }
+  ]
+}
