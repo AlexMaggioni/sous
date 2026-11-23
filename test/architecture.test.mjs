@@ -163,12 +163,14 @@ const PINS = [
   ] },
   { change: "orc doctor --live --model haiku runs haiku", tests: [
     ["packages/engine/test/programs.test.ts", "runs a bare model name on the harness it routes to, and says so"],
+    ["packages/orc/test/doctor.test.ts", "with --live --model, runs that model on its program alone"],
   ] },
   { change: "The worker's last log line for a run paused on a failed step says why", tests: [
     ["packages/engine/test/runs/worker-log.test.ts", "says why a step failed, on a start and on a resume alike"],
   ] },
   { change: "The run's log gets a note line when a program could not do what a step asked", tests: [
     ["packages/engine/test/steps.test.ts", "reports once per step what its program could not do as asked, also when the step fails"],
+    ["packages/orc/test/note-line.test.ts", "names the step and what its program could not do, once, between the step's start and its end"],
   ] },
   { change: "An MCP server of a type a step cannot start says so", tests: [
     ["packages/engine/test/mcp-servers.test.ts", "names the server and its type when a step cannot start it"],
@@ -178,7 +180,9 @@ const PINS = [
   { change: "orc answer <q> stop at a breakpoint stops the run", tests: [
     ["packages/orc/test/questions.test.ts", "orc answer <q> stop stops a running run, as orc stop does"],
   ] },
-  { change: "An answer file with no value pauses the run", waiting: "No test writes an answer file with no value." },
+  { change: "An answer file with no value pauses the run", tests: [
+    ["packages/orc/test/answer-file.test.ts", "pauses the run, runs no step, and asks again when the run resumes"],
+  ] },
 
   // Resume
   { change: "--latest keeps the steps that match after an edit", tests: [
@@ -229,7 +233,9 @@ const PINS = [
   { change: "orc show lists the steps that finished before a worker was killed as done", tests: [
     ["packages/engine/test/runs/run.test.ts", "the event log gives the steps the worker never saved, and none of them runs"],
   ] },
-  { change: "orc log -f prints the no run error if the run's record is deleted just after its worker ends", waiting: "No test deletes a record during a follow." },
+  { change: "orc log -f prints the no run error if the run's record is deleted just after its worker ends", tests: [
+    ["packages/orc/test/reads.test.ts", "let orc log -f print the no run error, and exit 1, when the run goes away while it follows"],
+  ] },
 
   // The library
   { change: "A reuse run that ends without an engine result lists its call rows in the order they settled", waiting: "The proof says orc reads no result's call rows, so only a direct call shows it." },
