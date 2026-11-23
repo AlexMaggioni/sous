@@ -143,8 +143,8 @@ return { safe, unsafe, empty }`),
     const prepared: PreparedResume = {
       strategy: "positional-v1",
       sourceRunId: "source",
-      requestedPolicy: "positional",
-      fallbackReason: "forced-positional",
+      requestedPolicy: "auto",
+      fallbackReason: "unsafe-recording",
       eligibility: "safe-prefix",
       sourceCalls: new Map([[0, source]]),
     };

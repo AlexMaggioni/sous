@@ -433,8 +433,8 @@ return { first, second }`, "nested-positional"));
     const positionalPrepared: PreparedResume = {
       strategy: "positional-v1",
       sourceRunId: positionalRecording.runId,
-      requestedPolicy: "positional",
-      fallbackReason: "forced-positional",
+      requestedPolicy: "auto",
+      fallbackReason: "unsafe-recording",
       eligibility: "safe-prefix",
       sourceCalls: new Map(positionalRecording.calls.map((call) => [call.index, call])),
     };

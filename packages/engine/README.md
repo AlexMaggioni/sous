@@ -140,7 +140,6 @@ a **new** manager run:
 const first = await manager.runSync(script, { topic: "otters" });
 const again = await manager.runSync(script, { topic: "otters", expanded: true }, {
   resumeFromRunId: first.runId,
-  resumePolicy: "auto", // default; "positional" is the migration escape hatch
 });
 console.log(again.replayEligibility, again.resumeReport);
 ```
@@ -174,8 +173,8 @@ neither hash. Captured start/terminal environment values, current environment, N
 provenance only and never gate matching. Reporting compares the recorded terminal environment (or
 start environment when no terminal capture exists) with the current environment. A current-format crash snapshot reconciled to
 `paused` / `interrupted` uses its identity manifest even without terminal environment capture.
-Input-fingerprint formats below 2 use the named
-`inputs-format-legacy` positional bridge, including ancestor-scoped prefixes carried by ≤0.23 resume
+A source whose input-fingerprint format is below 2 runs live.
+Positional resume keeps ancestor-scoped prefixes carried by ≤0.23 resume
 hops when the ancestor run is still persisted. The persisted producing engine version is diagnostic only. The saved run and its
 terminal result expose the same eligibility strategy, predicted/observed
 prefix, first non-replay, version formats, runtime/environment provenance changes, and operational differences.
@@ -185,9 +184,8 @@ usage/auth-paused snapshot's coherent root `calls[]` × `agents[]` join. Both ne
 resume paths thread it to the live boundary. On attempt one, an exact call-index/hash/input/cwd
 match that is not worktree-isolated passes the recorded session ref to the runner; every failed
 gate runs fresh and emits a guarded `kind: "continuation"` notice with its exact reason. Candidates
-carry their persisted input format so format-1 interrupted sessions are checked with the legacy
-fingerprint (including its historical retry/timeout fields) rather than compared to incompatible
-format-2 bytes. Unsupported formats and changed semantic inputs still run fresh. Candidates
+carry their persisted input format. A candidate from another format, or with changed semantic
+inputs, runs fresh. Candidates
 are rebuilt per execution, so multiple new-run consumers may independently reopen the same paused
 source session. Nested workflows receive no continuation channel.
 

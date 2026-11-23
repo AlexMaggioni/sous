@@ -1181,11 +1181,6 @@ export async function runWorkflow<T = unknown>(
       backends: null,
     };
     const callInputsHash = hashCallInputs(callInputs);
-    const legacyCallInputsHash = hashCallInputsV1({
-      ...callInputs,
-      retries: retryAttempts,
-      timeoutMs: null,
-    });
 
     // Deterministic resume key: assigned at lexical call time, before the limiter,
     // so parallel()/pipeline() fan-out is reproducible for a fixed script.
@@ -1476,9 +1471,7 @@ export async function runWorkflow<T = unknown>(
           const comparableInputsHash = continuationCandidate.inputsFormat === undefined ||
               continuationCandidate.inputsFormat === CALL_INPUTS_FORMAT
             ? callInputsHash
-            : continuationCandidate.inputsFormat === 1
-              ? legacyCallInputsHash
-              : undefined;
+            : undefined;
           if (continuationCandidate.hash !== callHash) {
             continuationSkipReason = "hash-mismatch";
           } else if (
@@ -2964,24 +2957,6 @@ function hashCallInputs(inputs: {
   promptMeta: unknown;
   label: unknown;
   backends: unknown;
-}): string | undefined {
-  return hashCanonicalStrictJson(inputs);
-}
-
-/** Compatibility fingerprint for interrupted sessions recorded before format 2 removed
- * retry and timeout controls from call identity. This is never written by a current run. */
-function hashCallInputsV1(inputs: {
-  cwd: unknown;
-  isolation: unknown;
-  keepSession: unknown;
-  images: unknown;
-  mcpServers: unknown;
-  meta: unknown;
-  promptMeta: unknown;
-  label: unknown;
-  backends: unknown;
-  retries: unknown;
-  timeoutMs: unknown;
 }): string | undefined {
   return hashCanonicalStrictJson(inputs);
 }

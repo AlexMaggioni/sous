@@ -17,7 +17,6 @@ import type { AgentRunner } from "./steps/agent-runner.js";
 import type {
   AgentSessionRecord,
   JournalEntry,
-  ResumePolicy,
   TokenUsage,
   WorkflowCallRecord,
   WorkflowCheckpointTaken,
@@ -301,8 +300,6 @@ export interface ExecOptions {
   resumeJournal?: Map<number, JournalEntry>;
   /** Load this persisted run as the source for a new managed execution. */
   resumeFromRunId?: string;
-  /** Default "auto". "positional" requests the historical index/prefix matcher. */
-  resumePolicy?: ResumePolicy;
   /**
    * Whether THIS run writes/reads the engine persistence journal. Default is the
    * manager setting. When false, no run-state/log files are written and resume
@@ -788,16 +785,8 @@ export class WorkflowManager extends EventEmitter {
     if (hasSource && (typeof exec.resumeFromRunId !== "string" || exec.resumeFromRunId.length === 0)) {
       throw this.scriptValidationError("resumeFromRunId must be a non-empty string");
     }
-    if (exec.resumePolicy !== undefined && exec.resumePolicy !== "auto" && exec.resumePolicy !== "positional") {
-      throw this.scriptValidationError('resumePolicy must be "auto" or "positional"');
-    }
-    if (exec.resumeJournal !== undefined && (hasSource || exec.resumePolicy !== undefined)) {
-      throw this.scriptValidationError(
-        "resumeJournal is mutually exclusive with resumeFromRunId and resumePolicy",
-      );
-    }
-    if (exec.resumePolicy !== undefined && !hasSource) {
-      throw this.scriptValidationError("resumePolicy requires resumeFromRunId");
+    if (exec.resumeJournal !== undefined && hasSource) {
+      throw this.scriptValidationError("resumeJournal is mutually exclusive with resumeFromRunId");
     }
     if (hasSource && !journaling) {
       throw this.scriptValidationError("resumeFromRunId requires journaling");
@@ -1199,13 +1188,11 @@ export class WorkflowManager extends EventEmitter {
   private prepareManagedResume(
     managed: ManagedRun,
     source: PersistedRunState,
-    exec: ExecOptions,
   ): ManagerResumeExecution {
     assertExplicitCheckpointProvenance(source);
-    const requestedPolicy = exec.resumePolicy ?? "auto";
     const admission = admitResumeSource({
       source,
-      requestedPolicy,
+      requestedPolicy: "auto",
       current: {
         effectiveCwd: managed.effectiveCwd,
         runtime: {
@@ -1269,12 +1256,8 @@ export class WorkflowManager extends EventEmitter {
       admission,
       predictedPositionalReplayablePrefix(admission.eligibility, sourceJournal, managed.calls),
     );
-    // Marked format-1 rows can republish matching diagnostic provenance under format 2;
-    // markerless legacy rows have no trustworthy source-call facts to promote.
-    const retainSourceCallFacts =
-      admission.eligibility !== "legacy" ||
-      admission.fallbackReason === "inputs-format-legacy";
-    const sourceCalls = retainSourceCallFacts
+    // Legacy rows have no trustworthy source-call facts to promote.
+    const sourceCalls = admission.eligibility !== "legacy"
       ? new Map(managed.calls.map((call) => [call.index, call] as const))
       : new Map<number, WorkflowCallRecord>();
     return {
@@ -1306,7 +1289,7 @@ export class WorkflowManager extends EventEmitter {
       identity = this.acquireNewRunIdentity(exec.runId);
       const managed = this.createManaged(script, args, journaling, exec, background, identity);
       const resumeExecution = source
-        ? this.prepareManagedResume(managed, source.source, exec)
+        ? this.prepareManagedResume(managed, source.source)
         : undefined;
       if (!source && managed.journaling && exec.resumeJournal) {
         managed.journal = latestRows([...exec.resumeJournal.values()]);
@@ -2589,7 +2572,6 @@ export class WorkflowManager extends EventEmitter {
   ): Promise<WorkflowContinuationStart> {
     if (
       exec.resumeFromRunId !== undefined ||
-      exec.resumePolicy !== undefined ||
       exec.resumeJournal !== undefined ||
       exec.resumeCalls !== undefined ||
       exec.cwd !== undefined ||
@@ -2871,7 +2853,7 @@ export class WorkflowManager extends EventEmitter {
         { generation, scriptHash: hashScriptText(revision), revisedAt: new Date().toISOString() },
       ];
       try {
-        revisedExecution = this.prepareManagedResume(managed, persisted, { resumePolicy: "auto" });
+        revisedExecution = this.prepareManagedResume(managed, persisted);
       } catch (error) {
         this.persistence.releaseRunLease(lease);
         publication.lease = undefined;

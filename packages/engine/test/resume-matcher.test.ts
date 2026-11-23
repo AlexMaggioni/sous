@@ -287,24 +287,14 @@ describe("incremental resume admission", () => {
     const legacyResume = admission(sourceState(undefined, { legacyResume: true }));
     assert.equal(legacyResume.strategy, "positional-v1");
     assert.equal(legacyResume.strategy === "positional-v1" && legacyResume.fallbackReason, "legacy-resume");
-
-    const forced = admission(sourceState(), { requestedPolicy: "positional" });
-    assert.equal(forced.strategy, "positional-v1");
-    assert.equal(forced.strategy === "positional-v1" && forced.fallbackReason, "forced-positional");
-    assert.equal(forced.strategy === "positional-v1" && forced.eligibility, "safe-prefix");
   });
 
-  it("bridges older call-input formats through legacy positional matching", () => {
-    const bridged = admission(sourceState(undefined, {
+  it("runs a source with another call-input format live", () => {
+    const older = admission(sourceState(undefined, {
       runtime: { ...RUNTIME, inputsFormat: 1 },
     }));
-    assert.deepEqual(bridged, {
-      strategy: "positional-v1",
-      sourceRunId: SOURCE_RUN_ID,
-      requestedPolicy: "auto",
-      fallbackReason: "inputs-format-legacy",
-      eligibility: "legacy",
-    });
+    assert.equal(older.strategy, "live");
+    assert.equal(older.strategy === "live" && older.disabledReason, "runtime-mismatch");
 
     const replay = selectPositionalResume({
       index: 0,
@@ -315,7 +305,7 @@ describe("incremental resume admission", () => {
       firstMiss: initialPositionalFirstMiss("legacy"),
       cached: entryFor(agentRow()),
     });
-    assert.equal(replay.action, "replay", "format-1 input bytes are not reinterpreted");
+    assert.equal(replay.action, "replay", "legacy positional matching does not compare input bytes");
 
     const future = admission(sourceState(undefined, {
       runtime: { ...RUNTIME, inputsFormat: 3 },
@@ -325,20 +315,6 @@ describe("incremental resume admission", () => {
   });
 
   it("uses manifest identity for crash residue without consulting world state", () => {
-    const legacyCrashed = sourceState(undefined, {
-      status: "paused",
-      pauseReason: "interrupted",
-      runtime: { ...RUNTIME, inputsFormat: 1 },
-      resume: { format: "identity-v1" },
-    });
-    assert.deepEqual(admission(legacyCrashed), {
-      strategy: "positional-v1",
-      sourceRunId: SOURCE_RUN_ID,
-      requestedPolicy: "auto",
-      fallbackReason: "inputs-format-legacy",
-      eligibility: "legacy",
-    });
-
     const currentCrashed = sourceState(undefined, {
       status: "paused",
       pauseReason: "interrupted",
@@ -370,7 +346,7 @@ describe("incremental resume admission", () => {
     assert.equal(malformed.strategy, "identity-v1");
   });
 
-  it("replays across retry/concurrency changes and migrates format 1 positionally", async () => {
+  it("replays across retry/concurrency changes", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "resume-knobs-cwd-"));
     const persistenceRoot = mkdtempSync(join(tmpdir(), "resume-knobs-runs-"));
     const script = `export const meta = { name: "resume-knobs", description: "resume knobs" };
@@ -414,39 +390,6 @@ return { first, second };`;
         assert.equal(resumed.replayEligibility?.engineVersionComparison, "different", variant.runId);
       }
       assert.equal(liveCalls, 2, "operational changes never invoke the runner for completed calls");
-
-      const persisted = manager.getPersistence().load(source.runId);
-      assert.ok(persisted?.runtime);
-      persisted.runtime.inputsFormat = 1;
-      manager.getPersistence().save(persisted);
-      const bridged = await manager.runSync(script, undefined, {
-        runId: "format-one-bridge",
-        resumeFromRunId: source.runId,
-        agentRetries: 0,
-        concurrency: 9,
-      });
-      assert.equal(bridged.resumeReport?.strategy, "positional-v1");
-      if (bridged.resumeReport?.strategy === "positional-v1") {
-        assert.equal(bridged.resumeReport.fallbackReason, "inputs-format-legacy");
-        assert.equal(bridged.resumeReport.eligibility, "legacy");
-      }
-      assert.equal(bridged.resumeReport?.replayed, 2);
-      assert.equal(liveCalls, 2);
-      const bridgedState = manager.getPersistence().load("format-one-bridge");
-      assert.equal(bridgedState?.runtime?.inputsFormat, 2);
-
-      const upgraded = await manager.runSync(script, undefined, {
-        runId: "format-two-upgraded",
-        resumeFromRunId: "format-one-bridge",
-      });
-      assert.equal(
-        upgraded.resumeReport?.strategy,
-        "identity-v1",
-        "the format-2 target admits identity replay on its next hop",
-      );
-      assert.equal(upgraded.resumeReport?.replayed, 2);
-      assert.equal(upgraded.resumeReport?.live, 0);
-      assert.equal(liveCalls, 2, "format-2 re-journaling enables identity replay on the next hop");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(persistenceRoot, { recursive: true, force: true });
@@ -513,10 +456,6 @@ return { first, second };`;
     });
     const automatic = admission(drifted);
     assert.equal(automatic.strategy, "identity-v1");
-
-    const positional = admission(drifted, { requestedPolicy: "positional" });
-    assert.equal(positional.strategy, "positional-v1");
-    assert.equal(positional.strategy === "positional-v1" && positional.eligibility, "safe-prefix");
 
     const unsafeRow = agentRow();
     delete unsafeRow.resumeSafety;
@@ -1015,19 +954,19 @@ describe("incremental resume report construction", () => {
     const report = buildResumeReport({
       strategy: "positional-v1",
       sourceRunId: SOURCE_RUN_ID,
-      requestedPolicy: "positional",
-      fallbackReason: "forced-positional",
+      requestedPolicy: "auto",
+      fallbackReason: "unsafe-recording",
       eligibility: "safe-prefix",
     }, decisions);
     assert.deepEqual(report, {
       strategy: "positional-v1",
       sourceRunId: SOURCE_RUN_ID,
-      requestedPolicy: "positional",
+      requestedPolicy: "auto",
       replayed: 1,
       live: 1,
       failed: 1,
       calls: [decisions[1], decisions[2], decisions[0]],
-      fallbackReason: "forced-positional",
+      fallbackReason: "unsafe-recording",
       eligibility: "safe-prefix",
     });
     assert.equal(Object.isFrozen(report), true);

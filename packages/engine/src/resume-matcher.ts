@@ -676,24 +676,12 @@ export function admitResumeSource(input: ResumeAdmissionInput): ResumeAdmissionD
   if (source.effectiveCwd !== current.effectiveCwd) {
     return liveDecision(sourceRunId, requestedPolicy, "cwd-mismatch");
   }
-  const inputsFormatLegacy =
-    source.runtime.inputsFormat < 2 && current.runtime.inputsFormat === 2;
   if (
     source.runtime.pathFormat !== current.runtime.pathFormat ||
-    (!inputsFormatLegacy && source.runtime.inputsFormat !== current.runtime.inputsFormat) ||
+    source.runtime.inputsFormat !== current.runtime.inputsFormat ||
     source.runtime.checkpointInputsFormat !== current.runtime.checkpointInputsFormat
   ) {
     return liveDecision(sourceRunId, requestedPolicy, "runtime-mismatch");
-  }
-
-  if (inputsFormatLegacy) {
-    return {
-      strategy: "positional-v1",
-      sourceRunId,
-      requestedPolicy,
-      fallbackReason: "inputs-format-legacy",
-      eligibility: "legacy",
-    };
   }
 
   const manifest = validateManifest(source, sourceRunId);
@@ -719,18 +707,12 @@ export function admitResumeSource(input: ResumeAdmissionInput): ResumeAdmissionD
   );
   const facts: ResumeAdmissionFacts = { allCallsRepresented };
 
-  const fallbackReason: WorkflowResumeFallbackReason | undefined =
-    requestedPolicy === "positional"
-      ? "forced-positional"
-      : !allCallsRepresented
-        ? "unsafe-recording"
-        : undefined;
-  if (fallbackReason) {
+  if (!allCallsRepresented) {
     return {
       strategy: "positional-v1",
       sourceRunId,
       requestedPolicy,
-      fallbackReason,
+      fallbackReason: "unsafe-recording",
       eligibility: "safe-prefix",
       facts,
     };

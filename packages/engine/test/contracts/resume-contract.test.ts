@@ -29,8 +29,6 @@ const MATCHES = ["path-hash", "unique-hash", "index-hash"] as const satisfies re
 const FALLBACK_REASONS = [
   "legacy-recording",
   "crash-residue",
-  "inputs-format-legacy",
-  "forced-positional",
   "unsafe-recording",
   "nested-workflows",
   "legacy-resume",
@@ -146,8 +144,8 @@ const identityReport: WorkflowResumeReport = {
 const positionalReport: WorkflowResumeReport = {
   strategy: "positional-v1",
   sourceRunId: "source-run",
-  requestedPolicy: "positional",
-  fallbackReason: "forced-positional",
+  requestedPolicy: "auto",
+  fallbackReason: "unsafe-recording",
   eligibility: "safe-prefix",
   replayed: 0,
   live: 0,
@@ -185,7 +183,7 @@ const provenanceChange: WorkflowReplayProvenanceChange = {
 const replayEligibility: WorkflowReplayEligibility = {
   strategy: "positional-v1",
   sourceRunId: "source-run",
-  fallbackReason: "inputs-format-legacy",
+  fallbackReason: "legacy-resume",
   eligibility: "legacy",
   predictedReplayablePrefix: 2,
   replayedPrefix: 0,
@@ -232,7 +230,7 @@ test("incremental resume shared type fixtures cover every public branch", () => 
   assert.deepEqual(POLICIES, ["auto", "positional"]);
   assert.deepEqual(STRATEGIES, ["identity-v1", "positional-v1", "live"]);
   assert.deepEqual(MATCHES, ["path-hash", "unique-hash", "index-hash"]);
-  assert.equal(FALLBACK_REASONS.length, 7);
+  assert.equal(FALLBACK_REASONS.length, 5);
   assert.equal(DISABLED_REASONS.length, 12);
   assert.equal(CALL_LIVE_REASONS.length, 14);
   assert.equal(CALL_FAILED_REASONS.length, 2);
@@ -242,7 +240,7 @@ test("incremental resume shared type fixtures cover every public branch", () => 
   assert.equal(resumeResult.resumeReport?.strategy, "identity-v1");
   assert.equal(positionalReport.eligibility, "safe-prefix");
   assert.equal(liveReport.disabledReason, "runtime-mismatch");
-  assert.equal(replayEligibility.fallbackReason, "inputs-format-legacy");
+  assert.equal(replayEligibility.fallbackReason, "legacy-resume");
   assert.equal(replayEligibility.predictedReplayablePrefix, 2);
   assert.equal(replayEligibility.operationalChanges[0]?.option, "agentRetries");
   assert.equal(replayEligibility.operationalChanges[1]?.option, "concurrency");

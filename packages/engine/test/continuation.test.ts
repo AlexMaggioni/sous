@@ -288,7 +288,7 @@ describe("live-boundary continuation", () => {
     }
   });
 
-  it("compares format-1 continuation candidates with the legacy fingerprint", async () => {
+  it("runs a format-1 continuation candidate fresh", async () => {
     const fixture = tempCwd();
     const sourceScript = workflow("retries: 1");
     try {
@@ -298,13 +298,24 @@ describe("live-boundary continuation", () => {
         inputsFormat: 1,
         inputsHash: legacyInputsHash(),
       };
-      const continued = await runWorkflow(sourceScript, {
+      const unchangedFallbacks: WorkflowRunFallback[] = [];
+      const unchanged = await runWorkflow(sourceScript, {
         cwd: fixture.cwd,
         persistLogs: false,
         preparedContinuation: prepared(legacyCandidate),
-        agent: continuedRunner(legacyCandidate),
+        agent: {
+          async run(_prompt, options) {
+            assert.equal(options.continueFromSession, undefined);
+            return "fresh";
+          },
+        },
+        onFallback: (fallback) => unchangedFallbacks.push(fallback),
       });
-      assert.equal(continued.result, "continued");
+      assert.equal(unchanged.result, "fresh");
+      assert.deepEqual(unchangedFallbacks[0]?.continuation, {
+        outcome: "skipped",
+        reason: "inputs-mismatch",
+      });
 
       const fallbacks: WorkflowRunFallback[] = [];
       const changed = await runWorkflow(
@@ -569,8 +580,8 @@ return [first, second]`);
       const positional: PreparedResume = {
         strategy: "positional-v1",
         sourceRunId: "continued-source",
-        requestedPolicy: "positional",
-        fallbackReason: "forced-positional",
+        requestedPolicy: "auto",
+        fallbackReason: "legacy-resume",
         eligibility: "legacy",
         sourceCalls: new Map(),
       };

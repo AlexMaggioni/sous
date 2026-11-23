@@ -67,8 +67,8 @@ const identityPrepared: PreparedResume = {
 const positionalPrepared: PreparedResume = {
   strategy: "positional-v1",
   sourceRunId: "source-run",
-  requestedPolicy: "positional",
-  fallbackReason: "forced-positional",
+  requestedPolicy: "auto",
+  fallbackReason: "unsafe-recording",
   eligibility: "safe-prefix",
   sourceCalls: new Map([[sourceCall.index, sourceCall]]),
 };

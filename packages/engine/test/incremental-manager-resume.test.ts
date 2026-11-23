@@ -214,10 +214,7 @@ describe("WorkflowManager resumeFromRunId admission", () => {
       const invalid = [
         { resumeFromRunId: "" },
         { resumeFromRunId: 1 as unknown as string },
-        { resumePolicy: "auto" as const },
-        { resumePolicy: "future" as "auto" },
         { resumeFromRunId: sourceRunId, resumeJournal: new Map() },
-        { resumePolicy: "positional" as const, resumeJournal: new Map() },
         { resumeFromRunId: sourceRunId, journaling: false },
         { resumeFromRunId: sourceRunId, runId: sourceRunId },
       ];
@@ -375,7 +372,7 @@ return await checkpoint("approve", { })`, "legacy-ancestry"), undefined, {
     }
   });
 
-  it("activates legacy, forced-positional, and unknown-format rollout paths", async () => {
+  it("activates legacy and unknown-format rollout paths", async () => {
     const dirs = tempDirs();
     try {
       const store = memoryStore(dirs.root);
@@ -386,24 +383,6 @@ return await checkpoint("approve", { })`, "legacy-ancestry"), undefined, {
         agent: { async run(prompt) { return `source:${prompt}`; } },
       });
       const identitySource = await recordSafeSource(sourceManager, ["one"]);
-
-      const positional = await new WorkflowManager({
-        cwd: dirs.cwd,
-        persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
-        agent: { async run() { assert.fail("forced positional should replay"); } },
-      }).runSync(safeCalls(["one"]), undefined, {
-        runId: "forced-positional",
-        resumeFromRunId: identitySource,
-        resumePolicy: "positional",
-      });
-      assert.equal(positional.resumeReport?.strategy, "positional-v1");
-      if (positional.resumeReport?.strategy === "positional-v1") {
-        assert.equal(positional.resumeReport.fallbackReason, "forced-positional");
-        assert.equal(positional.resumeReport.eligibility, "safe-prefix");
-      }
-      assert.equal(positional.resumeReport?.replayed, 1);
-      assert.equal(store.persistence.load("forced-positional")?.legacyResume, undefined);
 
       const legacyState = store.persistence.load(identitySource);
       assert.ok(legacyState);
@@ -656,6 +635,10 @@ await checkpoint("original checkpoint")
 return await agent("tail", { label: "tail", resume: { filesystem: "read-only" } })`, "positional-checkpoint-source");
       const source = await manager.runSync(sourceScript, undefined, { confirm: async () => true });
       assert.equal(source.status, "completed");
+      // A legacy resume marker sends the next hop through positional matching.
+      const sourceState = store.persistence.load(source.runId);
+      assert.ok(sourceState);
+      store.persistence.save({ ...sourceState, legacyResume: true });
 
       const changedScript = workflow(`
 await agent("one", { label: "one", resume: { filesystem: "read-only" } })
@@ -665,7 +648,6 @@ return { approval, tail }`, "positional-checkpoint-target");
       const paused = await manager.runSync(changedScript, undefined, {
         runId: "positional-pause",
         resumeFromRunId: source.runId,
-        resumePolicy: "positional",
       });
       assert.equal(paused.status, "paused");
       assert.ok(paused.checkpointContext);
