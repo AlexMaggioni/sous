@@ -17,6 +17,7 @@ import {
   useAccount,
   workerProcess,
   type HomePaths,
+  type RunRecord,
 } from "@orchestrator/engine";
 import {
   createRun,
@@ -318,18 +319,6 @@ describe("accounts", () => {
     assert.deepEqual(spawned, [record.runId], "the time counts from the pause, not from the later save");
   });
 
-  it("remove is refused while an unfinished run uses the account", () => {
-    const { paths, projectDir } = testHome({ one: ONE_STEP });
-    addAccount(paths, "work", WORK);
-    useAccount(paths, "work", quiet);
-    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
-    assert.throws(() => removeAccount(paths, "work"), new RegExp(`^Error: ${record.runId} uses account work\\.`));
-    // A run that has not started yet counts as unfinished too. Once it is done, the account can go.
-    plantState(paths, { runId: record.runId, status: "completed", startedAt: record.createdAt, updatedAt: record.createdAt, agents: [], logs: [], phases: [] });
-    removeAccount(paths, "work");
-    assert.deepEqual(listAccounts(paths).map((row) => row.name), ["default", "default"]);
-  });
-
   it("orc account rm names every unfinished run on the account, waiting or not started, and exits 1", async () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
@@ -340,22 +329,35 @@ describe("accounts", () => {
     assert.equal(readState(paths, waiting.runId)?.pauseReason, "usage_limit");
     const fresh = createRun(paths, { workflow: "one", projectDir, inputs: {} });
 
-    const errors: string[] = [];
-    const write = process.stderr.write;
-    process.stderr.write = ((chunk: string) => (errors.push(String(chunk)), true)) as typeof process.stderr.write;
-    let removed;
-    try {
-      removed = await withHome(paths, () => main(["account", "rm", "work"]));
-    } finally {
-      process.stderr.write = write;
-    }
-    assert.equal(removed.value, 1);
-    assert.equal(removed.printed, "");
-    assert.equal(
-      errors.join(""),
-      `orc: ${fresh.runId}, ${waiting.runId} use account work. orc account use <name> moves the runs waiting at the limit to another account. Stop or finish the others first.\n`,
-    );
+    /** orc account rm work, with what it prints to stdout and to stderr kept apart. */
+    const rm = async () => {
+      const errors: string[] = [];
+      const write = process.stderr.write;
+      process.stderr.write = ((chunk: string) => (errors.push(String(chunk)), true)) as typeof process.stderr.write;
+      try {
+        const removed = await withHome(paths, () => main(["account", "rm", "work"]));
+        return { code: removed.value, out: removed.printed, err: errors.join("") };
+      } finally {
+        process.stderr.write = write;
+      }
+    };
+    const refusal = (who: string, verb: string) =>
+      `orc: ${who} ${verb} account work. orc account use <name> moves the runs waiting at the limit to another account. Stop or finish the others first.\n`;
+    const finish = (run: RunRecord) => plantState(paths, { runId: run.runId, status: "completed", startedAt: run.createdAt, updatedAt: run.createdAt, agents: [], logs: [], phases: [] });
+
+    assert.deepEqual(await rm(), { code: 1, out: "", err: refusal(`${fresh.runId}, ${waiting.runId}`, "use") });
     assert.equal(currentAccount(paths, "claude"), "work", "the account stays");
+
+    // Once one run is done, the other is named alone. A run that has not started counts as unfinished.
+    finish(waiting);
+    assert.deepEqual(await rm(), { code: 1, out: "", err: refusal(fresh.runId, "uses") });
+    assert.equal(currentAccount(paths, "claude"), "work", "the account stays");
+
+    // Once both are done, the account can go.
+    finish(fresh);
+    assert.deepEqual(await rm(), { code: 0, out: "removed Claude Code account work. orc uses default.\n", err: "" });
+    assert.equal(currentAccount(paths, "claude"), "default");
+    assert.deepEqual(listAccounts(paths).map((row) => row.name), ["default", "default"]);
   });
 
   it("orc account lists, switches and removes; add reads the token from stdin off a terminal", async () => {
