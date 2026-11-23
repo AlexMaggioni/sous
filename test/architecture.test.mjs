@@ -60,7 +60,7 @@ const HOMES = [
   {
     idea: "run files: the record, its log, its questions, its snapshot, its events and the agent cap",
     pattern: /\bpaths\.(records|inbox|logs|slots|queue)\b|["'`](records|inbox|logs|slots|queue)["'`]|\.events\.jsonl|\.lineage\b|\bruns[Dd]ir\b/,
-    home: ["packages/engine/src/runs/"],
+    home: ["packages/engine/src/runs/store.ts", "packages/engine/src/runs/persistence/"],
   },
   {
     idea: "making a git worktree",
