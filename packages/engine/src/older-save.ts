@@ -30,6 +30,12 @@ function hasBudget(call: unknown): boolean {
   return isRecord(call) && (Object.hasOwn(call, "budgetDebit") || (isRecord(call.replay) && Object.hasOwn(call.replay, "logicalBudgetDebit")));
 }
 
+/** A replay row with the resume safety marker of the last release. Today's reader rejects it, so
+ * a resume with a new script would run the step again. */
+function hasResumeMarker(call: unknown): boolean {
+  return isRecord(call) && isRecord(call.replay) && Object.hasOwn(call.replay, "sourceResumeSafety");
+}
+
 /**
  * What marks the state as saved by older code, or undefined when today's code can resume it. A
  * field that is merely missing does not count: today's code reads a state without it.
@@ -53,6 +59,7 @@ export function olderSave(state: PersistedRunState): string | undefined {
   if ([...calls, ...seedCalls].some(hasBudget) || list(seed.candidates).some((row) => isRecord(row) && Object.hasOwn(row, "logicalBudgetDebit"))) {
     return "it holds the budget fields of an older engine";
   }
+  if ([...calls, ...seedCalls].some(hasResumeMarker)) return "it holds the resume safety marker of an older engine";
   return undefined;
 }
 

@@ -64,6 +64,16 @@ const olderShape = (state: PersistedRunState) => {
   state.calls = [];
 };
 
+/** The call rows as the last release saved them for a run that reused a step with the resume
+ *  option: a replay row that names the marker its source step carried. */
+const replayMarker = (state: PersistedRunState) => {
+  state.calls = state.calls!.map((call) => ({
+    ...call,
+    origin: "journal-replay",
+    replay: { sourceRunId: "earlier-run", recordedIndex: 0, match: "path-hash", sourceResumeSafety: "declared-read-only" },
+  }) as typeof call);
+};
+
 const refusal = (runId: string) =>
   `${runId} was saved by an older orc, and this orc cannot resume it. orc rerun ${runId} starts it again, and orc stop ${runId} ends it.`;
 
@@ -100,6 +110,13 @@ describe("a run saved by older code", () => {
     assert.deepEqual(launched, []);
   });
 
+  it("orc resume refuses a run with the resume safety marker of the last release on a replay row", () => {
+    const { paths, runId } = plantOldRun(DEAD, replayMarker);
+    const launched: string[] = [];
+    assert.throws(() => resumeRun(paths, (_paths, id) => launched.push(id), runId), { message: refusal(runId) });
+    assert.deepEqual(launched, []);
+  });
+
   it("the service neither resumes it nor tells of it", () => {
     const { paths, runId } = plantOldRun(DEAD, olderShape);
     const launched: string[] = [];
@@ -122,6 +139,14 @@ describe("olderSave", () => {
     assert.equal(olderSave(deadState()), undefined);
   });
 
+  // Today's code ignores this marker on a call row, so the run resumes as it is.
+  it("passes a state with a resume safety marker on a call row, which nothing reads", () => {
+    const state = deadState((s) => {
+      s.calls = s.calls!.map((call) => ({ ...call, resumeSafety: "declared-read-only" }) as typeof call);
+    });
+    assert.equal(olderSave(state), undefined);
+  });
+
   const shapes: Record<string, (state: PersistedRunState) => void> = {
     "a step in the journal with no call row": olderShape,
     "inputs hashes of format 1": (state) => {
@@ -136,6 +161,15 @@ describe("olderSave", () => {
     },
     "a budget field on a call row": (state) => {
       state.calls = state.calls!.map((call) => ({ ...call, budgetDebit: 1 }) as typeof call);
+    },
+    "a resume safety marker on a replay row": replayMarker,
+    "a resume safety marker on a replay row in its seed": (state) => {
+      replayMarker(state);
+      state.resumeSeed = {
+        format: "identity-v1",
+        sourceRunId: "earlier-run",
+        candidates: [{ sourceRunId: "earlier-run", recordedIndex: 0, entry: state.journal![0], call: state.calls![0] }],
+      } as unknown as PersistedRunState["resumeSeed"];
     },
     "an injected checkpoint answer in its seed": (state) => {
       state.resumeSeed = {
