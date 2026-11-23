@@ -309,12 +309,13 @@ describe("pipeline()", () => {
 });
 
 describe("a script that calls one of the four functions an older engine had", () => {
-  const removed = ["verify", "judgePanel", "loopUntilDry", "completenessCheck"];
-  for (const name of removed) {
-    it(`a script that calls ${name} fails with a ReferenceError`, async () => {
-      const error = await failureOf(`return await ${name}('is it right?', { agents: 3 })`, { agent: unused });
-      assert.equal(error.code, WorkflowErrorCode.SCRIPT_ERROR);
-      assert.equal(error.message, `${name} is not defined`);
-    });
-  }
+  const failsWithReferenceError = (name: string) => async () => {
+    const error = await failureOf(`return await ${name}('is it right?', { agents: 3 })`, { agent: unused });
+    assert.equal(error.code, WorkflowErrorCode.SCRIPT_ERROR);
+    assert.equal(error.message, `${name} is not defined`);
+  };
+  it("a script that calls verify fails with a ReferenceError", failsWithReferenceError("verify"));
+  it("a script that calls judgePanel fails with a ReferenceError", failsWithReferenceError("judgePanel"));
+  it("a script that calls loopUntilDry fails with a ReferenceError", failsWithReferenceError("loopUntilDry"));
+  it("a script that calls completenessCheck fails with a ReferenceError", failsWithReferenceError("completenessCheck"));
 });
