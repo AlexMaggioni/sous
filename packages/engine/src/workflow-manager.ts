@@ -391,6 +391,21 @@ function pauseReasonOf(error: WorkflowError | undefined): RunPauseReason | undef
   }
 }
 
+/** What a stop writes over a paused run's saved state: the run is aborted, and nothing of its
+ *  pause is left. */
+const STOPPED_STATE = {
+  status: "aborted",
+  reason: undefined,
+  errorCode: undefined,
+  pauseReason: undefined,
+  resetHint: undefined,
+  resetAt: undefined,
+  pausedAt: undefined,
+  authContext: undefined,
+  checkpointContext: undefined,
+  abortSignaled: true,
+} as const satisfies Partial<PersistedRunState>;
+
 /** The paused event for a pause, with the context its reason carries. One case per reason, so a
  *  new reason fails to compile here until it has its own. */
 function pausedPayload(runId: string, reason: RunPauseReason, error: WorkflowError): RunPausedPayload {
@@ -2025,16 +2040,7 @@ export class WorkflowManager extends EventEmitter {
     managed.controller.abort();
     managed.status = "aborted";
     if (pausedSnapshot) {
-      pausedSnapshot.status = "aborted";
-      pausedSnapshot.reason = undefined;
-      pausedSnapshot.errorCode = undefined;
-      pausedSnapshot.pauseReason = undefined;
-      pausedSnapshot.resetHint = undefined;
-      pausedSnapshot.resetAt = undefined;
-      pausedSnapshot.pausedAt = undefined;
-      pausedSnapshot.authContext = undefined;
-      pausedSnapshot.checkpointContext = undefined;
-      pausedSnapshot.abortSignaled = true;
+      Object.assign(pausedSnapshot, STOPPED_STATE);
     }
     const saveStopped = () => {
       if (!managed.lease) return;
@@ -2109,16 +2115,7 @@ export class WorkflowManager extends EventEmitter {
           stoppedEventAlreadyDurable = false;
         }
       }
-      current.status = "aborted";
-      current.reason = undefined;
-      current.errorCode = undefined;
-      current.pauseReason = undefined;
-      current.resetHint = undefined;
-      current.resetAt = undefined;
-      current.pausedAt = undefined;
-      current.authContext = undefined;
-      current.checkpointContext = undefined;
-      current.abortSignaled = true;
+      Object.assign(current, STOPPED_STATE);
 
       const saveStopped = () => this.saveWithWatermark(current, publication);
       if (stoppedEventAlreadyDurable) {
