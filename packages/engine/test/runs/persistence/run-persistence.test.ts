@@ -672,7 +672,7 @@ test(
 );
 
 test(
-  "createRunPersistence retains only content-free lineage after delete and clears it on run-id reuse",
+  "createRunPersistence delete leaves no file of the run, and removes the files older engines left",
   withTempCwd(async (cwd) => {
     const rp = createRunPersistence(cwd);
     const state = {
@@ -681,7 +681,6 @@ test(
       script: "secret script content",
       args: { secret: "argument content" },
       resumeSourceRunId: "lineage-root",
-      resumeSeed: { format: "identity-v1" as const, sourceRunId: "matcher-parent", candidates: [] },
       status: "paused" as const,
       phases: [],
       agents: [],
@@ -690,16 +689,18 @@ test(
       updatedAt: "2024-01-01T00:00:00.000Z",
     };
     rp.save(state);
+    const { runsDir } = workflowProjectPaths(cwd);
+    // An older engine wrote a copy of the inline script, and a marker when it deleted a run.
+    writeFileSync(join(runsDir, `${state.runId}.script.js`), state.script);
+    writeFileSync(join(runsDir, `${state.runId}.lineage`), JSON.stringify({ runId: state.runId, deletedAt: "2024-01-02T00:00:00.000Z" }));
 
     assert.equal(rp.delete(state.runId), true);
-    const tombstone = rp.loadLineageTombstone?.(state.runId);
-    assert.equal(tombstone?.runId, state.runId);
-    assert.equal(tombstone?.sourceRunId, "lineage-root");
-    assert.equal(typeof tombstone?.deletedAt, "string");
-    assert.deepEqual(Object.keys(tombstone ?? {}).sort(), ["deletedAt", "runId", "sourceRunId"]);
+    assert.deepEqual(readdirSync(runsDir).filter((name) => name.startsWith(state.runId)), []);
 
+    // Saving a run removes a marker left under its id.
+    writeFileSync(join(runsDir, `${state.runId}.lineage`), JSON.stringify({ runId: state.runId, deletedAt: "2024-01-02T00:00:00.000Z" }));
     rp.save({ ...state, script: "replacement content" });
-    assert.equal(rp.loadLineageTombstone?.(state.runId), null);
+    assert.equal(existsSync(join(runsDir, `${state.runId}.lineage`)), false);
   }),
 );
 

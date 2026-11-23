@@ -3,10 +3,12 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { HomePaths } from "../../src/runs/home.js";
 import type { RunRecord } from "../../src/runs/records.js";
 import { forgetRun, pruneRuns } from "../../src/runs/run.js";
-import { layout, plantTodayRun, setup, TODAY_ID } from "./fixture.js";
+import { layout, plantTodayRun, projectKey, setup, TODAY_ID } from "./fixture.js";
 
 const folders = [
   "home/",
@@ -59,18 +61,18 @@ describe("forget and prune on today's files", () => {
     assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles].sort());
   });
 
-  it("forgetRun removes every file of the run but the home's project.json and the run's .lineage", () => {
+  it("forgetRun removes every file of the run but the home's project.json", () => {
     const { paths } = setup({});
     const record = plantTodayRun(paths);
     assert.equal(forgetRun(paths, record), true);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, lineage].sort());
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept].sort());
   });
 
   it("pruneRuns removes the same files once the run is older than the days given", () => {
     const { paths } = setup({});
     const record = plantTodayRun(paths);
     assert.deepEqual(pruneRuns(paths, 7, later), [TODAY_ID]);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, lineage].sort());
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept].sort());
   });
 
   it("with a worktree cwd, forgetRun and pruneRuns remove the engine log in the worktree's folder, and the worktree stays", () => {
@@ -80,7 +82,7 @@ describe("forget and prune on today's files", () => {
       assert.equal(record.cwd, `${paths.home}/worktrees/${TODAY_ID}`);
       assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles, "home/worktrees/<id>/"].sort());
       remove(paths, record);
-      assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, lineage, "home/worktrees/<id>/"].sort(), name);
+      assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, "home/worktrees/<id>/"].sort(), name);
     }
   });
 
@@ -100,14 +102,26 @@ describe("forget and prune on today's files", () => {
     assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles, lock].sort());
   });
 
-  it("a .lineage left by an earlier forget stays, and forgetRun and pruneRuns remove the rest", () => {
+  it("forgetRun and pruneRuns remove a .lineage an older engine left next to the run", () => {
     for (const [name, remove] of Object.entries(removers)) {
       const { paths } = setup({});
       const record = plantTodayRun(paths, { lineage: true });
       assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles, lineage].sort());
       remove(paths, record);
-      assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, lineage].sort(), name);
+      assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept].sort(), name);
     }
+  });
+
+  it("pruneRuns removes a .lineage whose run is gone, and keeps one whose run has a state", () => {
+    const { paths } = setup({});
+    const record = plantTodayRun(paths, { lineage: true });
+    // A marker an older engine left when it forgot another run.
+    const orphan = join(paths.home, "runs", "projects", projectKey(paths.home), "runs", "gone-run.lineage");
+    writeFileSync(orphan, `${JSON.stringify({ runId: "gone-run", deletedAt: "2026-11-01T00:00:00.000Z" }, null, 2)}\n`);
+    // The planted run is a day old, so the prune keeps it.
+    assert.deepEqual(pruneRuns(paths, 7, new Date(Date.parse("2026-11-24T06:21:32.322Z"))), []);
+    assert.equal(existsSync(orphan), false);
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles, lineage].sort());
   });
 
   it("forgetRun removes the run's open question from the inbox", () => {
@@ -115,6 +129,6 @@ describe("forget and prune on today's files", () => {
     const record = plantTodayRun(paths, { question: true });
     assert.ok(layout(paths, record.runId, record.cwd).includes("home/inbox/<id>--1.json"));
     forgetRun(paths, record);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, lineage].sort());
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept].sort());
   });
 });

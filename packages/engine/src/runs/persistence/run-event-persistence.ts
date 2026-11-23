@@ -822,9 +822,6 @@ export function withRunEvents(persistence: RunPersistence, fsOverride?: Partial<
       }
       return persistence.delete(runId);
     },
-    loadLineageTombstone(runId) {
-      return persistence.loadLineageTombstone?.(runId) ?? null;
-    },
     acquireRunLease(runId) {
       return persistence.acquireRunLease(runId);
     },

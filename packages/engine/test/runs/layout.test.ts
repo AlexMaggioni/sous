@@ -83,13 +83,13 @@ describe("where a run leaves its files", () => {
     assert.deepEqual(layout(paths, record.runId, record.cwd), [...home, ...runFiles].sort());
   });
 
-  it("a forgotten run leaves only the home's project.json and its .lineage", async () => {
+  it("a forgotten run leaves only the home's project.json", async () => {
     const { paths, projectDir } = setup({ top, child });
     const { runner } = heldRunner(() => "ok");
     const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
     await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     forgetRun(paths, loadRecord(paths, record.runId)!);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...home, "home/runs/projects/<home key>/runs/<id>.lineage"].sort());
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...home].sort());
     const manifest = join(paths.runs, "projects", projectKey(paths.home), "project.json");
     assert.equal(readFileSync(manifest, "utf8"), `${JSON.stringify({ projectDir: paths.home })}\n`);
   });

@@ -112,17 +112,6 @@ export interface PersistedResumeSeed {
   checkpointInjections?: PersistedCheckpointInjection[];
 }
 
-/**
- * Content-free ancestry retained after a run record is deleted. The engine owns this
- * tombstone so read-only projections can walk an admitted resume chain without keeping
- * scripts, arguments, or synthetic lineage in process memory.
- */
-export interface PersistedRunLineageTombstone {
-  runId: string;
-  sourceRunId?: string;
-  deletedAt: string;
-}
-
 /** Where a run's script came from: passed inline, or read from the caller's absolute path. */
 export type WorkflowScriptOrigin = { kind: "inline" } | { kind: "path"; path: string };
 
@@ -244,8 +233,6 @@ export interface RunPersistence {
   list(): PersistedRunState[];
   /** Delete a persisted run. */
   delete(runId: string): boolean;
-  /** Load content-free ancestry for a deleted run, when the persistence supports it. */
-  loadLineageTombstone?(runId: string): PersistedRunLineageTombstone | null;
   /**
    * Acquire an exclusive cross-process lease for a run. Returns null when another
    * live process owns the run; stale/corrupt lock files are removed and retried.
@@ -397,20 +384,10 @@ export function createRunPersistence(
   const inlineScriptPath = (runId: string) => inlineScriptFile(runsDir, runId);
   const primaryLockPath = (runId: string) => lockPath(runsDir, runId);
   const legacyLockPath = (runId: string) => lockPath(legacyRunsDir, runId);
-  const primaryLineagePath = (runId: string) => lineagePath(runsDir, runId);
   const candidateRunPaths = (runId: string) => [primaryRunPath(runId), legacyRunPath(runId)];
-  const candidateLineagePaths = (runId: string) => [
-    primaryLineagePath(runId),
-    lineagePath(legacyRunsDir, runId),
-  ];
 
   const loadState = (runId: string): PersistedRunState | null =>
     loadRunState(runsDir, legacyRunsDir, runId, { existsSync: _existsSync, readFileSync: _readFileSync });
-
-  const lineageSourceRunId = (state: PersistedRunState): string | undefined => {
-    const sourceRunId = state.resumeSourceRunId;
-    return sourceRunId === state.runId ? undefined : sourceRunId;
-  };
 
   const pidIsAlive = (pid: number): boolean => {
     if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -481,10 +458,10 @@ export function createRunPersistence(
         // backup is best-effort; the primary write already succeeded
       }
       try {
-        const tombstonePath = primaryLineagePath(state.runId);
-        if (_existsSync(tombstonePath)) _unlinkSync(tombstonePath);
+        const marker = lineagePath(runsDir, state.runId);
+        if (_existsSync(marker)) _unlinkSync(marker);
       } catch {
-        // The live record wins over a stale tombstone; cleanup is best-effort.
+        // An old engine's deleted-run marker; the live record wins, so cleanup is best-effort.
       }
     },
 
@@ -515,97 +492,42 @@ export function createRunPersistence(
 
     delete(runId: string): boolean {
       let deleted = false;
-      let wroteTombstone = false;
-      try {
-        const state = loadState(runId);
-        if (state) {
-          ensureDir();
-          const sourceRunId = lineageSourceRunId(state);
-          const tombstone: PersistedRunLineageTombstone = {
-            runId,
-            ...(sourceRunId ? { sourceRunId } : {}),
-            deletedAt: new Date().toISOString(),
-          };
-          const path = primaryLineagePath(runId);
-          _writeFileSync(`${path}.tmp`, JSON.stringify(tombstone, null, 2));
-          _renameSync(`${path}.tmp`, path);
-          wroteTombstone = true;
-        }
+      // Files older engines wrote next to the run: a copy of an inline script and a deleted-run marker.
+      for (const old of [inlineScriptPath(runId), lineagePath(runsDir, runId), lineagePath(legacyRunsDir, runId)]) {
         try {
-          _unlinkSync(inlineScriptPath(runId));
+          if (_existsSync(old)) _unlinkSync(old);
         } catch {
-          // No inline copy (a path run, or an older record): nothing to remove.
-        }
-        for (const path of candidateRunPaths(runId)) {
-          try {
-            if (_existsSync(path)) {
-              _unlinkSync(path);
-              deleted = true;
-            }
-          } catch {
-            // ignore per-file cleanup failures
-          }
-          // Snapshot recovery artifacts follow the primary; the writer lock is always last.
-          for (const sidecar of [`${path}.bak`, `${path}.tmp`]) {
-            try {
-              if (_existsSync(sidecar)) _unlinkSync(sidecar);
-            } catch {
-              // ignore sidecar cleanup failures
-            }
-          }
-        }
-        // Both storage locations are settled before either writer-exclusion file is removed.
-        for (const dir of [legacyRunsDir, runsDir]) {
-          try {
-            const lock = lockPath(dir, runId);
-            if (_existsSync(lock)) _unlinkSync(lock);
-          } catch {
-            // ignore lock cleanup failures
-          }
-        }
-        if (!deleted && wroteTombstone) {
-          try {
-            _unlinkSync(primaryLineagePath(runId));
-          } catch {
-            // A failed delete must not manufacture a deleted-run tombstone.
-          }
-        }
-        return deleted;
-      } catch {
-        if (!deleted && wroteTombstone) {
-          try {
-            _unlinkSync(primaryLineagePath(runId));
-          } catch {
-            // Best-effort rollback; the still-live record remains authoritative.
-          }
-        }
-        return deleted;
-      }
-    },
-
-    loadLineageTombstone(runId: string): PersistedRunLineageTombstone | null {
-      for (const path of candidateLineagePaths(runId)) {
-        try {
-          if (!_existsSync(path)) continue;
-          const value = JSON.parse(_readFileSync(path, "utf-8")) as Partial<PersistedRunLineageTombstone>;
-          if (
-            value.runId !== runId ||
-            typeof value.deletedAt !== "string" ||
-            (value.sourceRunId !== undefined &&
-              (typeof value.sourceRunId !== "string" || value.sourceRunId.length === 0))
-          ) {
-            continue;
-          }
-          return {
-            runId,
-            ...(value.sourceRunId === undefined ? {} : { sourceRunId: value.sourceRunId }),
-            deletedAt: value.deletedAt,
-          };
-        } catch {
-          // corrupt candidate -> fall through to the next candidate
+          // ignore leftover cleanup failures
         }
       }
-      return null;
+      for (const path of candidateRunPaths(runId)) {
+        try {
+          if (_existsSync(path)) {
+            _unlinkSync(path);
+            deleted = true;
+          }
+        } catch {
+          // ignore per-file cleanup failures
+        }
+        // Snapshot recovery artifacts follow the primary; the writer lock is always last.
+        for (const sidecar of [`${path}.bak`, `${path}.tmp`]) {
+          try {
+            if (_existsSync(sidecar)) _unlinkSync(sidecar);
+          } catch {
+            // ignore sidecar cleanup failures
+          }
+        }
+      }
+      // Both storage locations are settled before either writer-exclusion file is removed.
+      for (const dir of [legacyRunsDir, runsDir]) {
+        try {
+          const lock = lockPath(dir, runId);
+          if (_existsSync(lock)) _unlinkSync(lock);
+        } catch {
+          // ignore lock cleanup failures
+        }
+      }
+      return deleted;
     },
 
     acquireRunLease(runId: string): RunLease | null {

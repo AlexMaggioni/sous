@@ -178,7 +178,7 @@ describe("forget, prune and resume on an old run's files", () => {
   // Thirty days after the dead run started.
   const later = new Date(Date.parse("2026-11-23T04:27:15.896Z") + 30 * 86_400_000);
 
-  it("forgetRun removes every file of a run whose worker died, but the home's project.json and the run's .lineage", () => {
+  it("forgetRun removes every file of a run whose worker died, but the home's project.json", () => {
     const { paths, runId } = plantOldRun(DEAD);
     const record = loadRecord(paths, runId)!;
     assert.deepEqual(runFiles(paths, record), [
@@ -195,7 +195,6 @@ describe("forget, prune and resume on an old run's files", () => {
       "home/runs/projects/<home key>/",
       "home/runs/projects/<home key>/project.json",
       "home/runs/projects/<home key>/runs/",
-      "home/runs/projects/<home key>/runs/<id>.lineage",
     ]);
   });
 
@@ -212,7 +211,7 @@ describe("forget, prune and resume on an old run's files", () => {
     const { runsDir } = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
     const state = JSON.parse(readFileSync(join(runsDir, `${runId}.json`), "utf8")) as PersistedRunState;
     writeFileSync(join(runsDir, `${runId}.script.js`), state.script);
-    // The tombstone an earlier forget of the same id writes.
+    // The marker an older engine wrote when it forgot a run of the same id.
     writeFileSync(join(runsDir, `${runId}.lineage`), `${JSON.stringify({ runId, deletedAt: "2026-11-23T06:21:32.519Z" }, null, 2)}\n`);
 
     const { runner, calls } = heldRunner(() => "two");

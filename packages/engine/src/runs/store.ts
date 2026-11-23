@@ -166,6 +166,23 @@ export function removeEngineRun(paths: HomePaths, runId: string): boolean {
   }
 }
 
+/** Remove each deleted-run marker (`<id>.lineage`) that older engines left in the engine's folders.
+ *  A marker whose run has a state stays, since the engine removes it when it next saves that run. */
+export function removeDeletedRunMarkers(paths: HomePaths): void {
+  const { runsDir, legacyRunsDir } = engineFolders(paths);
+  for (const dir of new Set([runsDir, legacyRunsDir])) {
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".lineage") || readState(paths, name.slice(0, -".lineage".length))) continue;
+      try {
+        unlinkSync(join(dir, name));
+      } catch {
+        // already gone
+      }
+    }
+  }
+}
+
 /** Delete a run's record, workflow snapshot, step stop requests and logs. removeEngineRun deletes the engine's files. */
 export function removeRunFiles(paths: HomePaths, record: RunRecord): void {
   // The engine keeps its own copy of the log, in a folder named after where the run worked.

@@ -1100,8 +1100,8 @@ return { out: made.stdout.trim(), approved: verdict.approved, rounds: round, kep
     assert.deepEqual(existsSync(paths.worktrees) ? readdirSync(paths.worktrees) : [], []);
     assert.equal(git(projectDir, "branch", "--list", "orc/*"), "");
     assert.equal(runQuestions(paths).length, 0);
-    // The engine keeps a small note that the run was deleted, and nothing else.
-    const left = (readdirSync(paths.home, { recursive: true }) as string[]).filter((name) => name.includes(dry.runId) && !name.endsWith(".lineage"));
+    // No file of the run is left in the home.
+    const left = (readdirSync(paths.home, { recursive: true }) as string[]).filter((name) => name.includes(dry.runId));
     assert.deepEqual(left, []);
   });
 
