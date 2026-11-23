@@ -406,13 +406,6 @@ export function definitionOf(agent: FoundAgent): AgentDefinition {
   };
 }
 
-/** Every agent that can be used as it is, by name. */
-export function registryOf(lookup: AgentLookup): Map<string, AgentDefinition> {
-  const out = new Map<string, AgentDefinition>();
-  for (const agent of lookup.agents.values()) out.set(agent.name, definitionOf(agent));
-  return out;
-}
-
 export function missingAgent(lookup: AgentLookup, name: string): string {
   const global = lookup.settings.rulesyncGlobal
     ? `the global rulesync folder (${lookup.settings.rulesyncGlobal}/.rulesync/subagents/)`

@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import { lookupAgents, lookupMcpServers, planStep, registryOf, routeStep, type LookupSettings } from "../src/agents.js";
+import { definitionOf, lookupAgents, lookupMcpServers, planStep, routeStep, type LookupSettings } from "../src/agents.js";
 import type { StepAsk, StepRoute } from "../src/steps/agent-runner.js";
 
 const temp = (name: string) => mkdtempSync(join(tmpdir(), `engine-${name}-`));
@@ -62,7 +62,9 @@ describe("agents", () => {
       rulesyncAgent("X", "claudecode:\n  model: haiku\n  tools: [Read, Grep]\ncodexcli:\n  model: gpt-test\n  model_reasoning_effort: low\n"),
     );
     const lookup = lookupAgents(place);
-    assert.equal(registryOf(lookup).get("reviewer")?.model, "claude/haiku");
+    const reviewer = lookup.agents.get("reviewer");
+    assert.ok(reviewer);
+    assert.equal(definitionOf(reviewer).model, "claude/haiku");
     const onClaude = planStep(lookup, "reviewer");
     assert.ok("plan" in onClaude);
     assert.deepEqual([onClaude.plan.harness, onClaude.plan.model, onClaude.plan.tools], ["claude", "claude/haiku", ["Read", "Grep"]]);
