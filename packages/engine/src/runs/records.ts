@@ -5,7 +5,8 @@
 // notes as the worker starts. A command writes a record only when no worker runs it. A save
 // replaces the whole file, so two writers at once would lose one's change.
 
-import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { writeJsonFile } from "../json-file.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
 import { recordFile, recordFiles, snapshotFile, stopRequestFile } from "./store.js";
@@ -115,9 +116,7 @@ export function noteStepWorktree(paths: HomePaths, rootRunId: string, tree: { di
 }
 
 export function saveSnapshot(paths: HomePaths, runId: string, scripts: Record<string, string>): void {
-  const file = snapshotFile(paths, runId);
-  writeFileSync(`${file}.tmp`, JSON.stringify(scripts));
-  renameSync(`${file}.tmp`, file);
+  writeJsonFile(snapshotFile(paths, runId), scripts);
 }
 
 export function loadSnapshot(paths: HomePaths, runId: string): Record<string, string> {
@@ -129,10 +128,7 @@ export function loadSnapshot(paths: HomePaths, runId: string): Record<string, st
 }
 
 export function saveRecord(paths: HomePaths, record: RunRecord): void {
-  const file = recordFile(paths, record.runId);
-  const temp = `${file}.${process.pid}.tmp`;
-  writeFileSync(temp, `${JSON.stringify(record, null, 2)}\n`);
-  renameSync(temp, file);
+  writeJsonFile(recordFile(paths, record.runId), record);
 }
 
 /**

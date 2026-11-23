@@ -2,7 +2,8 @@
 // inbox/. The answer is a second file next to it. A question's id stays the same when the
 // run pauses and resumes, so an answer given while the run was paused is used on resume.
 
-import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { readFileSync, unlinkSync } from "node:fs";
+import { writeJsonFile } from "../json-file.js";
 import type { HomePaths } from "./home.js";
 import { answerFile, questionFile, questionFiles } from "./store.js";
 
@@ -33,12 +34,6 @@ export function questionId(scope: string, callIndex: number): string {
   return `${scope}--${callIndex}`;
 }
 
-function writeAtomic(file: string, value: unknown): void {
-  const temp = `${file}.${process.pid}.tmp`;
-  writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`);
-  renameSync(temp, file);
-}
-
 function readJson<T>(file: string): T | undefined {
   try {
     return JSON.parse(readFileSync(file, "utf8")) as T;
@@ -48,7 +43,7 @@ function readJson<T>(file: string): T | undefined {
 }
 
 function writeQuestion(paths: HomePaths, question: Question): void {
-  writeAtomic(questionFile(paths, question.id), question);
+  writeJsonFile(questionFile(paths, question.id), question);
 }
 
 export function readQuestion(paths: HomePaths, id: string): Question | undefined {
@@ -60,7 +55,7 @@ function readAnswer(paths: HomePaths, id: string): Answer | undefined {
 }
 
 export function writeAnswer(paths: HomePaths, question: Question, value: unknown): void {
-  writeAtomic(answerFile(paths, question.id), { hash: question.hash, value, answeredAt: new Date().toISOString() } satisfies Answer);
+  writeJsonFile(answerFile(paths, question.id), { hash: question.hash, value, answeredAt: new Date().toISOString() } satisfies Answer);
 }
 
 function removeQuestion(paths: HomePaths, id: string): void {

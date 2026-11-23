@@ -8,8 +8,9 @@
 //  - removes finished runs older than keepDays, when config.json sets it;
 //  - once an hour, removes the worktrees whose branch was merged and that have nothing uncommitted.
 
-import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { writeJsonFile } from "../json-file.js";
 import { openWorkflowDir } from "../workflows/dir.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
@@ -52,18 +53,12 @@ function readJson<T>(file: string, fallback: T): T {
   }
 }
 
-function writeJson(file: string, value: unknown): void {
-  const temp = `${file}.${process.pid}.tmp`;
-  writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`);
-  renameSync(temp, file);
-}
-
 export function loadSchedules(paths: HomePaths): Schedule[] {
   return readJson<Schedule[]>(paths.schedules, []);
 }
 
 export function saveSchedules(paths: HomePaths, schedules: Schedule[]): void {
-  writeJson(paths.schedules, schedules);
+  writeJsonFile(paths.schedules, schedules);
 }
 
 /**
@@ -224,7 +219,7 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
     }
   }
 
-  writeJson(paths.daemonState, state);
+  writeJsonFile(paths.daemonState, state);
 }
 
 export function daemonPid(paths: HomePaths): number | undefined {
@@ -237,7 +232,7 @@ export async function daemonMain(paths: HomePaths, cliFile: string, everyMs = 20
   ensureHome(paths);
   const existing = daemonPid(paths);
   if (existing && existing !== process.pid) throw new Error(`the service already runs (pid ${existing})`);
-  writeJson(paths.daemonPid, { pid: process.pid, since: new Date().toISOString() });
+  writeJsonFile(paths.daemonPid, { pid: process.pid, since: new Date().toISOString() });
   let running = true;
   const stop = () => {
     running = false;

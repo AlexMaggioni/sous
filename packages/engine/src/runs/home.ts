@@ -1,9 +1,10 @@
 // The orc home folder (~/.orchestrator, or $ORC_HOME) and a project's .orchestrator folder.
 // A project's workflows win over the home folder's.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { writeJsonFile } from "../json-file.js";
 import { runFolders } from "./store.js";
 
 export type Place = "worktree" | "folder" | "none";
@@ -102,9 +103,7 @@ export function rememberProject(paths: HomePaths, projectDir: string): void {
   const known = knownProjects(paths);
   if (known.includes(dir) || !existsSync(join(dir, ".orchestrator", "workflows"))) return;
   mkdirSync(paths.home, { recursive: true });
-  const temp = `${paths.projects}.${process.pid}.tmp`;
-  writeFileSync(temp, `${JSON.stringify([...known, dir], null, 2)}\n`);
-  renameSync(temp, paths.projects);
+  writeJsonFile(paths.projects, [...known, dir]);
 }
 
 export function workflowDirs(projectDir: string, paths: HomePaths = homePaths()): string[] {

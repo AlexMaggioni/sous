@@ -6,10 +6,11 @@
 // to the new account and resumes them, through run.ts. Codex steps use Codex's own login for now.
 
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import type { Account } from "@orchestrator/harnesses";
 import { HARNESSES, harnessName, isHarness, loginOf, type Harness as Program } from "./agents.js";
+import { writeJsonFile } from "./json-file.js";
 import type { HomePaths } from "./runs/home.js";
 import { loadRecord, updateRecord, type RunAccount, type RunRecord } from "./runs/records.js";
 
@@ -65,10 +66,7 @@ function readFile(paths: HomePaths): AccountsFile {
 
 function writeFile(paths: HomePaths, file: AccountsFile): void {
   mkdirSync(paths.home, { recursive: true });
-  const temp = `${paths.accounts}.${process.pid}.tmp`;
-  writeFileSync(temp, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
-  chmodSync(temp, 0o600);
-  renameSync(temp, paths.accounts);
+  writeJsonFile(paths.accounts, file, 0o600);
 }
 
 const keyOf = (token: string) => createHash("sha256").update(token).digest("hex").slice(0, 16);
