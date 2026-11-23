@@ -237,7 +237,7 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   maxAgents?: number;
   /** Whether to persist logs to disk. Default: true */
   persistLogs?: boolean;
-  /** Absolute workflow persistence root for log persistence; explicit value wins over ORCHESTRATOR_PERSISTENCE_ROOT. */
+  /** Absolute workflow persistence root for log persistence. */
   persistenceRoot?: string;
   /** Run ID for persistence. Auto-generated if not provided. */
   runId?: string;

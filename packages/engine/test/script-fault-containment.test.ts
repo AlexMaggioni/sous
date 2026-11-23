@@ -6,7 +6,6 @@ import test from "node:test";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { workflowProjectPaths } from "../src/runs/persistence/project-paths.js";
-import { ORCHESTRATOR_PERSISTENCE_ROOT_ENV } from "../src/workflow-paths.js";
 import { withFakeHomeAsync } from "./helpers/fake-home.js";
 
 const noopAgent = {
@@ -73,13 +72,9 @@ function withTempCwd(fn: (cwd: string) => Promise<void>) {
   return async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ap-dw-fault-"));
     const fakeHome = mkdtempSync(join(tmpdir(), "ap-dw-home-"));
-    const priorRoot = process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV];
     try {
-      delete process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV];
       await withFakeHomeAsync(fakeHome, () => fn(cwd));
     } finally {
-      if (priorRoot === undefined) delete process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV];
-      else process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV] = priorRoot;
       rmSync(cwd, { recursive: true, force: true });
       rmSync(fakeHome, { recursive: true, force: true });
     }

@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { ORCHESTRATOR_PERSISTENCE_ROOT_ENV } from "../src/workflow-paths.js";
+import { WorkflowErrorCode } from "../src/errors.js";
 
 const packageDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = join(packageDir, "test", "fixtures", "tripwire-child.ts");
@@ -46,7 +46,7 @@ async function runScenario(scenario: string): Promise<ChildOutcome> {
         env: {
           ...process.env,
           AP_TEST_CWD: workCwd,
-          [ORCHESTRATOR_PERSISTENCE_ROOT_ENV]: persistenceRoot,
+          AP_TEST_PERSISTENCE_ROOT: persistenceRoot,
         },
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -86,7 +86,7 @@ function assertTripped(outcome: ChildOutcome, message: RegExp) {
   assert.equal(outcome.report?.status, "failed");
   assert.match(outcome.report?.reason ?? "", /Unhandled promise rejection in workflow script/);
   assert.match(outcome.report?.reason ?? "", message);
-  assert.equal(outcome.report?.code, "SCRIPT_ERROR", "a script float is labeled SCRIPT_ERROR, not WORKFLOW_ABORTED");
+  assert.equal(outcome.report?.code, WorkflowErrorCode.SCRIPT_ERROR, "a script float is labeled SCRIPT_ERROR, not WORKFLOW_ABORTED");
   assert.equal(outcome.report?.leaseReleased, true, "tripped workflow must release its run lease");
 }
 

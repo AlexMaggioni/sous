@@ -13,8 +13,9 @@ import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.j
 
 const scenario = process.argv[2];
 const cwd = process.env.AP_TEST_CWD;
-if (!scenario || !cwd) {
-  console.error("usage: tripwire-child.ts <scenario> (with AP_TEST_CWD set)");
+const persistenceRoot = process.env.AP_TEST_PERSISTENCE_ROOT;
+if (!scenario || !cwd || !persistenceRoot) {
+  console.error("usage: tripwire-child.ts <scenario> (with AP_TEST_CWD and AP_TEST_PERSISTENCE_ROOT set)");
   process.exit(2);
 }
 
@@ -58,21 +59,21 @@ async function runScenario(): Promise<Report> {
   switch (scenario) {
     case "realm_float": {
       let captured: AbortSignal | undefined;
-      const manager = new WorkflowManager({ cwd, agent: slowAgent((s) => (captured = s)) });
+      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: slowAgent((s) => (captured = s)) });
       const result = await manager.runSync(
         script("realm_float", "Promise.reject(new Error('float boom'))\nreturn await agent('slow', { label: 'slow' })"),
       );
       return report(manager, result, { signalAborted: captured?.aborted === true });
     }
     case "engine_float": {
-      const manager = new WorkflowManager({ cwd, agent: failFastAgent("bad", "schema never complied") });
+      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: failFastAgent("bad", "schema never complied") });
       const result = await manager.runSync(
         script("engine_float", "agent('bad', { label: 'bad' })\nreturn await agent('slow', { label: 'slow' })"),
       );
       return report(manager, result);
     }
     case "chained_float": {
-      const manager = new WorkflowManager({ cwd, agent: failFastAgent("bad", "chained boom") });
+      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: failFastAgent("bad", "chained boom") });
       const result = await manager.runSync(
         script(
           "chained_float",
@@ -82,7 +83,7 @@ async function runScenario(): Promise<Report> {
       return report(manager, result);
     }
     case "tail_float": {
-      const manager = new WorkflowManager({ cwd, agent: { async run() { return "unused"; } } });
+      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: { async run() { return "unused"; } } });
       const result = await manager.runSync(script("tail_float", "Promise.reject(new Error('tail boom'))\nreturn 1"));
       return report(manager, result);
     }
@@ -91,7 +92,7 @@ async function runScenario(): Promise<Report> {
       // rejection, and the run must complete untouched.
       const seen: unknown[] = [];
       process.on("unhandledRejection", (reason) => seen.push(reason));
-      const manager = new WorkflowManager({ cwd, agent: slowAgent() });
+      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: slowAgent() });
       const inFlight = manager.runSync(script("innocent_run", "return await agent('x', { label: 'x' })"));
       void Promise.reject(new Error("host boom"));
       const result = await inFlight;
@@ -101,7 +102,7 @@ async function runScenario(): Promise<Report> {
       // NO host listener: an unattributable host-side rejection during an active run must
       // preserve the platform default — the engine rethrows and this child CRASHES. The
       // parent asserts a non-zero exit.
-      const manager = new WorkflowManager({ cwd, agent: slowAgent() });
+      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: slowAgent() });
       void manager.runSync(script("innocent_run", "return await agent('x', { label: 'x' })"));
       await new Promise((resolve) => setTimeout(resolve, 10));
       void Promise.reject(new Error("host boom"));
@@ -125,7 +126,7 @@ function report(
     reason: result.reason,
     code: error?.code,
     result: result.result,
-    leaseReleased: !existsSync(join(workflowProjectPaths(cwd!).runsDir, `${result.runId}.lock`)),
+    leaseReleased: !existsSync(join(workflowProjectPaths(cwd!, { persistenceRoot }).runsDir, `${result.runId}.lock`)),
     ...extra,
   };
 }

@@ -7,7 +7,6 @@ import type { AgentSessionRecord, AgentSessionRef } from "../../../src/workflow-
 import { WorkflowError, WorkflowErrorCode } from "../../../src/errors.js";
 import { createRunPersistence, generateRunId, type PersistedRunState, type RunPersistence } from "../../../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../../../src/workflow-manager.js";
-import { ORCHESTRATOR_PERSISTENCE_ROOT_ENV } from "../../../src/workflow-paths.js";
 import { workflowProjectPaths } from "../../../src/runs/persistence/project-paths.js";
 import { withFakeHomeAsync } from "../../helpers/fake-home.js";
 
@@ -17,13 +16,9 @@ function withTempCwd(fn: (cwd: string) => Promise<void>) {
   return async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ap-dw-rp-"));
     const fakeHome = mkdtempSync(join(tmpdir(), "ap-dw-home-"));
-    const priorRoot = process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV];
     try {
-      delete process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV];
       await withFakeHomeAsync(fakeHome, () => fn(cwd));
     } finally {
-      if (priorRoot === undefined) delete process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV];
-      else process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV] = priorRoot;
       rmSync(cwd, { recursive: true, force: true });
       rmSync(fakeHome, { recursive: true, force: true });
     }
@@ -181,65 +176,31 @@ test(
 );
 
 test(
-  "createRunPersistence uses ORCHESTRATOR_PERSISTENCE_ROOT when no explicit root is supplied",
+  "WorkflowManager keeps run state and logs under its persistence root",
   withTempCwd(async (cwd) => {
-    const persistenceRoot = mkdtempSync(join(tmpdir(), "ap-dw-root-env-"));
-    const prior = process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV];
+    const persistenceRoot = mkdtempSync(join(tmpdir(), "ap-dw-root-"));
     try {
-      process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV] = persistenceRoot;
-      const rp = createRunPersistence(cwd);
-      rp.save({
-        runId: "env-root",
-        workflowName: "demo",
-        script: "export const meta = { name: 'd', description: 'd' }",
-        status: "completed",
-        phases: [],
-        agents: [],
-        logs: [],
-        startedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-      assert.ok(
-        existsSync(join(workflowProjectPaths(cwd, { persistenceRoot }).runsDir, "env-root.json")),
-        "run file should land under env root",
-      );
-    } finally {
-      if (prior === undefined) delete process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV];
-      else process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV] = prior;
-      rmSync(persistenceRoot, { recursive: true, force: true });
-    }
-  }),
-);
-
-test(
-  "WorkflowManager resolves persistence root once for run state and logs",
-  withTempCwd(async (cwd) => {
-    const constructionRoot = mkdtempSync(join(tmpdir(), "ap-dw-root-once-a-"));
-    const mutatedRoot = mkdtempSync(join(tmpdir(), "ap-dw-root-once-b-"));
-    try {
-      process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV] = constructionRoot;
       const manager = new WorkflowManager({
         cwd,
+        persistenceRoot,
         agent: {
           async run(prompt: string) {
             return `ok:${prompt}`;
           },
         },
       });
-      process.env[ORCHESTRATOR_PERSISTENCE_ROOT_ENV] = mutatedRoot;
 
       const result = await manager.runSync(loggingScript);
 
-      const constructionRunsDir = workflowProjectPaths(cwd, { persistenceRoot: constructionRoot }).runsDir;
-      const mutatedRunsDir = workflowProjectPaths(cwd, { persistenceRoot: mutatedRoot }).runsDir;
+      const runsDir = workflowProjectPaths(cwd, { persistenceRoot }).runsDir;
+      const homeRunsDir = workflowProjectPaths(cwd).runsDir;
       assert.equal(result.status, "completed");
-      assert.equal(existsSync(join(constructionRunsDir, `${result.runId}.json`)), true, "run state uses construction root");
-      assert.equal(existsSync(join(constructionRunsDir, `${result.runId}.log`)), true, "logs use construction root");
-      assert.equal(existsSync(join(mutatedRunsDir, `${result.runId}.json`)), false, "mutated env gets no run state");
-      assert.equal(existsSync(join(mutatedRunsDir, `${result.runId}.log`)), false, "mutated env gets no logs");
+      assert.equal(existsSync(join(runsDir, `${result.runId}.json`)), true, "run state uses the root");
+      assert.equal(existsSync(join(runsDir, `${result.runId}.log`)), true, "logs use the root");
+      assert.equal(existsSync(join(homeRunsDir, `${result.runId}.json`)), false, "the home default gets no run state");
+      assert.equal(existsSync(join(homeRunsDir, `${result.runId}.log`)), false, "the home default gets no logs");
     } finally {
-      rmSync(constructionRoot, { recursive: true, force: true });
-      rmSync(mutatedRoot, { recursive: true, force: true });
+      rmSync(persistenceRoot, { recursive: true, force: true });
     }
   }),
 );

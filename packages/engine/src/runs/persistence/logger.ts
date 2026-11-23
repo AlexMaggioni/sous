@@ -19,7 +19,7 @@ export interface WorkflowLoggerOptions {
   runId?: string;
   /** Working directory for file paths. */
   cwd?: string;
-  /** Absolute workflow persistence root; explicit value wins over ORCHESTRATOR_PERSISTENCE_ROOT. */
+  /** Absolute workflow persistence root. When omitted, `~/.orchestrator/engine`. */
   persistenceRoot?: string;
   /** Whether to persist logs to disk. */
   persist?: boolean;

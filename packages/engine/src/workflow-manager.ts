@@ -258,10 +258,7 @@ export interface WorkflowManagerOptions {
   agent?: AgentRunner;
   /** Default retry attempts after recoverable agent failures. */
   defaultAgentRetries?: number;
-  /**
-   * Absolute workflow persistence root. Precedence is this explicit option >
-   * ORCHESTRATOR_PERSISTENCE_ROOT > `~/.orchestrator/engine`.
-   */
+  /** Absolute workflow persistence root. When omitted, `~/.orchestrator/engine`. */
   persistenceRoot?: string;
   /**
    * Custom run persistence implementation. When omitted, the manager constructs
