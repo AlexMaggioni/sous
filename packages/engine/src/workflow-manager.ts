@@ -165,7 +165,6 @@ export interface ManagedRun {
   replayEligibilityPlan?: ReplayEligibilityPlan;
   resumeReportPlan?: PreparedResume;
   resumeDecisions?: Map<number, WorkflowResumeCallDecision>;
-  executionMode?: PersistedRunState["executionMode"];
   /** Cross-process execution lease for this run, when it is actively executing. */
   lease?: RunLease;
   eventStreamId?: string;
@@ -257,8 +256,6 @@ export interface ExecOptions {
   runId?: string;
   /** Where the script came from; an inline origin gets a working copy in the run store. */
   scriptOrigin?: WorkflowScriptOrigin;
-  /** Marks this run as an isolation execution from its initial save onward. */
-  executionMode?: PersistedRunState["executionMode"];
   /** Non-git environment label reported in replay provenance diagnostics only. */
   environmentKey?: string;
   /**
@@ -1234,7 +1231,6 @@ export class WorkflowManager extends EventEmitter {
         agentRetries: exec.agentRetries ?? this.defaultAgentRetries,
       }),
       defaultModel: exec.defaultModel,
-      executionMode: exec.executionMode,
       ...(exec.resumeFromRunId ? { resumeSourceRunId: exec.resumeFromRunId } : {}),
       ...(exec.resumeJournal ? { legacyResume: true as const, newRunResume: true as const } : {}),
       background,
@@ -2140,7 +2136,6 @@ export class WorkflowManager extends EventEmitter {
       ...(managed.replayEligibility ? { replayEligibility: managed.replayEligibility } : {}),
       ...(managed.continuation ? { continuation: managed.continuation } : {}),
       defaultModel: managed.defaultModel,
-      executionMode: managed.executionMode,
       eventStreamId: managed.eventStreamId,
       eventSeq: managed.eventSeq,
       eventLogIncomplete: managed.eventLogIncomplete,
@@ -2286,8 +2281,7 @@ export class WorkflowManager extends EventEmitter {
       exec.resumeFromRunId !== undefined ||
       exec.resumeJournal !== undefined ||
       exec.cwd !== undefined ||
-      exec.defaultModel !== undefined ||
-      exec.executionMode !== undefined
+      exec.defaultModel !== undefined
     ) {
       throw this.scriptValidationError(
         "same-run continuation accepts only runtime controls; script, args, cwd, provider configuration, and replay inputs are immutable",
@@ -2328,6 +2322,7 @@ export class WorkflowManager extends EventEmitter {
     if (!persisted) return { accepted: false };
     assertExplicitCheckpointProvenance(persisted);
     if (persisted.status === "completed") return { accepted: false };
+    // Older engines marked isolation runs with executionMode. Such a run never resumes.
     if (!persisted.script || persisted.executionMode || persisted.argsUnreplayable) {
       return { accepted: false };
     }

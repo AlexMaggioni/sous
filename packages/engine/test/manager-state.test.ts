@@ -46,11 +46,9 @@ describe("WorkflowManager PR3 state", () => {
       const background = manager.startInBackground(
         script(`args.value = 4\nreturn args.value`, "background-args"),
         backgroundArgs,
-        { executionMode: { kind: "isolation", baselineRunId: "baseline" } },
       );
       const initial = manager.getPersistence().load(background.runId);
       assert.deepEqual(initial?.args, { value: 3 }, "the initial save already has the snapshot");
-      assert.deepEqual(initial?.executionMode, { kind: "isolation", baselineRunId: "baseline" });
       const completed = await background.promise;
       assert.equal(completed.result, 4);
       assert.deepEqual(backgroundArgs, { value: 3 });
