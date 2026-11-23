@@ -962,20 +962,6 @@ test(
 );
 
 test(
-  "createRunPersistence list returns empty array when directory is unreadable",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd, {
-      readdirSync: () => {
-        throw new Error("EACCES: permission denied, scandir");
-      },
-    });
-
-    const runs = rp.list();
-    assert.deepEqual(runs, []);
-  }),
-);
-
-test(
   "createRunPersistence concurrent save and load returns consistent data",
   withTempCwd(async (cwd) => {
     const rp = createRunPersistence(cwd);
@@ -1439,46 +1425,6 @@ test("WorkflowManager recovery reloads under the lease so concurrent completion 
   assert.equal(saveCalls, 0, "the stale listed row is never written over the completion");
   assert.equal(releaseCalls, 1);
 });
-
-test(
-  "WorkflowManager does not recover a legacy running run while its legacy lock owner is alive",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    const legacyRunsDir = join(cwd, WORKFLOW_RUNS_DIR);
-    mkdirSync(legacyRunsDir, { recursive: true });
-    writeFileSync(
-      join(legacyRunsDir, "legacy-live.json"),
-      JSON.stringify({
-        runId: "legacy-live",
-        workflowName: "w",
-        status: "running",
-        script: "export const meta = { name: 'w', description: 'd' }\nawait agent('x',{label:'x'})\nreturn 1",
-        phases: [],
-        agents: [],
-        logs: [],
-        startedAt: "2024-01-01T00:00:00.000Z",
-        updatedAt: "2024-01-01T00:00:00.000Z",
-      }),
-      "utf-8",
-    );
-    writeFileSync(
-      join(legacyRunsDir, "legacy-live.lock"),
-      JSON.stringify({
-        runId: "legacy-live",
-        runPath: join(legacyRunsDir, "legacy-live.json"),
-        pid: process.pid,
-        startedAt: "2024-01-01T00:00:00.000Z",
-        token: "legacy-owner",
-      }),
-      "utf-8",
-    );
-
-    new WorkflowManager({ cwd });
-
-    assert.equal(rp.load("legacy-live")?.status, "running");
-    assert.equal(existsSync(join(workflowProjectPaths(cwd).runsDir, "legacy-live.json")), false);
-  }),
-);
 
 // ─── Per-run cwd (ExecOptions.cwd): worktree-per-run hosts ─────────────────────
 

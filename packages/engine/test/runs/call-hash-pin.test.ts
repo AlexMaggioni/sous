@@ -3,12 +3,15 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { CALL_PATH_FORMAT } from "../../src/call-path.js";
+import { CHECKPOINT_INPUTS_FORMAT } from "../../src/checkpoint-call.js";
 import { createRun } from "../../src/runs/launch.js";
 import { writeAnswer } from "../../src/runs/inbox.js";
 import { runQuestions } from "../../src/runs/run.js";
 import { readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
+import { CALL_INPUTS_FORMAT } from "../../src/workflow.js";
 import { setup } from "./fixture.js";
 
 // The call hash decides which steps replay when a run resumes. These pins hold the hash of each
@@ -255,5 +258,15 @@ return 'done'`,
       { index: 2, hash: "69fa71b87ee301dadf9d18a1f756878fcf35143268242981ac8b3c110a07679b", inputs: explicit },
       { index: 3, hash: confirm, inputs: "8f90526e8cbc69a2d80705e3262720543babc2ffff4657b642606d041c281312" },
     ]);
+  });
+});
+
+// A saved run records these numbers in its runtime field. A resume pairs steps on the inputs hash
+// only when the saved inputs numbers equal the current ones.
+describe("the format numbers", () => {
+  it("keeps the numbers of the call path, the call inputs and the checkpoint inputs formats", () => {
+    assert.equal(CALL_PATH_FORMAT, 1);
+    assert.equal(CALL_INPUTS_FORMAT, 2);
+    assert.equal(CHECKPOINT_INPUTS_FORMAT, 2);
   });
 });

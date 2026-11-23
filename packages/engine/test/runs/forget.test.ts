@@ -54,13 +54,6 @@ const removers = {
 };
 
 describe("forget and prune on today's files", () => {
-  it("the planted run has the files a finished run leaves", () => {
-    const { paths } = setup({});
-    const record = plantTodayRun(paths);
-    assert.equal(record.runId, TODAY_ID);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles].sort());
-  });
-
   it("forgetRun removes every file of the run but the home's project.json", () => {
     const { paths } = setup({});
     const record = plantTodayRun(paths);

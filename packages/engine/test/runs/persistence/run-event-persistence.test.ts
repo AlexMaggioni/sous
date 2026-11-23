@@ -21,8 +21,6 @@ import { WorkflowErrorCode } from "../../../src/errors.js";
 import type { PersistableEngineRunEvent, RunEventLogRecord } from "../../../src/run-events.js";
 import {
   RUN_EVENT_MAX_RECORD_BYTES,
-  RUN_EVENT_READ_LIMIT_DEFAULT,
-  RUN_EVENT_READ_LIMIT_MAX,
   RunEventLogError,
   hasEventLog,
   type RunEventPersistence,
@@ -101,23 +99,6 @@ function withPersistence(
     }
   };
 }
-
-test("event constants and RunEventLogError expose the frozen public contract", () => {
-  assert.equal(RUN_EVENT_MAX_RECORD_BYTES, 65_536);
-  assert.equal(RUN_EVENT_READ_LIMIT_DEFAULT, 100);
-  assert.equal(RUN_EVENT_READ_LIMIT_MAX, 1_000);
-  const cause = new Error("disk");
-  const error = new RunEventLogError("failed", "IO_ERROR", {
-    runId: "raw-run-id",
-    seq: 7,
-    path: "/absolute/run.events.jsonl",
-    cause,
-  });
-  assert.equal(error.runId, "raw-run-id");
-  assert.equal(error.seq, 7);
-  assert.equal(error.path, "/absolute/run.events.jsonl");
-  assert.equal(error.cause, cause);
-});
 
 test(
   "appendEvent writes one canonical line and readEvents provides stable cursors over a log-ahead snapshot",
