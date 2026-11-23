@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -35,7 +35,7 @@ import {
 } from "@orchestrator/engine/testing";
 import { cmdAccount } from "../src/account-cli.js";
 import { main } from "../src/cli.js";
-import { waitFor } from "./orc.js";
+import { orc, waitFor } from "./orc.js";
 
 // orc's accounts: one per program, the program's own login by default. Tokens here are made up.
 
@@ -367,11 +367,13 @@ describe("accounts", () => {
     delete env.CLAUDECODE;
     const added = execFileSync(process.execPath, ["--import", "tsx", "src/cli.ts", "account", "add", "work"], { cwd: here, env, input: `${WORK}\n`, encoding: "utf8" });
     assert.equal(added, "added Claude Code account work. orc account use work makes orc use it.\n");
-    const refused = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "account", "add", "work"], { cwd: here, env, input: `${SPARE}\n`, encoding: "utf8" });
-    assert.equal(refused.status, 1);
-    assert.match(refused.stderr, /there is an account work already/);
-    const usage = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "account", "swap", "work"], { cwd: here, env, encoding: "utf8" });
-    assert.equal(usage.status, 64);
+    // The name is checked before the token is read, so the refusal and the usage error need no process.
+    const refused = await orc(paths, ["account", "add", "work"]);
+    assert.equal(refused.code, 1);
+    assert.match(refused.out, /there is an account work already/);
+    const usage = await orc(paths, ["account", "swap", "work"]);
+    assert.equal(usage.code, 64);
+    assert.match(usage.out, /^usage: orc account \[add\|use\|remove <name>\], got "swap"/);
 
     const lines: string[] = [];
     const out = (line: string) => lines.push(line);
