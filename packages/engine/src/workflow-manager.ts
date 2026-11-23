@@ -29,6 +29,7 @@ import type {
   EngineRunEventPayloadMap,
   PersistableEngineRunEvent,
   RequestedPauseReason,
+  RunPausedPayload,
   RunPauseReason,
 } from "./run-events.js";
 import { foldStep, preview, recomputeWorkflowSnapshot, type WorkflowSnapshot } from "./display.js";
@@ -387,6 +388,29 @@ function pauseReasonOf(error: WorkflowError | undefined): RunPauseReason | undef
       return isStepFailedPause(error) ? stepPauseReason(error.details) : "requested";
     default:
       return undefined;
+  }
+}
+
+/** The paused event for a pause, with the context its reason carries. One case per reason, so a
+ *  new reason fails to compile here until it has its own. */
+function pausedPayload(runId: string, reason: RunPauseReason, error: WorkflowError): RunPausedPayload {
+  const base = { runId, scope: runId, error, errorRecord: projectRecordedError(error) };
+  switch (reason) {
+    case "requested":
+    case "step_failed":
+    case "step_stopped":
+    case "time_limit":
+      return { ...base, reason };
+    case "usage_limit":
+      return { ...base, reason, resetHint: error.resetHint };
+    case "auth_required":
+      return { ...base, reason, authContext: error.authContext };
+    case "checkpoint_required":
+      return { ...base, reason, checkpointContext: error.checkpointContext };
+    default: {
+      const exhaustive: never = reason;
+      throw new TypeError(`Unsupported pause reason ${String(exhaustive)}`);
+    }
   }
 }
 
@@ -1343,42 +1367,7 @@ export class WorkflowManager extends EventEmitter {
       managed.result = this.composeResult(managed, workflowError);
 
       if (pauseReason !== undefined) {
-        const errorRecord = projectRecordedError(workflowError);
-        const pausedEvent = pauseReason === "auth_required"
-          ? this.createRunEvent("paused", {
-              runId: managed.runId,
-              scope: managed.runId,
-              reason: "auth_required",
-              error: workflowError,
-              errorRecord,
-              authContext: workflowError.authContext,
-            })
-          : pauseReason === "checkpoint_required"
-            ? this.createRunEvent("paused", {
-                runId: managed.runId,
-                scope: managed.runId,
-                reason: "checkpoint_required",
-                error: workflowError,
-                errorRecord,
-                checkpointContext: workflowError.checkpointContext,
-              })
-            : pauseReason === "usage_limit"
-              ? this.createRunEvent("paused", {
-                  runId: managed.runId,
-                  scope: managed.runId,
-                  reason: "usage_limit",
-                  error: workflowError,
-                  errorRecord,
-                  resetHint: workflowError.resetHint,
-                })
-              : this.createRunEvent("paused", {
-                  runId: managed.runId,
-                  scope: managed.runId,
-                  reason: pauseReason,
-                  error: workflowError,
-                  errorRecord,
-                });
-        publish(pausedEvent, {
+        publish(this.createRunEvent("paused", pausedPayload(managed.runId, pauseReason, workflowError)), {
           beforeLive: () => {
             this.persistRun(managed);
             this.releaseRunLease(managed);

@@ -5,14 +5,13 @@ import type {
   WorkflowCallRecord,
   WorkflowLogTail,
 } from "./workflow-result.js";
-import {
-  isRequestedPauseReason,
-  type PersistableEngineRunEvent,
-  type PersistedRunEvent,
-  type RunEventCheckpointProjection,
-  type RunEventErrorProjection,
-  type RunEventLogRecord,
-  type RunEventValueProjection,
+import type {
+  PersistableEngineRunEvent,
+  PersistedRunEvent,
+  RunEventCheckpointProjection,
+  RunEventErrorProjection,
+  RunEventLogRecord,
+  RunEventValueProjection,
 } from "./run-events.js";
 import { redactText, truncateUtf8 } from "./redact.js";
 
@@ -457,39 +456,52 @@ export function projectRunEventForPersistence(
       projected = { type: "callRecord", ...origin(), record: projectCallRecord(event.record, state) };
       break;
     case "paused":
-      if (isRequestedPauseReason(event.reason)) {
-        projected = {
-          type: "paused",
-          ...origin(),
-          reason: event.reason,
-          errorRecord: projectRecordedError(event.errorRecord, state),
-        };
-      } else if (event.reason === "usage_limit") {
-        projected = {
-          type: "paused",
-          ...origin(),
-          reason: "usage_limit",
-          errorRecord: projectRecordedError(event.errorRecord, state),
-          ...(event.resetHint === undefined ? {} : { resetHint: projectText(event.resetHint, state) }),
-        };
-      } else if (event.reason === "auth_required") {
-        projected = {
-          type: "paused",
-          ...origin(),
-          reason: "auth_required",
-          errorRecord: projectRecordedError(event.errorRecord, state),
-          ...(event.authContext === undefined ? {} : { authContext: projectAuthContext(event.authContext, state) }),
-        };
-      } else {
-        projected = {
-          type: "paused",
-          ...origin(),
-          reason: "checkpoint_required",
-          errorRecord: projectRecordedError(event.errorRecord, state),
-          ...(event.checkpointContext === undefined
-            ? {}
-            : { checkpointContext: projectCheckpointContext(event.checkpointContext, state) }),
-        };
+      // One case per reason, so a new reason fails to compile here until it has its own.
+      switch (event.reason) {
+        case "requested":
+        case "step_failed":
+        case "step_stopped":
+        case "time_limit":
+          projected = {
+            type: "paused",
+            ...origin(),
+            reason: event.reason,
+            errorRecord: projectRecordedError(event.errorRecord, state),
+          };
+          break;
+        case "usage_limit":
+          projected = {
+            type: "paused",
+            ...origin(),
+            reason: "usage_limit",
+            errorRecord: projectRecordedError(event.errorRecord, state),
+            ...(event.resetHint === undefined ? {} : { resetHint: projectText(event.resetHint, state) }),
+          };
+          break;
+        case "auth_required":
+          projected = {
+            type: "paused",
+            ...origin(),
+            reason: "auth_required",
+            errorRecord: projectRecordedError(event.errorRecord, state),
+            ...(event.authContext === undefined ? {} : { authContext: projectAuthContext(event.authContext, state) }),
+          };
+          break;
+        case "checkpoint_required":
+          projected = {
+            type: "paused",
+            ...origin(),
+            reason: "checkpoint_required",
+            errorRecord: projectRecordedError(event.errorRecord, state),
+            ...(event.checkpointContext === undefined
+              ? {}
+              : { checkpointContext: projectCheckpointContext(event.checkpointContext, state) }),
+          };
+          break;
+        default: {
+          const exhaustive: never = event;
+          throw new TypeError(`Unsupported pause reason ${(exhaustive as { reason?: unknown }).reason as string}`);
+        }
       }
       break;
     case "error":
