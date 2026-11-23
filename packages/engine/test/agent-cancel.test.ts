@@ -209,10 +209,6 @@ test("manager cancels a selected attempt and acknowledges only after its durable
     );
     assert.equal(manager.getRun(started.runId)?.controller.signal.aborted, false);
     assert.equal(manager.getRun(started.runId)?.abortSignaled, undefined);
-    assert.equal(
-      manager.inspectRun(started.runId)?.calls.find((call) => call.index === 1)?.errorCode,
-      WorkflowErrorCode.AGENT_CANCELLED,
-    );
     assert.equal(invocations.filter((prompt) => prompt === "cancel").length, 1);
 
     await assert.rejects(

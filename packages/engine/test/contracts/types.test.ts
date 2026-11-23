@@ -9,9 +9,7 @@ import type {
   WorkflowCheckpointTaken,
   WorkflowLogTail,
   WorkflowRunFallback,
-  WorkflowRunInspectionOptions,
   WorkflowRunResult,
-  WorkflowRunStatus,
 } from "../../src/workflow-result.js";
 
 test("CheckpointContext has the fields a paused checkpoint records", () => {
@@ -24,7 +22,7 @@ test("CheckpointContext has the fields a paused checkpoint records", () => {
   assert.equal(context.kind, "confirm");
 });
 
-test("run-observability contracts are exported and legacy journals remain valid", () => {
+test("journal call attribution and the log tail are exported and legacy journals remain valid", () => {
   const legacy: JournalEntry = { index: 0, hash: "legacy", result: "cached" };
   const agentCall: JournalCallMetadata = {
     kind: "agent",
@@ -39,7 +37,6 @@ test("run-observability contracts are exported and legacy journals remain valid"
     { index: 1, hash: "agent", result: { ok: true }, call: agentCall },
     { index: 2, hash: "checkpoint", result: true, kind: "checkpoint", checkpointDecision: "explicit-v1", call: checkpointCall },
   ];
-  const options: WorkflowRunInspectionOptions = { lastN: 10, labelGlob: "review*", logLines: 5 };
   const tail: WorkflowLogTail = {
     lines: ["done"],
     totalLines: 1,
@@ -47,33 +44,13 @@ test("run-observability contracts are exported and legacy journals remain valid"
     truncatedLines: 0,
     redactedLines: 0,
   };
-  const status: WorkflowRunStatus = {
-    runId: "mabc-def",
-    status: "completed",
-    workflowName: "review",
-    phases: ["Review"],
-    logTail: tail,
-    calls: [],
-    filter: { lastN: options.lastN ?? 20, logLines: options.logLines ?? 20, labelGlob: options.labelGlob },
-    truncation: {
-      maxStructuredBytes: 24_576,
-      byteCapApplied: false,
-      phases: { total: 1, returned: 1, shortened: 0 },
-      logs: { total: 1, returned: 1, shortened: 0, redacted: 0 },
-      calls: { total: 3, matched: 1, returned: 0, shortenedResults: 0, redactedResults: 0 },
-    },
-  };
   assert.equal(entries[0]?.call, undefined);
   assert.equal(entries[1]?.call?.kind, "agent");
   assert.equal(entries[2]?.call?.kind, "checkpoint");
-  assert.equal(status.logTail.lines[0], "done");
+  assert.equal(tail.lines[0], "done");
 });
 
 test("run-result observability entries are exported and remain additive", () => {
-  type StatusExcludesFallbacks = "fallbacks" extends keyof WorkflowRunStatus ? never : true;
-  type StatusExcludesCheckpoints = "checkpointsTaken" extends keyof WorkflowRunStatus ? never : true;
-  const statusExcludesFallbacks: StatusExcludesFallbacks = true;
-  const statusExcludesCheckpoints: StatusExcludesCheckpoints = true;
   const fallback: WorkflowRunFallback = {
     callIndex: 1,
     label: "review",
@@ -108,6 +85,4 @@ test("run-result observability entries are exported and remain additive", () => 
   assert.equal(legacyResult.fallbacks, undefined);
   assert.equal(observedResult.fallbacks?.[0]?.kind, "continuation");
   assert.equal(observedResult.checkpointsTaken?.[0]?.source, "journal-replay");
-  assert.equal(statusExcludesFallbacks, true);
-  assert.equal(statusExcludesCheckpoints, true);
 });

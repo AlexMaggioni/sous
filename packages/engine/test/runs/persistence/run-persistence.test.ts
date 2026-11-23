@@ -1372,19 +1372,19 @@ test(
 );
 
 test(
-  "lazy inspect and list reconcile missing and corrupt locks once while live owners remain running",
+  "lazy lookup and list reconcile missing and corrupt locks once while live owners remain running",
   withTempCwd(async (cwd) => {
     const manager = new WorkflowManager({ cwd });
     const rp = createRunPersistence(cwd);
     const runsDir = workflowProjectPaths(cwd).runsDir;
 
     rp.save(persistedRun("late-missing", "running"));
-    const inspected = manager.inspectRun("late-missing");
-    assert.equal(inspected?.status, "paused");
-    assert.equal(inspected?.reason?.includes("PID unavailable"), true);
+    const reconciled = manager.reconcileExternallyDeadRun("late-missing");
+    assert.equal(reconciled?.status, "paused");
+    assert.equal(reconciled?.reason?.includes("PID unavailable"), true);
     assert.equal(rp.load("late-missing")?.pauseReason, "interrupted");
     const firstUpdatedAt = rp.load("late-missing")?.updatedAt;
-    manager.inspectRun("late-missing");
+    manager.reconcileExternallyDeadRun("late-missing");
     manager.listRuns();
     assert.equal(rp.load("late-missing")?.updatedAt, firstUpdatedAt, "reconciliation is idempotent");
 
@@ -1398,7 +1398,7 @@ test(
     rp.save(persistedRun("late-live", "running"));
     const liveLease = rp.acquireRunLease("late-live");
     assert.ok(liveLease);
-    assert.equal(manager.inspectRun("late-live")?.status, "running");
+    assert.equal(manager.reconcileExternallyDeadRun("late-live")?.status, "running");
     assert.equal(rp.load("late-live")?.pauseReason, undefined);
     assert.equal(existsSync(join(runsDir, "late-live.lock")), true);
     rp.releaseRunLease(liveLease);
@@ -1445,7 +1445,7 @@ test("WorkflowManager recovery reloads under the lease so concurrent completion 
   };
 
   const manager = new WorkflowManager({ persistence });
-  assert.equal(manager.inspectRun(state.runId)?.status, "completed");
+  assert.equal(manager.reconcileExternallyDeadRun(state.runId)?.status, "completed");
   assert.equal(state.result, "concurrent-winner");
   assert.equal(saveCalls, 0, "the stale listed row is never written over the completion");
   assert.equal(releaseCalls, 1);
@@ -1469,7 +1469,7 @@ test(
     const manager = new WorkflowManager({ cwd, journaling: false });
     assert.equal(rp.load("stale")?.status, "running", "journaling:false leaves persisted runs untouched");
     rp.save(persistedRun("late-stale", "pending"));
-    assert.equal(manager.inspectRun("late-stale")?.status, "pending");
+    assert.equal(manager.reconcileExternallyDeadRun("late-stale")?.status, "pending");
     assert.equal(manager.listRuns().find((run) => run.runId === "late-stale")?.status, "pending");
     assert.equal(rp.load("late-stale")?.pauseReason, undefined, "lazy paths also skip reconciliation");
   }),

@@ -176,9 +176,9 @@ export interface PersistedRunState {
   resumeReport?: WorkflowResumeReport;
   replayEligibility?: WorkflowReplayEligibility;
   status: RunStatus;
-  /** Safe run-level terminal explanation retained for cold inspection. */
+  /** Safe run-level terminal explanation kept on the saved run. */
   reason?: string;
-  /** Machine-readable terminal error retained for cold inspection. */
+  /** Machine-readable terminal error kept on the saved run. */
   errorCode?: WorkflowErrorCode;
   /** Why a paused run is paused (e.g. "usage_limit", "auth_required",
    *  "checkpoint_required", or "interrupted"). Free-form string — no migration. */

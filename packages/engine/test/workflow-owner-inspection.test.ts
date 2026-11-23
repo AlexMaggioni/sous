@@ -24,15 +24,13 @@ return [first, second];`);
     const next = await second.resumeInBackground(initial.runId, { checkpointReplies: { 0: true } });
     assert.ok(next.accepted);
     await assert.rejects(next.promise);
-    assert.equal(second.inspectRun(initial.runId)?.status, "paused");
+    assert.equal(second.getPersistence().load(initial.runId)?.status, "paused");
     assert.equal(first.getRun(initial.runId), undefined, "an older cached pause does not represent the new owner");
-    assert.deepEqual(first.inspectRun(initial.runId), second.inspectRun(initial.runId));
 
     const last = await second.resumeInBackground(initial.runId, { checkpointReplies: { 1: false } });
     assert.ok(last.accepted);
     await last.promise;
-    assert.equal(first.inspectRun(initial.runId)?.status, "completed");
-    assert.deepEqual(first.inspectRun(initial.runId), second.inspectRun(initial.runId));
+    assert.equal(first.getPersistence().load(initial.runId)?.status, "completed");
     assert.equal(second.getRun(initial.runId)?.status, "completed", "the current SDK keeps its completed history");
     second.getPersistence().delete(initial.runId);
     assert.equal(second.getRun(initial.runId)?.status, "completed", "removing durable artifacts does not erase SDK memory history");
@@ -54,20 +52,20 @@ test("another manager's whole stop supersedes a cached pause in the same generat
     assert.equal(second.stopPersistedRun(paused.runId).outcome, "stopped");
     assert.equal(first.getPersistence().load(paused.runId)?.continuation?.generation, originalGeneration);
     assert.equal(first.getRun(paused.runId), undefined, "a same-generation foreign stop replaces the old pause");
-    assert.equal(first.inspectRun(paused.runId)?.status, "aborted");
+    assert.equal(first.getPersistence().load(paused.runId)?.status, "aborted");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("non-journaled SDK runs retain their in-memory inspection after completion", async () => {
+test("non-journaled SDK runs keep their in-memory run after completion", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "workflow-ephemeral-inspection-"));
   try {
     const manager = new WorkflowManager({ cwd, persistenceRoot: join(cwd, "store"), journaling: false, agent: { async run() { return "unused"; } } });
     const result = await manager.runSync('export const meta = { name: "ephemeral", description: "SDK history" }; return 42;');
     assert.equal(manager.getPersistence().load(result.runId), null);
     assert.equal(manager.getRun(result.runId)?.result?.result, 42);
-    assert.equal(manager.inspectRun(result.runId)?.status, "completed");
+    assert.equal(manager.getRun(result.runId)?.status, "completed");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -81,7 +81,7 @@ before that save. Replay hits do not emit journal callbacks, so this seeding is 
 run independently resumable after a second pause or process loss. Each later live journal append
 persists the complete inherited prefix plus suffix. A dead owner's persisted `pending` or `running`
 run reconciles under its lease to `paused` with `pauseReason: "interrupted"` during construction or
-a cold inspect/list/resume lookup. Live and permission-protected owner PIDs remain untouched.
+a cold list or resume lookup. Live and permission-protected owner PIDs remain untouched.
 Completed current-format crash-journal entries use identity replay; an in-flight unjournaled call
 executes again on resume. Missing terminal-environment capture is diagnostic only.
 
@@ -91,36 +91,6 @@ settles, bypasses retries, and resolves only after the failed call record and `a
 committed. The script receives `null`; sibling branches continue, the run-level signal and
 `abortSignaled` remain untouched, and no journal result is created. Errors for missing, settled,
 checkpoint, or duplicate scoped indexes list the currently in-flight call-index/label pairs.
-
-Inspect a run without executing it:
-
-```ts
-const status = manager.inspectRun(result.runId, {
-  lastN: 10,
-  labelGlob: "review-*",
-  logLines: 20,
-});
-```
-
-`inspectRun()` is synchronous and live-first: it projects the manager's freshest in-memory snapshot
-and journal, then falls back to the same project-scoped persistence used by resume. A cold persisted
-`pending`/`running` row may be lease-reconciled to `paused` / `interrupted` when its owner is dead;
-all other inspection is non-mutating. It returns `undefined` for a missing/unreadable ID. `lastN` defaults to 20 (1–50),
-`logLines` defaults to 20 (0–50), and `labelGlob` is a case-sensitive whole-label glob where `*`
-matches zero or more Unicode code points, `?` matches one, and backslash escapes the next character
-(a trailing backslash is literal). Filtering precedes latest-N selection; calls are returned in
-ascending call-index order.
-
-The `WorkflowRunStatus` projection includes the run's resolved limits and, for a new-run resume,
-its bounded `replayEligibility` admission/progress summary. Agent call rows include their
-terminal `errorCode`, which keeps failures such as `AGENT_CANCELLED` visible even though they have no result journal row. The
-projection is allowlisted:
-it never exposes script, args, prompts,
-histories, journal hashes, session IDs, cwd, checkpoint text, auth context, or raw results.
-Text and result previews are redacted and capped at 512 UTF-8 bytes; results are structurally
-compacted; at most 64 phases are considered; and the serialized status is capped at 24,576 bytes
-by dropping oldest calls, then logs, then phases. `truncation` reports every selection, shortening,
-redaction, and byte-budget decision.
 
 Or call the bare engine function (no manager, no persistence layer):
 
@@ -207,8 +177,8 @@ start environment when no terminal capture exists) with the current environment.
 `paused` / `interrupted` uses its identity manifest even without terminal environment capture.
 Input-fingerprint formats below 2 use the named
 `inputs-format-legacy` positional bridge, including ancestor-scoped prefixes carried by ≤0.23 resume
-hops when the ancestor run is still persisted. The persisted producing engine version is diagnostic only. Background admission,
-inspection, polling, and terminal results expose the same eligibility strategy, predicted/observed
+hops when the ancestor run is still persisted. The persisted producing engine version is diagnostic only. The saved run and its
+terminal result expose the same eligibility strategy, predicted/observed
 prefix, first non-replay, version formats, runtime/environment provenance changes, and operational differences.
 
 Separately from replay correspondence, the manager builds a `PreparedContinuation` from a
@@ -271,8 +241,8 @@ and terminal writes.
 Successful journal writes now include optional replay-neutral `JournalEntry.call` attribution.
 Agent entries record the final label/phase/resolved model/actual backend; checkpoint and synthetic
 checkpoint-reply entries record checkpoint kind/label/phase. Old entries remain readable and hashes
-are unchanged. Terminal persisted states retain a safe run-level `reason` and `errorCode` for cold
-inspection. Every paused, failed, or aborted `WorkflowRunResult` has a redacted final-20 `logTail`
+are unchanged. Terminal persisted states retain a safe run-level `reason` and `errorCode` on the saved
+run. Every paused, failed, or aborted `WorkflowRunResult` has a redacted final-20 `logTail`
 (present even when empty); completed results omit it and preserve the full raw `logs` array.
 
 Two optional terminal audit arrays are persisted alongside that state. `fallbacks` records
@@ -281,8 +251,7 @@ propagate through the existing agent-error path.
 `checkpointsTaken` records each checkpoint
 that resolved in this execution with its journaled decision and source: `live`, `journal-replay`,
 or `injected` from `checkpointReplies`. Pausing checkpoints are omitted. Both
-arrays are absent when empty, stay outside call hashes, and are deliberately excluded from
-`WorkflowRunStatus`.
+arrays are absent when empty and stay outside call hashes.
 
 The manager treats `PROVIDER_USAGE_LIMIT`, `AUTH_REQUIRED`, `CHECKPOINT_REQUIRED`, and
 `PAUSE_REQUESTED` as resumable pause conditions rather than failed runs. `pause(runId)` raises the
@@ -360,8 +329,8 @@ From `@orchestrator/engine` (see `src/index.ts`):
 - **Manager & persistence** — `WorkflowManager` (`WorkflowManagerOptions`, `ExecOptions`,
   `ManagedRun`, `WorkflowAgentCallCancellation`, `PersistedRunStopResult`); `createRunPersistence`, `generateRunId`, and
   types `RunPersistence`, `RunEventPersistence`, `RunLease`, `RunLeaseOwner`, `RunStatus`, `PersistedRunState`,
-  `PersistedAgentState`, `FsLayer`; `readEvents()` options/results/errors; safe
-  `inspectRun()` and the `WorkflowRunStatus` / inspection / log-tail / call / truncation contracts.
+  `PersistedAgentState`, `FsLayer`; `readEvents()` options/results/errors; and the
+  `WorkflowLogTail` contract.
 - **Saved workflows** — `openWorkflowDir` and the `WorkflowDir` / `WorkflowDirEntry` /
   `OpenWorkflowDirOptions` types.
 - **Errors** — `WorkflowError`, `WorkflowErrorCode`, `isWorkflowError`, `wrapError`,

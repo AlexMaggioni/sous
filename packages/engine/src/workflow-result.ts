@@ -1,7 +1,7 @@
 // What a run returns and records: its result, its journal, its calls and its resume report.
 
 import type { AgentResultProvenance, AgentUsage, ContinuationSkipReason } from "./steps/agent-run.js";
-import type { AuthErrorContext, CheckpointContext, WorkflowErrorCode, WorkflowRecordedError } from "./errors.js";
+import type { AuthErrorContext, CheckpointContext, WorkflowRecordedError } from "./errors.js";
 
 /** Aggregate token/cost usage for a whole run (engine-summed; matches the
  *  onTokenUsage shape at workflow.ts:112-119). */
@@ -436,8 +436,8 @@ interface WorkflowReplayEligibilityBase {
   operationalChanges: WorkflowReplayOperationalChange[];
 }
 
-/** Bounded resume plan and progress summary suitable for admission, polling, and
- *  inspection responses. The full per-call decisions remain in WorkflowResumeReport. */
+/** Bounded resume plan and progress summary kept on the run.
+ *  The full per-call decisions remain in WorkflowResumeReport. */
 export type WorkflowReplayEligibility = WorkflowReplayEligibilityBase &
   (
     | {
@@ -526,15 +526,6 @@ export interface WorkflowCallRecord {
   scope?: string;
 }
 
-export interface WorkflowRunInspectionOptions {
-  /** Latest matching journal entries. Default 20; valid range 1..50. */
-  lastN?: number;
-  /** Case-sensitive whole-label glob. Omitted means all call kinds. */
-  labelGlob?: string;
-  /** Latest run-log lines. Default 20; valid range 0..50. */
-  logLines?: number;
-}
-
 export interface WorkflowLogTail {
   lines: string[];
   totalLines: number;
@@ -543,61 +534,11 @@ export interface WorkflowLogTail {
   redactedLines: number;
 }
 
-export interface WorkflowRunCallStatus {
-  index: number;
-  kind: "agent" | "checkpoint" | "unknown";
-  label?: string;
-  phase?: string;
-  model?: string;
-  backendId?: string;
-  /** Terminal agent error, including recoverable failures that settled the call to null. */
-  errorCode?: WorkflowErrorCode;
-  /** Present only while the call is in flight on a live run; settled calls omit it. */
-  status?: "queued" | "running";
-  /** Compact JSON text after structural compaction and redaction; never the raw result. */
-  resultPreview: string;
-  resultRedacted: boolean;
-  resultTruncated: boolean;
-}
-
-export interface WorkflowRunStatusTruncation {
-  maxStructuredBytes: number;
-  byteCapApplied: boolean;
-  phases: { total: number; returned: number; shortened: number };
-  logs: { total: number; returned: number; shortened: number; redacted: number };
-  calls: {
-    total: number;
-    matched: number;
-    returned: number;
-    shortenedResults: number;
-    redactedResults: number;
-  };
-}
-
 /** Host-resolved execution bounds in force for one run. */
 export interface WorkflowRunLimits {
   maxAgents: number;
   concurrency: number;
   agentRetries: number;
-}
-
-/** Safe, bounded, point-in-time status used by every run-inspection/polling host. */
-export interface WorkflowRunStatus {
-  runId: string;
-  status: RunStatus;
-  workflowName: string;
-  phases: string[];
-  currentPhase?: string;
-  reason?: string;
-  errorCode?: WorkflowErrorCode;
-  /** Resolved execution bounds. Absent only on legacy persisted rows that predate limits. */
-  limits?: WorkflowRunLimits;
-  /** Resume eligibility and progress. Present only on a run admitted from a source run. */
-  replayEligibility?: WorkflowReplayEligibility;
-  logTail: WorkflowLogTail;
-  calls: WorkflowRunCallStatus[];
-  filter: { lastN: number; logLines: number; labelGlob?: string };
-  truncation: WorkflowRunStatusTruncation;
 }
 
 /** Persisted run lifecycle (run-persistence.ts:11). A host-facing WorkflowRunResult

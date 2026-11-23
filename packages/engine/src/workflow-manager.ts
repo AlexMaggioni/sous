@@ -25,9 +25,7 @@ import type {
   WorkflowContinuationResult,
   WorkflowMeta,
   WorkflowRunFallback,
-  WorkflowRunInspectionOptions,
   WorkflowRunResult,
-  WorkflowRunStatus,
   WorkflowReplayEligibility,
   WorkflowReplayFirstNonReplay,
   WorkflowReplayOperationalChange,
@@ -89,7 +87,7 @@ import {
 } from "./workflow.js";
 import { parseWorkflowScript } from "./workflows/script.js";
 import type { AgentRegistry } from "./agent-registry.js";
-import { createWorkflowLogTail, projectWorkflowRunStatus } from "./run-observability.js";
+import { createWorkflowLogTail } from "./run-observability.js";
 import { assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
 import type { CodeStepEnv } from "./code-steps.js";
 
@@ -3358,50 +3356,6 @@ export class WorkflowManager extends EventEmitter {
       (persisted.continuation?.generation ?? 0) !== (managed.continuation?.generation ?? 0)
     ) return undefined;
     return managed;
-  }
-
-  /** Return a safe, bounded, live-first point-in-time run projection. */
-  inspectRun(runId: string, options?: WorkflowRunInspectionOptions): WorkflowRunStatus | undefined {
-    const managed = this.getRun(runId);
-    if (managed) {
-      return projectWorkflowRunStatus(
-        {
-          runId: managed.runId,
-          status: managed.status,
-          workflowName: managed.snapshot.name,
-          phases: managed.snapshot.phases,
-          currentPhase: managed.snapshot.currentPhase,
-          reason: runReason(managed.status, managed.error),
-          errorCode: managed.error?.code,
-          logs: managed.snapshot.logs,
-          journal: managed.journal,
-          agents: managed.snapshot.agents,
-          limits: managed.limits,
-          replayEligibility: managed.replayEligibility,
-        },
-        options,
-      );
-    }
-
-    const persisted = this.reconcileExternallyDeadRun(runId);
-    if (!persisted) return undefined;
-    return projectWorkflowRunStatus(
-      {
-        runId: persisted.runId,
-        status: persisted.status,
-        workflowName: persisted.workflowName,
-        phases: persisted.phases ?? [],
-        currentPhase: persisted.currentPhase,
-        reason: persisted.reason ?? persisted.pauseReason,
-        errorCode: persisted.errorCode,
-        logs: persisted.logs ?? [],
-        journal: persisted.journal ?? [],
-        agents: persisted.agents ?? [],
-        limits: persisted.limits,
-        replayEligibility: persisted.replayEligibility,
-      },
-      options,
-    );
   }
 
   /** Every persisted run, newest first, after reconciling runs whose owner exited. */
