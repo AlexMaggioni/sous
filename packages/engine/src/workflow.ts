@@ -49,9 +49,8 @@ import { nestedRunId } from "./resume-identity.js";
 import { createPairing, type RecordedScope } from "./resume-pairing.js";
 import { journalRows, type ResumeRow, type ResumeRows } from "./resume-rows.js";
 import {
-  createDecisionOrder,
+  createDecisionLog,
   createStepLedger,
-  type DecisionTurn,
   type Pairing,
   type SettledCall,
   type SourceRow,
@@ -825,8 +824,8 @@ export async function runWorkflow<T = unknown>(
   const preparedResume = options.preparedResume;
   const preparedContinuation = options.preparedContinuation;
   // A prepared resume reports a decision for each call, in the order calls were opened.
-  const decisionOrder = createDecisionOrder({
-    ordered: preparedResume !== undefined,
+  const decisionLog = createDecisionLog({
+    reports: preparedResume !== undefined,
     onDecision: (decision) => guardTerminal("onResumeDecision", () => options.onResumeDecision?.(decision)),
   });
   const appendCallRecord = (
@@ -886,7 +885,7 @@ export async function runWorkflow<T = unknown>(
       : preparedResume?.strategy === "live"
         ? { pair: () => ({ action: "live", reason: "strategy-live" }) }
         : undefined,
-    order: decisionOrder,
+    log: decisionLog,
     counter: { next: () => state.callSeq++ },
     sink: {
       call: appendCallRecord,
@@ -1745,7 +1744,6 @@ export async function runWorkflow<T = unknown>(
 
     // A call that fails before it runs or replays settles as an engine error.
     const failUnpaired = (error: unknown): never => {
-      stepSlot.release();
       closeStepWorktree(precreatedWorktree);
       if (!stepSlot.settled) {
         const errorRecord = projectRecordedError(error);
@@ -1770,23 +1768,11 @@ export async function runWorkflow<T = unknown>(
     };
 
     const accept = (row: SourceRow) => strictSnapshot(row.entry.result, `agent "${label}" replayed result`, label);
-    // A same-ID resume pairs at once, so its live call starts in this tick.
-    if (!preparedResume) {
-      let pairing: Pairing<unknown>;
-      try {
-        pairing = stepSlot.pair(accept) as Pairing<unknown>;
-      } catch (error) {
-        return failUnpaired(error);
-      }
-      return runPaired(pairing);
+    try {
+      return runPaired(stepSlot.pair(accept));
+    } catch (error) {
+      return failUnpaired(error);
     }
-    return (async () => {
-      try {
-        return runPaired(await stepSlot.pair(accept));
-      } catch (error) {
-        return failUnpaired(error);
-      }
-    })();
   };
 
   const step = (prompt: string, agentOptions: AgentOptions, codeSpec?: ExecSpec): Promise<unknown> => {
@@ -1867,17 +1853,9 @@ export async function runWorkflow<T = unknown>(
   const workflowImplementation = async (
     nameOrScript: string,
     childArgs: unknown,
-    resumeGate: DecisionTurn | undefined,
     nestedOptions: { place?: string; label?: string } | undefined,
     localOrdinal: number,
   ) => {
-    if (resumeGate) {
-      try {
-        await resumeGate.predecessor;
-      } finally {
-        resumeGate.release();
-      }
-    }
     throwIfAborted();
     const maxNestingDepth = options.maxNestingDepth ?? DEFAULT_MAX_NESTING_DEPTH;
     // Depth is this run's own level, so parallel siblings don't add up.
@@ -1935,11 +1913,10 @@ export async function runWorkflow<T = unknown>(
   };
 
   const workflowFn = (nameOrScript: string, childArgs?: unknown, nestedOptions?: { place?: string; label?: string }): Promise<unknown> => {
-    const resumeGate = decisionOrder.reserve();
     beginResumeActivity();
     let promise: Promise<unknown>;
     try {
-      promise = workflowImplementation(nameOrScript, childArgs, resumeGate, nestedOptions, ++nestedLocalSeq);
+      promise = workflowImplementation(nameOrScript, childArgs, nestedOptions, ++nestedLocalSeq);
     } catch (error) {
       promise = Promise.reject(error);
     }
@@ -2104,17 +2081,14 @@ export async function runWorkflow<T = unknown>(
     };
 
     try {
-      const paired = slot.pair((row) => {
+      const pairing = slot.pair((row) => {
         assertExplicitCheckpointDecision(row.entry);
         return strictSnapshot(row.entry.result, `checkpoint "${promptText}" replayed reply`);
       });
-      // Only a prepared resume waits for its turn. A same-ID resume pairs at once.
-      const pairing = paired instanceof Promise ? await paired : paired;
       if (pairing.action === "replay") return replayCheckpoint(pairing);
       if (preparedResume && options.confirm) options.onResumeFilesystemTainted?.();
       slot.live(pairing.reason);
     } catch (error) {
-      slot.release();
       settle({
         outcome: "error",
         origin: preparedResume ? "engine" : "journal-replay",
@@ -2358,7 +2332,7 @@ export async function runWorkflow<T = unknown>(
     calls: Object.freeze([...state.calls]) as WorkflowCallRecord[],
     callsAllocated: state.callSeq,
     ...(preparedResume
-      ? { resumeReport: buildResumeReport(preparedResume, decisionOrder.decisions()) }
+      ? { resumeReport: buildResumeReport(preparedResume, decisionLog.decisions()) }
       : {}),
     effectiveLimits,
     ...(abortSignaled ? { abortSignaled: true as const } : {}),

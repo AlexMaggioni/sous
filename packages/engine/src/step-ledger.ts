@@ -72,50 +72,24 @@ export interface SourceScope {
   pair<T>(call: OpenedCall, accept: (row: SourceRow) => T): Pairing<T>;
 }
 
-/** Lets one call decide after the calls opened before it. */
-export interface DecisionTurn {
-  /** Settles when every call opened before this one has decided. */
-  predecessor: Promise<void>;
-  /** Lets the next call decide. A second call does nothing. */
-  release(): void;
-}
-
-/** The resume decisions of a run, made in the order calls were opened. */
-export interface DecisionOrder {
-  /** A turn for the next call, or none when the run reports no decisions. */
-  reserve(): DecisionTurn | undefined;
+/**
+ * The resume decisions of a run. Calls pair when they open, so the decisions come in call order.
+ * A run that reports no decisions records none.
+ */
+export interface DecisionLog {
   /** Records a decision. A second decision for the same index is dropped. */
   decide(decision: WorkflowResumeCallDecision): void;
   decisions(): readonly WorkflowResumeCallDecision[];
 }
 
-export function createDecisionOrder(input: {
-  ordered: boolean;
+export function createDecisionLog(input: {
+  reports: boolean;
   onDecision?: (decision: WorkflowResumeCallDecision) => void;
-}): DecisionOrder {
+}): DecisionLog {
   const decisions = new Map<number, WorkflowResumeCallDecision>();
-  let tail = Promise.resolve();
   return {
-    reserve() {
-      if (!input.ordered) return undefined;
-      const predecessor = tail;
-      let resolveTurn!: () => void;
-      const turn = new Promise<void>((resolve) => {
-        resolveTurn = resolve;
-      });
-      tail = predecessor.then(() => turn, () => turn);
-      let released = false;
-      return {
-        predecessor,
-        release: () => {
-          if (released) return;
-          released = true;
-          resolveTurn();
-        },
-      };
-    },
     decide(decision) {
-      if (decisions.has(decision.index)) return;
+      if (!input.reports || decisions.has(decision.index)) return;
       const frozen = deepFreeze({ ...decision }) as WorkflowResumeCallDecision;
       decisions.set(frozen.index, frozen);
       input.onDecision?.(frozen);
@@ -130,16 +104,10 @@ export interface StepSlot {
   readonly index: number;
   /** The call row, once the call has settled. */
   readonly settled: WorkflowCallRecord | undefined;
-  /**
-   * Pairs the call with a recorded row. When the run reports decisions, it waits for the calls
-   * opened before it and returns a promise. A replay then reports its decision, and a live
-   * call reports it with `live`.
-   */
-  pair<T>(accept: (row: SourceRow) => T): Pairing<T> | Promise<Pairing<T>>;
-  /** Reports the live decision, when the source gave a reason, and lets the next call decide. */
+  /** Pairs the call with a recorded row. A replay reports its decision, a live call reports it with `live`. */
+  pair<T>(accept: (row: SourceRow) => T): Pairing<T>;
+  /** Reports the live decision, when the source gave a reason. */
   live(reason: WorkflowResumeCallLiveReason | undefined): void;
-  /** Lets the next call decide, for a call that failed before it decided. */
-  release(): void;
   /**
    * Writes the call row, and the journal row when the call returned a result. A call settles
    * once: a later settle returns the first row and writes nothing.
@@ -155,7 +123,7 @@ export interface StepLedger {
 export function createStepLedger(input: {
   /** The rows to pair with, or none. */
   source: SourceScope | undefined;
-  order: DecisionOrder;
+  log: DecisionLog;
   /** The scope's call sequence, shared by both kinds. */
   counter: { next(): number };
   sink: {
@@ -164,31 +132,13 @@ export function createStepLedger(input: {
     journal(entry: JournalEntry): void;
   };
 }): StepLedger {
-  const { source, order, sink } = input;
+  const { source, log, sink } = input;
   return {
-    decisions: () => order.decisions(),
+    decisions: () => log.decisions(),
     open(call) {
       const index = input.counter.next();
-      const turn = order.reserve();
       const opened: OpenedCall = { ...call, index };
       let settled: WorkflowCallRecord | undefined;
-
-      // A run that reports decisions reports a replay here and a live call through `live`.
-      const decide = <T>(pairing: Pairing<T>): Pairing<T> => {
-        if (turn && pairing.action === "replay") {
-          order.decide({
-            index,
-            kind: call.kind,
-            action: "replayed",
-            sourceRunId: pairing.row.sourceRunId,
-            recordedIndex: pairing.row.recordedIndex,
-            match: pairing.match,
-            ...(pairing.row.injected ? { checkpointInjected: true as const } : {}),
-          });
-          turn.release();
-        }
-        return pairing;
-      };
 
       return {
         index,
@@ -197,24 +147,22 @@ export function createStepLedger(input: {
         },
         pair(accept) {
           if (!source) return { action: "live" };
-          if (!turn) return decide(source.pair(opened, accept));
-          return (async () => {
-            try {
-              await turn.predecessor;
-              return decide(source.pair(opened, accept));
-            } catch (error) {
-              turn.release();
-              throw error;
-            }
-          })();
+          const pairing = source.pair(opened, accept);
+          if (pairing.action === "replay") {
+            log.decide({
+              index,
+              kind: call.kind,
+              action: "replayed",
+              sourceRunId: pairing.row.sourceRunId,
+              recordedIndex: pairing.row.recordedIndex,
+              match: pairing.match,
+              ...(pairing.row.injected ? { checkpointInjected: true as const } : {}),
+            });
+          }
+          return pairing;
         },
         live(reason) {
-          if (!turn) return;
-          if (reason) order.decide({ index, kind: call.kind, action: "live", reason });
-          turn.release();
-        },
-        release() {
-          turn?.release();
+          if (reason) log.decide({ index, kind: call.kind, action: "live", reason });
         },
         settle(terminal, entry) {
           if (settled) return settled;

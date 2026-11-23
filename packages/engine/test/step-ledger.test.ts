@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  createDecisionOrder,
+  createDecisionLog,
   createStepLedger,
   type OpenedCall,
   type Pairing,
@@ -28,16 +28,16 @@ function plantedSource(rows: Record<string, SourceRow>, seen: OpenedCall[] = [])
   };
 }
 
-function setup(input: { source?: SourceScope; ordered?: boolean }) {
+function setup(input: { source?: SourceScope; reports?: boolean }) {
   let seq = 0;
   let ordinal = 0;
   const calls: WorkflowCallRecord[] = [];
   const journal: JournalEntry[] = [];
   const reported: WorkflowResumeCallDecision[] = [];
-  const order = createDecisionOrder({ ordered: input.ordered ?? false, onDecision: (d) => reported.push(d) });
+  const log = createDecisionLog({ reports: input.reports ?? false, onDecision: (d) => reported.push(d) });
   const ledger = createStepLedger({
     source: input.source,
-    order,
+    log,
     counter: { next: () => seq++ },
     sink: {
       call: (record) => {
@@ -48,7 +48,7 @@ function setup(input: { source?: SourceScope; ordered?: boolean }) {
       journal: (row) => journal.push(row),
     },
   });
-  return { ledger, order, calls, journal, reported };
+  return { ledger, calls, journal, reported };
 }
 
 const row = (hash: string, recordedIndex: number): SourceRow => ({
@@ -62,7 +62,7 @@ describe("step ledger", () => {
     let seq = 4;
     const ledger = createStepLedger({
       source: undefined,
-      order: createDecisionOrder({ ordered: false }),
+      log: createDecisionLog({ reports: false }),
       counter: { next: () => seq++ },
       sink: { call: (record) => ({ ...record, scope: "run", settlementOrdinal: 1 }), journal: () => {} },
     });
@@ -98,7 +98,7 @@ describe("step ledger", () => {
   });
 
   it("runs every call live when there is no source", () => {
-    const { ledger, reported } = setup({ ordered: true });
+    const { ledger, reported } = setup({ reports: true });
     const pairing = ledger.open({ kind: "agent", hash: "a" }).pair(() => assert.fail("no row to accept"));
     assert.deepEqual(pairing, { action: "live" });
     assert.deepEqual(reported, []);
@@ -117,11 +117,11 @@ describe("step ledger", () => {
     assert.deepEqual(seen, [{ kind: "agent", hash: "a", inputsHash: "a-in", index: 0 }]);
   });
 
-  it("reports a replay with its source row, and an injected answer as injected", async () => {
+  it("reports a replay with its source row, and an injected answer as injected", () => {
     const injected: SourceRow = { ...row("q", 3), injected: true };
-    const { ledger, reported } = setup({ ordered: true, source: plantedSource({ a: row("a", 2), q: injected }) });
-    await ledger.open({ kind: "agent", hash: "a" }).pair((r) => r);
-    await ledger.open({ kind: "checkpoint", hash: "q" }).pair((r) => r);
+    const { ledger, reported } = setup({ reports: true, source: plantedSource({ a: row("a", 2), q: injected }) });
+    ledger.open({ kind: "agent", hash: "a" }).pair((r) => r);
+    ledger.open({ kind: "checkpoint", hash: "q" }).pair((r) => r);
     assert.deepEqual(reported, [
       { index: 0, kind: "agent", action: "replayed", sourceRunId: "source", recordedIndex: 2, match: "path-hash" },
       {
@@ -132,76 +132,47 @@ describe("step ledger", () => {
     assert.ok(Object.isFrozen(reported[0]));
   });
 
-  it("reports a live call through live, once, and only with a reason", async () => {
-    const { ledger, reported } = setup({ ordered: true, source: plantedSource({}) });
+  it("reports a live call through live, once, and only with a reason", () => {
+    const { ledger, reported } = setup({ reports: true, source: plantedSource({}) });
     const first = ledger.open({ kind: "agent", hash: "x" });
-    const pairing = await first.pair((r) => r);
+    const pairing = first.pair((r) => r);
     assert.deepEqual(pairing, { action: "live", reason: "not-recorded" });
     first.live("not-recorded");
     first.live("strategy-live");
     const second = ledger.open({ kind: "agent", hash: "y" });
-    await second.pair((r) => r);
+    second.pair((r) => r);
     second.live(undefined);
     assert.deepEqual(reported, [{ index: 0, kind: "agent", action: "live", reason: "not-recorded" }]);
     assert.deepEqual(ledger.decisions(), reported);
   });
 
-  it("lets a call decide only after the calls opened before it", async () => {
-    const order: string[] = [];
-    const source: SourceScope = {
-      pair(call) {
-        order.push(call.hash);
-        return { action: "live", reason: "not-recorded" };
-      },
-    };
-    const { ledger, reported } = setup({ ordered: true, source });
-    const first = ledger.open({ kind: "agent", hash: "first" });
-    const second = ledger.open({ kind: "agent", hash: "second" });
-    const secondPairing = second.pair((r) => r);
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual(order, []);
-    await first.pair((r) => r);
-    assert.deepEqual(order, ["first"]);
-    first.live("not-recorded");
-    await secondPairing;
-    second.live("not-recorded");
-    assert.deepEqual(order, ["first", "second"]);
-    assert.deepEqual(reported.map((d) => d.index), [0, 1]);
-  });
-
-  it("lets the next call decide when accept throws, and reports nothing for the failed call", async () => {
-    const { ledger, reported } = setup({ ordered: true, source: plantedSource({ a: row("a", 0), b: row("b", 1) }) });
+  it("reports nothing for a call whose accept throws, and pairs the next call", () => {
+    const { ledger, reported } = setup({ reports: true, source: plantedSource({ a: row("a", 0), b: row("b", 1) }) });
     const bad = ledger.open({ kind: "checkpoint", hash: "a" });
     const next = ledger.open({ kind: "agent", hash: "b" });
-    await assert.rejects(
-      Promise.resolve(bad.pair(() => {
+    assert.throws(
+      () => bad.pair(() => {
         throw new Error("not an explicit answer");
-      })),
+      }),
       /not an explicit answer/,
     );
-    const pairing = await next.pair((r) => r.entry.result);
+    const pairing = next.pair((r) => r.entry.result);
     assert.equal(pairing.action === "replay" && pairing.value, "b done");
     assert.deepEqual(reported.map((d) => [d.index, d.action]), [[1, "replayed"]]);
   });
 
-  it("lets the next call decide when a call fails before it pairs", async () => {
-    const { ledger, reported } = setup({ ordered: true, source: plantedSource({ b: row("b", 0) }) });
-    const failed = ledger.open({ kind: "agent", hash: "a" });
-    const next = ledger.open({ kind: "agent", hash: "b" });
-    failed.release();
-    failed.release();
-    await next.pair((r) => r);
-    assert.deepEqual(reported.map((d) => d.index), [1]);
-  });
-
   it("keeps the first decision for an index", () => {
-    const order = createDecisionOrder({ ordered: true });
-    order.decide({ index: 0, kind: "agent", action: "live", reason: "not-recorded" });
-    order.decide({ index: 0, kind: "agent", action: "live", reason: "strategy-live" });
-    assert.deepEqual(order.decisions(), [{ index: 0, kind: "agent", action: "live", reason: "not-recorded" }]);
+    const log = createDecisionLog({ reports: true });
+    log.decide({ index: 0, kind: "agent", action: "live", reason: "not-recorded" });
+    log.decide({ index: 0, kind: "agent", action: "live", reason: "strategy-live" });
+    assert.deepEqual(log.decisions(), [{ index: 0, kind: "agent", action: "live", reason: "not-recorded" }]);
   });
 
-  it("gives no turn when the run reports no decisions", () => {
-    assert.equal(createDecisionOrder({ ordered: false }).reserve(), undefined);
+  it("records nothing when the run reports no decisions", () => {
+    const reported: WorkflowResumeCallDecision[] = [];
+    const log = createDecisionLog({ reports: false, onDecision: (d) => reported.push(d) });
+    log.decide({ index: 0, kind: "agent", action: "live", reason: "not-recorded" });
+    assert.deepEqual(log.decisions(), []);
+    assert.deepEqual(reported, []);
   });
 });
