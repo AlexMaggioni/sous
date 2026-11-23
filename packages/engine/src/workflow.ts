@@ -39,6 +39,7 @@ import {
   WorkflowErrorCode,
   wrapError,
 } from "./errors.js";
+import { afterFailedAttempt } from "./failed-attempt.js";
 import { createWorkflowLogger } from "./runs/persistence/logger.js";
 import { parseModelRoutingFromMeta, resolveModelForPhase } from "./model-routing.js";
 import { projectRecordedError } from "./recorded-error.js";
@@ -108,15 +109,6 @@ export interface WorkflowAgentOptions {
    */
   defaultModel?: string;
 }
-
-/** Codes the host already turns into a pause, a stop or a reply. A failed step with one of them does not pause the run on it. */
-const HOST_HANDLED_CODES: ReadonlySet<WorkflowErrorCode> = new Set([
-  WorkflowErrorCode.PROVIDER_USAGE_LIMIT,
-  WorkflowErrorCode.AUTH_REQUIRED,
-  WorkflowErrorCode.CHECKPOINT_REQUIRED,
-  WorkflowErrorCode.PAUSE_REQUESTED,
-  WorkflowErrorCode.WORKFLOW_ABORTED,
-]);
 
 /** The message as a sentence, with one period at its end. */
 const sentence = (message: string) => (/[.!?]$/.test(message.trimEnd()) ? message.trimEnd() : `${message}.`);
@@ -1548,10 +1540,17 @@ export async function runWorkflow<T = unknown>(
             return result;
           } catch (error) {
             if (!slot.sealed) sealAttempt(slot);
-            const cancellationReason = attemptController
-              ? agentCancellationReason(attemptController.signal)
-              : undefined;
-            if (cancellationReason) {
+            const failed = afterFailedAttempt({
+              hostStop: attemptController ? agentCancellationReason(attemptController.signal) : undefined,
+              runStopped: signal.aborted,
+              pausePending: pauseRequested(),
+              thrown: error,
+              label,
+              attempt,
+              maxAttempts,
+            });
+            if (failed.next === "host-stopped") {
+              const cancellationReason = failed.reason;
               logger.error(
                 `agent ${label} attempt ${attempt}/${maxAttempts} cancelled by host: ${cancellationReason.message}`,
               );
@@ -1566,22 +1565,22 @@ export async function runWorkflow<T = unknown>(
                 ...(typeof why === "string" ? { pauseReason: why } : {}),
               }));
             }
-            if (signal.aborted) {
+            if (failed.next === "run-stopped") {
               emitFailure(error, attemptsRan > 0 ? "runner" : "engine", "error", slot, true);
               throw error;
             }
-            if (pauseRequested()) {
+            if (failed.next === "pause-pending") {
               // Either the attempt was refused at its start, or it failed while a pause was
               // pending and must not retry now. Both are interrupted rows that run again on resume.
               emitFailure(error, attemptsRan > 0 ? "runner" : "engine", "error", slot, true);
               throw pauseError();
             }
 
-            const workflowError = wrapError(error, { agentLabel: label });
+            const workflowError = failed.error;
             logger.error(`agent ${label} attempt ${attempt}/${maxAttempts} failed: ${workflowError.message}`);
             recordTokens(null, slot.usage);
 
-            if (workflowError.recoverable && attempt < maxAttempts) {
+            if (failed.next === "retry") {
               log(
                 `agent "${label}" attempt ${attempt}/${maxAttempts} failed: ${workflowError.code} ${workflowError.message}; retrying`,
               );
@@ -1591,7 +1590,7 @@ export async function runWorkflow<T = unknown>(
             // A step that fails on its last try, or in a way a retry cannot fix, pauses the whole
             // run. Steps already running finish and journal, and nothing new starts. The user fixes
             // the cause and resumes: the finished steps replay and this one runs again.
-            if (!HOST_HANDLED_CODES.has(workflowError.code)) {
+            if (failed.next === "pause-run") {
               const tries = workflowError.recoverable ? `after ${maxAttempts} tr${maxAttempts === 1 ? "y" : "ies"}` : "and a retry cannot fix it";
               const message = `step "${label}" failed ${tries}: ${workflowError.message}`;
               log(`${sentence(message)} The run pauses: fix the cause and resume it.`);
@@ -1601,7 +1600,7 @@ export async function runWorkflow<T = unknown>(
                 ...(workflowError.details !== undefined ? { details: workflowError.details } : {}),
               }));
             }
-            if (workflowError.recoverable) {
+            if (failed.next === "return-null") {
               log(
                 `agent "${label}" exhausted ${maxAttempts} attempt${maxAttempts === 1 ? "" : "s"}: ${workflowError.code} ${workflowError.message}`,
               );
