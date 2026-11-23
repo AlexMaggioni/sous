@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
+import { lookupAgents } from "../src/agents.js";
+import { createSteps } from "../src/steps/steps.js";
 import { runWorkflow } from "../src/workflow.js";
 
 test("parallel completion order and dynamic branches preserve their actual routes", async () => {
@@ -61,6 +63,33 @@ return agent("explicit", { model: "opencode" });`, {
     rmSync(home, { recursive: true, force: true });
   }
   assert.deepEqual(routes, ["codex", "claude/defined", "pi/provider/small", undefined, "claude", "opencode"]);
+});
+
+test("routing through the steps module resolves definitions, phase defaults and explicit routes", async () => {
+  const routes: Array<string | undefined> = [];
+  const root = mkdtempSync(join(tmpdir(), "explicit-routing-steps-"));
+  const projectDir = join(root, "project");
+  mkdirSync(join(projectDir, ".rulesync", "subagents"), { recursive: true });
+  writeFileSync(join(projectDir, ".rulesync", "subagents", "reviewer.md"), "---\nname: reviewer\ndescription: reviews\nclaudecode:\n  model: defined\n---\nReview\n");
+  const env = { CLAUDE_CONFIG_DIR: join(root, "claude"), CODEX_HOME: join(root, "codex"), XDG_CONFIG_HOME: join(root, "config") };
+  try {
+    await runWorkflow(`export const meta = { name: "route-sources", description: "Effective route sources", model: "codex", phases: [{ title: "General" }, { title: "Review", model: "claude" }] };
+await agent("workflow default");
+await agent("definition", { agentType: "reviewer" });
+phase("Review");
+await agent("phase");
+return agent("explicit", { model: "claude/explicit" });`, {
+      agent: createSteps({
+        cwd: projectDir,
+        inner: { async run(_prompt, options) { routes.push(options.model); return "ok"; } },
+        agents: lookupAgents({ projectDir, rulesyncGlobal: join(root, "aiglobal"), defaultHarness: "claude", env }),
+      }),
+      persistLogs: false,
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+  assert.deepEqual(routes, ["codex", "claude/defined", "claude", "claude/explicit"]);
 });
 
 test("aggregator selectors fail before dispatch", async () => {

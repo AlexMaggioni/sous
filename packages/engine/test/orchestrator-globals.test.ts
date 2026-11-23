@@ -6,13 +6,14 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { TSchema } from "typebox";
 import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
-import type { AgentRunner } from "../src/steps/agent-runner.js";
+import type { AgentRunner, StepAsk, StepRoute } from "../src/steps/agent-runner.js";
 import type { JournalEntry } from "../src/workflow-result.js";
 import type { AgentDefinition, AgentRegistry } from "../src/agent-registry.js";
 import { parseDurationSeconds } from "../src/orchestrator-globals.js";
 import { runWorkflow } from "../src/workflow.js";
 import { createSteps } from "../src/steps/steps.js";
 import { homePaths } from "../src/runs/home.js";
+import { lookupAgents, lookupMcpServers } from "../src/agents.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
 // Code steps, questions, breakpoints, choose(), and the per-step options.
@@ -266,6 +267,136 @@ return await agent("review", { agentType: "reviewer" });`);
       assert.equal(calls[0]!.options.model, "claude/haiku");
       assert.match(String(calls[0]!.options.instructions), /Answer FROM-HOST\./);
       assert.ok(asked.length > 0 && asked.every((folder) => folder === cwd));
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  // The same through the steps module: the agent comes from an agent file, and createSteps routes the step.
+  it("route timeout, effort, skills and MCP names through the steps module, with the step's lists replacing the agent's", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "agent-options-"));
+    mkdirSync(join(cwd, ".rulesync", "subagents"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".rulesync", "subagents", "reviewer.md"),
+      "---\nname: reviewer\ndescription: reviews\ntimeout: 10m\neffort: high\nskills: [review, tdd]\nmcp: [linear]\nclaudecode:\n  model: haiku\n---\nYou review code.\n",
+    );
+    writeFileSync(join(cwd, ".rulesync", "mcp.jsonc"), `{ "mcpServers": { "linear": { "command": "npx", "args": [] } } }`);
+    const settings = {
+      projectDir: cwd,
+      rulesyncGlobal: join(cwd, "aiglobal"),
+      defaultHarness: "claude" as const,
+      env: { CLAUDE_CONFIG_DIR: join(cwd, "claude"), CODEX_HOME: join(cwd, "codex"), XDG_CONFIG_HOME: join(cwd, "config") },
+    };
+    const calls: Call[] = [];
+    const steps = createSteps({
+      cwd,
+      inner: {
+        async run(prompt, options) {
+          calls.push({ prompt, options: { ...options } as Record<string, unknown> });
+          return "ok";
+        },
+      },
+      agents: lookupAgents(settings),
+      mcp: lookupMcpServers(settings, {}),
+    });
+    // The engine asks the steps module for each step's route. Keep each ask and route.
+    const asks: StepAsk[] = [];
+    const routes: StepRoute[] = [];
+    const agent: AgentRunner = {
+      ...steps,
+      route(ask) {
+        const route = steps.route(ask);
+        asks.push(ask);
+        routes.push(route);
+        return route;
+      },
+    };
+    const script = `export const meta = { name: 'opts', description: 'opts' }
+await agent('review A', { label: 'a', agentType: 'reviewer' })
+await agent('review B', { label: 'b', agentType: 'reviewer', skills: ['security'], mcp: [], effort: 'low', timeout: 30 })
+return 1`;
+    try {
+      await runWorkflow(script, { agent, cwd, persistLogs: false });
+      const [a, b] = routes;
+      assert.equal(a!.plan?.timeoutMs, 600_000);
+      assert.equal(a!.plan?.effort, "high");
+      assert.deepEqual(a!.plan?.skills, ["review", "tdd"]);
+      assert.deepEqual(a!.plan?.mcp, ["linear"]);
+      assert.equal(asks[0]!.agentType, "reviewer");
+      assert.equal(b!.plan?.timeoutMs, 30_000);
+      assert.equal(b!.plan?.effort, "low");
+      assert.deepEqual(b!.plan?.skills, ["security"]);
+      assert.deepEqual(b!.plan?.mcp, []);
+      // The ask holds the step's own values apart from the agent's. The script's lists come from its own context, so compare copies.
+      assert.deepEqual([asks[0]!.effort, asks[0]!.skills, asks[0]!.mcp, asks[0]!.timeout], [undefined, undefined, undefined, undefined]);
+      assert.deepEqual(structuredClone([asks[1]!.effort, asks[1]!.skills, asks[1]!.mcp, asks[1]!.timeout]), ["low", ["security"], [], 30]);
+      // The runner gets the planned values, and the MCP server each name stands for.
+      assert.deepEqual([calls[0]!.options.effort, calls[0]!.options.skills], ["high", ["review", "tdd"]]);
+      assert.deepEqual((calls[0]!.options.mcpServers as Array<{ name: string }>).map((server) => server.name), ["linear"]);
+      assert.deepEqual([calls[1]!.options.effort, calls[1]!.options.skills, calls[1]!.options.mcpServers], ["low", ["security"], undefined]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("stop the step of an agent no file has, with its name, through the steps module", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "agent-missing-"));
+    const env = { CLAUDE_CONFIG_DIR: join(cwd, "claude"), CODEX_HOME: join(cwd, "codex"), XDG_CONFIG_HOME: join(cwd, "config") };
+    const calls: Call[] = [];
+    const steps = createSteps({
+      cwd,
+      inner: {
+        async run(prompt, options) {
+          calls.push({ prompt, options: { ...options } as Record<string, unknown> });
+          return "ok";
+        },
+      },
+      agents: lookupAgents({ projectDir: cwd, rulesyncGlobal: join(cwd, "aiglobal"), defaultHarness: "claude", env }),
+    });
+    const asks: StepAsk[] = [];
+    const agent: AgentRunner = {
+      ...steps,
+      route(ask) {
+        asks.push(ask);
+        return steps.route(ask);
+      },
+    };
+    const script = `export const meta = { name: 'ghost', description: 'ghost' }
+await agent('go', { label: 'g', agentType: 'nobody', model: 'codex' })
+return 1`;
+    try {
+      await assert.rejects(runWorkflow(script, { agent, cwd, persistLogs: false }), /step "g": no agent "nobody"\./);
+      assert.deepEqual([asks[0]!.agentType, asks[0]!.model], ["nobody", "codex"]);
+      assert.equal(calls.length, 0, "the step never reaches the runner");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("take the host's agents from the steps module's lookup of the run's folder", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "load-agents-"));
+    mkdirSync(join(cwd, ".rulesync", "subagents"), { recursive: true });
+    writeFileSync(join(cwd, ".rulesync", "subagents", "reviewer.md"), "---\nname: reviewer\ndescription: reviews\nclaudecode:\n  model: haiku\n---\nAnswer FROM-HOST.\n");
+    const env = { CLAUDE_CONFIG_DIR: join(cwd, "claude"), CODEX_HOME: join(cwd, "codex"), XDG_CONFIG_HOME: join(cwd, "config") };
+    // No session ref: a stored run checks a ref's fields, and this test is about the agents.
+    const calls: Call[] = [];
+    const agent = createSteps({
+      cwd,
+      inner: {
+        async run(prompt, options) {
+          calls.push({ prompt, options: { ...options } as Record<string, unknown> });
+          return "ok";
+        },
+      },
+      agents: lookupAgents({ projectDir: cwd, rulesyncGlobal: join(cwd, "aiglobal"), defaultHarness: "claude", env }),
+    });
+    try {
+      const manager = new WorkflowManager({ cwd, persistenceRoot: join(cwd, "store"), agent });
+      const run = await manager.runSync(`export const meta = { name: "host-agents", description: "host agents" };
+return await agent("review", { agentType: "reviewer" });`);
+      assert.equal(run.status, "completed");
+      assert.equal(calls[0]!.options.model, "claude/haiku");
+      assert.match(String(calls[0]!.options.instructions), /Answer FROM-HOST\./);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
