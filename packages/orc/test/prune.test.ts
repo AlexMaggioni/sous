@@ -1,20 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { writeFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { loadRecord, type HomePaths } from "@orchestrator/engine";
 import { createRun, plantState, testHome, updateRecord } from "@orchestrator/engine/testing";
 import { orc } from "./orc.js";
 
 // orc prune removes the finished runs older than a number of days.
-
-// The agent lookup reads the harnesses' home folders. These tests give it empty ones.
-const harnessHome = mkdtempSync(join(tmpdir(), "orc-harness-home-"));
-process.env.CLAUDE_CONFIG_DIR = join(harnessHome, ".claude");
-process.env.CODEX_HOME = join(harnessHome, ".codex");
-process.env.XDG_CONFIG_HOME = join(harnessHome, ".config");
-delete process.env.AGENTPRISM_DEFAULT_BACKEND;
 
 const job = `export const meta = { name: 'job', description: 'j' }\nreturn 'done'`;
 const DAY = 86_400_000;

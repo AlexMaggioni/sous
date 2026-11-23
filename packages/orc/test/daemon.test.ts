@@ -6,7 +6,6 @@ import { daemonLog, daemonPid, type HomePaths } from "@orchestrator/engine";
 import { processAlive, testHome } from "@orchestrator/engine/testing";
 import { cliFile } from "../src/cli.js";
 import { orc, waitFor } from "./orc.js";
-import "./harness-home.js";
 
 // orc daemon start, stop and status. The commands that need no process run in this process, on a
 // pid file that names a stand-in. One test starts the real service from the built orc.

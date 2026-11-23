@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { testHome } from "@orchestrator/engine/testing";
 import { orc } from "./orc.js";
-import "./harness-home.js";
 
 // orc check and orc workflows with --json, and orc check --dry-run with an answers file. The
 // project is no git repo, so a dry run works in a scratch folder.

@@ -8,7 +8,6 @@ import { ensureHome, homePaths, type HomePaths } from "@orchestrator/engine";
 import { readState, tick, workflowProjectPaths } from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
 import { capture, orc, waitFor } from "./orc.js";
-import "./harness-home.js";
 
 // orc's reads write nothing. The home below is planted with raw writes, the way the worker and
 // the engine leave it, so the test also shows that orc reads today's files.

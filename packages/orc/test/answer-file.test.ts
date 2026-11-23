@@ -5,7 +5,6 @@ import { describe, it } from "node:test";
 import { resumeRun, runQuestions, startRun } from "@orchestrator/engine";
 import { fakeRunner, inProcess, readState, testHome } from "@orchestrator/engine/testing";
 import { orc, waitFor } from "./orc.js";
-import "./harness-home.js";
 
 // An answer file that holds no value. A person or a script may write one by hand, and the run
 // must not take it for an answer.

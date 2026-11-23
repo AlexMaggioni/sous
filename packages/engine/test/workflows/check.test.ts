@@ -1,19 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { checkWorkflow } from "../../src/workflows/check.js";
 import { setup } from "../runs/fixture.js";
 
 // `orc check` without orc: the problems and notes it prints for a workflow.
-
-// The agent lookup reads the harnesses' home folders. These tests give it empty ones.
-const harnessHome = mkdtempSync(join(tmpdir(), "engine-check-harness-home-"));
-process.env.CLAUDE_CONFIG_DIR = join(harnessHome, ".claude");
-process.env.CODEX_HOME = join(harnessHome, ".codex");
-process.env.XDG_CONFIG_HOME = join(harnessHome, ".config");
-delete process.env.AGENTPRISM_DEFAULT_BACKEND;
 
 function write(file: string, content: string): void {
   mkdirSync(dirname(file), { recursive: true });

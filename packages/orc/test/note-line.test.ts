@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import { listRecords, logFile } from "@orchestrator/engine";
 import { testHome } from "@orchestrator/engine/testing";
 import { orc } from "./orc.js";
-import "./harness-home.js";
 
 // The note line in a run's log: a step asks for something its program cannot do, and the log
 // says so beside the step. The run is a worker process of its own on the fake programs in

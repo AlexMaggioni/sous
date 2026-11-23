@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { resumeRun, runQuestions, startRun } from "@orchestrator/engine";
@@ -9,13 +8,6 @@ import { orc } from "./orc.js";
 
 // A workflow's time limit reached while a code step runs, and while no step runs. runs.test.ts
 // has the limit reached while an agent step runs.
-
-// The agent lookup reads the harnesses' home folders. These tests give it empty ones.
-const harnessHome = mkdtempSync(join(tmpdir(), "orc-harness-home-"));
-process.env.CLAUDE_CONFIG_DIR = join(harnessHome, ".claude");
-process.env.CODEX_HOME = join(harnessHome, ".codex");
-process.env.XDG_CONFIG_HOME = join(harnessHome, ".config");
-delete process.env.AGENTPRISM_DEFAULT_BACKEND;
 
 describe("time limit", () => {
   it("reached in a code step, stops it and pauses the run on it, and resume runs the code step again", async () => {

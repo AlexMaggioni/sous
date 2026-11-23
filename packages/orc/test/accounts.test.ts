@@ -35,7 +35,6 @@ import {
 import { cmdAccount } from "../src/account-cli.js";
 import { main } from "../src/cli.js";
 import { orc, waitFor } from "./orc.js";
-import "./harness-home.js";
 
 // orc's accounts: one per program, the program's own login by default. Tokens here are made up.
 

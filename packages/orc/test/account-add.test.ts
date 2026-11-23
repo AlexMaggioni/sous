@@ -6,7 +6,6 @@ import { listAccounts } from "@orchestrator/engine";
 import { testHome } from "@orchestrator/engine/testing";
 import { cmdAccount } from "../src/account-cli.js";
 import { capture } from "./orc.js";
-import "./harness-home.js";
 
 // orc account add in a terminal reads the token as the person types or pastes it, and shows
 // nothing of it. The terminal here is a stream that says it is one and records how orc sets it.

@@ -5,7 +5,6 @@ import { describe, it } from "node:test";
 import { loadRecord, logFile, type HomePaths } from "@orchestrator/engine";
 import { fakeRunner, inProcess, testHome } from "@orchestrator/engine/testing";
 import { orc } from "./orc.js";
-import "./harness-home.js";
 
 // orc run, orc resume and orc rerun, through main, with a launcher that runs each worker in this
 // process. They start their workers the way they do for a user, with a fake runner for the steps.

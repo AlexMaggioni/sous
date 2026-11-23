@@ -7,7 +7,6 @@ import { logFile, runQuestions, startRun, type HomePaths, type RunQuestion } fro
 import { inProcess, testHome, type InnerRunner } from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
 import { capture, orc, waitFor } from "./orc.js";
-import "./harness-home.js";
 
 // How orc shows a question, takes a reply and writes the answer, through its commands and the
 // prompt of `orc wait` in a terminal.

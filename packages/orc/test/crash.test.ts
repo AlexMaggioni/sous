@@ -1,22 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { createRun, fakeRunner, inProcess, readState, testHome } from "@orchestrator/engine/testing";
 import { orc } from "./orc.js";
 
 // A run whose worker process dies mid-step, saved by today's code, and resumed through orc.
-
-// The agent lookup reads the harnesses' home folders. These tests give it empty ones. The worker
-// process inherits them.
-const harnessHome = mkdtempSync(join(tmpdir(), "orc-harness-home-"));
-process.env.CLAUDE_CONFIG_DIR = join(harnessHome, ".claude");
-process.env.CODEX_HOME = join(harnessHome, ".codex");
-process.env.XDG_CONFIG_HOME = join(harnessHome, ".config");
-delete process.env.AGENTPRISM_DEFAULT_BACKEND;
 
 /** Wait until the process prints `marker`. */
 async function printed(child: ChildProcess, marker: string): Promise<void> {

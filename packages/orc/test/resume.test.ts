@@ -5,7 +5,6 @@ import { describe, it } from "node:test";
 import { rerunRun, resumeRun, runQuestions, startRun, type HomePaths, type RunRecord } from "@orchestrator/engine";
 import { fakeRunner, inProcess, plantState, readState, testHome, writeAnswer, WorkflowError, WorkflowErrorCode, type PersistedRunState } from "@orchestrator/engine/testing";
 import { orc, waitFor } from "./orc.js";
-import "./harness-home.js";
 
 // Which steps run again when a run resumes. Each test pauses a run with a fake agent, resumes it
 // as `orc resume` does, and checks the prompts the fake gets on the resume. A failed step,

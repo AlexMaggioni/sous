@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { CALL_PATH_FORMAT } from "../../src/call-path.js";
@@ -16,13 +15,6 @@ import { setup } from "./fixture.js";
 
 // The call hash decides which steps replay when a run resumes. These pins hold the hash of each
 // kind of step, read from the saved journal of a whole run, so a change that moves one shows.
-
-// The agent lookup reads the harnesses' home folders. These tests give it empty ones.
-const harnessHome = mkdtempSync(join(tmpdir(), "engine-pin-harness-home-"));
-process.env.CLAUDE_CONFIG_DIR = join(harnessHome, ".claude");
-process.env.CODEX_HOME = join(harnessHome, ".codex");
-process.env.XDG_CONFIG_HOME = join(harnessHome, ".config");
-delete process.env.AGENTPRISM_DEFAULT_BACKEND;
 
 function write(file: string, content: string): void {
   mkdirSync(dirname(file), { recursive: true });

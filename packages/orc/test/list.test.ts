@@ -4,7 +4,6 @@ import { loadRecord } from "@orchestrator/engine";
 import { createRun, testHome, updateRecord } from "@orchestrator/engine/testing";
 import { describe, it } from "node:test";
 import { orc } from "./orc.js";
-import "./harness-home.js";
 
 // orc list: how many runs it shows, and the place column. The runs here never start, since the
 // list reads only their records.

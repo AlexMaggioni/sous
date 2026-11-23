@@ -6,7 +6,6 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { testHome } from "@orchestrator/engine/testing";
 import { orc } from "./orc.js";
-import "./harness-home.js";
 
 // orc doctor on the fake programs in test/fakes: what it prints when a check fails, and what
 // --live sends. The home's config points at the fakes, so no real Claude Code or Codex runs.

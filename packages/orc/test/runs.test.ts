@@ -38,7 +38,6 @@ import {
 } from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
 import { orc, waitFor } from "./orc.js";
-import "./harness-home.js";
 
 // Whole runs in this process, with a fake agent runner, the way `orc run` drives them.
 

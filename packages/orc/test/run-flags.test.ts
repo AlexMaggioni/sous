@@ -3,7 +3,6 @@ import { describe, it } from "node:test";
 import { listRecords, loadRecord } from "@orchestrator/engine";
 import { fakeRunner, inProcess, testHome } from "@orchestrator/engine/testing";
 import { orc } from "./orc.js";
-import "./harness-home.js";
 
 // orc run --model, --set and --concurrency, through main with a launcher that runs the worker in
 // this process. The fake runner notes what each step got, and how many steps ran at once.
