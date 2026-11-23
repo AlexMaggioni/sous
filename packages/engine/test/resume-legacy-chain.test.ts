@@ -30,7 +30,7 @@ test("a markerless 0.23 chained journal accepts persisted ancestors but excludes
     assert.match(legacyFixture, /"budgetDebit"/);
     assert.match(legacyFixture, /"logicalBudgetDebit"/);
     const ancestorRunId = source.journal?.[0]?.scope;
-    assert.equal(typeof ancestorRunId, "string");
+    assert.ok(typeof ancestorRunId === "string", "the source run records a nested scope");
     source.effectiveCwd = cwd;
     source.calls = source.calls?.map((call) => ({ ...call, scope: ancestorRunId }));
     source.journal?.push({

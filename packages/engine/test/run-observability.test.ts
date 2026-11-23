@@ -44,7 +44,7 @@ function memoryPersistence() {
 }
 
 function runnerFrom(impl: (prompt: string, options: StepRequest) => unknown | Promise<unknown>): AgentRunner {
-  return { run: (prompt: string, options?: StepRequest) => Promise.resolve(impl(prompt, options ?? {})) } as AgentRunner;
+  return { run: (prompt: string, options: StepRequest) => Promise.resolve(impl(prompt, options)) };
 }
 
 function deferred<T>() {

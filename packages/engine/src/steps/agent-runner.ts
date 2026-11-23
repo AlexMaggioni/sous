@@ -75,4 +75,15 @@ export interface AgentRunner {
    * with no agent, and the agent's name as a hint in the instructions.
    */
   route?(ask: StepAsk): StepRoute;
+
+  /**
+   * Whether a run that paused for a lost login can resume. WorkflowManager asks it before it
+   * resumes such a run. A runner without it cannot confirm, so the run pauses again.
+   */
+  auth?: LoginCheck;
+}
+
+/** The engine asks it before it resumes a run that paused for a lost login. */
+export interface LoginCheck {
+  canResume(harness: string): boolean;
 }

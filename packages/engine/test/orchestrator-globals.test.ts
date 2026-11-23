@@ -85,6 +85,7 @@ return { a, b, c, d, e }`;
     assert.equal(out.d!.stdout, "args x\n");
     assert.deepEqual(out.d!.result, { y: 1 });
     assert.equal(out.e!.code, 0);
+    assert.ok(result.tokenUsage, "the run reports its token usage");
     assert.equal(result.tokenUsage.input + result.tokenUsage.output, 0, "a code step uses no model");
   });
 

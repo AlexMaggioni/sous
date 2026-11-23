@@ -95,5 +95,5 @@ return await pending;`, {
     persistLogs: false,
   });
   assert.deepEqual(seen, [{ reasoning_effort: "high" }]);
-  assert.deepEqual(result.calls[0].configOptionsRequested, { reasoning_effort: "high" });
+  assert.deepEqual(result.calls?.[0].configOptionsRequested, { reasoning_effort: "high" });
 });

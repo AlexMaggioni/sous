@@ -258,7 +258,7 @@ return { prefix, tail }`;
       assert.equal(gated.accepted, true);
       await assert.rejects(gated.promise, (error: unknown) =>
         error instanceof WorkflowError && error.code === WorkflowErrorCode.AUTH_REQUIRED);
-      assert.deepEqual(runner.directives, [], "cold gate re-pauses before executeRun");
+      assert.deepEqual<Array<StepRequest["continueFromSession"]>>(runner.directives, [], "cold gate re-pauses before executeRun");
 
       runner.authReady = true;
       const resumed = await manager.resumeInBackground("auth-source");

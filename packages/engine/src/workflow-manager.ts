@@ -2608,16 +2608,12 @@ export class WorkflowManager extends EventEmitter {
     // Cold-resume re-arm (§2.13). An "auth_required" pause is resumable ONLY when the auth
     // survived: warm resume (same process, credentials still in the runner's AuthStore) or a
     // disk-backed intent (native store / env re-read by a fresh spawn). We consult the INJECTED
-    // runner's auth controller by DUCK-TYPING — `runner.auth.canResume(backendId)` — never a
-    // package import (the engine's AgentRunner seam knows nothing of auth). An in-process
+    // runner's optional auth controller, `runner.auth.canResume(backendId)`. An in-process
     // (gateway) intent is gone after a cold process, so canResume is false and we
     // re-pause immediately with a re-supply message rather than re-running into the same wall.
     // A runner with no auth controller (default-off host) cannot confirm resumability -> re-pause.
     if (persisted.pauseReason === "auth_required") {
-      const agent = exec.agent ?? this.agent;
-      const authController = (
-        agent as { auth?: { canResume?: (backendId: string) => boolean } } | undefined
-      )?.auth;
+      const authController = (exec.agent ?? this.agent)?.auth;
       const backendId = persisted.authContext?.backendId ?? "";
       const canResume = typeof authController?.canResume === "function" && authController.canResume(backendId);
       if (!canResume) {

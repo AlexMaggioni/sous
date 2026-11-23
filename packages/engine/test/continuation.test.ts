@@ -12,7 +12,7 @@ import type {
   WorkflowCallRecord,
   WorkflowRunFallback,
 } from "../src/workflow-result.js";
-import type { StepRequest } from "../src/steps/agent-run.js";
+import type { ContinuationAttempt } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { ContinuationCandidate, PreparedContinuation, PreparedResume } from "../src/resume.js";
 import { runWorkflow } from "../src/workflow.js";
@@ -114,7 +114,7 @@ function legacyInputsHash(overrides: Record<string, unknown> = {}): string {
 
 function continuedRunner(
   candidate: ContinuationCandidate,
-  continuation: NonNullable<Parameters<NonNullable<StepRequest["onResultProvenance"]>>[0]>["continuation"] = {
+  continuation: ContinuationAttempt = {
     reattached: true,
     method: "resume",
   },

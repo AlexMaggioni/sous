@@ -4,14 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { lookupAgents } from "../src/agents.js";
+import type { PlannedRequest } from "../src/steps/agent-run.js";
 import { createSteps } from "../src/steps/steps.js";
 import { runWorkflow } from "../src/workflow.js";
 
 const MODEL_TIERS_FILE = ".agentprism/workflows/model-tiers.json";
 
-function capturingRunner(capture: (options: Record<string, unknown>) => void) {
+function capturingRunner(capture: (options: PlannedRequest) => void) {
   return {
-    async run(_prompt: string, options: Record<string, unknown>) {
+    async run(_prompt: string, options: PlannedRequest) {
       capture(options);
       return "ok";
     },

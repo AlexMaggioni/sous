@@ -40,7 +40,7 @@ function memoryPersistence() {
 }
 
 function runnerFrom(impl: (prompt: string, options: StepRequest) => unknown | Promise<unknown>): AgentRunner {
-  return { run: (prompt: string, options?: StepRequest) => Promise.resolve(impl(prompt, options ?? {})) } as AgentRunner;
+  return { run: (prompt: string, options: StepRequest) => Promise.resolve(impl(prompt, options)) };
 }
 
 function deferred<T>() {
@@ -95,7 +95,7 @@ test("live attempts emit fresh cumulative usage snapshots and persist them befor
   directSecond.resolve("second-result");
   const directResult = await directRun;
   assert.deepEqual(directSnapshots, [15, 42, 42], "live attempts plus the unchanged final snapshot are emitted");
-  assert.equal(directResult.tokenUsage.total, 42);
+  assert.equal(directResult.tokenUsage?.total, 42);
 
   const store = memoryPersistence();
   const manager = new WorkflowManager({ persistence: store.persistence, agent: runner });
@@ -131,7 +131,7 @@ test("usage includes estimates, failed retries, provider/auth pauses, and termin
     },
   );
   assert.ok(estimateSnapshots[0] > 0);
-  assert.equal(estimateSnapshots.at(-1), estimated.tokenUsage.total);
+  assert.equal(estimateSnapshots.at(-1), estimated.tokenUsage?.total);
 
   let retryCalls = 0;
   const retrySnapshots: number[] = [];
@@ -151,7 +151,7 @@ test("usage includes estimates, failed retries, provider/auth pauses, and termin
     },
   );
   assert.deepEqual(retrySnapshots, [3, 6, 6]);
-  assert.equal(retried.tokenUsage.total, 6);
+  assert.equal(retried.tokenUsage?.total, 6);
 
   for (const fixture of [
     { code: WorkflowErrorCode.PROVIDER_USAGE_LIMIT, status: "paused" },

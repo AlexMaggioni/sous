@@ -16,7 +16,7 @@ return { first, second, decision }`;
 function sessionRunner(): AgentRunner {
   let call = 0;
   return {
-    run: (async (_prompt: string, options: StepRequest = {}) => {
+    run: async (_prompt: string, options: StepRequest) => {
       options.onSessionOpen?.({
         sessionId: `session-${call}`,
         backendId: "codex",
@@ -26,7 +26,7 @@ function sessionRunner(): AgentRunner {
       if (call > 0) options.onModelResolved?.("gpt-example");
       call++;
       return "ok";
-    }) as AgentRunner["run"],
+    },
   };
 }
 

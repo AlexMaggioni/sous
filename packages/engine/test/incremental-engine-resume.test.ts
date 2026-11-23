@@ -158,7 +158,7 @@ return { values }`), {
     assert.deepEqual(JSON.parse(JSON.stringify(result.result)), {
       values: ["live:inserted", "recorded:alpha", "recorded:beta"],
     });
-    assert.equal(result.tokenUsage.total, 7);
+    assert.equal(result.tokenUsage?.total, 7);
     assert.deepEqual(result.resumeReport, {
       strategy: "identity-v1",
       sourceRunId: "resume-source",

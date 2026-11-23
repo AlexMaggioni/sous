@@ -5,6 +5,7 @@ import { checkInputs, workflowExtras } from "../src/workflows/meta.js";
 describe("inputs", () => {
   it("fill defaults, convert types and list every problem at once", () => {
     const extras = workflowExtras({
+      name: "w",
       description: "d",
       inputs: { ticket: "What to build", tries: { type: "number", default: 3 }, dry: { type: "boolean", required: false } },
       place: "folder",
@@ -22,6 +23,6 @@ describe("inputs", () => {
   });
 
   it("take anything when the workflow declares none", () => {
-    assert.deepEqual(checkInputs(workflowExtras({}), { a: "1" }), { args: { a: "1" }, problems: [] });
+    assert.deepEqual(checkInputs(workflowExtras({ name: "w", description: "d" }), { a: "1" }), { args: { a: "1" }, problems: [] });
   });
 });

@@ -191,7 +191,7 @@ describe("steps on the fake programs", () => {
     write(join(place.cwd, ".codex", "agents", "fixer.toml"), 'name = "fixer"\ndescription = "Fixes"\ndeveloper_instructions = "Fix."\nmodel = "codex/gpt-6.1-sol"\n');
     const home = join(place.dir, "home");
     const env = { CLAUDE_CONFIG_DIR: join(home, ".claude"), CODEX_HOME: join(home, ".codex"), XDG_CONFIG_HOME: join(home, ".config") };
-    const agents = lookupAgents({ projectDir: place.cwd, rulesyncGlobal: join(place.dir, "aiglobal"), env });
+    const agents = lookupAgents({ projectDir: place.cwd, rulesyncGlobal: join(place.dir, "aiglobal"), defaultHarness: "claude", env });
     const steps = createSteps(onFakes(place, { agents }));
     try {
       await steps.run("hi", routed(steps, { label: "a", agentType: "nobash" }));

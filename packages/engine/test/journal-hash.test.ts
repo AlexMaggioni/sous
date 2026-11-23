@@ -92,21 +92,21 @@ describe("journal hash (hashAgentCall byte-stability)", () => {
     const run = async (withContinuationMetadata: boolean) => {
       const journal: JournalEntry[] = [];
       let inputsHash: string | undefined;
-      const runner = {
-        async run(prompt: string, options?: StepRequest) {
-          inputsHash = options?.callInputsHash;
+      const runner: AgentRunner = {
+        async run(prompt: string, options: StepRequest) {
+          inputsHash = options.callInputsHash;
           if (withContinuationMetadata) {
             const directive: StepRequest = { ...options, continueFromSession: sessionRef };
             assert.deepEqual(directive.continueFromSession, sessionRef);
-            options?.onSessionOpen?.(sessionRef);
-            options?.onResultProvenance?.({
+            options.onSessionOpen?.(sessionRef);
+            options.onResultProvenance?.({
               source: "live",
               continuation: { reattached: true, method: "resume" },
             });
           }
           return `ran:${prompt}`;
         },
-      } as AgentRunner;
+      };
       const result = await runWorkflow(singleCall, {
         agent: runner,
         persistLogs: false,

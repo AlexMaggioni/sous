@@ -10,6 +10,7 @@ import { runWorkflow } from "../src/workflow.js";
 import { homePaths } from "../src/runs/home.js";
 import { lookupAgents } from "../src/agents.js";
 import { createSteps, type InnerRunner } from "../src/steps/steps.js";
+import type { PlannedRequest } from "../src/steps/agent-run.js";
 
 describe("agentDefinitionKey", () => {
   it("is null for undefined and stable for the same def", () => {
@@ -75,13 +76,13 @@ function capturingAgent() {
     cwdExists?: boolean;
   }> = [];
   const runner = {
-    async run(_prompt: string, options: Record<string, unknown>) {
+    async run(_prompt: string, options: PlannedRequest) {
       seen.push({
-        model: options.model as string | undefined,
-        toolNames: options.toolNames as string[] | undefined,
-        disallowedToolNames: options.disallowedToolNames as string[] | undefined,
-        instructions: options.instructions as string | undefined,
-        cwd: options.cwd as string | undefined,
+        model: options.model,
+        toolNames: options.toolNames,
+        disallowedToolNames: options.disallowedToolNames,
+        instructions: options.instructions,
+        cwd: options.cwd,
         cwdExists: typeof options.cwd === "string" ? existsSync(options.cwd) : undefined,
       });
       return "ok";

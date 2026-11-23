@@ -37,7 +37,7 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.test.json",
     "test": "HOME=\"$(mktemp -d)\" tsx --test \"test/**/*.test.ts\"",
     "codex-types": "node scripts/codex-types.mjs",
     "prepublishOnly": "tsc -b"

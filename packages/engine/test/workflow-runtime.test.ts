@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 // AgentUsage is part of the seam contract, which lives in src/steps/agent-run.ts.
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { AgentUsage } from "../src/steps/agent-run.js";
+import type { AgentUsage, StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { type JournalEntry, runWorkflow } from "../src/workflow.js";
 
@@ -108,7 +108,7 @@ test("agent() records configOptions without coercion and gives them to no step",
 return agent('x', { label: 'config-agent', configOptions: { reasoning_effort: 'high', fast_mode: true } })`,
     {
       agent: {
-        async run(_prompt: string, options: Record<string, unknown>) {
+        async run(_prompt: string, options: StepRequest) {
           assert.equal("configOptions" in options, false);
           return "ok";
         },
@@ -156,8 +156,8 @@ return agent('two', { label: 'two', model: 'codex/gpt-5' })`,
     { model: "claude/opus", mode: "code", configOptions: undefined },
     { model: "codex/gpt-5", mode: undefined, configOptions: undefined },
   ]);
-  assert.deepEqual(result.calls.map((call) => call.modelRequested), ["claude/opus", "codex/gpt-5"]);
-  assert.deepEqual(result.calls.map((call) => call.configOptionsRequested), [{ effort: "high", fast: false }, undefined]);
+  assert.deepEqual(result.calls?.map((call) => call.modelRequested), ["claude/opus", "codex/gpt-5"]);
+  assert.deepEqual(result.calls?.map((call) => call.configOptionsRequested), [{ effort: "high", fast: false }, undefined]);
 });
 
 test('configOptions "model" is rejected before the runner can open a session', async () => {

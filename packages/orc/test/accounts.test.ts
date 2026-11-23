@@ -319,7 +319,7 @@ describe("accounts", () => {
   it("orc account lists, switches and removes; add reads the token from stdin off a terminal", async () => {
     const { paths } = setup();
     const here = dirname(dirname(fileURLToPath(import.meta.url)));
-    const env = { ...process.env, ORC_HOME: paths.home };
+    const env: NodeJS.ProcessEnv = { ...process.env, ORC_HOME: paths.home };
     delete env.CLAUDECODE;
     const added = execFileSync(process.execPath, ["--import", "tsx", "src/cli.ts", "account", "add", "work"], { cwd: here, env, input: `${WORK}\n`, encoding: "utf8" });
     assert.equal(added, "added Claude Code account work. orc account use work makes orc use it.\n");

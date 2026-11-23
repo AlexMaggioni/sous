@@ -219,7 +219,7 @@ test(
         callIndex: 0,
         provenance: {
           source: "live",
-          continuation: { reattached: false, reason: "future-reason" },
+          continuation: { reattached: false, reason: "future-reason" as never },
         },
       } as PersistableEngineRunEvent,
     }), "CORRUPT_LOG");
@@ -479,9 +479,8 @@ test(
     const persistence = createRunPersistence(
       cwd,
       {
-        writeSync: ((...args: Parameters<typeof writeSync>) => {
+        writeSync: ((_fd: number, buffer: Uint8Array) => {
           writes++;
-          const buffer = args[1] as Uint8Array;
           return buffer.byteLength - 1;
         }) as typeof writeSync,
         closeSync: ((fd: number) => {

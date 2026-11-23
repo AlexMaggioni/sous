@@ -208,7 +208,7 @@ test("a fresh manager preserves actual authored configuration on cold continuati
   let failBeta = true;
   const runner: AgentRunner = {
     async run(prompt, options) {
-      dispatched.push({ model: options.model, mode: options.mode, configOptions: (options as Record<string, unknown>).configOptions });
+      dispatched.push({ model: options.model, mode: options.mode, configOptions: "configOptions" in options ? options.configOptions : undefined });
       if (prompt === "beta" && failBeta) {
         failBeta = false;
         throw new Error("beta failed once");

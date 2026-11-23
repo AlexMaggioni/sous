@@ -267,7 +267,7 @@ return { safe, unsafe, empty }`),
       );
       assert.equal(isolated.calls?.[0].resumeSafety, "isolated-worktree");
       assert.equal(isolated.calls?.[0].worktree, true);
-      assert.deepEqual(taints, []);
+      assert.deepEqual<string[]>(taints, []);
       assert.equal(existsSync(String(isolated.result)), false, "activity settles only after worktree cleanup");
 
       const unsafeIsolated = await runWorkflow(

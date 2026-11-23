@@ -23,7 +23,7 @@ import {
 } from "@orchestrator/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
 import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, PlannedRequest, StepRequest } from "./agent-run.js";
-import type { AgentRunner, StepAsk, StepRoute } from "./agent-runner.js";
+import type { AgentRunner, LoginCheck, StepAsk, StepRoute } from "./agent-runner.js";
 import type { AgentSessionRef } from "../workflow-result.js";
 import type { McpServerConfig } from "./mcp-config.js";
 import { harnessName, isHarness, missingServer, routeStep, type AgentLookup, type McpLookup, type RoutePlan } from "../agents.js";
@@ -36,11 +36,6 @@ export interface InnerRunner {
   run(prompt: string, request: PlannedRequest): Promise<unknown>;
   dispose?: () => Promise<void> | void;
   auth?: LoginCheck;
-}
-
-/** The engine asks it before it resumes a run that paused for a lost login. */
-interface LoginCheck {
-  canResume(harness: string): boolean;
 }
 
 export interface StepsOptions {

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { RunOptions } from "../src/steps/agent-run.js";
+import type { StepRequest } from "../src/steps/agent-run.js";
 import type { EngineRunEventName, EngineRunEventPayloadMap } from "../src/run-events.js";
 import { WorkflowError, WorkflowErrorCode, type AuthErrorContext } from "../src/errors.js";
 import { RunEventLogError } from "../src/runs/persistence/run-event-persistence.js";
@@ -145,12 +145,12 @@ test("append failure marks the snapshot incomplete once without changing the out
     const persistence = createRunPersistence(
       cwd,
       {
-        writeSync: ((..._args: Parameters<typeof writeSync>) => {
+        writeSync: () => {
           writes++;
           const error = new Error("event disk full") as NodeJS.ErrnoException;
           error.code = "ENOSPC";
           throw error;
-        }) as typeof writeSync,
+        },
       },
       { persistenceRoot: root },
     );
@@ -237,7 +237,7 @@ test("a failed step, a stopped step and a time limit pause with the same reason 
     await withPersistenceDirs(async ({ cwd, root }) => {
       const entered = deferred<void>();
       const runner: AgentRunner = {
-        async run(_prompt: string, options: RunOptions): Promise<unknown> {
+        async run(_prompt: string, options: StepRequest): Promise<unknown> {
           if (!stop) throw new Error("the build is broken");
           entered.resolve();
           return await new Promise((_resolve, reject) => {

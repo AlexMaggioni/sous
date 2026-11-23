@@ -302,7 +302,7 @@ test(
     const manager = new WorkflowManager({ cwd, agent: da.runner });
     manager.on("error", () => {});
 
-    let stoppedEvent: { runId: string } | null = null;
+    let stoppedEvent = null as { runId: string } | null;
     manager.on("stopped", (ev: { runId: string }) => {
       stoppedEvent = ev;
     });
@@ -346,7 +346,7 @@ test(
     const manager = new WorkflowManager({ cwd, agent: da.runner });
     manager.on("error", () => {});
 
-    let pausedEvent: { runId: string } | null = null;
+    let pausedEvent = null as { runId: string } | null;
     manager.on("paused", (ev: { runId: string }) => {
       pausedEvent = ev;
     });
@@ -354,7 +354,7 @@ test(
     const { runId, promise } = manager.startInBackground(twoAgentScript);
     await new Promise((r) => setTimeout(r, 20));
     assert.equal(manager.pause(runId), true);
-    assert.equal(pausedEvent, null, "the request alone does not pause: agent a is still executing");
+    assert.equal<{ runId: string } | null>(pausedEvent, null, "the request alone does not pause: agent a is still executing");
     assert.equal(manager.getRun(runId)?.status, "running");
     assert.equal(manager.pausePending(runId), true);
 
@@ -567,8 +567,9 @@ test(
 
     const finalRun = manager.getRun(runId);
     assert.equal(finalRun?.status, "completed", "resumed run should complete successfully");
-    assert.equal(finalRun?.result?.result?.a, "a-done", "agent a replayed from the journal");
-    assert.equal(finalRun?.result?.result?.b, "resumed-done", "agent b ran live after resume");
+    const value = finalRun?.result?.result as { a?: unknown; b?: unknown } | undefined;
+    assert.equal(value?.a, "a-done", "agent a replayed from the journal");
+    assert.equal(value?.b, "resumed-done", "agent b ran live after resume");
 
     // The run should also appear in listRuns as completed
     const persisted = manager.listRuns().find((r) => r.runId === runId);
@@ -618,8 +619,9 @@ return { a, b }`;
 
     const finalRun = manager.getRun(runId);
     assert.equal(finalRun?.status, "completed", "resumed multi-agent run should complete");
-    assert.equal(finalRun?.result?.result?.a, "first-result", "agent 1 replayed from the journal");
-    assert.equal(finalRun?.result?.result?.b, "second-result", "agent 2 ran live after resume");
+    const value = finalRun?.result?.result as { a?: unknown; b?: unknown } | undefined;
+    assert.equal(value?.a, "first-result", "agent 1 replayed from the journal");
+    assert.equal(value?.b, "second-result", "agent 2 ran live after resume");
   }),
 );
 
@@ -911,7 +913,7 @@ test(
     manager.on("error", () => {});
 
     // Track resumed event
-    let resumedEvent: { runId: string } | null = null;
+    let resumedEvent = null as { runId: string } | null;
     manager.on("resumed", (ev: { runId: string }) => {
       resumedEvent = ev;
     });
@@ -929,7 +931,7 @@ test(
 
     // Now test error event on abort. runSync settles to a terminal aborted result;
     // the 'error' event still fires.
-    let capturedError: { runId: string; error: WorkflowError } | null = null;
+    let capturedError = null as { runId: string; error: WorkflowError } | null;
     const da2 = deferredAgent();
     const manager2 = new WorkflowManager({ cwd, agent: da2.runner });
     manager2.on("error", (ev: { runId: string; error: WorkflowError }) => {

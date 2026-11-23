@@ -1057,11 +1057,14 @@ test(
     rp.save({
       runId: "r1",
       workflowName: "w",
+      script: "export const meta = { name: 'w', description: 'w' }",
       status: "running",
       phases: [],
       agents: [],
       logs: [],
-    } as PersistedRunState);
+      startedAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    });
     const runsDir = workflowProjectPaths(cwd).runsDir;
     assert.ok(existsSync(join(runsDir, "r1.json")), "primary written");
     assert.ok(existsSync(join(runsDir, "r1.json.bak")), ".bak written");
@@ -1076,11 +1079,14 @@ test(
     rp.save({
       runId: "r1",
       workflowName: "w",
+      script: "export const meta = { name: 'w', description: 'w' }",
       status: "running",
       phases: [],
       agents: [],
       logs: [],
-    } as PersistedRunState);
+      startedAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    });
     // Corrupt the primary; the .bak from the good save should still load.
     writeFileSync(join(workflowProjectPaths(cwd).runsDir, "r1.json"), "{ truncated", "utf-8");
     const loaded = rp.load("r1");
@@ -1095,11 +1101,14 @@ test(
     rp.save({
       runId: "r1",
       workflowName: "w",
+      script: "export const meta = { name: 'w', description: 'w' }",
       status: "completed",
       phases: [],
       agents: [],
       logs: [],
-    } as PersistedRunState);
+      startedAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    });
     rp.delete("r1");
     const runsDir = workflowProjectPaths(cwd).runsDir;
     assert.equal(existsSync(join(runsDir, "r1.json")), false);
@@ -1114,12 +1123,15 @@ test(
     rp.save({
       runId: "tu",
       workflowName: "w",
+      script: "export const meta = { name: 'w', description: 'w' }",
       status: "completed",
       phases: [],
       agents: [],
       logs: [],
+      startedAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
       tokenUsage: { input: 1, output: 2, total: 3, cost: 0.5, cacheRead: 9, cacheWrite: 4 },
-    } as PersistedRunState);
+    });
     const loaded = rp.load("tu");
     assert.equal(loaded?.tokenUsage?.cost, 0.5, "cost survives reload");
     assert.equal(loaded?.tokenUsage?.cacheRead, 9, "cacheRead survives reload");
@@ -1208,11 +1220,14 @@ test(
     rp.save({
       runId: "stale-lock",
       workflowName: "w",
+      script: "export const meta = { name: 'w', description: 'w' }",
       status: "paused",
       phases: [],
       agents: [],
       logs: [],
-    } as PersistedRunState);
+      startedAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    });
 
     writeFileSync(
       join(runsDir, "stale-lock.lock"),
@@ -1291,11 +1306,14 @@ test(
     rp.save({
       runId: "delete-lock",
       workflowName: "w",
+      script: "export const meta = { name: 'w', description: 'w' }",
       status: "paused",
       phases: [],
       agents: [],
       logs: [],
-    } as PersistedRunState);
+      startedAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    });
     const lease = rp.acquireRunLease("delete-lock");
     assert.ok(lease, "lease exists before delete");
     rp.delete("delete-lock");
@@ -1323,6 +1341,7 @@ test(
       session: {
         sessionId: "preserved-session",
         backendId: "custom",
+        cwd: "/workspace",
         reopen: { load: true, resume: true, list: true },
         callIndex: 0,
         label: "preserved-agent",
@@ -1461,7 +1480,9 @@ test(
       phases: [],
       agents: [],
       logs: [],
-    } as PersistedRunState);
+      startedAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    });
     // A non-journaling manager (the host keeps its own transcript store) must not rewrite
     // run state that belongs to journaling processes — stale-run recovery is gated off.
     const manager = new WorkflowManager({ cwd, journaling: false });

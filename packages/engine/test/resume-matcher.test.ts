@@ -15,6 +15,7 @@ import {
   normalizeResumeSeed,
   selectResumeCandidate,
   selectPositionalResume,
+  type ResumeAdmissionDecision,
   type ResumeAdmissionInput,
   type ResumeMatchInput,
 } from "../src/resume-matcher.js";
@@ -129,6 +130,11 @@ function admission(
     },
     ...overrides,
   });
+}
+
+/** Why admission fell back to a live run, or false when it admitted the source. */
+function disabledReason(decision: ResumeAdmissionDecision) {
+  return decision.strategy === "live" && decision.disabledReason;
 }
 
 function candidate(
@@ -477,16 +483,16 @@ return { first, second };`;
 
     const missingPair = sourceState();
     missingPair.journal = [];
-    assert.equal(admission(missingPair).strategy === "live" && admission(missingPair).disabledReason, "manifest-invalid");
+    assert.equal(disabledReason(admission(missingPair)), "manifest-invalid");
     const stalePair = sourceState();
     stalePair.journal?.push({ index: 1, hash: HASH_B, result: true, kind: "checkpoint", checkpointDecision: "explicit-v1", scope: SOURCE_RUN_ID });
-    assert.equal(admission(stalePair).strategy === "live" && admission(stalePair).disabledReason, "manifest-invalid");
+    assert.equal(disabledReason(admission(stalePair)), "manifest-invalid");
 
     const missingHighest = sourceState([agentRow(0)]);
     missingHighest.callsAllocated = 2;
-    assert.equal(admission(missingHighest).strategy === "live" && admission(missingHighest).disabledReason, "manifest-invalid");
+    assert.equal(disabledReason(admission(missingHighest)), "manifest-invalid");
     const duplicate = sourceState([agentRow(0), agentRow(0, { hash: HASH_B, inputsHash: INPUT_B })]);
-    assert.equal(admission(duplicate).strategy === "live" && admission(duplicate).disabledReason, "manifest-invalid");
+    assert.equal(disabledReason(admission(duplicate)), "manifest-invalid");
 
     const replayed = agentRow(0, {
       origin: "journal-replay",
@@ -499,13 +505,8 @@ return { first, second };`;
     });
     assert.equal(admission(sourceState([replayed])).strategy, "identity-v1");
 
-    const unknownSafety = agentRow(0) as WorkflowCallRecord & { resumeSafety: string };
-    unknownSafety.resumeSafety = "future-safety";
-    assert.equal(
-      admission(sourceState([unknownSafety])).strategy === "live" &&
-        admission(sourceState([unknownSafety])).disabledReason,
-      "manifest-invalid",
-    );
+    const unknownSafety = agentRow(0, { resumeSafety: "future-safety" as never });
+    assert.equal(disabledReason(admission(sourceState([unknownSafety]))), "manifest-invalid");
   });
 
   it("assigns the exact first failure without replacement", () => {
@@ -513,27 +514,27 @@ return { first, second };`;
       resume: { format: "future" } as never,
       status: "aborted",
     });
-    assert.equal(admission(unknownAborted).strategy === "live" && admission(unknownAborted).disabledReason, "unsupported-format");
+    assert.equal(disabledReason(admission(unknownAborted)), "unsupported-format");
     const abortedRunning = sourceState(undefined, { status: "running", abortSignaled: true });
-    assert.equal(admission(abortedRunning).strategy === "live" && admission(abortedRunning).disabledReason, "source-not-terminal");
+    assert.equal(disabledReason(admission(abortedRunning)), "source-not-terminal");
     const runningIsolation = sourceState(undefined, {
       status: "running",
       executionMode: { kind: "isolation", baselineRunId: "base" },
     });
-    assert.equal(admission(runningIsolation).strategy === "live" && admission(runningIsolation).disabledReason, "source-not-terminal");
+    assert.equal(disabledReason(admission(runningIsolation)), "source-not-terminal");
     const isolationMissing = sourceState(undefined, {
       executionMode: { kind: "isolation", baselineRunId: "base" },
       resume: { format: "identity-v1" },
     });
-    assert.equal(admission(isolationMissing).strategy === "live" && admission(isolationMissing).disabledReason, "isolation-recording");
+    assert.equal(disabledReason(admission(isolationMissing)), "isolation-recording");
     const missingEnvironmentAndCwd = sourceState(undefined, {
       effectiveCwd: undefined,
       resume: { format: "identity-v1" },
     });
-    assert.equal(admission(missingEnvironmentAndCwd).strategy === "live" && admission(missingEnvironmentAndCwd).disabledReason, "resume-metadata-missing");
+    assert.equal(disabledReason(admission(missingEnvironmentAndCwd)), "resume-metadata-missing");
     const cwdAndRuntime = sourceState(undefined, { runtime: { ...RUNTIME, node: "bad" } });
     const current = { effectiveCwd: "/other", runtime: RUNTIME, environment: ENVIRONMENT };
-    assert.equal(admission(cwdAndRuntime, { current }).strategy === "live" && admission(cwdAndRuntime, { current }).disabledReason, "cwd-mismatch");
+    assert.equal(disabledReason(admission(cwdAndRuntime, { current })), "cwd-mismatch");
   });
 
   it("validates retained seeds while stripping legacy debit metadata", () => {
@@ -573,7 +574,7 @@ return { first, second };`;
     const invalidImmediate = sourceState(undefined, {
       resumeSeed: { format: "identity-v1", sourceRunId: "wrong", candidates: [] },
     });
-    assert.equal(admission(invalidImmediate).strategy === "live" && admission(invalidImmediate).disabledReason, "resume-seed-invalid");
+    assert.equal(disabledReason(admission(invalidImmediate)), "resume-seed-invalid");
 
     const invalidBlocker = blocker();
     invalidBlocker.recordedIndex = 1;
@@ -585,10 +586,7 @@ return { first, second };`;
         callBlockers: [invalidBlocker],
       },
     });
-    assert.equal(
-      admission(withInvalidBlocker).strategy === "live" && admission(withInvalidBlocker).disabledReason,
-      "resume-seed-invalid",
-    );
+    assert.equal(disabledReason(admission(withInvalidBlocker)), "resume-seed-invalid");
 
     const collision = normalizeResumeSeed({
       sourceRunId: SOURCE_RUN_ID,

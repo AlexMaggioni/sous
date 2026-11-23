@@ -174,9 +174,9 @@ describe("PreparedContinuation snapshot projection", () => {
     delete noRecordCwd.resolvedCwd;
     assert.equal(candidate(state({ calls: [noRecordCwd] }))?.recordedCwd, "/workspace");
 
-    const noSessionCwd = session() as AgentSessionRecord & { cwd?: string };
+    const noSessionCwd: Omit<AgentSessionRecord, "cwd"> & { cwd?: string } = session();
     delete noSessionCwd.cwd;
-    assert.equal(candidate(state({ agents: [{ ...agent(), session: noSessionCwd }] }))?.recordedCwd, "/workspace");
+    assert.equal(candidate(state({ agents: [{ ...agent(), session: noSessionCwd as AgentSessionRecord }] }))?.recordedCwd, "/workspace");
   });
 
   it("joins only coherent root rows, uses later root rows, and never reads the journal or nested event-derived rows", () => {
