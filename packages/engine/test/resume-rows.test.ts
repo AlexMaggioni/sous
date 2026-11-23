@@ -70,7 +70,6 @@ describe("resume rows", () => {
     assert.equal(a!.kind, "agent");
     assert.equal(a!.inputsHash, "a-in");
     assert.equal(a!.call, undefined, "an own row has no call row, so its replay looks as it always has");
-    assert.equal(rows.get(RUN)!.byIndex, undefined);
   });
 
   it("keeps nested scopes apart", () => {
@@ -82,8 +81,6 @@ describe("resume rows", () => {
       key: "hash",
     });
     assert.deepEqual([...rows.keys()].sort(), [RUN, nested]);
-    assert.equal(rows.get(RUN)!.byIndex, undefined);
-    assert.equal(rows.get(nested)!.byIndex, undefined);
   });
 
   it("puts the seed's rows after the run's own rows, in recorded order", () => {
@@ -104,7 +101,6 @@ describe("resume rows", () => {
     ]);
     assert.equal(scope.rows[1]!.sourceRunId, seed.candidates[0]!.sourceRunId);
     assert.equal(scope.rows[1]!.call, seed.candidates[0]!.call);
-    assert.equal(scope.byIndex, undefined);
   });
 
   it("drops the seed rows a call row replayed, and keeps the rest", () => {

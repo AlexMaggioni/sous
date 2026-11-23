@@ -41,23 +41,10 @@ export interface RecordedScope<Row extends RecordedCall> {
    * with a row that has no inputs hash keys on "hash" whatever is asked.
    */
   key: "inputs" | "hash";
-  /**
-   * Old data: journal rows with no call rows. A call then pairs with the row at its own index
-   * when the hashes agree, and no row counts.
-   */
-  byIndex?: boolean;
 }
 
 /** Pair calls one at a time, in the order the script makes them. */
 export function createPairing<Row extends RecordedCall>(scope: RecordedScope<Row>): (call: CallToPair) => RowPairing<Row> {
-  if (scope.byIndex) {
-    const byIndex = new Map(scope.rows.map((row) => [row.index, row] as const));
-    return (call) => {
-      const row = byIndex.get(call.index);
-      if (!row || row.hash !== call.hash || (row.kind !== undefined && row.kind !== call.kind)) return { action: "live" };
-      return row.outcome === "result" ? { action: "replay", row } : { action: "live", row };
-    };
-  }
   const withInputs = scope.key === "inputs" && scope.rows.every((row) => row.inputsHash !== undefined);
   const keyOf = (call: { kind?: string; hash: string; inputsHash?: string }) =>
     withInputs ? `${call.kind}\u0000${call.hash}\u0000${call.inputsHash ?? ""}` : `${call.kind}\u0000${call.hash}`;

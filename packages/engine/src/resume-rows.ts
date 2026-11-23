@@ -174,25 +174,6 @@ export function revisionSeed(input: {
   return empty ? undefined : seed;
 }
 
-/**
- * A run's journal handed in by index, with no call rows. It is old data, so its calls pair by
- * index and hash.
- */
-export function journalRows(runId: string, journal: ReadonlyMap<number, JournalEntry>): ResumeRows {
-  const rows: ResumeRow[] = [...journal]
-    .sort(([left], [right]) => left - right)
-    .map(([index, entry]) => ({
-      index,
-      ...(entry.kind !== undefined ? { kind: entry.kind } : {}),
-      hash: entry.hash,
-      outcome: "result",
-      sourceRunId: runId,
-      entry,
-      own: true,
-    }));
-  return new Map([[runId, { rows, key: "hash", byIndex: true }]]);
-}
-
 /** A seed's rows, by the current run's scope, each scope in recorded index order. */
 function seedRows(seed: PersistedResumeSeed | undefined, runId: string): Map<string, ResumeRow[]> {
   const scopes = new Map<string, ResumeRow[]>();

@@ -132,17 +132,6 @@ describe("pairing calls by occurrence", () => {
     assert.deepEqual(show(pairCalls({ rows, key: "inputs" }, calls)), ["replay 0", "replay 1"]);
   });
 
-  it("pairs by index and hash when the scope has journal rows but no call rows", () => {
-    const rows: RecordedCall[] = [
-      { index: 0, hash: "a", outcome: "result" },
-      { index: 1, hash: "l", outcome: "result" },
-      { index: 2, hash: "l", outcome: "failed" },
-      { index: 3, hash: "c", outcome: "result" },
-    ];
-    const calls = [call(0, "a2"), call(1, "l"), call(2, "l"), call(3, "l"), call(4, "c")];
-    assert.deepEqual(show(pairCalls({ rows, key: "hash", byIndex: true }, calls)), ["live", "replay 1", "live 2", "live", "live"]);
-  });
-
   it("runs live a call with no recorded row", () => {
     assert.deepEqual(show(pairCalls({ rows: [], key: "inputs" }, [call(0, "a")])), ["live"]);
   });

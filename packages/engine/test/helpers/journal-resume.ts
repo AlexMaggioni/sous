@@ -1,17 +1,29 @@
 import { randomUUID } from "node:crypto";
-import { journalRows } from "../../src/resume-rows.js";
+import type { ResumeRow } from "../../src/resume-rows.js";
 import type { JournalEntry, WorkflowRunOptions } from "../../src/workflow.js";
 
 /**
- * The options that resume a run from a journal with no call rows. A call replays the row at its
- * own index when the hashes agree. The rows belong to one run id, so the helper sets it too.
+ * The options that resume a run from its journal. Each entry becomes a result row of the run's
+ * own scope, and a call pairs with the rows by occurrence, as a resume from saved call rows does.
+ * The rows belong to one run id, so the helper sets it too.
  */
 export function journalResume(
   journal: Iterable<JournalEntry> | ReadonlyMap<number, JournalEntry>,
   runId = `run-${randomUUID()}`,
 ): Pick<WorkflowRunOptions, "runId" | "resume"> {
-  const byIndex = journal instanceof Map
-    ? journal as ReadonlyMap<number, JournalEntry>
-    : new Map([...journal as Iterable<JournalEntry>].map((entry) => [entry.index, entry] as const));
-  return { runId, resume: { rows: journalRows(runId, byIndex) } };
+  const entries = journal instanceof Map
+    ? [...(journal as ReadonlyMap<number, JournalEntry>).values()]
+    : [...journal as Iterable<JournalEntry>];
+  const rows: ResumeRow[] = entries
+    .sort((left, right) => left.index - right.index)
+    .map((entry) => ({
+      index: entry.index,
+      ...(entry.kind !== undefined ? { kind: entry.kind } : {}),
+      hash: entry.hash,
+      outcome: "result",
+      sourceRunId: runId,
+      entry,
+      own: true,
+    }));
+  return { runId, resume: { rows: new Map([[runId, { rows, key: "hash" }]]) } };
 }

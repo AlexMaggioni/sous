@@ -820,7 +820,7 @@ async function runLevel<T>(
           action: "replay",
           row: sourceRow,
           value: accept(sourceRow),
-          match: scope?.byIndex ? "index-hash" : "occurrence",
+          match: "occurrence",
           journaled: row.own === true && row.index === call.index,
         };
       },
