@@ -114,12 +114,12 @@ const NEVER_REACH = [
 
 /**
  * The 36 behavior changes of docs/proof/improve.md, each with the tests that hold it. A test is a
- * file and the title its test() or it() call gets. The rule fails when a title is no longer a test
- * of its file, or when the test is skipped. A title that the source builds from a template stays as
- * the source writes it, ${...} included, and a third part names the case of the file that the
- * title stands for. A change with no test yet has `waiting` in place of `tests`, and the test run
- * lists it as todo. A later commit adds its tests. docs/test-plan/pins.tsv says what each test
- * holds, and where the hold is partial.
+ * file and the title its test() or it() call gets, or the title of a describe() with a test under
+ * it. The rule fails when a title is no longer a test of its file, or when the test is skipped.
+ * A title that the source builds from a template stays as the source writes it, ${...} included,
+ * and a third part names the case of the file that the title stands for. A change with no test
+ * yet has `waiting` in place of `tests`, and the test run lists it as todo. A later commit adds
+ * its tests. docs/test-plan/pins.tsv says what each test holds, and where the hold is partial.
  *
  * A test that holds a change keeps its file and its title. A cut or a merge keeps them too.
  */
@@ -507,22 +507,40 @@ function contractBreaks() {
 }
 
 /**
- * The titles of the tests a file runs: the first argument of each test() and it() call, other than
- * a skipped or todo one. A title built from a template is the template's source text.
+ * The titles of the tests and the suites a file runs: the first argument of each test(), it() and
+ * describe() call, other than a skipped or todo one. A suite counts when a test runs under it, so
+ * a pin on a suite holds while one of its tests does. A title built from a template is the
+ * template's source text.
  */
 function runningTitles(file) {
   const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
   const titles = new Set();
-  const visit = (node) => {
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && ["test", "it"].includes(node.expression.text) && node.arguments.length) {
-      const [title, ...rest] = node.arguments;
-      const off = rest.some((arg) => ts.isObjectLiteralExpression(arg) && arg.properties.some((prop) => prop.name && ["skip", "todo"].includes(prop.name.getText())));
-      if (!off && ts.isStringLiteralLike(title)) titles.add(title.text);
-      else if (!off && ts.isTemplateExpression(title)) titles.add(title.getText().slice(1, -1));
+  // Adds the titles under a node, and returns how many tests run under it. `off` says that a
+  // skipped suite is above.
+  const visit = (node, off) => {
+    let kind;
+    let title;
+    let here = off;
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.arguments.length && ["test", "it", "describe", "suite"].includes(node.expression.text)) {
+      kind = node.expression.text === "describe" || node.expression.text === "suite" ? "suite" : "test";
+      const [first, ...rest] = node.arguments;
+      here = off || rest.some((arg) => ts.isObjectLiteralExpression(arg) && arg.properties.some((prop) => prop.name && ["skip", "todo"].includes(prop.name.getText())));
+      if (ts.isStringLiteralLike(first)) title = first.text;
+      else if (ts.isTemplateExpression(first)) title = first.getText().slice(1, -1);
     }
-    ts.forEachChild(node, visit);
+    let tests = 0;
+    ts.forEachChild(node, (child) => {
+      tests += visit(child, here);
+    });
+    if (kind === "test") {
+      if (here) return 0;
+      if (title !== undefined) titles.add(title);
+      return 1;
+    }
+    if (kind === "suite" && !here && tests > 0 && title !== undefined) titles.add(title);
+    return tests;
   };
-  visit(source);
+  visit(source, false);
   return titles;
 }
 
@@ -610,7 +628,7 @@ test("each behavior change keeps the test that holds it", () => {
       }
       if (!read.has(file)) read.set(file, { titles: runningTitles(join(ROOT, file)), text: readFileSync(join(ROOT, file), "utf8") });
       const { titles, text } = read.get(file);
-      if (!titles.has(title)) lines.push(`${change}: "${title}" is no longer a test of ${file}`);
+      if (!titles.has(title)) lines.push(`${change}: "${title}" is no longer a test or a suite of ${file}`);
       else if (needs && !text.includes(needs)) lines.push(`${change}: ${file} no longer has the case ${needs}`);
     }
   }
