@@ -293,8 +293,6 @@ export interface ExecOptions {
   maxAgents?: number;
   /** Host signal (e.g. tool/Esc) that should abort this run when fired. */
   externalSignal?: AbortSignal;
-  /** Alias for externalSignal — the engine-owned cancellation the MCP shell threads in. */
-  signal?: AbortSignal;
   /** Called with the live snapshot on every progress event. */
   onProgress?: (snapshot: WorkflowSnapshot) => void;
   /** Max concurrent agents for this execution. */
@@ -1450,7 +1448,6 @@ export class WorkflowManager extends EventEmitter {
     const {
       maxAgents,
       externalSignal,
-      signal,
       onProgress,
       concurrency,
       agentRetries,
@@ -1474,10 +1471,9 @@ export class WorkflowManager extends EventEmitter {
     const publish = (event: EngineRunEvent, actions?: RunEventPublicationActions) =>
       this.publishRunEvent(managed, event, () => this.persistRun(managed), actions);
     // Let a host abort (e.g. Esc during a blocking tool call) cancel this run.
-    const hostSignal = externalSignal ?? signal;
-    if (hostSignal) {
-      if (hostSignal.aborted) managed.controller.abort();
-      else hostSignal.addEventListener("abort", () => managed.controller.abort(), { once: true });
+    if (externalSignal) {
+      if (externalSignal.aborted) managed.controller.abort();
+      else externalSignal.addEventListener("abort", () => managed.controller.abort(), { once: true });
     }
     try {
       // Resolve the injected agent backend (per-run override > constructor). The
@@ -2609,7 +2605,6 @@ export class WorkflowManager extends EventEmitter {
       concurrency: managed.limits?.concurrency,
       agentRetries: managed.limits?.agentRetries,
       externalSignal: exec.externalSignal,
-      signal: exec.signal,
       onProgress: exec.onProgress,
       confirm: exec.confirm,
       onNestedWorkflow: exec.onNestedWorkflow,

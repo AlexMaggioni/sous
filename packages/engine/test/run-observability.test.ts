@@ -220,7 +220,7 @@ test("terminal results get exact redacted final-20 tails while completed results
   const abortPromise = abortManager.runSync(
     `export const meta = { name: "aborted", description: "aborted" };\n${loggingPrefix}\nawait agent("hold");`,
     undefined,
-    { signal: controller.signal },
+    { externalSignal: controller.signal },
   );
   await entered.promise;
   controller.abort();
