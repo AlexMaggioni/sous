@@ -79,6 +79,10 @@ package, and passes.
 - **One step start.** Agent, code and checkpoint calls start through one function that takes the
   call's index and reports it. The ledger slot interrupts a call when the run halts, and one
   function, `afterFailedAttempt`, decides what a step does after an attempt fails.
+- **The engine's run function.** One `resume` field holds what a resumed run starts from, so a
+  wrong mix fails the type check, where two checks at run time caught it before. The state a
+  nested run shares with its parent left the options. `WorkflowRunOptions` went from 44 fields to
+  38.
 
 [The engine README](../../packages/engine/README.md) describes the result.
 
