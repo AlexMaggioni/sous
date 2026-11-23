@@ -17,6 +17,7 @@ import { notify } from "./notify.js";
 import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
 import { SlotPool } from "./slots.js";
+import { readState } from "./store.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
 import { programLookup } from "../programs.js";
 
@@ -90,7 +91,7 @@ export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<
 
 /** The run's saved state, as the engine last wrote it. */
 export function savedState(paths: HomePaths, record: RunRecord): PersistedRunState | undefined {
-  return managerFor(paths, record.projectDir).getPersistence().load(record.runId) ?? undefined;
+  return readState(paths, record.runId);
 }
 
 /** Run or resume one run in this process. Resolves with the engine's result. */

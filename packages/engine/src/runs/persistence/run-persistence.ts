@@ -369,6 +369,32 @@ export function readBoundedScriptFile(location: string, runId: string): string {
   }
 }
 
+/**
+ * Read a run's saved state, with no store built and nothing written. It tries the primary file,
+ * then the legacy one, each before its .bak, so a corrupt primary does not lose the run.
+ */
+export function loadRunState(
+  runsDir: string,
+  legacyRunsDir: string,
+  runId: string,
+  fs: Pick<FsLayer, "existsSync" | "readFileSync"> = { existsSync, readFileSync },
+): PersistedRunState | null {
+  for (const path of [join(runsDir, `${runId}.json`), join(legacyRunsDir, `${runId}.json`)]) {
+    for (const candidate of [path, `${path}.bak`]) {
+      let state: PersistedRunState;
+      try {
+        if (!fs.existsSync(candidate)) continue;
+        state = JSON.parse(fs.readFileSync(candidate, "utf-8") as string) as PersistedRunState;
+      } catch {
+        // corrupt candidate -> fall through to the next candidate
+        continue;
+      }
+      return state;
+    }
+  }
+  return null;
+}
+
 export function createRunPersistence(
   cwd: string,
   fsOverride?: Partial<FsLayer>,
@@ -389,20 +415,27 @@ export function createRunPersistence(
   // Self-describing store: the project key is a one-way hash of the project directory, so a
   // manifest records the directory itself. Cross-project hosts (the workflow daemon) locate a
   // bare runId by scanning project stores and re-opening the manifest's directory. Best-effort
-  // and idempotent; legacy stores heal on their next construction here.
-  try {
-    const manifestPath = join(paths.rootDir, "project.json");
-    if (!_existsSync(manifestPath)) {
-      _mkdirSync(paths.rootDir, { recursive: true });
-      const tmpPath = `${manifestPath}.${process.pid}.tmp`;
-      _writeFileSync(tmpPath, `${JSON.stringify({ projectDir: resolve(cwd) })}\n`);
-      _renameSync(tmpPath, manifestPath);
+  // and idempotent; legacy stores heal on their next save here. It is written on the first save,
+  // not when the store is built, so a store opened only to read writes nothing.
+  let manifestChecked = false;
+  const ensureManifest = () => {
+    if (manifestChecked) return;
+    manifestChecked = true;
+    try {
+      const manifestPath = join(paths.rootDir, "project.json");
+      if (!_existsSync(manifestPath)) {
+        _mkdirSync(paths.rootDir, { recursive: true });
+        const tmpPath = `${manifestPath}.${process.pid}.tmp`;
+        _writeFileSync(tmpPath, `${JSON.stringify({ projectDir: resolve(cwd) })}\n`);
+        _renameSync(tmpPath, manifestPath);
+      }
+    } catch {
+      // A store without a manifest is still fully functional for its own project.
     }
-  } catch {
-    // A store without a manifest is still fully functional for its own project.
-  }
+  };
 
   const ensureDir = () => {
+    ensureManifest();
     if (!_existsSync(runsDir)) {
       _mkdirSync(runsDir, { recursive: true });
     }
@@ -423,23 +456,8 @@ export function createRunPersistence(
     lineagePath(legacyRunsDir, runId),
   ];
 
-  const loadState = (runId: string): PersistedRunState | null => {
-    // Try the primary, then the .bak — so a corrupt primary doesn't lose the run.
-    for (const path of candidateRunPaths(runId)) {
-      for (const candidate of [path, `${path}.bak`]) {
-        let state: PersistedRunState;
-        try {
-          if (!_existsSync(candidate)) continue;
-          state = JSON.parse(_readFileSync(candidate, "utf-8")) as PersistedRunState;
-        } catch {
-          // corrupt candidate -> fall through to the next candidate
-          continue;
-        }
-        return state;
-      }
-    }
-    return null;
-  };
+  const loadState = (runId: string): PersistedRunState | null =>
+    loadRunState(runsDir, legacyRunsDir, runId, { existsSync: _existsSync, readFileSync: _readFileSync });
 
   const lineageSourceRunId = (state: PersistedRunState): string | undefined => {
     const sourceRunId = state.resumeSourceRunId;

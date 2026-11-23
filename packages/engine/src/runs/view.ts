@@ -8,16 +8,27 @@ import { listQuestions, type Question } from "./inbox.js";
 import { logFile } from "./launch.js";
 import { findRecord, loadRecord, processAlive, scopePrefix, type RunRecord } from "./records.js";
 import { judge, type Verdict } from "./rule.js";
-import { managerFor } from "./worker.js";
+import { readEventsAfter, readState } from "./store.js";
 
-/** The run's saved state. A run left running by a process that died reads as interrupted. */
+/**
+ * The run's state as orc shows it. Nothing is written. A run left pending or running by a worker
+ * that died stays so on disk, and the pause rule reads it as paused "interrupted". It shows as the
+ * paused state that `orc resume` saves before it goes on, so list, show and wait print what they
+ * printed when this read saved it.
+ */
 export function stateOf(paths: HomePaths, record: RunRecord): PersistedRunState | undefined {
-  const manager = managerFor(paths, record.projectDir);
-  const state = manager.getPersistence().load(record.runId) ?? undefined;
-  if (state && (state.status === "running" || state.status === "pending") && !processAlive(record.pid)) {
-    return manager.reconcileExternallyDeadRun(record.runId) ?? state;
-  }
-  return state;
+  const state = readState(paths, record.runId);
+  if (!state || state.status === "paused") return state;
+  const { pause } = judge({ state, alive: processAlive(record.pid), openQuestions: 0 });
+  if (pause?.reason !== "interrupted") return state;
+  return { ...state, status: "paused", pauseReason: "interrupted", reason: interruptedReason(record.pid) };
+}
+
+/** The engine's reason for a run its worker left, as the engine saves it on resume. */
+function interruptedReason(pid: number | undefined): string {
+  return pid === undefined
+    ? "Interrupted: the owning process exited before completion (PID unavailable); recovered to a resumable pause."
+    : `Interrupted: owning process PID ${pid} exited before completion; recovered to a resumable pause.`;
 }
 
 type Step = PersistedRunState["agents"][number];
@@ -25,14 +36,7 @@ type EventFields = Record<string, unknown>;
 
 /** Each event saved after the run's state, in order. */
 function eventsSinceState(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined, visit: (event: EventFields, timestamp: string) => void): void {
-  const persistence = managerFor(paths, record.projectDir).getPersistence();
-  let after = state?.eventSeq ?? 0;
-  for (;;) {
-    const page = persistence.readEvents(record.runId, { after, limit: 1000 });
-    for (const { event, timestamp } of page.events) visit(event as unknown as EventFields, timestamp);
-    if (!page.hasMore || page.events.length === 0) break;
-    after = page.events[page.events.length - 1]!.seq;
-  }
+  readEventsAfter(paths, record.runId, state?.eventSeq ?? 0, ({ event, timestamp }) => visit(event, timestamp));
 }
 
 /** A step's key: its scope and its call. Retries of a step happen inside the one call. */
@@ -87,7 +91,7 @@ const ENDS_STEPS = new Set(["complete", "paused", "error", "stopped", "resumed"]
  * state and the events saved after it.
  */
 export function runningSteps(paths: HomePaths, record: RunRecord): string[] {
-  const state = managerFor(paths, record.projectDir).getPersistence().load(record.runId) ?? undefined;
+  const state = readState(paths, record.runId);
   const running = new Map<string, { scope?: string; label: string }>();
   for (const agent of state?.agents ?? []) {
     if (agent.status === "running") running.set(stepKey(record, agent.scope, agent.callIndex), { ...(agent.scope ? { scope: agent.scope } : {}), label: agent.label });

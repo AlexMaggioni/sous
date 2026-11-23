@@ -64,11 +64,8 @@ export function changedWorkflows(paths: HomePaths, record: RunRecord, state: Per
 /** Check a run can resume. Returns the workflows edited since it started, which reach it only
  *  when the user says so. */
 export function resumeCheck(paths: HomePaths, record: RunRecord): string[] {
-  const alive = processAlive(record.pid);
-  // The rule refuses a live worker whatever its state. So the state is read only once the
-  // worker is gone, since stateOf can write.
-  const state = alive ? undefined : stateOf(paths, record);
-  const { resume } = judge({ state, alive, openQuestions: 0 });
+  const state = stateOf(paths, record);
+  const { resume } = judge({ state, alive: processAlive(record.pid), openQuestions: 0 });
   if (!resume.ok) throw new Error(RESUME_REFUSALS[resume.why](record.runId));
   return changedWorkflows(paths, record, state!);
 }

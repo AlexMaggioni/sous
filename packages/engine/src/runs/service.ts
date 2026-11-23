@@ -20,6 +20,8 @@ import { createRun, logFile, startWorker } from "./launch.js";
 import { notify } from "./notify.js";
 import { listRecords, processAlive, snapshotFile, type RunRecord } from "./records.js";
 import { judge, type Verdict } from "./rule.js";
+import { readState } from "./store.js";
+import { stateOf } from "./view.js";
 import { managerFor } from "./worker.js";
 
 export interface Schedule {
@@ -130,20 +132,6 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
   const tell = deps.notify ?? ((title: string, body: string) => notify(title, body, config.notify));
   state.told ??= {};
   const records = listRecords(paths);
-  const managers = new Map<string, ReturnType<typeof managerFor>>();
-  const manager = (projectDir: string) => {
-    let found = managers.get(projectDir);
-    if (!found) managers.set(projectDir, (found = managerFor(paths, projectDir)));
-    return found;
-  };
-  const statusOf = (record: RunRecord) => {
-    const m = manager(record.projectDir);
-    let persisted = m.getPersistence().load(record.runId) ?? undefined;
-    if (persisted && (persisted.status === "running" || persisted.status === "pending") && !processAlive(record.pid)) {
-      persisted = m.reconcileExternallyDeadRun(record.runId) ?? persisted;
-    }
-    return persisted;
-  };
 
   // Schedules.
   const key = minuteKey(now);
@@ -166,7 +154,8 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
     state.fired[schedule.name] = key;
     const last = records.find((record) => record.schedule === schedule.name);
     if (last) {
-      const lastState = statusOf(last);
+      // The log names the status orc list shows: a run its worker left running reads paused.
+      const lastState = stateOf(paths, last);
       // Questions do not change whether a run finished.
       if (startedAndUnfinished(judge({ state: lastState, alive: processAlive(last.pid), openQuestions: 0 }))) {
         log(`schedule ${schedule.name}: skipped, run ${last.runId} has not finished (${lastState?.status ?? "running"})`);
@@ -193,7 +182,8 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
   // Automatic resumes.
   for (const record of records) {
     if (processAlive(record.pid)) continue;
-    const persisted = statusOf(record);
+    // A plain read. The rule reads a run left running by a worker that died as interrupted.
+    const persisted = readState(paths, record.runId);
     const { pause } = judge({ state: persisted, alive: false, openQuestions: 0 });
     if (!persisted || !pause) {
       delete state.resumes[record.runId];
@@ -257,7 +247,7 @@ export function unfinishedRuns(paths: HomePaths, records = listRecords(paths)): 
   const ids = new Set<string>();
   for (const record of records) {
     // A run with no state yet is about to start, and the rule counts it unfinished.
-    const state = managerFor(paths, record.projectDir).getPersistence().load(record.runId) ?? undefined;
+    const state = readState(paths, record.runId);
     if (judge({ state, alive: processAlive(record.pid), openQuestions: 0 }).unfinished) ids.add(record.runId);
   }
   return ids;
@@ -303,8 +293,7 @@ export function prune(paths: HomePaths, days: number, now = new Date()): string[
   const removed: string[] = [];
   for (const record of listRecords(paths)) {
     if (Date.parse(record.createdAt) > cutoff || processAlive(record.pid)) continue;
-    const m = managerFor(paths, record.projectDir);
-    const state = m.getPersistence().load(record.runId) ?? undefined;
+    const state = readState(paths, record.runId);
     if (startedAndUnfinished(judge({ state, alive: false, openQuestions: 0 }))) continue;
     forgetRun(paths, record);
     removed.push(record.runId);

@@ -30,9 +30,10 @@ const TABLE: Array<{ row: string; facts: RunFacts } & Answers> = [
   { row: "asks",                        facts: { state: saved("running"), alive: true, openQuestions: 2 },  status: "asks",        word: "asks",                  exit: 4,         unfinished: true,  pause: undefined,       resume: "running",       reuse: "running" },
   { row: "starting",                    facts: { ...alive },                                                 status: "starting",    word: "starting",              exit: undefined, unfinished: true,  pause: undefined,       resume: "running",       reuse: "running" },
   { row: "not started",                 facts: { ...gone },                                                  status: "not started", word: "not started",           exit: 1,         unfinished: true,  pause: undefined,       resume: "never-started", reuse: "ok" },
-  { row: "pending",                     facts: { state: saved("pending"), ...gone },                         status: "pending",     word: "pending",               exit: 1,         unfinished: true,  pause: undefined,       resume: "ok",            reuse: "running" },
+  { row: "pending",                     facts: { state: saved("pending"), ...alive },                        status: "pending",     word: "pending",               exit: undefined, unfinished: true,  pause: undefined,       resume: "running",       reuse: "running" },
+  { row: "pending, worker gone",        facts: { state: saved("pending"), ...gone },                         status: "interrupted", word: "interrupted",           exit: 2,         unfinished: true,  pause: "interrupted",   resume: "ok",            reuse: "paused" },
   { row: "running",                     facts: { state: saved("running"), ...alive },                        status: "running",     word: "running",               exit: undefined, unfinished: true,  pause: undefined,       resume: "running",       reuse: "running" },
-  { row: "running, worker gone",        facts: { state: saved("running"), ...gone },                         status: "interrupted", word: "interrupted",           exit: 1,         unfinished: true,  pause: undefined,       resume: "ok",            reuse: "running" },
+  { row: "running, worker gone",        facts: { state: saved("running"), ...gone },                         status: "interrupted", word: "interrupted",           exit: 2,         unfinished: true,  pause: "interrupted",   resume: "ok",            reuse: "paused" },
   { row: "paused, usage_limit",         facts: { state: saved("paused", "usage_limit"), ...gone },           status: "paused",      word: "paused: limit",         exit: 2,         unfinished: true,  pause: "usage_limit",   resume: "ok",            reuse: "paused" },
   { row: "paused, auth_required",       facts: { state: saved("paused", "auth_required"), ...gone },         status: "paused",      word: "paused: login",         exit: 2,         unfinished: true,  pause: "auth_required", resume: "ok",            reuse: "paused" },
   { row: "paused, checkpoint_required", facts: { state: saved("paused", "checkpoint_required"), ...gone },   status: "paused",      word: "paused: asks",          exit: 2,         unfinished: true,  pause: "asks",          resume: "ok",            reuse: "paused" },
@@ -62,6 +63,15 @@ describe("the pause rule", () => {
       [saved("aborted"), "stopped", "stopped", undefined],
     ] as const) {
       assert.deepEqual(answers(judge({ state, ...alive })), { ...live, status, word, pause });
+    }
+  });
+
+  it("a pending or running run whose worker is gone answers as one paused interrupted, and reuse refuses it as paused", () => {
+    const paused = judge({ state: saved("paused", "interrupted"), ...gone });
+    for (const status of ["pending", "running"] as const) {
+      const derived = judge({ state: saved(status), ...gone });
+      assert.deepEqual(derived, paused, status);
+      assert.deepEqual(derived.reuse, { ok: false, why: "paused" }, status);
     }
   });
 

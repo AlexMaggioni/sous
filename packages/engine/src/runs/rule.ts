@@ -42,7 +42,8 @@ export interface Verdict {
   exit?: number;
   /** A worker runs it, or it waits to go on. */
   unfinished: boolean;
-  /** Set when the saved state is paused, whatever the worker and the questions. */
+  /** Set when the saved state is paused, whatever the worker and the questions, and when a
+   *  pending or running run's worker is gone. */
   pause?: RunPause;
   resume: { ok: true } | { ok: false; why: ResumeRefusal };
   reuse: { ok: true } | { ok: false; why: ReuseRefusal };
@@ -64,7 +65,7 @@ interface Row {
   word: string;
   exit?: number;
   unfinished: boolean;
-  /** What the saved pause reason means. Paused rows only. */
+  /** What the saved pause reason means, on paused rows. A worker-gone row derives its pause. */
   pause?: PauseReason;
   resume: Verdict["resume"];
   reuse: Verdict["reuse"];
@@ -73,15 +74,17 @@ interface Row {
 /**
  * What a run's facts mean, one row per case. The answers of an "any" row are for a gone worker.
  * A live worker on such a row still runs or ends the run, so judge holds the wait, resume and
- * reuse for it.
+ * reuse for it. A pending or running run whose worker is gone answers as paused "interrupted":
+ * no read rewrites its state, and `orc resume` saves it paused "interrupted" before it goes on.
  */
 const ROWS = {
   "asks":                        { worker: "alive", status: "asks",        word: "asks",                  exit: 4, unfinished: true,  resume: no("running"),       reuse: no("running") },
   "starting":                    { worker: "alive", status: "starting",    word: "starting",                       unfinished: true,  resume: no("running"),       reuse: no("running") },
   "not started":                 { worker: "gone",  status: "not started", word: "not started",           exit: 1, unfinished: true,  resume: no("never-started"), reuse: OK },
-  "pending":                     { worker: "any",   status: "pending",     word: "pending",               exit: 1, unfinished: true,  resume: OK,                  reuse: no("running") },
+  "pending":                     { worker: "alive", status: "pending",     word: "pending",                        unfinished: true,  resume: no("running"),       reuse: no("running") },
+  "pending, worker gone":        { worker: "gone",  status: "interrupted", word: "interrupted",           exit: 2, unfinished: true,  pause: "interrupted",   resume: OK, reuse: no("paused") },
   "running":                     { worker: "alive", status: "running",     word: "running",                        unfinished: true,  resume: no("running"),       reuse: no("running") },
-  "running, worker gone":        { worker: "gone",  status: "interrupted", word: "interrupted",           exit: 1, unfinished: true,  resume: OK,                  reuse: no("running") },
+  "running, worker gone":        { worker: "gone",  status: "interrupted", word: "interrupted",           exit: 2, unfinished: true,  pause: "interrupted",   resume: OK, reuse: no("paused") },
   "paused, usage_limit":         { worker: "any",   status: "paused",      word: "paused: limit",         exit: 2, unfinished: true,  pause: "usage_limit",   resume: OK, reuse: no("paused") },
   "paused, auth_required":       { worker: "any",   status: "paused",      word: "paused: login",         exit: 2, unfinished: true,  pause: "auth_required", resume: OK, reuse: no("paused") },
   "paused, checkpoint_required": { worker: "any",   status: "paused",      word: "paused: asks",          exit: 2, unfinished: true,  pause: "asks",          resume: OK, reuse: no("paused") },
@@ -104,7 +107,7 @@ const WORKER_RUNS: Pick<Row, "exit" | "unfinished" | "resume" | "reuse"> = { unf
 /** What the facts mean. */
 export function judge(facts: RunFacts): Verdict {
   const row: Row = ROWS[keyOf(facts)];
-  const pause = pauseOf(facts.state);
+  const pause = pauseOf(facts.state) ?? (row.pause ? { reason: row.pause } : undefined);
   const word = row.word.replace("<text>", () => facts.state?.pauseReason ?? "?");
   const { exit, unfinished, resume, reuse } = facts.alive && row.worker === "any" ? WORKER_RUNS : row;
   return { status: row.status, word, ...(exit === undefined ? {} : { exit }), unfinished, ...(pause ? { pause } : {}), resume, reuse };
@@ -113,6 +116,7 @@ export function judge(facts: RunFacts): Verdict {
 function keyOf({ state, alive, openQuestions }: RunFacts): Key {
   if (alive && openQuestions > 0) return "asks";
   if (!state) return alive ? "starting" : "not started";
+  if (state.status === "pending") return alive ? "pending" : "pending, worker gone";
   if (state.status === "running") return alive ? "running" : "running, worker gone";
   if (state.status === "paused") return pausedKey(state.pauseReason);
   return state.status;
