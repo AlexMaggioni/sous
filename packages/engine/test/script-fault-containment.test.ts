@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { workflowProjectPaths } from "../src/runs/persistence/project-paths.js";
-import { withFakeHomeAsync } from "./helpers/fake-home.js";
+import { withTempCwd } from "./helpers/temp.js";
 
 const noopAgent = {
   async run() {
@@ -66,19 +65,6 @@ const faultScripts = [
 function scriptBody(name: string, body: string): string {
   return `export const meta = { name: '${name}', description: '${name}' }
 ${body}`;
-}
-
-function withTempCwd(fn: (cwd: string) => Promise<void>) {
-  return async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "ap-dw-fault-"));
-    const fakeHome = mkdtempSync(join(tmpdir(), "ap-dw-home-"));
-    try {
-      await withFakeHomeAsync(fakeHome, () => fn(cwd));
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(fakeHome, { recursive: true, force: true });
-    }
-  };
 }
 
 async function withUnhandledRejectionTripwire(fn: () => Promise<void>): Promise<void> {

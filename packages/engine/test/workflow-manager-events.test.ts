@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
@@ -15,32 +14,11 @@ import {
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { eventLog } from "./helpers/event-log.js";
 import { runsDir } from "./helpers/run-files.js";
+import { deferred } from "./helpers/async.js";
+import { withTempDirs } from "./helpers/temp.js";
 
 const script = (body: string, name = "manager-events") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: 'manager event persistence' }\n${body}`;
-
-async function withPersistenceDirs(
-  run: (dirs: { cwd: string; root: string }) => Promise<void>,
-): Promise<void> {
-  const cwd = mkdtempSync(join(tmpdir(), "workflow-manager-events-cwd-"));
-  const root = mkdtempSync(join(tmpdir(), "workflow-manager-events-root-"));
-  try {
-    await run({ cwd, root });
-  } finally {
-    rmSync(cwd, { recursive: true, force: true });
-    rmSync(root, { recursive: true, force: true });
-  }
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
 
 function legacyState(runId: string, source: string): PersistedRunState {
   const now = new Date().toISOString();
@@ -58,7 +36,7 @@ function legacyState(runId: string, source: string): PersistedRunState {
 }
 
 test("manager appends dense events before delivery and public emit stays live-only", async () => {
-  await withPersistenceDirs(async ({ cwd, root }) => {
+  await withTempDirs(async ({ cwd, root }) => {
     const manager = new WorkflowManager({
       cwd,
       persistenceRoot: root,
@@ -109,7 +87,7 @@ test("manager appends dense events before delivery and public emit stays live-on
 });
 
 test("nested workflow observations use the parent stream and child callback scope", async () => {
-  await withPersistenceDirs(async ({ cwd, root }) => {
+  await withTempDirs(async ({ cwd, root }) => {
     const child = script(`phase('Child')\nlog('child-log')\nreturn await agent('child', { label: 'child' })`, "child");
     const manager = new WorkflowManager({
       cwd,
@@ -141,7 +119,7 @@ test("nested workflow observations use the parent stream and child callback scop
 });
 
 test("append failure marks the snapshot incomplete once without changing the outcome", async () => {
-  await withPersistenceDirs(async ({ cwd, root }) => {
+  await withTempDirs(async ({ cwd, root }) => {
     let writes = 0;
     const persistence = createRunPersistence(
       cwd,
@@ -179,7 +157,7 @@ test("append failure marks the snapshot incomplete once without changing the out
 });
 
 test("a requested pause settles after the executing call", async () => {
-  await withPersistenceDirs(async ({ cwd, root }) => {
+  await withTempDirs(async ({ cwd, root }) => {
     const entered = deferred<void>();
     const finish = deferred<string>();
     const runner: AgentRunner = {
@@ -228,7 +206,7 @@ test("a failed step, a stopped step and a time limit pause with the same reason 
     { want: "time_limit", stop: { pauseReason: "time_limit", message: "the run reached its time limit" } },
   ];
   for (const { want, stop } of cases) {
-    await withPersistenceDirs(async ({ cwd, root }) => {
+    await withTempDirs(async ({ cwd, root }) => {
       const entered = deferred<void>();
       const runner: AgentRunner = {
         async run(_prompt: string, options: StepRequest): Promise<unknown> {
@@ -262,7 +240,7 @@ test("a failed step, a stopped step and a time limit pause with the same reason 
 });
 
 test("automatic error persists without a listener", async () => {
-  await withPersistenceDirs(async ({ cwd, root }) => {
+  await withTempDirs(async ({ cwd, root }) => {
     const failedManager = new WorkflowManager({
       cwd,
       persistenceRoot: root,
@@ -280,7 +258,7 @@ test("automatic error persists without a listener", async () => {
 });
 
 test("resume replay republishes execution observations without cached journal events", async () => {
-  await withPersistenceDirs(async ({ cwd, root }) => {
+  await withTempDirs(async ({ cwd, root }) => {
     let calls = 0;
     const runner: AgentRunner = {
       async run() {
@@ -330,7 +308,7 @@ return { value, decision }`,
 });
 
 test("legacy resume upgrades under lease and begins a new event stream at resumed", async () => {
-  await withPersistenceDirs(async ({ cwd, root }) => {
+  await withTempDirs(async ({ cwd, root }) => {
     const runId = "legacy-manager-events";
     const source = script(`return 'resumed'`, "legacy-events");
     const persistence = createRunPersistence(cwd, undefined, { persistenceRoot: root });
@@ -358,7 +336,7 @@ test("legacy resume upgrades under lease and begins a new event stream at resume
 });
 
 test("a running run whose lock another owner took and deleted never recreates its files", async () => {
-  await withPersistenceDirs(async ({ cwd, root }) => {
+  await withTempDirs(async ({ cwd, root }) => {
     const entered = deferred<void>();
     const outcome = deferred<unknown>();
     const manager = new WorkflowManager({
@@ -439,7 +417,7 @@ function captureEventKeys(
 }
 
 test("each manager event carries exactly its §2.2 payload key set", async () => {
-  await withPersistenceDirs(async ({ cwd, root }) => {
+  await withTempDirs(async ({ cwd, root }) => {
     // Scenario 1 — a successful agent run drives the nine execution/lifecycle events. The runner
     // reports usage (→ tokenUsage and agentEnd.usage) and history (→ agentHistory).
     const historyRunner: AgentRunner = {
@@ -516,7 +494,7 @@ return await agent('next', { label: 'next' })`, "hold-events"),
 });
 
 test("automatic usage_limit and auth_required settlements carry reason + errorRecord on live and persisted surfaces", async () => {
-  await withPersistenceDirs(async ({ cwd, root }) => {
+  await withTempDirs(async ({ cwd, root }) => {
     // usage_limit — the live paused payload carries reason + errorRecord + resetHint (and no
     // authContext); the persisted record projects the same and drops the raw WorkflowError.
     const usageManager = new WorkflowManager({
@@ -590,7 +568,7 @@ test("automatic usage_limit and auth_required settlements carry reason + errorRe
 });
 
 test("a step's history report lands on that step, found by its scope and call index", async () => {
-  await withPersistenceDirs(async ({ cwd, root }) => {
+  await withTempDirs(async ({ cwd, root }) => {
     const history = [{ role: "assistant" as const, kind: "text" as const, text: "second" }];
     const manager = new WorkflowManager({
       cwd,

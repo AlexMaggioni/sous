@@ -6,13 +6,13 @@ import { join } from "node:path";
 import test from "node:test";
 import type { CheckpointContext } from "../src/errors.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { projectRunEventForPersistence } from "../src/run-observability.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import type { WorkflowCallRecord } from "../src/workflow-result.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
 import { journalResume } from "./helpers/journal-resume.js";
+import { memoryPersistence } from "./helpers/memory-persistence.js";
 
 const noopAgent = {
   async run() {
@@ -30,39 +30,6 @@ const decision = await checkpoint('${DURABLE_PROMPT}', {
 })
 const after = await agent('after:' + decision, { label: 'after' })
 return { prefix, decision, after }`;
-
-function memoryPersistence(): { persistence: RunPersistence; saves: PersistedRunState[] } {
-  const states = new Map<string, PersistedRunState>();
-  const saves: PersistedRunState[] = [];
-  const clone = (state: PersistedRunState): PersistedRunState => structuredClone(state);
-  return {
-    saves,
-    persistence: {
-      save(state) {
-        const copy = clone(state);
-        saves.push(copy);
-        states.set(copy.runId, copy);
-      },
-      load(runId) {
-        const state = states.get(runId);
-        return state ? clone(state) : null;
-      },
-      list() {
-        return [...states.values()].map(clone);
-      },
-      delete(runId) {
-        return states.delete(runId);
-      },
-      acquireRunLease(runId) {
-        return { runId, token: `${runId}-lease` };
-      },
-      releaseRunLease() {},
-      validateRunLease() {
-        return true;
-      },
-    },
-  };
-}
 
 function recordingAgent() {
   const prompts: string[] = [];

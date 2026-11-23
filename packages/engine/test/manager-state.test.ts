@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
@@ -11,22 +10,10 @@ import { WorkflowManager } from "../src/workflow-manager.js";
 import { CALL_INPUTS_FORMAT } from "../src/workflow.js";
 import { CALL_PATH_FORMAT } from "../src/call-path.js";
 import { CHECKPOINT_INPUTS_FORMAT } from "../src/checkpoint-call.js";
+import { tempDirs } from "./helpers/temp.js";
 
 const script = (body: string, name = "manager-state") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: 'manager state' }\n${body}`;
-
-function tempDirs(): { cwd: string; root: string; cleanup: () => void } {
-  const cwd = mkdtempSync(join(tmpdir(), "manager-state-cwd-"));
-  const root = mkdtempSync(join(tmpdir(), "manager-state-root-"));
-  return {
-    cwd,
-    root,
-    cleanup: () => {
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(root, { recursive: true, force: true });
-    },
-  };
-}
 
 describe("WorkflowManager PR3 state", () => {
   it("snapshots strict args before execution", async () => {

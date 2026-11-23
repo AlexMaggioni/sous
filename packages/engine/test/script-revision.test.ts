@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import type { StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { lockOwnerPid } from "./helpers/run-files.js";
+import { waitUntil } from "./helpers/async.js";
+import { type TempDirs, withTempDirs } from "./helpers/temp.js";
 
 /** Every run() call gets its own deferred result, resolved by call order. */
 function perCallRunner() {
@@ -22,26 +21,7 @@ function perCallRunner() {
   };
 }
 
-async function waitUntil(predicate: () => boolean, message: string): Promise<void> {
-  for (let attempt = 0; attempt < 400; attempt++) {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  assert.fail(message);
-}
-
-function withDirs(fn: (dirs: { cwd: string; root: string }) => Promise<void>) {
-  return async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "ap-revision-cwd-"));
-    const root = mkdtempSync(join(tmpdir(), "ap-revision-store-"));
-    try {
-      await fn({ cwd, root });
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(root, { recursive: true, force: true });
-    }
-  };
-}
+const withDirs = (fn: (dirs: TempDirs) => Promise<void>) => () => withTempDirs(fn, "ap-revision");
 
 const threeCalls = (second: string) => `export const meta = { name: 'revise', description: 'three calls', model: 'claude' }
 const a = await agent('first', { label: 'a' })

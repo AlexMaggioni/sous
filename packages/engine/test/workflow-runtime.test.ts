@@ -7,6 +7,7 @@ import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { isStepFailedPause, type JournalEntry, runWorkflow } from "../src/workflow.js";
 import type { WorkflowCallRecord } from "../src/workflow-result.js";
 import { journalResume } from "./helpers/journal-resume.js";
+import { fakeAgent } from "./helpers/runners.js";
 
 /** Agent runner that counts real invocations and echoes a per-call result. */
 function countingAgent() {
@@ -18,24 +19,6 @@ function countingAgent() {
         state.calls++;
         return `ran:${prompt}`;
       },
-    },
-  };
-}
-
-/** Minimal fake agent runner that reports a fixed usage via onUsage. */
-function fakeAgent(usage: Partial<AgentUsage>, result: unknown = "ok") {
-  return {
-    async run(_prompt: string, options: { onUsage?: (u: AgentUsage) => void }) {
-      options.onUsage?.({
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        total: 0,
-        cost: 0,
-        ...usage,
-      });
-      return result;
     },
   };
 }

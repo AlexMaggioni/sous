@@ -17,6 +17,7 @@ import type { AgentSessionRef } from "../src/workflow-result.js";
 import { lookupAgents, lookupMcpServers } from "../src/agents.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { createSteps, type StepsOptions } from "../src/steps/steps.js";
+import { waitUntil } from "./helpers/async.js";
 
 function write(file: string, content: string): void {
   mkdirSync(dirname(file), { recursive: true });
@@ -75,14 +76,6 @@ const onFakes = (place: ReturnType<typeof fakePlace>, extra: Partial<StepsOption
   accounts: place.accounts,
   ...extra,
 });
-
-async function until(check: () => boolean, ms = 10_000) {
-  const end = Date.now() + ms;
-  while (!check()) {
-    if (Date.now() > end) assert.fail("timed out");
-    await new Promise((done) => setTimeout(done, 20));
-  }
-}
 
 /** The request the engine sends: it asks the steps module for the step's route first. */
 function routed(steps: ReturnType<typeof createSteps>, ask: StepAsk, fields: Omit<StepRequest, "route"> = {}): StepRequest {
@@ -345,7 +338,7 @@ describe("steps on the fake programs", () => {
       const sessions: string[] = [];
       try {
         const running = steps.run("hello", routed(steps, { label: "a", model }, { signal: controller.signal, onSessionOpen: (ref: AgentSessionRef) => sessions.push(ref.sessionId) }));
-        await until(() => place.lines().length === 1);
+        await waitUntil(() => place.lines().length === 1, "the program should receive the step", 10_000);
         controller.abort();
         await assert.rejects(running);
       } finally {

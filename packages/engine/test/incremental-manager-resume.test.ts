@@ -1,29 +1,16 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { WorkflowReplayProvenanceField } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
+import { tempDirs } from "./helpers/temp.js";
 
 const workflow = (body: string, name = "incremental-manager") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: "manager resume" }\n${body}`;
-
-function tempDirs(prefix = "incremental-manager-"): { cwd: string; root: string; cleanup: () => void } {
-  const cwd = mkdtempSync(join(tmpdir(), `${prefix}cwd-`));
-  const root = mkdtempSync(join(tmpdir(), `${prefix}root-`));
-  return {
-    cwd,
-    root,
-    cleanup: () => {
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(root, { recursive: true, force: true });
-    },
-  };
-}
 
 interface MemoryStore {
   persistence: RunPersistence;
@@ -114,7 +101,7 @@ async function assertDriftedCheckpointResume(
   mutateSource: (manager: WorkflowManager, sourceRunId: string, cwd: string) => void,
   expectedField: WorkflowReplayProvenanceField,
 ): Promise<void> {
-  const dirs = tempDirs("incremental-manager-provenance-");
+  const dirs = tempDirs("incremental-manager-provenance");
   execFileSync("git", ["-C", dirs.cwd, "init", "-q"]);
   execFileSync("git", ["-C", dirs.cwd, "config", "user.email", "tests@example.com"]);
   execFileSync("git", ["-C", dirs.cwd, "config", "user.name", "Tests"]);

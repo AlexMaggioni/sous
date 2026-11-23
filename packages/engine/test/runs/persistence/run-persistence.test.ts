@@ -8,22 +8,8 @@ import { WorkflowError, WorkflowErrorCode } from "../../../src/errors.js";
 import { createRunPersistence, generateRunId, type PersistedRunState, type RunPersistence } from "../../../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../../../src/workflow-manager.js";
 import { workflowProjectPaths } from "../../../src/runs/persistence/project-paths.js";
-import { withFakeHomeAsync } from "../../helpers/fake-home.js";
-
-// Run state lives under the user's workflow home (~/.orchestrator/engine/projects/<key>/runs).
-// Each test isolates both cwd and HOME, so no run state reaches a real folder.
-function withTempCwd(fn: (cwd: string) => Promise<void>) {
-  return async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "ap-dw-rp-"));
-    const fakeHome = mkdtempSync(join(tmpdir(), "ap-dw-home-"));
-    try {
-      await withFakeHomeAsync(fakeHome, () => fn(cwd));
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(fakeHome, { recursive: true, force: true });
-    }
-  };
-}
+import { memoryPersistence } from "../../helpers/memory-persistence.js";
+import { withTempCwd } from "../../helpers/temp.js";
 
 const twoAgentScript = `export const meta = { name: 'persistence_demo', description: 'persistence demo' }
 const a = await agent('first', { label: 'first' })
@@ -58,52 +44,6 @@ function persistedRun(runId: string, status: PersistedRunState["status"]): Persi
     callsAllocated: 0,
     startedAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:01.000Z",
-  };
-}
-
-function memoryPersistence(): {
-  persistence: RunPersistence;
-  saves: PersistedRunState[];
-  acquired: string[];
-  released: string[];
-} {
-  const states = new Map<string, PersistedRunState>();
-  const saves: PersistedRunState[] = [];
-  const acquired: string[] = [];
-  const released: string[] = [];
-  const clone = (state: PersistedRunState): PersistedRunState => structuredClone(state);
-
-  return {
-    saves,
-    acquired,
-    released,
-    persistence: {
-      save(state) {
-        const copy = clone(state);
-        saves.push(copy);
-        states.set(state.runId, copy);
-      },
-      load(runId) {
-        const state = states.get(runId);
-        return state ? clone(state) : null;
-      },
-      list() {
-        return [...states.values()].map(clone);
-      },
-      delete(runId) {
-        return states.delete(runId);
-      },
-      acquireRunLease(runId) {
-        acquired.push(runId);
-        return { runId, token: `${runId}-lease` };
-      },
-      releaseRunLease(lease) {
-        released.push(lease.runId);
-      },
-      validateRunLease() {
-        return true;
-      },
-    },
   };
 }
 

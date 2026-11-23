@@ -1,62 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { AgentUsage, StepRequest } from "../src/steps/agent-run.js";
+import type { AgentUsage } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { runWorkflow } from "../src/workflow.js";
-
-function memoryPersistence() {
-  const states = new Map<string, PersistedRunState>();
-  const saves: PersistedRunState[] = [];
-  const clone = (state: PersistedRunState) => structuredClone(state);
-  const persistence: RunPersistence = {
-    save(state) {
-      const copy = clone(state);
-      states.set(state.runId, copy);
-      saves.push(copy);
-    },
-    load(runId) {
-      const state = states.get(runId);
-      return state ? clone(state) : null;
-    },
-    list() {
-      return [...states.values()].map(clone);
-    },
-    delete(runId) {
-      return states.delete(runId);
-    },
-    acquireRunLease(runId) {
-      return { runId, token: `${runId}-lease` };
-    },
-    releaseRunLease() {},
-    validateRunLease() {
-      return true;
-    },
-  };
-  return { persistence, states, saves };
-}
-
-function runnerFrom(impl: (prompt: string, options: StepRequest) => unknown | Promise<unknown>): AgentRunner {
-  return { run: (prompt: string, options: StepRequest) => Promise.resolve(impl(prompt, options)) };
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
-async function waitUntil(predicate: () => boolean, message: string): Promise<void> {
-  for (let attempt = 0; attempt < 200; attempt++) {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  assert.fail(message);
-}
+import { deferred, waitUntil } from "./helpers/async.js";
+import { memoryPersistence } from "./helpers/memory-persistence.js";
+import { runnerFrom } from "./helpers/runners.js";
 
 const TWO_AGENT_SCRIPT = [
   'export const meta = { name: "usage-live", description: "usage" };',

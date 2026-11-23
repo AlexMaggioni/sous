@@ -1,34 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
-
-function tempDirs(): { cwd: string; root: string; cleanup: () => void } {
-  const base = mkdtempSync(join(tmpdir(), "resume-unsettled-"));
-  const cwd = join(base, "cwd");
-  const root = join(base, "persistence");
-  mkdirSync(cwd);
-  mkdirSync(root);
-  return { cwd, root, cleanup: () => rmSync(base, { recursive: true, force: true }) };
-}
-
-function deferred(): { promise: Promise<void>; resolve: () => void } {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => { resolve = done; });
-  return { promise, resolve };
-}
-
-async function waitUntil(predicate: () => boolean, message: string): Promise<void> {
-  for (let attempt = 0; attempt < 1_000; attempt++) {
-    if (predicate()) return;
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-  assert.fail(message);
-}
+import { deferred, waitUntil } from "./helpers/async.js";
+import { tempDirs } from "./helpers/temp.js";
 
 function abortablePending(options: StepRequest): Promise<never> {
   return new Promise((_resolve, reject) => {

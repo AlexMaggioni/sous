@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 
 import type { StepRequest } from "../src/steps/agent-run.js";
@@ -12,6 +9,8 @@ import {
   runWorkflow,
   type WorkflowAgentAttemptControl,
 } from "../src/workflow.js";
+import { waitUntil } from "./helpers/async.js";
+import { tempDirs } from "./helpers/temp.js";
 
 const parallelScript = `export const meta = { name: "agent-cancel", description: "per-agent cancellation" }
 const values = await parallel([
@@ -26,27 +25,6 @@ function cancelledByHost(): WorkflowError {
     WorkflowErrorCode.AGENT_CANCELLED,
     { recoverable: true },
   );
-}
-
-async function waitUntil(predicate: () => boolean, message: string): Promise<void> {
-  for (let attempt = 0; attempt < 300; attempt++) {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  assert.fail(message);
-}
-
-function tempDirs(prefix: string): { cwd: string; root: string; cleanup: () => void } {
-  const cwd = mkdtempSync(join(tmpdir(), `${prefix}-cwd-`));
-  const root = mkdtempSync(join(tmpdir(), `${prefix}-root-`));
-  return {
-    cwd,
-    root,
-    cleanup: () => {
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(root, { recursive: true, force: true });
-    },
-  };
 }
 
 test("engine host cancellation settles one call, bypasses retries, lets siblings finish, and pauses the run", async () => {

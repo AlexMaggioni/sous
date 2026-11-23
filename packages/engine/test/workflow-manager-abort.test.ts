@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import type { AgentUsage } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
-import { withFakeHomeAsync } from "./helpers/fake-home.js";
+import { fakeAgent } from "./helpers/runners.js";
+import { withTempCwd } from "./helpers/temp.js";
 
 // AgentUsage lives in src/steps/agent-run.ts (the seam). runSync is the consolidated
 // path the MCP shell drives: it resolves
@@ -15,24 +13,6 @@ import { withFakeHomeAsync } from "./helpers/fake-home.js";
 // thrown error. The manager still emits the same 'error'/'paused'/'stopped' events.
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Agent runner that reports fixed usage so token accounting is exercised. */
-function fakeAgent(usage: Partial<AgentUsage> = {}, result: unknown = "ok") {
-  return {
-    async run(_prompt: string, options: { onUsage?: (u: AgentUsage) => void }) {
-      options.onUsage?.({
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        total: 0,
-        cost: 0,
-        ...usage,
-      });
-      return result;
-    },
-  };
-}
 
 /**
  * Agent that stays running until a single shared deferred resolve is called externally.
@@ -105,20 +85,6 @@ const twoAgentScript = `export const meta = { name: 'tracked_demo_two', descript
 const a = await agent('first', { label: 'a' })
 const b = await agent('second', { label: 'b' })
 return { a, b }`;
-
-/** Run each manager test with isolated cwd and HOME so workflow state is isolated. */
-function withTempCwd(fn: (cwd: string) => Promise<void>) {
-  return async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "ap-dw-abort-"));
-    const fakeHome = mkdtempSync(join(tmpdir(), "ap-dw-home-"));
-    try {
-      await withFakeHomeAsync(fakeHome, () => fn(cwd));
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(fakeHome, { recursive: true, force: true });
-    }
-  };
-}
 
 // ─── Observer isolation ───────────────────────────────────────────────────────
 

@@ -1,50 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { StepRequest } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
-
-function memoryPersistence() {
-  const states = new Map<string, PersistedRunState>();
-  const saves: PersistedRunState[] = [];
-  const acquired: string[] = [];
-  const released: string[] = [];
-  const clone = (state: PersistedRunState) => structuredClone(state);
-  const persistence: RunPersistence = {
-    save(state) {
-      const copy = clone(state);
-      saves.push(copy);
-      states.set(state.runId, copy);
-    },
-    load(runId) {
-      const state = states.get(runId);
-      return state ? clone(state) : null;
-    },
-    list() {
-      return [...states.values()].map(clone);
-    },
-    delete(runId) {
-      return states.delete(runId);
-    },
-    acquireRunLease(runId) {
-      acquired.push(runId);
-      return { runId, token: `${runId}-lease` };
-    },
-    releaseRunLease(lease) {
-      released.push(lease.runId);
-    },
-    validateRunLease() {
-      return true;
-    },
-  };
-  return { persistence, states, saves, acquired, released };
-}
-
-function runnerFrom(impl: (prompt: string, options: StepRequest) => unknown | Promise<unknown>): AgentRunner {
-  return { run: (prompt: string, options: StepRequest) => Promise.resolve(impl(prompt, options)) };
-}
+import { memoryPersistence } from "./helpers/memory-persistence.js";
+import { runnerFrom } from "./helpers/runners.js";
 
 test("a checkpoint call is attributed in the journal", async () => {
   const store = memoryPersistence();

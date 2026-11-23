@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { AuthErrorContext } from "../src/errors.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
+import { memoryPersistence } from "./helpers/memory-persistence.js";
+import { withTempCwd } from "./helpers/temp.js";
 
 // PR4 (§2.12/§2.13): the engine generalizes the PROVIDER_USAGE_LIMIT pause branch so an
 // AUTH_REQUIRED fault CHECKPOINTS the run as paused (reason "auth_required") carrying the
@@ -25,57 +24,6 @@ const AUTH_CONTEXT: AuthErrorContext = {
     { id: "claude-login", type: "terminal", name: "Terminal Login" },
   ],
 };
-
-/** An in-memory RunPersistence with capture hooks — no fs, deterministic, shareable across
- *  "cold" managers so a fresh manager re-loads a paused run exactly as a new process would. */
-function memoryPersistence(): {
-  persistence: RunPersistence;
-  saves: PersistedRunState[];
-  acquired: string[];
-  released: string[];
-  seed: (state: PersistedRunState) => void;
-} {
-  const states = new Map<string, PersistedRunState>();
-  const saves: PersistedRunState[] = [];
-  const acquired: string[] = [];
-  const released: string[] = [];
-  const clone = (state: PersistedRunState): PersistedRunState => structuredClone(state);
-  return {
-    saves,
-    acquired,
-    released,
-    seed(state) {
-      states.set(state.runId, clone(state));
-    },
-    persistence: {
-      save(state) {
-        const copy = clone(state);
-        saves.push(copy);
-        states.set(state.runId, copy);
-      },
-      load(runId) {
-        const state = states.get(runId);
-        return state ? clone(state) : null;
-      },
-      list() {
-        return [...states.values()].map(clone);
-      },
-      delete(runId) {
-        return states.delete(runId);
-      },
-      acquireRunLease(runId) {
-        acquired.push(runId);
-        return { runId, token: `${runId}-lease` };
-      },
-      releaseRunLease(lease) {
-        released.push(lease.runId);
-      },
-      validateRunLease() {
-        return true;
-      },
-    },
-  };
-}
 
 /** A runner stub that fails EVERY agent() call with AUTH_REQUIRED carrying the given authContext.
  *  A secret may be attached to the error's `details` — the closest analog to the intent's secret
@@ -97,17 +45,6 @@ function authRequiredAgent(opts: { authContext: AuthErrorContext; secret?: strin
         });
       },
     },
-  };
-}
-
-function withTempCwd(fn: (cwd: string) => Promise<void>) {
-  return async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "ap-auth-pause-"));
-    try {
-      await fn(cwd);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
   };
 }
 

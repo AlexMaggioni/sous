@@ -1,36 +1,21 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
+import type { WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import type { OccurrenceResume } from "../src/resume.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
-import { normalizeResumeSeed } from "../src/resume-matcher.js";
-import { resumeRows } from "../src/resume-rows.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
-import { tempPlaces } from "./helpers/places.js";
 import { hashCheckpointInputs } from "../src/checkpoint-call.js";
 import { isStepFailedPause, runWorkflow } from "../src/workflow.js";
+import { deferred } from "./helpers/async.js";
+import { tempDirs } from "./helpers/temp.js";
 
 const script = (body: string, name = "incremental-recording") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: 'incremental recording' }\n${body}`;
-
-function tempDirs(): { cwd: string; root: string; cleanup: () => void } {
-  const cwd = mkdtempSync(join(tmpdir(), "incremental-recording-cwd-"));
-  const root = mkdtempSync(join(tmpdir(), "incremental-recording-root-"));
-  return {
-    cwd,
-    root,
-    cleanup: () => {
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(root, { recursive: true, force: true });
-    },
-  };
-}
 
 function initGitRepo(cwd: string): void {
   execFileSync("git", ["-C", cwd, "init", "-q"]);
@@ -39,12 +24,6 @@ function initGitRepo(cwd: string): void {
   writeFileSync(join(cwd, "tracked.txt"), "clean\n");
   execFileSync("git", ["-C", cwd, "add", "tracked.txt"]);
   execFileSync("git", ["-C", cwd, "commit", "-qm", "initial"]);
-}
-
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
-  return { promise, resolve };
 }
 
 describe("checkpoint input recording and byte compatibility", () => {
