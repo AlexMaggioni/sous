@@ -136,7 +136,7 @@ export interface PersistedRunState {
   /** The persisted args value was not a faithful pre-execution strict-JSON snapshot. */
   argsUnreplayable?: true;
   /** The run's working directory (ExecOptions.cwd) when it overrode the manager cwd —
-   *  kept so resume() re-runs in the same directory (e.g. the same worktree). */
+   *  kept so a resume re-runs in the same directory (e.g. the same worktree). */
   cwd?: string;
   /** The directory the run actually executed in. */
   effectiveCwd?: string;
@@ -174,7 +174,7 @@ export interface PersistedRunState {
   pausedAt?: string;
   /** For an "auth_required" pause (§2.12/§2.13): the structured, NON-SECRET auth surface
    *  (backendId + advertised method ids/types/names). NEVER the intent's secret payload —
-   *  no `authenticateMeta`, no `envValues` (Principle 9). Read by resume()'s cold re-arm. */
+   *  no `authenticateMeta`, no `envValues` (Principle 9). Read by the cold re-arm of a resume. */
   authContext?: AuthErrorContext;
   /** For a "checkpoint_required" pause: the structured, NON-SECRET pending checkpoint
    *  surface. Its call index and hash let resume journal the host-supplied decision. */

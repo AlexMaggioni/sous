@@ -110,7 +110,7 @@ export interface ManagedRun {
   argsSnapshotOk: boolean;
   argsUnreplayable?: true;
   /** THIS run's working directory (ExecOptions.cwd), when it overrides the manager cwd.
-   *  Persisted so resume() re-runs in the same directory (e.g. the same worktree). */
+   *  Persisted so a resume re-runs in the same directory (e.g. the same worktree). */
   cwd?: string;
   /** Parsed meta, kept so a terminal (paused/failed) result can still report it. */
   meta?: WorkflowMeta;
@@ -271,7 +271,7 @@ export interface ExecOptions {
    * Working directory for THIS run, overriding the manager's constructor `cwd` —
    * the natural fit for hosts that run each workflow inside its own git worktree.
    * Every agent step runs here (unless worktree isolation or a per-agent
-   * `agent({ cwd })` overrides it further). Persisted with the run so `resume()`
+   * `agent({ cwd })` overrides it further). Persisted with the run so a resume
    * re-runs in the SAME directory. Run STATE stays keyed to the manager cwd, so
    * listing and resuming runs are unaffected by the per-run directory's lifetime.
    */
@@ -1718,7 +1718,7 @@ export class WorkflowManager extends EventEmitter {
           ? error
           : new WorkflowError(errorMessage(error), WorkflowErrorCode.UNKNOWN, { recoverable: false });
       // Four recoverable-by-external-action fault codes checkpoint the run as PAUSED (not failed),
-      // so resume() replays the journaled prefix instead of restarting from scratch (§2.12):
+      // so a resume replays the journaled prefix instead of restarting from scratch (§2.12):
       //  - PROVIDER_USAGE_LIMIT: a provider quota refills over time.
       //  - AUTH_REQUIRED: a host completes an auth step.
       //  - CHECKPOINT_REQUIRED: a host supplies the pending durable checkpoint decision.
@@ -2132,7 +2132,7 @@ export class WorkflowManager extends EventEmitter {
       ...(managed.scriptRevisions ? { scriptRevisions: managed.scriptRevisions } : {}),
       args: managed.args,
       argsUnreplayable: managed.argsUnreplayable,
-      // The per-run working directory, so resume() re-runs in the SAME place.
+      // The per-run working directory, so a resume re-runs in the SAME place.
       cwd: managed.cwd,
       effectiveCwd: managed.effectiveCwd,
       runtime: managed.runtime,
@@ -2178,13 +2178,13 @@ export class WorkflowManager extends EventEmitter {
       pausedAt: managed.status === "paused" ? managed.pausedAt : undefined,
       // The NON-SECRET auth surface for an auth pause — backendId + advertised method
       // ids/types/names only (never authenticateMeta/envValues; Principle 9, §2.14). It
-      // arms resume()'s cold re-check (§2.13).
+      // arms the cold re-check of a resume (§2.13).
       authContext:
         managed.status === "paused" && managed.error?.code === WorkflowErrorCode.AUTH_REQUIRED
           ? managed.error.authContext
           : undefined,
       // The NON-SECRET pending durable checkpoint surface. Its callIndex/hash pair arms
-      // resume() to inject the host's decision as a deterministic journal entry.
+      // a resume to inject the host's decision as a deterministic journal entry.
       checkpointContext:
         managed.status === "paused" && managed.error?.code === WorkflowErrorCode.CHECKPOINT_REQUIRED
           ? managed.error.checkpointContext
@@ -2266,17 +2266,8 @@ export class WorkflowManager extends EventEmitter {
 
   /**
    * Resume an interrupted run: replay journaled results for the unchanged prefix
-   * and run the rest live. Returns false if there is nothing resumable.
-   */
-  async resume(runId: string, exec: ExecOptions = {}): Promise<boolean> {
-    const { accepted } = await this.continueRunInternal(runId, exec);
-    return accepted;
-  }
-
-  /**
-   * Resume an interrupted run while exposing the resumed execution's settlement.
-   * Rejected resumptions have no completion promise; accepted resumptions retain
-   * the same background result contract as startInBackground.
+   * and run the rest live. A refused resume has no completion promise. An accepted
+   * one keeps the same background result contract as startInBackground.
    */
   async resumeInBackground(
     runId: string,

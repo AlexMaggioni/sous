@@ -1550,7 +1550,7 @@ test(
 
       failFirstPass = false;
       // NOTE: no exec.cwd here — resume must recover it from the persisted run.
-      const resumed = await manager.resume(result.runId);
+      const resumed = (await manager.resumeInBackground(result.runId)).accepted;
       assert.equal(resumed, true, "the paused run should resume");
       const deadline = Date.now() + 5_000;
       while (manager.getRun(result.runId)?.status === "running" && Date.now() < deadline) {
@@ -1693,7 +1693,7 @@ test(
       rePause = ev;
     });
 
-    const ok = await manager2.resume(paused.runId);
+    const ok = (await manager2.resumeInBackground(paused.runId)).accepted;
     assert.equal(ok, true, "resume handled the run by re-pausing");
     assert.deepEqual(consulted, ["codex"], "the cold runner's auth.canResume was consulted with the persisted backendId");
     assert.equal(runCalls, 0, "the lost in-process intent means the agent is never re-executed");
@@ -1738,7 +1738,7 @@ test(
       },
     });
 
-    const ok = await manager2.resume(paused.runId);
+    const ok = (await manager2.resumeInBackground(paused.runId)).accepted;
     assert.equal(ok, true);
     const deadline = Date.now() + 5_000;
     while (manager2.getRun(paused.runId)?.status === "running" && Date.now() < deadline) {

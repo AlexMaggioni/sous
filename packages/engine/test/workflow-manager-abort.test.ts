@@ -429,7 +429,7 @@ test(
     assert.equal(persisted?.pauseReason, "requested");
 
     // Resume runs everything live.
-    assert.equal(await manager.resume(runId), true);
+    assert.equal((await manager.resumeInBackground(runId)).accepted, true);
     await new Promise((r) => setTimeout(r, 20));
     agent.resolve(0, "a");
     await new Promise((r) => setTimeout(r, 20));
@@ -472,7 +472,7 @@ return await parallel([
     assert.equal(queued?.aborted, true, "the queued call never started and is recorded as interrupted");
     assert.equal(queued?.error?.code, WorkflowErrorCode.PAUSE_REQUESTED);
 
-    assert.equal(await manager.resume(runId), true);
+    assert.equal((await manager.resumeInBackground(runId)).accepted, true);
     await new Promise((r) => setTimeout(r, 30));
     agent.resolve(2, "three-done");
     await new Promise((r) => setTimeout(r, 50));
@@ -524,7 +524,7 @@ test(
     assert.equal(persisted?.journal?.length, 1);
 
     // Resume: a replays, b runs live with a fresh runner call.
-    assert.equal(await manager.resume(runId), true);
+    assert.equal((await manager.resumeInBackground(runId)).accepted, true);
     assert.equal(manager.getRun(runId)?.status, "running");
     await new Promise((r) => setTimeout(r, 30));
     agent.resolve(2, "b-done");
@@ -556,7 +556,7 @@ test(
     assert.equal(manager.getRun(runId)?.status, "paused");
 
     // Resume — a replays from the journal, b runs live.
-    const resumed = await manager.resume(runId);
+    const resumed = (await manager.resumeInBackground(runId)).accepted;
     assert.equal(resumed, true, "resume should succeed");
     assert.equal(manager.getRun(runId)?.status, "running", "resumed run should be running");
 
@@ -610,7 +610,7 @@ return { a, b }`;
 
     // Resume: agent 1 replays from the journal (no run() call); agent 2 runs live
     // (the next run() call, #2).
-    const resumed = await manager.resume(runId);
+    const resumed = (await manager.resumeInBackground(runId)).accepted;
     assert.equal(resumed, true);
     await new Promise((r) => setTimeout(r, 30));
     agent.resolve(2, "second-result");
@@ -638,7 +638,6 @@ test(
 
     const alreadyCompleted = await manager.resumeInBackground(runId);
     assert.deepEqual(alreadyCompleted, { accepted: false });
-    assert.equal(await manager.resume("another-missing-run"), false, "resume keeps its false return contract");
   }),
 );
 
@@ -667,22 +666,6 @@ test(
     assert.equal(result.status, "completed");
     assert.equal(manager.getRun(runId)?.status, "completed");
     assert.equal(manager.getPersistence().list().find((run) => run.runId === runId)?.status, "completed");
-  }),
-);
-
-test(
-  "resume returns false for completed run",
-  withTempCwd(async (cwd) => {
-    const manager = new WorkflowManager({ cwd, agent: fakeAgent() });
-    const { promise } = manager.startInBackground(oneAgentScript);
-    await promise; // wait for completion
-
-    const runs = manager.getPersistence().list();
-    const runId = runs[0]?.runId;
-    if (runId) {
-      const resumed = await manager.resume(runId);
-      assert.equal(resumed, false, "cannot resume a completed run");
-    }
   }),
 );
 
@@ -923,7 +906,7 @@ test(
     manager.stop(runId);
     da.resolve("done");
     await origPromise.catch(() => {});
-    await manager.resume(runId);
+    await manager.resumeInBackground(runId);
 
     assert.ok(resumedEvent, "resumed event should fire on resume");
     assert.equal(resumedEvent?.runId, runId);

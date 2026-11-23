@@ -279,7 +279,7 @@ test(
       resumedEvent = true;
     });
 
-    const ok = await manager.resume(runId);
+    const ok = (await manager.resumeInBackground(runId)).accepted;
     assert.equal(ok, true, "resume was accepted");
     assert.deepEqual(agent.canResumeCalls, ["claude"], "the runner's auth.canResume was consulted with backendId");
     assert.equal(resumedEvent, true, "a proceeding resume emits 'resumed'");
@@ -311,7 +311,7 @@ test(
       paused = ev;
     });
 
-    const ok = await manager.resume(runId);
+    const ok = (await manager.resumeInBackground(runId)).accepted;
     assert.equal(ok, true, "resume handled the run (by re-pausing)");
     assert.deepEqual(agent.canResumeCalls, ["claude"], "the runner's auth.canResume was consulted");
     assert.equal(resumedEvent, false, "a re-paused resume does NOT emit 'resumed'");
@@ -351,7 +351,7 @@ test(
       paused = ev;
     });
 
-    const ok = await manager.resume(runId);
+    const ok = (await manager.resumeInBackground(runId)).accepted;
     assert.equal(ok, true);
     assert.equal(runCalls, 0, "no auth controller ⇒ cannot confirm resumability ⇒ never re-executes");
     assert.equal(paused?.reason, "auth_required");
@@ -383,7 +383,7 @@ test(
     const agent = resumableAgent(false);
     const manager = new WorkflowManager({ cwd, persistence: store.persistence, agent: agent.runner });
 
-    const ok = await manager.resume(runId);
+    const ok = (await manager.resumeInBackground(runId)).accepted;
     assert.equal(ok, true);
     assert.deepEqual(agent.canResumeCalls, [], "canResume is only consulted for an 'auth_required' pause");
 
