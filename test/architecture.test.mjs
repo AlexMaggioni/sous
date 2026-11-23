@@ -407,6 +407,13 @@ const MEMBER_CAPS = [
   { file: "packages/engine/src/workflow.ts", fieldsOf: "AgentOptions", cap: 18 },
 ];
 
+/**
+ * The number of test files that build a WorkflowManager themselves. The source builds it in one
+ * place, runs/worker.ts, and each of these files changes when the manager's interface does. New
+ * tests go through runs/run.ts or the test kit. The number only goes down.
+ */
+const MANAGER_BUILDERS = 25;
+
 /** The README whose "Inside" table names each top-level file and folder of the package's src. */
 const INSIDE = { readme: "packages/engine/README.md", src: "packages/engine/src" };
 
@@ -992,6 +999,13 @@ function insideBreaks() {
   return found.sort();
 }
 
+function managerBuilderBreaks({ tests }) {
+  const count = tests.filter(({ file }) => /(?<![`'"])\bnew WorkflowManager\(/.test(readFileSync(file, "utf8"))).length;
+  if (count > MANAGER_BUILDERS) return [`${count} test files build a WorkflowManager, over MANAGER_BUILDERS (${MANAGER_BUILDERS}). Go through runs/run.ts or the test kit.`];
+  if (count < MANAGER_BUILDERS) return [`${count} test files build a WorkflowManager. Lower MANAGER_BUILDERS to ${count}.`];
+  return [];
+}
+
 // ── The tests ───────────────────────────────────────────────────────────────────────────────────
 
 const state = collect();
@@ -1009,6 +1023,7 @@ const now = {
   members: memberBreaks(),
   machine: machineBreaks(state),
   inside: insideBreaks(),
+  managerBuilders: managerBuilderBreaks(state),
   ...unusedExportBreaks(state),
 };
 
@@ -1049,6 +1064,7 @@ test("each exported value has an importer", () => compareList("unused"));
 test("each exported value has an importer in the source, not only in tests", () => compareList("forTests"));
 test("each file and function stays under its line cap", () => assert.equal(now.sizes.join("\n"), "", now.sizes.join("\n")));
 test("the engine README names each top-level file and folder of its src", () => assert.equal(now.inside.join("\n"), "", now.inside.join("\n")));
+test("no more test files build a WorkflowManager themselves", () => assert.equal(now.managerBuilders.join("\n"), "", now.managerBuilders.join("\n")));
 test("the manager's methods and the run's options stay at their caps", () => assert.equal(now.members.join("\n"), "", now.members.join("\n")));
 
 test("each behavior change keeps the test that holds it", () => {
