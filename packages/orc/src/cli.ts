@@ -7,7 +7,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { answerQuestion, checkWorkflow, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, gcRuns, HARNESSES, harnessName, hint, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, openWorkflowDir, parseCron, pauseRun, pruneRuns, readLog, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workerProcess, workflowDirs, type Answers, type HomePaths, type Launcher, type Place, type Reply, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
+import { answerQuestion, checkWorkflow, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, gcRuns, HARNESSES, harnessName, hint, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, parseCron, pauseRun, projectWorkflows, pruneRuns, readLog, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workerProcess, type Answers, type HomePaths, type Launcher, type Place, type Reply, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { doctor } from "./doctor.js";
 
@@ -442,13 +442,14 @@ async function cmdRerun(parsed: Parsed, options: MainOptions): Promise<number> {
 
 function cmdWorkflows(parsed: Parsed): number {
   const { paths, projectDir } = context(parsed);
-  const entries = openWorkflowDir(workflowDirs(projectDir, paths)).list();
+  const view = projectWorkflows(paths, projectDir);
+  const entries = view.list();
   if (parsed.flags.json) {
     printJson(entries.map((entry) => ({ name: entry.name, file: entry.file, ...(entry.error ? { error: entry.error } : { ...entry.extras }) })));
     return 0;
   }
   if (!entries.length) {
-    out(`no saved workflows. Put them in ${workflowDirs(projectDir, paths).join(" or ")}.`);
+    out(`no saved workflows. Put them in ${view.dirs.join(" or ")}.`);
     return 0;
   }
   for (const entry of entries) {

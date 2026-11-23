@@ -8,7 +8,6 @@ export {
   homePaths,
   loadConfig,
   rememberProject,
-  workflowDirs,
   type HomePaths,
   type Place,
 } from "./runs/home.js";
@@ -47,7 +46,7 @@ export {
 export { isPlace } from "./places/places.js";
 
 // ── Saved workflows: the folders that hold them, the check and the dry run ──
-export { openWorkflowDir, resolveWorkflow } from "./workflows/dir.js";
+export { projectWorkflows, resolveWorkflow } from "./workflows/dir.js";
 export { checkWorkflow } from "./workflows/check.js";
 export { dryRun, type Answers } from "./workflows/dry-run.js";
 

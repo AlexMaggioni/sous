@@ -34,6 +34,8 @@ export interface WorkflowDirEntry {
 
 /** A read-only view over folders of workflow scripts that reads them again on each call. */
 export interface WorkflowDir {
+  /** The folders, absolute, the first winning. */
+  dirs: string[];
   /** Every workflow file, the first per name winning, sorted by name. */
   list(): WorkflowDirEntry[];
   /** A workflow's script by name, or undefined when no file matches or the text is not one
@@ -112,6 +114,7 @@ export function openWorkflowDir(dir: string | string[]): WorkflowDir {
   };
 
   return {
+    dirs,
     resolve,
     list(): WorkflowDirEntry[] {
       const entries: WorkflowDirEntry[] = [];
@@ -126,6 +129,11 @@ export function openWorkflowDir(dir: string | string[]): WorkflowDir {
       return entries.sort((a, b) => a.name.localeCompare(b.name));
     },
   };
+}
+
+/** The workflows a project sees: those in its own folder, then those in the home folder. */
+export function projectWorkflows(paths: HomePaths, projectDir: string): WorkflowDir {
+  return openWorkflowDir(workflowDirs(projectDir, paths));
 }
 
 /** A saved workflow, read once: its meta as written, the meta checked, and the names it uses. */
@@ -145,16 +153,13 @@ export function resolveWorkflow(paths: HomePaths, projectDir: string, nameOrPath
   if ((nameOrPath.includes("/") || nameOrPath.endsWith(".js") || nameOrPath.endsWith(".mjs")) && existsSync(asPath)) {
     file = asPath;
   } else {
-    const dirs = workflowDirs(projectDir, paths);
-    const entry = openWorkflowDir(dirs)
-      .list()
-      .find((candidate) => candidate.name === nameOrPath);
+    const view = projectWorkflows(paths, projectDir);
+    const entries = view.list();
+    const entry = entries.find((candidate) => candidate.name === nameOrPath);
     if (!entry) {
-      const names = openWorkflowDir(dirs)
-        .list()
-        .map((candidate) => candidate.name);
+      const names = entries.map((candidate) => candidate.name);
       throw new Error(
-        `no workflow "${nameOrPath}". Looked in ${dirs.join(" and ")}.${names.length ? ` Saved workflows: ${names.join(", ")}.` : ""}`,
+        `no workflow "${nameOrPath}". Looked in ${view.dirs.join(" and ")}.${names.length ? ` Saved workflows: ${names.join(", ")}.` : ""}`,
       );
     }
     if (entry.error) throw new Error(`${entry.file} does not parse: ${entry.error}`);

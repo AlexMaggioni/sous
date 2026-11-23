@@ -7,11 +7,11 @@ import type { WorkflowRunResult } from "../workflow-result.js";
 import { limitNotice, runAccounts } from "../accounts.js";
 import { envFor, lookupAgents, lookupMcpServers, lookupSettings } from "../agents.js";
 import { parseDurationSeconds } from "../duration.js";
-import { openWorkflowDir } from "../workflows/dir.js";
+import { projectWorkflows } from "../workflows/dir.js";
 import type { CheckpointCallContext } from "../workflow.js";
 import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";
 import { dropUnchangedWorktrees, runWorktrees } from "../places/places.js";
-import { ensureHome, homePaths, loadConfig, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
+import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
 import { ask, decisionOf, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
 import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
@@ -46,7 +46,7 @@ function oneLine(text: string, max = 160): string {
 
 /** Every saved workflow the project sees now, by name, as script text. */
 export function currentWorkflows(paths: HomePaths, projectDir: string): Record<string, string> {
-  const dirs = openWorkflowDir(workflowDirs(projectDir, paths));
+  const dirs = projectWorkflows(paths, projectDir);
   const out: Record<string, string> = {};
   for (const entry of dirs.list()) {
     const script = dirs.resolve(entry.name);
@@ -57,7 +57,7 @@ export function currentWorkflows(paths: HomePaths, projectDir: string): Record<s
 
 /** The engine's manager for a project's runs. Only this file builds one. */
 function managerFor(paths: HomePaths, projectDir: string, extra: Partial<ConstructorParameters<typeof WorkflowManager>[0]> = {}) {
-  const dirs = openWorkflowDir(workflowDirs(projectDir, paths));
+  const dirs = projectWorkflows(paths, projectDir);
   return new WorkflowManager({
     ...managerStore(paths),
     defaultAgentRetries: loadConfig(paths).retries,
@@ -149,7 +149,7 @@ async function runOnAccounts(
   if (mode === "start" || takeLatest) saveSnapshot(paths, runId, currentWorkflows(paths, record.projectDir));
   if (takeLatest) updateRecord(paths, runId, { resumeLatest: undefined });
   const snapshot = loadSnapshot(paths, runId);
-  const live = openWorkflowDir(workflowDirs(record.projectDir, paths));
+  const live = projectWorkflows(paths, record.projectDir);
   const manager = managerFor(paths, record.projectDir, {
     loadSavedWorkflow: (name) => snapshot[name] ?? live.resolve(name),
   });

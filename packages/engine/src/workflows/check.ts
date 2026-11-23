@@ -21,8 +21,8 @@ import {
   type McpLookup,
 } from "../agents.js";
 import { nextRun, parseCron } from "../runs/cron.js";
-import { loadConfig, loadSecrets, workflowDirs, type HomePaths } from "../runs/home.js";
-import { openWorkflowDir, resolveWorkflow } from "./dir.js";
+import { loadConfig, loadSecrets, type HomePaths } from "../runs/home.js";
+import { projectWorkflows, resolveWorkflow } from "./dir.js";
 import { checkInputs } from "./meta.js";
 import { readWorkflowScript, type ScriptRefs } from "./script.js";
 
@@ -39,7 +39,7 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
   const resolved = resolveWorkflow(paths, projectDir, nameOrPath);
   const problems: string[] = [];
   const notes: string[] = [];
-  const dirs = openWorkflowDir(workflowDirs(projectDir, paths));
+  const dirs = projectWorkflows(paths, projectDir);
   const settings = lookupSettings(paths, projectDir);
   const agents = lookupAgents(settings);
   let mcp: McpLookup | undefined;
