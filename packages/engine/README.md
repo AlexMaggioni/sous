@@ -120,8 +120,7 @@ Inside a workflow body these are available as globals (no imports):
   sharing the parent run's caps.
 - `checkpoint(prompt, opts?)` — a deterministic, journaled human gate. It requires an explicit
   host reply; without one it pauses durably. Options are `kind`, `choices`, and `timeoutMs`.
-- Quality combinators built on the above: `verify`, `judgePanel`, `loopUntilDry`,
-  `completenessCheck`, `retry`, and `gate`. A fulfilled `gate` returns
+- Combinators built on the above: `retry` and `gate`. A fulfilled `gate` returns
   `{ ok, value, verdict, attempts }`, where `value` is the final producer result and
   `verdict` is the exact last validator return. Its inner `agent()` calls are journaled;
   the aggregate gate result is not a separate journal entry.
