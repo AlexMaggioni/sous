@@ -1,10 +1,10 @@
 // What orc knows about a run beyond the engine's own state: which workflow, where it works,
 // who started it and which process runs it. One JSON file per root run in records/.
 
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
+import { recordFile, recordFiles, snapshotFile } from "./store.js";
 
 /** The programs whose steps a run records: Claude Code and Codex. */
 export type Program = "claude" | "codex";
@@ -112,12 +112,6 @@ export function noteStepWorktree(paths: HomePaths, rootRunId: string, tree: { di
   saveRecord(paths, { ...record, stepWorktrees });
 }
 
-/** The saved workflows as they were when the run started, by name. Nested workflows come from it,
- * so an edit made during the run never reaches it. */
-export function snapshotFile(paths: HomePaths, runId: string): string {
-  return join(paths.records, `${runId}.workflows`);
-}
-
 export function saveSnapshot(paths: HomePaths, runId: string, scripts: Record<string, string>): void {
   const file = snapshotFile(paths, runId);
   writeFileSync(`${file}.tmp`, JSON.stringify(scripts));
@@ -130,10 +124,6 @@ export function loadSnapshot(paths: HomePaths, runId: string): Record<string, st
   } catch {
     return {};
   }
-}
-
-function recordFile(paths: HomePaths, runId: string): string {
-  return join(paths.records, `${runId}.json`);
 }
 
 export function saveRecord(paths: HomePaths, record: RunRecord): void {
@@ -173,12 +163,10 @@ export function updateRecord(paths: HomePaths, runId: string, change: Partial<Ru
 
 /** Every run orc started, newest first. */
 export function listRecords(paths: HomePaths): RunRecord[] {
-  if (!existsSync(paths.records)) return [];
   const out: RunRecord[] = [];
-  for (const name of readdirSync(paths.records)) {
-    if (!name.endsWith(".json")) continue;
+  for (const file of recordFiles(paths)) {
     try {
-      out.push(readRecord(join(paths.records, name)));
+      out.push(readRecord(file));
     } catch {
       // a record being written
     }

@@ -8,12 +8,31 @@ import { workflowProjectPaths } from "./persistence/project-paths.js";
 import { createRunPersistence, loadRunState, type FsLayer, type PersistedRunState } from "./persistence/run-persistence.js";
 import type { RunEventPersistence } from "./persistence/run-event-persistence.js";
 import type { HomePaths } from "./home.js";
-import { snapshotFile, type RunRecord } from "./records.js";
+import type { RunRecord } from "./records.js";
 
 /** The file calls the store reads through. Tests hand it one that counts the calls. */
 export type StoreFs = Pick<FsLayer, "existsSync" | "readdirSync" | "readFileSync">;
 
 const DISK: StoreFs = { existsSync, readdirSync, readFileSync };
+
+/** The run's record. */
+export function recordFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.json`);
+}
+
+/** The saved workflows as they were when the run started, by name. Nested workflows come from it,
+ * so an edit made during the run never reaches it. */
+export function snapshotFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.workflows`);
+}
+
+/** Every record file, in the order the folder lists them. */
+export function recordFiles(paths: HomePaths): string[] {
+  if (!existsSync(paths.records)) return [];
+  return readdirSync(paths.records)
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => join(paths.records, name));
+}
 
 /** The run's worker log. The worker's output goes there. */
 export function logFile(paths: HomePaths, runId: string): string {
@@ -101,7 +120,7 @@ export function removeEngineRun(paths: HomePaths, runId: string): boolean {
 export function removeRunFiles(paths: HomePaths, record: RunRecord): void {
   // The engine keeps its own copy of the log, in a folder named after where the run worked.
   const engineLogs = workflowProjectPaths(record.cwd, { persistenceRoot: paths.runs });
-  const files = [join(paths.records, `${record.runId}.json`), snapshotFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
+  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
   for (const file of files) {
     try {
       unlinkSync(file);
