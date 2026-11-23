@@ -93,6 +93,51 @@ const HOMES = [
     pattern: /from\s+["'`]@anthropic-ai\/claude-agent-sdk|import\(\s*["'`]@anthropic-ai\/claude-agent-sdk/,
     home: ["packages/harnesses/src/claude/"],
   },
+  {
+    // Only the worker builds a run manager. The manager's own error message names the call in
+    // quotes, which is not a build.
+    idea: "building a run manager",
+    pattern: /(?<![`'"])\bnew WorkflowManager\(/,
+    home: ["packages/engine/src/runs/worker.ts"],
+  },
+  {
+    // The workflow core never picks a home.
+    idea: "finding the user's home folder",
+    pattern: /\bhomedir\(/,
+    home: [
+      "packages/engine/src/runs/home.ts",
+      "packages/engine/src/workflow-paths.ts",
+      "packages/engine/src/agents.ts",
+      "packages/engine/src/accounts.ts",
+      "packages/harnesses/src/lookup.ts",
+      "packages/harnesses/src/claude/program.ts",
+      "packages/harnesses/src/codex/program.ts",
+    ],
+  },
+  {
+    // The core, the manager and the rule modules take their settings as arguments.
+    idea: "reading the environment",
+    pattern: /\bprocess\.env\b/,
+    home: [
+      "packages/engine/src/runs/home.ts",
+      "packages/engine/src/runs/launch.ts",
+      "packages/engine/src/runs/notify.ts",
+      "packages/engine/src/runs/worker.ts",
+      "packages/engine/src/agents.ts",
+      "packages/engine/src/code-steps.ts",
+      "packages/engine/src/workflows/check.ts",
+      "packages/orc/src/",
+      "packages/harnesses/src/types.ts",
+      "packages/harnesses/src/lookup.ts",
+      "packages/harnesses/src/claude/program.ts",
+      "packages/harnesses/src/codex/program.ts",
+    ],
+  },
+  {
+    idea: "running a script in a node:vm context",
+    pattern: /["'`](node:)?vm["'`]/,
+    home: ["packages/engine/src/workflow.ts", "packages/engine/src/rejection-tripwire.ts"],
+  },
 ];
 
 /** The engine exports only what orc calls, and the harnesses only what the engine calls. */
