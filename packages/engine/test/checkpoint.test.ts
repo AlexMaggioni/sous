@@ -422,7 +422,7 @@ test(
     assert.equal(field(completed.result, "after"), "agent:after:ship");
     assert.deepEqual(resumedAgent.prompts, ["after:ship"]);
 
-    const listed = manager2.listRuns().find((run) => run.runId === paused.runId);
+    const listed = manager2.getPersistence().list().find((run) => run.runId === paused.runId);
     const loaded = manager2.getPersistence().load(paused.runId);
     assert.equal(listed?.status, "completed", "the filesystem listing exposes the terminal state");
     assert.equal(loaded?.status, "completed", "a direct filesystem load exposes the terminal state");

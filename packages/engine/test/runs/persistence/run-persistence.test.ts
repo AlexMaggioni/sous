@@ -813,7 +813,7 @@ test(
         },
       },
     });
-    const persisted = fresh.listRuns().find((run) => run.runId === original.runId);
+    const persisted = fresh.getPersistence().load(original.runId);
     assert.ok(persisted, "a fresh manager loads the completed run from persisted storage");
 
     const expected: AgentSessionRecord = {
@@ -834,7 +834,7 @@ test(
 
     const noSession = await writer.runSync(noSessionScript);
     assert.equal(noSession.status, "completed");
-    const persistedNoSession = fresh.listRuns().find((run) => run.runId === noSession.runId);
+    const persistedNoSession = fresh.getPersistence().load(noSession.runId);
     assert.ok(persistedNoSession);
     assert.deepEqual(
       [
@@ -1301,7 +1301,7 @@ test(
 );
 
 test(
-  "WorkflowManager reconciles a stale 'running' run to 'paused' when it lists runs",
+  "WorkflowManager reconciles a stale 'running' run to 'paused'",
   withTempCwd(async (cwd) => {
     const rp = createRunPersistence(cwd);
     const state: PersistedRunState = {
@@ -1351,10 +1351,10 @@ test(
       }),
       "utf8",
     );
-    // A fresh manager (the previous process died) recovers the orphan when it lists runs.
+    // A fresh manager (the previous process died) recovers the orphan when it reconciles it.
     const manager = new WorkflowManager({ cwd });
     assert.equal(rp.load("stale")?.status, "running", "construction leaves saved runs alone");
-    manager.listRuns();
+    manager.reconcileExternallyDeadRun("stale");
     const recovered = rp.load("stale");
     assert.equal(recovered?.status, "paused", "stale running -> paused (journal preserved for resume)");
     assert.equal(recovered?.pauseReason, "interrupted");
@@ -1370,7 +1370,7 @@ test(
 );
 
 test(
-  "lazy lookup and list reconcile missing and corrupt locks once while live owners remain running",
+  "lazy lookup reconciles missing and corrupt locks once while live owners remain running",
   withTempCwd(async (cwd) => {
     const manager = new WorkflowManager({ cwd });
     const rp = createRunPersistence(cwd);
@@ -1383,12 +1383,11 @@ test(
     assert.equal(rp.load("late-missing")?.pauseReason, "interrupted");
     const firstUpdatedAt = rp.load("late-missing")?.updatedAt;
     manager.reconcileExternallyDeadRun("late-missing");
-    manager.listRuns();
     assert.equal(rp.load("late-missing")?.updatedAt, firstUpdatedAt, "reconciliation is idempotent");
 
     rp.save(persistedRun("late-corrupt", "pending"));
     writeFileSync(join(runsDir, "late-corrupt.lock"), "not-json", "utf8");
-    const corrupt = manager.listRuns().find((run) => run.runId === "late-corrupt");
+    const corrupt = manager.reconcileExternallyDeadRun("late-corrupt");
     assert.equal(corrupt?.status, "paused");
     assert.equal(corrupt?.pauseReason, "interrupted");
     assert.equal(existsSync(join(runsDir, "late-corrupt.lock")), false);
@@ -1406,7 +1405,7 @@ test(
       const paused = { ...persistedRun(runId, "paused"), pauseReason };
       rp.save(paused);
       const before = rp.load(runId);
-      assert.equal(manager.listRuns().find((run) => run.runId === runId)?.pauseReason, pauseReason);
+      assert.equal(manager.reconcileExternallyDeadRun(runId)?.pauseReason, pauseReason);
       assert.deepEqual(rp.load(runId), before, `${pauseReason} pauses are never swept`);
     }
   }),

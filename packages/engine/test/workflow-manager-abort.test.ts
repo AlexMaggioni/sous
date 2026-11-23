@@ -261,7 +261,7 @@ return { a, b }`;
     await promise.catch(() => {});
 
     // Verify the run is aborted
-    const persisted = manager.listRuns().find((r) => r.runId === runId);
+    const persisted = manager.getPersistence().list().find((r) => r.runId === runId);
     assert.equal(persisted?.status, "aborted", "run should be aborted after stop");
 
     // Verify the error is a WorkflowError
@@ -365,7 +365,7 @@ test(
     assert.equal(pausedEvent?.runId, runId);
     assert.equal((pausedEvent as { reason?: string } | null)?.reason, "requested");
     assert.equal(manager.getRun(runId)?.status, "paused");
-    const persisted = manager.listRuns().find((r) => r.runId === runId);
+    const persisted = manager.getPersistence().list().find((r) => r.runId === runId);
     assert.equal(persisted?.pauseReason, "requested");
     assert.equal(persisted?.reason, "requested");
     assert.equal(persisted?.errorCode, WorkflowErrorCode.PAUSE_REQUESTED);
@@ -423,7 +423,7 @@ test(
     assert.equal(manager.pause(runId), true);
     await promise.catch(() => {});
     assert.equal(manager.getRun(runId)?.status, "paused");
-    const persisted = manager.listRuns().find((r) => r.runId === runId);
+    const persisted = manager.getPersistence().list().find((r) => r.runId === runId);
     assert.equal(persisted?.journal?.length ?? 0, 0);
     assert.equal(persisted?.calls?.length ?? 0, 0, "an admission refused before allocation leaves no row");
     assert.equal(persisted?.pauseReason, "requested");
@@ -462,7 +462,7 @@ return await parallel([
     await promise.catch(() => {});
     assert.equal(manager.getRun(runId)?.status, "paused");
 
-    const persisted = manager.listRuns().find((r) => r.runId === runId);
+    const persisted = manager.getPersistence().list().find((r) => r.runId === runId);
     assert.deepEqual(
       persisted?.journal?.map((entry) => entry.index).sort(),
       [0, 1],
@@ -518,7 +518,7 @@ test(
     agent.resolve(1, "lost");
     await promise.catch(() => {});
     assert.equal(manager.getRun(runId)?.status, "aborted");
-    let persisted = manager.listRuns().find((r) => r.runId === runId);
+    let persisted = manager.getPersistence().list().find((r) => r.runId === runId);
     assert.equal(persisted?.status, "aborted");
     assert.equal(persisted?.abortSignaled, true);
     assert.equal(persisted?.journal?.length, 1);
@@ -531,7 +531,7 @@ test(
     await new Promise((r) => setTimeout(r, 50));
     assert.equal(manager.getRun(runId)?.status, "completed");
     assert.equal(JSON.stringify(manager.getRun(runId)?.result?.result), JSON.stringify({ a: "a-done", b: "b-done" }));
-    persisted = manager.listRuns().find((r) => r.runId === runId);
+    persisted = manager.getPersistence().list().find((r) => r.runId === runId);
     assert.equal(persisted?.status, "completed");
     assert.equal(persisted?.abortSignaled, undefined, "the stop marker does not outlive the continuation");
   }),
@@ -570,8 +570,8 @@ test(
     assert.equal(value?.a, "a-done", "agent a replayed from the journal");
     assert.equal(value?.b, "resumed-done", "agent b ran live after resume");
 
-    // The run should also appear in listRuns as completed
-    const persisted = manager.listRuns().find((r) => r.runId === runId);
+    // The run should also appear in the persisted runs as completed
+    const persisted = manager.getPersistence().list().find((r) => r.runId === runId);
     assert.equal(persisted?.status, "completed");
   }),
 );
@@ -604,7 +604,7 @@ return { a, b }`;
     await origPromise.catch(() => {});
 
     // Only the completed agent 1 made it into the journal.
-    const persisted = manager.listRuns().find((r) => r.runId === runId);
+    const persisted = manager.getPersistence().list().find((r) => r.runId === runId);
     assert.ok(persisted?.journal && persisted.journal.length >= 1, "journal should have at least one entry");
     assert.equal(persisted?.journal?.length, 1, "only the completed agent 1 is journaled");
 
@@ -666,7 +666,7 @@ test(
     assert.equal(result.runId, runId);
     assert.equal(result.status, "completed");
     assert.equal(manager.getRun(runId)?.status, "completed");
-    assert.equal(manager.listRuns().find((run) => run.runId === runId)?.status, "completed");
+    assert.equal(manager.getPersistence().list().find((run) => run.runId === runId)?.status, "completed");
   }),
 );
 
@@ -677,7 +677,7 @@ test(
     const { promise } = manager.startInBackground(oneAgentScript);
     await promise; // wait for completion
 
-    const runs = manager.listRuns();
+    const runs = manager.getPersistence().list();
     const runId = runs[0]?.runId;
     if (runId) {
       const resumed = await manager.resume(runId);
@@ -774,7 +774,7 @@ test(
     assert.equal(manager.getRun(runId), undefined);
 
     // Should not be in persistence
-    const runs = manager.listRuns();
+    const runs = manager.getPersistence().list();
     assert.equal(
       runs.find((r) => r.runId === runId),
       undefined,
@@ -796,8 +796,8 @@ test(
     const deleted = manager.deleteRun(runId);
     assert.equal(deleted, true);
 
-    // Verify persistence file is gone by checking listRuns
-    const runs = manager.listRuns();
+    // Verify persistence file is gone by listing the persisted runs
+    const runs = manager.getPersistence().list();
     assert.equal(runs.length, 0, "no persisted runs should remain after delete");
   }),
 );
@@ -869,8 +869,8 @@ test(
     assert.equal(manager.getRun(r1.runId)?.status, "aborted");
     assert.equal(manager.getRun(r2.runId)?.status, "running", "other run should still be running");
 
-    // listRuns should show both
-    const runs = manager.listRuns();
+    // The persisted listing shows both
+    const runs = manager.getPersistence().list();
     assert.equal(runs.length, 2, "both runs should be listed");
 
     da.resolve("done");
@@ -879,7 +879,7 @@ test(
 );
 
 test(
-  "listRuns reflects status changes after pause and stop",
+  "the persisted listing reflects status changes after pause and stop",
   withTempCwd(async (cwd) => {
     const da = deferredAgent();
     const manager = new WorkflowManager({ cwd, agent: da.runner });
@@ -892,13 +892,13 @@ test(
     manager.pause(runId);
     da.resolve("a-done");
     await promise.catch(() => {});
-    let persisted = manager.listRuns().find((r) => r.runId === runId);
-    assert.equal(persisted?.status, "paused", "listRuns should show paused status");
+    let persisted = manager.getPersistence().list().find((r) => r.runId === runId);
+    assert.equal(persisted?.status, "paused", "the listing should show paused status");
 
     // Stop
     manager.stop(runId);
-    persisted = manager.listRuns().find((r) => r.runId === runId);
-    assert.equal(persisted?.status, "aborted", "listRuns should show aborted status after stop");
+    persisted = manager.getPersistence().list().find((r) => r.runId === runId);
+    assert.equal(persisted?.status, "aborted", "the listing should show aborted status after stop");
   }),
 );
 

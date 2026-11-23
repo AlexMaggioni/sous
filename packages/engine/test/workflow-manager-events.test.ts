@@ -11,7 +11,6 @@ import { RunEventLogError } from "../src/runs/persistence/run-event-persistence.
 import {
   createRunPersistence,
   type PersistedRunState,
-  type RunPersistence,
 } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 
@@ -397,52 +396,6 @@ test("legacy resume upgrades under lease and begins a new event stream at resume
     assert.equal(records.events[0]?.event.type, "resumed");
     assert.equal(persisted?.eventSeq, records.endCursor);
   });
-});
-
-test("listing a stale run reloads it under lease and never saves the pre-lease listing copy", () => {
-  const runsDir = mkdtempSync(join(tmpdir(), "workflow-manager-recovery-"));
-  try {
-    const source = legacyState("stale-recovery", script(`return 1`));
-    source.status = "running";
-    let current = structuredClone(source);
-    const saved: PersistedRunState[] = [];
-    let releases = 0;
-    const persistence: RunPersistence = {
-      save(state) {
-        saved.push(structuredClone(state));
-        current = structuredClone(state);
-      },
-      load() {
-        return structuredClone(current);
-      },
-      list() {
-        return [structuredClone(source)];
-      },
-      delete() {
-        return false;
-      },
-      acquireRunLease(runId) {
-        current = { ...current, status: "completed", result: "won elsewhere" };
-        return { runId, token: "recovery" };
-      },
-      releaseRunLease() {
-        releases++;
-      },
-      getRunsDir() {
-        return runsDir;
-      },
-    };
-
-    const manager = new WorkflowManager({ persistence, agent: { async run() { return "unused"; } } });
-    assert.equal(releases, 0, "construction takes no lease");
-    manager.listRuns();
-    assert.deepEqual(saved, []);
-    assert.equal(current.status, "completed");
-    assert.equal(current.result, "won elsewhere");
-    assert.equal(releases, 1);
-  } finally {
-    rmSync(runsDir, { recursive: true, force: true });
-  }
 });
 
 test("deleting a running managed run prevents every later callback from recreating files", async () => {

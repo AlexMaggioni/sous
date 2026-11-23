@@ -273,7 +273,7 @@ export interface ExecOptions {
    * Every agent step runs here (unless worktree isolation or a per-agent
    * `agent({ cwd })` overrides it further). Persisted with the run so `resume()`
    * re-runs in the SAME directory. Run STATE stays keyed to the manager cwd, so
-   * listRuns()/resume() are unaffected by the per-run directory's lifetime.
+   * listing and resuming runs are unaffected by the per-run directory's lifetime.
    */
   cwd?: string;
   /**
@@ -601,26 +601,33 @@ export class WorkflowManager extends EventEmitter {
     return listeners.length > 0;
   }
 
-  private reconcileListedRun(candidate: PersistedRunState): PersistedRunState | null {
+  /**
+   * Reconcile one persisted run whose owning process may have exited. The lease
+   * acquisition preserves live/EPERM owners, removes stale or corrupt locks, and
+   * the under-lease reload lets a concurrent completion win over recovery.
+   */
+  reconcileExternallyDeadRun(runId: string): PersistedRunState | undefined {
+    const candidate = this.persistence.load(runId);
+    if (!candidate) return undefined;
     if (
-      this.getRun(candidate.runId) !== undefined ||
+      this.getRun(runId) !== undefined ||
       (candidate.status !== "pending" && candidate.status !== "running")
     ) {
       return candidate;
     }
     let lease: RunLease | null;
     try {
-      lease = this.persistence.acquireRunLease(candidate.runId);
+      lease = this.persistence.acquireRunLease(runId);
     } catch {
       return candidate;
     }
     if (!lease) return candidate;
 
     try {
-      const current = this.persistence.load(candidate.runId);
-      if (!current) return null;
+      const current = this.persistence.load(runId);
+      if (!current) return undefined;
       if (
-        this.getRun(candidate.runId) !== undefined ||
+        this.getRun(runId) !== undefined ||
         (current.status !== "pending" && current.status !== "running")
       ) {
         return current;
@@ -639,28 +646,6 @@ export class WorkflowManager extends EventEmitter {
     } finally {
       this.persistence.releaseRunLease(lease);
     }
-  }
-
-  private reconcileListedRuns(rows: PersistedRunState[]): PersistedRunState[] {
-    const reconciled: PersistedRunState[] = [];
-    for (const row of rows) {
-      const current = this.reconcileListedRun(row);
-      if (current) reconciled.push(current);
-    }
-    return reconciled.sort(
-      (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
-    );
-  }
-
-  /**
-   * Reconcile one persisted run whose owning process may have exited. The lease
-   * acquisition preserves live/EPERM owners, removes stale or corrupt locks, and
-   * the under-lease reload lets a concurrent completion win over recovery.
-   */
-  reconcileExternallyDeadRun(runId: string): PersistedRunState | undefined {
-    const persisted = this.persistence.load(runId);
-    if (!persisted) return undefined;
-    return this.reconcileListedRun(persisted) ?? undefined;
   }
 
   /** Resolve the agent backend for a run: per-run override wins, else the
@@ -2865,11 +2850,6 @@ export class WorkflowManager extends EventEmitter {
       (persisted.continuation?.generation ?? 0) !== (managed.continuation?.generation ?? 0)
     ) return undefined;
     return managed;
-  }
-
-  /** Every persisted run, newest first, after reconciling runs whose owner exited. */
-  listRuns(): PersistedRunState[] {
-    return this.reconcileListedRuns(this.persistence.list());
   }
 
   /**
