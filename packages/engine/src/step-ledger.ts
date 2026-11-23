@@ -61,6 +61,8 @@ export type Pairing<T> =
       action: "live";
       /** Absent when the source reports no decisions. */
       reason?: WorkflowResumeCallLiveReason;
+      /** The recorded call that failed, when the call took one. Its session can go on. */
+      failed?: { sourceRunId: string; recordedIndex: number };
     };
 
 /** Where the calls of a scope find their recorded rows. */

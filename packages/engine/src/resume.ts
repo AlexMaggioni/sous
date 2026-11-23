@@ -85,4 +85,10 @@ export type PreparedResume =
       sourceRunId: string;
       requestedPolicy: ResumePolicy;
       disabledReason: WorkflowResumeDisabledReason;
+    }
+  | {
+      /** The calls pair by occurrence with the rows in the run's `resumeRows`. */
+      strategy: "occurrence-v1";
+      sourceRunId: string;
+      requestedPolicy: ResumePolicy;
     };

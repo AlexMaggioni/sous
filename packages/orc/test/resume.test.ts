@@ -115,6 +115,33 @@ const n = await workflow('child', {})
 const c = await agent('C', { label: 'c' })
 return [a, n, c]`;
 
+const par = (comment = "") => `export const meta = { name: 'par', description: 'parallel' }${comment}
+const a = await agent('A', { label: 'a' })
+const [b, c] = await parallel([() => agent('B', { label: 'b' }), () => agent('C', { label: 'c' })])
+const d = await agent('D', { label: 'd' })
+return [a, b, c, d]`;
+
+const asks = (a: string) => `export const meta = { name: 'asks', description: 'asks' }
+const a = await agent('${a}', { label: 'a' })
+const name = await checkpoint('Name it', { kind: 'input' })
+return await agent('Build ' + name, { label: 'build' })`;
+
+/** Pause `three` with C failed, edit it, and resume it with --latest. Returns the prompts of the resume. */
+async function latest(edited: string, before?: (paths: HomePaths, runId: string) => void) {
+  const { paths, projectDir } = setup({ three: three("A") });
+  let broken = true;
+  const { runner, since } = fake((prompt) => (broken && prompt === "C" ? boom() : undefined));
+  const record = createRun(paths, { workflow: "three", projectDir, inputs: {} });
+  assert.equal((await start(paths, record.runId, runner))?.status, "paused");
+  before?.(paths, record.runId);
+  edit(projectDir, "three", edited);
+  updateRecord(paths, record.runId, { resumeLatest: true });
+  broken = false;
+  const done = await resume(paths, record.runId, runner);
+  assert.equal(done?.status, "completed");
+  return { live: since(3), done, state: readState(paths, record.runId)! };
+}
+
 describe("resume", () => {
   it("keeps a parallel sibling that finished after the failed step", async () => {
     const { paths, projectDir } = setup({
@@ -316,5 +343,111 @@ return await agent('Build ' + name, { label: 'build' })`,
     const done = await resume(paths, record.runId, runner);
     assert.equal(done?.status, "completed");
     assert.deepEqual(since(3), ["C"]);
+  });
+
+  it("with --latest and step 1 edited, keeps the steps after it", async () => {
+    const { live, done, state } = await latest(three("A2"));
+    assert.deepEqual(live, ["A2", "C"]);
+    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["A2 done", "B done", "C done"]);
+    assert.equal(state.resumeReport?.strategy, "occurrence-v1");
+    assert.equal(state.replayEligibility?.strategy, "occurrence-v1");
+    assert.deepEqual(
+      state.resumeReport?.calls.map((call) => [call.index, call.action, call.match ?? call.reason]),
+      [[0, "live", "not-recorded"], [1, "replayed", "occurrence"], [2, "live", "not-recorded"]],
+    );
+  });
+
+  it("with --latest and a step inserted first, keeps the steps after it", async () => {
+    const inserted = three("A").replace("const a =", "const z = await agent('Z', { label: 'z' })\nconst a =");
+    const { live } = await latest(inserted);
+    assert.deepEqual(live, ["Z", "C"]);
+  });
+
+  it("with --latest and a comment-only edit, keeps a parallel sibling that finished after the failed step", async () => {
+    const { paths, projectDir } = setup({ par: par() });
+    let broken = true;
+    const { runner, since } = fake((prompt) => (broken && prompt === "B" ? boom() : undefined));
+    const record = createRun(paths, { workflow: "par", projectDir, inputs: {} });
+    assert.equal((await start(paths, record.runId, runner))?.status, "paused");
+    edit(projectDir, "par", par("\n// a comment"));
+    updateRecord(paths, record.runId, { resumeLatest: true });
+    broken = false;
+    const done = await resume(paths, record.runId, runner);
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(since(3), ["B", "D"]);
+  });
+
+  it("with --latest, replays a question answered after the edited step", async () => {
+    const { paths, projectDir } = setup({ asks: asks("A") });
+    let broken = true;
+    const { runner, since } = fake((prompt) => (broken && prompt.startsWith("Build") ? boom() : undefined));
+    const record = createRun(paths, { workflow: "asks", projectDir, inputs: {} });
+    let ended = false;
+    const answering = answerUntil(paths, record.runId, "orc", () => ended);
+    assert.equal((await start(paths, record.runId, runner))?.status, "paused");
+    ended = true;
+    assert.deepEqual(await answering, ["Name it"]);
+
+    edit(projectDir, "asks", asks("A2"));
+    updateRecord(paths, record.runId, { resumeLatest: true });
+    broken = false;
+    ended = false;
+    const again = answerUntil(paths, record.runId, "other", () => ended);
+    const done = await resume(paths, record.runId, runner);
+    ended = true;
+    assert.deepEqual(await again, [], "no question is asked again");
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(since(2), ["A2", "Build orc"]);
+  });
+
+  it("with --latest, runs a step whose inputs hash changed", async () => {
+    const { live } = await latest(`${three("A")}\n// a comment`, (paths, runId) => {
+      // A hand edit stands in for any change that moves only the inputs hash of A.
+      const state = readState(paths, runId)!;
+      state.calls!.find((call) => call.label === "a")!.inputsHash = "0".repeat(64);
+      const { runsDir } = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
+      writeFileSync(join(runsDir, `${runId}.json`), JSON.stringify(state, null, 2));
+    });
+    assert.deepEqual(live, ["A", "C"]);
+  });
+
+  it("with --latest and a step inserted first, goes on in the session of the step at the usage limit", async () => {
+    const { paths, projectDir } = setup({ three: three("A") });
+    let limited = true;
+    const { runner, calls, since } = fake((prompt) =>
+      limited && prompt === "B" ? new WorkflowError("You've hit your limit", WorkflowErrorCode.PROVIDER_USAGE_LIMIT, { recoverable: false }) : undefined,
+    );
+    const record = createRun(paths, { workflow: "three", projectDir, inputs: {} });
+    await start(paths, record.runId, runner);
+    assert.equal(readState(paths, record.runId)?.pauseReason, "usage_limit");
+    edit(projectDir, "three", three("A").replace("const a =", "const z = await agent('Z', { label: 'z' })\nconst a ="));
+    updateRecord(paths, record.runId, { resumeLatest: true });
+
+    limited = false;
+    const done = await resume(paths, record.runId, runner);
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(since(2), ["Z", "B", "C"]);
+    assert.equal(calls[2]!.options.continueFromSession, undefined);
+    assert.equal((calls[3]!.options.continueFromSession as { sessionId?: string } | undefined)?.sessionId, "s2", "B goes on in its own session");
+  });
+
+  it("with --latest, keeps the steps it has not reached when it pauses again", async () => {
+    const { paths, projectDir } = setup({ three: three("A") });
+    const broken = new Set(["C"]);
+    const { runner, since } = fake((prompt) => (broken.has(prompt) ? boom() : undefined));
+    const record = createRun(paths, { workflow: "three", projectDir, inputs: {} });
+    assert.equal((await start(paths, record.runId, runner))?.status, "paused");
+    edit(projectDir, "three", three("A2"));
+    updateRecord(paths, record.runId, { resumeLatest: true });
+    broken.add("A2");
+    await resume(paths, record.runId, runner);
+    assert.equal(readState(paths, record.runId)?.status, "paused");
+    assert.deepEqual(since(3), ["A2"]);
+
+    broken.clear();
+    const done = await resume(paths, record.runId, runner);
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(since(4), ["A2", "C"], "B replays from the first version");
+    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["A2 done", "B done", "C done"]);
   });
 });

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { resumeRows, unusedSeed } from "../src/resume-rows.js";
+import { WorkflowErrorCode } from "../src/errors.js";
+import { resumeRows, revisionSeed, unusedSeed } from "../src/resume-rows.js";
 import type { PersistedResumeSeed, PersistedRunState } from "../src/runs/persistence/run-persistence.js";
 import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
 
@@ -30,6 +31,22 @@ function plantedSeed(): { seed: PersistedResumeSeed; runId: string } {
   };
   const state = fixture.runs[1]!.state;
   return { seed: state.resumeSeed!, runId: state.runId };
+}
+
+/** A hash of one repeated hex digit, so the seed checks take it. */
+const H = (digit: string) => digit.repeat(64);
+
+/** A journal row and a call row a seed can hold: with a path and an inputs hash. */
+function full(index: number, digit: string, outcome: WorkflowCallRecord["outcome"], scope = RUN): WorkflowCallRecord {
+  const base = {
+    index, kind: "agent", hash: H(digit), path: `step-${digit}`, inputsHash: H(digit).slice(0, 63) + "0",
+    origin: "runner", scope,
+  } as const;
+  return outcome === "result" ? { ...base, outcome } : { ...base, outcome, error: { form: "workflow-error", message: "stopped", code: WorkflowErrorCode.AGENT_EXECUTION_ERROR } };
+}
+
+function fullEntry(index: number, digit: string, scope = RUN): JournalEntry {
+  return { index, hash: H(digit), result: `${digit} done`, kind: "agent", scope };
 }
 
 describe("resume rows", () => {
@@ -104,6 +121,66 @@ describe("resume rows", () => {
     // A replay in another scope does not use a root row.
     const elsewhere = { ...replayed, scope: `${runId}-nested1` };
     assert.equal(unusedSeed(seed, [elsewhere], runId)?.candidates.length, 2);
+  });
+
+  it("carries a revised run's own rows into a seed, with the run as their source", () => {
+    const nested = `${RUN}-nested1`;
+    const seed = revisionSeed({
+      runId: RUN,
+      journal: [fullEntry(0, "a"), fullEntry(2, "c"), fullEntry(0, "d", nested)],
+      calls: [
+        full(0, "a", "result"),
+        full(1, "b", "error"),
+        { ...full(2, "c", "result"), path: undefined },
+        full(3, "e", "result"),
+        full(0, "d", "result", nested),
+      ],
+    });
+    assert.equal(seed?.sourceRunId, RUN);
+    // Index 2 has no path and index 3 has no journal row, so those steps run again.
+    assert.deepEqual(seed?.candidates.map((row) => [row.call.scope, row.recordedIndex, row.sourceRunId]), [
+      [RUN, 0, RUN],
+      [nested, 0, RUN],
+    ]);
+    assert.deepEqual(seed?.callBlockers?.map((row) => [row.recordedIndex, row.call.outcome]), [[1, "error"]]);
+
+    // The new version starts with no journal and no call rows, and pairs with the seed.
+    const rows = resumeRows({ runId: RUN, journal: [], calls: [], seed, key: "inputs" });
+    assert.deepEqual(shape(rows, RUN), [
+      [0, H("a"), "result", RUN],
+      [1, H("b"), "failed", RUN],
+    ]);
+    assert.deepEqual(shape(rows, nested), [[0, H("d"), "result", RUN]]);
+  });
+
+  it("keeps the seed rows a revised run did not reach, and drops one its own row now holds", () => {
+    const first = revisionSeed({
+      runId: RUN,
+      journal: [fullEntry(0, "a"), fullEntry(1, "b"), fullEntry(2, "c")],
+      calls: [full(0, "a", "result"), full(1, "b", "result"), full(2, "c", "result")],
+    });
+    // The second version replayed A, ran a new step D at index 1, and stopped there.
+    const replayedA: WorkflowCallRecord = {
+      ...full(0, "a", "result"),
+      origin: "journal-replay",
+      replay: { sourceRunId: RUN, recordedIndex: 0, match: "occurrence" },
+    };
+    const second = revisionSeed({
+      runId: RUN,
+      journal: [fullEntry(0, "a"), fullEntry(1, "d")],
+      calls: [replayedA, full(1, "d", "result")],
+      seed: first,
+    });
+    assert.deepEqual(second?.candidates.map((row) => [row.recordedIndex, row.call.hash]), [
+      [0, H("a")],
+      [1, H("d")],
+      [2, H("c")],
+    ]);
+  });
+
+  it("gives no revision seed when no row can be carried", () => {
+    assert.equal(revisionSeed({ runId: RUN, journal: [entry(0, "a")], calls: [call(0, "a", "result")] }), undefined);
+    assert.equal(revisionSeed({ runId: RUN, journal: [], calls: [] }), undefined);
   });
 
   it("gives no seed when every row is used, or when there was none", () => {

@@ -4,10 +4,14 @@
 //
 // Internal: not exported from index.ts.
 
-import { normalizeResumeSeed } from "./resume-matcher.js";
+import { cloneResumeCallBlocker, cloneResumeCandidate, normalizeResumeSeed } from "./resume-matcher.js";
 import { isNestedScope, resumeOccurrenceKey } from "./resume-identity.js";
 import type { RecordedCall, RecordedScope } from "./resume-pairing.js";
-import type { PersistedResumeSeed } from "./runs/persistence/run-persistence.js";
+import type {
+  PersistedResumeCallBlocker,
+  PersistedResumeCandidate,
+  PersistedResumeSeed,
+} from "./runs/persistence/run-persistence.js";
 import type { JournalEntry, WorkflowCallRecord } from "./workflow-result.js";
 
 /** A recorded call, with what a replay needs. */
@@ -111,6 +115,53 @@ export function unusedSeed(
   const empty = remaining === undefined ||
     remaining.candidates.length + (remaining.callBlockers?.length ?? 0) + (remaining.checkpointInjections?.length ?? 0) === 0;
   return empty ? undefined : remaining;
+}
+
+/**
+ * The seed of a run whose script changed, before the new version clears its journal and call
+ * rows. It holds the run's own rows of each scope with call rows, with the run as their source,
+ * then the rows of its seed that no own row replayed. A seed row from an earlier version at the
+ * same scope and index gives way to the own row. A row with no path or inputs hash cannot be a
+ * seed row, so its step runs again. None when nothing is left.
+ */
+export function revisionSeed(input: {
+  runId: string;
+  journal: readonly JournalEntry[];
+  calls: readonly WorkflowCallRecord[];
+  seed?: PersistedResumeSeed;
+}): PersistedResumeSeed | undefined {
+  const { runId } = input;
+  const journal = byScope(input.journal, runId);
+  const candidates: PersistedResumeCandidate[] = [];
+  const blockers: PersistedResumeCallBlocker[] = [];
+  for (const [scope, calls] of byScope(input.calls, runId)) {
+    for (const call of [...calls.values()].sort((a, b) => a.index - b.index)) {
+      const entry = journal.get(scope)?.get(call.index);
+      if (call.outcome === "result") {
+        if (entry?.hash !== call.hash) continue;
+        const candidate = cloneResumeCandidate(runId, { ...entry, scope }, { ...call, scope });
+        if (candidate) candidates.push(candidate);
+      } else {
+        const blocker = cloneResumeCallBlocker(runId, { ...call, scope });
+        if (blocker) blockers.push(blocker);
+      }
+    }
+  }
+  const own = new Set([...candidates, ...blockers].map((row) => resumeOccurrenceKey(row.call.scope ?? runId, row.recordedIndex)));
+  const left = unusedSeed(input.seed, input.calls, runId);
+  const keep = (row: { sourceRunId: string; recordedIndex: number; call?: WorkflowCallRecord }) =>
+    !own.has(resumeOccurrenceKey(row.call?.scope ?? row.sourceRunId, row.recordedIndex));
+  const seed = normalizeResumeSeed({
+    sourceRunId: runId,
+    promoted: candidates,
+    promotedBlockers: blockers,
+    retained: (left?.candidates ?? []).filter(keep),
+    retainedBlockers: (left?.callBlockers ?? []).filter(keep),
+    retainedInjections: (left?.checkpointInjections ?? []).filter(keep),
+  });
+  const empty = seed === undefined ||
+    seed.candidates.length + (seed.callBlockers?.length ?? 0) + (seed.checkpointInjections?.length ?? 0) === 0;
+  return empty ? undefined : seed;
 }
 
 /** A seed's rows, by the current run's scope, each scope in recorded index order. */

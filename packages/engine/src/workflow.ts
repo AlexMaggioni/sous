@@ -225,7 +225,8 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   resumeFromRunId?: string;
   /**
    * Internal (manager): the recorded rows of the run and of its nested runs, by scope. A call
-   * takes the next row with its kind and call hash. Excludes resumeJournal and preparedResume.
+   * takes the next row with its key. Excludes resumeJournal, and goes with no preparedResume or
+   * with one of strategy "occurrence-v1".
    */
   resumeRows?: ResumeRows;
   /** Manager-prepared resume state. Mutually exclusive with a caller-authored
@@ -619,9 +620,14 @@ export async function runWorkflow<T = unknown>(
       { recoverable: false },
     );
   }
-  if (options.resumeRows && (options.resumeJournal || options.preparedResume)) {
+  const occurrencePrepared = options.preparedResume?.strategy === "occurrence-v1";
+  if (
+    options.resumeRows
+      ? options.resumeJournal || (options.preparedResume && !occurrencePrepared)
+      : occurrencePrepared
+  ) {
     throw new WorkflowError(
-      "resumeRows excludes resumeJournal and preparedResume",
+      "resumeRows excludes resumeJournal, and goes with no preparedResume or an occurrence-v1 one",
       WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
       { recoverable: false },
     );
@@ -873,12 +879,18 @@ export async function runWorkflow<T = unknown>(
             fallbackReason: preparedResume.fallbackReason,
             eligibility: preparedResume.eligibility,
           }
-        : {
-            strategy: preparedResume.strategy,
-            sourceRunId: preparedResume.sourceRunId,
-            requestedPolicy: preparedResume.requestedPolicy,
-            disabledReason: preparedResume.disabledReason,
-          }
+        : preparedResume.strategy === "live"
+          ? {
+              strategy: preparedResume.strategy,
+              sourceRunId: preparedResume.sourceRunId,
+              requestedPolicy: preparedResume.requestedPolicy,
+              disabledReason: preparedResume.disabledReason,
+            }
+          : {
+              strategy: preparedResume.strategy,
+              sourceRunId: preparedResume.sourceRunId,
+              requestedPolicy: preparedResume.requestedPolicy,
+            }
     : undefined;
   // A prepared resume reports a decision for each call, in the order calls were opened.
   const decisionOrder = createDecisionOrder({
@@ -1113,16 +1125,26 @@ export async function runWorkflow<T = unknown>(
     },
   };
 
-  // A same-ID resume: the n-th call with a kind and call hash takes the n-th recorded row with
-  // them, from the scope's own rows first and then its seed's. An agent's empty text runs live.
+  // A resume that pairs by occurrence: the n-th call with a key takes the n-th recorded row with
+  // it, from the scope's own rows first and then its seed's. An agent's empty text runs live. A
+  // live call that took a failed row of this run can go on in that row's session.
   const occurrenceSource = (scope: RecordedScope<ResumeRow> | undefined): SourceScope => {
     const pairNext = createPairing(scope ?? { rows: [], key: "hash" });
     return {
       pair(call, accept) {
         const paired = pairNext(call);
-        if (paired.action === "live" || !paired.row.entry) return { action: "live" };
+        if (paired.action === "live" || !paired.row.entry) {
+          const failed = paired.row;
+          return {
+            action: "live",
+            reason: "not-recorded",
+            ...(failed ? { failed: { sourceRunId: failed.sourceRunId, recordedIndex: failed.index } } : {}),
+          };
+        }
         const { row } = paired;
-        if (call.kind === "agent" && isEmptyTextAgentResult(row.entry!.result, call.hasSchema)) return { action: "live" };
+        if (call.kind === "agent" && isEmptyTextAgentResult(row.entry!.result, call.hasSchema)) {
+          return { action: "live", reason: "empty-output" };
+        }
         const sourceRow: SourceRow = {
           sourceRunId: row.sourceRunId,
           recordedIndex: row.index,
@@ -1409,6 +1431,8 @@ export async function runWorkflow<T = unknown>(
       throwIfAborted();
     }
 
+    // The recorded call whose session a live call can go on in: the one at its own index.
+    let continuationIndex: number | undefined = callIndex;
     const runLive = () => limiter(async () => {
       const maxAttempts = retryAttempts + 1;
       let worktree = precreatedWorktree;
@@ -1416,7 +1440,9 @@ export async function runWorkflow<T = unknown>(
       let attemptsRan = 0;
       let observedTokens = 0;
       const sealedUsage: AgentUsage[] = [];
-      const continuationCandidate = preparedContinuation?.candidatesByIndex.get(callIndex);
+      const continuationCandidate = continuationIndex === undefined
+        ? undefined
+        : preparedContinuation?.candidatesByIndex.get(continuationIndex);
 
       interface AttemptSlots {
         sealed: boolean;
@@ -1968,6 +1994,10 @@ export async function runWorkflow<T = unknown>(
 
     const runPaired = (pairing: Pairing<unknown>): Promise<unknown> => {
       if (pairing.action === "replay") return replayAgent(pairing);
+      // Pairing by occurrence goes on only in the session of the failed row this call took.
+      if (options.resumeRows) {
+        continuationIndex = pairing.failed?.sourceRunId === runId ? pairing.failed.recordedIndex : undefined;
+      }
       if (legacyResumeSafety === undefined) options.onResumeFilesystemTainted?.();
       let reason = pairing.reason;
       // A run that reports decisions opens the step's worktree before it decides, so the

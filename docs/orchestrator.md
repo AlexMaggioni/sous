@@ -299,6 +299,9 @@ something, pauses or fails.
 - A run keeps the workflows as they were when it started, nested ones included. After an edit,
   `orc resume` asks first: `--latest` takes the new version and keeps the finished steps that
   match, and `--same` goes on with the run's own version.
+- A step matches when it asks for the same thing in the same way: the same prompt, model, agent,
+  options and label. When a workflow runs the same step several times, the first time matches the
+  first recorded one, the second time the second, and so on.
 - At the subscription limit the run pauses, and the notice names the account and the reset time.
   The service resumes it after the reset time, or 30 minutes later when no time is known.
   `orc account use <name>` moves it to another account and resumes it now.

@@ -24,7 +24,7 @@ import type {
 type WorkflowResumeStrategy = WorkflowResumeReport["strategy"];
 
 const POLICIES = ["auto", "positional"] as const satisfies readonly ResumePolicy[];
-const STRATEGIES = ["identity-v1", "positional-v1", "live"] as const satisfies readonly WorkflowResumeStrategy[];
+const STRATEGIES = ["identity-v1", "positional-v1", "live", "occurrence-v1"] as const satisfies readonly WorkflowResumeStrategy[];
 const MATCHES = ["path-hash", "unique-hash", "index-hash", "occurrence"] as const satisfies readonly WorkflowResumeMatch[];
 const FALLBACK_REASONS = [
   "legacy-recording",
@@ -162,6 +162,15 @@ const liveReport: WorkflowResumeReport = {
   failed: 0,
   calls: [],
 };
+const occurrenceReport: WorkflowResumeReport = {
+  strategy: "occurrence-v1",
+  sourceRunId: "source-run",
+  requestedPolicy: "auto",
+  replayed: 1,
+  live: 1,
+  failed: 0,
+  calls: [{ ...replayedDecision, match: "occurrence" }, liveDecision],
+};
 const operationalChange: WorkflowReplayOperationalChange = {
   option: "agentRetries",
   source: 1,
@@ -198,6 +207,22 @@ const replayEligibility: WorkflowReplayEligibility = {
   provenanceChanges: [provenanceChange],
   operationalChanges: [operationalChange, idleOperationalChange],
 };
+const occurrenceEligibility: WorkflowReplayEligibility = {
+  strategy: "occurrence-v1",
+  sourceRunId: "source-run",
+  predictedReplayablePrefix: 2,
+  replayedPrefix: 0,
+  replayed: 1,
+  live: 1,
+  failed: 0,
+  sourceEngineVersion: "0.27.0",
+  currentEngineVersion: "0.27.0",
+  engineVersionComparison: "same",
+  sourceInputsFormat: 2,
+  currentInputsFormat: 2,
+  provenanceChanges: [],
+  operationalChanges: [],
+};
 
 const legacyJournal: JournalEntry = { index: 0, hash: "legacy", result: "cached" };
 const legacyCall: WorkflowCallRecord = {
@@ -228,7 +253,7 @@ const resumeResult: WorkflowRunResult = { ...legacyResult, resumeReport: identit
 
 test("incremental resume shared type fixtures cover every public branch", () => {
   assert.deepEqual(POLICIES, ["auto", "positional"]);
-  assert.deepEqual(STRATEGIES, ["identity-v1", "positional-v1", "live"]);
+  assert.deepEqual(STRATEGIES, ["identity-v1", "positional-v1", "live", "occurrence-v1"]);
   assert.deepEqual(MATCHES, ["path-hash", "unique-hash", "index-hash", "occurrence"]);
   assert.equal(FALLBACK_REASONS.length, 5);
   assert.equal(DISABLED_REASONS.length, 12);
@@ -240,6 +265,8 @@ test("incremental resume shared type fixtures cover every public branch", () => 
   assert.equal(resumeResult.resumeReport?.strategy, "identity-v1");
   assert.equal(positionalReport.eligibility, "safe-prefix");
   assert.equal(liveReport.disabledReason, "runtime-mismatch");
+  assert.equal(occurrenceReport.calls[0]?.action === "replayed" && occurrenceReport.calls[0].match, "occurrence");
+  assert.equal(occurrenceEligibility.fallbackReason, undefined);
   assert.equal(replayEligibility.fallbackReason, "legacy-resume");
   assert.equal(replayEligibility.predictedReplayablePrefix, 2);
   assert.equal(replayEligibility.operationalChanges[0]?.option, "agentRetries");

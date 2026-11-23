@@ -580,7 +580,7 @@ export function cloneResumeCandidate(
   });
 }
 
-function cloneResumeCallBlocker(
+export function cloneResumeCallBlocker(
   sourceRunId: string,
   call: WorkflowCallRecord,
 ): PersistedResumeCallBlocker | undefined {
@@ -965,7 +965,8 @@ export type ResumeReportPlan =
       sourceRunId: string;
       requestedPolicy: ResumePolicy;
       disabledReason: Extract<ResumeAdmissionDecision, { strategy: "live" }>["disabledReason"];
-    };
+    }
+  | { strategy: "occurrence-v1"; sourceRunId: string; requestedPolicy: ResumePolicy };
 
 export function buildResumeReport(
   plan: ResumeReportPlan,

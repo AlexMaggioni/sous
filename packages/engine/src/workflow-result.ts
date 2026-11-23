@@ -331,6 +331,13 @@ export type WorkflowResumeReport = WorkflowResumeReportBase &
         fallbackReason?: never;
         eligibility?: never;
       }
+    | {
+        /** Each call took the recorded call with its key and occurrence. */
+        strategy: "occurrence-v1";
+        fallbackReason?: never;
+        disabledReason?: never;
+        eligibility?: never;
+      }
   );
 
 export type WorkflowReplayOperationalOption =
@@ -416,6 +423,13 @@ export type WorkflowReplayEligibility = WorkflowReplayEligibilityBase &
         strategy: "live";
         disabledReason: WorkflowResumeDisabledReason;
         fallbackReason?: never;
+        eligibility?: never;
+      }
+    | {
+        /** Each call took the recorded call with its key and occurrence. */
+        strategy: "occurrence-v1";
+        fallbackReason?: never;
+        disabledReason?: never;
         eligibility?: never;
       }
   );
