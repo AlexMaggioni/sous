@@ -329,8 +329,10 @@ test(
     await new Promise((r) => setTimeout(r, 20));
 
     manager.stop(runId);
+    assert.equal(manager.getRun(runId)?.status, "aborted");
     const secondStop = manager.stop(runId);
     assert.equal(secondStop, false, "second stop on same run should return false");
+    assert.equal(manager.pause(runId), false, "cannot pause an already stopped/aborted run");
 
     da.resolve("done");
     await promise.catch(() => {});
@@ -372,24 +374,6 @@ test(
     assert.equal(persisted?.journal?.length, 1, "the executing agent journaled before the pause settled");
     assert.equal(persisted?.calls?.length, 1, "the refused second admission was never allocated");
     assert.equal(persisted?.calls?.[0]?.outcome, "result");
-  }),
-);
-
-test(
-  "pause returns false for already-stopped run",
-  withTempCwd(async (cwd) => {
-    const da = deferredAgent();
-    const manager = new WorkflowManager({ cwd, agent: da.runner });
-    manager.on("error", () => {});
-    const { runId, promise } = manager.startInBackground(oneAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
-
-    manager.stop(runId);
-    const paused = manager.pause(runId);
-    assert.equal(paused, false, "cannot pause an already stopped/aborted run");
-
-    da.resolve("done");
-    await promise.catch(() => {});
   }),
 );
 
@@ -691,24 +675,6 @@ test(
 
     // snapshot should be populated
     assert.equal(run?.snapshot.name, "tracked_demo");
-
-    da.resolve("done");
-    await promise.catch(() => {});
-  }),
-);
-
-test(
-  "getRun returns ManagedRun with status 'aborted' after stop",
-  withTempCwd(async (cwd) => {
-    const da = deferredAgent();
-    const manager = new WorkflowManager({ cwd, agent: da.runner });
-    manager.on("error", () => {});
-    const { runId, promise } = manager.startInBackground(oneAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
-
-    manager.stop(runId);
-    const run = manager.getRun(runId);
-    assert.equal(run?.status, "aborted");
 
     da.resolve("done");
     await promise.catch(() => {});
