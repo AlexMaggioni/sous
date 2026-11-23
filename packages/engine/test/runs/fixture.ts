@@ -2,33 +2,14 @@
 // no program runs.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
-import { ensureHome, homePaths, type HomePaths } from "../../src/runs/home.js";
-import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
-import type { PersistedRunState } from "../../src/runs/persistence/run-persistence.js";
+import type { HomePaths } from "../../src/runs/home.js";
 import type { RunRecord } from "../../src/runs/records.js";
 
-export function setup(workflows: Record<string, string>, config: Record<string, unknown> = {}): { paths: HomePaths; projectDir: string } {
-  const root = mkdtempSync(join(tmpdir(), "engine-runs-"));
-  const paths = ensureHome(homePaths(join(root, "home")));
-  writeFileSync(paths.config, JSON.stringify({ notify: false, defaultPlace: "folder", ...config }));
-  const projectDir = join(root, "project");
-  mkdirSync(join(projectDir, ".orchestrator", "workflows"), { recursive: true });
-  for (const [name, script] of Object.entries(workflows)) writeFileSync(join(projectDir, ".orchestrator", "workflows", `${name}.js`), script);
-  return { paths, projectDir };
-}
-
-/** Write a run's engine files the way the engine leaves them, with no manager: its state and,
- *  when given, its event log. A state may leave out what an old engine did not save. */
-export function plantState(paths: HomePaths, state: Partial<PersistedRunState> & { runId: string }, events?: string): void {
-  const { runsDir } = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
-  mkdirSync(runsDir, { recursive: true });
-  writeFileSync(join(runsDir, `${state.runId}.json`), JSON.stringify(state, null, 2));
-  if (events !== undefined) writeFileSync(join(runsDir, `${state.runId}.events.jsonl`), events);
-}
+// The home and the planted state come from the test kit, which orc's tests use too.
+export { plantState, testHome as setup } from "../../src/testing.js";
 
 /** The engine names a project's folder after the folder's name and a hash of its path. */
 export function projectKey(dir: string): string {

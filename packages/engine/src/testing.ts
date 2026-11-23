@@ -1,0 +1,112 @@
+// The test kit, at @orchestrator/engine/testing. A test makes a home with it, plants a run's
+// files, and starts workers in its own process through the launcher orc's commands take. orc's
+// code never imports it: the architecture test flags an import past the entry from src.
+
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { ensureHome, homePaths, type HomePaths } from "./runs/home.js";
+import type { Launcher } from "./runs/launch.js";
+import { loadRecord, updateRecord } from "./runs/records.js";
+import { engineRunFiles, logFile } from "./runs/store.js";
+import { runWorker } from "./runs/worker.js";
+import type { PersistedRunState } from "./runs/persistence/run-persistence.js";
+import type { InnerRunner } from "./steps/steps.js";
+import type { WorkflowRunResult } from "./workflow-result.js";
+
+/**
+ * A new home and project folder in the temp folder. The config sends no notices and runs in the
+ * project folder, unless `config` says otherwise. Each workflow goes in the project's workflow
+ * folder as `<name>.js`.
+ */
+export function testHome(workflows: Record<string, string> = {}, config: Record<string, unknown> = {}): { paths: HomePaths; projectDir: string } {
+  const root = mkdtempSync(join(tmpdir(), "orc-test-"));
+  const paths = ensureHome(homePaths(join(root, "home")));
+  writeFileSync(paths.config, JSON.stringify({ notify: false, defaultPlace: "folder", ...config }));
+  const projectDir = join(root, "project");
+  mkdirSync(join(projectDir, ".orchestrator", "workflows"), { recursive: true });
+  for (const [name, script] of Object.entries(workflows)) writeFileSync(join(projectDir, ".orchestrator", "workflows", `${name}.js`), script);
+  return { paths, projectDir };
+}
+
+/** Write a run's engine files the way the engine leaves them, with no manager: its state and,
+ *  when given, its event log. A state may leave out what an old engine did not save. */
+export function plantState(paths: HomePaths, state: Partial<PersistedRunState> & { runId: string }, events?: string): void {
+  const files = engineRunFiles(paths, state.runId);
+  mkdirSync(dirname(files.state), { recursive: true });
+  writeFileSync(files.state, JSON.stringify(state, null, 2));
+  if (events !== undefined) writeFileSync(files.events, events);
+}
+
+/** A step the fake runner was asked to run. */
+export interface Call {
+  prompt: string;
+  label?: string;
+  options: Record<string, unknown>;
+}
+
+/**
+ * A runner that stands in for the programs. Each call is noted, opens a session as a program
+ * would, and gives what `answer` returns. An `answer` that throws fails the step.
+ */
+export function fakeRunner(answer: (call: Call, calls: Call[]) => unknown): { runner: InnerRunner; calls: Call[] } {
+  const calls: Call[] = [];
+  const runner = {
+    async run(prompt: string, options: Record<string, unknown> = {}) {
+      const call = { prompt, label: options.label as string | undefined, options };
+      calls.push(call);
+      (options.onSessionOpen as ((ref: unknown) => void) | undefined)?.({ sessionId: `s${calls.length}`, backendId: "claude", cwd: options.cwd, reopen: { load: true, resume: true, list: true } });
+      return answer(call, calls);
+    },
+  } as unknown as InnerRunner;
+  return { runner, calls };
+}
+
+export interface InProcessOptions {
+  /** The runner that stands in for the programs. */
+  inner: InnerRunner;
+  /** How often the worker looks for an answer, in ms. Default 20. */
+  pollMs?: number;
+  /** Gets each line the worker logs. The run's log file gets them too. */
+  log?: (line: string) => void;
+  /** Let `orc pause`, `orc stop` and `orc stop --step` reach the worker. They signal the
+   *  record's pid, which is this process. Default false. */
+  handleSignals?: boolean;
+}
+
+export interface InProcessWorkers {
+  /** Starts each worker in this process. Pass it where orc passes workerProcess. */
+  launch: Launcher;
+  /** Each worker started, in order. */
+  launched: Array<{ runId: string; mode: "start" | "resume" }>;
+  /** The result of the last worker started for the run. It rejects when that worker threw. */
+  ended(runId: string): Promise<WorkflowRunResult | undefined>;
+}
+
+/**
+ * A launcher that runs each worker in this process, with the given runner. The worker writes its
+ * lines to the run's log file, as a worker process does, so `orc log` and `orc run --wait` read
+ * them. A worker that throws writes the error to the log and clears its pid, as workerMain does.
+ * Unlike a worker process, it leaves ORC_RUN_ID unset.
+ */
+export function inProcess(options: InProcessOptions): InProcessWorkers {
+  const { inner, pollMs = 20, handleSignals = false } = options;
+  const launched: InProcessWorkers["launched"] = [];
+  const workers = new Map<string, Promise<WorkflowRunResult | undefined>>();
+  const launch: Launcher = (paths, runId, mode) => {
+    launched.push({ runId, mode });
+    const toFile = (line: string) => appendFileSync(logFile(paths, runId), `${line}\n`);
+    const log = (line: string) => {
+      toFile(line);
+      options.log?.(line);
+    };
+    const worker = runWorker(runId, mode, { paths, inner, pollMs, log, handleSignals });
+    worker.catch((error: unknown) => {
+      toFile(`${new Date().toISOString().slice(11, 19)} error      ${(error as Error).stack ?? String(error)}`);
+      if (loadRecord(paths, runId)) updateRecord(paths, runId, { pid: undefined });
+    });
+    workers.set(runId, worker);
+  };
+  const ended = (runId: string) => workers.get(runId) ?? Promise.reject(new Error(`no worker started for ${runId}`));
+  return { launch, launched, ended };
+}

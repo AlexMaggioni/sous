@@ -92,6 +92,13 @@ function engineFolders(paths: HomePaths) {
   return workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
 }
 
+/** The engine's files for a run: its saved state and its event log. The test kit writes them
+ *  by hand, to plant a run as an engine left it. */
+export function engineRunFiles(paths: HomePaths, runId: string): { state: string; events: string } {
+  const { runsDir } = engineFolders(paths);
+  return { state: join(runsDir, `${runId}.json`), events: join(runsDir, `${runId}.events.jsonl`) };
+}
+
 /** The engine's persistence for orc's runs. The worker hands it to its manager. It writes nothing
  *  until something saves or takes a lease through it. */
 export function enginePersistence(paths: HomePaths): RunEventPersistence {
