@@ -3,11 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import type { JournalEntry, WorkflowCallRecord, WorkflowResumeCallDecision } from "../src/workflow-result.js";
+import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowErrorCode } from "../src/errors.js";
 import {
   admitResumeSource,
-  buildResumeReport,
   cloneResumeCallBlocker,
   cloneResumeCandidate,
   normalizeResumeSeed,
@@ -356,54 +355,5 @@ return { first, second };`;
     });
     assert.equal(admission(paused).strategy, "occurrence-v1");
     assert.equal(cloneResumeCallBlocker(SOURCE_RUN_ID, pending)?.call.outcome, "error");
-  });
-});
-
-describe("incremental resume report construction", () => {
-  it("sorts cloned decisions, computes counters, and emits only strategy fields", () => {
-    const decisions: WorkflowResumeCallDecision[] = [
-      { index: 2, kind: "agent", action: "failed", reason: "resume-fatal-latch" },
-      { index: 0, kind: "agent", action: "replayed", sourceRunId: SOURCE_RUN_ID, recordedIndex: 7, match: "occurrence" },
-      { index: 1, kind: "checkpoint", action: "live", reason: "not-recorded" },
-    ];
-    const report = buildResumeReport({
-      strategy: "occurrence-v1",
-      sourceRunId: SOURCE_RUN_ID,
-      requestedPolicy: "auto",
-    }, decisions);
-    assert.deepEqual(report, {
-      strategy: "occurrence-v1",
-      sourceRunId: SOURCE_RUN_ID,
-      requestedPolicy: "auto",
-      replayed: 1,
-      live: 1,
-      failed: 1,
-      calls: [decisions[1], decisions[2], decisions[0]],
-    });
-    assert.equal(Object.isFrozen(report), true);
-    assert.equal(Object.isFrozen(report.calls), true);
-    assert.notEqual(report.calls, decisions);
-    assert.throws(() => buildResumeReport({
-      strategy: "occurrence-v1",
-      sourceRunId: SOURCE_RUN_ID,
-      requestedPolicy: "auto",
-    }, [decisions[0], { ...decisions[0] }]));
-
-    const live = buildResumeReport({
-      strategy: "live",
-      sourceRunId: SOURCE_RUN_ID,
-      requestedPolicy: "auto",
-      disabledReason: "cwd-mismatch",
-    }, []);
-    assert.deepEqual(live, {
-      strategy: "live",
-      sourceRunId: SOURCE_RUN_ID,
-      requestedPolicy: "auto",
-      replayed: 0,
-      live: 0,
-      failed: 0,
-      calls: [],
-      disabledReason: "cwd-mismatch",
-    });
   });
 });

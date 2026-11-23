@@ -152,7 +152,7 @@ async function assertDriftedCheckpointResume(
       resumeFromRunId: paused.runId,
       confirm: async () => true,
     });
-    const admittedChange = manager.getRun(targetRunId)?.replayEligibility?.provenanceChanges
+    const admittedChange = manager.getRun(targetRunId)?.resumeReporting?.eligibility().provenanceChanges
       ?.find((change) => change.field === expectedField);
     assert.ok(admittedChange, `${expectedField} is reported at admission`);
     assert.notEqual(admittedChange.source, admittedChange.current);

@@ -22,12 +22,6 @@ import type {
   WorkflowMeta,
   WorkflowRunFallback,
   WorkflowRunResult,
-  WorkflowReplayEligibility,
-  WorkflowReplayFirstNonReplay,
-  WorkflowReplayOperationalChange,
-  WorkflowReplayProvenanceChange,
-  WorkflowResumeCallDecision,
-  WorkflowResumeReport,
 } from "./workflow-result.js";
 import type {
   EngineRunEvent,
@@ -41,7 +35,7 @@ import { foldStep, preview, recomputeWorkflowSnapshot, type WorkflowSnapshot } f
 import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
-import { isNestedScope, isRunEnvironmentIdentity } from "./resume-identity.js";
+import { isNestedScope } from "./resume-identity.js";
 import type { ResumeRows } from "./resume-rows.js";
 import { continueRows, handedInRows, newRows, reuseRows, reviseRows, type RunRows } from "./run-rows.js";
 import {
@@ -56,7 +50,8 @@ import {
   type WorkflowScriptOrigin,
   type WorkflowScriptRevision,
 } from "./runs/persistence/run-persistence.js";
-import { admitResumeSource, buildResumeReport } from "./resume-matcher.js";
+import { admitResumeSource } from "./resume-matcher.js";
+import { startResumeReport, type ResumeReporting } from "./resume-report.js";
 import type {
   ContinuationCandidate,
   PreparedContinuation,
@@ -65,7 +60,7 @@ import type {
 import { hasEventLog, type RunEventLog } from "./runs/persistence/run-event-persistence.js";
 import { projectRecordedError } from "./recorded-error.js";
 import { workflowHomeDir } from "./workflow-paths.js";
-import { cloneFrozenStrictJson, cloneStrictJsonValue, deepFreeze } from "./strict-json.js";
+import { cloneStrictJsonValue, deepFreeze } from "./strict-json.js";
 import {
   CALL_INPUTS_FORMAT,
   CALL_PATH_FORMAT,
@@ -148,12 +143,8 @@ export interface ManagedRun {
   readonly resumeSourceRunId?: string;
   /** Resume-only interrupted root calls eligible for live session continuation. */
   preparedContinuation?: PreparedContinuation;
-  /** Manager-owned report, incrementally updated while the engine is executing. */
-  resumeReport?: WorkflowResumeReport;
-  replayEligibility?: WorkflowReplayEligibility;
-  replayEligibilityPlan?: ReplayEligibilityPlan;
-  resumeReportPlan?: PreparedResume;
-  resumeDecisions?: Map<number, WorkflowResumeCallDecision>;
+  /** The resume report, kept current as the engine decides each call. Only a resumed run has one. */
+  resumeReporting?: ResumeReporting;
   /** Cross-process execution lease for this run, when it is actively executing. */
   lease?: RunLease;
   eventStreamId?: string;
@@ -183,21 +174,6 @@ interface ManagerResumeExecution {
   preparedResume?: PreparedResume;
   /** The rows the run pairs with, by scope. */
   resumeRows?: ResumeRows;
-}
-
-interface ReplayEligibilityPlan {
-  sourceRunId: string;
-  strategy: WorkflowReplayEligibility["strategy"];
-  disabledReason?: Extract<WorkflowReplayEligibility, { strategy: "live" }>["disabledReason"];
-  predictedReplayablePrefix: number;
-  initialFirstNonReplay?: WorkflowReplayFirstNonReplay;
-  sourceEngineVersion?: string;
-  currentEngineVersion: string;
-  engineVersionComparison: WorkflowReplayEligibility["engineVersionComparison"];
-  sourceInputsFormat?: number;
-  currentInputsFormat: number;
-  provenanceChanges: WorkflowReplayProvenanceChange[];
-  operationalChanges: WorkflowReplayOperationalChange[];
 }
 
 interface InitializedRun {
@@ -360,14 +336,6 @@ function pairingKey(saved: PersistedRunState["runtime"], current: ManagedRun["ru
       saved?.checkpointInputsFormat === current.checkpointInputsFormat
     ? "inputs"
     : "hash";
-}
-
-function displayOperationalValue(value: number | null): string {
-  return value === null ? "none" : String(value);
-}
-
-function displayProvenanceValue(value: string | null): string {
-  return value === null ? "unavailable" : value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -669,208 +637,6 @@ export class WorkflowManager extends EventEmitter {
     }
   }
 
-  private operationalChanges(
-    source: PersistedRunState,
-    managed: ManagedRun,
-  ): WorkflowReplayOperationalChange[] {
-    if (!source.limits || !managed.limits) return [];
-    const options = ["agentRetries", "concurrency"] as const;
-    const changes: WorkflowReplayOperationalChange[] = [];
-    for (const option of options) {
-      const sourceValue = source.limits[option];
-      const currentValue = managed.limits[option];
-      if (sourceValue === currentValue) continue;
-      changes.push({
-        option,
-        source: sourceValue,
-        current: currentValue,
-        detail:
-          `source recorded ${option}=${displayOperationalValue(sourceValue)}; ` +
-          `this run: ${displayOperationalValue(currentValue)}`,
-      });
-    }
-    return changes;
-  }
-
-  private provenanceChanges(
-    source: PersistedRunState,
-    managed: ManagedRun,
-  ): WorkflowReplayProvenanceChange[] {
-    const changes: WorkflowReplayProvenanceChange[] = [];
-    const append = (
-      field: WorkflowReplayProvenanceChange["field"],
-      sourceValue: string | null,
-      currentValue: string | null,
-      label: string,
-    ): void => {
-      if (sourceValue === currentValue) return;
-      changes.push({
-        field,
-        source: sourceValue,
-        current: currentValue,
-        detail:
-          `source recorded ${label}=${displayProvenanceValue(sourceValue)}; ` +
-          `this run: ${displayProvenanceValue(currentValue)}`,
-      });
-    };
-
-    append("runtime.node", source.runtime?.node ?? null, managed.runtime.node, "runtime.node");
-    append("runtime.v8", source.runtime?.v8 ?? null, managed.runtime.v8, "runtime.v8");
-
-    const recordedTerminal = source.resume?.terminalEnvironment;
-    const recordedEnvironment = isRunEnvironmentIdentity(recordedTerminal)
-      ? recordedTerminal
-      : source.environment;
-    const sourceEnvironment = isRunEnvironmentIdentity(recordedEnvironment)
-      ? recordedEnvironment
-      : undefined;
-    const currentEnvironment = isRunEnvironmentIdentity(managed.environment)
-      ? managed.environment
-      : undefined;
-    const sourceKind = sourceEnvironment?.git ? "git" : sourceEnvironment?.key !== undefined ? "key" : null;
-    const currentKind = currentEnvironment?.git ? "git" : currentEnvironment?.key !== undefined ? "key" : null;
-    if (sourceKind !== currentKind) {
-      append("environment.identity", sourceKind, currentKind, "environment identity");
-    } else if (sourceEnvironment?.git && currentEnvironment?.git) {
-      append("environment.git.head", sourceEnvironment.git.head, currentEnvironment.git.head, "git HEAD");
-      append(
-        "environment.git.dirtyDigest",
-        sourceEnvironment.git.dirtyDigest,
-        currentEnvironment.git.dirtyDigest,
-        "git dirty digest",
-      );
-    } else if (sourceEnvironment?.key !== undefined && currentEnvironment?.key !== undefined) {
-      append("environment.key", sourceEnvironment.key, currentEnvironment.key, "environment key");
-    }
-    return changes;
-  }
-
-  private replayEligibilityPlan(
-    admission: PreparedResume,
-    source: PersistedRunState,
-    managed: ManagedRun,
-    predictedReplayablePrefix: number,
-  ): ReplayEligibilityPlan {
-    const sourceEngineVersion = typeof source.runtime?.engineVersion === "string"
-      ? source.runtime.engineVersion
-      : undefined;
-    const sourceInputsFormat = Number.isSafeInteger(source.runtime?.inputsFormat)
-      ? source.runtime?.inputsFormat
-      : undefined;
-    const operationalChanges = this.operationalChanges(source, managed);
-    const provenanceChanges = this.provenanceChanges(source, managed);
-    let initialFirstNonReplay: WorkflowReplayFirstNonReplay | undefined;
-    if (admission.strategy === "live") {
-      initialFirstNonReplay = {
-        index: 0,
-        action: "live",
-        reason: admission.disabledReason,
-        detail: admission.disabledReason === "cwd-mismatch"
-          ? "source effectiveCwd differs from this run"
-          : "source status is not terminal",
-      };
-    } else if (
-      predictedReplayablePrefix === 0 ||
-      (
-        Number.isSafeInteger(source.callsAllocated) &&
-        predictedReplayablePrefix < (source.callsAllocated as number)
-      )
-    ) {
-      initialFirstNonReplay = {
-        index: predictedReplayablePrefix,
-        action: "live",
-        reason: "not-recorded",
-        detail: `source has no contiguous replayable result at call ${predictedReplayablePrefix}`,
-      };
-    }
-    return {
-      sourceRunId: admission.sourceRunId,
-      strategy: admission.strategy,
-      ...(admission.strategy === "live" ? { disabledReason: admission.disabledReason } : {}),
-      predictedReplayablePrefix,
-      ...(initialFirstNonReplay === undefined ? {} : { initialFirstNonReplay }),
-      ...(sourceEngineVersion === undefined ? {} : { sourceEngineVersion }),
-      currentEngineVersion: managed.runtime.engineVersion,
-      engineVersionComparison: sourceEngineVersion === undefined
-        ? "source-unknown"
-        : sourceEngineVersion === managed.runtime.engineVersion
-          ? "same"
-          : "different",
-      ...(sourceInputsFormat === undefined ? {} : { sourceInputsFormat }),
-      currentInputsFormat: managed.runtime.inputsFormat,
-      provenanceChanges,
-      operationalChanges,
-    };
-  }
-
-  private buildReplayEligibility(
-    plan: ReplayEligibilityPlan,
-    report: WorkflowResumeReport,
-  ): WorkflowReplayEligibility {
-    const decisions = [...report.calls].sort((left, right) => left.index - right.index);
-    const byIndex = new Map(decisions.map((decision) => [decision.index, decision] as const));
-    let replayedPrefix = 0;
-    while (byIndex.get(replayedPrefix)?.action === "replayed") replayedPrefix++;
-    const firstDecision = decisions.find((decision) => decision.action !== "replayed");
-    const operationalDetail = plan.operationalChanges.map((change) => change.detail).join("; ");
-    const firstNonReplay: WorkflowReplayFirstNonReplay | undefined = firstDecision
-      ? {
-          index: firstDecision.index,
-          action: firstDecision.action,
-          reason: firstDecision.reason,
-          ...(
-            operationalDetail.length > 0 &&
-            firstDecision.action === "live" &&
-            firstDecision.reason === "inputs-changed"
-              ? { detail: operationalDetail }
-              : {}
-          ),
-        }
-      : plan.initialFirstNonReplay;
-    const summary = {
-      sourceRunId: plan.sourceRunId,
-      strategy: plan.strategy,
-      ...(plan.strategy === "live" ? { disabledReason: plan.disabledReason } : {}),
-      predictedReplayablePrefix: plan.predictedReplayablePrefix,
-      replayedPrefix,
-      replayed: report.replayed,
-      live: report.live,
-      failed: report.failed,
-      ...(firstNonReplay === undefined ? {} : { firstNonReplay }),
-      ...(plan.sourceEngineVersion === undefined ? {} : { sourceEngineVersion: plan.sourceEngineVersion }),
-      currentEngineVersion: plan.currentEngineVersion,
-      engineVersionComparison: plan.engineVersionComparison,
-      ...(plan.sourceInputsFormat === undefined ? {} : { sourceInputsFormat: plan.sourceInputsFormat }),
-      currentInputsFormat: plan.currentInputsFormat,
-      provenanceChanges: plan.provenanceChanges,
-      operationalChanges: plan.operationalChanges,
-    };
-    const captured = cloneFrozenStrictJson(summary);
-    if (!captured.ok) throw new TypeError(`replay eligibility is not strict JSON at ${captured.path}`);
-    return captured.clone as unknown as WorkflowReplayEligibility;
-  }
-
-  private initializeResumeReporting(
-    managed: ManagedRun,
-    source: PersistedRunState,
-    admission: PreparedResume,
-    predictedReplayablePrefix: number,
-  ): void {
-    managed.resumeReportPlan = admission;
-    managed.resumeDecisions = new Map();
-    managed.resumeReport = buildResumeReport(managed.resumeReportPlan, []);
-    managed.replayEligibilityPlan = this.replayEligibilityPlan(
-      admission,
-      source,
-      managed,
-      predictedReplayablePrefix,
-    );
-    managed.replayEligibility = this.buildReplayEligibility(
-      managed.replayEligibilityPlan,
-      managed.resumeReport,
-    );
-  }
-
   private cloneResumeSourceValue<T>(value: T, runId: string): T {
     try {
       return structuredClone(value);
@@ -979,7 +745,7 @@ export class WorkflowManager extends EventEmitter {
     managed.preparedContinuation = this.buildPreparedContinuation(source);
     if (admission.strategy === "live") {
       managed.rows = reuseRows(managed.runId).rows;
-      this.initializeResumeReporting(managed, source, admission, 0);
+      managed.resumeReporting = startResumeReport({ plan: admission, source, run: managed, predictedReplayablePrefix: 0 });
       return { preparedResume: admission };
     }
 
@@ -994,7 +760,12 @@ export class WorkflowManager extends EventEmitter {
       key: pairingKey(source.runtime, managed.runtime),
     });
     managed.rows = started.rows;
-    this.initializeResumeReporting(managed, source, admission, started.prefix);
+    managed.resumeReporting = startResumeReport({
+      plan: admission,
+      source,
+      run: managed,
+      predictedReplayablePrefix: started.prefix,
+    });
     return { preparedResume: admission, resumeRows: started.resume };
   }
 
@@ -1351,10 +1122,10 @@ export class WorkflowManager extends EventEmitter {
       ...(checkpointsTaken.length === 0 ? {} : { checkpointsTaken }),
       calls: engineResult?.calls ?? managed.rows.resultCalls(),
       callsAllocated: engineResult?.callsAllocated ?? managed.callsAllocated,
-      ...(engineResult?.resumeReport ?? managed.resumeReport
-        ? { resumeReport: engineResult?.resumeReport ?? managed.resumeReport }
+      ...(engineResult?.resumeReport ?? managed.resumeReporting
+        ? { resumeReport: engineResult?.resumeReport ?? managed.resumeReporting?.report() }
         : {}),
-      ...(managed.replayEligibility ? { replayEligibility: managed.replayEligibility } : {}),
+      ...(managed.resumeReporting ? { replayEligibility: managed.resumeReporting.eligibility() } : {}),
       ...(managed.continuation ? { continuation: managed.continuation } : {}),
       effectiveLimits: engineResult?.effectiveLimits ?? managed.limits,
       ...(engineResult?.abortSignaled || managed.abortSignaled ? { abortSignaled: true as const } : {}),
@@ -1464,7 +1235,11 @@ export class WorkflowManager extends EventEmitter {
           }
           managed.callsAllocated = allocated;
         },
-        onResumeDecision: (decision) => this.recordResumeDecision(managed, decision),
+        onResumeDecision: (decision) => {
+          if (!managed.resumeReporting) return;
+          managed.resumeReporting.decide(decision);
+          this.persistRun(managed);
+        },
         onAgentJournal: (entry) => this.recordJournalEntry(managed, entry),
         onFallback: (entry) => {
           managed.fallbacks.push(entry);
@@ -1533,21 +1308,6 @@ export class WorkflowManager extends EventEmitter {
       managed.executionSettled = true;
       managed.rows.completed(engineResult.calls ?? []);
       managed.callsAllocated = engineResult.callsAllocated;
-      if (engineResult.resumeReport && managed.resumeReportPlan) {
-        managed.resumeReport = buildResumeReport(
-          managed.resumeReportPlan,
-          engineResult.resumeReport.calls,
-        );
-        engineResult.resumeReport = managed.resumeReport;
-        if (managed.replayEligibilityPlan) {
-          managed.replayEligibility = this.buildReplayEligibility(
-            managed.replayEligibilityPlan,
-            managed.resumeReport,
-          );
-        }
-      } else {
-        managed.resumeReport = engineResult.resumeReport;
-      }
       managed.limits = engineResult.effectiveLimits;
       if (engineResult.abortSignaled) managed.abortSignaled = true;
       if (engineResult.nestedWorkflows) managed.nestedWorkflows = true;
@@ -1600,7 +1360,6 @@ export class WorkflowManager extends EventEmitter {
         managed.status = "failed";
       }
       managed.error = workflowError;
-      this.finalizeResumeReport(managed);
       managed.result = this.composeResult(managed, workflowError);
 
       if (pauseReason !== undefined) {
@@ -1670,36 +1429,6 @@ export class WorkflowManager extends EventEmitter {
     if (!managed.lease) return;
     this.persistence.releaseRunLease(managed.lease);
     managed.lease = undefined;
-  }
-
-  private recordResumeDecision(managed: ManagedRun, decision: WorkflowResumeCallDecision): void {
-    if (!managed.resumeReportPlan || !managed.resumeDecisions) return;
-    managed.resumeDecisions.set(decision.index, decision);
-    managed.resumeReport = buildResumeReport(
-      managed.resumeReportPlan,
-      [...managed.resumeDecisions.values()],
-    );
-    if (managed.replayEligibilityPlan) {
-      managed.replayEligibility = this.buildReplayEligibility(
-        managed.replayEligibilityPlan,
-        managed.resumeReport,
-      );
-    }
-    this.persistRun(managed);
-  }
-
-  private finalizeResumeReport(managed: ManagedRun): void {
-    if (!managed.resumeReportPlan || !managed.resumeDecisions) return;
-    managed.resumeReport = buildResumeReport(
-      managed.resumeReportPlan,
-      [...managed.resumeDecisions.values()],
-    );
-    if (managed.replayEligibilityPlan) {
-      managed.replayEligibility = this.buildReplayEligibility(
-        managed.replayEligibilityPlan,
-        managed.resumeReport,
-      );
-    }
   }
 
   private recordJournalEntry(managed: ManagedRun, entry: JournalEntry): void {
@@ -1888,8 +1617,9 @@ export class WorkflowManager extends EventEmitter {
       ...(managed.resume ? { resume: managed.resume } : {}),
       ...(managed.resumeSourceRunId ? { resumeSourceRunId: managed.resumeSourceRunId } : {}),
       ...(rows.resumeSeed ? { resumeSeed: rows.resumeSeed } : {}),
-      ...(managed.resumeReport ? { resumeReport: managed.resumeReport } : {}),
-      ...(managed.replayEligibility ? { replayEligibility: managed.replayEligibility } : {}),
+      ...(managed.resumeReporting
+        ? { resumeReport: managed.resumeReporting.report(), replayEligibility: managed.resumeReporting.eligibility() }
+        : {}),
       ...(managed.continuation ? { continuation: managed.continuation } : {}),
       defaultModel: managed.defaultModel,
       eventStreamId: managed.eventStreamId,
@@ -2296,7 +2026,12 @@ export class WorkflowManager extends EventEmitter {
         { generation, scriptHash: hashScriptText(revision), revisedAt: new Date().toISOString() },
       ];
       occurrenceResume = { strategy: "occurrence-v1", sourceRunId: runId, requestedPolicy: "auto" };
-      this.initializeResumeReporting(managed, persisted, occurrenceResume, revised.prefix);
+      managed.resumeReporting = startResumeReport({
+        plan: occurrenceResume,
+        source: persisted,
+        run: managed,
+        predictedReplayablePrefix: revised.prefix,
+      });
     }
     const continuation: WorkflowContinuationResult = deepFreeze({
       generation,

@@ -2,8 +2,6 @@ import type {
   AgentSessionRecord,
   JournalEntry,
   WorkflowCallRecord,
-  WorkflowResumeCallDecision,
-  WorkflowResumeReport,
   WorkflowResumeSafety,
 } from "./workflow-result.js";
 import type { AgentUsage } from "./steps/agent-run.js";
@@ -379,32 +377,4 @@ export function admitResumeSource(input: { source: PersistedRunState; effectiveC
     return { strategy: "live", ...base, disabledReason: "cwd-mismatch" };
   }
   return { strategy: "occurrence-v1", ...base };
-}
-
-/** The resume report of a run: what `plan` says about the run, then its calls by index. */
-export function buildResumeReport(
-  plan: PreparedResume,
-  decisions: readonly WorkflowResumeCallDecision[],
-): WorkflowResumeReport {
-  const indexes = new Set<number>();
-  for (const decision of decisions) {
-    if (!isNonNegativeSafeInteger(decision.index) || indexes.has(decision.index)) {
-      throw new TypeError("resume decisions must have unique non-negative safe-integer indexes");
-    }
-    indexes.add(decision.index);
-  }
-  const calls = [...decisions].sort((left, right) => left.index - right.index);
-  const report = {
-    strategy: plan.strategy,
-    sourceRunId: plan.sourceRunId,
-    requestedPolicy: plan.requestedPolicy,
-    replayed: calls.filter((decision) => decision.action === "replayed").length,
-    live: calls.filter((decision) => decision.action === "live").length,
-    failed: calls.filter((decision) => decision.action === "failed").length,
-    calls,
-    ...(plan.strategy === "live" ? { disabledReason: plan.disabledReason } : {}),
-  };
-  const cloned = cloneFrozenStrictJson(report);
-  if (!cloned.ok) throw new TypeError(`resume report is not strict JSON at ${cloned.path}`);
-  return cloned.clone as unknown as WorkflowResumeReport;
 }

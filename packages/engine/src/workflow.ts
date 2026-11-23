@@ -44,7 +44,7 @@ import { parseModelRoutingFromMeta, resolveModelForPhase } from "./model-routing
 import { projectRecordedError } from "./recorded-error.js";
 import { registerRunTripwire } from "./rejection-tripwire.js";
 import type { PreparedContinuation, PreparedResume } from "./resume.js";
-import { buildResumeReport } from "./resume-matcher.js";
+import { buildResumeReport } from "./resume-report.js";
 import { nestedRunId } from "./resume-identity.js";
 import { createPairing, type RecordedScope } from "./resume-pairing.js";
 import { journalRows, type ResumeRow, type ResumeRows } from "./resume-rows.js";
