@@ -166,6 +166,14 @@ export interface SharedRuntime {
   };
 }
 
+/** What a nested workflow() run gets from the run that calls it. A root run has none. */
+interface NestedRun {
+  /** The root run's shared runtime. */
+  runtime: SharedRuntime;
+  /** How many workflow() levels sit above this run. The root is 0, so a nested run is 1 or more. */
+  depth: number;
+}
+
 export interface WorkflowCallbackContext {
   /** The runWorkflow invocation that produced this callback. */
   scope: string;
@@ -258,10 +266,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   onAgentAttempt?: (attempt: WorkflowAgentAttemptControl) => void | (() => void);
   /** Called synchronously when workflow() allocates a unique child-run ordinal. */
   onNestedWorkflow?: (ordinal: number, childRunId: string) => void;
-  /** Internal: shared runtime inherited by a nested workflow() call. */
-  sharedRuntime?: SharedRuntime;
-  /** Internal (orchestrator): how many workflow() levels sit above this run. The root is 0. */
-  nestingDepth?: number;
   /** Resolve a saved-workflow name to its script, enabling `workflow('name', args)`. */
   loadSavedWorkflow?: (name: string) => string | undefined;
   /** Per-run changes to steps, by label, such as { reviewer: { model: "haiku" } }. */
@@ -563,9 +567,18 @@ export function sanitizeVmName(name: string): string {
   return sanitized || "workflow";
 }
 
-export async function runWorkflow<T = unknown>(
+export function runWorkflow<T = unknown>(
   script: string,
   options: WorkflowRunOptions,
+): Promise<EngineRunResult<T>> {
+  return runLevel<T>(script, options, undefined);
+}
+
+/** Runs one level of a run tree. `runWorkflow` starts the root, and workflow() starts each nested level. */
+async function runLevel<T>(
+  script: string,
+  options: WorkflowRunOptions,
+  nested: NestedRun | undefined,
 ): Promise<EngineRunResult<T>> {
   const started = Date.now();
   const { meta, body } = parseWorkflowScript(script);
@@ -629,7 +642,7 @@ export async function runWorkflow<T = unknown>(
 
   const agentRunner = options.agent;
   // Global caps are shared with any nested workflow() so they hold across nesting.
-  const shared: SharedRuntime = options.sharedRuntime ?? {
+  const shared: SharedRuntime = nested?.runtime ?? {
     limiter: createLimiter(concurrency),
     agentCount: 0,
     tokenUsage: copyTokenUsageBaseline(options.tokenUsageBaseline),
@@ -688,7 +701,7 @@ export async function runWorkflow<T = unknown>(
   };
 
   const reportRootCallAllocated = (callIndex: number) => {
-    if (options.sharedRuntime) return;
+    if (nested) return;
     const allocated = callIndex + 1;
     if (allocated !== rootCallsAllocated + 1) {
       resumeActivity.invalid = true;
@@ -879,7 +892,7 @@ export async function runWorkflow<T = unknown>(
   // unsafe, nested, and checkpoint work keeps the existing quiescence barrier.
   const interruptUnsettledCalls = () => {
     const terminalSafe = ledger.interruptUnsettled();
-    if (options.sharedRuntime === undefined && terminalSafe && !nestedWorkflows && !resumeActivity.retired) {
+    if (nested === undefined && terminalSafe && !nestedWorkflows && !resumeActivity.retired) {
       resumeActivity.retired = true;
       while (resumeActivity.active > 0) transitionResumeActivity(-1);
     }
@@ -1834,7 +1847,7 @@ export async function runWorkflow<T = unknown>(
     throwIfAborted();
     const maxNestingDepth = options.maxNestingDepth ?? DEFAULT_MAX_NESTING_DEPTH;
     // Depth is this run's own level, so parallel siblings don't add up.
-    const ownDepth = options.nestingDepth ?? 0;
+    const ownDepth = nested?.depth ?? 0;
     if (ownDepth >= maxNestingDepth) {
       throw new WorkflowError(
         `workflow() can nest at most ${maxNestingDepth} levels deep`,
@@ -1859,15 +1872,13 @@ export async function runWorkflow<T = unknown>(
     const place = nestedOptions?.place;
     if (place !== undefined && !isPlace(place)) throw new Error(`place must be worktree, folder or none, got "${String(place)}"`);
     const childCwd = place !== undefined ? places.nestedPlace(childRunId, place, baseCwd) : options.cwd;
-    const child = await runWorkflow(childScript, {
+    const child = await runLevel(childScript, {
       ...options,
       args,
       cwd: childCwd,
       // The COMBINED signal, so a parent-side fault/abort cancels the child's agents too
       // (the child layers its own fault controller on top of this).
       signal,
-      sharedRuntime: shared,
-      nestingDepth: ownDepth + 1,
       // A nested run finds its rows in the same resume rows by its run id. It has no plan and no
       // interrupted calls.
       resume: options.resume?.rows ? { rows: options.resume.rows } : undefined,
@@ -1875,7 +1886,7 @@ export async function runWorkflow<T = unknown>(
       onResumeDecision: undefined,
       runId: childRunId,
       persistLogs: false,
-    });
+    }, { runtime: shared, depth: ownDepth + 1 });
     state.fallbacks.push(...(child.fallbacks ?? []));
     state.checkpointsTaken.push(...(child.checkpointsTaken ?? []));
     return child.result;
