@@ -1,6 +1,8 @@
 // The calls of one scope, in the order the script makes them. A kind opens a slot for each
 // call. The slot takes the call's index, pairs the call with a recorded row through the scope's
 // source, and settles once. Settling writes the call row and, for a result, the journal row.
+// A kind arms its slot with the function that settles it when the run halts. From then until it
+// settles, the ledger counts the call as unsettled and can interrupt it.
 // The kinds keep their hash, their live run, their retries and their events.
 //
 // Internal: not exported from index.ts.
@@ -109,6 +111,14 @@ export interface StepSlot {
   /** Reports the live decision, when the source gave a reason. */
   live(reason: WorkflowResumeCallLiveReason | undefined): void;
   /**
+   * Gives the slot the function that settles it when the run halts. The call counts as unsettled
+   * from now until it settles. `terminalSafe` marks a call whose interruption lets the run retire
+   * its pending activity. A slot arms once: a later arm does nothing.
+   */
+  arm(interrupt: () => void, terminalSafe: boolean): void;
+  /** Runs the armed interrupt, unless the call has settled. An unarmed slot does nothing. */
+  interrupt(): void;
+  /**
    * Writes the call row, and the journal row when the call returned a result. A call settles
    * once: a later settle returns the first row and writes nothing.
    */
@@ -118,6 +128,13 @@ export interface StepSlot {
 export interface StepLedger {
   open(call: LedgerCall): StepSlot;
   decisions(): readonly WorkflowResumeCallDecision[];
+  /**
+   * Interrupts every armed call that has not settled, in the order they armed. True when every
+   * one of them was terminal-safe, and when there was none.
+   */
+  interruptUnsettled(): boolean;
+  /** How many armed calls have not settled. */
+  unsettled(): number;
 }
 
 export function createStepLedger(input: {
@@ -131,20 +148,41 @@ export function createStepLedger(input: {
     call(record: Omit<WorkflowCallRecord, "scope" | "settlementOrdinal">): WorkflowCallRecord;
     journal(entry: JournalEntry): void;
   };
+  /** Told when a call arms and when an armed call settles, such as a count a pause drains. */
+  unsettled?: { armed(): void; settled(): void };
 }): StepLedger {
   const { source, log, sink } = input;
+  // The armed calls that have not settled, in arm order, with their terminal-safe flag.
+  const armed = new Map<() => void, boolean>();
   return {
     decisions: () => log.decisions(),
+    interruptUnsettled() {
+      const terminalSafe = [...armed.values()].every(Boolean);
+      for (const interrupt of [...armed.keys()]) interrupt();
+      return terminalSafe;
+    },
+    unsettled: () => armed.size,
     open(call) {
       const index = input.counter.next();
       const opened: OpenedCall = { ...call, index };
       let settled: WorkflowCallRecord | undefined;
+      let interrupt: (() => void) | undefined;
+      const slotInterrupt = () => {
+        if (!settled) interrupt?.();
+      };
 
       return {
         index,
         get settled() {
           return settled;
         },
+        arm(onInterrupt, terminalSafe) {
+          if (interrupt || settled) return;
+          interrupt = onInterrupt;
+          armed.set(slotInterrupt, terminalSafe);
+          input.unsettled?.armed();
+        },
+        interrupt: slotInterrupt,
         pair(accept) {
           if (!source) return { action: "live" };
           const pairing = source.pair(opened, accept);
@@ -166,6 +204,7 @@ export function createStepLedger(input: {
         },
         settle(terminal, entry) {
           if (settled) return settled;
+          if (armed.delete(slotInterrupt)) input.unsettled?.settled();
           settled = sink.call({
             index,
             kind: call.kind,

@@ -34,6 +34,8 @@ function setup(input: { source?: SourceScope; reports?: boolean }) {
   const calls: WorkflowCallRecord[] = [];
   const journal: JournalEntry[] = [];
   const reported: WorkflowResumeCallDecision[] = [];
+  // "armed" and "settled" as the ledger tells them, in order.
+  const counted: string[] = [];
   const log = createDecisionLog({ reports: input.reports ?? false, onDecision: (d) => reported.push(d) });
   const ledger = createStepLedger({
     source: input.source,
@@ -47,8 +49,9 @@ function setup(input: { source?: SourceScope; reports?: boolean }) {
       },
       journal: (row) => journal.push(row),
     },
+    unsettled: { armed: () => counted.push("armed"), settled: () => counted.push("settled") },
   });
-  return { ledger, calls, journal, reported };
+  return { ledger, calls, journal, reported, counted };
 }
 
 const row = (hash: string, recordedIndex: number): SourceRow => ({
@@ -87,6 +90,103 @@ describe("step ledger", () => {
     assert.deepEqual(Object.keys(first), [
       "index", "kind", "hash", "path", "inputsHash", "label", "outcome", "origin", "aborted", "scope", "settlementOrdinal",
     ]);
+  });
+
+  it("counts an armed call as unsettled until it settles, and tells each change once", () => {
+    const { ledger, counted } = setup({});
+    const slot = ledger.open({ kind: "agent", hash: "a" });
+    assert.equal(ledger.unsettled(), 0);
+    slot.arm(() => assert.fail("not interrupted"), true);
+    assert.equal(ledger.unsettled(), 1);
+    slot.settle({ outcome: "result", origin: "runner" });
+    slot.settle({ outcome: "error", origin: "engine" });
+    assert.equal(ledger.unsettled(), 0);
+    assert.deepEqual(counted, ["armed", "settled"]);
+  });
+
+  it("leaves the count alone for a call that settles without arming, or arms after it settled", () => {
+    const { ledger, counted } = setup({});
+    const slot = ledger.open({ kind: "checkpoint", hash: "q" });
+    slot.settle({ outcome: "result", origin: "runner" });
+    slot.arm(() => assert.fail("settled already"), false);
+    assert.equal(ledger.unsettled(), 0);
+    assert.deepEqual(counted, []);
+  });
+
+  it("arms a slot once", () => {
+    const { ledger, counted } = setup({});
+    const seen: string[] = [];
+    const slot = ledger.open({ kind: "agent", hash: "a" });
+    slot.arm(() => seen.push("first"), true);
+    slot.arm(() => seen.push("second"), false);
+    assert.equal(ledger.unsettled(), 1);
+    assert.equal(ledger.interruptUnsettled(), true);
+    assert.deepEqual(seen, ["first"]);
+    assert.deepEqual(counted, ["armed"]);
+  });
+
+  it("runs a slot's interrupt only while it is armed and unsettled", () => {
+    const { ledger } = setup({});
+    const seen: string[] = [];
+    const unarmed = ledger.open({ kind: "agent", hash: "a" });
+    unarmed.interrupt();
+    const armed = ledger.open({ kind: "agent", hash: "b" });
+    armed.arm(() => {
+      seen.push("b");
+      armed.settle({ outcome: "error", origin: "engine", aborted: true });
+    }, false);
+    armed.interrupt();
+    armed.interrupt();
+    assert.deepEqual(seen, ["b"]);
+    assert.equal(ledger.unsettled(), 0);
+  });
+
+  it("interrupts the unsettled calls in the order they armed, and skips settled and unarmed ones", () => {
+    const { ledger, calls, counted } = setup({});
+    const seen: number[] = [];
+    const slots = ["a", "b", "c", "d"].map((hash) => ledger.open({ kind: "agent", hash }));
+    const armSettling = (i: number) => slots[i]!.arm(() => {
+      seen.push(i);
+      slots[i]!.settle({ outcome: "error", origin: "engine", aborted: true });
+    }, true);
+    armSettling(2);
+    armSettling(0);
+    armSettling(1);
+    slots[0]!.settle({ outcome: "result", origin: "runner" });
+    assert.equal(ledger.interruptUnsettled(), true);
+    assert.deepEqual(seen, [2, 1]);
+    assert.equal(ledger.unsettled(), 0);
+    assert.deepEqual(calls.map((c) => [c.index, c.outcome]), [[0, "result"], [2, "error"], [1, "error"]]);
+    assert.deepEqual(counted, ["armed", "armed", "armed", "settled", "settled", "settled"]);
+  });
+
+  it("says the interrupted calls were terminal-safe only when every one was, and when there was none", () => {
+    const { ledger } = setup({});
+    assert.equal(ledger.interruptUnsettled(), true);
+    const safe = ledger.open({ kind: "agent", hash: "a" });
+    safe.arm(() => safe.settle({ outcome: "error", origin: "engine", aborted: true }), true);
+    const unsafe = ledger.open({ kind: "checkpoint", hash: "q" });
+    let unsafeInterrupted = false;
+    unsafe.arm(() => {
+      unsafeInterrupted = true;
+      unsafe.settle({ outcome: "error", origin: "engine", aborted: true });
+    }, false);
+    assert.equal(ledger.interruptUnsettled(), false);
+    assert.equal(unsafeInterrupted, true);
+    assert.equal(ledger.unsettled(), 0);
+  });
+
+  it("decides terminal safety before an interrupt runs", () => {
+    const { ledger } = setup({});
+    const safe = ledger.open({ kind: "agent", hash: "a" });
+    const unsafe = ledger.open({ kind: "agent", hash: "b" });
+    // The first interrupt settles the unsafe call too, so it is gone by the time the loop reaches it.
+    safe.arm(() => {
+      unsafe.settle({ outcome: "error", origin: "engine", aborted: true });
+      safe.settle({ outcome: "error", origin: "engine", aborted: true });
+    }, true);
+    unsafe.arm(() => assert.fail("settled by the first interrupt"), false);
+    assert.equal(ledger.interruptUnsettled(), false);
   });
 
   it("writes the journal row only for a result", () => {

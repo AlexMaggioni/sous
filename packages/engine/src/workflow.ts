@@ -52,7 +52,6 @@ import {
   createDecisionLog,
   createStepLedger,
   type Pairing,
-  type SettledCall,
   type SourceRow,
   type SourceScope,
 } from "./step-ledger.js";
@@ -879,19 +878,18 @@ export async function runWorkflow<T = unknown>(
       call: appendCallRecord,
       journal: (entry) => guardTerminal("onAgentJournal", () => options.onAgentJournal?.(entry)),
     },
+    unsettled: { armed: noteCallUnsettled, settled: noteCallSettled },
   });
 
   // Allocation happens before limiter admission, so a run can halt while calls are
-  // either executing or still queued. Keep the engine-owned identity closures alive
-  // until settlement and synchronously turn every remaining allocation into an
+  // either executing or still queued. Each call arms its ledger slot with the function
+  // that settles it, and the ledger synchronously turns every remaining allocation into an
   // aborted engine row when the run stops. This preserves the dense manifest without
   // waiting for a backend that may ignore cancellation during wind-down. Only a root
   // set made entirely of declared-read-only agents can retire that pending activity;
   // unsafe, nested, and checkpoint work keeps the existing quiescence barrier.
-  const unsettledCallInterruptions = new Map<() => void, boolean>();
   const interruptUnsettledCalls = () => {
-    const terminalSafe = [...unsettledCallInterruptions.values()].every(Boolean);
-    for (const interrupt of [...unsettledCallInterruptions.keys()]) interrupt();
+    const terminalSafe = ledger.interruptUnsettled();
     if (options.sharedRuntime === undefined && terminalSafe && !nestedWorkflows && !resumeActivity.retired) {
       resumeActivity.retired = true;
       while (resumeActivity.active > 0) transitionResumeActivity(-1);
@@ -1036,15 +1034,6 @@ export async function runWorkflow<T = unknown>(
     onAllocated(callIndex);
     reportRootCallAllocated(callIndex);
 
-    let interrupt: (() => void) | undefined;
-    const settle = (terminal: SettledCall, entry?: JournalEntry): WorkflowCallRecord => {
-      if (!stepSlot.settled && interrupt) {
-        unsettledCallInterruptions.delete(interrupt);
-        noteCallSettled();
-      }
-      return stepSlot.settle(terminal, entry);
-    };
-
     const emitAgentEnd = (
       event: Omit<NonNullable<WorkflowRunOptions["onAgentEnd"]> extends (event: infer E) => void ? E : never, "callIndex" | "scope">,
     ) => {
@@ -1086,8 +1075,8 @@ export async function runWorkflow<T = unknown>(
           : undefined
       : undefined;
 
-    interrupt = () => {
-      if (stepSlot.settled) return;
+    // A halt settles the call as interrupted, and ends it when it has started.
+    stepSlot.arm(() => {
       const error = pauseRequested()
         ? new WorkflowError(
             `agent "${label}" was not started because the workflow paused by host request`,
@@ -1100,7 +1089,7 @@ export async function runWorkflow<T = unknown>(
             { recoverable: true, agentLabel: label },
           );
       const errorRecord = projectRecordedError(error);
-      settle({
+      stepSlot.settle({
         outcome: "error",
         origin: "engine",
         error: errorRecord,
@@ -1122,11 +1111,9 @@ export async function runWorkflow<T = unknown>(
           errorRecord,
         });
       }
-    };
-    unsettledCallInterruptions.set(interrupt, legacyResumeSafety === "declared-read-only");
-    noteCallUnsettled();
+    }, legacyResumeSafety === "declared-read-only");
     if (signal.aborted || pauseRequested()) {
-      interrupt();
+      stepSlot.interrupt();
       throwIfAborted();
     }
 
@@ -1284,7 +1271,7 @@ export async function runWorkflow<T = unknown>(
             )
           : undefined;
         if (session) state.agentSessions.push(session);
-        settle({
+        stepSlot.settle({
           outcome,
           origin,
           error: errorRecord,
@@ -1511,7 +1498,7 @@ export async function runWorkflow<T = unknown>(
                   : {}),
               },
             });
-            const terminalRecord = settle({
+            const terminalRecord = stepSlot.settle({
               outcome: "result",
               origin: "runner",
               ...liveFields("runner", slot, usage),
@@ -1621,7 +1608,7 @@ export async function runWorkflow<T = unknown>(
       const sourceResumeSafety = row.call?.resumeSafety;
       await Promise.resolve();
       // A halt that lands here must still settle this allocation: nothing downstream will.
-      if (signal.aborted || pauseRequested()) interrupt?.();
+      if (signal.aborted || pauseRequested()) stepSlot.interrupt();
       throwIfAborted();
       emitAgentStart();
       // The recorded session, moved to this call's index, label and phase.
@@ -1657,7 +1644,7 @@ export async function runWorkflow<T = unknown>(
             : {}),
         },
       });
-      const terminalRecord = settle({
+      const terminalRecord = stepSlot.settle({
         outcome: "result",
         origin: "journal-replay",
         ...(cachedUsage ? { usage: cachedUsage } : {}),
@@ -1725,7 +1712,7 @@ export async function runWorkflow<T = unknown>(
       if (!stepSlot.settled) {
         const errorRecord = projectRecordedError(error);
         const workflowError = wrapError(error, { agentLabel: label });
-        settle({ outcome: "error", origin: "engine", error: errorRecord });
+        stepSlot.settle({ outcome: "error", origin: "engine", error: errorRecord });
         // A same-ID resume reports the end even before the start, as it always has.
         if (agentStartEmitted || !preparedResume) {
           emitAgentEnd({
@@ -1982,16 +1969,8 @@ export async function runWorkflow<T = unknown>(
     const callIndex = slot.index;
     onAllocated(callIndex);
     reportRootCallAllocated(callIndex);
-    let interrupt: (() => void) | undefined;
-    const settle = (terminal: SettledCall, entry?: JournalEntry): WorkflowCallRecord => {
-      if (!slot.settled && interrupt) {
-        unsettledCallInterruptions.delete(interrupt);
-        noteCallSettled();
-      }
-      return slot.settle(terminal, entry);
-    };
-    interrupt = () => {
-      if (slot.settled) return;
+    // A halt settles the question as interrupted.
+    slot.arm(() => {
       const error = pauseRequested()
         ? new WorkflowError(
             `checkpoint "${promptText}" was not asked because the workflow paused by host request`,
@@ -2003,17 +1982,15 @@ export async function runWorkflow<T = unknown>(
             WorkflowErrorCode.WORKFLOW_ABORTED,
             { recoverable: true },
           );
-      settle({
+      slot.settle({
         outcome: "error",
         origin: "engine",
         error: projectRecordedError(error),
         aborted: true,
       });
-    };
-    unsettledCallInterruptions.set(interrupt, false);
-    noteCallUnsettled();
+    }, false);
     if (signal.aborted || pauseRequested()) {
-      interrupt();
+      slot.interrupt();
       throwIfAborted();
     }
     shared.agentCount++;
@@ -2034,7 +2011,7 @@ export async function runWorkflow<T = unknown>(
       const checkpointHostDecision = row.injected === true || row.call === undefined ||
         row.call.origin === "confirm" ||
         (row.call.origin === "journal-replay" && row.call.replay?.checkpointHostDecision === true);
-      const terminalRecord = settle({
+      const terminalRecord = slot.settle({
         outcome: "result",
         origin: "journal-replay",
         checkpointDecision: "explicit-v1",
@@ -2067,7 +2044,7 @@ export async function runWorkflow<T = unknown>(
       if (preparedResume && options.confirm) options.onResumeFilesystemTainted?.();
       slot.live(pairing.reason);
     } catch (error) {
-      settle({
+      slot.settle({
         outcome: "error",
         origin: preparedResume ? "engine" : "journal-replay",
         error: projectRecordedError(error),
@@ -2136,7 +2113,7 @@ export async function runWorkflow<T = unknown>(
         // checkpoint so the script cannot catch serialization failure and cross its gate.
         throw waiting();
       }
-      const terminalRecord = settle(
+      const terminalRecord = slot.settle(
         { outcome: "result", origin, checkpointDecision: "explicit-v1" },
         journalEntry(replySnapshot),
       );
@@ -2152,7 +2129,7 @@ export async function runWorkflow<T = unknown>(
       return reply;
     } catch (error) {
       const aborted = signal.aborted || pauseRequested();
-      settle({
+      slot.settle({
         outcome: "error",
         origin: aborted ? "engine" : origin,
         error: projectRecordedError(error),
@@ -2277,7 +2254,7 @@ export async function runWorkflow<T = unknown>(
     if (error instanceof WorkflowError) throw error;
     throw new WorkflowError(errorMessage(error), WorkflowErrorCode.SCRIPT_ERROR, { recoverable: false });
   } finally {
-    if (unsettledCallInterruptions.size > 0 && !signal.aborted) {
+    if (ledger.unsettled() > 0 && !signal.aborted) {
       if (scriptFailed) faults.abort();
       else interruptUnsettledCalls();
     }
