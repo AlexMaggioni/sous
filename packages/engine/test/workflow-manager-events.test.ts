@@ -245,7 +245,7 @@ test("a failed step, a stopped step and a time limit pause with the same reason 
           });
         },
       };
-      const manager = new WorkflowManager({ cwd, persistenceRoot: root, agent: runner, orchestrator: { pauseOnFailedStep: true } });
+      const manager = new WorkflowManager({ cwd, persistenceRoot: root, agent: runner });
       const live: string[] = [];
       manager.on("paused", (payload) => live.push(payload.reason));
       const background = manager.startInBackground(script(`return await agent('held', { label: 'held', retries: 0 })`));

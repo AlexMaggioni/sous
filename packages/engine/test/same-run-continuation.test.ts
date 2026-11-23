@@ -43,12 +43,11 @@ test("continuation keeps one run id, immutable inputs, config, and cumulative us
     const script = `export const meta = { name: "same-run-usage", description: "same run usage" };
 const alpha = await agent("alpha", { label: "alpha", model: "claude/opus" });
 const beta = await agent("beta", { label: "beta", model: "codex/gpt" });
-if (beta === null) throw new Error("beta is required");
 return { alpha, beta, marker: args.marker };`;
     const first = await testRun.manager.runSync(script, { marker: "original" }, {
       runId: "same-run-usage",
     });
-    assert.equal(first.status, "failed");
+    assert.equal(first.status, "paused", "the failed step pauses the run");
     assert.equal(first.tokenUsage?.total, 13);
     const beforeEvents = testRun.manager.getPersistence().readEvents(first.runId, { limit: 1_000 });
 
@@ -185,10 +184,9 @@ test("SDK same-ID recovery keeps the persisted default model and replays the jou
     const script = `export const meta = { name: "default-model", description: "default model" };
 const alpha = await agent("alpha");
 const beta = await agent("beta");
-if (beta === null) throw new Error("beta is required");
 return { alpha, beta };`;
     const first = await testRun.manager.runSync(script, undefined, { runId: "default-model", defaultModel: "codex/gpt" });
-    assert.equal(first.status, "failed");
+    assert.equal(first.status, "paused", "the failed step pauses the run");
     assert.equal(testRun.manager.getPersistence().load("default-model")?.defaultModel, "codex/gpt");
 
     const resumed = await testRun.manager.resumeInBackground("default-model");
@@ -220,13 +218,12 @@ test("a fresh manager preserves actual authored configuration on cold continuati
     const script = `export const meta = { name: "cold-dispatch", description: "cold dispatch" };
 const alpha = await agent("alpha", { label: "alpha", model: "claude/opus", mode: "bypassPermissions", configOptions: { effort: "high", verbose: true } });
 const beta = await agent("beta", { label: "beta", model: "codex/gpt", mode: "agent", configOptions: { reasoning_effort: "xhigh" } });
-if (beta === null) throw new Error("beta is required");
 return { alpha, beta };`;
     const warm = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
     const first = await warm.runSync(script, undefined, {
       runId: "cold-dispatch",
     });
-    assert.equal(first.status, "failed");
+    assert.equal(first.status, "paused", "the failed step pauses the run");
     assert.deepEqual(dispatched.map((call) => call.model), ["claude/opus", "codex/gpt"]);
 
     const cold = new WorkflowManager({ cwd, persistenceRoot, agent: runner });

@@ -338,7 +338,7 @@ export interface WorkflowManagerOptions {
   /** Resolve a saved-workflow name to its script, enabling nested `workflow('name')`. */
   loadSavedWorkflow?: (name: string) => string | undefined;
   /** Options every run gets, such as the nesting limit and nested places. */
-  orchestrator?: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "home" | "pauseOnFailedStep">;
+  orchestrator?: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "home">;
   /**
    * The injected agent backend (the frozen AgentRunner seam). May be overridden
    * per-run via ExecOptions.agent. The engine depends on this injection and never
@@ -582,7 +582,7 @@ export class WorkflowManager extends EventEmitter {
   readonly cwd: string;
   private concurrency: number;
   private loadSavedWorkflow?: (name: string) => string | undefined;
-  private orchestratorOptions: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "home" | "pauseOnFailedStep">;
+  private orchestratorOptions: Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows" | "home">;
   private agent?: AgentRunner;
   private defaultAgentRetries: number;
   private persistenceRoot: string;
@@ -1556,6 +1556,8 @@ export class WorkflowManager extends EventEmitter {
         },
         loadSavedWorkflow: this.loadSavedWorkflow,
         ...this.orchestratorOptions,
+        // A failed or stopped step pauses the run, so resume can run it again.
+        pauseOnFailedStep: true,
         ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
         ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
         // Manager-level `journal` events are observation, not persistence. Keep the engine's
@@ -1781,8 +1783,8 @@ export class WorkflowManager extends EventEmitter {
       //  - PROVIDER_USAGE_LIMIT: a provider quota refills over time.
       //  - AUTH_REQUIRED: a host completes an auth step.
       //  - CHECKPOINT_REQUIRED: a host supplies the pending durable checkpoint decision.
-      //  - PAUSE_REQUESTED: a host asked for the pause, or a step failed or was stopped under
-      //    pauseOnFailedStep, and the run resumes when the cause is fixed.
+      //  - PAUSE_REQUESTED: a host asked for the pause, or a step failed or was stopped, and
+      //    the run resumes when the cause is fixed.
       // All are recoverable:false, so the retry ladder skips them.
       const pauseReason = managed.controller.signal.aborted ? undefined : pauseReasonOf(workflowError);
       if (managed.controller.signal.aborted) {
@@ -2708,8 +2710,8 @@ export class WorkflowManager extends EventEmitter {
 
   /**
    * Stop the in-flight steps of a run: those with `label`, or all of them, in the
-   * run itself or, with `scope`, in that nested run. Returns how many attempts it stopped. Under
-   * pauseOnFailedStep the run then pauses on them, and resume runs them again. `pauseReason`
+   * run itself or, with `scope`, in that nested run. Returns how many attempts it stopped. The
+   * run then pauses on them, and resume runs them again. `pauseReason`
    * replaces the paused run's "step_stopped", and `message` says why in the run's reason.
    */
   cancelAgentSteps(
@@ -2998,7 +3000,7 @@ function contiguousJournalPrefix(entries: readonly JournalEntry[], runId: string
   return index;
 }
 
-/** The pause reason of a step that failed or was stopped under pauseOnFailedStep. */
+/** The pause reason of a step that failed or was stopped. */
 function stepPauseReason(details: unknown): Exclude<RequestedPauseReason, "requested"> {
   const { code, pauseReason } = (details ?? {}) as { code?: unknown; pauseReason?: unknown };
   if (pauseReason === "time_limit") return pauseReason;

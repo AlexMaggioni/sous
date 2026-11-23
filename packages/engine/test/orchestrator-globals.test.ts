@@ -511,10 +511,9 @@ return [own, below]`;
 const first = await agent('first')
 const kids = await parallel([() => workflow(${JSON.stringify(child)}, 'a'), () => workflow(${JSON.stringify(child)}, 'b')])
 const last = await agent('final')
-if (last === null) throw new Error('final is required')
 return { first, kids, last }`;
-      const failed = await manager.runSync(script, undefined, { runId: "nested-resume" });
-      assert.equal(failed.status, "failed");
+      const paused = await manager.runSync(script, undefined, { runId: "nested-resume" });
+      assert.equal(paused.status, "paused", "the failed step pauses the run");
       assert.equal(prompts.length, 8, "first, two children, four grandchildren, final");
       const persisted = manager.getPersistence().load("nested-resume");
       assert.equal(persisted?.nestedJournal?.length, 6);
@@ -551,7 +550,7 @@ return { first, kids, last }`;
     const cwd = mkdtempSync(join(tmpdir(), "nested-calls-cwd-"));
     const persistenceRoot = mkdtempSync(join(tmpdir(), "nested-calls-store-"));
     try {
-      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: runner, orchestrator: { pauseOnFailedStep: true } });
+      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
       const child = `export const meta = { name: 'child', description: 'c' }
 return [await agent('x'), await agent('y')]`;
       const script = `export const meta = { name: 'parent', description: 'p' }
@@ -597,7 +596,7 @@ return [first, kids, await agent('c')]`;
 });
 
 describe("failed steps", () => {
-  it("pause the run with pauseOnFailedStep, even when the script catches, and resume runs the step again", async () => {
+  it("a failed step pauses the run, even when the script catches, and resume runs the step again", async () => {
     const { mkdtempSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
@@ -614,7 +613,7 @@ describe("failed steps", () => {
     const cwd = mkdtempSync(join(tmpdir(), "failed-step-cwd-"));
     const persistenceRoot = mkdtempSync(join(tmpdir(), "failed-step-store-"));
     try {
-      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: runner, orchestrator: { pauseOnFailedStep: true } });
+      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
       const script = `export const meta = { name: 'steps', description: 's' }
 const first = await agent('first', { label: 'first' })
 let flaky
@@ -654,7 +653,7 @@ return { first, flaky, other }`;
     const cwd = mkdtempSync(join(tmpdir(), "failed-step-cwd-"));
     const persistenceRoot = mkdtempSync(join(tmpdir(), "failed-step-store-"));
     try {
-      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: runner, orchestrator: { pauseOnFailedStep: true } });
+      const manager = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
       const script = `export const meta = { name: 'steps', description: 's' }
 return await agent('old', { label: 'old', retries: 0 })`;
       const paused = await manager.runSync(script, undefined, { runId: "failed-period" });

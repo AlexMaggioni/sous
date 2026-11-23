@@ -156,18 +156,24 @@ test("usage includes estimates, failed retries, provider/auth pauses, and termin
   for (const fixture of [
     { code: WorkflowErrorCode.PROVIDER_USAGE_LIMIT, status: "paused" },
     { code: WorkflowErrorCode.AUTH_REQUIRED, status: "paused" },
-    { code: WorkflowErrorCode.SCRIPT_ERROR, status: "failed" },
+    // A failed step pauses the run.
+    { code: WorkflowErrorCode.SCRIPT_ERROR, status: "paused" },
+    // A script that throws after its step fails the run.
+    { code: undefined, status: "failed" },
   ] as const) {
     const store = memoryPersistence();
     const manager = new WorkflowManager({
       persistence: store.persistence,
       agent: runnerFrom((_prompt, options) => {
         options.onUsage?.({ input: 8, output: 2, total: 10, cost: 0.5, cacheRead: 1, cacheWrite: 0 });
+        if (fixture.code === undefined) return "done";
         throw new WorkflowError("terminal", fixture.code, { recoverable: false });
       }),
     });
     const result = await manager.runSync(
-      'export const meta = { name: "terminal-usage", description: "terminal" }; return await agent("stop");',
+      fixture.code === undefined
+        ? 'export const meta = { name: "terminal-usage", description: "terminal" }; await agent("stop"); throw new Error("terminal");'
+        : 'export const meta = { name: "terminal-usage", description: "terminal" }; return await agent("stop");',
     );
     assert.equal(result.status, fixture.status);
     assert.equal(result.tokenUsage?.total, 10);

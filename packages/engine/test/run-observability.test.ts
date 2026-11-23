@@ -279,8 +279,16 @@ test("failure reasons persist the actual WorkflowError message and code", async 
       throw new WorkflowError("FAIL-CLOSED at review", WorkflowErrorCode.SCRIPT_ERROR, { recoverable: false });
     }),
   });
-  const result = await manager.runSync(
+  // A failed step pauses the run, and the reason carries the step's own message.
+  const paused = await manager.runSync(
     'export const meta = { name: "failure", description: "failure" };\nawait agent("fail");',
+  );
+  assert.equal(paused.status, "paused");
+  assert.equal(store.persistence.load(paused.runId)?.pauseReason, "step_failed");
+  assert.match(store.persistence.load(paused.runId)?.reason ?? "", /FAIL-CLOSED at review/);
+  // A script that throws fails the run with its message and code.
+  const result = await manager.runSync(
+    'export const meta = { name: "failure", description: "failure" };\nthrow new Error("FAIL-CLOSED at review");',
   );
   assert.equal(result.status, "failed");
   assert.equal(store.persistence.load(result.runId)?.reason, "FAIL-CLOSED at review");

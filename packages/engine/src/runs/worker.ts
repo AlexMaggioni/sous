@@ -64,7 +64,6 @@ function managerFor(paths: HomePaths, projectDir: string, extra: Partial<Constru
     loadSavedWorkflow: (name) => dirs.resolve(name),
     orchestrator: {
       maxNestingDepth: 5,
-      pauseOnFailedStep: true,
       // What an agent may pick with choose({ any: true }). Workflows for people only stay out.
       listSavedWorkflows: () =>
         dirs

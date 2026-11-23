@@ -1692,12 +1692,12 @@ test(
       manager.on("error", () => {});
 
       const result = await manager.runSync(perRunCwdScript, undefined, { cwd: runCwd });
-      assert.equal(result.status, "failed");
+      assert.equal(result.status, "paused", "the failed step pauses the run");
 
       failFirstPass = false;
       // NOTE: no exec.cwd here — resume must recover it from the persisted run.
       const resumed = await manager.resume(result.runId);
-      assert.equal(resumed, true, "failed run should resume");
+      assert.equal(resumed, true, "the paused run should resume");
       const deadline = Date.now() + 5_000;
       while (manager.getRun(result.runId)?.status === "running" && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 25));

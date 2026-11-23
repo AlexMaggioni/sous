@@ -175,10 +175,15 @@ test("resume replays a completed sibling and reruns the cancelled occurrence", a
       "the completed sibling should be journaled before cancellation",
     );
     assert.equal(source.cancelAgentSteps(first.runId, { label: "cancel" }), 1);
-    const sourceResult = await first.promise;
-    assert.equal(sourceResult.status, "completed");
-    assert.equal(JSON.stringify(sourceResult.result), JSON.stringify({ values: ["source-peer", null] }));
-    assert.equal(source.getPersistence().load(first.runId)?.abortSignaled, undefined);
+    // The stopped step pauses the source run.
+    await assert.rejects(
+      first.promise,
+      (error: unknown) => error instanceof WorkflowError && error.code === WorkflowErrorCode.PAUSE_REQUESTED,
+    );
+    const sourceState = source.getPersistence().load(first.runId);
+    assert.equal(sourceState?.status, "paused");
+    assert.equal(sourceState?.pauseReason, "step_stopped");
+    assert.equal(sourceState?.abortSignaled, undefined);
 
     const livePrompts: string[] = [];
     const resumed = await new WorkflowManager({
