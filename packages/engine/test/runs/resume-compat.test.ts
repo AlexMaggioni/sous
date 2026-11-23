@@ -164,7 +164,7 @@ describe("a run saved by the code at b21cd2c4", () => {
     const { runner, prompts } = fake();
     const { result } = await work(paths, record.runId, "start", runner);
     assert.equal(readState(paths, record.runId)?.status, "completed");
-    assert.deepEqual(prompts(), ["A2", "B", "C"]);
+    assert.deepEqual(prompts(), ["A2"], "B and C replay from the source");
     assert.deepEqual(result, ["A2 done", "B done", "C done"]);
   });
 });

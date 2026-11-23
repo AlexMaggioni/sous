@@ -390,7 +390,7 @@ return { first, second };`;
           ...variant,
           resumeFromRunId: source.runId,
         });
-        assert.equal(resumed.resumeReport?.strategy, "identity-v1", variant.runId);
+        assert.equal(resumed.resumeReport?.strategy, "occurrence-v1", variant.runId);
         assert.equal(resumed.resumeReport?.replayed, 2, variant.runId);
         assert.equal(resumed.resumeReport?.live, 0, variant.runId);
         assert.equal(resumed.replayEligibility?.engineVersionComparison, "different", variant.runId);

@@ -31,7 +31,7 @@ return await agent("ordinary-two", { label: "ordinary-two" })`, "safe-prefix-pre
       assert.equal(source.status, "completed");
       const resumed = await manager.runSync(script, undefined, { resumeFromRunId: source.runId });
       assert.equal(resumed.status, "completed");
-      assert.equal(resumed.resumeReport?.strategy, "identity-v1");
+      assert.equal(resumed.resumeReport?.strategy, "occurrence-v1");
       assert.equal(resumed.replayEligibility?.predictedReplayablePrefix, 2);
       assert.equal(resumed.replayEligibility?.replayedPrefix, 2);
       assert.equal(resumed.resumeReport?.replayed, 2);

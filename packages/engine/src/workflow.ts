@@ -1994,9 +1994,12 @@ export async function runWorkflow<T = unknown>(
 
     const runPaired = (pairing: Pairing<unknown>): Promise<unknown> => {
       if (pairing.action === "replay") return replayAgent(pairing);
-      // Pairing by occurrence goes on only in the session of the failed row this call took.
+      // Pairing by occurrence goes on only in the session of the failed row this call took. The
+      // sessions are those of the run this one resumes from.
       if (options.resumeRows) {
-        continuationIndex = pairing.failed?.sourceRunId === runId ? pairing.failed.recordedIndex : undefined;
+        continuationIndex = pairing.failed?.sourceRunId === (options.resumeFromRunId ?? runId)
+          ? pairing.failed.recordedIndex
+          : undefined;
       }
       if (legacyResumeSafety === undefined) options.onResumeFilesystemTainted?.();
       let reason = pairing.reason;

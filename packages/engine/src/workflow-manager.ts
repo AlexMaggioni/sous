@@ -45,7 +45,7 @@ import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
 import { isNestedScope, isRunEnvironmentIdentity } from "./resume-identity.js";
-import { resumeRows as buildResumeRows, revisionSeed, unusedSeed, type ResumeRows } from "./resume-rows.js";
+import { oldDataRows, resumeRows as buildResumeRows, revisionSeed, unusedSeed, type ResumeRows } from "./resume-rows.js";
 import {
   createRunPersistence,
   generateRunId,
@@ -59,7 +59,6 @@ import {
   type WorkflowScriptRevision,
 } from "./runs/persistence/run-persistence.js";
 import {
-  admitResumeSource,
   buildResumeReport,
   type ResumeAdmissionDecision,
   type ResumeReportPlan,
@@ -394,24 +393,6 @@ function runtimeIdentity(): ManagedRun["runtime"] {
   };
 }
 
-function positionalSourceRows<T extends { index: number; scope?: string }>(
-  rows: T[],
-  sourceRunId: string,
-  persistedRunIds: ReadonlySet<string>,
-): T[] {
-  const latest = new Map<number, T>();
-  for (const row of rows) {
-    if (
-      row.scope === undefined ||
-      row.scope === sourceRunId ||
-      persistedRunIds.has(row.scope)
-    ) {
-      latest.set(row.index, row);
-    }
-  }
-  return [...latest.values()].sort((left, right) => left.index - right.index);
-}
-
 function contiguousIndexes(indexes: Iterable<number>): number {
   const available = new Set(indexes);
   let prefix = 0;
@@ -419,29 +400,26 @@ function contiguousIndexes(indexes: Iterable<number>): number {
   return prefix;
 }
 
-function predictedPositionalReplayablePrefix(
-  eligibility: Extract<ResumeAdmissionDecision, { strategy: "positional-v1" }>["eligibility"],
-  journal: ReadonlyMap<number, JournalEntry>,
-  calls: readonly WorkflowCallRecord[],
-): number {
-  if (eligibility === "all-live") return 0;
-  if (eligibility === "legacy") return contiguousIndexes(journal.keys());
-  const callsByIndex = new Map(calls.map((call) => [call.index, call] as const));
-  let prefix = 0;
-  while (true) {
-    const entry = journal.get(prefix);
-    const call = callsByIndex.get(prefix);
-    if (
-      entry === undefined ||
-      call === undefined ||
-      call.outcome !== "result" ||
-      call.hash !== entry.hash
-    ) {
-      return prefix;
-    }
-    prefix++;
-  }
+/** The first root steps a seed and the old journal rows can replay, counted from step 0. */
+function seedPrefix(seed: PersistedResumeSeed | undefined, journal: readonly JournalEntry[]): number {
+  return contiguousIndexes([
+    ...(seed?.candidates ?? [])
+      .filter((candidate) => (candidate.call.scope ?? candidate.sourceRunId) === candidate.sourceRunId)
+      .map((candidate) => candidate.recordedIndex),
+    ...(seed?.checkpointInjections ?? []).map((injection) => injection.recordedIndex),
+    ...journal.map((entry) => entry.index),
+  ]);
 }
+
+/** A saved run whose inputs hashes this build computes the same way pairs on them too. */
+function pairingKey(saved: PersistedRunState["runtime"], current: ManagedRun["runtime"]): "inputs" | "hash" {
+  return saved?.inputsFormat === current.inputsFormat &&
+      saved?.checkpointInputsFormat === current.checkpointInputsFormat
+    ? "inputs"
+    : "hash";
+}
+
+const ENDED_STATUSES: ReadonlySet<string> = new Set(["completed", "paused", "failed", "aborted"]);
 
 function displayOperationalValue(value: number | null): string {
   return value === null ? "none" : String(value);
@@ -1117,16 +1095,6 @@ export class WorkflowManager extends EventEmitter {
     );
   }
 
-  private commitResumeSeed(managed: ManagedRun, remaining: PersistedResumeSeed): void {
-    managed.resumeSeed = remaining;
-    try {
-      this.persistRunOrThrow(managed);
-    } catch (error) {
-      managed.resumeSeed = undefined;
-      throw error;
-    }
-  }
-
   private cloneResumeSourceValue<T>(value: T, runId: string): T {
     try {
       return structuredClone(value);
@@ -1212,91 +1180,65 @@ export class WorkflowManager extends EventEmitter {
     return candidatesByIndex.size === 0 ? undefined : { candidatesByIndex };
   }
 
+  /**
+   * A run saved by engine 0.23 can hold root rows under the id of the run it came from. Such a
+   * row counts as a root row of the source while that run is still saved, and is dropped
+   * otherwise. The saved runs are listed only when a row needs it.
+   */
+  private chainedRows(sourceRunId: string): <T extends { scope?: string }>(rows: T[]) => T[] {
+    let saved: ReadonlySet<string> | undefined;
+    return (rows) => rows.flatMap((row) => {
+      if (row.scope === undefined || row.scope === sourceRunId || isNestedScope(row.scope, sourceRunId)) return [row];
+      saved ??= new Set(this.persistence.list().map((state) => state.runId));
+      return saved.has(row.scope) ? [{ ...row, scope: sourceRunId }] : [];
+    });
+  }
+
   private prepareManagedResume(
     managed: ManagedRun,
     source: PersistedRunState,
   ): ManagerResumeExecution {
     assertExplicitCheckpointProvenance(source);
-    const admission = admitResumeSource({
-      source,
-      requestedPolicy: "auto",
-      current: {
-        effectiveCwd: managed.effectiveCwd,
-        runtime: {
-          pathFormat: managed.runtime.pathFormat,
-          inputsFormat: managed.runtime.inputsFormat,
-          checkpointInputsFormat: managed.runtime.checkpointInputsFormat as number,
-        },
-      },
-    });
     managed.newRunResume = true;
     if (source.resume === undefined || source.legacyResume === true) managed.legacyResume = true;
     managed.preparedContinuation = this.buildPreparedContinuation(source);
 
-    if (admission.strategy === "identity-v1") {
-      this.initializeResumeReporting(
-        managed,
-        source,
-        admission,
-        contiguousIndexes([
-          ...admission.seed.candidates.map((candidate) => candidate.recordedIndex),
-          ...(admission.seed.checkpointInjections ?? []).map((injection) => injection.recordedIndex),
-        ]),
-      );
-      managed.resumeSeed = admission.seed;
-      return {
-        preparedResume: {
-          strategy: admission.strategy,
-          sourceRunId: admission.sourceRunId,
-          requestedPolicy: admission.requestedPolicy,
-          seed: admission.seed,
-          commitSeed: (remaining) => this.commitResumeSeed(managed, remaining),
-        },
-      };
+    // A reuse replays nothing from a run that has not ended, or that ran in another folder.
+    const disabledReason = !ENDED_STATUSES.has(String(source.status))
+      ? "source-not-terminal" as const
+      : typeof source.effectiveCwd === "string" && source.effectiveCwd !== managed.effectiveCwd
+        ? "cwd-mismatch" as const
+        : undefined;
+    if (disabledReason !== undefined) {
+      const live = { strategy: "live" as const, sourceRunId: source.runId, requestedPolicy: "auto" as const, disabledReason };
+      this.initializeResumeReporting(managed, source, live, 0);
+      return { preparedResume: live };
     }
 
-    if (admission.strategy === "live") {
-      this.initializeResumeReporting(managed, source, admission, 0);
-      return {
-        preparedResume: {
-          strategy: admission.strategy,
-          sourceRunId: admission.sourceRunId,
-          requestedPolicy: admission.requestedPolicy,
-          disabledReason: admission.disabledReason,
-        },
-      };
-    }
-
-    const sourceJournalRows = this.cloneResumeSourceValue(source.journal ?? [], source.runId);
-    const sourceCallRows = this.cloneResumeSourceValue(source.calls ?? [], source.runId);
-    const persistedRunIds = new Set(this.persistence.list().map((row) => row.runId));
-    const sourceJournal = new Map(
-      positionalSourceRows(sourceJournalRows, source.runId, persistedRunIds)
-        .map((entry) => [entry.index, entry] as const),
+    // The new run's seed holds the source's own rows of each scope with call rows, then the rows
+    // of the source's seed that the source did not replay. A scope saved with no call rows is old
+    // data: its journal rows move to the same scope of the new run, and pair by index.
+    const chained = this.chainedRows(source.runId);
+    const journal = chained(
+      this.cloneResumeSourceValue([...(source.journal ?? []), ...(source.nestedJournal ?? [])], source.runId),
     );
-    managed.journal = latestRows([...sourceJournal.values()]);
-    managed.calls = positionalSourceRows(sourceCallRows, source.runId, persistedRunIds)
-      .map(stripLegacyCallBudgetFields);
-    this.initializeResumeReporting(
-      managed,
-      source,
-      admission,
-      predictedPositionalReplayablePrefix(admission.eligibility, sourceJournal, managed.calls),
-    );
-    // Legacy rows have no trustworthy source-call facts to promote.
-    const sourceCalls = admission.eligibility !== "legacy"
-      ? new Map(managed.calls.map((call) => [call.index, call] as const))
-      : new Map<number, WorkflowCallRecord>();
+    const calls = chained(this.cloneResumeSourceValue(source.calls ?? [], source.runId)).map(stripLegacyCallBudgetFields);
+    managed.resumeSeed = revisionSeed({ runId: source.runId, journal, calls, seed: source.resumeSeed });
+    const old = oldDataRows({ sourceRunId: source.runId, runId: managed.runId, journal, calls });
+    managed.journal = latestRows(old.filter((entry) => entry.scope === managed.runId));
+    const nestedJournal = latestNestedRows(old, managed.runId);
+    if (nestedJournal.length > 0) managed.nestedJournal = nestedJournal;
+    const resume: OccurrenceResume = { strategy: "occurrence-v1", sourceRunId: source.runId, requestedPolicy: "auto" };
+    this.initializeResumeReporting(managed, source, resume, seedPrefix(managed.resumeSeed, managed.journal));
     return {
-      preparedResume: {
-        strategy: admission.strategy,
-        sourceRunId: admission.sourceRunId,
-        requestedPolicy: admission.requestedPolicy,
-        fallbackReason: admission.fallbackReason,
-        eligibility: admission.eligibility,
-        sourceCalls,
-      },
-      resumeJournal: sourceJournal,
+      preparedResume: resume,
+      resumeRows: buildResumeRows({
+        runId: managed.runId,
+        journal: [...managed.journal, ...(managed.nestedJournal ?? [])],
+        calls: [],
+        seed: managed.resumeSeed,
+        key: pairingKey(source.runtime, managed.runtime),
+      }),
     };
   }
 
@@ -2329,6 +2271,8 @@ export class WorkflowManager extends EventEmitter {
           return row !== undefined && entry.kind === row.kind && entry.hash === row.hash;
         }),
       );
+      // The seed keeps the rows the run did not replay, for the run that resumes it.
+      managed.resumeSeed = unusedSeed(managed.resumeSeed, managed.calls, managed.runId);
       if (managed.status !== "completed" && managed.resumeSeed) {
         managed.resumeSeed = deepFreeze({
           ...managed.resumeSeed,
@@ -2845,16 +2789,11 @@ export class WorkflowManager extends EventEmitter {
       // so a second pause keeps the steps the new version has not reached. A scope saved with no
       // call rows keeps its journal, and pairs by index.
       try {
-        const scopesWithCalls = new Set(managed.calls.map((call) => call.scope ?? runId));
-        const oldData = (entry: JournalEntry) => !scopesWithCalls.has(entry.scope ?? runId);
-        managed.resumeSeed = revisionSeed({
-          runId,
-          journal: [...managed.journal, ...(managed.nestedJournal ?? [])],
-          calls: managed.calls,
-          seed: persisted.resumeSeed,
-        });
-        managed.journal = managed.journal.filter(oldData);
-        const nestedJournal = managed.nestedJournal?.filter(oldData) ?? [];
+        const journal = [...managed.journal, ...(managed.nestedJournal ?? [])];
+        managed.resumeSeed = revisionSeed({ runId, journal, calls: managed.calls, seed: persisted.resumeSeed });
+        const old = oldDataRows({ sourceRunId: runId, runId, journal, calls: managed.calls });
+        managed.journal = latestRows(old.filter((entry) => entry.scope === runId));
+        const nestedJournal = latestNestedRows(old, runId);
         if (nestedJournal.length > 0) managed.nestedJournal = nestedJournal;
         else delete managed.nestedJournal;
         managed.calls = [];
@@ -2864,27 +2803,13 @@ export class WorkflowManager extends EventEmitter {
         ];
         managed.newRunResume = true;
         occurrenceResume = { strategy: "occurrence-v1", sourceRunId: runId, requestedPolicy: "auto" };
-        this.initializeResumeReporting(
-          managed,
-          persisted,
-          occurrenceResume,
-          contiguousIndexes([
-            ...(managed.resumeSeed?.candidates ?? [])
-              .filter((candidate) => (candidate.call.scope ?? candidate.sourceRunId) === runId)
-              .map((candidate) => candidate.recordedIndex),
-            ...(managed.resumeSeed?.checkpointInjections ?? [])
-              .filter((injection) => injection.sourceRunId === runId)
-              .map((injection) => injection.recordedIndex),
-          ]),
-        );
-        const sameInputsFormat = persisted.runtime?.inputsFormat === managed.runtime.inputsFormat &&
-          persisted.runtime?.checkpointInputsFormat === managed.runtime.checkpointInputsFormat;
+        this.initializeResumeReporting(managed, persisted, occurrenceResume, seedPrefix(managed.resumeSeed, managed.journal));
         resumeRows = buildResumeRows({
           runId,
           journal: [...managed.journal, ...(managed.nestedJournal ?? [])],
           calls: [],
           seed: managed.resumeSeed,
-          key: sameInputsFormat ? "inputs" : "hash",
+          key: pairingKey(persisted.runtime, managed.runtime),
         });
       } catch (error) {
         this.persistence.releaseRunLease(lease);

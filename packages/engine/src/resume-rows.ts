@@ -164,6 +164,27 @@ export function revisionSeed(input: {
   return empty ? undefined : seed;
 }
 
+/**
+ * The journal rows of a saved run's scopes that have no call rows, moved to the same scopes of
+ * the run that resumes it. Such a scope is old data, and pairs by index.
+ */
+export function oldDataRows(input: {
+  sourceRunId: string;
+  runId: string;
+  journal: readonly JournalEntry[];
+  calls: readonly WorkflowCallRecord[];
+}): JournalEntry[] {
+  const withCalls = new Set(input.calls.map((call) => call.scope ?? input.sourceRunId));
+  const rows: JournalEntry[] = [];
+  for (const entry of input.journal) {
+    const scope = entry.scope ?? input.sourceRunId;
+    if (withCalls.has(scope)) continue;
+    const mapped = seedScope(scope, input.sourceRunId, input.runId);
+    if (mapped !== undefined) rows.push({ ...entry, scope: mapped });
+  }
+  return rows;
+}
+
 /** A seed's rows, by the current run's scope, each scope in recorded index order. */
 function seedRows(seed: PersistedResumeSeed | undefined, runId: string): Map<string, ResumeRow[]> {
   const scopes = new Map<string, ResumeRow[]>();

@@ -98,7 +98,7 @@ describe("resume manifests for unsettled calls", () => {
       }).runSync(script, undefined, { resumeFromRunId: started.runId, concurrency: 8 });
 
       assert.equal(resumed.status, "completed");
-      assert.equal(resumed.resumeReport?.strategy, "identity-v1");
+      assert.equal(resumed.resumeReport?.strategy, "occurrence-v1");
       assert.deepEqual(resumed.result, [
         "source:complete-0",
         "source:complete-1",

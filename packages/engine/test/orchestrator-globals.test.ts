@@ -594,13 +594,14 @@ return [first, kids, await agent('c')]`;
       ]);
 
       // Nested rows do not stop a reuse. A run that was never resumed is a source with call rows.
-      // Today a reuse of it replays the root steps and runs the nested steps again.
+      // A reuse of it replays the root steps and the nested steps.
       const clean = await manager.runSync(script, undefined, { runId: "nested-calls-clean" });
       assert.equal(clean.status, "completed");
       assert.equal(rows("nested-calls-clean").length, 2);
       const reused = await manager.runSync(script, undefined, { runId: "nested-calls-reuse", resumeFromRunId: "nested-calls-clean" });
       assert.equal(reused.status, "completed");
-      assert.deepEqual(prompts.slice(9), ["x", "y"]);
+      assert.deepEqual(prompts.slice(9), []);
+      assert.deepEqual(JSON.parse(JSON.stringify(reused.result)), ["done:a", ["done:x", "done:y"], "done:c"]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(persistenceRoot, { recursive: true, force: true });

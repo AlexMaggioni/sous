@@ -450,4 +450,63 @@ return await agent('Build ' + name, { label: 'build' })`,
     assert.deepEqual(since(4), ["A2", "C"], "B replays from the first version");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["A2 done", "B done", "C done"]);
   });
+
+  it("reuses the steps of a resumed run after an edited first step", async () => {
+    const { paths, projectDir } = setup({ three: three("A") });
+    let broken = true;
+    const { runner, since } = fake((prompt) => (broken && prompt === "C" ? boom() : undefined));
+    const first = createRun(paths, { workflow: "three", projectDir, inputs: {} });
+    assert.equal((await start(paths, first.runId, runner))?.status, "paused");
+    broken = false;
+    assert.equal((await resume(paths, first.runId, runner))?.status, "completed");
+    assert.deepEqual(since(3), ["C"]);
+
+    edit(projectDir, "three", three("A2"));
+    const again = createRun(paths, { workflow: "three", projectDir, inputs: {}, reuseFrom: first });
+    const done = await start(paths, again.runId, runner);
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(since(4), ["A2"]);
+    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["A2 done", "B done", "C done"]);
+    const state = readState(paths, again.runId)!;
+    assert.equal(state.resumeReport?.strategy, "occurrence-v1");
+    assert.equal(state.replayEligibility?.strategy, "occurrence-v1");
+    assert.deepEqual(
+      state.resumeReport?.calls.map((call) => [call.index, call.action, call.match ?? call.reason]),
+      [[0, "live", "not-recorded"], [1, "replayed", "occurrence"], [2, "replayed", "occurrence"]],
+    );
+  });
+
+  it("reuses the steps of a nested workflow", async () => {
+    const { paths, projectDir } = setup({ child: child("X"), parent: parent("A") });
+    const { runner, since } = fake();
+    const first = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    assert.equal((await start(paths, first.runId, runner))?.status, "completed");
+    assert.deepEqual(since(0), ["A", "X", "Y", "C"]);
+
+    edit(projectDir, "parent", parent("A").replace("agent('C'", "agent('C2'"));
+    const again = createRun(paths, { workflow: "parent", projectDir, inputs: {}, reuseFrom: first });
+    const done = await start(paths, again.runId, runner);
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(since(4), ["C2"]);
+    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["A done", ["X done", "Y done"], "C2 done"]);
+  });
+
+  it("reuses a loop of identical steps", async () => {
+    const loop = (last: string) => `export const meta = { name: 'loop', description: 'a loop' }
+const out = []
+for (let i = 0; i < 3; i++) out.push(await agent('check', { label: 'check' }))
+out.push(await agent('${last}', { label: 'last' }))
+return out`;
+    const { paths, projectDir } = setup({ loop: loop("L") });
+    const { runner, since } = fake();
+    const first = createRun(paths, { workflow: "loop", projectDir, inputs: {} });
+    assert.equal((await start(paths, first.runId, runner))?.status, "completed");
+    assert.deepEqual(since(0), ["check", "check", "check", "L"]);
+
+    edit(projectDir, "loop", loop("L2"));
+    const again = createRun(paths, { workflow: "loop", projectDir, inputs: {}, reuseFrom: first });
+    const done = await start(paths, again.runId, runner);
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(since(4), ["L2"]);
+  });
 });

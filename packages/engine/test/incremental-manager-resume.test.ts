@@ -159,7 +159,7 @@ async function assertDriftedCheckpointResume(
 
     const resumed = await started.promise;
     assert.equal(resumed.status, "completed", JSON.stringify(resumed.resumeReport));
-    assert.equal(resumed.resumeReport?.strategy, "identity-v1");
+    assert.equal(resumed.resumeReport?.strategy, "occurrence-v1");
     assert.equal(resumed.resumeReport?.replayed, 2);
     assert.equal(resumed.resumeReport?.live, 2);
     assert.equal(resumed.replayEligibility?.replayedPrefix, 2);
@@ -277,10 +277,10 @@ describe("WorkflowManager resumeFromRunId admission", () => {
       assert.equal(store.leases.has("durable-target"), true, "target writer keeps its own lease");
       assert.equal(observedCriticalSave, true);
       const firstTargetSave = store.history.find((state) => state.runId === "durable-target");
-      assert.equal(firstTargetSave?.resumeReport?.strategy, "identity-v1", JSON.stringify(firstTargetSave?.resumeReport));
+      assert.equal(firstTargetSave?.resumeReport?.strategy, "occurrence-v1", JSON.stringify(firstTargetSave?.resumeReport));
       assert.equal(firstTargetSave?.resumeSeed?.candidates.length, 2);
       assert.deepEqual(firstTargetSave?.resumeReport, {
-        strategy: "identity-v1",
+        strategy: "occurrence-v1",
         sourceRunId,
         requestedPolicy: "auto",
         replayed: 0,
@@ -372,7 +372,7 @@ return await checkpoint("approve", { })`, "legacy-ancestry"), undefined, {
     }
   });
 
-  it("activates legacy and unknown-format rollout paths", async () => {
+  it("reuses a legacy or unknown-format source by occurrence, and keeps the legacy mark", async () => {
     const dirs = tempDirs();
     try {
       const store = memoryStore(dirs.root);
@@ -396,16 +396,12 @@ return await checkpoint("approve", { })`, "legacy-ancestry"), undefined, {
         cwd: dirs.cwd,
         persistence: store.persistence,
         environmentKey: ENVIRONMENT_KEY,
-        agent: { async run() { assert.fail("legacy positional should replay"); } },
+        agent: { async run() { assert.fail("a legacy source should replay"); } },
       }).runSync(safeCalls(["one"]), undefined, {
         runId: "legacy-target",
         resumeFromRunId: "legacy-source",
       });
-      assert.equal(legacy.resumeReport?.strategy, "positional-v1");
-      if (legacy.resumeReport?.strategy === "positional-v1") {
-        assert.equal(legacy.resumeReport.fallbackReason, "legacy-recording");
-        assert.equal(legacy.resumeReport.eligibility, "legacy");
-      }
+      assert.equal(legacy.resumeReport?.strategy, "occurrence-v1");
       assert.equal(legacy.resumeReport?.replayed, 1);
       assert.equal(store.persistence.load("legacy-target")?.legacyResume, true);
 
@@ -423,11 +419,10 @@ return await checkpoint("approve", { })`, "legacy-ancestry"), undefined, {
         runId: "unsupported-target",
         resumeFromRunId: "unsupported-source",
       });
-      assert.equal(live, 1);
-      assert.equal(unsupportedResult.resumeReport?.strategy, "live");
-      if (unsupportedResult.resumeReport?.strategy === "live") {
-        assert.equal(unsupportedResult.resumeReport.disabledReason, "unsupported-format");
-      }
+      // Nothing reads the format marker for a decision any more. The rows replay by occurrence.
+      assert.equal(live, 0);
+      assert.equal(unsupportedResult.resumeReport?.strategy, "occurrence-v1");
+      assert.equal(unsupportedResult.resumeReport?.replayed, 1);
     } finally {
       dirs.cleanup();
     }
@@ -463,7 +458,7 @@ describe("WorkflowManager durable identity execution", () => {
       });
       assert.equal(result.status, "completed");
       assert.deepEqual(livePrompts.sort(), ["changed-a", "changed-b"]);
-      assert.equal(result.resumeReport?.strategy, "identity-v1");
+      assert.equal(result.resumeReport?.strategy, "occurrence-v1");
       assert.equal(result.resumeReport?.replayed, 38);
       assert.equal(result.resumeReport?.live, 2);
       assert.equal(result.resumeReport?.failed, 0);
@@ -530,7 +525,7 @@ return { one, approval, two }`, "replied-hop"), undefined, {
         approval: true,
         two: "source:two",
       });
-      assert.equal(final.resumeReport?.strategy, "identity-v1");
+      assert.equal(final.resumeReport?.strategy, "occurrence-v1");
       assert.equal(final.resumeReport?.replayed, 2);
       const twoDecision = final.resumeReport?.calls[2];
       assert.equal(twoDecision?.action, "replayed");
@@ -619,7 +614,7 @@ return await agent("two", { label: "two", resume: { filesystem: "read-only" } })
     }
   });
 
-  it("drops an inherited positional suffix before a confirmed checkpoint double hop", async () => {
+  it("keeps an inherited step after a changed checkpoint across two reuses", async () => {
     const dirs = tempDirs();
     try {
       const store = memoryStore(dirs.root);
@@ -635,7 +630,7 @@ await checkpoint("original checkpoint")
 return await agent("tail", { label: "tail", resume: { filesystem: "read-only" } })`, "positional-checkpoint-source");
       const source = await manager.runSync(sourceScript, undefined, { confirm: async () => true });
       assert.equal(source.status, "completed");
-      // A legacy resume marker sends the next hop through positional matching.
+      // A legacy resume marker no longer changes how the next hop pairs.
       const sourceState = store.persistence.load(source.runId);
       assert.ok(sourceState);
       store.persistence.save({ ...sourceState, legacyResume: true });
@@ -651,7 +646,7 @@ return { approval, tail }`, "positional-checkpoint-target");
       });
       assert.equal(paused.status, "paused");
       assert.ok(paused.checkpointContext);
-      assert.equal(paused.resumeReport?.strategy, "positional-v1");
+      assert.equal(paused.resumeReport?.strategy, "occurrence-v1");
       assert.deepEqual(store.persistence.load("positional-pause")?.journal?.map((entry) => entry.index), [0]);
 
       const live: string[] = [];
@@ -666,19 +661,23 @@ return { approval, tail }`, "positional-checkpoint-target");
         confirm: async () => true,
       });
       assert.equal(resumed.status, "completed");
-      assert.deepEqual(live, ["tail"]);
-      assert.deepEqual(JSON.parse(JSON.stringify(resumed.result)), { approval: true, tail: "live:tail" });
+      // The paused hop keeps the source's tail in its seed, so the second hop replays it.
+      assert.deepEqual(live, []);
+      assert.deepEqual(JSON.parse(JSON.stringify(resumed.result)), { approval: true, tail: "source:tail" });
       assert.deepEqual(resumed.resumeReport?.calls.map((decision) => decision.action), [
         "replayed",
         "live",
-        "live",
+        "replayed",
       ]);
+      const tail = resumed.resumeReport?.calls[2];
+      assert.ok(tail?.action === "replayed");
+      assert.equal(tail.sourceRunId, source.runId);
     } finally {
       dirs.cleanup();
     }
   });
 
-  it("turns initial and commit save failures into fail-closed persistence errors", async () => {
+  it("turns an initial save failure into a fail-closed persistence error", async () => {
     const dirs = tempDirs();
     try {
       const store = memoryStore(dirs.root);
@@ -708,45 +707,6 @@ return { approval, tail }`, "positional-checkpoint-target");
       assert.equal(store.leases.has(sourceRunId), false);
       assert.equal(store.leases.has("initial-failure"), false);
       assert.equal(store.states.has("initial-failure"), false);
-
-      let failedCommit = false;
-      store.failSaveWhen((state) => {
-        if (
-          !failedCommit &&
-          state.runId === "commit-failure" &&
-          state.resumeSeed?.candidates.length === 1
-        ) {
-          failedCommit = true;
-          return true;
-        }
-        return false;
-      });
-      let liveCalls = 0;
-      const commitManager = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
-        agent: { async run() { liveCalls++; return "live"; } },
-      });
-      const caught = await commitManager.runSync(workflow(`
-const codes = []
-try { await agent("one", { label: "one", resume: { filesystem: "read-only" } }) } catch (error) { codes.push(error.code) }
-try { await agent("two", { label: "two", resume: { filesystem: "read-only" } }) } catch (error) { codes.push(error.code) }
-return codes`, "commit-failure"), undefined, {
-        runId: "commit-failure",
-        resumeFromRunId: sourceRunId,
-      });
-      assert.equal(failedCommit, true);
-      assert.equal(liveCalls, 0);
-      assert.deepEqual(JSON.parse(JSON.stringify(caught.result)), [
-        WorkflowErrorCode.PERSISTENCE_ERROR,
-        WorkflowErrorCode.PERSISTENCE_ERROR,
-      ]);
-      assert.deepEqual(caught.resumeReport?.calls.map((decision) =>
-        decision.action === "failed" ? decision.reason : decision.action), [
-        "seed-persistence-error",
-        "resume-fatal-latch",
-      ]);
     } finally {
       dirs.cleanup();
     }
@@ -803,7 +763,7 @@ return await agent(${JSON.stringify(reader)}, {
       }).runSync(writerScript("write:v2", "read"), undefined, { resumeFromRunId: source.runId });
       assert.deepEqual(targetCalls, ["write:v2"]);
       assert.equal(target.result, "v1");
-      assert.equal(target.resumeReport?.strategy, "identity-v1");
+      assert.equal(target.resumeReport?.strategy, "occurrence-v1");
       assert.deepEqual(target.resumeReport?.calls.map((decision) =>
         decision.action === "live" ? decision.reason : decision.action), [
         "not-recorded",

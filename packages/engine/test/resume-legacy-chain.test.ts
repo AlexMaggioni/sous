@@ -71,14 +71,11 @@ test("a markerless 0.23 chained journal accepts persisted ancestors but excludes
       runId: "legacy-chain-target",
       resumeFromRunId: source.runId,
     });
-    assert.equal(listCalls, 1, "positional preparation scans persisted run IDs exactly once");
+    assert.equal(listCalls, 1, "preparation scans persisted run IDs exactly once");
     assert.equal(replayed.status, "completed");
     assert.equal(liveCalls, 0);
-    assert.equal(replayed.resumeReport?.strategy, "positional-v1");
-    if (replayed.resumeReport?.strategy === "positional-v1") {
-      assert.equal(replayed.resumeReport.fallbackReason, "legacy-recording");
-      assert.equal(replayed.resumeReport.eligibility, "legacy");
-    }
+    assert.equal(replayed.resumeReport?.strategy, "occurrence-v1");
+    assert.equal(persistence.load("legacy-chain-target")?.legacyResume, true, "a markerless source still marks its reuse");
     assert.equal(replayed.resumeReport?.replayed, 3);
     assert.equal(replayed.replayEligibility?.predictedReplayablePrefix, 3);
     assert.equal(replayed.replayEligibility?.replayedPrefix, 3);
@@ -105,13 +102,13 @@ test("a markerless 0.23 chained journal accepts persisted ancestors but excludes
       runId: "legacy-chain-missing-ancestor",
       resumeFromRunId: source.runId,
     });
-    assert.equal(listCalls, 1, "each positional admission performs one persisted-run scan");
+    assert.equal(listCalls, 1, "each preparation performs one persisted-run scan");
     assert.equal(liveCalls, 3, "an absent ancestor remains conservatively ineligible");
     assert.equal(missingAncestor.resumeReport?.replayed, 0);
     assert.deepEqual(
       missingAncestor.resumeReport?.calls.map((decision) =>
         decision.action === "live" ? decision.reason : decision.action),
-      ["positional-miss", "positional-suffix", "positional-suffix"],
+      ["not-recorded", "not-recorded", "not-recorded"],
     );
   } finally {
     rmSync(cwd, { recursive: true, force: true });

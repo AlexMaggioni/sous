@@ -140,7 +140,7 @@ describe("WorkflowManager continuation wiring", () => {
     }
   });
 
-  it("reattaches on identity new-run resume and permits sequential multi-consumer fan-out", async () => {
+  it("reattaches on a new-run resume and permits sequential multi-consumer fan-out", async () => {
     const test = fixture();
     try {
       const runner = new ContinuationRunner();
@@ -162,7 +162,7 @@ describe("WorkflowManager continuation wiring", () => {
         const completed = await started.promise;
         assert.equal(completed.status, "completed");
         assert.equal(completed.result, "continued result");
-        assert.equal(completed.resumeReport?.strategy, "identity-v1");
+        assert.equal(completed.resumeReport?.strategy, "occurrence-v1");
         assert.equal(test.states.get(runId)?.resumeSourceRunId, "fanout-source");
       }
       assert.deepEqual(runner.directives.map((directive) => directive?.sessionId), [
@@ -233,7 +233,7 @@ return { prefix, tail }`;
       });
       assert.deepEqual(calls, ["completed prefix", "interrupted tail", "interrupted tail"]);
       assert.equal(directives[0]?.sessionId, "interrupted-session");
-      assert.equal(completed.resumeReport?.strategy, "identity-v1");
+      assert.equal(completed.resumeReport?.strategy, "occurrence-v1");
       assert.deepEqual(completed.resumeReport?.calls.map((decision) => decision.action), [
         "replayed",
         "live",

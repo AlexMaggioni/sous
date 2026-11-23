@@ -94,7 +94,7 @@ test("SIGKILL crash residue is lazily paused and reports environment drift witho
     const result = resumed.result as Record<string, unknown>;
     assert.equal(result.first, "child:first");
     assert.equal(result.second, "parent:second");
-    assert.equal(resumed.resumeReport?.strategy, "identity-v1");
+    assert.equal(resumed.resumeReport?.strategy, "occurrence-v1");
     assert.equal(resumed.resumeReport?.replayed, 1);
     assert.equal(resumed.resumeReport?.live, 1);
     assert.deepEqual(livePrompts, ["second"]);
@@ -110,7 +110,7 @@ test("SIGKILL crash residue is lazily paused and reports environment drift witho
       environmentKey: "drifted-environment",
     });
     assert.equal(drifted.status, "completed");
-    assert.equal(drifted.resumeReport?.strategy, "identity-v1");
+    assert.equal(drifted.resumeReport?.strategy, "occurrence-v1");
     assert.equal(drifted.resumeReport?.replayed, 1);
     assert.equal(drifted.resumeReport?.live, 1);
     assert.equal(drifted.replayEligibility?.firstNonReplay?.reason, "not-recorded");
