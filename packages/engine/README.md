@@ -206,13 +206,6 @@ MCP enables `requireAgentConfiguration` for actual-call checks. The optional
 `onMissingAgentConfiguration({ label, phase? })` callback supplies diagnostics only and cannot route
 a call. SDK promise-based APIs and `executionAdmission` remain independently supported.
 
-Hosts that park a validated run for setup before execution use `prepareRun`, `claimPreparedRun`,
-`updatePreparation`, and `admitPreparedRun`; `prepareRun` mints a fresh engine run identity. To finish setup without execution, call
-`settlePreparedRun(runId, "failed" | "aborted", error, { responses?, expectedRevision? })`.
-`responses` maps exact setup request IDs to their canonical response fingerprints; `expectedRevision`
-guards the observed preparation revision. The first mandatory save commits receipts and terminal
-state together. A failed save rolls both back, leaving the same pending question retryable.
-
 Every execution/reuse path checks explicit checkpoint provenance. Checkpoint input fingerprints
 use format 2, binding explicit-answer semantics and `timeoutMs`; prompt, kind, and choices remain
 the checkpoint identity. Checkpoint journal results, result call records, and injected decisions

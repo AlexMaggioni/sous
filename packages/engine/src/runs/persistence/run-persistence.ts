@@ -39,9 +39,6 @@ import type { ReplayReport } from "../../isolation.js";
 import type { RunEnvironmentIdentity } from "../../run-environment.js";
 import { withRunEventsUsingFs, type RunEventPersistence } from "./run-event-persistence.js";
 import { workflowProjectPaths } from "./project-paths.js";
-import type {
-  WorkflowPreparation,
-} from "../../workflow-preparation.js";
 
 export type RunStatus = "pending" | "running" | "paused" | "completed" | "failed" | "aborted";
 
@@ -187,11 +184,6 @@ export interface PersistedRunState {
   environment?: RunEnvironmentIdentity;
   /** Required by same-ID continuation; deliberately absent on pre-contract runs. */
   admission?: PersistedRunAdmission;
-  /** Host-owned preparation survives request/session/process loss before execution admission. */
-  preparation?: WorkflowPreparation;
-  preparationRevision?: number;
-  /** Accepted host setup response hashes survive removal of the preparation envelope. */
-  setupResponses?: Record<string, string>;
   continuation?: WorkflowContinuationResult;
   resume?: PersistedResumeFormat;
   /** Immediate run named by resumeFromRunId, written once by the engine at admission. */
