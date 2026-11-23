@@ -1109,3 +1109,108 @@ return (await sh('pwd', { label: 'where' })).stdout.trim()`,
     assert.match(text, /"rounds": 1/);
   });
 });
+
+describe("orc schedule", () => {
+  const workflows = {
+    daily: `export const meta = { name: 'daily', description: 'd', inputs: { who: 'Who' } }\nreturn args.who`,
+    nightly: `export const meta = { name: 'nightly', description: 'n', inputs: { who: 'Who' }, schedule: { cron: '0 3 * * *', inputs: { who: 'night' } } }\nreturn args.who`,
+  };
+  // orc shows a path in the home folder with ~. These tests set HOME to the folder that holds the
+  // project, so the workflow files show as ~/project/....
+  const scheduleIn = (paths: HomePaths, projectDir: string) => async (...args: string[]) => {
+    const before = process.env.HOME;
+    process.env.HOME = dirname(projectDir);
+    try {
+      return await orc(paths, ["schedule", ...args, "--project", projectDir]);
+    } finally {
+      if (before === undefined) delete process.env.HOME;
+      else process.env.HOME = before;
+    }
+  };
+  /** The output with each next start, a local time, as "next <time>". */
+  const timed = (shown: { code: number; out: string }) => ({ ...shown, out: shown.out.replace(/next \S.*$/gm, "next <time>") });
+  const daily = "~/project/.orchestrator/workflows/daily.js";
+  const nightly = "~/project/.orchestrator/workflows/nightly.js";
+
+  it("adds, lists, disables, enables, tests and removes a schedule, beside the one a workflow's meta sets", async () => {
+    const { paths, projectDir } = setup(workflows);
+    const schedule = scheduleIn(paths, projectDir);
+    const dailyFile = join(projectDir, ".orchestrator", "workflows", "daily.js");
+    const nightlyFile = join(projectDir, ".orchestrator", "workflows", "nightly.js");
+    const notRunning = "the service is not running, so nothing will start: orc daemon start\n";
+
+    assert.deepEqual(timed(await schedule("add", "morning", "daily", "--cron", "0 9 * * 1-5", "--who", "me")), {
+      code: 0,
+      out: `schedule morning: daily at "0 9 * * 1-5", next <time>\n${notRunning}`,
+    });
+    assert.deepEqual(timed(await schedule("add", "often", "nightly", "--cron", "* * * * *", "--place", "folder")), {
+      code: 0,
+      out: `schedule often: nightly at "* * * * *", next <time>\nnote: nightly also sets "0 3 * * *" in its meta, and both start it\n${notRunning}`,
+    });
+
+    // orc schedule list remembers the project, so it also lists the schedule in nightly's meta.
+    const listed = `morning  0 9 * * 1-5  ${daily}  next <time>\noften  * * * * *  ${nightly}  next <time>\n${nightly}  0 3 * * *  set in the file  next <time>\n\nthe service is not running: orc daemon start\n`;
+    assert.deepEqual(timed(await schedule("list")), { code: 0, out: listed });
+    assert.deepEqual(timed(await schedule()), { code: 0, out: listed }, "list is the default");
+
+    const json = await schedule("list", "--json");
+    assert.equal(json.code, 0);
+    const [morning, often] = JSON.parse(json.out) as Array<{ createdAt: string }>;
+    for (const one of [morning!, often!]) assert.match(one.createdAt, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+    const stored = [
+      { name: "morning", workflow: dailyFile, projectDir, cron: "0 9 * * 1-5", inputs: { who: "me" }, enabled: true, createdAt: morning!.createdAt },
+      { name: "often", workflow: nightlyFile, projectDir, cron: "* * * * *", inputs: {}, place: "folder", enabled: true, createdAt: often!.createdAt },
+      { name: nightlyFile, workflow: nightlyFile, projectDir, cron: "0 3 * * *", inputs: { who: "night" }, enabled: true, createdAt: "", fromFile: true },
+    ];
+    assert.equal(json.out, `${JSON.stringify(stored, null, 2)}\n`);
+
+    assert.deepEqual(await schedule("disable", "morning"), { code: 0, out: "disabled morning\n" });
+    assert.deepEqual(timed(await schedule("list")), { code: 0, out: listed.replace(`${daily}  next <time>`, `${daily}  disabled`) });
+    assert.deepEqual(await schedule("enable", "morning"), { code: 0, out: "enabled morning\n" });
+    assert.deepEqual(timed(await schedule("list")), { code: 0, out: listed });
+
+    assert.deepEqual(timed(await schedule("test", "often")), { code: 0, out: "often matches now; next <time>\n" });
+    const tested = await schedule("test", "morning");
+    assert.equal(tested.code, 0);
+    assert.match(tested.out, /^morning (matches|does not match) now; next \S.*\n$/);
+    const inMeta = await schedule("test", nightlyFile);
+    assert.equal(inMeta.code, 0);
+    assert.match(inMeta.out, /^~\/project\/\.orchestrator\/workflows\/nightly\.js (matches|does not match) now; next \S.*\n$/);
+
+    assert.deepEqual(await schedule("remove", "often"), { code: 0, out: "removed often\n" });
+    assert.deepEqual(timed(await schedule("list")), {
+      code: 0,
+      out: `morning  0 9 * * 1-5  ${daily}  next <time>\n${nightly}  0 3 * * *  set in the file  next <time>\n\nthe service is not running: orc daemon start\n`,
+    });
+  });
+
+  it("refuses a name that exists, a bad cron, an unknown workflow, a bad place and a change to a schedule a meta sets, and writes nothing", async () => {
+    const { paths, projectDir } = setup(workflows);
+    const schedule = scheduleIn(paths, projectDir);
+    assert.equal((await schedule("add", "morning", "daily", "--cron", "0 9 * * *")).code, 0);
+    const saved = readFileSync(paths.schedules, "utf8");
+
+    assert.deepEqual(await schedule("add", "morning", "nightly", "--cron", "0 9 * * *"), { code: 1, out: 'orc: a schedule "morning" exists. Remove it first.\n' });
+    assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 25 * * *"), { code: 1, out: 'orc: bad hour in cron: "25" (allowed 0-23)\n' });
+    assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 9 * *"), { code: 1, out: 'orc: cron needs five fields (minute hour day month weekday), got "0 9 * *"\n' });
+    assert.deepEqual(await schedule("add", "late", "nope", "--cron", "0 9 * * *"), {
+      code: 1,
+      out: `orc: no workflow "nope". Looked in ${join(projectDir, ".orchestrator", "workflows")} and ${paths.workflows}. Saved workflows: daily, nightly.\n`,
+    });
+    assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 9 * * *", "--place", "moon"), { code: 64, out: 'usage: --place is worktree, folder or none, got "moon"\n' });
+    // With two mistakes, the name that exists comes before the bad place.
+    assert.deepEqual(await schedule("add", "morning", "daily", "--cron", "0 9 * * *", "--place", "moon"), { code: 1, out: 'orc: a schedule "morning" exists. Remove it first.\n' });
+    assert.deepEqual(await schedule("add", "late", "daily"), { code: 64, out: 'usage: orc schedule add <name> <workflow> --cron "0 9 * * 1-5" [--name value ...]\n' });
+    assert.equal(readFileSync(paths.schedules, "utf8"), saved, "a refused add writes nothing");
+
+    // Once orc schedule list has remembered the project, the schedule in nightly's meta is known,
+    // and orc refuses to change it.
+    const nightlyFile = join(projectDir, ".orchestrator", "workflows", "nightly.js");
+    assert.equal((await schedule("list")).code, 0);
+    const inMeta = `orc: the schedule of ${nightly} is set in its meta. Change or remove meta.schedule there.\n`;
+    for (const action of ["remove", "disable", "enable"]) assert.deepEqual(await schedule(action, nightlyFile), { code: 1, out: inMeta }, action);
+    for (const action of ["remove", "disable", "enable", "test"]) assert.deepEqual(await schedule(action, "nope"), { code: 1, out: 'orc: no schedule "nope". orc schedule list shows them.\n' }, action);
+    assert.deepEqual(await schedule("launch"), { code: 64, out: "usage: orc schedule add|list|remove|enable|disable|test\n" });
+    assert.equal(readFileSync(paths.schedules, "utf8"), saved, "a refused change writes nothing");
+  });
+});
