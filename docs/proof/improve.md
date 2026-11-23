@@ -76,6 +76,9 @@ package, and passes.
 - **One name for the programs.** `HarnessId` from the harnesses package names Claude Code and
   Codex in the engine too, where `Harness` and `Program` named them before. The manager lost a
   field nothing read and the comments that described an old host.
+- **One step start.** Agent, code and checkpoint calls start through one function that takes the
+  call's index and reports it. The ledger slot interrupts a call when the run halts, and one
+  function, `afterFailedAttempt`, decides what a step does after an attempt fails.
 
 [The engine README](../../packages/engine/README.md) describes the result.
 
