@@ -56,6 +56,8 @@ export interface StepsOptions {
   onProgram?: (found: { program: HarnessId; name: string; path: string; version?: string }) => void;
   /** Called when a step hits its program's usage limit, before the run pauses. */
   onLimit?: (event: { program: HarnessId; label?: string }) => void;
+  /** Called once per step with what its program could not do as asked, such as a mode it lacks. */
+  onNotes?: (event: { label?: string; notes: string[] }) => void;
 }
 
 
@@ -147,7 +149,9 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     try {
       const account = options.accounts?.[step.harness];
       if (options.inner) return await runInner(options.inner, prompt, call, step, { signal, servers, account });
-      return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account });
+      const report = options.onNotes;
+      const onNotes = report && ((notes: string[]) => report({ label: call.label, notes }));
+      return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account, onNotes });
     } catch (error) {
       if ((error as { code?: unknown } | undefined)?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT) {
         options.onLimit?.({ program: step.harness, label: call.label });
@@ -218,9 +222,16 @@ async function runOnHarness(
   prompt: string,
   call: StepRequest,
   step: RoutePlan,
-  given: { cwd: string; signal?: AbortSignal; servers: McpServerConfig[]; stop: (message: string) => WorkflowError; account?: Account },
+  given: {
+    cwd: string;
+    signal?: AbortSignal;
+    servers: McpServerConfig[];
+    stop: (message: string) => WorkflowError;
+    account?: Account;
+    onNotes?: (notes: string[]) => void;
+  },
 ): Promise<unknown> {
-  const { cwd, signal, servers, stop, account } = given;
+  const { cwd, signal, servers, stop, account, onNotes } = given;
   const harness = step.harness;
   const label = call.label;
   const schema = call.schema;
@@ -261,6 +272,8 @@ async function runOnHarness(
     gauge = reading;
   };
   const history: AgentHistoryEntry[] = [];
+  // Each turn repeats what the program could not do as asked, so the step reports each note once.
+  const notes = new Set<string>();
   let opened: string | undefined;
   const open = (sessionId: string) => {
     if (opened) return;
@@ -285,10 +298,12 @@ async function runOnHarness(
     try {
       const result = await adapter.run(turn, events);
       count(result.usage, turn.resume !== undefined);
+      for (const note of result.notes ?? []) notes.add(note);
       return result;
     } catch (error) {
       if (isFailure(error)) {
         if (error.usage) count(error.usage, turn.resume !== undefined);
+        for (const note of error.notes ?? []) notes.add(note);
         if (error.sessionId) open(error.sessionId);
       }
       throw error;
@@ -367,6 +382,7 @@ async function runOnHarness(
       if (gauge !== undefined) call.onSessionCostGauge?.(gauge);
     }
     if (history.length) call.onHistory?.(history);
+    if (notes.size) onNotes?.([...notes]);
   }
 }
 

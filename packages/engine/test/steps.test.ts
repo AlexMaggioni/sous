@@ -221,6 +221,29 @@ describe("steps on the fake programs", () => {
     assert.equal(place.lines()[0]?.program, "codex");
   });
 
+  it("reports once per step what its program could not do as asked, also when the step fails", async () => {
+    const place = fakePlace([
+      { match: "city", times: 1, answer: { town: 1 } },
+      { match: "broken", fail: "server fell over" },
+    ]);
+    const reported: Array<{ label?: string; notes: string[] }> = [];
+    const steps = createSteps(onFakes(place, { onNotes: (event) => reported.push(event) }));
+    const schema = Type.Object({ city: Type.String() }, { additionalProperties: false });
+    try {
+      await steps.run("name a city", routed(steps, { label: "codex", model: "codex/gpt-6.1-sol", skills: ["review"] }, { schema }));
+      await assert.rejects(steps.run("broken", routed(steps, { label: "claude", model: "claude/haiku" }, { mode: "careful" })));
+      await steps.run("hello", routed(steps, { label: "plain", model: "claude/haiku" }));
+    } finally {
+      await steps.dispose();
+    }
+    // The Codex step took a repair turn, and both its turns said the same.
+    assert.equal(place.lines().filter((line) => line.program === "codex").length, 2);
+    assert.deepEqual(reported, [
+      { label: "codex", notes: ["Codex gets no skills from a step, so review did not reach it."] },
+      { label: "claude", notes: ["Claude Code has no permission mode careful, so the user's default stays."] },
+    ]);
+  });
+
   for (const harness of ["claude", "codex"] as const) {
     const model = harness === "claude" ? "claude/haiku" : "codex/gpt-6.1-sol";
 

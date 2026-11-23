@@ -150,6 +150,9 @@ async function runOnAccounts(
       const account = loadRecord(paths, runId)?.accounts?.[program]?.name ?? "default";
       updateRecord(paths, runId, { limit: { program, account, at: new Date().toISOString() } });
     },
+    onNotes: ({ label, notes }) => {
+      for (const note of notes) log(`${stamp()} note       ${label ?? "agent"}: ${oneLine(note, 400)}`);
+    },
   });
   // A run keeps the workflows as they were when it started. A resume takes the edited ones only
   // after `orc resume --latest`.

@@ -203,6 +203,10 @@ finds them in its own folders, such as `.claude/skills/`. `npx rulesync generate
 sessions too. orc never writes into those folders. On Claude Code an agent's `skills` list is the
 only skills it sees. Codex has no such list and sees every skill in its folders.
 
+A step can ask for something its harness can't do, such as `skills` on Codex or an `effort` level
+Claude Code lacks. The step still runs, with the harness's default, and `orc log` shows a `note`
+line that says what was left out.
+
 ### The installed Claude Code and Codex
 
 A Claude Code or Codex step runs on the program installed on this machine. orc ships no copy of
