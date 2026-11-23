@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { appendFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { ensureHome, homePaths, type HomePaths } from "@orchestrator/engine";
 // orc does not import these, so the engine entry does not export them. The tests load the
@@ -185,6 +186,7 @@ describe("orc's reads", () => {
       ["inbox"],
       ["inbox", "--json"],
       ["log", ids.done],
+      ["log", ids.done, "-f"],
       ["account", "list"],
       ["account", "list", "--json"],
     ];
@@ -199,6 +201,44 @@ describe("orc's reads", () => {
     }
     assert.match(printed.get("list")!.out, new RegExp(`${ids.dead}\\s+build\\s+interrupted`));
     assert.match(printed.get(`show ${ids.dead}`)!.out, /status {4}interrupted/);
+    assert.equal(printed.get(`log ${ids.done} -f`)!.out, "12:00:00 run        build\n12:01:00 completed  build\n", "a run with no worker prints its log once");
+  });
+
+  it("let orc log -f print the log, then what the worker adds, until the worker ends", async () => {
+    const { paths, ids } = plant();
+    const worker = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    try {
+      const runId = "run-follow";
+      const record = JSON.parse(readFileSync(join(paths.records, `${ids.done}.json`), "utf8"));
+      writeJson(join(paths.records, `${runId}.json`), { ...record, runId, pid: worker.pid });
+      const log = join(paths.logs, `${runId}.log`);
+      writeFileSync(log, "12:00:00 run        build\n");
+
+      // orc runs in a process of its own, since the test runner writes to this one's stdout.
+      const here = dirname(dirname(fileURLToPath(import.meta.url)));
+      const following = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", "log", runId, "-f"], { cwd: here, env: { ...process.env, ORC_HOME: paths.home } });
+      let out = "";
+      following.stdout.on("data", (chunk) => (out += String(chunk)));
+      following.stderr.on("data", (chunk) => (out += String(chunk)));
+      const ended = new Promise<number | null>((done) => following.on("close", done));
+      const printed = async (text: string) => {
+        for (let i = 0; i < 400 && !out.includes(text); i++) await new Promise((done) => setTimeout(done, 25));
+      };
+
+      await printed("build\n");
+      assert.equal(out, "12:00:00 run        build\n", "the log so far comes at once");
+      appendFileSync(log, "12:01:00 agent      first\n");
+      await printed("first\n");
+      assert.equal(out, "12:00:00 run        build\n12:01:00 agent      first\n", "a line the worker adds comes while it runs");
+
+      // The line written just before the worker ends comes too.
+      appendFileSync(log, "12:02:00 completed  build\n");
+      worker.kill();
+      assert.equal(await ended, 0, out);
+      assert.equal(out, "12:00:00 run        build\n12:01:00 agent      first\n12:02:00 completed  build\n");
+    } finally {
+      worker.kill();
+    }
   });
 
   it("let orc stop on a paused run change only that run's files", async () => {
