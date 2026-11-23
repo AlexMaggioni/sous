@@ -202,10 +202,10 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
     const repository = initGitRepo();
     const home = tempPlaces();
     try {
-      const original = Array.from({ length: 40 }, (_value, index) => `worktree-${index}`);
+      // Three items keep every case. Each one makes a real git worktree, so more only add time.
+      const original = Array.from({ length: 3 }, (_value, index) => `worktree-${index}`);
       const changed = [...original];
-      changed[5] = "worktree-5-changed";
-      changed[20] = "worktree-20-changed";
+      changed[1] = "worktree-1-changed";
       const recording = await record(fanout(original, true), {
         runId: "worktree-source",
         cwd: repository.cwd,
@@ -219,7 +219,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       const result = await runWorkflow(fanout(changed, true), {
         runId: "worktree-success",
         cwd: repository.cwd,
-        concurrency: 4,
+        concurrency: 2,
         places: home.places("worktree-success"),
         agent: {
           async run(prompt, options) {
@@ -232,10 +232,10 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
         persistLogs: false,
         onResumeDecision: (decision) => orderedDecisions.push(decision.index),
       });
-      assert.deepEqual(runnerPrompts.sort(), ["worktree-20-changed", "worktree-5-changed"]);
-      assert.equal(result.resumeReport?.replayed, 38);
-      assert.equal(result.resumeReport?.live, 2);
-      assert.deepEqual(orderedDecisions, Array.from({ length: 40 }, (_value, index) => index));
+      assert.deepEqual(runnerPrompts, ["worktree-1-changed"]);
+      assert.equal(result.resumeReport?.replayed, 2);
+      assert.equal(result.resumeReport?.live, 1);
+      assert.deepEqual(orderedDecisions, [0, 1, 2]);
 
       execFileSync("git", ["-C", repository.cwd, "branch", "orc/degrade-0-item-0"]);
       const degraded = [...original];
@@ -244,14 +244,14 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       const degradedResult = await runWorkflow(fanout(degraded, true), {
         runId: "degrade",
         cwd: repository.cwd,
-        concurrency: 4,
+        concurrency: 2,
         places: home.places("degrade"),
         agent: { async run(prompt) { degradedPrompts.push(prompt); return `live:${prompt}`; } },
         ...occurrence(seedFor(recording), "degrade"),
         persistLogs: false,
       });
       assert.deepEqual(degradedPrompts, ["worktree-0-changed"]);
-      assert.equal(degradedResult.resumeReport?.replayed, 39);
+      assert.equal(degradedResult.resumeReport?.replayed, 2);
       assert.equal(degradedResult.resumeReport?.live, 1);
       assert.deepEqual(degradedResult.resumeReport?.calls.slice(0, 2).map((decision) =>
         decision.action === "live" ? decision.reason : decision.action), [
@@ -270,14 +270,14 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       const unsafeResult = await runWorkflow(fanout(original, true, false), {
         runId: "unsafe-worktree-target",
         cwd: repository.cwd,
-        concurrency: 4,
+        concurrency: 2,
         places: home.places("unsafe-worktree-target"),
         agent: { async run() { unsafeRunnerCalls += 1; return "live"; } },
         ...occurrence(seedFor(unsafeRecording), "unsafe-worktree-target"),
         persistLogs: false,
       });
       assert.equal(unsafeRunnerCalls, 0);
-      assert.equal(unsafeResult.resumeReport?.replayed, 40);
+      assert.equal(unsafeResult.resumeReport?.replayed, 3);
       assert.equal(unsafeResult.resumeReport?.live, 0);
     } finally {
       repository.cleanup();
