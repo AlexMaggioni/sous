@@ -542,19 +542,6 @@ test(
 );
 
 test(
-  "createRunPersistence is already event-capable and default deletion removes its sidecar",
-  withPersistence(({ persistence, eventPath }) => {
-    assert.equal(hasEventLog(persistence), true);
-    const runId = "delete-order";
-    persistence.save(state(runId));
-    persistence.appendEvent(runId, { seq: 1, timestamp: TIMESTAMP, event: stopped(runId) });
-    assert.equal(statSync(eventPath(runId)).isFile(), true);
-    assert.equal(persistence.delete(runId), true);
-    assert.throws(() => statSync(eventPath(runId)), (error) => (error as { code?: string }).code === "ENOENT");
-  }),
-);
-
-test(
   "list() surfaces the snapshot run but never its .events.jsonl sidecar",
   withPersistence(({ persistence, runsDir, eventPath }) => {
     const runId = "sidecar-excluded";

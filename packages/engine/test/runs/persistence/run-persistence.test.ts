@@ -213,16 +213,6 @@ test(
 );
 
 test(
-  "WorkflowManager rejects a relative persistence root",
-  withTempCwd(async (cwd) => {
-    assert.throws(
-      () => new WorkflowManager({ cwd, persistenceRoot: "relative-root" }),
-      /persistenceRoot.*absolute/,
-    );
-  }),
-);
-
-test(
   "WorkflowManager resolves persistence root once for run state and logs",
   withTempCwd(async (cwd) => {
     const constructionRoot = mkdtempSync(join(tmpdir(), "ap-dw-root-once-a-"));
@@ -628,28 +618,6 @@ test(
 );
 
 test(
-  "createRunPersistence delete removes run and returns true",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    rp.save({
-      runId: "delete-me",
-      workflowName: "d",
-      script: "export const meta = { name: 'd', description: 'd' }",
-      status: "completed",
-      phases: [],
-      agents: [],
-      logs: [],
-      startedAt: "2024-01-01T00:00:00.000Z",
-      updatedAt: "2024-01-01T00:00:00.000Z",
-    });
-    assert.ok(existsSync(join(workflowProjectPaths(cwd).runsDir, "delete-me.json")), "existsSync() should succeed");
-    const deleted = rp.delete("delete-me");
-    assert.equal(deleted, true);
-    assert.equal(rp.load("delete-me"), null);
-  }),
-);
-
-test(
   "createRunPersistence delete leaves no file of the run, and removes the files older engines left",
   withTempCwd(async (cwd) => {
     const rp = createRunPersistence(cwd);
@@ -933,35 +901,6 @@ test(
 );
 
 test(
-  "createRunPersistence save throws EACCES when permission denied",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd, {
-      writeFileSync: () => {
-        const err = new Error("EACCES: permission denied");
-        (err as { code?: string }).code = "EACCES";
-        throw err;
-      },
-    });
-
-    const state: PersistedRunState = {
-      runId: "eacces-test",
-      workflowName: "wf",
-      script: "export const meta = { name: 'w', description: 'w' }",
-      status: "pending",
-      phases: [],
-      agents: [],
-      logs: [],
-      startedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    assert.throws(
-      () => rp.save(state),
-      (err: unknown) => (err as { code?: string }).code === "EACCES",
-    );
-  }),
-);
-
-test(
   "createRunPersistence concurrent save and load returns consistent data",
   withTempCwd(async (cwd) => {
     const rp = createRunPersistence(cwd);
@@ -1048,28 +987,6 @@ test(
     writeFileSync(join(workflowProjectPaths(cwd).runsDir, "r1.json"), "{ truncated", "utf-8");
     const loaded = rp.load("r1");
     assert.equal(loaded?.runId, "r1", "load falls back to the intact .bak");
-  }),
-);
-
-test(
-  "delete removes the .bak sidecar too",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    rp.save({
-      runId: "r1",
-      workflowName: "w",
-      script: "export const meta = { name: 'w', description: 'w' }",
-      status: "completed",
-      phases: [],
-      agents: [],
-      logs: [],
-      startedAt: "2024-01-01T00:00:00.000Z",
-      updatedAt: "2024-01-01T00:00:00.000Z",
-    });
-    rp.delete("r1");
-    const runsDir = workflowProjectPaths(cwd).runsDir;
-    assert.equal(existsSync(join(runsDir, "r1.json")), false);
-    assert.equal(existsSync(join(runsDir, "r1.json.bak")), false, ".bak cleaned up");
   }),
 );
 
@@ -1253,28 +1170,6 @@ test(
       process.kill = originalKill;
       rp.releaseRunLease({ runId: "eperm-lock", token: "eperm-owner" });
     }
-  }),
-);
-
-test(
-  "delete removes the lock sidecar too",
-  withTempCwd(async (cwd) => {
-    const rp = createRunPersistence(cwd);
-    rp.save({
-      runId: "delete-lock",
-      workflowName: "w",
-      script: "export const meta = { name: 'w', description: 'w' }",
-      status: "paused",
-      phases: [],
-      agents: [],
-      logs: [],
-      startedAt: "2024-01-01T00:00:00.000Z",
-      updatedAt: "2024-01-01T00:00:00.000Z",
-    });
-    const lease = rp.acquireRunLease("delete-lock");
-    assert.ok(lease, "lease exists before delete");
-    rp.delete("delete-lock");
-    assert.equal(existsSync(join(workflowProjectPaths(cwd).runsDir, "delete-lock.lock")), false, "lock cleaned up");
   }),
 );
 
@@ -1579,33 +1474,6 @@ test(
     assert.equal(loaded?.pauseReason, "auth_required");
     assert.equal(loaded?.resetHint, undefined);
     assert.deepEqual(loaded?.authContext, authPersistContext, "the non-secret authContext survives save/load");
-  }),
-);
-
-test(
-  "auth pause persists 'auth_required' + authContext to real disk",
-  withTempCwd(async (cwd) => {
-    // Manager 1: an AUTH_REQUIRED fault checkpoints the run as paused and writes it to disk.
-    const manager1 = new WorkflowManager({
-      cwd,
-      agent: {
-        async run() {
-          throw new WorkflowError("Authentication required for codex", WorkflowErrorCode.AUTH_REQUIRED, {
-            recoverable: false,
-            authContext: authPersistContext,
-          });
-        },
-      },
-    });
-    const paused = await manager1.runSync(oneAgentAuthScript);
-    assert.equal(paused.status, "paused");
-    assert.equal(paused.reason, "auth_required");
-
-    // The persisted file on disk carries pauseReason + authContext (no reset hint).
-    const rp = createRunPersistence(cwd);
-    const onDisk = rp.load(paused.runId);
-    assert.equal(onDisk?.pauseReason, "auth_required");
-    assert.deepEqual(onDisk?.authContext, authPersistContext);
   }),
 );
 

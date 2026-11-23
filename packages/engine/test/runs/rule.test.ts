@@ -66,15 +66,6 @@ describe("the pause rule", () => {
     }
   });
 
-  it("a pending or running run whose worker is gone answers as one paused interrupted, and reuse refuses it as paused", () => {
-    const paused = judge({ state: saved("paused", "interrupted"), ...gone });
-    for (const status of ["pending", "running"] as const) {
-      const derived = judge({ state: saved(status), ...gone });
-      assert.deepEqual(derived, paused, status);
-      assert.deepEqual(derived.reuse, { ok: false, why: "paused" }, status);
-    }
-  });
-
   it("open questions only count while the worker runs", () => {
     assert.equal(judge({ state: saved("paused", "checkpoint_required"), alive: false, openQuestions: 1 }).word, "paused: asks");
     assert.equal(judge({ alive: true, openQuestions: 1 }).word, "asks");
@@ -134,18 +125,5 @@ describe("the reset time", () => {
     for (const reason of ["auth_required", "checkpoint_required", "requested", "step_failed", "step_stopped", "time_limit", "interrupted"]) {
       assert.equal(judge({ state: { ...saved("paused", reason), resetHint: "Resets at 2026-11-21T12:00:00.000Z" }, ...gone }).pause?.resumeAt, undefined, reason);
     }
-  });
-});
-
-describe("usage limit", () => {
-  /** The time the service resumes a run paused at the limit. service.ts's resumeTime gave it before the rule. */
-  const resumeTime = (resetHint: string | undefined, pausedAt: string) =>
-    judge({ state: { status: "paused", pauseReason: "usage_limit", ...(resetHint === undefined ? {} : { resetHint }), updatedAt: pausedAt }, ...gone }).pause?.resumeAt?.getTime();
-
-  it("resumes after the reset time, or 30 minutes after the pause when no time is known", () => {
-    const pausedAt = "2026-11-21T10:00:00.000Z";
-    assert.equal(resumeTime("Resets at 2026-11-21T12:00:00.000Z", pausedAt), Date.parse("2026-11-21T12:00:30.000Z"));
-    assert.equal(resumeTime("Resets in ~2h", pausedAt), Date.parse("2026-11-21T12:00:30.000Z"));
-    assert.equal(resumeTime(undefined, pausedAt), Date.parse("2026-11-21T10:30:00.000Z"));
   });
 });

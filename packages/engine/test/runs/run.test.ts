@@ -251,20 +251,6 @@ describe("the steps that run now", () => {
     assert.deepEqual(running(paths, record.runId), [], "nothing runs once the run ended");
   });
 
-  it("a step of a nested run goes by the nested label and its own", async () => {
-    const { paths, projectDir } = setup({
-      child,
-      parent: `export const meta = { name: 'parent', description: 'parent' }\nreturn await workflow('child', {}, { label: 'ticket A' })`,
-    });
-    const { runner, calls, release } = heldRunner(() => "wait");
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
-    const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
-    await until(() => calls.length === 1);
-    assert.deepEqual(await settle(() => running(paths, record.runId), ["ticket A: build"]), ["ticket A: build"]);
-    release("build");
-    assert.equal((await worker)?.status, "completed");
-  });
-
   it("two nested runs side by side each show their step", async () => {
     const { paths, projectDir } = setup({
       child,

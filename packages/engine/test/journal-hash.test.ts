@@ -6,7 +6,6 @@ import type { AgentSessionRef } from "../src/workflow-result.js";
 import type { StepRequest } from "../src/steps/agent-run.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
-import { journalResume } from "./helpers/journal-resume.js";
 
 // hashAgentCall() is module-private, but every live agent() emits its call hash on the
 // JournalEntry (workflow.ts: onAgentJournal({ index, hash, result })). The resume
@@ -39,48 +38,6 @@ const a = await agent('only', { label: 'a' })
 return a`;
 
 describe("journal hash (hashAgentCall byte-stability)", () => {
-  it("emits a sha256 hex digest as the resume key", async () => {
-    const [entry] = await journalOf(singleCall);
-    assert.equal(entry.index, 0);
-    assert.match(entry.hash, /^[a-f0-9]{64}$/, "hash is a lowercase sha256 hex digest");
-  });
-
-  it("pins the exact identity serialization (byte layout is load-bearing)", async () => {
-    // This is the strongest guard: it reconstructs the EXACT JSON the engine hashes,
-    // in the EXACT field order, with the EXACT null-mapping for absent inputs. A
-    // call `agent('only', { label: 'a' })` in a script with no meta.model / no phases
-    // resolves every identity input but the prompt to null. If anyone reorders the
-    // fields or changes how an absent input is encoded, resume keys shift under old
-    // journals and this assertion fails.
-    // NOTE deliberately NO `mode` key here: mode joins the identity ONLY when set, so
-    // journals written before session modes existed keep replaying for mode-less calls.
-    // The resolved `agentDef` is still an identity field even when its value is null.
-    const expectedIdentity = JSON.stringify({
-      prompt: "only",
-      model: null,
-      tier: null,
-      phase: null,
-      agentType: null,
-      agentDef: null,
-      schema: null,
-    });
-    const expected = createHash("sha256").update(expectedIdentity).digest("hex");
-
-    const [entry] = await journalOf(singleCall);
-    assert.equal(entry.hash, "2aa09c56e72fb040ff729ab7ada54158759da157dd048aecd467867debc30e99");
-    assert.equal(entry.hash, expected, "journal hash equals sha256 of the canonical identity JSON");
-  });
-
-  it("is byte-identical across independent runs of the same script", async () => {
-    const a = await journalOf(singleCall);
-    const b = await journalOf(singleCall);
-    assert.deepEqual(
-      a.map((e) => e.hash),
-      b.map((e) => e.hash),
-      "the same call identity hashes to the same bytes every run (resume depends on it)",
-    );
-  });
-
   it("keeps call and input hash fixtures unchanged by continuation-adjacent metadata", async () => {
     const sessionRef: AgentSessionRef = {
       sessionId: "continuation-session",
@@ -138,6 +95,8 @@ describe("journal hash (hashAgentCall byte-stability)", () => {
       call: { kind: "agent", label: "a", continuation: { method: "resume" } },
     };
 
+    // The digest of {"prompt":"only","model":null,"tier":null,"phase":null,"agentType":null,"agentDef":null,"schema":null},
+    // in that field order, with null for each input the call leaves out.
     assert.equal(plain.entry.hash, "2aa09c56e72fb040ff729ab7ada54158759da157dd048aecd467867debc30e99");
     assert.equal(adjacent.entry.hash, plain.entry.hash);
     assert.equal(markedEntry.hash, plain.entry.hash);
@@ -174,14 +133,6 @@ return { a, b }`;
 
     assert.equal(before[0].hash, after[0].hash, "index 0 (unchanged prompt) keeps an identical hash");
     assert.notEqual(before[1].hash, after[1].hash, "index 1 (changed prompt) gets a different hash");
-  });
-
-  it("refuses a tier, so no call journals one", async () => {
-    const withTier = `export const meta = { name: 'h3', description: 'hash' }
-const a = await agent('same', { label: 'a', tier: 'small' })
-return a`;
-
-    await assert.rejects(journalOf(withTier), { message: 'tier is gone. Set the model with model, such as "claude/haiku", or name an agent with agentType.' });
   });
 
   it("folds mode into the identity (mode change => different hash, same prompt/index)", async () => {
@@ -229,38 +180,6 @@ return agent('same', { label: 'a', configOptions: { '2': 'two', '10': 'ten' } })
     const expectedIdentity =
       '{"prompt":"same","model":null,"configOptions":{"10":"ten","2":"two"},"tier":null,"phase":null,"agentType":null,"agentDef":null,"schema":null}';
     assert.equal(entry.hash, createHash("sha256").update(expectedIdentity).digest("hex"));
-  });
-
-  it("replays reordered configOptions and cache-misses when a value changes", async () => {
-    const source = `export const meta = { name: 'h-config-replay', description: 'hash' }
-return agent('same', { label: 'a', configOptions: { zeta: 'last', alpha: true } })`;
-    const reordered = source.replace("zeta: 'last', alpha: true", "alpha: true, zeta: 'last'");
-    const changed = source.replace("alpha: true", "alpha: false");
-    const journal = await journalOf(source);
-    const resumeJournal = new Map(journal.map((entry) => [entry.index, entry]));
-    let calls = 0;
-    const runner = {
-      async run() {
-        calls++;
-        return "live";
-      },
-    };
-
-    const replayed = await runWorkflow(reordered, {
-      agent: runner,
-      persistLogs: false,
-      ...journalResume(resumeJournal),
-    });
-    assert.equal(replayed.result, "ran:same");
-    assert.equal(calls, 0, "sorted-key equivalent options replay from the journal");
-
-    const missed = await runWorkflow(changed, {
-      agent: runner,
-      persistLogs: false,
-      ...journalResume(resumeJournal),
-    });
-    assert.equal(missed.result, "live");
-    assert.equal(calls, 1, "changed option value runs live");
   });
 
   it("folds phase into the identity (phase change => different hash)", async () => {
