@@ -81,7 +81,7 @@ function memoryPersistence(): {
  *  A secret may be attached to the error's `details` — the closest analog to the intent's secret
  *  payload — so we can prove the engine persists ONLY the non-secret authContext, never `details`.
  *  (Upstream PR1 guarantees the MESSAGE itself is secret-free; the engine passes it through.) */
-function authRequiredAgent(opts: { authContext: AuthErrorContext; secret?: string } = { authContext: AUTH_CONTEXT }) {
+function authRequiredAgent(opts: { authContext: AuthErrorContext; secret?: string }) {
   let calls = 0;
   return {
     get calls() {
@@ -112,22 +112,6 @@ function withTempCwd(fn: (cwd: string) => Promise<void>) {
 }
 
 test(
-  "executeRun pause branch fires for AUTH_REQUIRED → status paused, not failed (§2.12)",
-  withTempCwd(async (cwd) => {
-    const store = memoryPersistence();
-    const agent = authRequiredAgent();
-    const manager = new WorkflowManager({ cwd, persistence: store.persistence, agent: agent.runner });
-
-    const result = await manager.runSync(ONE_AGENT);
-
-    assert.equal(result.status, "paused", "AUTH_REQUIRED checkpoints the run as paused");
-    assert.equal(result.reason, "auth_required", "composeResult reports reason 'auth_required'");
-    assert.equal(result.resetHint, undefined, "resetHint stays usage-limit-only");
-    assert.deepEqual(result.authContext, AUTH_CONTEXT, "the structured non-secret authContext rides the result");
-  }),
-);
-
-test(
   "persistRun writes pauseReason 'auth_required' and keeps authContext non-secret (§2.12/§2.14)",
   withTempCwd(async (cwd) => {
     const store = memoryPersistence();
@@ -138,6 +122,10 @@ test(
     const result = await manager.runSync(ONE_AGENT);
     const persisted = store.persistence.load(result.runId);
 
+    assert.equal(result.status, "paused", "AUTH_REQUIRED checkpoints the run as paused");
+    assert.equal(result.reason, "auth_required", "composeResult reports reason 'auth_required'");
+    assert.equal(result.resetHint, undefined, "resetHint stays usage-limit-only");
+    assert.deepEqual(result.authContext, AUTH_CONTEXT, "the structured non-secret authContext rides the result");
     assert.equal(persisted?.status, "paused");
     assert.equal(persisted?.pauseReason, "auth_required", "pauseReason switches on the paused error code");
     assert.equal(persisted?.resetHint, undefined, "resetHint stays usage-limit-only");
