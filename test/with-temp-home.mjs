@@ -4,9 +4,8 @@
 //   node ../../test/with-temp-home.mjs tsx --test "test/**/*.test.ts"
 //
 // HOME, CLAUDE_CONFIG_DIR, CODEX_HOME and XDG_CONFIG_HOME point into a new folder. The Claude
-// token, SOUS_HOME and AGENTPRISM_DEFAULT_BACKEND are removed. The agent lookup then reads empty
-// login folders, and a bare model name routes to Claude. A test gives the same result on every
-// machine and under every login.
+// token and SOUS_HOME are removed. The agent lookup then reads empty login folders. A test gives
+// the same result on every machine and under every login.
 //
 // To run one test file, put the same command in front of it, from the package folder:
 //
@@ -33,7 +32,6 @@ const env = {
 };
 delete env.CLAUDE_CODE_OAUTH_TOKEN;
 delete env.SOUS_HOME;
-delete env.AGENTPRISM_DEFAULT_BACKEND;
 
 const child = spawn(command, args, { env, stdio: "inherit" });
 child.on("error", (error) => {

@@ -103,7 +103,7 @@ exit 0
     "cwd": "<tmp>/scenario-limit-claude/sous-home/scratch/<run-1>",
     "effectiveCwd": "<tmp>/scenario-limit-claude/sous-home/scratch/<run-1>",
     "runtime": {
-      "engineVersion": "4.0.5",
+      "engineVersion": "0.1.0",
       "node": "<node>",
       "v8": "<v8>",
       "pathFormat": 1,

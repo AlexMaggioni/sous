@@ -136,7 +136,7 @@ exit 0
     "cwd": "<tmp>/scenario-places/sous-home/scratch/<run-1>",
     "effectiveCwd": "<tmp>/scenario-places/sous-home/scratch/<run-1>",
     "runtime": {
-      "engineVersion": "4.0.5",
+      "engineVersion": "0.1.0",
       "node": "<node>",
       "v8": "<v8>",
       "pathFormat": 1,
@@ -302,7 +302,7 @@ exit 0
     "cwd": "<tmp>/scenario-places/project",
     "effectiveCwd": "<tmp>/scenario-places/project",
     "runtime": {
-      "engineVersion": "4.0.5",
+      "engineVersion": "0.1.0",
       "node": "<node>",
       "v8": "<v8>",
       "pathFormat": 1,
@@ -485,7 +485,7 @@ exit 0
     "cwd": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
     "effectiveCwd": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
     "runtime": {
-      "engineVersion": "4.0.5",
+      "engineVersion": "0.1.0",
       "node": "<node>",
       "v8": "<v8>",
       "pathFormat": 1,

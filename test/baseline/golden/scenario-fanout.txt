@@ -118,7 +118,7 @@ exit 0
     "cwd": "<tmp>/scenario-fanout/project",
     "effectiveCwd": "<tmp>/scenario-fanout/project",
     "runtime": {
-      "engineVersion": "4.0.5",
+      "engineVersion": "0.1.0",
       "node": "<node>",
       "v8": "<v8>",
       "pathFormat": 1,

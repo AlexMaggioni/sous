@@ -1,14 +1,25 @@
 {
   "name": "@sous/harnesses",
-  "version": "4.0.5",
+  "version": "0.1.0",
+  "description": "Runs the agent steps of sous on the installed Claude Code and Codex.",
   "license": "Apache-2.0",
-  "engines": {
-    "node": ">=22"
+  "keywords": [
+    "agents",
+    "workflows",
+    "claude-code",
+    "codex"
+  ],
+  "homepage": "https://github.com/AlexMaggioni/sous#readme",
+  "bugs": {
+    "url": "https://github.com/AlexMaggioni/sous/issues"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/AlexMaggioni/sous.git",
     "directory": "packages/harnesses"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "type": "module",
   "main": "./dist/index.js",

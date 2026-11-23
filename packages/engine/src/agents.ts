@@ -361,12 +361,10 @@ export function removedHarness(spec: string | undefined): string | undefined {
 }
 
 /** The harness a model spec routes to. */
-export function routeHarness(spec: string | undefined, env: Record<string, string | undefined> = process.env): HarnessId | undefined {
+export function routeHarness(spec: string | undefined): HarnessId | undefined {
   if (spec === undefined) return undefined;
   const first = spec.split("/")[0]!.toLowerCase();
-  if (isHarness(first)) return first;
-  const configured = env.AGENTPRISM_DEFAULT_BACKEND?.toLowerCase();
-  return isHarness(configured) ? configured : "claude";
+  return isHarness(first) ? first : "claude";
 }
 
 /** The settings an agent runs with on a harness: its own block over its common settings. */
@@ -376,9 +374,9 @@ function settingsFor(agent: FoundAgent, harness: HarnessId): HarnessSettings {
 
 /** The model spec for a harness: the block's model, else the run's model when it is on that
  *  harness, else the harness alone, which runs the harness's own default model. */
-function modelFor(harness: HarnessId, model: string | undefined, fallback?: string, env: Record<string, string | undefined> = process.env): string {
+function modelFor(harness: HarnessId, model: string | undefined, fallback?: string): string {
   if (model) return `${harness}/${model}`;
-  if (fallback && routeHarness(fallback, env) === harness) return fallback;
+  if (fallback && routeHarness(fallback) === harness) return fallback;
   return harness;
 }
 
@@ -515,12 +513,11 @@ export interface StepPlan {
 export function planStep(lookup: AgentLookup, name: string, given: StepGiven = {}, fallback?: string): { plan: StepPlan } | { problem: string } {
   const agent = lookup.agents.get(name);
   if (!agent) return { problem: lookup.problems.get(name)?.message ?? missingAgent(lookup, name) };
-  const env = lookup.settings.env ?? process.env;
-  const harness = given.model ? routeHarness(given.model, env)! : agent.harness;
+  const harness = given.model ? routeHarness(given.model)! : agent.harness;
   if (agent.from !== "rulesync" && agent.from !== harness) return { problem: wrongHarness(agent, harness) };
   const settings = settingsFor(agent, harness);
   const bare = given.model !== undefined && given.model.toLowerCase() === harness;
-  const model = given.model && !bare ? given.model : modelFor(harness, settings.model, fallback ?? lookup.settings.defaultModel, env);
+  const model = given.model && !bare ? given.model : modelFor(harness, settings.model, fallback ?? lookup.settings.defaultModel);
   return {
     plan: {
       agent,
@@ -590,11 +587,10 @@ export function routeStep(lookup: AgentLookup | undefined, ask: StepAsk): StepRo
     const { agent: _agent, ...plan } = planned.plan;
     return { ...frozen, plan: { ...plan, ...timed } };
   }
-  const env = lookup?.settings.env ?? process.env;
   return {
     ...frozen,
     plan: {
-      harness: routeHarness(requested, env) ?? lookup?.settings.defaultHarness ?? "claude",
+      harness: routeHarness(requested) ?? lookup?.settings.defaultHarness ?? "claude",
       ...(requested ? { model: requested } : {}),
       ...(ask.effort === undefined ? {} : { effort: ask.effort }),
       ...(ask.skills === undefined ? {} : { skills: [...ask.skills] }),

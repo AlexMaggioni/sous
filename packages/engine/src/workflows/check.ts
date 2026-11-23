@@ -109,7 +109,7 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
         }
         checkServers(plan.mcp ?? [], plan.harness, within);
       } else if (!step.setsAgentType) {
-        checkServers(servers, routeHarness(model, settings.env) ?? settings.defaultHarness, within);
+        checkServers(servers, routeHarness(model) ?? settings.defaultHarness, within);
       }
     }
     for (const file of refs.scripts) {

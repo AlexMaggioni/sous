@@ -1,8 +1,25 @@
 {
   "name": "@sous/cli",
   "version": "0.1.0",
+  "description": "Run workflows of Claude Code and Codex agents in the background, on your own machine.",
   "private": true,
   "license": "Apache-2.0",
+  "keywords": [
+    "agents",
+    "workflows",
+    "claude-code",
+    "codex",
+    "cli"
+  ],
+  "homepage": "https://github.com/AlexMaggioni/sous#readme",
+  "bugs": {
+    "url": "https://github.com/AlexMaggioni/sous/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlexMaggioni/sous.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"

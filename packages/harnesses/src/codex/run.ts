@@ -32,7 +32,7 @@ export async function openServer(path: string, env: Record<string, string | unde
   const server = new AppServer(path, env, cwd);
   try {
     await server.request("initialize", {
-      clientInfo: { name: "orchestrator", title: "Orchestrator", version: pkg.version },
+      clientInfo: { name: "sous", title: "Sous", version: pkg.version },
       capabilities: { experimentalApi: true, requestAttestation: false },
     });
   } catch (error) {
@@ -187,7 +187,7 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
       case "currentTime/read":
         return { currentTimeAt: Math.floor(Date.now() / 1000) };
       default:
-        throw new RpcError(`The orchestrator does not answer ${method}.`, -32601);
+        throw new RpcError(`sous does not answer ${method}.`, -32601);
     }
   }
 

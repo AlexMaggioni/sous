@@ -368,7 +368,7 @@ const AGENT_OPTION_KEYS = [
 const AGENT_OPTION_KEY_SET = new Set<string>(AGENT_OPTION_KEYS);
 // Options a step once took. A step that sets one is refused with a message that names it.
 const REMOVED_AGENT_OPTIONS: ReadonlyArray<readonly [string, string]> = [
-  // tier read a model table from AgentPrism's home folder, and dropped the run's model when set.
+  // tier read a model table from the old home folder, and dropped the run's model when set.
   ["tier", 'tier is gone. Set the model with model, such as "claude/haiku", or name an agent with agentType.'],
   // The three below changed nothing a step did.
   ["meta", "meta is gone. No harness read it. Remove it from the step."],

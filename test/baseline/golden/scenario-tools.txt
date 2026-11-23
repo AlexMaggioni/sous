@@ -77,7 +77,7 @@ exit 0
     "cwd": "<tmp>/scenario-tools/sous-home/scratch/<run-1>",
     "effectiveCwd": "<tmp>/scenario-tools/sous-home/scratch/<run-1>",
     "runtime": {
-      "engineVersion": "4.0.5",
+      "engineVersion": "0.1.0",
       "node": "<node>",
       "v8": "<v8>",
       "pathFormat": 1,
