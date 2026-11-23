@@ -20,8 +20,8 @@ export function setup(workflows: Record<string, string>, config: Record<string, 
 }
 
 /** Write a run's engine files the way the engine leaves them, with no manager: its state and,
- *  when given, its event log. */
-export function plantState(paths: HomePaths, state: PersistedRunState, events?: string): void {
+ *  when given, its event log. A state may leave out what an old engine did not save. */
+export function plantState(paths: HomePaths, state: Partial<PersistedRunState> & { runId: string }, events?: string): void {
   const { runsDir } = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
   mkdirSync(runsDir, { recursive: true });
   writeFileSync(join(runsDir, `${state.runId}.json`), JSON.stringify(state, null, 2));

@@ -361,6 +361,12 @@ export interface WorkflowManagerOptions {
   leaseOwnerId?: string;
   /** Default non-git environment label for replay provenance diagnostics. */
   environmentKey?: string;
+  /**
+   * Whether the constructor repairs the saved runs whose owner died, which rewrites their
+   * state. Default true. orc's worker sets false: orc's readers name such a run through the
+   * pause rule, and a resume repairs its own run.
+   */
+  scanStaleRuns?: boolean;
 }
 
 type ArgsSnapshot = { ok: true; clone: unknown } | { ok: false };
@@ -632,7 +638,7 @@ export class WorkflowManager extends EventEmitter {
     // Stale-run recovery mutates the PERSISTED run store, so it is gated on this manager's
     // journaling default: a `journaling: false` manager (host keeps its own transcript/audit
     // store) must never rewrite run state that belongs to journaling processes.
-    if (this.journaling) this.recoverStaleRuns();
+    if (this.journaling && options.scanStaleRuns !== false) this.recoverStaleRuns();
   }
 
   override emit(eventName: string | symbol, ...args: unknown[]): boolean {

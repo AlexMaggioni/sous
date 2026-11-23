@@ -1,0 +1,120 @@
+{
+  "note": "A run whose worker died while its second step ran, as the code before the run module's last commit left it, with its lock. The worker's pid is __PID__. Paths under the test's root are __ROOT__.",
+  "record": {
+    "runId": "mwsrl6pk-ydzdb3",
+    "workflow": "two",
+    "file": "__ROOT__/project/.orchestrator/workflows/two.js",
+    "args": {},
+    "place": "folder",
+    "cwd": "__ROOT__/project",
+    "projectDir": "__ROOT__/project",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "2026-11-23T04:27:15.896Z",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": "__ROOT__/claude"
+      },
+      "codex": {
+        "name": "default",
+        "folder": "__ROOT__/codex"
+      }
+    },
+    "pid": "__PID__"
+  },
+  "workflows": {
+    "two": "export const meta = { name: 'two', description: 'two steps' }\nconst first = await agent('Write the first part', { label: 'first' })\nconst second = await agent('Write the second part', { label: 'second' })\nreturn first + ' ' + second\n"
+  },
+  "state": {
+    "runId": "mwsrl6pk-ydzdb3",
+    "workflowName": "two",
+    "script": "export const meta = { name: 'two', description: 'two steps' }\nconst first = await agent('Write the first part', { label: 'first' })\nconst second = await agent('Write the second part', { label: 'second' })\nreturn first + ' ' + second\n",
+    "scriptOrigin": {
+      "kind": "inline"
+    },
+    "args": {},
+    "cwd": "__ROOT__/project",
+    "effectiveCwd": "__ROOT__/project",
+    "runtime": {
+      "engineVersion": "4.0.5",
+      "node": "v24.2.0",
+      "v8": "13.6.233.10-node.17",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "resume": {
+      "format": "identity-v1"
+    },
+    "eventStreamId": "1875a28c3360c56de08f25a7f719580e",
+    "eventSeq": 4,
+    "journal": [
+      {
+        "index": 0,
+        "hash": "46720c3572331e54207c25c595a6d8b203f23bb6bdb53f5add980010b65376a8",
+        "result": "one",
+        "kind": "agent",
+        "scope": "mwsrl6pk-ydzdb3",
+        "call": {
+          "kind": "agent",
+          "label": "first"
+        }
+      }
+    ],
+    "calls": [
+      {
+        "index": 0,
+        "kind": "agent",
+        "hash": "46720c3572331e54207c25c595a6d8b203f23bb6bdb53f5add980010b65376a8",
+        "path": "2:21<6:3",
+        "inputsHash": "f75a5384a92deff641d090b6377fecc34ccdc4cb7725afb2f05fb0b0ce374831",
+        "label": "first",
+        "outcome": "result",
+        "origin": "runner",
+        "attempts": 1,
+        "resolvedCwd": "__ROOT__/project",
+        "settlementOrdinal": 1,
+        "scope": "mwsrl6pk-ydzdb3"
+      }
+    ],
+    "callsAllocated": 1,
+    "limits": {
+      "maxAgents": 1000,
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "running",
+    "phases": [],
+    "agents": [
+      {
+        "id": 1,
+        "label": "first",
+        "prompt": "Write the first part",
+        "status": "running",
+        "callIndex": 0,
+        "scope": "mwsrl6pk-ydzdb3",
+        "startedAt": "2026-11-23T04:27:15.921Z"
+      }
+    ],
+    "logs": [],
+    "tokenUsage": {
+      "input": 0,
+      "output": 0,
+      "total": 8,
+      "cost": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "2026-11-23T04:27:15.903Z",
+    "updatedAt": "2026-11-23T04:27:15.931Z"
+  },
+  "events": "{\"version\":1,\"streamId\":\"1875a28c3360c56de08f25a7f719580e\",\"runId\":\"mwsrl6pk-ydzdb3\",\"seq\":1,\"timestamp\":\"2026-11-23T04:27:15.921Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsrl6pk-ydzdb3\",\"scope\":\"mwsrl6pk-ydzdb3\",\"label\":\"first\",\"prompt\":\"Write the first part\",\"callIndex\":0,\"path\":\"2:21<6:3\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"1875a28c3360c56de08f25a7f719580e\",\"runId\":\"mwsrl6pk-ydzdb3\",\"seq\":2,\"timestamp\":\"2026-11-23T04:27:15.927Z\",\"event\":{\"type\":\"tokenUsage\",\"runId\":\"mwsrl6pk-ydzdb3\",\"scope\":\"mwsrl6pk-ydzdb3\",\"usage\":{\"input\":0,\"output\":0,\"total\":8,\"cost\":0,\"cacheRead\":0,\"cacheWrite\":0}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"1875a28c3360c56de08f25a7f719580e\",\"runId\":\"mwsrl6pk-ydzdb3\",\"seq\":3,\"timestamp\":\"2026-11-23T04:27:15.928Z\",\"event\":{\"type\":\"callRecord\",\"runId\":\"mwsrl6pk-ydzdb3\",\"scope\":\"mwsrl6pk-ydzdb3\",\"record\":{\"index\":0,\"kind\":\"agent\",\"hash\":\"46720c3572331e54207c25c595a6d8b203f23bb6bdb53f5add980010b65376a8\",\"path\":\"2:21<6:3\",\"inputsHash\":\"f75a5384a92deff641d090b6377fecc34ccdc4cb7725afb2f05fb0b0ce374831\",\"label\":\"first\",\"outcome\":\"result\",\"origin\":\"runner\",\"attempts\":1,\"resolvedCwd\":\"[REDACTED]\",\"settlementOrdinal\":1,\"scope\":\"mwsrl6pk-ydzdb3\"}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"1875a28c3360c56de08f25a7f719580e\",\"runId\":\"mwsrl6pk-ydzdb3\",\"seq\":4,\"timestamp\":\"2026-11-23T04:27:15.930Z\",\"event\":{\"type\":\"journal\",\"runId\":\"mwsrl6pk-ydzdb3\",\"scope\":\"mwsrl6pk-ydzdb3\",\"entry\":{\"index\":0,\"hash\":\"46720c3572331e54207c25c595a6d8b203f23bb6bdb53f5add980010b65376a8\",\"result\":{\"preview\":\"\\\"one\\\"\",\"redacted\":false,\"truncated\":false},\"call\":{\"kind\":\"agent\",\"label\":\"first\"},\"kind\":\"agent\",\"scope\":\"mwsrl6pk-ydzdb3\"}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"1875a28c3360c56de08f25a7f719580e\",\"runId\":\"mwsrl6pk-ydzdb3\",\"seq\":5,\"timestamp\":\"2026-11-23T04:27:15.933Z\",\"event\":{\"type\":\"agentEnd\",\"runId\":\"mwsrl6pk-ydzdb3\",\"scope\":\"mwsrl6pk-ydzdb3\",\"label\":\"first\",\"result\":{\"preview\":\"\\\"one\\\"\",\"redacted\":false,\"truncated\":false},\"tokens\":8,\"worktree\":\"[REDACTED]\",\"callIndex\":0},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"1875a28c3360c56de08f25a7f719580e\",\"runId\":\"mwsrl6pk-ydzdb3\",\"seq\":6,\"timestamp\":\"2026-11-23T04:27:15.938Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsrl6pk-ydzdb3\",\"scope\":\"mwsrl6pk-ydzdb3\",\"label\":\"second\",\"prompt\":\"Write the second part\",\"callIndex\":1,\"path\":\"3:22\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n",
+  "lock": {
+    "runId": "mwsrl6pk-ydzdb3",
+    "runPath": "__ROOT__/home/runs/projects/home-20f2231daa61/runs/mwsrl6pk-ydzdb3.json",
+    "pid": "__PID__",
+    "startedAt": "2026-11-23T04:27:15.903Z",
+    "token": "66604-mwsrl6pr-0s58zlfwrs4"
+  }
+}

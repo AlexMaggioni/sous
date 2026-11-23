@@ -10,8 +10,8 @@ import { listQuestions, readQuestion, removeRunQuestions, writeAnswer, type Ques
 import { createRun, logFile, startWorker, type CreateRunRequest } from "./launch.js";
 import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
-import { readEventsAfter, readState, readStates, removeRunFiles, type StoreFs } from "./store.js";
-import { currentWorkflows, managerFor } from "./worker.js";
+import { readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
+import { currentWorkflows, stopColdRun } from "./worker.js";
 
 /** A question a run asks, as the inbox holds it. */
 export type RunQuestion = Question;
@@ -308,7 +308,7 @@ export function stopRun(paths: HomePaths, runId: string): { outcome: StopOutcome
     process.kill(record.pid!, "SIGTERM");
     return { outcome: "stopping" };
   }
-  const result = managerFor(paths, record.projectDir).stopPersistedRun(record.runId);
+  const result = stopColdRun(paths, record);
   removeRunQuestions(paths, record.runId);
   if (result.outcome === "already-terminal") return { outcome: "already-ended", ...(result.state?.status ? { status: result.state.status } : {}) };
   if (result.outcome === "missing") return { outcome: "never-started" };
@@ -461,7 +461,7 @@ export function discardRun(paths: HomePaths, runId: string, options: { remove?: 
 
 /** Delete a run's saved state, record, workflow snapshot and logs. Its worktrees stay. */
 export function forgetRun(paths: HomePaths, record: RunRecord): void {
-  managerFor(paths, record.projectDir).deleteRun(record.runId);
+  removeEngineRun(paths, record.runId);
   removeRunFiles(paths, record);
 }
 

@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { createRun } from "../../src/runs/launch.js";
-import { managerFor, runWorker } from "../../src/runs/worker.js";
+import { readState } from "../../src/runs/store.js";
+import { runWorker } from "../../src/runs/worker.js";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
 import { setup } from "./fixture.js";
 
@@ -56,8 +57,8 @@ function standIn(): { runner: AgentRunner; seen: Seen[] } {
 const quiet = () => {};
 
 /** Each call's hash from the saved journal, with what the call record keeps beside it. */
-function pins(paths: Parameters<typeof managerFor>[0], projectDir: string, runId: string) {
-  const state = managerFor(paths, projectDir).getPersistence().load(runId);
+function pins(paths: Parameters<typeof readState>[0], runId: string) {
+  const state = readState(paths, runId);
   assert.ok(state, "the run was saved");
   const journal = new Map((state.journal ?? []).map((entry) => [entry.index, entry.hash]));
   return Object.fromEntries(
@@ -95,7 +96,7 @@ await agent('Isolated step', { label: 'isolated', agentType: 'isolated' })
 return 'done'`,
     );
     assert.equal(run.result?.status, "completed");
-    assert.deepEqual(pins(run.paths, run.projectDir, run.record.runId), {
+    assert.deepEqual(pins(run.paths, run.record.runId), {
       plain: { hash: "bdb6845eaa3d2a5929d99f03b20e28523f7177047d889e53d4b09fea7c37bd5a", model: null, inputs: "50526967a1114655a6e0cda28feeb866221cea7710b83d3f107ee67d01c126a4" },
       haiku: { hash: "4456e2f3ac6a997389463a97536dc4693b690ba24321fe7da9f5dd0ecd57bed9", model: "claude/haiku", inputs: "78ee4d72b673292e77b1e676bb6178a72e0a88cf33a30b64c37880c2f09fba23" },
       reviewer: { hash: "e39a1105d357ac13500f89dd9902e484fb4f71b849809dc3603963ae8d0bf8b4", model: "claude/haiku", inputs: "a3952b706b9bfba2eceb055685ac1b588ba96e32cbc4fa0da0023c7249687288" },
@@ -133,7 +134,7 @@ return 'done'`,
       { defaultModel: "codex/gpt-run", overrides: { over: { model: "claude/sonnet" } } },
     );
     assert.equal(run.result?.status, "completed");
-    assert.deepEqual(pins(run.paths, run.projectDir, run.record.runId), {
+    assert.deepEqual(pins(run.paths, run.record.runId), {
       "run model": { hash: "d38fddfe6d05571a0b52525572c88e1a5c6d744cb6330e8198bd8ba56a069e71", model: "codex/gpt-run", inputs: "729ed414f1a3e5aad773472781b92784e1be3c05f2119a321bf75ddd5c8f03a6" },
       over: { hash: "68e91f31b3485dca4a1740f0cee01c147201ca2d6ba338d984f86980d81ce4cc", model: "claude/sonnet", inputs: "d98b23dc15c655f8e2bb9c2225926443cbf899e86e6ccf25883f4ae6224eeb4e" },
       "no block model": { hash: "469b59402c840102568d780b8fe262a98e7498a06232a9b911f8c4bb118d997e", model: "codex/gpt-run", inputs: "8791aac3341f6fa57b7d5755ae96add8187955e941eb4cbe2a78d5b0014a4cca" },
@@ -155,7 +156,7 @@ await agent('Phase step', { label: 'phase route' })
 return 'done'`,
     );
     assert.equal(run.result?.status, "completed");
-    assert.deepEqual(pins(run.paths, run.projectDir, run.record.runId), {
+    assert.deepEqual(pins(run.paths, run.record.runId), {
       "meta model": { hash: "bc416053513b448327ee5ccf02b57968fbc6b65979f6f0eaebd660f9e89e2008", model: "claude/sonnet", inputs: "1f44a396337c4fc7f7211363bce97e2982fd6e548002d8c46c6499ca8004ea60" },
       "phase route": { hash: "00b665ce16abc2aa2539303eed78ed45eddc99dd1a1525f1c159b4aba3f9c8e8", model: "codex/gpt-phase", inputs: "8543e816715270f2b832b4579210b8be9e8db14950a8c468175e50d36ce249fb" },
     });
@@ -174,7 +175,7 @@ return 'done'`,
     // tier is gone. The hash still holds "tier": null, so the pins above keep their bytes.
     assert.equal(run.result?.status, "failed");
     assert.equal(run.result?.reason, 'tier is gone. Set the model with model, such as "claude/haiku", or name an agent with agentType.');
-    assert.deepEqual(pins(run.paths, run.projectDir, run.record.runId), {});
+    assert.deepEqual(pins(run.paths, run.record.runId), {});
     assert.equal(run.seen.length, 0, "a step with a tier never reaches the runner");
   });
 });

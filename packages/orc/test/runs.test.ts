@@ -27,7 +27,10 @@ import { createRun } from "../../engine/dist/runs/launch.js";
 import { knownProjects } from "../../engine/dist/runs/home.js";
 import { updateRecord } from "../../engine/dist/runs/records.js";
 import { tick } from "../../engine/dist/runs/service.js";
-import { managerFor, runWorker } from "../../engine/dist/runs/worker.js";
+import { workflowProjectPaths } from "../../engine/dist/runs/persistence/project-paths.js";
+import type { PersistedRunState } from "../../engine/dist/runs/persistence/run-persistence.js";
+import { readState } from "../../engine/dist/runs/store.js";
+import { runWorker } from "../../engine/dist/runs/worker.js";
 import type { AgentRunner } from "../../engine/dist/steps/agent-runner.js";
 import { checkWorkflow } from "../src/check.js";
 import { main } from "../src/cli.js";
@@ -44,6 +47,13 @@ delete process.env.AGENTPRISM_DEFAULT_BACKEND;
 function write(file: string, content: string): void {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, content);
+}
+
+/** Write a run's state where the engine saves it, as the engine leaves it, with no manager. */
+function plantState(paths: HomePaths, state: Partial<PersistedRunState> & { runId: string }): void {
+  const { runsDir } = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
+  mkdirSync(runsDir, { recursive: true });
+  writeFileSync(join(runsDir, `${state.runId}.json`), JSON.stringify(state, null, 2));
 }
 
 function setup(workflows: Record<string, string>, config: Record<string, unknown> = {}): { paths: HomePaths; projectDir: string } {
@@ -194,7 +204,7 @@ return { first, second }`,
     const record = createRun(paths, { workflow: "flaky", projectDir, inputs: {} });
     const paused = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal(paused?.status, "paused");
-    const state = managerFor(paths, projectDir).getPersistence().load(record.runId);
+    const state = readState(paths, record.runId);
     assert.equal(state?.pauseReason, "step_failed");
     assert.match(String(state?.reason), /step "second" failed after 2 tries: .*the tests fail/);
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"]);
@@ -224,7 +234,7 @@ return { first, second }`,
     Object.assign(runner, { auth: { canResume: () => loggedIn } });
     const record = createRun(paths, { workflow: "login", projectDir, inputs: {} });
     await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
-    assert.equal(managerFor(paths, projectDir).getPersistence().load(record.runId)?.pauseReason, "auth_required");
+    assert.equal(readState(paths, record.runId)?.pauseReason, "auth_required");
     assert.deepEqual(calls.map((c) => c.label), ["first", "second"]);
 
     const lines: string[] = [];
@@ -275,7 +285,7 @@ return { first, second }`,
     assert.match(errors.join(""), /child changed since .*--latest takes the new version.*--same goes on with the version it started with/);
 
     await runWorker(record.runId, "resume", { paths, inner: runner, log: quiet });
-    assert.equal(managerFor(paths, projectDir).getPersistence().load(record.runId)?.status, "paused");
+    assert.equal(readState(paths, record.runId)?.status, "paused");
     assert.equal(calls.at(-1)?.prompt, "v1", "a plain resume keeps the run's version");
 
     updateRecord(paths, record.runId, { resumeLatest: true });
@@ -322,7 +332,7 @@ return { first, built }`,
     assert.match(errors.join(""), /no step named "build" runs .*Running now: "ticket A: build"/);
 
     await running;
-    const state = managerFor(paths, projectDir).getPersistence().load(record.runId);
+    const state = readState(paths, record.runId);
     assert.equal(state?.status, "paused");
     assert.equal(state?.pauseReason, "step_stopped");
     assert.match(readFileSync(file, "utf8"), /stopping   ticket A: build/);
@@ -350,7 +360,7 @@ return { first, second }`,
     const record = createRun(paths, { workflow: "slow", projectDir, inputs: {} });
     assert.equal(record.timeout, "200ms");
     await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
-    const state = managerFor(paths, projectDir).getPersistence().load(record.runId);
+    const state = readState(paths, record.runId);
     assert.equal(state?.status, "paused");
     assert.equal(state?.pauseReason, "time_limit");
     assert.match(String(state?.reason), /step "second" was stopped: the workflow's time limit of 200ms was reached/);
@@ -409,7 +419,7 @@ return await agent('review', { label: 'reviewer' })`,
     await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
     assert.equal(calls[0]!.options.model, "claude/opus");
     // Each step keeps its own start and end time.
-    const step = managerFor(paths, projectDir).getPersistence().load(record.runId)!.agents[0]!;
+    const step = readState(paths, record.runId)!.agents[0]!;
     assert.ok(step.startedAt && step.endedAt && step.endedAt >= step.startedAt);
   });
 
@@ -588,14 +598,14 @@ await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness 
     assert.deepEqual([claude!.options.effort, codex!.options.effort], ["high", "low"]);
     assert.match(String(codex!.options.instructions), /Answer REVIEW\./);
     // orc show lists each step with its harness and model.
-    const state = managerFor(paths, projectDir).getPersistence().load(record.runId);
+    const state = readState(paths, record.runId);
     assert.deepEqual(state?.agents.map((step) => [step.label, step.model]), [["on claude", "claude/haiku"], ["on codex", "codex/gpt-test"]]);
 
     const before = calls.length;
     const wrong = createRun(paths, { workflow: "wrong", projectDir, inputs: { harness: "claude" } });
     const stopped = await runWorker(wrong.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     assert.notEqual(stopped?.status, "completed");
-    const wrongState = managerFor(paths, projectDir).getPersistence().load(wrong.runId);
+    const wrongState = readState(paths, wrong.runId);
     assert.match(String(wrongState?.reason), /step "fixer": agent "fixer" comes from .*fixer\.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code\. Move it to rulesync/);
     assert.equal(calls.length, before, "the agent never started");
   });
@@ -770,7 +780,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('ticket', { id }, { 
     assert.match(wrong.err, /no step named "checker" runs .*Running now: "ticket A \/ check A: checker"/);
     assert.equal((await orc(paths, "stop", record.runId, "--step", "ticket A / check A: checker")).code, 0);
     await running;
-    const state = managerFor(paths, projectDir).getPersistence().load(record.runId);
+    const state = readState(paths, record.runId);
     assert.equal(state?.status, "paused");
     assert.equal(state?.pauseReason, "step_stopped");
 
@@ -872,7 +882,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
     toOldShape();
     assert.equal((await orc(paths, "stop", runId, "--step", "ticket A: builder")).code, 0);
     await running;
-    assert.equal(managerFor(paths, projectDir).getPersistence().load(runId)?.pauseReason, "step_stopped");
+    assert.equal(readState(paths, runId)?.pauseReason, "step_stopped");
     assert.match(readFileSync(file, "utf8"), /stopping   ticket A: builder/);
 
     // A paused run keeps its nested worktrees, merged or not.
@@ -1032,14 +1042,10 @@ describe("service", () => {
 
     // The run never started, so it counts as unfinished only once the engine knows it. Mark it paused.
     const lines: string[] = [];
-    const manager = managerFor(paths, projectDir);
-    const persistence = manager.getPersistence() as unknown as { save?: (state: unknown) => void };
-    if (typeof persistence.save === "function") {
-      persistence.save({ runId: started[0], status: "paused", pauseReason: "requested", startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), agents: [], logs: [], phases: [] });
-      tick(paths, NO_CLI, { now: new Date(2026, 10, 22, 3, 0), spawn, log: (line) => lines.push(line) });
-      assert.equal(started.length, 1);
-      assert.match(lines.join("\n"), /skipped, run .* has not finished/);
-    }
+    plantState(paths, { runId: started[0]!, status: "paused", pauseReason: "requested", startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), agents: [], logs: [], phases: [] });
+    tick(paths, NO_CLI, { now: new Date(2026, 10, 22, 3, 0), spawn, log: (line) => lines.push(line) });
+    assert.equal(started.length, 1);
+    assert.match(lines.join("\n"), /skipped, run .* has not finished/);
   });
 
   it("starts a workflow on the cron in its meta, once orc has run in its project", () => {
@@ -1090,12 +1096,11 @@ describe("service", () => {
     const { paths, projectDir } = setup({ job: `export const meta = { name: 'job', description: 'j' }\nreturn 1` });
     const cut = createRun(paths, { workflow: "job", projectDir, inputs: {} });
     const limited = createRun(paths, { workflow: "job", projectDir, inputs: {} });
-    const persistence = managerFor(paths, projectDir).getPersistence() as unknown as { save: (state: unknown) => void };
     const at = new Date(2026, 10, 21, 10, 0).toISOString();
     const base = { startedAt: at, updatedAt: at, agents: [], logs: [], phases: [] };
-    persistence.save({ ...base, runId: cut.runId, status: "paused", pauseReason: "interrupted" });
+    plantState(paths, { ...base, runId: cut.runId, status: "paused", pauseReason: "interrupted" });
     // A real paused state keeps its script, and the service resumes only when the file still matches it.
-    persistence.save({ ...base, runId: limited.runId, status: "paused", pauseReason: "usage_limit", resetHint: "Resets at 2026-11-21T10:30:00.000Z", script: readFileSync(limited.file, "utf8") });
+    plantState(paths, { ...base, runId: limited.runId, status: "paused", pauseReason: "usage_limit", resetHint: "Resets at 2026-11-21T10:30:00.000Z", script: readFileSync(limited.file, "utf8") });
     const spawned: string[] = [];
     const told: string[] = [];
     const deps = { spawn: (runId: string) => spawned.push(runId), notify: (title: string, body: string) => told.push(`${title}: ${body}`), log: quiet };

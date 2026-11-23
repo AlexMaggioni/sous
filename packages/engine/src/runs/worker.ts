@@ -9,7 +9,7 @@ import { envFor, lookupAgents, lookupMcpServers, lookupSettings } from "../agent
 import { parseDurationSeconds } from "../orchestrator-globals.js";
 import { openWorkflowDir } from "../workflows/dir.js";
 import type { CheckpointCallContext } from "../workflow.js";
-import { WorkflowManager } from "../workflow-manager.js";
+import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";
 import { dropUnchangedWorktrees, runWorktrees } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, workflowDirs, type HomePaths } from "./home.js";
 import { questionId, readAnswer, removeQuestion, removeRunQuestions, writeQuestion, type Question } from "./inbox.js";
@@ -17,6 +17,7 @@ import { notify } from "./notify.js";
 import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
 import { SlotPool } from "./slots.js";
+import { enginePersistence } from "./store.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
 import { programLookup } from "../programs.js";
 
@@ -63,13 +64,17 @@ export function currentWorkflows(paths: HomePaths, projectDir: string): Record<s
   return out;
 }
 
-/** The engine's manager for a project's runs. */
-export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<ConstructorParameters<typeof WorkflowManager>[0]> = {}) {
+/** The engine's manager for a project's runs. Only this file builds one. */
+function managerFor(paths: HomePaths, projectDir: string, extra: Partial<ConstructorParameters<typeof WorkflowManager>[0]> = {}) {
   const dirs = openWorkflowDir(workflowDirs(projectDir, paths));
   return new WorkflowManager({
     // Run state is keyed to the manager's folder, so every orc manager uses the home folder.
     cwd: paths.home,
     persistenceRoot: paths.runs,
+    persistence: enginePersistence(paths),
+    // The manager leaves other runs' files alone. The pause rule names a run whose worker died,
+    // and a resume repairs its own run.
+    scanStaleRuns: false,
     defaultAgentRetries: loadConfig(paths).retries,
     loadSavedWorkflow: (name) => dirs.resolve(name),
     orchestrator: {
@@ -86,6 +91,12 @@ export function managerFor(paths: HomePaths, projectDir: string, extra: Partial<
     },
     ...extra,
   });
+}
+
+/** Stop a run that no worker runs: a paused run, or one whose worker died. The manager saves it
+ *  as stopped under the run's lease and changes no other run's files. */
+export function stopColdRun(paths: HomePaths, record: RunRecord): PersistedRunStopResult {
+  return managerFor(paths, record.projectDir).stopPersistedRun(record.runId);
 }
 
 /** Run or resume one run in this process. Resolves with the engine's result. */

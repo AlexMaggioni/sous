@@ -1,10 +1,12 @@
-// Plain reads of a run's engine files, and the delete of orc's own files for a run that is
-// forgotten. Only removeRunFiles writes, and no manager is built.
+// Plain reads of a run's engine files, the engine's persistence for the worker's manager, and the
+// delete of a run that is forgotten. Only removeEngineRun and removeRunFiles write, and no manager
+// is built.
 
 import { existsSync, readdirSync, readFileSync, rmdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { workflowProjectPaths } from "./persistence/project-paths.js";
 import { createRunPersistence, loadRunState, type FsLayer, type PersistedRunState } from "./persistence/run-persistence.js";
+import type { RunEventPersistence } from "./persistence/run-event-persistence.js";
 import type { HomePaths } from "./home.js";
 import { logFile } from "./launch.js";
 import { snapshotFile, type RunRecord } from "./records.js";
@@ -18,6 +20,12 @@ const DISK: StoreFs = { existsSync, readdirSync, readFileSync };
  *  folders do not depend on the run's project. */
 function engineFolders(paths: HomePaths) {
   return workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
+}
+
+/** The engine's persistence for orc's runs. The worker hands it to its manager. It writes nothing
+ *  until something saves or takes a lease through it. */
+export function enginePersistence(paths: HomePaths): RunEventPersistence {
+  return createRunPersistence(paths.home, undefined, { persistenceRoot: paths.runs });
 }
 
 /** The run's state as the engine last saved it. A run left running by a worker that died still
@@ -56,8 +64,8 @@ export interface SavedEvent {
 
 /** Each event saved after `seq`, in order. Throws when the run has no event log. */
 export function readEventsAfter(paths: HomePaths, runId: string, seq: number, visit: (saved: SavedEvent) => void): void {
-  // Built on each call: the store writes nothing until something saves through it.
-  const events = createRunPersistence(paths.home, undefined, { persistenceRoot: paths.runs });
+  // Built on each call: it writes nothing, since nothing saves through it.
+  const events = enginePersistence(paths);
   let after = seq;
   for (;;) {
     const page = events.readEvents(runId, { after, limit: 1000 });
@@ -67,7 +75,20 @@ export function readEventsAfter(paths: HomePaths, runId: string, seq: number, vi
   }
 }
 
-/** Delete a run's record, workflow snapshot and logs. The engine deletes its state itself. */
+/** Delete the engine's files for a run: its state, event log and lock. It takes the run's lease
+ *  first, as the engine does, and returns false when another process holds it. */
+export function removeEngineRun(paths: HomePaths, runId: string): boolean {
+  const engine = enginePersistence(paths);
+  const lease = engine.acquireRunLease(runId);
+  if (!lease) return false;
+  try {
+    return engine.delete(runId);
+  } finally {
+    engine.releaseRunLease(lease);
+  }
+}
+
+/** Delete a run's record, workflow snapshot and logs. removeEngineRun deletes the engine's files. */
 export function removeRunFiles(paths: HomePaths, record: RunRecord): void {
   // The engine keeps its own copy of the log, in a folder named after where the run worked.
   const engineLogs = workflowProjectPaths(record.cwd, { persistenceRoot: paths.runs });

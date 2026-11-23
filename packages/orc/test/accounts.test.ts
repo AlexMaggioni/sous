@@ -23,7 +23,8 @@ import {
 import { WorkflowError, WorkflowErrorCode } from "../../engine/dist/errors.js";
 import { createRun } from "../../engine/dist/runs/launch.js";
 import { tick } from "../../engine/dist/runs/service.js";
-import { managerFor, runWorker } from "../../engine/dist/runs/worker.js";
+import { enginePersistence, readState } from "../../engine/dist/runs/store.js";
+import { runWorker } from "../../engine/dist/runs/worker.js";
 import type { AgentRunner } from "../../engine/dist/steps/agent-runner.js";
 import { cmdAccount } from "../src/account-cli.js";
 import { main } from "../src/cli.js";
@@ -97,7 +98,7 @@ function typedLimitRunner(resetAt: string | undefined): AgentRunner {
 
 function atLimit(paths: HomePaths) {
   return (record: RunRecord) => {
-    const state = managerFor(paths, record.projectDir).getPersistence().load(record.runId);
+    const state = readState(paths, record.runId);
     return state?.status === "paused" && state.pauseReason === "usage_limit";
   };
 }
@@ -229,7 +230,7 @@ describe("accounts", () => {
     const lines: string[] = [];
     const paused = await runWorker(record.runId, "start", { paths, inner: runner, log: (line) => lines.push(line) });
     assert.equal(paused?.status, "paused");
-    assert.equal(managerFor(paths, projectDir).getPersistence().load(record.runId)?.pauseReason, "usage_limit");
+    assert.equal(readState(paths, record.runId)?.pauseReason, "usage_limit");
     assert.deepEqual({ ...loadRecord(paths, record.runId)?.limit, at: undefined }, { program: "claude", account: "default", at: undefined });
     const notice = lines.find((line) => line.includes(" limit      "));
     assert.match(String(notice), /Claude Code's own login \(default\) hit its usage limit\. It resets at \d\d:\d\d\. orc account use <name> goes on now on another account\./);
@@ -287,7 +288,7 @@ describe("accounts", () => {
     const { paths, projectDir } = setup({ one: ONE_STEP });
     const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
     await runWorker(record.runId, "start", { paths, inner: typedLimitRunner(undefined), log: quiet });
-    const persistence = managerFor(paths, projectDir).getPersistence();
+    const persistence = enginePersistence(paths);
     const first = persistence.load(record.runId)!;
     assert.equal(first.pauseReason, "usage_limit");
     const pausedAt = first.pausedAt;

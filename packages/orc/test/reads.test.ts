@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { ensureHome, homePaths, type HomePaths } from "@orchestrator/engine";
 // orc does not import these, so the engine entry does not export them. The tests load the
 // engine's built modules by path.
 import { workflowProjectPaths } from "../../engine/dist/runs/persistence/project-paths.js";
 import { tick } from "../../engine/dist/runs/service.js";
+import { readState } from "../../engine/dist/runs/store.js";
 import { main } from "../src/cli.js";
 
 // orc's reads write nothing. The home below is planted with raw writes, the way the worker and
@@ -198,6 +199,27 @@ describe("orc's reads", () => {
     }
     assert.match(printed.get("list")!.out, new RegExp(`${ids.dead}\\s+build\\s+interrupted`));
     assert.match(printed.get(`show ${ids.dead}`)!.out, /status {4}interrupted/);
+  });
+
+  it("let orc stop on a paused run change only that run's files", async () => {
+    const { root, paths, ids } = plant();
+    // A stop saves, and the engine's first save writes project.json. Plant it, as a home where
+    // the engine saved before has it.
+    const engine = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
+    writeFileSync(join(engine.rootDir, "project.json"), `${JSON.stringify({ projectDir: paths.home })}\n`);
+    const before = walk(root);
+    const { code, out } = await orc(paths, ["stop", ids.limit]);
+    assert.equal(code, 0, out);
+    assert.equal(out.trim(), `stopped ${ids.limit}`);
+    assert.equal(readState(paths, ids.limit)?.status, "aborted");
+
+    // Each file that changed is the stopped run's, and each folder that changed holds one of them.
+    const changed = changes(before, walk(root)).map((line) => line.replace(/^\w+ /, ""));
+    const files = changed.filter((path) => !path.endsWith("/"));
+    const folders = changed.filter((path) => path.endsWith("/")).map((path) => path.slice(0, -1));
+    assert.ok(files.includes(join(engine.runsDir, `${ids.limit}.json`)), changed.join("\n"));
+    assert.deepEqual(files.filter((file) => !basename(file).startsWith(`${ids.limit}.`)), [], "no other run's file changed");
+    assert.deepEqual(folders.filter((folder) => !files.some((file) => dirname(file) === folder)), [], "no other folder changed");
   });
 
   it("leave every file but the service's own state as it was after a tick", async () => {

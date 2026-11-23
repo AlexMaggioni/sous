@@ -1,0 +1,169 @@
+{
+  "note": "A run paused at the usage limit, as the code before the typed reset time saved it: resetHint, and no resetAt or pausedAt. Paths under the test's root are __ROOT__.",
+  "record": {
+    "runId": "mwsruvlh-ym33yv",
+    "workflow": "two",
+    "file": "__ROOT__/project/.orchestrator/workflows/two.js",
+    "args": {},
+    "place": "folder",
+    "cwd": "__ROOT__/project",
+    "projectDir": "__ROOT__/project",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "2026-11-23T04:34:48.053Z",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": "__ROOT__/claude"
+      },
+      "codex": {
+        "name": "default",
+        "folder": "__ROOT__/codex"
+      }
+    },
+    "limit": {
+      "program": "claude",
+      "account": "default",
+      "at": "2026-11-23T04:34:48.132Z"
+    }
+  },
+  "workflows": {
+    "two": "export const meta = { name: 'two', description: 'two steps' }\nconst first = await agent('Write the first part', { label: 'first' })\nconst second = await agent('Write the second part', { label: 'second' })\nreturn first + ' ' + second\n"
+  },
+  "state": {
+    "runId": "mwsruvlh-ym33yv",
+    "workflowName": "two",
+    "script": "export const meta = { name: 'two', description: 'two steps' }\nconst first = await agent('Write the first part', { label: 'first' })\nconst second = await agent('Write the second part', { label: 'second' })\nreturn first + ' ' + second\n",
+    "scriptOrigin": {
+      "kind": "inline"
+    },
+    "args": {},
+    "cwd": "__ROOT__/project",
+    "effectiveCwd": "__ROOT__/project",
+    "runtime": {
+      "engineVersion": "4.0.5",
+      "node": "v24.2.0",
+      "v8": "13.6.233.10-node.17",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "resume": {
+      "format": "identity-v1"
+    },
+    "eventStreamId": "d7a26933d35ee620431467109b4a43a4",
+    "eventSeq": 11,
+    "journal": [
+      {
+        "index": 0,
+        "hash": "46720c3572331e54207c25c595a6d8b203f23bb6bdb53f5add980010b65376a8",
+        "result": "one",
+        "kind": "agent",
+        "scope": "mwsruvlh-ym33yv",
+        "call": {
+          "kind": "agent",
+          "label": "first"
+        }
+      }
+    ],
+    "calls": [
+      {
+        "index": 0,
+        "kind": "agent",
+        "hash": "46720c3572331e54207c25c595a6d8b203f23bb6bdb53f5add980010b65376a8",
+        "path": "2:21<6:3",
+        "inputsHash": "f75a5384a92deff641d090b6377fecc34ccdc4cb7725afb2f05fb0b0ce374831",
+        "label": "first",
+        "outcome": "result",
+        "origin": "runner",
+        "attempts": 1,
+        "resolvedCwd": "__ROOT__/project",
+        "settlementOrdinal": 1,
+        "scope": "mwsruvlh-ym33yv"
+      },
+      {
+        "index": 1,
+        "kind": "agent",
+        "hash": "9157555a4dabfac607593ee077cdcca90dfa2553a7562efbd6d7fd9b2fe6615b",
+        "path": "3:22",
+        "inputsHash": "d4b7b0152ef1d69e6df1945a0cf8e341e51044424ef3a2a6483bf04d4a341b17",
+        "label": "second",
+        "outcome": "error",
+        "origin": "runner",
+        "error": {
+          "form": "workflow-error",
+          "message": "You've hit your limit",
+          "code": "PROVIDER_USAGE_LIMIT",
+          "recoverable": false,
+          "agentLabel": "second",
+          "resetHint": "Resets at 2026-11-21T10:30:00.000Z",
+          "providerUsageLimitContext": {
+            "backendId": "claude",
+            "source": "provider",
+            "resetAt": "2026-11-21T10:30:00.000Z"
+          }
+        },
+        "attempts": 1,
+        "resolvedCwd": "__ROOT__/project",
+        "settlementOrdinal": 2,
+        "scope": "mwsruvlh-ym33yv"
+      }
+    ],
+    "callsAllocated": 2,
+    "limits": {
+      "maxAgents": 1000,
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "paused",
+    "reason": "usage_limit",
+    "errorCode": "PROVIDER_USAGE_LIMIT",
+    "pauseReason": "usage_limit",
+    "resetHint": "Resets at 2026-11-21T10:30:00.000Z",
+    "phases": [],
+    "agents": [
+      {
+        "id": 1,
+        "label": "first",
+        "prompt": "Write the first part",
+        "status": "done",
+        "callIndex": 0,
+        "scope": "mwsruvlh-ym33yv",
+        "startedAt": "2026-11-23T04:34:48.079Z",
+        "resultPreview": "one",
+        "tokens": 8,
+        "endedAt": "2026-11-23T04:34:48.125Z"
+      },
+      {
+        "id": 2,
+        "label": "second",
+        "prompt": "Write the second part",
+        "status": "error",
+        "callIndex": 1,
+        "scope": "mwsruvlh-ym33yv",
+        "startedAt": "2026-11-23T04:34:48.126Z",
+        "resultPreview": "null",
+        "error": "You've hit your limit",
+        "errorCode": "PROVIDER_USAGE_LIMIT",
+        "recoverable": false,
+        "tokens": 7,
+        "endedAt": "2026-11-23T04:34:48.139Z"
+      }
+    ],
+    "logs": [
+      "agent second attempt 1/3 failed: You've hit your limit"
+    ],
+    "tokenUsage": {
+      "input": 0,
+      "output": 0,
+      "total": 15,
+      "cost": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "2026-11-23T04:34:48.062Z",
+    "updatedAt": "2026-11-23T04:34:48.153Z",
+    "durationMs": 78
+  },
+  "events": "{\"version\":1,\"streamId\":\"d7a26933d35ee620431467109b4a43a4\",\"runId\":\"mwsruvlh-ym33yv\",\"seq\":1,\"timestamp\":\"2026-11-23T04:34:48.079Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsruvlh-ym33yv\",\"scope\":\"mwsruvlh-ym33yv\",\"label\":\"first\",\"prompt\":\"Write the first part\",\"callIndex\":0,\"path\":\"2:21<6:3\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"d7a26933d35ee620431467109b4a43a4\",\"runId\":\"mwsruvlh-ym33yv\",\"seq\":2,\"timestamp\":\"2026-11-23T04:34:48.099Z\",\"event\":{\"type\":\"tokenUsage\",\"runId\":\"mwsruvlh-ym33yv\",\"scope\":\"mwsruvlh-ym33yv\",\"usage\":{\"input\":0,\"output\":0,\"total\":8,\"cost\":0,\"cacheRead\":0,\"cacheWrite\":0}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"d7a26933d35ee620431467109b4a43a4\",\"runId\":\"mwsruvlh-ym33yv\",\"seq\":3,\"timestamp\":\"2026-11-23T04:34:48.099Z\",\"event\":{\"type\":\"callRecord\",\"runId\":\"mwsruvlh-ym33yv\",\"scope\":\"mwsruvlh-ym33yv\",\"record\":{\"index\":0,\"kind\":\"agent\",\"hash\":\"46720c3572331e54207c25c595a6d8b203f23bb6bdb53f5add980010b65376a8\",\"path\":\"2:21<6:3\",\"inputsHash\":\"f75a5384a92deff641d090b6377fecc34ccdc4cb7725afb2f05fb0b0ce374831\",\"label\":\"first\",\"outcome\":\"result\",\"origin\":\"runner\",\"attempts\":1,\"resolvedCwd\":\"[REDACTED]\",\"settlementOrdinal\":1,\"scope\":\"mwsruvlh-ym33yv\"}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"d7a26933d35ee620431467109b4a43a4\",\"runId\":\"mwsruvlh-ym33yv\",\"seq\":4,\"timestamp\":\"2026-11-23T04:34:48.101Z\",\"event\":{\"type\":\"journal\",\"runId\":\"mwsruvlh-ym33yv\",\"scope\":\"mwsruvlh-ym33yv\",\"entry\":{\"index\":0,\"hash\":\"46720c3572331e54207c25c595a6d8b203f23bb6bdb53f5add980010b65376a8\",\"result\":{\"preview\":\"\\\"one\\\"\",\"redacted\":false,\"truncated\":false},\"call\":{\"kind\":\"agent\",\"label\":\"first\"},\"kind\":\"agent\",\"scope\":\"mwsruvlh-ym33yv\"}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"d7a26933d35ee620431467109b4a43a4\",\"runId\":\"mwsruvlh-ym33yv\",\"seq\":5,\"timestamp\":\"2026-11-23T04:34:48.126Z\",\"event\":{\"type\":\"agentEnd\",\"runId\":\"mwsruvlh-ym33yv\",\"scope\":\"mwsruvlh-ym33yv\",\"label\":\"first\",\"result\":{\"preview\":\"\\\"one\\\"\",\"redacted\":false,\"truncated\":false},\"tokens\":8,\"worktree\":\"[REDACTED]\",\"callIndex\":0},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"d7a26933d35ee620431467109b4a43a4\",\"runId\":\"mwsruvlh-ym33yv\",\"seq\":6,\"timestamp\":\"2026-11-23T04:34:48.126Z\",\"event\":{\"type\":\"agentStart\",\"runId\":\"mwsruvlh-ym33yv\",\"scope\":\"mwsruvlh-ym33yv\",\"label\":\"second\",\"prompt\":\"Write the second part\",\"callIndex\":1,\"path\":\"3:22\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"d7a26933d35ee620431467109b4a43a4\",\"runId\":\"mwsruvlh-ym33yv\",\"seq\":7,\"timestamp\":\"2026-11-23T04:34:48.133Z\",\"event\":{\"type\":\"log\",\"runId\":\"mwsruvlh-ym33yv\",\"scope\":\"mwsruvlh-ym33yv\",\"message\":\"agent second attempt 1/3 failed: You've hit your limit\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"d7a26933d35ee620431467109b4a43a4\",\"runId\":\"mwsruvlh-ym33yv\",\"seq\":8,\"timestamp\":\"2026-11-23T04:34:48.135Z\",\"event\":{\"type\":\"tokenUsage\",\"runId\":\"mwsruvlh-ym33yv\",\"scope\":\"mwsruvlh-ym33yv\",\"usage\":{\"input\":0,\"output\":0,\"total\":15,\"cost\":0,\"cacheRead\":0,\"cacheWrite\":0}},\"projection\":{\"redacted\":false,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"d7a26933d35ee620431467109b4a43a4\",\"runId\":\"mwsruvlh-ym33yv\",\"seq\":9,\"timestamp\":\"2026-11-23T04:34:48.137Z\",\"event\":{\"type\":\"callRecord\",\"runId\":\"mwsruvlh-ym33yv\",\"scope\":\"mwsruvlh-ym33yv\",\"record\":{\"index\":1,\"kind\":\"agent\",\"hash\":\"9157555a4dabfac607593ee077cdcca90dfa2553a7562efbd6d7fd9b2fe6615b\",\"path\":\"3:22\",\"inputsHash\":\"d4b7b0152ef1d69e6df1945a0cf8e341e51044424ef3a2a6483bf04d4a341b17\",\"label\":\"second\",\"outcome\":\"error\",\"origin\":\"runner\",\"error\":{\"form\":\"workflow-error\",\"message\":\"You've hit your limit\",\"code\":\"PROVIDER_USAGE_LIMIT\",\"recoverable\":false,\"agentLabel\":\"second\",\"resetHint\":\"Resets at 2026-11-21T10:30:00.000Z\",\"providerUsageLimitContext\":{\"backendId\":\"claude\",\"source\":\"provider\",\"resetAt\":\"2026-11-21T10:30:00.000Z\"}},\"attempts\":1,\"resolvedCwd\":\"[REDACTED]\",\"settlementOrdinal\":2,\"scope\":\"mwsruvlh-ym33yv\"}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"d7a26933d35ee620431467109b4a43a4\",\"runId\":\"mwsruvlh-ym33yv\",\"seq\":10,\"timestamp\":\"2026-11-23T04:34:48.139Z\",\"event\":{\"type\":\"agentEnd\",\"runId\":\"mwsruvlh-ym33yv\",\"scope\":\"mwsruvlh-ym33yv\",\"label\":\"second\",\"result\":{\"preview\":\"null\",\"redacted\":false,\"truncated\":false},\"tokens\":7,\"worktree\":\"[REDACTED]\",\"error\":\"You've hit your limit\",\"errorCode\":\"PROVIDER_USAGE_LIMIT\",\"recoverable\":false,\"callIndex\":1,\"errorRecord\":{\"form\":\"workflow-error\",\"message\":\"You've hit your limit\",\"code\":\"PROVIDER_USAGE_LIMIT\",\"recoverable\":false,\"agentLabel\":\"second\",\"resetHint\":\"Resets at 2026-11-21T10:30:00.000Z\",\"providerUsageLimitContext\":{\"backendId\":\"claude\",\"source\":\"provider\",\"resetAt\":\"2026-11-21T10:30:00.000Z\"}}},\"projection\":{\"redacted\":true,\"truncated\":false}}\n{\"version\":1,\"streamId\":\"d7a26933d35ee620431467109b4a43a4\",\"runId\":\"mwsruvlh-ym33yv\",\"seq\":11,\"timestamp\":\"2026-11-23T04:34:48.141Z\",\"event\":{\"type\":\"paused\",\"runId\":\"mwsruvlh-ym33yv\",\"scope\":\"mwsruvlh-ym33yv\",\"reason\":\"usage_limit\",\"errorRecord\":{\"form\":\"workflow-error\",\"message\":\"You've hit your limit\",\"code\":\"PROVIDER_USAGE_LIMIT\",\"recoverable\":false,\"agentLabel\":\"second\",\"resetHint\":\"Resets at 2026-11-21T10:30:00.000Z\",\"providerUsageLimitContext\":{\"backendId\":\"claude\",\"source\":\"provider\",\"resetAt\":\"2026-11-21T10:30:00.000Z\"}},\"resetHint\":\"Resets at 2026-11-21T10:30:00.000Z\"},\"projection\":{\"redacted\":false,\"truncated\":false}}\n"
+}

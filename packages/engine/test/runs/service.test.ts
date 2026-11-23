@@ -4,8 +4,7 @@ import { describe, it } from "node:test";
 import { createRun } from "../../src/runs/launch.js";
 import { updateRecord } from "../../src/runs/records.js";
 import { tick } from "../../src/runs/service.js";
-import { managerFor } from "../../src/runs/worker.js";
-import { NO_CLI, setup } from "./fixture.js";
+import { NO_CLI, plantState, setup } from "./fixture.js";
 
 describe("usage limit", () => {
   it("does not resume a run whose workflow changed since it started, tells the user once, and resumes it after --latest", () => {
@@ -13,11 +12,10 @@ describe("usage limit", () => {
     const { paths, projectDir } = setup({ job: job("v1") });
     const kept = createRun(paths, { workflow: "job", projectDir, inputs: {} });
     const edited = createRun(paths, { workflow: "job", projectDir, inputs: {} });
-    const persistence = managerFor(paths, projectDir).getPersistence() as unknown as { save: (state: unknown) => void };
     const at = "2026-11-21T10:00:00.000Z";
-    const paused = { startedAt: at, updatedAt: at, agents: [], logs: [], phases: [], status: "paused", pauseReason: "usage_limit", resetHint: "Resets at 2026-11-21T10:30:00.000Z" };
-    persistence.save({ ...paused, runId: kept.runId, script: readFileSync(kept.file, "utf8") });
-    persistence.save({ ...paused, runId: edited.runId, script: job("v0") });
+    const paused = { startedAt: at, updatedAt: at, agents: [], logs: [], phases: [], status: "paused" as const, pauseReason: "usage_limit", resetHint: "Resets at 2026-11-21T10:30:00.000Z" };
+    plantState(paths, { ...paused, runId: kept.runId, script: readFileSync(kept.file, "utf8") });
+    plantState(paths, { ...paused, runId: edited.runId, script: job("v0") });
 
     const spawned: string[] = [];
     const told: string[] = [];
