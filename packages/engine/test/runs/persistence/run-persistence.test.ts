@@ -190,12 +190,11 @@ test(
       const runsDir = projectPaths.runsDir;
       assert.ok(existsSync(join(runsDir, "custom-root.json")), "run file should land under explicit root");
       assert.ok(writePaths.length > 0, "fsOverride should still observe writes");
-      // Run writes land in runs/; the store's project.json manifest lands at the project root.
       assert.ok(
-        writePaths.every((path) => path.startsWith(projectPaths.rootDir)),
+        writePaths.every((path) => path.startsWith(projectPaths.runsDir)),
         "fsOverride writes should target explicit root",
       );
-      assert.ok(existsSync(join(projectPaths.rootDir, "project.json")), "store manifest should be written");
+      assert.equal(existsSync(join(projectPaths.rootDir, "project.json")), false, "the store writes no manifest");
       assert.equal(existsSync(workflowProjectPaths(cwd).runsDir), false, "homedir default should not receive files");
     } finally {
       rmSync(persistenceRoot, { recursive: true, force: true });

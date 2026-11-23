@@ -44,7 +44,7 @@ function plant(): Planted {
   writeJson(paths.config, { notify: false, defaultPlace: "folder" });
   const projectDir = join(root, "project");
   mkdirSync(join(projectDir, ".orchestrator", "workflows"), { recursive: true });
-  // The engine's folder for orc's runs. No project.json: the engine writes it on a first save.
+  // The engine's folder for orc's runs.
   const engine = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs }).runsDir;
   mkdirSync(engine, { recursive: true });
 
@@ -243,10 +243,7 @@ describe("orc's reads", () => {
 
   it("let orc stop on a paused run change only that run's files", async () => {
     const { root, paths, ids } = plant();
-    // A stop saves, and the engine's first save writes project.json. Plant it, as a home where
-    // the engine saved before has it.
     const engine = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
-    writeFileSync(join(engine.rootDir, "project.json"), `${JSON.stringify({ projectDir: paths.home })}\n`);
     const before = walk(root);
     const { code, out } = await orc(paths, ["stop", ids.limit]);
     assert.equal(code, 0, out);

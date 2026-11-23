@@ -178,7 +178,7 @@ describe("forget, prune and resume on an old run's files", () => {
   // Thirty days after the dead run started.
   const later = new Date(Date.parse("2026-11-23T04:27:15.896Z") + 30 * 86_400_000);
 
-  it("forgetRun removes every file of a run whose worker died, but the home's project.json", () => {
+  it("forgetRun removes every file of a run whose worker died", () => {
     const { paths, runId } = plantOldRun(DEAD);
     const record = loadRecord(paths, runId)!;
     assert.deepEqual(runFiles(paths, record), [
@@ -191,11 +191,7 @@ describe("forget, prune and resume on an old run's files", () => {
       "home/runs/projects/<home key>/runs/<id>.lock",
     ]);
     forgetRun(paths, record);
-    assert.deepEqual(runFiles(paths, record), [
-      "home/runs/projects/<home key>/",
-      "home/runs/projects/<home key>/project.json",
-      "home/runs/projects/<home key>/runs/",
-    ]);
+    assert.deepEqual(runFiles(paths, record), ["home/runs/projects/<home key>/", "home/runs/projects/<home key>/runs/"]);
   });
 
   it("pruneRuns keeps a run whose worker died, since the run did not finish", () => {

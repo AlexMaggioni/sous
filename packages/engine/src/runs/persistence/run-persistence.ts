@@ -15,7 +15,7 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import type { AgentHistoryEntry } from "../../steps/agent-history.js";
 import type { AgentResultProvenance, AgentUsage } from "../../steps/agent-run.js";
 import type {
@@ -343,34 +343,9 @@ export function createRunPersistence(
   const _unlinkSync = fsOverride?.unlinkSync ?? unlinkSync;
   const _writeFileSync = fsOverride?.writeFileSync ?? writeFileSync;
 
-  const paths = workflowProjectPaths(cwd, { persistenceRoot: options.persistenceRoot });
-  const runsDir = paths.runsDir;
-  const legacyRunsDir = paths.legacyRunsDir;
-
-  // Self-describing store: the project key is a one-way hash of the project directory, so a
-  // manifest records the directory itself. Cross-project hosts (the workflow daemon) locate a
-  // bare runId by scanning project stores and re-opening the manifest's directory. Best-effort
-  // and idempotent; legacy stores heal on their next save here. It is written on the first save,
-  // not when the store is built, so a store opened only to read writes nothing.
-  let manifestChecked = false;
-  const ensureManifest = () => {
-    if (manifestChecked) return;
-    manifestChecked = true;
-    try {
-      const manifestPath = join(paths.rootDir, "project.json");
-      if (!_existsSync(manifestPath)) {
-        _mkdirSync(paths.rootDir, { recursive: true });
-        const tmpPath = `${manifestPath}.${process.pid}.tmp`;
-        _writeFileSync(tmpPath, `${JSON.stringify({ projectDir: resolve(cwd) })}\n`);
-        _renameSync(tmpPath, manifestPath);
-      }
-    } catch {
-      // A store without a manifest is still fully functional for its own project.
-    }
-  };
+  const { runsDir, legacyRunsDir } = workflowProjectPaths(cwd, { persistenceRoot: options.persistenceRoot });
 
   const ensureDir = () => {
-    ensureManifest();
     if (!_existsSync(runsDir)) {
       _mkdirSync(runsDir, { recursive: true });
     }
