@@ -27,13 +27,6 @@ describe("openWorkflowDir", () => {
     assert.equal(flows.resolve("anything"), undefined);
   });
 
-  it("resolves relative dirs against options.cwd and exposes absolute dirs", () => {
-    makeDir("rel", { "a.js": script("a") });
-    const flows = openWorkflowDir("rel", { cwd: ROOT });
-    assert.deepEqual(flows.dirs, [join(ROOT, "rel")]);
-    assert.equal(flows.resolve("a"), script("a"));
-  });
-
   it("list() scans per call (fresh), parses meta, sorts by name, and reports parse errors", () => {
     const dir = makeDir("list", { "beta.workflow.js": script("beta"), "alpha.js": script("alpha") });
     const flows = openWorkflowDir(dir);
@@ -74,21 +67,6 @@ describe("openWorkflowDir", () => {
     assert.equal(flows.resolve("sub/real"), undefined);
     assert.equal(flows.resolve(".hidden"), undefined);
     assert.equal(flows.resolve("real"), script("real"));
-  });
-
-  it("read() returns the script or throws with searched dirs and closest matches", () => {
-    const dir = makeDir("read", { "review-pr.workflow.js": script("review-pr"), "release.js": script("release") });
-    const flows = openWorkflowDir(dir);
-    assert.equal(flows.read("review-pr"), script("review-pr"));
-    assert.throws(
-      () => flows.read("reviw-pr"),
-      (error: Error) => {
-        assert.match(error.message, /workflow "reviw-pr" not found/);
-        assert.ok(error.message.includes(dir));
-        assert.match(error.message, /Did you mean: review-pr/);
-        return true;
-      },
-    );
   });
 
   it("resolve() IS a loadSavedWorkflow resolver: unbound, (name) => string | undefined", () => {

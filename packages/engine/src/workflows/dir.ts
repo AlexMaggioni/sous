@@ -1,25 +1,14 @@
 /**
- * openWorkflowDir — a read-only VIEW over one or more directories of workflow-script
- * files, for integrators who keep versioned folders of workflows and don't want to
- * hand-roll readFileSync plumbing or a `loadSavedWorkflow` resolver.
+ * openWorkflowDir: a read-only view over folders of workflow scripts. Opening one reads nothing,
+ * and each call reads the folders again, so a long-lived view sees a checkout or a save at once.
+ * A folder that does not exist gives no workflows.
  *
- * Construction does NO I/O — no directory is created, nothing is scanned or cached.
- * Every method reads the filesystem at call time, so a long-lived view always reflects
- * the current working tree (these folders are typically git-versioned; a cached scan
- * would serve stale scripts after a checkout/pull/save). Directories that don't exist
- * simply contribute nothing — a normal state for an optional shared/user tier.
+ * The file's stem is the workflow's name (`review-pr.workflow.js` or `review-pr.js` give
+ * "review-pr"). The first folder that has a name wins, and in one folder `.workflow.js` beats `.js`.
  *
- * Name convention: the filename stem is the workflow name (`review-pr.workflow.js` or
- * `review-pr.js` => "review-pr"). Across dirs, the FIRST hit wins (list dirs in
- * precedence order, e.g. project before shared); within a dir, the more specific
- * `.workflow.js` beats `.js`.
- *
- * `resolve(name)` deliberately matches the `loadSavedWorkflow` contract
- * (`(name) => string | undefined`), so a view plugs straight into WorkflowManager /
- * WorkflowRunOptions and serves nested `workflow("<name>")` calls. Because the engine
- * hands that hook whatever string the script passed — including full INLINE nested
- * scripts — resolve() strictly validates the name shape and returns undefined for
- * anything else (which also blocks path traversal out of the configured dirs).
+ * `resolve(name)` is the manager's `loadSavedWorkflow` hook, which also gets inline nested
+ * scripts. It returns undefined for anything that is not one plain name, which also keeps a
+ * lookup inside the folders.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -43,25 +32,13 @@ export interface WorkflowDirEntry {
   error?: string;
 }
 
-/** A read-only, per-call-fresh view over directories of workflow scripts. */
+/** A read-only view over folders of workflow scripts that reads them again on each call. */
 export interface WorkflowDir {
-  /** The directories this view searches, absolute, in precedence order. */
-  readonly dirs: readonly string[];
-  /** Scan now and index every workflow file (first hit per name wins). Sorted by name. */
+  /** Every workflow file, the first per name winning, sorted by name. */
   list(): WorkflowDirEntry[];
-  /**
-   * Resolve a workflow name to its script text; undefined when no file matches (or the
-   * string isn't a plausible name — e.g. an inline script). Matches the
-   * `loadSavedWorkflow` contract, so pass it directly as that option.
-   */
+  /** A workflow's script by name, or undefined when no file matches or the text is not one
+   *  plain name, such as an inline script. It is the `loadSavedWorkflow` hook as it stands. */
   resolve(name: string): string | undefined;
-  /** Like resolve(), but throws a diagnosable error (searched dirs + closest matches). */
-  read(name: string): string;
-}
-
-export interface OpenWorkflowDirOptions {
-  /** Base for resolving relative directory paths. Default process.cwd(). */
-  cwd?: string;
 }
 
 /** Extension priority within a directory: more specific first. */
@@ -84,10 +61,9 @@ function stemOf(fileName: string): { stem: string; priority: number } | undefine
   return undefined;
 }
 
-/** Open a read-only view over `dir` (or several dirs in precedence order). No I/O here. */
-export function openWorkflowDir(dir: string | string[], options: OpenWorkflowDirOptions = {}): WorkflowDir {
-  const base = options.cwd ?? process.cwd();
-  const dirs = (Array.isArray(dir) ? dir : [dir]).map((d) => (isAbsolute(d) ? d : resolvePath(base, d)));
+/** Open a view over `dir`, or several folders with the first winning. It reads nothing yet. */
+export function openWorkflowDir(dir: string | string[]): WorkflowDir {
+  const dirs = (Array.isArray(dir) ? dir : [dir]).map((d) => resolvePath(d));
   if (dirs.length === 0) throw new Error("openWorkflowDir requires at least one directory");
 
   /** name -> winning file, honoring dir precedence then extension priority. */
@@ -136,7 +112,6 @@ export function openWorkflowDir(dir: string | string[], options: OpenWorkflowDir
   };
 
   return {
-    dirs,
     resolve,
     list(): WorkflowDirEntry[] {
       const entries: WorkflowDirEntry[] = [];
@@ -149,16 +124,6 @@ export function openWorkflowDir(dir: string | string[], options: OpenWorkflowDir
         }
       }
       return entries.sort((a, b) => a.name.localeCompare(b.name));
-    },
-    read(name: string): string {
-      const script = resolve(name);
-      if (script !== undefined) return script;
-      const known = [...scan().keys()];
-      const suggestions = closestMatches(name, known);
-      throw new Error(
-        `workflow "${name}" not found. Searched (for <name>{${WORKFLOW_FILE_EXTENSIONS.join(",")}}): ${dirs.join(", ")}.` +
-          (suggestions.length ? ` Did you mean: ${suggestions.join(", ")}?` : known.length ? ` Available: ${known.sort().join(", ")}.` : " No workflow files found."),
-      );
     },
   };
 }
@@ -199,32 +164,4 @@ export function resolveWorkflow(paths: HomePaths, projectDir: string, nameOrPath
   const { meta, refs } = readWorkflowScript(script);
   const name = basename(file).replace(/(\.workflow)?\.m?js$/, "");
   return { name, file, script, meta, extras: workflowExtras(meta), refs };
-}
-
-/** Tiny edit-distance ranking for read()'s did-you-mean; good enough for CLI typos. */
-function closestMatches(target: string, candidates: string[], max = 3): string[] {
-  const t = target.toLowerCase();
-  return candidates
-    .map((name) => ({ name, distance: editDistance(t, name.toLowerCase()) }))
-    .filter((c) => c.distance <= Math.max(2, Math.floor(t.length / 3)))
-    .sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name))
-    .slice(0, max)
-    .map((c) => c.name);
-}
-
-function editDistance(a: string, b: string): number {
-  if (a === b) return 0;
-  const prev = new Array<number>(b.length + 1);
-  for (let j = 0; j <= b.length; j++) prev[j] = j;
-  for (let i = 1; i <= a.length; i++) {
-    let diagonal = prev[0];
-    prev[0] = i;
-    for (let j = 1; j <= b.length; j++) {
-      const insertOrDelete = Math.min(prev[j], prev[j - 1]) + 1;
-      const substitute = diagonal + (a[i - 1] === b[j - 1] ? 0 : 1);
-      diagonal = prev[j];
-      prev[j] = Math.min(insertOrDelete, substitute);
-    }
-  }
-  return prev[b.length];
 }
