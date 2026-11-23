@@ -41,10 +41,6 @@ export interface WorkflowSnapshot {
   currentPhase?: string;
   logs: string[];
   agents: WorkflowAgentSnapshot[];
-  agentCount: number;
-  runningCount: number;
-  doneCount: number;
-  errorCount: number;
   durationMs?: number;
   result?: unknown;
   tokenUsage?: {
@@ -56,13 +52,6 @@ export interface WorkflowSnapshot {
     cacheWrite?: number;
   };
   runId?: string;
-}
-
-export function recomputeWorkflowSnapshot(snapshot: WorkflowSnapshot): WorkflowSnapshot {
-  const runningCount = snapshot.agents.filter((agent) => agent.status === "running").length;
-  const doneCount = snapshot.agents.filter((agent) => agent.status === "done").length;
-  const errorCount = snapshot.agents.filter((agent) => agent.status === "error").length;
-  return { ...snapshot, agentCount: snapshot.agents.length, runningCount, doneCount, errorCount };
 }
 
 export function preview(value: unknown, max = 80): string {

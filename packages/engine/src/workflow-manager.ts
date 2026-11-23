@@ -32,7 +32,7 @@ import type {
   RunPausedPayload,
   RunPauseReason,
 } from "./run-events.js";
-import { foldStep, preview, recomputeWorkflowSnapshot, type WorkflowSnapshot } from "./display.js";
+import { foldStep, preview, type WorkflowSnapshot } from "./display.js";
 import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
@@ -229,8 +229,6 @@ export interface ExecOptions {
   resumeFromRunId?: string;
   /** Cap on total agents for this run. */
   maxAgents?: number;
-  /** Called with the live snapshot on every progress event. */
-  onProgress?: (snapshot: WorkflowSnapshot) => void;
   /** Max concurrent agents for this execution. */
   concurrency?: number;
   /**
@@ -324,15 +322,9 @@ function freshExecution() {
   } satisfies Partial<ManagedRun>;
 }
 
-/** A snapshot's empty agent list and counts, as each execution starts. */
+/** A snapshot's empty agent list, as each execution starts. */
 function noAgents() {
-  return {
-    agents: [],
-    agentCount: 0,
-    runningCount: 0,
-    doneCount: 0,
-    errorCount: 0,
-  } satisfies Partial<WorkflowSnapshot>;
+  return { agents: [] } satisfies Partial<WorkflowSnapshot>;
 }
 
 /** A saved run whose inputs hashes this build computes the same way pairs on them too. */
@@ -862,8 +854,7 @@ export class WorkflowManager extends EventEmitter {
   }
 
   /**
-   * Run a workflow and wait for it to end. The run is tracked like a background run, and
-   * `onProgress` fires with the current snapshot on every progress event.
+   * Run a workflow and wait for it to end. The run is tracked like a background run.
    *
    * Unlike the background path, runSync resolves to a final WorkflowRunResult, with status
    * completed, paused, failed or aborted, even when the run does not complete. The worker reads
@@ -1154,7 +1145,6 @@ export class WorkflowManager extends EventEmitter {
   ): Promise<WorkflowRunResult> {
     const {
       maxAgents,
-      onProgress,
       concurrency,
       agentRetries,
       confirm,
@@ -1164,14 +1154,6 @@ export class WorkflowManager extends EventEmitter {
     const runResume = resume ?? (exec.resumeJournal ? { rows: journalRows(managed.runId, exec.resumeJournal) } : undefined);
     const resolvedConcurrency = concurrency ?? this.concurrency;
     const resolvedAgentRetries = agentRetries ?? this.defaultAgentRetries;
-    // Sync the derived counters (agentCount/runningCount/doneCount/errorCount) from the
-    // agents array BEFORE every emission: the mutation sites below only push/patch
-    // `snapshot.agents`, so without this the counters stay frozen at their initial 0s and
-    // every onProgress consumer reads "0/0" forever.
-    const progress = () => {
-      Object.assign(managed.snapshot, recomputeWorkflowSnapshot(managed.snapshot));
-      onProgress?.(managed.snapshot);
-    };
     const publish = (event: EngineRunEvent, actions?: RunEventPublicationActions) =>
       this.publishRunEvent(managed, event, () => this.persistRun(managed), actions);
     try {
@@ -1259,7 +1241,6 @@ export class WorkflowManager extends EventEmitter {
             scope: context?.scope ?? managed.runId,
             message,
           }));
-          progress();
         },
         onPhase: (title, context) => {
           managed.snapshot.currentPhase = title;
@@ -1271,20 +1252,17 @@ export class WorkflowManager extends EventEmitter {
             scope: context?.scope ?? managed.runId,
             title,
           }));
-          progress();
         },
         onAgentStart: (event) => {
           if (this.dropPostTerminal(managed, "agentStart")) return;
           foldStep(managed.snapshot.agents, { type: "agentStart", ...event }, new Date().toISOString());
           publish(this.createRunEvent("agentStart", { runId: managed.runId, ...event }));
-          progress();
         },
         onAgentEnd: (event) => {
           if (this.dropPostTerminal(managed, "agentEnd")) return;
           foldStep(managed.snapshot.agents, { type: "agentEnd", ...event, resultPreview: preview(event.result) }, new Date().toISOString());
           publish(this.createRunEvent("agentEnd", { runId: managed.runId, ...event }));
           this.completeAgentCancellation(managed, event);
-          progress();
         },
         onAgentHistory: (event) => {
           if (this.dropPostTerminal(managed, "agentHistory")) return;
@@ -1293,7 +1271,6 @@ export class WorkflowManager extends EventEmitter {
           );
           if (agentSnapshot) agentSnapshot.history = event.history;
           publish(this.createRunEvent("agentHistory", { runId: managed.runId, ...event }));
-          progress();
         },
         onTokenUsage: (usage, context) => {
           managed.snapshot.tokenUsage = usage;
@@ -1302,7 +1279,6 @@ export class WorkflowManager extends EventEmitter {
             scope: context?.scope ?? managed.runId,
             usage,
           }));
-          progress();
         },
       });
 
@@ -1916,7 +1892,6 @@ export class WorkflowManager extends EventEmitter {
       maxAgents: managed.limits?.maxAgents,
       concurrency: managed.limits?.concurrency,
       agentRetries: managed.limits?.agentRetries,
-      onProgress: exec.onProgress,
       confirm: exec.confirm,
       onNestedWorkflow: exec.onNestedWorkflow,
       ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),

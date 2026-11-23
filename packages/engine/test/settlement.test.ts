@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AgentHistoryEntry } from "../src/steps/agent-history.js";
 import type { AgentResultProvenance, AgentUsage, StepRequest } from "../src/steps/agent-run.js";
 import type { WorkflowCallRecord } from "../src/workflow-result.js";
 import { runWorkflow } from "../src/workflow.js";
-import { WorkflowManager } from "../src/workflow-manager.js";
 
 const script = `export const meta = { name: 'settlement', description: 'settlement tests' }
 return await agent('work', { label: 'work' })`;
@@ -64,36 +60,6 @@ describe("guarded exactly-once settlement", () => {
     assert.equal(delivered, 1);
     assert.equal(result.calls?.length, 1);
     assert.equal(result.calls?.[0].outcome, "result");
-  });
-
-  it("does not let a terminal onProgress throw retry or fail a managed success", async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "settlement-progress-"));
-    const root = mkdtempSync(join(tmpdir(), "settlement-progress-root-"));
-    try {
-      let runs = 0;
-      const manager = new WorkflowManager({
-        cwd,
-        persistenceRoot: root,
-        agent: { async run() { runs++; return "ok"; } },
-      });
-      let threw = false;
-      const result = await manager.runSync(script, undefined, {
-        agentRetries: 2,
-        onProgress: (snapshot) => {
-          if (snapshot.doneCount === 1 && !threw) {
-            threw = true;
-            throw new Error("terminal progress exploded");
-          }
-        },
-      });
-      assert.equal(result.status, "completed");
-      assert.equal(result.result, "ok");
-      assert.equal(runs, 1);
-      assert.equal(result.calls?.length, 1);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(root, { recursive: true, force: true });
-    }
   });
 
   it("uses the last valid cumulative usage snapshot, copies at receipt, and sums attempts", async () => {
