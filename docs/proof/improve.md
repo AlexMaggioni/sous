@@ -73,6 +73,9 @@ package, and passes.
 - **Smaller fixes.** One reader for the home's JSON files, one interrupted reason, a check that
   each pause reason has a row in the rule, and a run store interface with only what the manager
   calls.
+- **One name for the programs.** `HarnessId` from the harnesses package names Claude Code and
+  Codex in the engine too, where `Harness` and `Program` named them before. The manager lost a
+  field nothing read and the comments that described an old host.
 
 [The engine README](../../packages/engine/README.md) describes the result.
 
