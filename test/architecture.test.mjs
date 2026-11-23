@@ -89,12 +89,27 @@ const HOMES = [
 /** The engine exports only what orc calls, and the harnesses only what the engine calls. */
 const CALLERS = { engine: "orc", harnesses: "engine" };
 
+/**
+ * Files that never reach certain files of their package at run time, through their own imports
+ * or through the files they import. Importing a type is fine. A path that ends in "/" names a
+ * folder.
+ */
+const NEVER_REACH = [
+  {
+    // The core runs workflows. The worker hands it the places of a run tree, and the core never
+    // picks a home or writes the run record.
+    from: ["packages/engine/src/workflow.ts", "packages/engine/src/workflow-manager.ts", "packages/engine/src/places/"],
+    never: ["packages/engine/src/runs/records.ts", "packages/engine/src/runs/home.ts"],
+  },
+];
+
 // ── The breaks of today. They can only go. ──────────────────────────────────────────────────────
 
 const BREAKS = {
   packages: [],
   imports: [],
   homes: [],
+  reach: [],
   exports: {},
   contract: []
 };
@@ -127,7 +142,10 @@ function role(dir) {
   return OLD_NAMES[dir];
 }
 
-/** Imports of one file: the specifier and the names it takes, read from the parsed file. */
+/**
+ * Imports of one file: the specifier, the names it takes, and whether it takes only types, read
+ * from the parsed file.
+ */
 function importsOf(file) {
   const text = readFileSync(file, "utf8");
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
@@ -145,7 +163,11 @@ function importsOf(file) {
         if (node.exportClause && ts.isNamedExports(node.exportClause)) for (const el of node.exportClause.elements) names.push((el.propertyName ?? el.name).text);
         else star = true;
       }
-      found.push({ spec: node.moduleSpecifier.text, names, star });
+      const elements = (bindings && ts.isNamedImports(bindings) ? bindings.elements : undefined)
+        ?? (node.exportClause && ts.isNamedExports(node.exportClause) ? node.exportClause.elements : undefined);
+      const typeOnly = Boolean(clause?.isTypeOnly || (ts.isExportDeclaration(node) && node.isTypeOnly)
+        || (!clause?.name && elements?.length && elements.every((el) => el.isTypeOnly)));
+      found.push({ spec: node.moduleSpecifier.text, names, star, typeOnly });
     } else if (ts.isCallExpression(node) && node.arguments.length === 1 && ts.isStringLiteral(node.arguments[0])) {
       const callee = node.expression;
       if (callee.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(callee) && callee.text === "require")) {
@@ -265,6 +287,32 @@ function homeBreaks({ files }) {
   return [...found].sort();
 }
 
+function reachBreaks({ files }) {
+  const found = new Set();
+  const known = new Map(files.map(({ file, path }) => [path, file]));
+  for (const { from, never } of NEVER_REACH) {
+    const starts = [...known.keys()].filter((path) => from.some((place) => (place.endsWith("/") ? path.startsWith(place) : path === place)));
+    for (const start of starts) {
+      // Each file this one reaches at run time, and the file that imports it on the way.
+      const importer = new Map([[start, undefined]]);
+      const queue = [start];
+      while (queue.length) {
+        const path = queue.shift();
+        for (const { spec, typeOnly } of importsOf(known.get(path))) {
+          if (typeOnly || !spec.startsWith(".")) continue;
+          const target = rel(resolve(dirname(known.get(path)), spec)).replace(/\.js$/, ".ts");
+          if (!known.has(target) || importer.has(target)) continue;
+          importer.set(target, path);
+          if (!never.includes(target)) queue.push(target);
+          else if (path === start) found.add(`${start} imports ${target}`);
+          else found.add(`${start} reaches ${target} through ${path}`);
+        }
+      }
+    }
+  }
+  return [...found].sort();
+}
+
 /** Each exported name of a package's public entry, read by the type checker. */
 function exportedNames(dir) {
   const entry = join(ROOT, "packages", dir, "src", "index.ts");
@@ -319,6 +367,7 @@ const now = {
   packages: packageBreaks(state),
   imports: importBreaks(state),
   homes: homeBreaks(state),
+  reach: reachBreaks(state),
   exports: exportBreaks(state),
   contract: contractBreaks(),
 };
@@ -340,6 +389,7 @@ function compareList(rule) {
 test("only the table's packages exist, under our scope", () => compareList("packages"));
 test("each package imports only what the table allows", () => compareList("imports"));
 test("each idea lives in its one home", () => compareList("homes"));
+test("no file reaches at run time what the table keeps from it", () => compareList("reach"));
 test("each package exports only what its caller imports", () => {
   const lines = [];
   for (const key of new Set([...Object.keys(BREAKS.exports), ...Object.keys(now.exports)])) {
