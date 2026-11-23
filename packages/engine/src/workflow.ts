@@ -107,8 +107,6 @@ export type EngineRunResult<T = unknown> = Omit<WorkflowRunResult<T>, "status" |
 export interface WorkflowAgentOptions {
   /** Base working directory for the run (e.g. the project root). */
   cwd?: string;
-  /** Extra system guidance prepended to every subagent task. */
-  instructions?: string;
   /**
    * Host-pinned model/backend for calls that author no model and have no agentType model or
    * phase/meta route. Unlike a runner's ambient default, this participates in the call
@@ -1319,7 +1317,6 @@ async function runLevel<T>(
                   schema: agentOptions.schema,
                   signal: attemptSignal,
                   instructions: buildAgentInstructions(
-                    options.instructions,
                     assignedPhase,
                     agentOptions,
                     route.prompt,
@@ -2211,14 +2208,12 @@ function hasModelConfigOption(configOptions: Record<string, string | boolean> | 
 }
 
 function buildAgentInstructions(
-  runInstructions: string | undefined,
   phase: string | undefined,
   options: AgentOptions,
   agentPrompt: string | undefined,
   resolvedIsolation?: "worktree",
 ): string | undefined {
   const lines: string[] = [];
-  if (runInstructions) lines.push(runInstructions);
   // A found agent gives its own prompt, the route's. Only fall back to the prose hint when the
   // agentType named no known agent.
   if (agentPrompt) lines.push(agentPrompt);
