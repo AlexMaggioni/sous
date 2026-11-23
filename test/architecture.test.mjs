@@ -260,6 +260,27 @@ const PINS = [
   ] },
 ];
 
+/**
+ * Size caps. A source file has at most FILE_LINES lines and a function at most FUNCTION_LINES,
+ * other than the ones LINE_CAPS lists with a cap of their own. A function runs from its first line
+ * to its last, the functions inside it included, as an editor shows it. An unnamed function counts
+ * under the name of the function or variable that holds it. A key is a file, or a file and a
+ * function's name.
+ *
+ * A listed cap only goes down. The test fails when its file or function is SLACK lines under it,
+ * and says to lower it.
+ */
+const FILE_LINES = 850;
+const FUNCTION_LINES = 250;
+const SLACK = 50;
+const LINE_CAPS = {
+  "packages/engine/src/workflow.ts": 2312,
+  "packages/engine/src/workflow-manager.ts": 2084,
+  "packages/engine/src/workflow.ts: runLevel": 1476,
+  "packages/engine/src/workflow.ts: agentImplementation": 780,
+  "packages/engine/src/workflow.ts: runLive": 446,
+};
+
 // ── The breaks of today. They can only go. ──────────────────────────────────────────────────────
 
 const BREAKS = {
@@ -572,6 +593,54 @@ function testBreaks({ tests }) {
   return found.sort();
 }
 
+/** The name a function goes by: its own, its variable's or its property's, with its class. */
+function functionName(node) {
+  const holder = node.parent;
+  const named = node.name ?? (holder && (ts.isVariableDeclaration(holder) || ts.isPropertyAssignment(holder) || ts.isPropertyDeclaration(holder)) ? holder.name : undefined);
+  const name = ts.isConstructorDeclaration(node) ? "constructor" : named?.getText();
+  if (!name) return undefined;
+  const member = ts.isClassLike(holder) ? holder : ts.isPropertyDeclaration(holder) && ts.isClassLike(holder.parent) ? holder.parent : undefined;
+  return member?.name ? `${member.name.text}.${name}` : name;
+}
+
+/** The lines of each source file, and of each function by its name, the longest of a name. */
+function lineCounts({ files }) {
+  const counts = new Map();
+  for (const { file, path } of files) {
+    const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+    const lineOf = (pos) => source.getLineAndCharacterOfPosition(pos).line;
+    counts.set(path, lineOf(source.end) + (source.text.endsWith("\n") ? 0 : 1));
+    const visit = (node, owner) => {
+      let name = owner;
+      if (ts.isFunctionLike(node) && node.body) {
+        name = functionName(node) ?? owner ?? "(unnamed function)";
+        const key = `${path}: ${name}`;
+        counts.set(key, Math.max(counts.get(key) ?? 0, lineOf(node.end) - lineOf(node.getStart()) + 1));
+      }
+      ts.forEachChild(node, (child) => visit(child, name));
+    };
+    visit(source, undefined);
+  }
+  return counts;
+}
+
+/** Each file or function over its cap, and each listed cap that is SLACK lines too high. */
+function sizeBreaks(counts) {
+  const found = [];
+  for (const [key, lines] of counts) {
+    const cap = LINE_CAPS[key] ?? (key.includes(": ") ? FUNCTION_LINES : FILE_LINES);
+    if (lines > cap) found.push(`${key} has ${lines} lines, more than its cap of ${cap}. Split it.`);
+  }
+  for (const [key, cap] of Object.entries(LINE_CAPS)) {
+    const lines = counts.get(key);
+    const general = key.includes(": ") ? FUNCTION_LINES : FILE_LINES;
+    if (lines === undefined) found.push(`${key} is gone. Remove it from LINE_CAPS.`);
+    else if (lines <= general) found.push(`${key} has ${lines} lines, within the cap of ${general} for all. Remove it from LINE_CAPS.`);
+    else if (lines <= cap - SLACK) found.push(`${key} has ${lines} lines, ${cap - lines} under its cap of ${cap}. Lower it to ${lines}.`);
+  }
+  return found.sort();
+}
+
 function scriptBreaks({ dirs }) {
   const found = [];
   if (!existsSync(join(ROOT, TEST_RUNNER))) found.push(`${TEST_RUNNER} is missing`);
@@ -594,6 +663,7 @@ const now = {
   contract: contractBreaks(),
   tests: testBreaks(state),
   scripts: scriptBreaks(state),
+  sizes: sizeBreaks(lineCounts(state)),
 };
 
 if (process.env.ARCH_PRINT) console.log(JSON.stringify(now, null, 2));
@@ -627,6 +697,7 @@ test("each package exports only what its caller imports", () => {
 test("both adapters exist and pass one contract test", () => compareList("contract"));
 test("each test file imports a run-time value of the code it tests", () => compareList("tests"));
 test("each package runs its tests on a temporary home", () => compareList("scripts"));
+test("each file and function stays under its line cap", () => assert.equal(now.sizes.join("\n"), "", now.sizes.join("\n")));
 
 test("each behavior change keeps the test that holds it", () => {
   assert.equal(PINS.length, 36, "docs/proof/improve.md lists 36 behavior changes, and the table holds one row for each");
