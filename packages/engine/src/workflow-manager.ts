@@ -2396,29 +2396,28 @@ export class WorkflowManager extends EventEmitter {
     if (!lease) {
       return { accepted: false };
     }
-    let persisted: PersistedRunState | null;
+    // Every exit releases the lease here, except a run that starts. That run owns the lease
+    // and releases it when it settles.
+    const handOff = { started: false };
     try {
-      persisted = this.persistence.load(runId);
-    } catch (error) {
-      this.persistence.releaseRunLease(lease);
-      throw error;
+      return this.continueUnderLease(runId, exec, lease, handOff);
+    } finally {
+      if (!handOff.started) this.persistence.releaseRunLease(lease);
     }
-    if (!persisted) {
-      this.persistence.releaseRunLease(lease);
-      return { accepted: false };
-    }
-    try {
-      assertExplicitCheckpointProvenance(persisted);
-    } catch (error) {
-      this.persistence.releaseRunLease(lease);
-      throw error;
-    }
-    if (persisted.status === "completed") {
-      this.persistence.releaseRunLease(lease);
-      return { accepted: false };
-    }
+  }
+
+  /** A same-run continuation while the caller holds the run's lease. Sets `handOff.started` once the run owns it. */
+  private continueUnderLease(
+    runId: string,
+    exec: ExecOptions,
+    lease: RunLease,
+    handOff: { started: boolean },
+  ): WorkflowContinuationStart {
+    const persisted = this.persistence.load(runId);
+    if (!persisted) return { accepted: false };
+    assertExplicitCheckpointProvenance(persisted);
+    if (persisted.status === "completed") return { accepted: false };
     if (!persisted.script || persisted.executionMode || persisted.argsUnreplayable) {
-      this.persistence.releaseRunLease(lease);
       return { accepted: false };
     }
     // Same-ID recovery keeps its explicit legacy marker.
@@ -2429,7 +2428,6 @@ export class WorkflowManager extends EventEmitter {
       }
       this.persistence.save(persisted);
     } catch (error) {
-      this.persistence.releaseRunLease(lease);
       throw new WorkflowError(
         `failed to persist legacy resume marker for ${runId}: ${errorMessage(error)}`,
         WorkflowErrorCode.PERSISTENCE_ERROR,
@@ -2479,8 +2477,6 @@ export class WorkflowManager extends EventEmitter {
           {
             afterLive: () => {
               if (publication.eventSeq !== gateEventSeq) saveLegacyGate();
-              this.persistence.releaseRunLease(lease);
-              publication.lease = undefined;
             },
           },
         );
@@ -2521,8 +2517,6 @@ export class WorkflowManager extends EventEmitter {
         {
           afterLive: () => {
             if (publication.eventSeq !== gateEventSeq) saveLegacyGate();
-            this.persistence.releaseRunLease(lease);
-            publication.lease = undefined;
           },
         },
       );
@@ -2549,8 +2543,6 @@ export class WorkflowManager extends EventEmitter {
       try {
         revisionMeta = parseWorkflowScript(revision).meta;
       } catch {
-        this.persistence.releaseRunLease(lease);
-        publication.lease = undefined;
         return { accepted: false };
       }
     }
@@ -2657,34 +2649,28 @@ export class WorkflowManager extends EventEmitter {
       // The new version starts with no call rows. Its seed holds the rows of the version before,
       // so a second pause keeps the steps the new version has not reached. A scope saved with no
       // call rows keeps its journal, and pairs by index.
-      try {
-        const journal = [...managed.journal, ...(managed.nestedJournal ?? [])];
-        managed.resumeSeed = revisionSeed({ runId, journal, calls: managed.calls, seed: persisted.resumeSeed });
-        const old = oldDataRows({ sourceRunId: runId, runId, journal, calls: managed.calls });
-        managed.journal = latestRows(old.filter((entry) => entry.scope === runId));
-        const nestedJournal = latestNestedRows(old, runId);
-        if (nestedJournal.length > 0) managed.nestedJournal = nestedJournal;
-        else delete managed.nestedJournal;
-        managed.calls = [];
-        managed.scriptRevisions = [
-          ...(persisted.scriptRevisions ?? []),
-          { generation, scriptHash: hashScriptText(revision), revisedAt: new Date().toISOString() },
-        ];
-        managed.newRunResume = true;
-        occurrenceResume = { strategy: "occurrence-v1", sourceRunId: runId, requestedPolicy: "auto" };
-        this.initializeResumeReporting(managed, persisted, occurrenceResume, seedPrefix(managed.resumeSeed, managed.journal));
-        resumeRows = buildResumeRows({
-          runId,
-          journal: [...managed.journal, ...(managed.nestedJournal ?? [])],
-          calls: [],
-          seed: managed.resumeSeed,
-          key: pairingKey(persisted.runtime, managed.runtime),
-        });
-      } catch (error) {
-        this.persistence.releaseRunLease(lease);
-        publication.lease = undefined;
-        throw error;
-      }
+      const journal = [...managed.journal, ...(managed.nestedJournal ?? [])];
+      managed.resumeSeed = revisionSeed({ runId, journal, calls: managed.calls, seed: persisted.resumeSeed });
+      const old = oldDataRows({ sourceRunId: runId, runId, journal, calls: managed.calls });
+      managed.journal = latestRows(old.filter((entry) => entry.scope === runId));
+      const nestedJournal = latestNestedRows(old, runId);
+      if (nestedJournal.length > 0) managed.nestedJournal = nestedJournal;
+      else delete managed.nestedJournal;
+      managed.calls = [];
+      managed.scriptRevisions = [
+        ...(persisted.scriptRevisions ?? []),
+        { generation, scriptHash: hashScriptText(revision), revisedAt: new Date().toISOString() },
+      ];
+      managed.newRunResume = true;
+      occurrenceResume = { strategy: "occurrence-v1", sourceRunId: runId, requestedPolicy: "auto" };
+      this.initializeResumeReporting(managed, persisted, occurrenceResume, seedPrefix(managed.resumeSeed, managed.journal));
+      resumeRows = buildResumeRows({
+        runId,
+        journal: [...managed.journal, ...(managed.nestedJournal ?? [])],
+        calls: [],
+        seed: managed.resumeSeed,
+        key: pairingKey(persisted.runtime, managed.runtime),
+      });
     }
     const continuation: WorkflowContinuationResult = deepFreeze({
       generation,
@@ -2692,13 +2678,8 @@ export class WorkflowManager extends EventEmitter {
       ...(revision === undefined ? {} : { scriptRevised: true as const }),
     });
     managed.continuation = continuation;
-    try {
-      this.persistRunOrThrow(managed);
-    } catch (error) {
-      this.persistence.releaseRunLease(lease);
-      managed.lease = undefined;
-      throw error;
-    }
+    this.persistRunOrThrow(managed);
+    handOff.started = true;
     this.runs.set(runId, managed);
     this.publishRunEvent(
       managed,
