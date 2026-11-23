@@ -192,5 +192,5 @@ These come from replacing the ACP layer in step 3.
 - `--same` is not saved on the run record. A run resumed with `--same` that later waits at a usage
   limit is not resumed by the service while its file differs. The service says so once.
 - The engine still knows the old `.agentprism/workflows/runs` and `saved` folders of a project,
-  as before the refactor.
+  as before the refactor. The cut-over of old runs removed them later.
 - On Codex, the adapter does not retry an interrupt. It waits 10 seconds, then closes the server.

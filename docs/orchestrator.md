@@ -347,6 +347,10 @@ the notices off.
   `orc resume` refuses and names the two ways on: `--latest` takes the new version and keeps the
   finished steps that match, and `--same` goes on with the run's own version. The service doesn't
   resume such a run at the limit either. It tells you once.
+- A run saved by an older orc in a format this one no longer reads still shows in `orc list` and
+  `orc show`, and does not resume. `orc resume` says so and names `orc rerun <run>`, which starts
+  it again, and `orc stop <run>`, which ends it. `orc rerun --reuse` refuses it too, and the service
+  leaves it alone.
 - A step matches when it asks for the same thing in the same way: the same prompt, model, agent,
   options and label. When a workflow runs the same step several times, the first time matches the
   first recorded one, the second time the second, and so on.

@@ -268,9 +268,9 @@ These are choices for the owner, not bugs the branch left.
 - `--latest` keeps a step whose inputs match even when it read a file that an edited step wrote.
 - A run's files keep today's layout. A folder per run needs a reader for both layouts and changes
   12 to 27 goldens.
-- The readers for runs saved by older code sit in about ten modules. A format version with one
-  cut-over would let old runs show but not resume, and the readers could go. Whether that is fine
-  depends on how many paused runs are worth resuming. The folder per run fits the same cut-over.
+- The readers for runs saved by older code sat in about ten modules. The owner chose the cut-over
+  later. Old runs now show but do not resume, and the readers are gone. The folder per run could
+  use the same cut-over.
 - The run manager still holds a map of runs and `startInBackground`, for a host that runs many runs
   in one process. orc runs one per worker. A one-run object would change 32 test files.
 - A step that asks for a mode its program lacks gets a note in the log, not a refusal.
