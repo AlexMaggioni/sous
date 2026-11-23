@@ -170,7 +170,7 @@ return { first, second }`,
     assert.deepEqual(calls.slice(3).map((c) => c.label), ["second"], "first is not run again");
   });
 
-  it("a run paused for a lost login says why a resume cannot start, and resumes once the person logs in again", async () => {
+  it("a run paused for a lost login pauses again while the login is gone, says why, and resumes once the person logs in again", async () => {
     const { paths, projectDir } = testHome({
       login: `export const meta = { name: 'login', description: 'loses its login' }
 const first = await agent('first', { label: 'first' })
@@ -184,8 +184,6 @@ return { first, second }`,
       }
       return `${call.label} done`;
     });
-    // The stand-in for the programs knows whether its login is back.
-    Object.assign(runner, { auth: { canResume: () => loggedIn } });
     const workers = inProcess({ inner: runner });
     const record = startRun(paths, workers.launch, { workflow: "login", projectDir, inputs: {} });
     await workers.ended(record.runId);
@@ -196,15 +194,16 @@ return { first, second }`,
     const watched = inProcess({ inner: runner, log: (line) => lines.push(line) });
     resumeRun(paths, watched.launch, record.runId);
     await watched.ended(record.runId);
-    assert.equal(calls.length, 2, "no step runs while the login is still gone");
-    assert.match(lines.at(-1)!, /paused +login \(auth_required\): .*claude/, "the log says why the resume did not start");
+    assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"], "the step tries again, and first is not run again");
+    assert.equal(readState(paths, record.runId)?.pauseReason, "auth_required");
+    assert.match(lines.at(-1)!, /paused +login \(auth_required\): .*not logged in/, "the log says why the run paused again");
 
     loggedIn = true;
     resumeRun(paths, workers.launch, record.runId);
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), { first: "first done", second: "second done" });
-    assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"], "first is not run again");
+    assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second", "second"], "first is not run again");
   });
 
   it("a run keeps the workflows it started with, and resume asks before it takes an edit", async () => {

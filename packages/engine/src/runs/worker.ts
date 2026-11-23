@@ -266,8 +266,8 @@ async function runOnAccounts(
     : undefined;
 
   let result: WorkflowRunResult | undefined;
-  // Why a resumed run stopped again, so the log can say it. A run paused for a lost login
-  // pauses again at once while the login is still gone, and only this message says so.
+  // Why a resumed run stopped again, so the log can say it. A run paused for a lost login runs
+  // its step again, and while the login is still gone the step fails and the run pauses again.
   let why: string | undefined;
   try {
     if (mode === "start") {

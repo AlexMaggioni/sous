@@ -1637,7 +1637,7 @@ test(
 );
 
 test(
-  "auth pause persists 'auth_required' + authContext to real disk; a COLD manager re-pauses when canResume is false (§2.13)",
+  "auth pause persists 'auth_required' + authContext to real disk",
   withTempCwd(async (cwd) => {
     // Manager 1: an AUTH_REQUIRED fault checkpoints the run as paused and writes it to disk.
     const manager1 = new WorkflowManager({
@@ -1660,43 +1660,11 @@ test(
     const onDisk = rp.load(paused.runId);
     assert.equal(onDisk?.pauseReason, "auth_required");
     assert.deepEqual(onDisk?.authContext, authPersistContext);
-
-    // Manager 2 = a fresh ("cold") process: its runner's in-process/spawn-env intent is gone, so
-    // auth.canResume returns false → resume re-pauses instead of re-running into the same wall.
-    let runCalls = 0;
-    const consulted: string[] = [];
-    const manager2 = new WorkflowManager({
-      cwd,
-      agent: {
-        auth: {
-          canResume(backendId: string): boolean {
-            consulted.push(backendId);
-            return false;
-          },
-        },
-        async run(prompt: string) {
-          runCalls++;
-          return `ok:${prompt}`;
-        },
-      },
-    });
-    let rePause: { reason?: string; error?: WorkflowError; authContext?: unknown } | undefined;
-    manager2.on("paused", (ev: typeof rePause) => {
-      rePause = ev;
-    });
-
-    const ok = (await manager2.resumeInBackground(paused.runId)).accepted;
-    assert.equal(ok, true, "resume handled the run by re-pausing");
-    assert.deepEqual(consulted, ["codex"], "the cold runner's auth.canResume was consulted with the persisted backendId");
-    assert.equal(runCalls, 0, "the lost in-process intent means the agent is never re-executed");
-    assert.equal(rePause?.reason, "auth_required");
-    assert.match(rePause?.error?.message ?? "", /re-supply credentials for codex via runner auth before resuming/);
-    assert.deepEqual(rePause?.authContext, authPersistContext);
   }),
 );
 
 test(
-  "a disk-backed auth pause cold-resumes to completion when canResume is true (§2.13)",
+  "a disk-saved auth pause cold-resumes to completion",
   withTempCwd(async (cwd) => {
     const manager1 = new WorkflowManager({
       cwd,
@@ -1712,17 +1680,12 @@ test(
     const paused = await manager1.runSync(oneAgentAuthScript);
     assert.equal(paused.status, "paused");
 
-    // Manager 2: a disk-backed intent (native store / env re-read by the fresh spawn) survives, so
-    // canResume is true and the run proceeds — the fresh runner re-executes and completes clean.
+    // Manager 2 is a fresh process whose runner succeeds: the run proceeds, runs the step
+    // again and completes.
     let runCalls = 0;
     const manager2 = new WorkflowManager({
       cwd,
       agent: {
-        auth: {
-          canResume(): boolean {
-            return true;
-          },
-        },
         async run(prompt: string) {
           runCalls++;
           return `ok:${prompt}`;

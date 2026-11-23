@@ -1618,7 +1618,7 @@ export class WorkflowManager extends EventEmitter {
       status: managed.status,
       reason: runReason(managed.status, managed.error),
       errorCode: managed.error?.code,
-      // Why a pause happened, so a later read can show it and a cold start can re-arm resume.
+      // Why a pause happened, so a later read can show it.
       // The paused event gives the same reason.
       pauseReason: managed.status === "paused" ? pauseReasonOf(managed.error) : undefined,
       // resetHint and resetAt stay usage-limit-only.
@@ -1805,57 +1805,6 @@ export class WorkflowManager extends EventEmitter {
       );
     }
     const publication = this.prepareEventPublicationState(persisted, lease);
-    const saveLegacyGate = () => this.saveWithWatermark(persisted, publication);
-
-    // Cold-resume re-arm (§2.13). An "auth_required" pause is resumable ONLY when the auth
-    // survived: warm resume (same process, credentials still in the runner's AuthStore) or a
-    // disk-backed intent (native store / env re-read by a fresh spawn). We consult the INJECTED
-    // runner's optional auth controller, `runner.auth.canResume(backendId)`. An in-process
-    // (gateway) intent is gone after a cold process, so canResume is false and we
-    // re-pause immediately with a re-supply message rather than re-running into the same wall.
-    // A runner with no auth controller (default-off host) cannot confirm resumability -> re-pause.
-    if (persisted.pauseReason === "auth_required") {
-      const authController = (exec.agent ?? this.agent)?.auth;
-      const backendId = persisted.authContext?.backendId ?? "";
-      const canResume = typeof authController?.canResume === "function" && authController.canResume(backendId);
-      if (!canResume) {
-        const backendLabel = persisted.authContext?.backendId ?? "the backend";
-        const reSupplyError = new WorkflowError(
-          `re-supply credentials for ${backendLabel} via runner auth before resuming`,
-          WorkflowErrorCode.AUTH_REQUIRED,
-          { recoverable: false, authContext: persisted.authContext },
-        );
-        const gateEventSeq = publication.eventSeq;
-        this.publishRunEvent(
-          publication,
-          this.createRunEvent("paused", {
-            runId,
-            scope: runId,
-            reason: "auth_required",
-            error: reSupplyError,
-            errorRecord: projectRecordedError(reSupplyError),
-            authContext: persisted.authContext,
-          }),
-          saveLegacyGate,
-          {
-            afterLive: () => {
-              if (publication.eventSeq !== gateEventSeq) saveLegacyGate();
-            },
-          },
-        );
-        const promise = Promise.reject<WorkflowRunResult>(reSupplyError);
-        promise.catch(() => {});
-        return {
-          accepted: true,
-          runId,
-          continuation: persisted.continuation ?? deepFreeze({
-            generation: 0,
-            replayedPrefix: contiguousJournalPrefix(persisted.journal ?? [], runId),
-          }),
-          promise,
-        };
-      }
-    }
 
     // A revised script (the run's editable file changed since admission) continues through an
     // identity-matched replay of this run's own terminal state: unchanged calls replay, changed

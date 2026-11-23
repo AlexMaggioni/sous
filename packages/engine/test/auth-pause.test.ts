@@ -219,7 +219,7 @@ test(
   }),
 );
 
-// ─── Cold-resume re-arm (§2.13) — the engine consults the DUCK-TYPED runner.auth.canResume ───
+// ─── Cold resume of a paused run ───
 
 /** Seed a paused "auth_required" run directly, as a fresh (cold) process would re-load it. */
 function seedAuthPausedRun(store: ReturnType<typeof memoryPersistence>, runId: string): void {
@@ -240,23 +240,14 @@ function seedAuthPausedRun(store: ReturnType<typeof memoryPersistence>, runId: s
   });
 }
 
-/** A runner whose auth controller answers canResume deterministically, and whose run() succeeds —
- *  so "resume proceeds" is observable as the run driving to completion. */
-function resumableAgent(canResume: boolean) {
+/** A runner whose run() succeeds, so "resume proceeds" is observable as the run driving to completion. */
+function resumableAgent() {
   let runCalls = 0;
-  const canResumeCalls: string[] = [];
   return {
     get runCalls() {
       return runCalls;
     },
-    canResumeCalls,
     runner: {
-      auth: {
-        canResume(backendId: string): boolean {
-          canResumeCalls.push(backendId);
-          return canResume;
-        },
-      },
       async run(prompt: string) {
         runCalls++;
         return `ok:${prompt}`;
@@ -266,12 +257,12 @@ function resumableAgent(canResume: boolean) {
 }
 
 test(
-  "cold resume of a disk-backed auth pause PROCEEDS — canResume(true) → run re-executes to completion (§2.13)",
+  "cold resume of an auth pause runs the step again, and the run completes once the login is back",
   withTempCwd(async (cwd) => {
     const store = memoryPersistence();
-    const runId = "cold-disk-backed";
+    const runId = "cold-auth";
     seedAuthPausedRun(store, runId);
-    const agent = resumableAgent(true);
+    const agent = resumableAgent();
     const manager = new WorkflowManager({ cwd, persistence: store.persistence, agent: agent.runner });
 
     let resumedEvent = false;
@@ -281,86 +272,19 @@ test(
 
     const ok = (await manager.resumeInBackground(runId)).accepted;
     assert.equal(ok, true, "resume was accepted");
-    assert.deepEqual(agent.canResumeCalls, ["claude"], "the runner's auth.canResume was consulted with backendId");
     assert.equal(resumedEvent, true, "a proceeding resume emits 'resumed'");
 
     const deadline = Date.now() + 5_000;
     while (manager.getRun(runId)?.status === "running" && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 25));
     }
-    assert.equal(manager.getRun(runId)?.status, "completed", "the disk-backed run resumed and completed");
-    assert.ok(agent.runCalls >= 1, "the agent re-executed live (resume proceeded, did not re-pause)");
+    assert.equal(manager.getRun(runId)?.status, "completed", "the auth-paused run resumed and completed");
+    assert.ok(agent.runCalls >= 1, "the agent re-executed live");
   }),
 );
 
 test(
-  "cold resume of an in-process auth pause RE-PAUSES — canResume(false) → re-supply message, agent never runs (§2.13)",
-  withTempCwd(async (cwd) => {
-    const store = memoryPersistence();
-    const runId = "cold-in-process";
-    seedAuthPausedRun(store, runId);
-    const agent = resumableAgent(false);
-    const manager = new WorkflowManager({ cwd, persistence: store.persistence, agent: agent.runner });
-
-    let resumedEvent = false;
-    manager.on("resumed", () => {
-      resumedEvent = true;
-    });
-    let paused: { reason?: string; error?: WorkflowError; authContext?: AuthErrorContext } | undefined;
-    manager.on("paused", (ev: typeof paused) => {
-      paused = ev;
-    });
-
-    const ok = (await manager.resumeInBackground(runId)).accepted;
-    assert.equal(ok, true, "resume handled the run (by re-pausing)");
-    assert.deepEqual(agent.canResumeCalls, ["claude"], "the runner's auth.canResume was consulted");
-    assert.equal(resumedEvent, false, "a re-paused resume does NOT emit 'resumed'");
-    assert.equal(agent.runCalls, 0, "the agent is NEVER re-executed when the intent was lost to the cold process");
-
-    assert.ok(paused, "re-pause emitted the paused event");
-    assert.equal(paused?.reason, "auth_required");
-    assert.equal(paused?.error?.code, WorkflowErrorCode.AUTH_REQUIRED);
-    assert.match(paused?.error?.message ?? "", /re-supply credentials for claude via runner auth before resuming/);
-    assert.deepEqual(paused?.authContext, AUTH_CONTEXT, "the non-secret authContext rides the re-pause");
-    // The lease taken for the resume attempt is released again.
-    assert.deepEqual(store.released, [runId], "the resume lease is released on re-pause");
-  }),
-);
-
-test(
-  "cold resume with a runner that has NO auth controller RE-PAUSES (default-off host cannot confirm resumability) (§2.13)",
-  withTempCwd(async (cwd) => {
-    const store = memoryPersistence();
-    const runId = "cold-no-controller";
-    seedAuthPausedRun(store, runId);
-    let runCalls = 0;
-    const manager = new WorkflowManager({
-      cwd,
-      persistence: store.persistence,
-      // A plain AgentRunner — no `auth` controller (the DEFAULT-OFF surface).
-      agent: {
-        async run(prompt: string) {
-          runCalls++;
-          return `ok:${prompt}`;
-        },
-      },
-    });
-
-    let paused: { reason?: string; error?: WorkflowError } | undefined;
-    manager.on("paused", (ev: typeof paused) => {
-      paused = ev;
-    });
-
-    const ok = (await manager.resumeInBackground(runId)).accepted;
-    assert.equal(ok, true);
-    assert.equal(runCalls, 0, "no auth controller ⇒ cannot confirm resumability ⇒ never re-executes");
-    assert.equal(paused?.reason, "auth_required");
-    assert.match(paused?.error?.message ?? "", /re-supply credentials for claude via runner auth before resuming/);
-  }),
-);
-
-test(
-  "a usage-limit cold resume is NOT gated by the auth re-arm — proceeds without consulting canResume (§2.13)",
+  "a usage-limit cold resume proceeds and completes",
   withTempCwd(async (cwd) => {
     const store = memoryPersistence();
     const runId = "cold-usage-limit";
@@ -379,13 +303,11 @@ test(
       startedAt: now,
       updatedAt: now,
     });
-    // canResume(false) would re-pause IF the auth branch were wrongly applied to a usage-limit run.
-    const agent = resumableAgent(false);
+    const agent = resumableAgent();
     const manager = new WorkflowManager({ cwd, persistence: store.persistence, agent: agent.runner });
 
     const ok = (await manager.resumeInBackground(runId)).accepted;
     assert.equal(ok, true);
-    assert.deepEqual(agent.canResumeCalls, [], "canResume is only consulted for an 'auth_required' pause");
 
     const deadline = Date.now() + 5_000;
     while (manager.getRun(runId)?.status === "running" && Date.now() < deadline) {

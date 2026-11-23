@@ -22,7 +22,7 @@ import {
 } from "@orchestrator/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
 import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, PlannedRequest, StepRequest } from "./agent-run.js";
-import type { AgentRunner, LoginCheck, StepAsk, StepRoute } from "./agent-runner.js";
+import type { AgentRunner, StepAsk, StepRoute } from "./agent-runner.js";
 import type { AgentSessionRef } from "../workflow-result.js";
 import type { McpServerConfig } from "./mcp-config.js";
 import { harnessName, missingServer, routeStep, stepModel, withHarness, type AgentLookup, type McpLookup, type RoutePlan } from "../agents.js";
@@ -34,7 +34,6 @@ import { buildPrompt, checkImages, CONTINUATION_INSTRUCTION, extractValidated, R
 export interface InnerRunner {
   run(prompt: string, request: PlannedRequest): Promise<unknown>;
   dispose?: () => Promise<void> | void;
-  auth?: LoginCheck;
 }
 
 export interface StepsOptions {
@@ -81,7 +80,7 @@ const toHistory = (entry: HistoryEntry): AgentHistoryEntry => ({
   timestamp: entry.at,
 });
 
-export function createSteps(options: StepsOptions): AgentRunner & { route(ask: StepAsk): StepRoute; dispose(): Promise<void>; auth: LoginCheck } {
+export function createSteps(options: StepsOptions): AgentRunner & { route(ask: StepAsk): StepRoute; dispose(): Promise<void> } {
   const lookup = options.programs ?? (options.inner ? undefined : () => ({}));
   const programs = new Map<HarnessId, Promise<Adapter | { problem: string }>>();
 
@@ -158,10 +157,6 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
   return {
     route: (ask) => routeStep(options.agents, ask),
     run,
-    // A run paused for a lost login may resume: each step starts its program, which reads the
-    // login again. If it is still gone, the step fails the same way and the run pauses again.
-    // A runner that stands in for the programs answers for its own login.
-    auth: { canResume: (harness) => options.inner?.auth?.canResume(harness) ?? true },
     async dispose() {
       await options.inner?.dispose?.();
     },

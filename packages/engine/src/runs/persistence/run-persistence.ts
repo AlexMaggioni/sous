@@ -175,7 +175,7 @@ export interface PersistedRunState {
   pausedAt?: string;
   /** For an "auth_required" pause (§2.12/§2.13): the structured, NON-SECRET auth surface
    *  (backendId + advertised method ids/types/names). NEVER the intent's secret payload —
-   *  no `authenticateMeta`, no `envValues` (Principle 9). Read by the cold re-arm of a resume. */
+   *  no `authenticateMeta`, no `envValues` (Principle 9). */
   authContext?: AuthErrorContext;
   /** For a "checkpoint_required" pause: the structured, NON-SECRET pending checkpoint
    *  surface. Its call index and hash let resume journal the host-supplied decision. */

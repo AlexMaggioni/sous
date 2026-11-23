@@ -64,12 +64,8 @@ function fixture(): {
 
 class ContinuationRunner implements AgentRunner {
   mode: "usage-pause" | "auth-pause" | "continue" = "usage-pause";
-  authReady = false;
   readonly directives: Array<StepRequest["continueFromSession"]> = [];
   readonly calls: string[] = [];
-  readonly auth = {
-    canResume: (_backendId: string) => this.authReady,
-  };
 
   async run(prompt: string, options: StepRequest): Promise<string> {
     this.calls.push(prompt);
@@ -243,7 +239,7 @@ return { prefix, tail }`;
     }
   });
 
-  it("runs the auth cold re-arm gate before same-ID candidate consumption", async () => {
+  it("an auth pause resumes from its session", async () => {
     const test = fixture();
     try {
       const runner = new ContinuationRunner();
@@ -254,13 +250,6 @@ return { prefix, tail }`;
       assert.equal(paused.reason, "auth_required");
       runner.mode = "continue";
 
-      const gated = await manager.resumeInBackground("auth-source");
-      assert.equal(gated.accepted, true);
-      await assert.rejects(gated.promise, (error: unknown) =>
-        error instanceof WorkflowError && error.code === WorkflowErrorCode.AUTH_REQUIRED);
-      assert.deepEqual<Array<StepRequest["continueFromSession"]>>(runner.directives, [], "cold gate re-pauses before executeRun");
-
-      runner.authReady = true;
       const resumed = await manager.resumeInBackground("auth-source");
       assert.equal(resumed.accepted, true);
       const completed = await resumed.promise;
