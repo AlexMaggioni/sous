@@ -319,6 +319,9 @@ readJsonLines(process.stdin, (message) => {
   else if (message.type === "control_response") return;
   else if (message.type === "user") chain = chain.then(() => runTurn(message));
 });
-process.stdin.on("end", () => chain.then(() => process.exit(0)));
+// The SDK closes stdin when its caller is done, also when it stops a step in the middle of a
+// turn. The program exits then. Without this, a held turn keeps it up until the SDK's SIGTERM,
+// two seconds later.
+process.stdin.on("end", () => process.exit(0));
 process.on("SIGTERM", () => process.exit(143));
 debug("claude", "argv", argv);
