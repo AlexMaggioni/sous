@@ -50,6 +50,12 @@ const NEVER_IMPORT = ["@agentclientprotocol/", "@zed-industries/", "@automatalab
 /** One folder per harness adapter in packages/harnesses/src. An adapter never imports another. */
 const HARNESSES = ["claude", "codex"];
 
+/**
+ * Each package's test script runs through this file. It gives the tests a temporary home and
+ * temporary login folders, and removes the Claude token.
+ */
+const TEST_RUNNER = "test/with-temp-home.mjs";
+
 /** A test file of a package. */
 const TEST_FILE = /\.test\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
 
@@ -250,7 +256,8 @@ const BREAKS = {
   reach: [],
   exports: {},
   contract: [],
-  tests: []
+  tests: [],
+  scripts: []
 };
 
 // ── Reading the source ──────────────────────────────────────────────────────────────────────────
@@ -534,6 +541,16 @@ function testBreaks({ tests }) {
   return found.sort();
 }
 
+function scriptBreaks({ dirs }) {
+  const found = [];
+  if (!existsSync(join(ROOT, TEST_RUNNER))) found.push(`${TEST_RUNNER} is missing`);
+  for (const dir of dirs) {
+    const script = JSON.parse(readFileSync(join(ROOT, "packages", dir, "package.json"), "utf8")).scripts?.test ?? "";
+    if (!script.split(" ").includes(`../../${TEST_RUNNER}`)) found.push(`${dir} runs its tests without ${TEST_RUNNER}`);
+  }
+  return found;
+}
+
 // ── The tests ───────────────────────────────────────────────────────────────────────────────────
 
 const state = collect();
@@ -545,6 +562,7 @@ const now = {
   exports: exportBreaks(state),
   contract: contractBreaks(),
   tests: testBreaks(state),
+  scripts: scriptBreaks(state),
 };
 
 if (process.env.ARCH_PRINT) console.log(JSON.stringify(now, null, 2));
@@ -577,6 +595,7 @@ test("each package exports only what its caller imports", () => {
 });
 test("both adapters exist and pass one contract test", () => compareList("contract"));
 test("each test file imports a run-time value of the code it tests", () => compareList("tests"));
+test("each package runs its tests on a temporary home", () => compareList("scripts"));
 
 test("each behavior change keeps the test that holds it", () => {
   assert.equal(PINS.length, 36, "docs/proof/improve.md lists 36 behavior changes, and the table holds one row for each");
