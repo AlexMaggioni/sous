@@ -2128,16 +2128,16 @@ export class WorkflowManager extends EventEmitter {
     if (managed.newRunResume) {
       const rootCalls = latestRows(managed.calls.filter((row) => row.scope === managed.runId));
       managed.calls = [...rootCalls, ...latestNestedRows(managed.calls, managed.runId)];
-      const resultRows = new Map(
-        rootCalls
-          .filter((row) => row.outcome === "result")
-          .map((row) => [row.index, row] as const),
-      );
+      const callAt = new Map(rootCalls.map((row) => [row.index, row] as const));
+      // A journal row stays while the call at its index returned it. A row with no call at its
+      // index stays too: it comes from a run saved before call rows, at a step this run did not
+      // reach yet, and a resume of this run replays it.
       managed.journal = latestRows(
         managed.journal.filter((entry) => {
           if (entry.scope !== managed.runId) return false;
-          const row = resultRows.get(entry.index);
-          return row !== undefined && entry.kind === row.kind && entry.hash === row.hash;
+          const row = callAt.get(entry.index);
+          if (row === undefined) return true;
+          return row.outcome === "result" && entry.kind === row.kind && entry.hash === row.hash;
         }),
       );
       // The seed keeps the rows the run did not replay, for the run that resumes it.
