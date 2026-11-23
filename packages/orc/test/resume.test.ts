@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { rerunRun, resumeRun, runQuestions, startRun, type HomePaths, type RunRecord } from "@orchestrator/engine";
-import { fakeRunner, inProcess, plantState, readState, testHome, writeAnswer, WorkflowError, WorkflowErrorCode } from "@orchestrator/engine/testing";
+import { fakeRunner, inProcess, plantState, readState, testHome, writeAnswer, WorkflowError, WorkflowErrorCode, type PersistedRunState } from "@orchestrator/engine/testing";
 import { orc, waitFor } from "./orc.js";
 import "./harness-home.js";
 
@@ -125,7 +125,14 @@ async function resumed(options: {
   broken = false;
   const done = await resume(paths, record.runId, agent, options.mode);
   assert.equal(done?.status, "completed");
-  return { first, live: agent.since(first.length), done, state: readState(paths, record.runId)! };
+  return { first, live: agent.since(first.length), done, paths, runId: record.runId };
+}
+
+/** The engine's state of the run, as `orc show --json` prints it. */
+async function shownState(paths: HomePaths, runId: string): Promise<PersistedRunState> {
+  const shown = await orc(paths, ["show", runId, "--json"]);
+  assert.equal(shown.code, 0, shown.out);
+  return (JSON.parse(shown.out) as { state: PersistedRunState }).state;
 }
 
 /** Pause `three` with C failed, edit it, and resume it with --latest. */
@@ -306,9 +313,10 @@ describe("resume", () => {
   });
 
   it("with --latest and step 1 edited, keeps the steps after it", async () => {
-    const { live, done, state } = await latest(three("A2"));
+    const { live, done, paths, runId } = await latest(three("A2"));
     assert.deepEqual(live, ["A2", "C"]);
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["A2 done", "B done", "C done"]);
+    const state = await shownState(paths, runId);
     assert.equal(state.resumeReport?.strategy, "occurrence-v1");
     assert.equal(state.replayEligibility?.strategy, "occurrence-v1");
     assert.deepEqual(
@@ -404,7 +412,7 @@ describe("resume", () => {
     assert.equal(done?.status, "completed");
     assert.deepEqual(agent.since(4), ["A2"]);
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["A2 done", "B done", "C done"]);
-    const state = readState(paths, again.runId)!;
+    const state = await shownState(paths, again.runId);
     assert.equal(state.resumeReport?.strategy, "occurrence-v1");
     assert.equal(state.replayEligibility?.strategy, "occurrence-v1");
     assert.deepEqual(
