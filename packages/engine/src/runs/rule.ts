@@ -83,7 +83,7 @@ const ROWS = {
   "running":                     { worker: "alive", status: "running",     word: "running",                        unfinished: true,  resume: no("running"),       reuse: no("running") },
   "running, worker gone":        { worker: "gone",  status: "interrupted", word: "interrupted",           exit: 1, unfinished: true,  resume: OK,                  reuse: no("running") },
   "paused, usage_limit":         { worker: "any",   status: "paused",      word: "paused: limit",         exit: 2, unfinished: true,  pause: "usage_limit",   resume: OK, reuse: no("paused") },
-  "paused, auth_required":       { worker: "any",   status: "paused",      word: "paused: auth_required", exit: 2, unfinished: true,  pause: "auth_required", resume: OK, reuse: no("paused") },
+  "paused, auth_required":       { worker: "any",   status: "paused",      word: "paused: login",         exit: 2, unfinished: true,  pause: "auth_required", resume: OK, reuse: no("paused") },
   "paused, checkpoint_required": { worker: "any",   status: "paused",      word: "paused: asks",          exit: 2, unfinished: true,  pause: "asks",          resume: OK, reuse: no("paused") },
   "paused, requested":           { worker: "any",   status: "paused",      word: "paused",                exit: 2, unfinished: true,  pause: "requested",     resume: OK, reuse: no("paused") },
   "paused, step_failed":         { worker: "any",   status: "paused",      word: "paused: failed step",   exit: 2, unfinished: true,  pause: "step_failed",   resume: OK, reuse: no("paused") },

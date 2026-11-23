@@ -284,6 +284,8 @@ something, pauses or fails.
 - At the subscription limit the run pauses, and the notice names the account and the reset time.
   The service resumes it after the reset time, or 30 minutes later when no time is known.
   `orc account use <name>` moves it to another account and resumes it now.
+- A run whose program loses its login pauses, shown as `paused: login`. The service does not
+  resume it. Log in again, then `orc resume` goes on.
 - `maxAgents` caps the agents running at once across all runs. Others wait in a queue, and a
   person's run goes before a scheduled one.
 - A loop's rounds are the workflow's to cap, usually with an input such as `rounds`.
