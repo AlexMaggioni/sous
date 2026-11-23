@@ -4,7 +4,7 @@
 // and never open a run file. A read writes nothing.
 
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
-import type { PersistedRunState, RunStatus } from "./persistence/run-persistence.js";
+import { interruptedReason, type PersistedRunState, type RunStatus } from "./persistence/run-persistence.js";
 import { deleteAccount, DEFAULT, moveRunAccount, setCurrentAccount, type AccountName } from "../accounts.js";
 import type { Harness } from "../agents.js";
 import { foldStep } from "../display.js";
@@ -64,13 +64,6 @@ export interface RunDetail extends RunView {
 function shownState(record: RunRecord, state: PersistedRunState | undefined, verdict: Verdict): PersistedRunState | undefined {
   if (!state || state.status === "paused" || verdict.pause?.reason !== "interrupted") return state;
   return { ...state, status: "paused", pauseReason: "interrupted", reason: interruptedReason(record.pid) };
-}
-
-/** The engine's reason for a run its worker left, as the engine saves it on resume. */
-function interruptedReason(pid: number | undefined): string {
-  return pid === undefined
-    ? "Interrupted: the owning process exited before completion (PID unavailable); recovered to a resumable pause."
-    : `Interrupted: owning process PID ${pid} exited before completion; recovered to a resumable pause.`;
 }
 
 function savedFacts(shown: PersistedRunState): SavedFacts {

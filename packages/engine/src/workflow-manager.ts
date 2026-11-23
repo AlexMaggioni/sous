@@ -47,6 +47,7 @@ import { continueRows, handedInRows, newRows, reuseRows, reviseRows, type RunRow
 import {
   createRunPersistence,
   generateRunId,
+  interruptedReason,
   type PersistedResumeFormat,
   type PersistedRunState,
   type RunLease,
@@ -433,12 +434,6 @@ function pauseReasonOf(error: WorkflowError | undefined): RunPauseReason | undef
   }
 }
 
-function interruptedRunReason(ownerPid: number | undefined): string {
-  return ownerPid === undefined
-    ? "Interrupted: the owning process exited before completion (PID unavailable); recovered to a resumable pause."
-    : `Interrupted: owning process PID ${ownerPid} exited before completion; recovered to a resumable pause.`;
-}
-
 function generateEventStreamId(): string {
   return randomBytes(16).toString("hex");
 }
@@ -572,7 +567,7 @@ export class WorkflowManager extends EventEmitter {
         ...current,
         status: "paused",
         pauseReason: "interrupted",
-        reason: interruptedRunReason(lease.recoveredOwnerPid),
+        reason: interruptedReason(lease.recoveredOwnerPid),
       };
       this.persistence.save(reconciled);
       return reconciled;

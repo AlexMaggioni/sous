@@ -224,6 +224,13 @@ export interface PersistedRunState {
   eventLogIncomplete?: true;
 }
 
+/** The reason a run's saved state gets when its worker left the run before it ended. */
+export function interruptedReason(pid: number | undefined): string {
+  return pid === undefined
+    ? "Interrupted: the owning process exited before completion (PID unavailable); recovered to a resumable pause."
+    : `Interrupted: owning process PID ${pid} exited before completion; recovered to a resumable pause.`;
+}
+
 export interface RunPersistence {
   /** Save current run state. */
   save(state: PersistedRunState): void;
