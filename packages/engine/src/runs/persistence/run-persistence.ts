@@ -34,7 +34,7 @@ import type {
 import type { AuthErrorContext, CheckpointContext } from "../../errors.js";
 import { WorkflowError, WorkflowErrorCode } from "../../errors.js";
 import type { RunEnvironmentIdentity } from "../../run-environment.js";
-import { withRunEventsUsingFs, type RunEventPersistence } from "./run-event-persistence.js";
+import { withRunEvents, type RunEventPersistence } from "./run-event-persistence.js";
 import { workflowProjectPaths } from "./project-paths.js";
 
 export type RunStatus = "pending" | "running" | "paused" | "completed" | "failed" | "aborted";
@@ -766,7 +766,7 @@ export function createRunPersistence(
       return runsDir;
     },
   };
-  return withRunEventsUsingFs(persistence, fsOverride);
+  return withRunEvents(persistence, fsOverride);
 }
 
 /**
@@ -777,16 +777,3 @@ export function generateRunId(): string {
   const random = Math.random().toString(36).slice(2, 8);
   return `${timestamp}-${random}`;
 }
-
-export {
-  RUN_EVENT_MAX_RECORD_BYTES,
-  RUN_EVENT_READ_LIMIT_DEFAULT,
-  RUN_EVENT_READ_LIMIT_MAX,
-  RunEventLogError,
-  withRunEvents,
-  type AppendRunEventInput,
-  type ReadRunEventsOptions,
-  type ReadRunEventsResult,
-  type RunEventLogErrorCode,
-  type RunEventPersistence,
-} from "./run-event-persistence.js";

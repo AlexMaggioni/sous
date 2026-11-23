@@ -13,7 +13,7 @@ import {
   type PersistableEngineRunEvent,
   type RunEventLogRecord,
 } from "../../run-events.js";
-import { WorkflowError, WorkflowErrorCode } from "../../errors.js";
+import { WorkflowErrorCode } from "../../errors.js";
 import { MAX_OBSERVABILITY_SCALAR_BYTES, projectRunEventForPersistence } from "../../run-observability.js";
 import type { FsLayer, PersistedRunState, RunLease, RunPersistence } from "./run-persistence.js";
 
@@ -23,10 +23,6 @@ export const RUN_EVENT_READ_LIMIT_MAX = 1_000 as const;
 
 const STREAM_ID_PATTERN = /^[0-9a-f]{32}$/;
 const RUN_EVENT_WRAPPER = Symbol("orchestrator.runEventPersistence");
-// Soft cap on distinct runs held in the read cache. Writer-owned caches are released with their run
-// lease and are never evicted; this bounds only the read-seeded caches a long-lived daemon accrues
-// by reading many foreign/terminal runs, evicting least-recently-used ones first.
-const MAX_CACHED_RUNS = 512;
 const EVENT_TYPES = new Set([
   "log",
   "phase",
@@ -140,70 +136,10 @@ interface ResolvedEventFs {
   truncateSync: typeof truncateSync;
 }
 
-interface ParsedSuffix {
+interface ParsedLog {
   records: RunEventLogRecord[];
+  /** Byte length of the complete records. A partial last line, with no LF, is left out. */
   completeBytes: number;
-}
-
-/**
- * FNV-1a fingerprint of a validated record prefix, kept as two independent 32-bit lanes
- * (folded with Math.imul) so it can be advanced incrementally on append and recomputed cheaply
- * on read. Its only job is to detect that the on-disk prefix still matches what we validated
- * — accidental corruption / an external rewrite, never an adversary — so 64 combined bits are
- * ample, and folding lets appendEvent update it in O(bytes-written) instead of O(journal).
- */
-interface PrefixHash {
-  h1: number;
-  h2: number;
-}
-
-const FNV_OFFSET_1 = 0x811c9dc5 | 0;
-const FNV_OFFSET_2 = 0x9dc5811c | 0;
-const FNV_PRIME_1 = 0x01000193;
-const FNV_PRIME_2 = 0x01000197;
-
-function newPrefixHash(): PrefixHash {
-  return { h1: FNV_OFFSET_1, h2: FNV_OFFSET_2 };
-}
-
-function foldPrefixHash(hash: PrefixHash, bytes: Buffer, start: number, end: number): void {
-  let h1 = hash.h1;
-  let h2 = hash.h2;
-  for (let i = start; i < end; i++) {
-    const byte = bytes[i]!;
-    h1 = Math.imul(h1 ^ byte, FNV_PRIME_1);
-    h2 = Math.imul(h2 ^ byte, FNV_PRIME_2);
-  }
-  hash.h1 = h1 | 0;
-  hash.h2 = h2 | 0;
-}
-
-function prefixHashOf(bytes: Buffer, end: number): PrefixHash {
-  const hash = newPrefixHash();
-  foldPrefixHash(hash, bytes, 0, end);
-  return hash;
-}
-
-function prefixHashEquals(left: PrefixHash, right: PrefixHash): boolean {
-  return left.h1 === right.h1 && left.h2 === right.h2;
-}
-
-/**
- * Per-run, in-memory validated view of the event log, keyed by runId inside one
- * RunEventPersistence wrapper. The daemon is the journal's writer, so appendEvent maintains
- * this view directly and readEvents serves from it — parsing only the never-before
- * -seen suffix — instead of re-parsing the whole file for every read and every record yielded.
- */
-interface RunEventCache {
-  streamId: string;
-  /** Fully validated records in dense seq order (`records[i].seq === i + 1`). */
-  records: RunEventLogRecord[];
-  /** Byte length of the complete-record prefix `records` covers. */
-  completeBytes: number;
-  /** FNV fingerprint of bytes `[0, completeBytes)`; folded on append, recomputed on read to verify. */
-  prefixHash: PrefixHash;
-  /** This process has repaired the torn tail and owns the writer epoch for this run. */
-  writerRepaired: boolean;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -301,9 +237,9 @@ function isContinuationMarker(value: unknown): boolean {
   return isObject(value) && (value.method === "resume" || value.method === "load");
 }
 
-function isProvenance(value: unknown, projected: boolean): boolean {
+function isProvenance(value: unknown): boolean {
   if (!isObject(value)) return false;
-  const text = projected ? isProjectedText : isString;
+  const text = isProjectedText;
   if (value.source === "live") {
     return hasOptional(value, "overrideModel", text) &&
       hasOptional(value, "continuation", isContinuationAttempt);
@@ -316,9 +252,9 @@ function isProvenance(value: unknown, projected: boolean): boolean {
   );
 }
 
-function isAuthContext(value: unknown, projected: boolean): boolean {
-  if (!isObject(value) || !Array.isArray(value.methods) || (projected && value.methods.length > 20)) return false;
-  const text = projected ? isProjectedText : isString;
+function isAuthContext(value: unknown): boolean {
+  if (!isObject(value) || !Array.isArray(value.methods) || value.methods.length > 20) return false;
+  const text = isProjectedText;
   if (!hasOptional(value, "backendId", text)) return false;
   return value.methods.every(
     (method) =>
@@ -329,9 +265,9 @@ function isAuthContext(value: unknown, projected: boolean): boolean {
   );
 }
 
-function isCheckpointContext(value: unknown, projected: boolean): boolean {
+function isCheckpointContext(value: unknown): boolean {
   if (!isObject(value)) return false;
-  const text = projected ? isProjectedText : isString;
+  const text = isProjectedText;
   if (
     !hasRequired(value, "callIndex", isNonNegativeSafeInteger) ||
     !hasRequired(value, "hash", isString) ||
@@ -341,15 +277,15 @@ function isCheckpointContext(value: unknown, projected: boolean): boolean {
     return false;
   }
   if (hasOwn(value, "choices") && value.choices !== undefined) {
-    if (!Array.isArray(value.choices) || (projected && value.choices.length > 20) || !value.choices.every(text)) return false;
+    if (!Array.isArray(value.choices) || value.choices.length > 20 || !value.choices.every(text)) return false;
   }
   if (!hasOptional(value, "timeoutMs", isNonNegativeFinite)) return false;
-  return !projected || !hasOwn(value, "default") || value.default === undefined || isProjectionValue(value.default);
+  return hasOptional(value, "default", isProjectionValue);
 }
 
-function isProviderUsageContext(value: unknown, projected: boolean): boolean {
+function isProviderUsageContext(value: unknown): boolean {
   if (!isObject(value)) return false;
-  const text = projected ? isProjectedText : isString;
+  const text = isProjectedText;
   return (
     hasRequired(value, "backendId", text) &&
     (value.source === "provider" || value.source === "adapter_fallback") &&
@@ -358,11 +294,11 @@ function isProviderUsageContext(value: unknown, projected: boolean): boolean {
   );
 }
 
-function isRecordedError(value: unknown, projected: boolean): boolean {
+function isRecordedError(value: unknown): boolean {
   if (!isObject(value) || !(value.form === "workflow-error" || value.form === "error" || value.form === "value")) {
     return false;
   }
-  const text = projected ? isProjectedText : isString;
+  const text = isProjectedText;
   if (
     !hasOptional(value, "name", text) ||
     !hasOptional(value, "message", text) ||
@@ -370,27 +306,24 @@ function isRecordedError(value: unknown, projected: boolean): boolean {
     !hasOptional(value, "recoverable", isBoolean) ||
     !hasOptional(value, "agentLabel", text) ||
     !hasOptional(value, "resetHint", text) ||
-    !hasOptional(value, "providerUsageLimitContext", (candidate) => isProviderUsageContext(candidate, projected)) ||
-    !hasOptional(value, "authContext", (candidate) => isAuthContext(candidate, projected)) ||
-    !hasOptional(value, "checkpointContext", (candidate) => isCheckpointContext(candidate, projected)) ||
+    !hasOptional(value, "providerUsageLimitContext", isProviderUsageContext) ||
+    !hasOptional(value, "authContext", isAuthContext) ||
+    !hasOptional(value, "checkpointContext", isCheckpointContext) ||
     !hasOptional(value, "lossy", isBoolean)
   ) {
     return false;
   }
   if ((value.form === "workflow-error" || value.form === "error") && !hasRequired(value, "message", text)) return false;
-  if (projected) {
-    return (
-      hasOptional(value, "details", isProjectionValue) &&
-      hasOptional(value, "props", isProjectionValue) &&
-      hasOptional(value, "value", isProjectionValue)
-    );
-  }
-  return hasOptional(value, "props", isObject);
+  return (
+    hasOptional(value, "details", isProjectionValue) &&
+    hasOptional(value, "props", isProjectionValue) &&
+    hasOptional(value, "value", isProjectionValue)
+  );
 }
 
-function isJournalCall(value: unknown, projected: boolean): boolean {
+function isJournalCall(value: unknown): boolean {
   if (!isObject(value)) return false;
-  const text = projected ? isProjectedText : isString;
+  const text = isProjectedText;
   if (value.kind === "agent") {
     return (
       hasRequired(value, "label", text) &&
@@ -403,44 +336,26 @@ function isJournalCall(value: unknown, projected: boolean): boolean {
   return value.kind === "checkpoint" && value.label === "checkpoint" && hasOptional(value, "phase", text);
 }
 
-function isSession(value: unknown): boolean {
-  if (!isObject(value) || !isObject(value.reopen)) return false;
-  return (
-    hasRequired(value, "sessionId", isString) &&
-    hasRequired(value, "backendId", isString) &&
-    hasRequired(value, "cwd", isString) &&
-    hasRequired(value.reopen, "load", isBoolean) &&
-    hasRequired(value.reopen, "resume", isBoolean) &&
-    hasRequired(value.reopen, "list", isBoolean) &&
-    hasOptional(value.reopen, "fork", isBoolean) &&
-    hasRequired(value, "callIndex", isNonNegativeSafeInteger) &&
-    hasRequired(value, "label", isString) &&
-    hasOptional(value, "phase", isString) &&
-    hasRequired(value, "keptOpen", isBoolean)
-  );
-}
-
-function isJournalEntry(value: unknown, projected: boolean): boolean {
+function isJournalEntry(value: unknown): boolean {
   if (!isObject(value)) return false;
-  const text = projected ? isProjectedText : isString;
+  const text = isProjectedText;
   return (
     hasRequired(value, "index", isNonNegativeSafeInteger) &&
     hasRequired(value, "hash", isString) &&
-    (!projected || hasRequired(value, "result", isProjectionValue)) &&
-    (projected || hasOwn(value, "result")) &&
-    hasOptional(value, "session", isSession) &&
-    hasOptional(value, "call", (candidate) => isJournalCall(candidate, projected)) &&
+    hasRequired(value, "result", isProjectionValue) &&
+    !hasOwn(value, "session") &&
+    hasOptional(value, "call", isJournalCall) &&
     hasOptional(value, "kind", (candidate) => candidate === "agent" || candidate === "checkpoint") &&
     hasOptional(value, "usage", isAgentUsage) &&
     hasOptional(value, "scope", text)
   );
 }
 
-function isCallRecord(value: unknown, projected: boolean): boolean {
+function isCallRecord(value: unknown): boolean {
   // Historical event observation remains readable, including the retired "headless"
   // origin. Execution reuse is separately gated by explicit checkpoint provenance.
   if (!isObject(value)) return false;
-  const text = projected ? isProjectedText : isString;
+  const text = isProjectedText;
   if (
     !hasRequired(value, "index", isNonNegativeSafeInteger) ||
     !(value.kind === "agent" || value.kind === "checkpoint") ||
@@ -450,7 +365,7 @@ function isCallRecord(value: unknown, projected: boolean): boolean {
     !hasOptional(value, "path", text) ||
     !hasOptional(value, "inputsHash", isString) ||
     !hasOptional(value, "label", text) ||
-    !hasOptional(value, "error", (candidate) => isRecordedError(candidate, projected)) ||
+    !hasOptional(value, "error", isRecordedError) ||
     !hasOptional(value, "aborted", isBoolean) ||
     !hasOptional(value, "attempts", isPositiveSafeInteger) ||
     !hasOptional(value, "usage", isAgentUsage) ||
@@ -461,120 +376,26 @@ function isCallRecord(value: unknown, projected: boolean): boolean {
     !hasOptional(value, "isolation", (candidate) => candidate === "worktree") ||
     !hasOptional(value, "resolvedCwd", text) ||
     !hasOptional(value, "settlementOrdinal", isPositiveSafeInteger) ||
-    !hasOptional(value, "provenance", (candidate) => isProvenance(candidate, projected)) ||
+    !hasOptional(value, "provenance", isProvenance) ||
     !hasOptional(value, "scope", text)
   ) {
     return false;
   }
-  return value.outcome === "result" ? !hasOwn(value, "error") : hasRequired(value, "error", (error) => isRecordedError(error, projected));
+  return value.outcome === "result" ? !hasOwn(value, "error") : hasRequired(value, "error", isRecordedError);
 }
 
-function isOrigin(value: Record<string, unknown>, projected: boolean): boolean {
-  const text = projected ? isProjectedText : isString;
-  return hasRequired(value, "runId", text) && hasRequired(value, "scope", text);
+function isOrigin(value: Record<string, unknown>): boolean {
+  return hasRequired(value, "runId", isProjectedText) && hasRequired(value, "scope", isProjectedText);
 }
 
-function isConfigOptions(value: unknown, projected: boolean): boolean {
-  if (!isObject(value) || (projected && Object.keys(value).length > 20)) return false;
-  return Object.entries(value).every(
-    ([key, option]) => (!projected || isProjectedText(key)) && (typeof option === "string" || typeof option === "boolean") && (!projected || typeof option !== "string" || isProjectedText(option)),
-  );
+function isConfigOptions(value: unknown): boolean {
+  if (!isObject(value) || Object.keys(value).length > 20) return false;
+  return Object.entries(value).every(([key, option]) => isProjectedText(key) && (isBoolean(option) || isProjectedText(option)));
 }
 
-function isCompleteResult(value: unknown): boolean {
-  if (!isObject(value) || !isObject(value.meta)) return false;
-  return (
-    hasRequired(value, "runId", isString) &&
-    value.status === "completed" &&
-    hasRequired(value.meta, "name", isString) &&
-    hasRequired(value.meta, "description", isString) &&
-    hasOwn(value, "result") &&
-    Array.isArray(value.phases) &&
-    value.phases.every(isString) &&
-    hasRequired(value, "agentCount", isNonNegativeSafeInteger) &&
-    hasRequired(value, "durationMs", isNonNegativeFinite) &&
-    Array.isArray(value.logs) &&
-    value.logs.every(isString) &&
-    hasOptional(value, "tokenUsage", isTokenUsage) &&
-    hasOptional(value, "calls", (candidate) => Array.isArray(candidate) && candidate.every((record) => isCallRecord(record, false)))
-  );
-}
-
-function isPersistableInputEvent(value: unknown): value is PersistableEngineRunEvent {
-  if (!isObject(value) || !isString(value.type) || !EVENT_TYPES.has(value.type) || !isOrigin(value, false)) return false;
-  switch (value.type) {
-    case "log":
-      return hasRequired(value, "message", isString);
-    case "phase":
-      return hasRequired(value, "title", isString);
-    case "agentStart":
-      return (
-        hasRequired(value, "label", isString) &&
-        hasOptional(value, "phase", isString) &&
-        hasRequired(value, "prompt", isString) &&
-        hasOptional(value, "model", isString) &&
-        hasOptional(value, "configOptions", (candidate) => isConfigOptions(candidate, false)) &&
-        hasOptional(value, "timeoutMs", (candidate) => candidate === null || isNonNegativeFinite(candidate)) &&
-        hasOptional(value, "idleTimeoutMs", (candidate) => candidate === null || isNonNegativeFinite(candidate)) &&
-        hasRequired(value, "callIndex", isNonNegativeSafeInteger) &&
-        hasOptional(value, "path", isString)
-      );
-    case "agentEnd":
-      return (
-        hasRequired(value, "label", isString) &&
-        hasOptional(value, "phase", isString) &&
-        hasOwn(value, "result") &&
-        hasOptional(value, "tokens", isNonNegativeSafeInteger) &&
-        hasOptional(value, "worktree", isString) &&
-        hasOptional(value, "model", isString) &&
-        hasOptional(value, "error", isString) &&
-        hasOptional(value, "errorCode", (candidate) => typeof candidate === "string" && WORKFLOW_ERROR_CODES.has(candidate as WorkflowErrorCode)) &&
-        hasOptional(value, "recoverable", isBoolean) &&
-        hasOptional(value, "session", isSession) &&
-        hasRequired(value, "callIndex", isNonNegativeSafeInteger) &&
-        hasOptional(value, "usage", isAgentUsage) &&
-        hasOptional(value, "modelResolved", isString) &&
-        hasOptional(value, "backendId", isString) &&
-        hasOptional(value, "provenance", (candidate) => isProvenance(candidate, false)) &&
-        hasOptional(value, "errorRecord", (candidate) => isRecordedError(candidate, false))
-      );
-    case "tokenUsage":
-      return hasRequired(value, "usage", isTokenUsage);
-    case "complete":
-      return hasRequired(value, "result", isCompleteResult);
-    case "journal":
-      return hasRequired(value, "entry", (candidate) => isJournalEntry(candidate, false));
-    case "callRecord":
-      return hasRequired(value, "record", (candidate) => isCallRecord(candidate, false));
-    case "paused":
-      if (!hasOwn(value, "reason")) {
-        return hasNone(value, ["error", "errorRecord", "resetHint", "authContext", "checkpointContext"]);
-      }
-      if (isRequestedPauseReason(value.reason)) {
-        return value.error instanceof WorkflowError && hasRequired(value, "errorRecord", (candidate) => isRecordedError(candidate, false)) && hasNone(value, ["resetHint", "authContext", "checkpointContext"]);
-      }
-      if (value.reason === "usage_limit") {
-        return value.error instanceof WorkflowError && hasRequired(value, "errorRecord", (candidate) => isRecordedError(candidate, false)) && hasOptional(value, "resetHint", isString) && hasNone(value, ["authContext", "checkpointContext"]);
-      }
-      if (value.reason === "auth_required") {
-        return value.error instanceof WorkflowError && hasRequired(value, "errorRecord", (candidate) => isRecordedError(candidate, false)) && hasOptional(value, "authContext", (candidate) => isAuthContext(candidate, false)) && hasNone(value, ["resetHint", "checkpointContext"]);
-      }
-      if (value.reason === "checkpoint_required") {
-        return value.error instanceof WorkflowError && hasRequired(value, "errorRecord", (candidate) => isRecordedError(candidate, false)) && hasOptional(value, "checkpointContext", (candidate) => isCheckpointContext(candidate, false)) && hasNone(value, ["resetHint", "authContext"]);
-      }
-      return false;
-    case "error":
-      return value.error instanceof WorkflowError && hasRequired(value, "errorRecord", (candidate) => isRecordedError(candidate, false));
-    case "stopped":
-    case "resumed":
-      return true;
-    default:
-      return false;
-  }
-}
-
+/** The shape of a saved event, after the projection. */
 function isPersistedEvent(value: unknown): boolean {
-  if (!isObject(value) || !isString(value.type) || !EVENT_TYPES.has(value.type) || !isOrigin(value, true)) return false;
+  if (!isObject(value) || !isString(value.type) || !EVENT_TYPES.has(value.type) || !isOrigin(value)) return false;
   switch (value.type) {
     case "log":
       return hasRequired(value, "message", isProjectedText);
@@ -586,7 +407,7 @@ function isPersistedEvent(value: unknown): boolean {
         hasOptional(value, "phase", isProjectedText) &&
         hasRequired(value, "prompt", isProjectedText) &&
         hasOptional(value, "model", isProjectedText) &&
-        hasOptional(value, "configOptions", (candidate) => isConfigOptions(candidate, true)) &&
+        hasOptional(value, "configOptions", isConfigOptions) &&
         hasOptional(value, "timeoutMs", (candidate) => candidate === null || isNonNegativeFinite(candidate)) &&
         hasOptional(value, "idleTimeoutMs", (candidate) => candidate === null || isNonNegativeFinite(candidate)) &&
         hasRequired(value, "callIndex", isNonNegativeSafeInteger) &&
@@ -607,8 +428,8 @@ function isPersistedEvent(value: unknown): boolean {
         hasOptional(value, "usage", isAgentUsage) &&
         hasOptional(value, "modelResolved", isProjectedText) &&
         hasOptional(value, "backendId", isProjectedText) &&
-        hasOptional(value, "provenance", (candidate) => isProvenance(candidate, true)) &&
-        hasOptional(value, "errorRecord", (candidate) => isRecordedError(candidate, true)) &&
+        hasOptional(value, "provenance", isProvenance) &&
+        hasOptional(value, "errorRecord", isRecordedError) &&
         !hasOwn(value, "session")
       );
     case "tokenUsage":
@@ -628,29 +449,29 @@ function isPersistedEvent(value: unknown): boolean {
       );
     }
     case "journal":
-      return hasRequired(value, "entry", (candidate) => isJournalEntry(candidate, true)) && !hasOwn(value.entry as Record<string, unknown>, "session");
+      return hasRequired(value, "entry", isJournalEntry);
     case "callRecord":
-      return hasRequired(value, "record", (candidate) => isCallRecord(candidate, true));
+      return hasRequired(value, "record", isCallRecord);
     case "paused":
       if (hasOwn(value, "error")) return false;
       if (!hasOwn(value, "reason")) {
         return hasNone(value, ["errorRecord", "resetHint", "authContext", "checkpointContext"]);
       }
       if (isRequestedPauseReason(value.reason)) {
-        return hasRequired(value, "errorRecord", (candidate) => isRecordedError(candidate, true)) && hasNone(value, ["resetHint", "authContext", "checkpointContext"]);
+        return hasRequired(value, "errorRecord", isRecordedError) && hasNone(value, ["resetHint", "authContext", "checkpointContext"]);
       }
       if (value.reason === "usage_limit") {
-        return hasRequired(value, "errorRecord", (candidate) => isRecordedError(candidate, true)) && hasOptional(value, "resetHint", isProjectedText) && hasNone(value, ["authContext", "checkpointContext"]);
+        return hasRequired(value, "errorRecord", isRecordedError) && hasOptional(value, "resetHint", isProjectedText) && hasNone(value, ["authContext", "checkpointContext"]);
       }
       if (value.reason === "auth_required") {
-        return hasRequired(value, "errorRecord", (candidate) => isRecordedError(candidate, true)) && hasOptional(value, "authContext", (candidate) => isAuthContext(candidate, true)) && hasNone(value, ["resetHint", "checkpointContext"]);
+        return hasRequired(value, "errorRecord", isRecordedError) && hasOptional(value, "authContext", isAuthContext) && hasNone(value, ["resetHint", "checkpointContext"]);
       }
       if (value.reason === "checkpoint_required") {
-        return hasRequired(value, "errorRecord", (candidate) => isRecordedError(candidate, true)) && hasOptional(value, "checkpointContext", (candidate) => isCheckpointContext(candidate, true)) && hasNone(value, ["resetHint", "authContext"]);
+        return hasRequired(value, "errorRecord", isRecordedError) && hasOptional(value, "checkpointContext", isCheckpointContext) && hasNone(value, ["resetHint", "authContext"]);
       }
       return false;
     case "error":
-      return !hasOwn(value, "error") && hasRequired(value, "errorRecord", (candidate) => isRecordedError(candidate, true));
+      return !hasOwn(value, "error") && hasRequired(value, "errorRecord", isRecordedError);
     case "stopped":
     case "resumed":
       return true;
@@ -659,21 +480,16 @@ function isPersistedEvent(value: unknown): boolean {
   }
 }
 
-function recordShapeIsValid(value: unknown, requestedRunId: string): value is RunEventLogRecord {
+function recordShapeIsValid(value: unknown, savedRunId: string): value is RunEventLogRecord {
   if (!isObject(value) || !isObject(value.projection)) return false;
-  const sanitizedRunId = projectRunEventForPersistence({
-    type: "stopped",
-    runId: requestedRunId,
-    scope: requestedRunId,
-  }).runId;
   return (
     value.version === RUN_EVENT_LOG_VERSION &&
     hasRequired(value, "streamId", (candidate) => typeof candidate === "string" && STREAM_ID_PATTERN.test(candidate)) &&
-    value.runId === sanitizedRunId &&
+    value.runId === savedRunId &&
     hasRequired(value, "seq", isPositiveSafeInteger) &&
     hasRequired(value, "timestamp", isCanonicalTimestamp) &&
     isPersistedEvent(value.event) &&
-    (value.event as Record<string, unknown>).runId === sanitizedRunId &&
+    (value.event as Record<string, unknown>).runId === savedRunId &&
     hasRequired(value.projection, "redacted", isBoolean) &&
     hasRequired(value.projection, "truncated", isBoolean)
   );
@@ -709,36 +525,30 @@ function eventError(
   });
 }
 
+/** The run ID as the projection saves it, which every record must carry. */
+function persistedRunId(runId: string): string {
+  return projectRunEventForPersistence({ type: "stopped", runId, scope: runId }).runId;
+}
+
 /**
- * Parse and fully validate the complete records in `buffer` starting at byte `startOffset`,
- * whose first record must have sequence `startSeq + 1`. A trailing
- * partial line (no terminating LF) is left unparsed — the torn-tail contract. Every record it
- * returns has passed the identical UTF-8 / canonical-JSON / shape / density / stream
- * checks the whole-file parser applied, so the caller may cache and trust them without re-parsing.
+ * Parse and validate every complete record in `buffer`. A trailing partial line, with no LF,
+ * is left unparsed: a reader ignores it, and the writer cuts it off before its first append.
  */
-function parseLogFrom(
-  buffer: Buffer,
-  runId: string,
-  path: string,
-  expectedStreamId: string,
-  startOffset: number,
-  startSeq: number,
-): ParsedSuffix {
+function parseLog(buffer: Buffer, runId: string, path: string, expectedStreamId: string): ParsedLog {
+  const savedRunId = persistedRunId(runId);
+  const decoder = new TextDecoder("utf-8", { fatal: true });
   const records: RunEventLogRecord[] = [];
-  let offset = startOffset;
-  let completeBytes = startOffset;
-  let expectedSeq = startSeq + 1;
+  let offset = 0;
+  let expectedSeq = 1;
   while (offset < buffer.length) {
     const lf = buffer.indexOf(0x0a, offset);
     if (lf === -1) break;
-    const lineBytes = lf - offset + 1;
-    if (lineBytes > RUN_EVENT_MAX_RECORD_BYTES) {
+    if (lf - offset + 1 > RUN_EVENT_MAX_RECORD_BYTES) {
       throw eventError(`Terminated event record ${expectedSeq} exceeds the byte limit`, "RECORD_TOO_LARGE", runId, path, expectedSeq);
     }
-    const bytes = buffer.subarray(offset, lf);
     let line: string;
     try {
-      line = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      line = decoder.decode(buffer.subarray(offset, lf));
     } catch {
       throw eventError(`Event record ${expectedSeq} is not valid UTF-8`, "CORRUPT_LOG", runId, path, expectedSeq);
     }
@@ -756,7 +566,7 @@ function parseLogFrom(
       throw eventError(`Event record ${expectedSeq} is not in canonical JSONL form`, "CORRUPT_LOG", runId, path, expectedSeq);
     }
     const parsedSeq = isObject(value) && typeof value.seq === "number" ? value.seq : expectedSeq;
-    if (!recordShapeIsValid(value, runId)) {
+    if (!recordShapeIsValid(value, savedRunId)) {
       throw eventError(`Event record ${expectedSeq} violates the v1 record shape`, "CORRUPT_LOG", runId, path, parsedSeq);
     }
     if (value.seq !== expectedSeq) {
@@ -767,10 +577,9 @@ function parseLogFrom(
     }
     records.push(stripLegacyBudgetFields(value));
     offset = lf + 1;
-    completeBytes = offset;
     expectedSeq += 1;
   }
-  return { records, completeBytes };
+  return { records, completeBytes: offset };
 }
 
 function normalizeReadOptions(options: ReadRunEventsOptions = {}): { after: number; limit: number; streamId?: string } {
@@ -799,32 +608,20 @@ function resolveEventFs(fsOverride: Partial<FsLayer> = {}): ResolvedEventFs {
   };
 }
 
-function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs): RunEventPersistence {
+/**
+ * Add the event log to a run store. Each read parses the whole log. The writer parses it once
+ * per lease, before its first append, and then only counts what it adds.
+ */
+export function withRunEvents(persistence: RunPersistence, fsOverride?: Partial<FsLayer>): RunEventPersistence {
   if ((persistence as RunPersistence & { [RUN_EVENT_WRAPPER]?: boolean })[RUN_EVENT_WRAPPER]) {
     return persistence as RunEventPersistence;
   }
-
-  // One validated in-memory view per run (see RunEventCache), keyed by runId and released with the run.
-  const runCaches = new Map<string, RunEventCache>();
+  const fs = resolveEventFs(fsOverride);
+  // The next sequence for each run this process appends to. It is set by the first append under
+  // a lease and dropped when the lease is released.
+  const writers = new Map<string, { streamId: string; nextSeq: number }>();
   const runsDir = resolve(persistence.getRunsDir());
   const eventPath = (runId: string) => join(runsDir, `${runId}.events.jsonl`);
-
-  // Move a read-seeded cache to the most-recently-used position (Map preserves insertion order),
-  // and evict the least-recently-used read caches once the map exceeds MAX_CACHED_RUNS. Writer-owned
-  // caches are lease-bounded and skipped — evicting one would force a re-parse and torn-tail repair.
-  const touchReadCache = (runId: string, cache: RunEventCache): void => {
-    if (cache.writerRepaired) return;
-    runCaches.delete(runId);
-    runCaches.set(runId, cache);
-  };
-
-  const evictReadCaches = (): void => {
-    if (runCaches.size <= MAX_CACHED_RUNS) return;
-    for (const [id, cache] of runCaches) {
-      if (runCaches.size <= MAX_CACHED_RUNS) break;
-      if (!cache.writerRepaired) runCaches.delete(id);
-    }
-  };
 
   const readSidecar = (runId: string): { path: string; present: boolean; buffer: Buffer } => {
     const path = eventPath(runId);
@@ -895,113 +692,33 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
     return { snapshot, streamId: snapshot.eventStreamId };
   };
 
-  const snapshotAheadError = (runId: string, path: string | undefined, eventSeq: number): RunEventLogError =>
-    eventError("Run snapshot watermark is ahead of the event log", "SNAPSHOT_AHEAD", runId, path, eventSeq);
-
-  /**
-   * Whole-file validated parse: the cold, authoritative path a run this process never wrote must
-   * take at least once before any cached fast path is trusted. Runs every durability check on
-   * every record (torn-tail stop, canonical form, shape, sequence density, stream identity,
-   * snapshot watermark).
-   */
-  const validatedParse = (runId: string, suppliedStreamId?: string) => {
+  /** Every complete record of the run's log, checked against its snapshot. */
+  const parse = (runId: string, suppliedStreamId?: string) => {
     const snapshot = loadSnapshot(runId);
     const sidecar = readSidecar(runId);
-    const classified = classify(runId, snapshot, sidecar, suppliedStreamId);
-    const parsed = parseLogFrom(sidecar.buffer, runId, sidecar.path, classified.streamId, 0, 0);
-    if (classified.snapshot.eventSeq! > parsed.records.length) {
-      throw snapshotAheadError(runId, sidecar.path, classified.snapshot.eventSeq!);
+    const { snapshot: classified, streamId } = classify(runId, snapshot, sidecar, suppliedStreamId);
+    const parsed = parseLog(sidecar.buffer, runId, sidecar.path, streamId);
+    if (classified.eventSeq! > parsed.records.length) {
+      throw eventError("Run snapshot watermark is ahead of the event log", "SNAPSHOT_AHEAD", runId, sidecar.path, classified.eventSeq!);
     }
-    return { ...classified, ...sidecar, ...parsed };
+    return { ...parsed, streamId, path: sidecar.path, bytes: sidecar.buffer.length };
   };
 
-  const cacheFromParse = (
-    parsed: ReturnType<typeof validatedParse>,
-    writerRepaired: boolean,
-  ): RunEventCache => ({
-    streamId: parsed.streamId,
-    records: parsed.records,
-    completeBytes: parsed.completeBytes,
-    prefixHash: prefixHashOf(parsed.buffer, parsed.completeBytes),
-    writerRepaired,
-  });
-
-  /**
-   * The writer's own view. First append (or the first after a lease release cleared the cache)
-   * pays one whole-file validated parse, repairs any torn suffix, and seeds a writer-owned cache
-   * that every later append advances in O(bytes-written).
-   */
-  const ensureWriterCache = (runId: string): RunEventCache => {
-    const existing = runCaches.get(runId);
-    if (existing !== undefined && existing.writerRepaired) return existing;
-    const parsed = validatedParse(runId);
-    if (parsed.buffer.length !== parsed.completeBytes) {
+  /** The writer's state. The first append under a lease cuts off a partial last line. */
+  const writerFor = (runId: string): { streamId: string; nextSeq: number } => {
+    const existing = writers.get(runId);
+    if (existing) return existing;
+    const parsed = parse(runId);
+    if (parsed.bytes !== parsed.completeBytes) {
       try {
         fs.truncateSync(parsed.path, parsed.completeBytes);
       } catch (cause) {
         throw eventError("Unable to repair the partial event-log suffix", "IO_ERROR", runId, parsed.path, parsed.records.length + 1, cause);
       }
     }
-    const cache = cacheFromParse(parsed, true);
-    runCaches.set(runId, cache);
-    return cache;
-  };
-
-  /**
-   * Bring the cached view of `runId` up to date and hand it back, doing work proportional only to
-   * the never-before-seen suffix. The file is re-read and its validated prefix re-verified every
-   * time, so an in-place same-length rewrite of an already-validated prefix is still caught.
-   */
-  const ensureReadCache = (
-    runId: string,
-    suppliedStreamId?: string,
-  ): { cache: RunEventCache; snapshot: PersistedRunState; path: string } => {
-    const snapshot = loadSnapshot(runId);
-    const sidecar = readSidecar(runId);
-    const classified = classify(runId, snapshot, sidecar, suppliedStreamId);
-    const streamId = classified.streamId;
-    let cache = runCaches.get(runId);
-    const canWarm =
-      cache !== undefined &&
-      cache.streamId === streamId &&
-      sidecar.buffer.length >= cache.completeBytes &&
-      // appendEvent extends a writer-owned cache itself, so a foreign extension of its file
-      // falls back to a cold re-validation rather than a suffix parse.
-      !(cache.writerRepaired && sidecar.buffer.length > cache.completeBytes) &&
-      prefixHashEquals(prefixHashOf(sidecar.buffer, cache.completeBytes), cache.prefixHash);
-    if (canWarm && cache !== undefined) {
-      if (sidecar.buffer.length > cache.completeBytes) {
-        const suffix = parseLogFrom(
-          sidecar.buffer,
-          runId,
-          sidecar.path,
-          streamId,
-          cache.completeBytes,
-          cache.records.length,
-        );
-        if (suffix.records.length > 0) {
-          for (const record of suffix.records) cache.records.push(record);
-          foldPrefixHash(cache.prefixHash, sidecar.buffer, cache.completeBytes, suffix.completeBytes);
-          cache.completeBytes = suffix.completeBytes;
-        }
-      }
-      touchReadCache(runId, cache);
-    } else {
-      const parsed = parseLogFrom(sidecar.buffer, runId, sidecar.path, streamId, 0, 0);
-      cache = {
-        streamId,
-        records: parsed.records,
-        completeBytes: parsed.completeBytes,
-        prefixHash: prefixHashOf(sidecar.buffer, parsed.completeBytes),
-        writerRepaired: false,
-      };
-      runCaches.set(runId, cache);
-      evictReadCaches();
-    }
-    if (classified.snapshot.eventSeq! > cache.records.length) {
-      throw snapshotAheadError(runId, sidecar.path, classified.snapshot.eventSeq!);
-    }
-    return { cache, snapshot: classified.snapshot, path: sidecar.path };
+    const writer = { streamId: parsed.streamId, nextSeq: parsed.records.length + 1 };
+    writers.set(runId, writer);
+    return writer;
   };
 
   const readEvents = (runId: string, options: ReadRunEventsOptions = {}): ReadRunEventsResult => {
@@ -1012,64 +729,52 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
       const invalid = error as RunEventLogError;
       throw new RunEventLogError(invalid.message, invalid.code, { runId });
     }
-    const { cache, path } = ensureReadCache(runId, normalized.streamId);
-    const tail = cache.records.length;
+    const { records, streamId, path } = parse(runId, normalized.streamId);
+    const tail = records.length;
     if (normalized.after > tail) {
       throw eventError("after is ahead of the complete event-log tail", "CURSOR_AHEAD", runId, path, normalized.after);
     }
-    const events = cache.records.slice(normalized.after, normalized.after + normalized.limit);
+    const events = records.slice(normalized.after, normalized.after + normalized.limit);
     const cursor = events.at(-1)?.seq ?? normalized.after;
-    return {
-      events,
-      streamId: cache.streamId,
-      cursor,
-      endCursor: tail,
-      hasMore: cursor < tail,
-    };
+    return { events, streamId, cursor, endCursor: tail, hasMore: cursor < tail };
   };
 
   const appendEvent = (runId: string, input: AppendRunEventInput): RunEventLogRecord => {
-    const cache = ensureWriterCache(runId);
-    const expectedSeq = cache.records.length + 1;
-    if (input.seq !== expectedSeq) {
-      throw eventError(`Append sequence must be ${expectedSeq}`, "SEQUENCE_MISMATCH", runId, eventPath(runId), typeof input.seq === "number" ? input.seq : undefined);
+    const writer = writerFor(runId);
+    const path = eventPath(runId);
+    if (input.seq !== writer.nextSeq) {
+      throw eventError(`Append sequence must be ${writer.nextSeq}`, "SEQUENCE_MISMATCH", runId, path, typeof input.seq === "number" ? input.seq : undefined);
     }
     if (!isCanonicalTimestamp(input.timestamp)) {
-      throw eventError("Append timestamp is not canonical", "CORRUPT_LOG", runId, eventPath(runId), input.seq);
+      throw eventError("Append timestamp is not canonical", "CORRUPT_LOG", runId, path, input.seq);
     }
-    let admitted: boolean;
-    try {
-      admitted = isPersistableInputEvent(input.event);
-    } catch (cause) {
-      throw eventError("Run event traversal failed during projection", "PROJECTION_ERROR", runId, eventPath(runId), input.seq, cause);
-    }
-    if (!admitted || input.event.runId !== runId) {
-      throw eventError("Append input is not a valid persistable run event", "CORRUPT_LOG", runId, eventPath(runId), input.seq);
+    if (!EVENT_TYPES.has(input.event.type) || input.event.runId !== runId) {
+      throw eventError("Append input is not a valid persistable run event", "CORRUPT_LOG", runId, path, input.seq);
     }
     let projected: ReturnType<typeof projectRunEventForPersistence>;
     try {
       projected = projectRunEventForPersistence(input.event);
     } catch (cause) {
-      throw eventError("Run event projection failed", "PROJECTION_ERROR", runId, eventPath(runId), input.seq, cause);
+      throw eventError("Run event projection failed", "PROJECTION_ERROR", runId, path, input.seq, cause);
     }
     const record: RunEventLogRecord = {
       version: RUN_EVENT_LOG_VERSION,
-      streamId: cache.streamId,
+      streamId: writer.streamId,
       runId: projected.runId,
       seq: input.seq,
       timestamp: input.timestamp,
       event: projected.event,
       projection: projected.projection,
     };
-    if (!recordShapeIsValid(record, runId)) {
-      throw eventError("Projected event violates the v1 record shape", "CORRUPT_LOG", runId, eventPath(runId), input.seq);
+    // The record must read back: a reader runs this same check on every line.
+    if (!recordShapeIsValid(record, persistedRunId(runId))) {
+      throw eventError("Projected event violates the v1 record shape", "CORRUPT_LOG", runId, path, input.seq);
     }
     const line = Buffer.from(`${JSON.stringify(record)}\n`, "utf8");
     if (line.length > RUN_EVENT_MAX_RECORD_BYTES) {
-      throw eventError("Projected event record exceeds the byte limit", "RECORD_TOO_LARGE", runId, eventPath(runId), input.seq);
+      throw eventError("Projected event record exceeds the byte limit", "RECORD_TOO_LARGE", runId, path, input.seq);
     }
 
-    const path = eventPath(runId);
     let descriptor: number;
     try {
       descriptor = fs.openSync(path, "a");
@@ -1094,10 +799,7 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
     if (written !== line.length) {
       throw eventError("Event-log append returned a short write", "IO_ERROR", runId, path, input.seq);
     }
-    // The durable write succeeded: advance the writer-owned view (O(bytes-written)).
-    cache.records.push(record);
-    foldPrefixHash(cache.prefixHash, line, 0, line.length);
-    cache.completeBytes += line.length;
+    writer.nextSeq += 1;
     return record;
   };
 
@@ -1112,7 +814,7 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
       return persistence.list();
     },
     delete(runId) {
-      runCaches.delete(runId);
+      writers.delete(runId);
       try {
         fs.unlinkSync(eventPath(runId));
       } catch {
@@ -1127,7 +829,7 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
       return persistence.acquireRunLease(runId);
     },
     releaseRunLease(lease: RunLease) {
-      runCaches.delete(lease.runId);
+      writers.delete(lease.runId);
       return persistence.releaseRunLease(lease);
     },
     inspectRunLease(runId: string) {
@@ -1155,16 +857,4 @@ function withRunEventsInternal(persistence: RunPersistence, fs: ResolvedEventFs)
   } as RunEventPersistence & { [RUN_EVENT_WRAPPER]: true };
   Object.defineProperty(wrapper, RUN_EVENT_WRAPPER, { value: true });
   return wrapper;
-}
-
-export function withRunEvents(persistence: RunPersistence): RunEventPersistence {
-  return withRunEventsInternal(persistence, resolveEventFs());
-}
-
-/** Package-private factory seam that keeps filesystem overrides consistent with snapshot I/O. */
-export function withRunEventsUsingFs(
-  persistence: RunPersistence,
-  fsOverride?: Partial<FsLayer>,
-): RunEventPersistence {
-  return withRunEventsInternal(persistence, resolveEventFs(fsOverride));
 }

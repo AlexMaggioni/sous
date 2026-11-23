@@ -702,30 +702,26 @@ test("withRunEvents wraps structural persistence once, delegates it, and deletes
   }
 });
 
-// The daemon event path honors its bounds. On a real ≥20,000-record journal with a cursor
-// lagging ≥5,000 records, a readEvents page must stay bounded (no whole-file re-parse per read).
+// A read parses the whole log, so its cost grows with the log. This bounds it on a large one.
+// The log is written in one go, since 20,000 appends spend most of a minute opening the file.
 test(
-  "R0: a >=20k-record journal serves a 5k-lagging read page within bounds",
-  withPersistence(async ({ persistence }) => {
+  "a read of a 20,000-record log returns its page within a second",
+  withPersistence(({ persistence, eventPath }) => {
     const runId = "r0-bounded";
     persistence.save(state(runId));
+    const first = persistence.appendEvent(runId, {
+      seq: 1,
+      timestamp: TIMESTAMP,
+      event: { type: "log", runId, scope: runId, message: "bounded-1" },
+    });
     const total = 20_000;
-    for (let seq = 1; seq <= total; seq++) {
-      persistence.appendEvent(runId, {
-        seq,
-        timestamp: TIMESTAMP,
-        event: { type: "log", runId, scope: runId, message: `bounded-${seq}` },
-      });
-    }
-    // Model the watermark trailing the journal tail by the lag amount, exactly as the daemon's
-    // snapshot cadence lags its append cadence.
-    const lag = 5_000;
-    const after = total - lag; // 15000
+    const lines = Array.from({ length: total }, (_, index) =>
+      JSON.stringify({ ...first, seq: index + 1, event: { ...first.event, message: `bounded-${index + 1}` } }));
+    writeFileSync(eventPath(runId), `${lines.join("\n")}\n`);
+    // The snapshot's watermark trails the log by 5,000 records.
+    const after = total - 5_000;
     persistence.save(state(runId, { eventSeq: after }));
 
-    // A read from the lagging cursor returns its exact 100-record window fast — no per-call
-    // whole-journal re-parse (that this process wrote it warmed the cache; a cold reader would pay
-    // exactly one validated parse, not one per record).
     const readStart = Date.now();
     const page = persistence.readEvents(runId, { after, limit: 100 });
     const readMs = Date.now() - readStart;
