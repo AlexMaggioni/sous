@@ -122,6 +122,19 @@ const HOST_HANDLED_CODES: ReadonlySet<WorkflowErrorCode> = new Set([
 /** The message as a sentence, with one period at its end. */
 const sentence = (message: string) => (/[.!?]$/.test(message.trimEnd()) ? message.trimEnd() : `${message}.`);
 
+/** The pause a failed or stopped step causes. The manager reads its code and pauseReason. */
+function stepFailedPause(
+  label: string,
+  message: string,
+  details: { code: WorkflowErrorCode; pauseReason?: string; details?: unknown },
+): WorkflowError {
+  return new WorkflowError(message, WorkflowErrorCode.PAUSE_REQUESTED, {
+    recoverable: false,
+    agentLabel: label,
+    details: { stepFailed: true, ...details },
+  });
+}
+
 /** True for the pause a failed or stopped step causes. */
 export function isStepFailedPause(error: { code?: unknown; details?: unknown } | undefined): boolean {
   return (
@@ -1533,10 +1546,9 @@ export async function runWorkflow<T = unknown>(
               const message = `step "${label}" was stopped${typeof why === "string" ? `: ${cancellationReason.message}` : ""}`;
               log(`${sentence(message)} The run pauses: resume it to run the step again.`);
               emitFailure(cancellationReason, "engine", "error", slot, false);
-              throw (shared.pendingPause ??= new WorkflowError(message, WorkflowErrorCode.PAUSE_REQUESTED, {
-                recoverable: false,
-                agentLabel: label,
-                details: { stepFailed: true, code: WorkflowErrorCode.AGENT_CANCELLED, ...(typeof why === "string" ? { pauseReason: why } : {}) },
+              throw (shared.pendingPause ??= stepFailedPause(label, message, {
+                code: WorkflowErrorCode.AGENT_CANCELLED,
+                ...(typeof why === "string" ? { pauseReason: why } : {}),
               }));
             }
             if (signal.aborted) {
@@ -1569,10 +1581,9 @@ export async function runWorkflow<T = unknown>(
               const message = `step "${label}" failed ${tries}: ${workflowError.message}`;
               log(`${sentence(message)} The run pauses: fix the cause and resume it.`);
               emitFailure(workflowError, "runner", "error", slot, false);
-              throw (shared.pendingPause ??= new WorkflowError(message, WorkflowErrorCode.PAUSE_REQUESTED, {
-                recoverable: false,
-                agentLabel: label,
-                details: { stepFailed: true, code: workflowError.code, ...(workflowError.details !== undefined ? { details: workflowError.details } : {}) },
+              throw (shared.pendingPause ??= stepFailedPause(label, message, {
+                code: workflowError.code,
+                ...(workflowError.details !== undefined ? { details: workflowError.details } : {}),
               }));
             }
             if (workflowError.recoverable) {
