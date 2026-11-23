@@ -1,4 +1,4 @@
-# sous
+# The sous guide
 
 `sous` runs saved workflows on this machine, in the background. A run keeps going when the terminal
 closes. It asks its questions through an inbox, pauses on a failed step, and waits out the
@@ -446,7 +446,7 @@ Proven end to end with real agents, on `claude/haiku` unless a proof says otherw
   Claude Code 2.1.329 and Codex 0.169.0, on Haiku 5.5 and gpt-6.1-sol, each run keeps which
   program and version it used, `sous doctor` checks both, and neither program changes its own
   files during the runs. The minimum Claude Code has since moved to 2.1.330, and the
-  [proofs of the cleanup](proof/improve.md) ran on it.
+  [proofs of the cleanup](history/improve.md) ran on it.
 
 - [Accounts](proof/accounts.md). A run from a Claude Code session records that session's login, a
   run from a plain shell records sous's account, and the tests cover the usage limit, the switch

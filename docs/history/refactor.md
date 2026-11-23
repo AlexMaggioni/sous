@@ -1,6 +1,6 @@
 # Proof: the refactor
 
-This is the proof that [the refactor plan](../refactor-plan.md) was done and kept orc's behavior.
+This is the proof that [the refactor plan](refactor-plan.md) was done and kept orc's behavior.
 "Before" is commit 06bb4927, the last commit before the refactor. "After" is the head of
 `refactor/step4`. The runs were on 2026-11-22, on this machine's Claude and ChatGPT subscriptions,
 with Claude Code 2.1.330 and Codex 0.169.0. Claude Code steps ran on haiku. Codex steps ran on
