@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { StepRequest } from "../src/steps/agent-run.js";
 import type { WorkflowReplayProvenanceField } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PersistedRunState, RunLease, RunPersistence } from "../src/runs/persistence/run-persistence.js";
@@ -697,38 +695,4 @@ return { approval, tail }`, "positional-checkpoint-target");
       dirs.cleanup();
     }
   });
-});
-
-describe("WorkflowManager world-neutral journal replay", () => {
-  function gitDirs(): { cwd: string; root: string; cleanup: () => void } {
-    const dirs = tempDirs("incremental-manager-git-");
-    execFileSync("git", ["-C", dirs.cwd, "init", "-q"]);
-    execFileSync("git", ["-C", dirs.cwd, "config", "user.email", "tests@example.com"]);
-    execFileSync("git", ["-C", dirs.cwd, "config", "user.name", "Tests"]);
-    writeFileSync(join(dirs.cwd, "tracked.txt"), "clean\n");
-    execFileSync("git", ["-C", dirs.cwd, "add", "tracked.txt"]);
-    execFileSync("git", ["-C", dirs.cwd, "commit", "-qm", "initial"]);
-    return dirs;
-  }
-
-  function artifactRunner(cwd: string, calls: string[]): AgentRunner {
-    return {
-      async run(prompt: string, options: StepRequest) {
-        calls.push(prompt);
-        if (prompt.startsWith("write:")) {
-          const value = prompt.slice("write:".length);
-          writeFileSync(join(options.cwd ?? cwd, "generated.json"), value);
-          return value;
-        }
-        return readFileSync(join(options.cwd ?? cwd, "generated.json"), "utf8");
-      },
-    };
-  }
-
-  const writerScript = (writer: string, reader: string) => workflow(`
-await agent(${JSON.stringify(writer)}, { label: "writer" })
-return await agent(${JSON.stringify(reader)}, {
-  label: "reader",
-  resume: { filesystem: "read-only" },
-})`, "writer-counterexample");
 });

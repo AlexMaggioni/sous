@@ -8,8 +8,6 @@ import type { PlannedRequest } from "../src/steps/agent-run.js";
 import { createSteps } from "../src/steps/steps.js";
 import { runWorkflow } from "../src/workflow.js";
 
-const MODEL_TIERS_FILE = ".agentprism/workflows/model-tiers.json";
-
 function capturingRunner(capture: (options: PlannedRequest) => void) {
   return {
     async run(_prompt: string, options: PlannedRequest) {
@@ -17,25 +15,6 @@ function capturingRunner(capture: (options: PlannedRequest) => void) {
       return "ok";
     },
   };
-}
-
-async function withOldTierFile<T>(
-  tiers: Record<string, string>,
-  fn: (configPath: string) => Promise<T>,
-): Promise<T> {
-  const previousHome = process.env.HOME;
-  const home = mkdtempSync(join(tmpdir(), "orchestrator-tier-home-"));
-  const configPath = join(home, MODEL_TIERS_FILE);
-  mkdirSync(join(home, ".agentprism", "workflows"), { recursive: true });
-  writeFileSync(configPath, JSON.stringify({ tiers }), "utf-8");
-  process.env.HOME = home;
-  try {
-    return await fn(configPath);
-  } finally {
-    if (previousHome === undefined) delete process.env.HOME;
-    else process.env.HOME = previousHome;
-    rmSync(home, { recursive: true, force: true });
-  }
 }
 
 test("run-level instructions are prepended to the instructions of an agent the steps module routes", async () => {

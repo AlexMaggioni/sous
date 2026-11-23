@@ -63,24 +63,6 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
   assert.fail("condition did not become true");
 }
 
-function persisted(runId: string, status: PersistedRunState["status"]): PersistedRunState {
-  return {
-    runId,
-    workflowName: `workflow-${status}`,
-    script: "private script",
-    args: { private: true },
-    cwd: "/private/cwd",
-    status,
-    phases: ["Declared", "Dynamic"],
-    currentPhase: "Dynamic",
-    agents: [],
-    logs: ["one", "two"],
-    journal: [{ index: 0, hash: "private-hash", result: { ok: true } }],
-    startedAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  };
-}
-
 test("a checkpoint call is attributed in the journal and a completed run has no log tail", async () => {
   const store = memoryPersistence();
   const held = deferred<unknown>();
