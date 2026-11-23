@@ -135,6 +135,21 @@ async function resumed(options: {
 const latest = (edited: string, before?: (paths: HomePaths, runId: string) => void) =>
   resumed({ workflows: { three: three("A") }, workflow: "three", fails: "C", edits: { three: edited }, mode: "latest", before });
 
+/** Run the workflow to its end, apply the edits, and run it again as `orc rerun --reuse` does.
+ *  Returns the prompts of the first run, the prompts of the second, and the second's result. */
+async function reuseAfterEdit(workflows: Record<string, string>, workflow: string, edits: Record<string, string>) {
+  const { paths, projectDir } = setup(workflows);
+  const agent = fake();
+  const first = start(paths, projectDir, workflow, agent);
+  assert.equal((await agent.ended(first.runId))?.status, "completed");
+  const before = agent.since(0);
+  for (const [name, script] of Object.entries(edits)) edit(projectDir, name, script);
+  const again = reuse(paths, first, agent);
+  const done = await agent.ended(again.runId);
+  assert.equal(done?.status, "completed");
+  return { first: before, live: agent.since(before.length), result: JSON.parse(JSON.stringify(done?.result)) as unknown };
+}
+
 const NESTED = { child: child("X"), parent: parent("A") };
 
 /** One row per case. A step fails, the workflow may change, and the run resumes in one mode.
@@ -395,36 +410,15 @@ return await agent('Build ' + name, { label: 'build' })`,
   });
 
   it("reuses the steps of a nested workflow", async () => {
-    const { paths, projectDir } = setup({ child: child("X"), parent: parent("A") });
-    const agent = fake();
-    const first = start(paths, projectDir, "parent", agent);
-    assert.equal((await agent.ended(first.runId))?.status, "completed");
-    assert.deepEqual(agent.since(0), ["A", "X", "Y", "C"]);
-
-    edit(projectDir, "parent", parent("A").replace("agent('C'", "agent('C2'"));
-    const again = reuse(paths, first, agent);
-    const done = await agent.ended(again.runId);
-    assert.equal(done?.status, "completed");
-    assert.deepEqual(agent.since(4), ["C2"]);
-    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["A done", ["X done", "Y done"], "C2 done"]);
+    const { first, live, result } = await reuseAfterEdit(NESTED, "parent", { parent: parent("A").replace("agent('C'", "agent('C2'") });
+    assert.deepEqual(first, ["A", "X", "Y", "C"]);
+    assert.deepEqual(live, ["C2"]);
+    assert.deepEqual(result, ["A done", ["X done", "Y done"], "C2 done"]);
   });
 
   it("reuses a loop of identical steps", async () => {
-    const loop = (last: string) => `export const meta = { name: 'loop', description: 'a loop' }
-const out = []
-for (let i = 0; i < 3; i++) out.push(await agent('check', { label: 'check' }))
-out.push(await agent('${last}', { label: 'last' }))
-return out`;
-    const { paths, projectDir } = setup({ loop: loop("L") });
-    const agent = fake();
-    const first = start(paths, projectDir, "loop", agent);
-    assert.equal((await agent.ended(first.runId))?.status, "completed");
-    assert.deepEqual(agent.since(0), ["check", "check", "check", "L"]);
-
-    edit(projectDir, "loop", loop("L2"));
-    const again = reuse(paths, first, agent);
-    const done = await agent.ended(again.runId);
-    assert.equal(done?.status, "completed");
-    assert.deepEqual(agent.since(4), ["L2"]);
+    const { first, live } = await reuseAfterEdit({ loop: loop("L") }, "loop", { loop: loop("L2") });
+    assert.deepEqual(first, ["check", "check", "check", "L"]);
+    assert.deepEqual(live, ["L2"]);
   });
 });
