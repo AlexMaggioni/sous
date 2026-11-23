@@ -845,15 +845,16 @@ export class WorkflowManager extends EventEmitter {
     try {
       return await this.executeRun(managed, script, exec, resumeExecution);
     } catch (error) {
+      // executeRun settled the run, kept its result, saved it and released the lease before it
+      // threw. Return that result, so it agrees with the saved state.
+      if (managed.result) return managed.result;
       const wfError =
         error instanceof WorkflowError
           ? error
           : new WorkflowError(errorMessage(error), WorkflowErrorCode.UNKNOWN, {
               recoverable: false,
             });
-      // executeRun's own catch already settled status + persisted + released the
-      // lease for the failure modes it handles. If the throw came from before that
-      // (e.g. a missing AgentRunner), settle a terminal status here too.
+      // A throw from before executeRun's own catch: settle a terminal status here too.
       if (managed.status === "running") {
         managed.status = managed.controller.signal.aborted ? "aborted" : "failed";
         managed.error = wfError;

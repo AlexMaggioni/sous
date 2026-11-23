@@ -296,6 +296,27 @@ return { count: args.count, answer }`,
     }
   });
 
+  it("runSync returns the result its paused or failed run kept and saved", async () => {
+    const dirs = tempDirs();
+    try {
+      const manager = new WorkflowManager({
+        cwd: dirs.cwd,
+        persistenceRoot: dirs.root,
+        defaultAgentRetries: 0,
+        agent: { async run() { throw new Error("the disk is full"); } },
+      });
+      const paused = await manager.runSync(script(`return await agent('write', { label: 'write' })`, "paused-result"));
+      const failed = await manager.runSync(script(`throw new Error('broken')`, "failed-result"));
+      for (const [result, status] of [[paused, "paused"], [failed, "failed"]] as const) {
+        assert.equal(result.status, status);
+        assert.equal(result, manager.getRun(result.runId)?.result, `the ${status} run keeps the result runSync returns`);
+        assert.equal(result.durationMs, manager.getPersistence().load(result.runId)?.durationMs, `the ${status} run saved the same duration`);
+      }
+    } finally {
+      dirs.cleanup();
+    }
+  });
+
   it("guards caller run ids lease-first, including a second manager before the first save", async () => {
     const states = new Map<string, PersistedRunState>();
     const held = new Set<string>();
