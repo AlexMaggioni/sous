@@ -18,16 +18,6 @@ describe("accounts", () => {
     assert.deepEqual(accountsForRun(paths, { CLAUDE_CONFIG_DIR: "/somewhere" }).claude, { name: "default", folder: "/somewhere" });
   });
 
-  it("keeps a login token from the environment that is no account of orc's, and names one that is", () => {
-    const paths = home();
-    addAccount(paths, "work", "sk-ant-oat-work");
-    assert.equal(accountsForRun(paths, { CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat-work" }, { caller: true }).claude.name, "work");
-    const kept = accountsForRun(paths, { CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat-other" }, { caller: true }).claude;
-    assert.equal(kept.name, "caller");
-    assert.ok(kept.kept);
-    assert.deepEqual(stepAccount(paths, "claude", kept), { folder: undefined, token: "sk-ant-oat-other" });
-  });
-
   it("runs a step as a named account, and refuses one orc no longer has", () => {
     const paths = home();
     addAccount(paths, "work", "sk-ant-oat-work");

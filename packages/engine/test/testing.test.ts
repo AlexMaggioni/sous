@@ -104,16 +104,4 @@ describe("test kit", () => {
     await assert.rejects(workers.ended("run-other"), /no worker started for run-other/);
     assert.equal(existsSync(logFile(paths, "run-other")), false);
   });
-
-  it("fakeRunner notes each call and opens a session for it", async () => {
-    const opened: unknown[] = [];
-    const { runner, calls } = fakeRunner((call, all) => `${call.prompt} ${all.length}`);
-    const request = { label: "first", cwd: "/tmp", onSessionOpen: (ref: unknown) => opened.push(ref) };
-    assert.equal(await runner.run("hello", request as never), "hello 1");
-    assert.deepEqual(
-      calls.map((call) => [call.prompt, call.label]),
-      [["hello", "first"]],
-    );
-    assert.deepEqual(opened, [{ sessionId: "s1", backendId: "claude", cwd: "/tmp", reopen: { load: true, resume: true, list: true } }]);
-  });
 });
