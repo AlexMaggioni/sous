@@ -96,6 +96,9 @@ for (let i = 0; i < 3; i++) out.push(await agent('check', { label: 'check' }))
 out.push(await agent('${last}', { label: 'last' }))
 return out`;
 
+/** `three` with these options on step a, in place of its label alone. */
+const threeWith = (options: string) => three("A").replace("{ label: 'a' }", `{ ${options} }`);
+
 const asks = (a: string) => `export const meta = { name: 'asks', description: 'asks' }
 const a = await agent('${a}', { label: 'a' })
 const name = await checkpoint('Name it', { kind: 'input' })
@@ -178,6 +181,23 @@ const RESUMES: Array<{
   {
     title: "with --latest and a comment-only edit, keeps a parallel sibling that finished after the failed step",
     workflows: { par: par() }, workflow: "par", fails: "B", edits: { par: par("\n// a comment") }, mode: "latest", first: ["A", "B", "C"], live: ["B", "D"],
+  },
+  // The guide: a step matches on the same prompt, model, agent, options and label. Each row below
+  // edits one of these on step 1 and nothing else.
+  {
+    title: "with --latest and only the model of step 1 edited, runs it again and keeps the steps after it",
+    workflows: { three: threeWith("label: 'a', model: 'claude/haiku'") }, workflow: "three", fails: "C",
+    edits: { three: threeWith("label: 'a', model: 'claude/sonnet'") }, mode: "latest", first: ["A", "B", "C"], live: ["A", "C"],
+  },
+  {
+    title: "with --latest and only an option of step 1 edited, runs it again and keeps the steps after it",
+    workflows: { three: threeWith("label: 'a', effort: 'low'") }, workflow: "three", fails: "C",
+    edits: { three: threeWith("label: 'a', effort: 'high'") }, mode: "latest", first: ["A", "B", "C"], live: ["A", "C"],
+  },
+  {
+    title: "with --latest and only the label of step 1 edited, runs it again and keeps the steps after it",
+    workflows: { three: three("A") }, workflow: "three", fails: "C",
+    edits: { three: threeWith("label: 'first'") }, mode: "latest", first: ["A", "B", "C"], live: ["A", "C"],
   },
 ];
 
