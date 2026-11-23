@@ -25,21 +25,21 @@ const ts = createRequire(import.meta.url)("typescript");
 // ── The tables ──────────────────────────────────────────────────────────────────────────────────
 
 /** Our npm scope. The fork's scope, @automatalabs, must be gone. */
-const SCOPE = "@orchestrator";
+const SCOPE = "@sous";
 
-/** The only packages. orc is the command line, engine the backend, harnesses the programs. */
-const PACKAGES = ["orc", "engine", "harnesses"];
+/** The only packages. cli is the sous command, engine the backend, harnesses the programs. */
+const PACKAGES = ["cli", "engine", "harnesses"];
 
 /** Old folder names of the table's packages, while the refactor moves them. Empty at the end. */
 const OLD_NAMES = {};
 
 /**
  * What each package may import besides node's own modules and its own files. Ours are named
- * without the scope. orc imports only the engine, the engine reaches the programs only through
+ * without the scope. cli imports only the engine, the engine reaches the programs only through
  * the harnesses' public entry, and the harnesses import nothing of ours.
  */
 const MAY_IMPORT = {
-  orc: { ours: ["engine"], outside: [] },
+  cli: { ours: ["engine"], outside: [] },
   engine: { ours: ["harnesses"], outside: ["typebox", "acorn", "yaml", "smol-toml"] },
   harnesses: { ours: [], outside: ["@anthropic-ai/claude-agent-sdk", "typebox", "yaml", "smol-toml"] },
 };
@@ -126,7 +126,7 @@ const HOMES = [
       "packages/engine/src/agents.ts",
       "packages/engine/src/code-steps.ts",
       "packages/engine/src/workflows/check.ts",
-      "packages/orc/src/",
+      "packages/cli/src/",
       "packages/harnesses/src/types.ts",
       "packages/harnesses/src/lookup.ts",
       "packages/harnesses/src/claude/program.ts",
@@ -140,8 +140,8 @@ const HOMES = [
   },
 ];
 
-/** The engine exports only what orc calls, and the harnesses only what the engine calls. */
-const CALLERS = { engine: "orc", harnesses: "engine" };
+/** The engine exports only what cli calls, and the harnesses only what the engine calls. */
+const CALLERS = { engine: "cli", harnesses: "engine" };
 
 /** The node modules that touch the machine: files, processes, the system, the network and vm. */
 const MACHINE = /^(node:)?(fs|fs\/promises|child_process|os|vm|net|http|https|worker_threads)$/;
@@ -182,8 +182,8 @@ const TOUCHES_MACHINE = [
   "packages/harnesses/src/codex/rpc.ts",
   "packages/harnesses/src/codex/run.ts",
   "packages/harnesses/src/lookup.ts",
-  "packages/orc/src/account-cli.ts",
-  "packages/orc/src/cli.ts",
+  "packages/cli/src/account-cli.ts",
+  "packages/cli/src/cli.ts",
 ];
 
 /** The rule modules decide from what they are given. They read no file and start no process. */
@@ -202,7 +202,7 @@ const RULE_MODULES = [
 ];
 
 /** The workflow core. It runs one workflow, and the worker around it handles the run. */
-const CORE = ["packages/engine/src/workflow.ts", "packages/engine/src/workflow-manager.ts", "packages/engine/src/orchestrator-globals.ts", "packages/engine/src/steps/"];
+const CORE = ["packages/engine/src/workflow.ts", "packages/engine/src/workflow-manager.ts", "packages/engine/src/sous-globals.ts", "packages/engine/src/steps/"];
 
 /**
  * Files that never reach certain files of their package at run time, through their own imports
@@ -247,14 +247,14 @@ const NEVER_REACH = [
 const PINS = [
   // Runs
   { change: "A run paused for a lost login resumes once the login is back", tests: [
-    ["packages/orc/test/runs.test.ts", "a run paused for a lost login pauses again while the login is gone, says why, and resumes once the person logs in again"],
+    ["packages/cli/test/runs.test.ts", "a run paused for a lost login pauses again while the login is gone, says why, and resumes once the person logs in again"],
     ["packages/engine/test/runs/rule.test.ts", "${row}: ${expected.word}", '"paused, auth_required"'],
   ] },
   { change: "A step's time limit counts from when it holds a slot", tests: [
-    ["packages/orc/test/runs.test.ts", "a step's time limit counts from when it starts running, not while it waits for a free slot"],
+    ["packages/cli/test/runs.test.ts", "a step's time limit counts from when it starts running, not while it waits for a free slot"],
   ] },
   { change: "choose() takes the run's step changes like agent()", tests: [
-    ["packages/orc/test/runs.test.ts", "per-run step changes reach the agent that choose() asks"],
+    ["packages/cli/test/runs.test.ts", "per-run step changes reach the agent that choose() asks"],
   ] },
   { change: "A step that sets tier stops with an error", tests: [
     ["packages/engine/test/runs/call-hash-pin.test.ts", "refuses a step with a tier, so no call keeps a hash for it"],
@@ -266,55 +266,55 @@ const PINS = [
     ["packages/engine/test/script-functions.test.ts", "a script that calls completenessCheck fails with a ReferenceError"],
   ] },
   { change: "A run whose worker died while another process held its lock reads as interrupted with exit 2", tests: [
-    ["packages/orc/test/reads.test.ts", "write no file"],
+    ["packages/cli/test/reads.test.ts", "write no file"],
     ["packages/engine/test/runs/rule.test.ts", "${row}: ${expected.word}", '"running, worker gone"'],
   ] },
   { change: "The state saves when the run paused, once", tests: [
-    ["packages/orc/test/accounts.test.ts", "a limit with no reset time is tried again 30 minutes after the pause, whatever saves the state later"],
+    ["packages/cli/test/accounts.test.ts", "a limit with no reset time is tried again 30 minutes after the pause, whatever saves the state later"],
   ] },
   { change: "ask(\"Breakpoint: ...\") is a plain question", tests: [
-    ["packages/orc/test/runs.test.ts", "a question whose text starts like a breakpoint's is a plain question, which send-back refuses"],
+    ["packages/cli/test/runs.test.ts", "a question whose text starts like a breakpoint's is a plain question, which send-back refuses"],
   ] },
-  { change: "orc stop --step writes its request to a file of its own", tests: [
-    ["packages/orc/test/runs.test.ts", "a step stop survives the worker saving a record it read before the request"],
-    ["packages/orc/test/runs.test.ts", "a step stop left by a worker that ended is dropped when the next worker starts"],
+  { change: "sous stop --step writes its request to a file of its own", tests: [
+    ["packages/cli/test/runs.test.ts", "a step stop survives the worker saving a record it read before the request"],
+    ["packages/cli/test/runs.test.ts", "a step stop left by a worker that ended is dropped when the next worker starts"],
   ] },
-  { change: "orc stop --step build stops the step that orc log names build", tests: [
-    ["packages/orc/test/runs.test.ts", "stopping a step by its name stops only that step, not a nested step with the same label"],
+  { change: "sous stop --step build stops the step that sous log names build", tests: [
+    ["packages/cli/test/runs.test.ts", "stopping a step by its name stops only that step, not a nested step with the same label"],
   ] },
-  { change: "orc doctor --live --model haiku runs haiku", tests: [
+  { change: "sous doctor --live --model haiku runs haiku", tests: [
     ["packages/engine/test/programs.test.ts", "runs a bare model name on the harness it routes to, and says so"],
-    ["packages/orc/test/doctor.test.ts", "with --live --model, runs that model on its program alone"],
+    ["packages/cli/test/doctor.test.ts", "with --live --model, runs that model on its program alone"],
   ] },
   { change: "The worker's last log line for a run paused on a failed step says why", tests: [
     ["packages/engine/test/runs/worker-log.test.ts", "says why a step failed, on a start and on a resume alike"],
   ] },
   { change: "The run's log gets a note line when a program could not do what a step asked", tests: [
     ["packages/engine/test/steps.test.ts", "reports once per step what its program could not do as asked, also when the step fails"],
-    ["packages/orc/test/note-line.test.ts", "names the step and what its program could not do, once, between the step's start and its end"],
+    ["packages/cli/test/note-line.test.ts", "names the step and what its program could not do, once, between the step's start and its end"],
   ] },
   { change: "An MCP server of a type a step cannot start says so", tests: [
     ["packages/engine/test/mcp-servers.test.ts", "names the server and its type when a step cannot start it"],
   ] },
 
   // Questions
-  { change: "orc answer <q> stop at a breakpoint stops the run", tests: [
-    ["packages/orc/test/questions.test.ts", "orc answer <q> stop stops a running run, as orc stop does"],
+  { change: "sous answer <q> stop at a breakpoint stops the run", tests: [
+    ["packages/cli/test/questions.test.ts", "sous answer <q> stop stops a running run, as sous stop does"],
   ] },
   { change: "An answer file with no value pauses the run", tests: [
-    ["packages/orc/test/answer-file.test.ts", "pauses the run, runs no step, and asks again when the run resumes"],
+    ["packages/cli/test/answer-file.test.ts", "pauses the run, runs no step, and asks again when the run resumes"],
   ] },
 
   // Resume
   { change: "--latest keeps the steps that match after an edit", tests: [
-    ["packages/orc/test/resume.test.ts", "with --latest and step 1 edited, keeps the steps after it"],
+    ["packages/cli/test/resume.test.ts", "with --latest and step 1 edited, keeps the steps after it"],
   ] },
   { change: "A reuse of a run that was resumed, a nested run and a loop replay their finished steps", tests: [
-    ["packages/orc/test/resume.test.ts", "reuses the steps of a resumed run after an edited first step"],
-    ["packages/orc/test/resume.test.ts", "reuses the steps of a nested workflow"],
+    ["packages/cli/test/resume.test.ts", "reuses the steps of a resumed run after an edited first step"],
+    ["packages/cli/test/resume.test.ts", "reuses the steps of a nested workflow"],
   ] },
   { change: "A paused reuse run keeps its source's steps when it resumes", tests: [
-    ["packages/orc/test/resume.test.ts", "resumes a paused reuse run with its source's later steps"],
+    ["packages/cli/test/resume.test.ts", "resumes a paused reuse run with its source's later steps"],
   ] },
   { change: "A stale journal row under a later call no longer replays", tests: [
     ["packages/engine/test/runs/resume-moved-rows.test.ts", "runs a step live after two failed resumes moved an identical step's row"],
@@ -323,21 +323,21 @@ const PINS = [
   { change: "On a resume, an agent step that returned a blank result with no schema runs again", tests: [
     ["packages/engine/test/incremental-engine-resume.test.ts", "runs live a step whose recorded text is blank, unless the step has a schema"],
   ] },
-  // Both tests read the saved state with readState. No test reads it from orc show --json.
-  { change: "orc show --json shows the strategy occurrence-v1 and the match occurrence", tests: [
-    ["packages/orc/test/resume.test.ts", "with --latest and step 1 edited, keeps the steps after it"],
-    ["packages/orc/test/resume.test.ts", "reuses the steps of a resumed run after an edited first step"],
+  // Both tests read the saved state with readState. No test reads it from sous show --json.
+  { change: "sous show --json shows the strategy occurrence-v1 and the match occurrence", tests: [
+    ["packages/cli/test/resume.test.ts", "with --latest and step 1 edited, keeps the steps after it"],
+    ["packages/cli/test/resume.test.ts", "reuses the steps of a resumed run after an edited first step"],
   ] },
 
   // Accounts and clean-up
-  { change: "A second orc account use spare, after a move whose worker did not start, retries the resume", tests: [
-    ["packages/orc/test/accounts.test.ts", "orc account use goes by the account whose limit a run hit, so a second use after a move whose worker did not start tries again"],
+  { change: "A second sous account use spare, after a move whose worker did not start, retries the resume", tests: [
+    ["packages/cli/test/accounts.test.ts", "sous account use goes by the account whose limit a run hit, so a second use after a move whose worker did not start tries again"],
     ["packages/engine/test/runs/run.test.ts", "lists the runs whose worker is gone and that paused at the limit, newest first, each with the account whose limit it hit"],
   ] },
   { change: "Forgetting or pruning a run removes its open questions", tests: [
     ["packages/engine/test/runs/forget.test.ts", "forgetRun removes the run's open question from the inbox"],
   ] },
-  { change: "orc prune and the service skip a run while another process holds its lock", tests: [
+  { change: "sous prune and the service skip a run while another process holds its lock", tests: [
     ["packages/engine/test/runs/forget.test.ts", "with a lock held by a live process, pruneRuns keeps the finished run whole"],
   ] },
   { change: "A forgotten or pruned run leaves no file behind", tests: [
@@ -346,17 +346,17 @@ const PINS = [
   ] },
 
   // Reads
-  { change: "orc list, show, wait, inbox, log and account list write nothing", tests: [
-    ["packages/orc/test/reads.test.ts", "write no file"],
+  { change: "sous list, show, wait, inbox, log and account list write nothing", tests: [
+    ["packages/cli/test/reads.test.ts", "write no file"],
   ] },
-  { change: "While a run is live, orc show --json gives a step what a saved step has", tests: [
+  { change: "While a run is live, sous show --json gives a step what a saved step has", tests: [
     ["packages/engine/test/runs/run.test.ts", "the event log gives each step what the saved state gives it"],
   ] },
-  { change: "orc show lists the steps that finished before a worker was killed as done", tests: [
+  { change: "sous show lists the steps that finished before a worker was killed as done", tests: [
     ["packages/engine/test/runs/run.test.ts", "the event log gives the steps the worker never saved, and none of them runs"],
   ] },
-  { change: "orc log -f prints the no run error if the run's record is deleted just after its worker ends", tests: [
-    ["packages/orc/test/reads.test.ts", "let orc log -f print the no run error, and exit 1, when the run goes away while it follows"],
+  { change: "sous log -f prints the no run error if the run's record is deleted just after its worker ends", tests: [
+    ["packages/cli/test/reads.test.ts", "let sous log -f print the no run error, and exit 1, when the run goes away while it follows"],
   ] },
 
   // The library
@@ -365,7 +365,7 @@ const PINS = [
   ] },
   { change: "A caller that passes no places object gets no home to make worktrees in", tests: [
     ["packages/engine/test/places.test.ts", "a step with isolation worktree and no places works in the run's folder, and the log says why"],
-    ["packages/engine/test/orchestrator-globals.test.ts", "with no places, a nested place of its own fails and says why, and place folder works in the parent's folder"],
+    ["packages/engine/test/sous-globals.test.ts", "with no places, a nested place of its own fails and says why, and place folder works in the parent's folder"],
   ] },
   { change: "runSync on a run that paused or failed returns the result the run saved", tests: [
     ["packages/engine/test/manager-state.test.ts", "runSync returns the result its paused or failed run kept and saved"],
@@ -379,7 +379,7 @@ const PINS = [
   ] },
   // The requests reach the worker through the file, but no test reads the file's text.
   { change: "The file of step stop requests holds one JSON object per line", tests: [
-    ["packages/orc/test/runs.test.ts", "stopping a step by its name stops only that step, not a nested step with the same label"],
+    ["packages/cli/test/runs.test.ts", "stopping a step by its name stops only that step, not a nested step with the same label"],
   ] },
 ];
 
@@ -434,7 +434,7 @@ const BREAKS = {
   cycles: [],
   homes: [],
   reach: [
-    "packages/engine/src/orchestrator-globals.ts imports packages/engine/src/runs/inbox.ts",
+    "packages/engine/src/sous-globals.ts imports packages/engine/src/runs/inbox.ts",
     // Already there at bf2bf6a5. The plan missed it.
     "packages/engine/src/steps/steps.ts reaches packages/engine/src/runs/home.ts through packages/engine/src/agents.ts",
   ],
@@ -560,11 +560,10 @@ function npmName(spec) {
 
 /** Our package a specifier names, without the scope, or undefined. */
 function oursName(spec) {
-  const match = /^@(orchestrator|automatalabs)\/([^/]+)/.exec(spec);
+  const match = /^@(sous|automatalabs)\/([^/]+)/.exec(spec);
   if (!match) return undefined;
   const name = match[2];
   if (name === "workflow-engine") return "engine";
-  if (name === "orc") return "orc";
   return name;
 }
 
@@ -623,7 +622,7 @@ function importBreaks({ files, dirs, tests }) {
     }
   }
   // A test takes another package's parts from its entries, such as the engine's test kit at
-  // @orchestrator/engine/testing, never by a path into that package's src or dist.
+  // @sous/engine/testing, never by a path into that package's src or dist.
   for (const { dir, file, path } of tests) {
     for (const { spec } of importsOf(file)) {
       if (spec.startsWith(".") && !resolve(dirname(file), spec).startsWith(join(ROOT, "packages", dir) + sep)) found.add(`${path} reaches outside its package with ${spec}`);
