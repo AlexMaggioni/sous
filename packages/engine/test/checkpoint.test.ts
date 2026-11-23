@@ -388,23 +388,6 @@ test(
     );
     assert.deepEqual(replyEntry?.call, { kind: "checkpoint", label: "checkpoint", phase: undefined });
     assert.deepEqual(finalState?.checkpointsTaken, completed.checkpointsTaken);
-
-    // A third, cold manager can hydrate that final journal and complete with no reply or
-    // confirm channel at all. Every call replays, proving the confirmed answer is durable.
-    const replayAgent = recordingAgent();
-    const manager3 = new WorkflowManager({
-      agent: replayAgent.runner,
-      persistence: memoryPersistence().persistence,
-      persistenceRoot,
-    });
-    const replayJournal = new Map((finalState?.journal ?? []).map((entry) => [entry.index, entry] as const));
-    const replayed = await manager3.runSync(DURABLE_SCRIPT, undefined, { resumeJournal: replayJournal });
-    assert.equal(replayed.status, "completed");
-    assert.equal(field(replayed.result, "decision"), "ship");
-    assert.deepEqual(replayAgent.prompts, [], "the third cold replay asks nothing and executes no agent");
-    assert.deepEqual(replayed.checkpointsTaken, [
-      { callIndex: context.callIndex, kind: "select", decision: "ship", source: "journal-replay" },
-    ]);
   }),
 );
 

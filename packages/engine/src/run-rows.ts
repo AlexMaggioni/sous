@@ -67,14 +67,6 @@ export function newRows(runId: string): RunRows {
 }
 
 /**
- * A new run over a journal its caller hands in by index. workflow.ts pairs its steps with these
- * rows. A terminal save trims the rows, as for a reuse.
- */
-export function handedInRows(runId: string, journal: ReadonlyMap<number, JournalEntry>): RunRows {
-  return createRows({ runId, journal: latestRows([...journal.values()]), reuse: true });
-}
-
-/**
  * A new run that reuses a saved run. Its seed holds the source's own rows, then the rows of the
  * source's seed that the source did not replay. The new run starts with no rows of its own. With
  * no source rows, the run replays nothing and starts empty.

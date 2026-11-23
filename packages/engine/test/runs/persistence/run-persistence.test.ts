@@ -613,10 +613,7 @@ test(
       "legacy/no-session runs produce an empty hand-off",
     );
 
-    assert.ok(persisted.journal);
-    const replayed = await fresh.runSync(persistedSessionScript, undefined, {
-      resumeJournal: new Map(persisted.journal.map((entry) => [entry.index, entry] as const)),
-    });
+    const replayed = await fresh.runSync(persistedSessionScript, undefined, { resumeFromRunId: original.runId });
     assert.equal(replayed.status, "completed");
     assert.equal(replayCalls, 0, "a matching persisted journal prevents a live agent call");
     assert.deepEqual(replayed.agentSessions, [expected], "journal replay restores the persisted session record as-is");

@@ -35,8 +35,7 @@ import type {
 import { foldStep, preview, type WorkflowSnapshot } from "./display.js";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
-import { journalRows } from "./resume-rows.js";
-import { continueRows, handedInRows, newRows, reuseRows, reviseRows, type RunRows } from "./run-rows.js";
+import { continueRows, newRows, reuseRows, reviseRows, type RunRows } from "./run-rows.js";
 import {
   createRunPersistence,
   generateRunId,
@@ -215,11 +214,6 @@ export interface ExecOptions {
    * of this run's own journal (unchanged calls replay, the rest run live). A revision must parse.
    */
   script?: string;
-  /**
-   * A journal with no call rows, by call index (resume). A call replays the row at its own index
-   * when the hashes agree.
-   */
-  resumeJournal?: Map<number, JournalEntry>;
   /** Load this persisted run as the source for a new managed execution. The run must have ended: a paused one is refused. */
   resumeFromRunId?: string;
   /** Cap on total agents for this run. */
@@ -641,9 +635,6 @@ export class WorkflowManager extends EventEmitter {
     if (hasSource && (typeof exec.resumeFromRunId !== "string" || exec.resumeFromRunId.length === 0)) {
       throw this.scriptValidationError("resumeFromRunId must be a non-empty string");
     }
-    if (exec.resumeJournal !== undefined && hasSource) {
-      throw this.scriptValidationError("resumeJournal is mutually exclusive with resumeFromRunId");
-    }
     if (hasSource && exec.runId === exec.resumeFromRunId) {
       throw this.scriptValidationError("runId must differ from resumeFromRunId");
     }
@@ -802,7 +793,7 @@ export class WorkflowManager extends EventEmitter {
         ? this.prepareManagedResume(managed, source.source)
         : undefined;
       this.runs.set(managed.runId, managed);
-      if (source || exec.resumeJournal) {
+      if (source) {
         this.persistRunOrThrow(managed);
       } else {
         this.persistRun(managed);
@@ -907,9 +898,7 @@ export class WorkflowManager extends EventEmitter {
       argsSnapshotOk: capturedArgs.ok,
       ...(!capturedArgs.ok ? { argsUnreplayable: true as const } : {}),
       meta,
-      rows: exec.resumeJournal
-        ? handedInRows(identity.runId, exec.resumeJournal)
-        : newRows(identity.runId),
+      rows: newRows(identity.runId),
       fallbacks: [],
       effectiveCwd,
       environment: captureRunEnvironment(effectiveCwd, exec.environmentKey ?? this.environmentKey),
@@ -922,7 +911,6 @@ export class WorkflowManager extends EventEmitter {
       }),
       defaultModel: exec.defaultModel,
       ...(exec.resumeFromRunId ? { resumeSourceRunId: exec.resumeFromRunId } : {}),
-      ...(exec.resumeJournal ? { legacyResume: true as const } : {}),
       lease: identity.lease,
       ...(this.eventLog ? { eventStreamId: generateEventStreamId(), eventSeq: 0 } : {}),
     };
@@ -1141,8 +1129,6 @@ export class WorkflowManager extends EventEmitter {
       confirm,
       onNestedWorkflow,
     } = exec;
-    // A journal handed in pairs by index with the run's own calls.
-    const runResume = resume ?? (exec.resumeJournal ? { rows: journalRows(managed.runId, exec.resumeJournal) } : undefined);
     const resolvedConcurrency = concurrency ?? this.concurrency;
     const resolvedAgentRetries = agentRetries ?? this.defaultAgentRetries;
     const publish = (event: EngineRunEvent, actions?: RunEventPublicationActions) =>
@@ -1176,7 +1162,7 @@ export class WorkflowManager extends EventEmitter {
         ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
         ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
         persistenceRoot: this.persistenceRoot,
-        ...(runResume ? { resume: runResume } : {}),
+        ...(resume ? { resume } : {}),
         tokenUsageBaseline: managed.sameRunContinuation
           ? {
               input: managed.snapshot.tokenUsage?.input ?? 0,
@@ -1706,7 +1692,6 @@ export class WorkflowManager extends EventEmitter {
   ): Promise<WorkflowContinuationStart> {
     if (
       exec.resumeFromRunId !== undefined ||
-      exec.resumeJournal !== undefined ||
       exec.cwd !== undefined ||
       exec.defaultModel !== undefined
     ) {

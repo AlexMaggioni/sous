@@ -99,14 +99,13 @@ test("journal attribution covers agents, checkpoints, and replay without changin
     backendId: "actual-backend",
   });
 
-  const replayMap = new Map(entries.map((entry) => [entry.index, entry] as const));
   const replayRunner = runnerFrom(() => {
     assert.fail("a matching enriched journal entry must replay without invoking the runner");
   });
-  const replayed = await new WorkflowManager({ persistence: memoryPersistence().persistence, agent: replayRunner }).runSync(
+  const replayed = await new WorkflowManager({ persistence: store.persistence, agent: replayRunner }).runSync(
     script,
     undefined,
-    { resumeJournal: replayMap },
+    { resumeFromRunId: paused.runId },
   );
   assert.equal(replayed.status, "completed");
   assert.equal(calls, 1);

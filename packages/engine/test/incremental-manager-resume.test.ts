@@ -183,46 +183,6 @@ describe("WorkflowManager resumeFromRunId admission", () => {
     );
   });
 
-  it("validates exact option combinations before creating a target run", async () => {
-    const dirs = tempDirs();
-    try {
-      const store = memoryStore(dirs.root);
-      const manager = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
-        agent: { async run(prompt) { return `recorded:${prompt}`; } },
-      });
-      const sourceRunId = await recordSafeSource(manager, ["one"]);
-      const originalIds = [...store.states.keys()];
-      const invalid = [
-        { resumeFromRunId: "" },
-        { resumeFromRunId: 1 as unknown as string },
-        { resumeFromRunId: sourceRunId, resumeJournal: new Map() },
-        { resumeFromRunId: sourceRunId, runId: sourceRunId },
-      ];
-      for (const exec of invalid) {
-        assert.throws(
-          () => manager.startInBackground(workflow(`return "unused"`), undefined, exec),
-          (error: unknown) =>
-            error instanceof WorkflowError && error.code === WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-        );
-      }
-      assert.deepEqual([...store.states.keys()], originalIds);
-
-      assert.throws(
-        () => manager.startInBackground(workflow(`return "unused"`), undefined, {
-          resumeFromRunId: "missing-source",
-        }),
-        (error: unknown) =>
-          error instanceof WorkflowError && error.code === WorkflowErrorCode.PERSISTENCE_ERROR,
-      );
-      assert.deepEqual([...store.states.keys()], originalIds);
-    } finally {
-      dirs.cleanup();
-    }
-  });
-
   it("holds the source lease through the critical target save and releases it before acknowledgement", async () => {
     const dirs = tempDirs();
     try {

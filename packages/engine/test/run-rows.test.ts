@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { WorkflowErrorCode } from "../src/errors.js";
-import { continueRows, handedInRows, newRows, reuseRows, reviseRows } from "../src/run-rows.js";
+import { continueRows, newRows, reuseRows, reviseRows } from "../src/run-rows.js";
 import type { PersistedCheckpointInjection, PersistedResumeSeed } from "../src/runs/persistence/run-persistence.js";
 import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
 
@@ -84,7 +84,7 @@ describe("run rows", () => {
       callIndex: 7, label: "old", phase: "plan", keptOpen: false,
     };
     const old: JournalEntry = { index: 0, hash: "a", result: "a done", session, call: { kind: "agent", label: "old", phase: "plan" } };
-    const run = handedInRows(RUN, new Map([[0, old], [1, { index: 1, hash: "k", result: true }], [2, entry(2, "c")]]));
+    const run = continueRows(RUN, { journal: [old, { index: 1, hash: "k", result: true }, entry(2, "c")] }).rows;
 
     run.call(replayed({ ...call(0, "a", "result"), label: "writer" }, RUN), "review");
     run.call(replayed({ ...call(1, "k", "result"), kind: "checkpoint" }, RUN), "review");
@@ -105,7 +105,7 @@ describe("run rows", () => {
     }, "a checkpoint row takes the run's phase now");
     assert.deepEqual(other, entry(2, "c"), "a call with another hash leaves the row as it is");
 
-    const live = handedInRows(RUN, new Map([[0, entry(0, "a", null)]]));
+    const live = continueRows(RUN, { journal: [entry(0, "a", null)] }).rows;
     live.call(call(0, "a", "result"), undefined);
     assert.deepEqual(live.saved("running").journal, [entry(0, "a", null)], "a live call binds nothing");
   });
@@ -275,12 +275,5 @@ describe("run rows", () => {
     assert.equal(revised.prefix, 1);
     assert.equal(revised.resume?.get(RUN)?.key, "inputs");
     assert.deepEqual(seedShape(revised.rows.saved("paused").resumeSeed), seedShape(saved.resumeSeed), "the new version trims when it stops");
-  });
-
-  it("sorts a journal handed in by index, and trims it when the run stops", () => {
-    const run = handedInRows(RUN, new Map([[1, entry(1, "b")], [0, entry(0, "a")]]));
-    assert.deepEqual(rows(run.saved("running").journal), [[0, "a"], [1, "b"]]);
-    run.call(call(1, "x", "result"), undefined);
-    assert.deepEqual(rows(run.saved("failed").journal), [[0, "a"]]);
   });
 });

@@ -55,8 +55,7 @@ test("manager persists checkpoint observability and replay-only executions omit 
         },
       },
     });
-    const resumeJournal = new Map((persisted?.journal ?? []).map((entry) => [entry.index, entry] as const));
-    const replayed = await replay.runSync(SCRIPT, undefined, { resumeJournal });
+    const replayed = await replay.runSync(SCRIPT, undefined, { resumeFromRunId: first.runId });
     assert.equal(replayed.status, "completed");
     assert.equal(replayCalls, 0);
     assert.equal(replayed.fallbacks, undefined, "fallback entries arise only from live calls in this execution");

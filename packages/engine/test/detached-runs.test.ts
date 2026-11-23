@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { AgentUsage, StepRequest } from "../src/steps/agent-run.js";
-import type { JournalEntry } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
@@ -182,92 +181,3 @@ test("usage includes estimates, failed retries, provider/auth pauses, and termin
   }
 });
 
-test("replay contributes no usage and background journal seeding survives a multi-hop checkpoint resume", async () => {
-  const store = memoryPersistence();
-  let sourceCalls = 0;
-  const sourceManager = new WorkflowManager({
-    persistence: store.persistence,
-    agent: runnerFrom((prompt) => {
-      sourceCalls++;
-      return `source:${prompt}`;
-    }),
-  });
-  const script = [
-    'export const meta = { name: "multi-hop", description: "multi hop", phases: [{ title: "Work" }] };',
-    'phase("Work");',
-    'const values = [];',
-    'for (let i = 0; i < args.count; i++) values.push(await agent(`call-${i}`, { label: `call-${i}` }));',
-    'if (args.pause) values.push(await checkpoint("ship?", { kind: "confirm" }));',
-    "return values;",
-  ].join("\n");
-  const source = await sourceManager.runSync(script, { count: 10, pause: false });
-  assert.equal(source.status, "completed");
-  assert.equal(sourceCalls, 10);
-  const sourceJournal = store.persistence.load(source.runId)?.journal ?? [];
-  assert.deepEqual(sourceJournal.map((entry) => entry.index), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-
-  const liveMiss = deferred<string>();
-  let childCalls = 0;
-  let childJournalEvents = 0;
-  const childManager = new WorkflowManager({
-    persistence: store.persistence,
-    agent: runnerFrom(async (prompt) => {
-      childCalls++;
-      return await liveMiss.promise.then(() => `child:${prompt}`);
-    }),
-  });
-  childManager.on("journal", () => childJournalEvents++);
-  const child = childManager.startInBackground(script, { count: 11, pause: true }, {
-    resumeJournal: new Map(sourceJournal.map((entry) => [entry.index, entry] as const)),
-  });
-  assert.deepEqual(
-    store.persistence.load(child.runId)?.journal?.map((entry) => entry.index),
-    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-    "the fail-fast initial save contains the entire inherited prefix",
-  );
-  await waitUntil(() => childCalls === 1, "the child did not reach its only live miss");
-  assert.equal(childManager.getRun(child.runId)?.snapshot.tokenUsage, undefined, "cached calls add no usage");
-  liveMiss.resolve("ready");
-  await assert.rejects(child.promise, (error: unknown) => {
-    return error instanceof WorkflowError && error.code === WorkflowErrorCode.CHECKPOINT_REQUIRED;
-  });
-  assert.equal(childJournalEvents, 1, "replay never re-fires onAgentJournal");
-  const childPersisted = store.persistence.load(child.runId);
-  assert.deepEqual(childPersisted?.journal?.map((entry) => entry.index), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  assert.equal(childManager.getRun(child.runId)?.snapshot.tokenUsage?.total, childPersisted?.tokenUsage?.total);
-
-  const checkpoint = childPersisted?.checkpointContext;
-  assert.ok(checkpoint);
-  const synthetic: JournalEntry = {
-    checkpointDecision: "explicit-v1",
-    index: checkpoint.callIndex,
-    hash: checkpoint.hash,
-    result: true,
-    call: { kind: "checkpoint", label: "checkpoint", phase: childPersisted?.currentPhase },
-  };
-  const thirdJournal = new Map(
-    [...(childPersisted?.journal ?? [])].reverse().map((entry) => [entry.index, entry] as const),
-  );
-  thirdJournal.set(synthetic.index, synthetic);
-  let thirdCalls = 0;
-  const thirdManager = new WorkflowManager({
-    persistence: store.persistence,
-    agent: runnerFrom(() => {
-      thirdCalls++;
-      return "unexpected";
-    }),
-  });
-  let thirdJournalEvents = 0;
-  thirdManager.on("journal", () => thirdJournalEvents++);
-  const third = thirdManager.startInBackground(script, { count: 11, pause: true }, { resumeJournal: thirdJournal });
-  assert.deepEqual(
-    store.persistence.load(third.runId)?.journal?.map((entry) => entry.index),
-    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-    "sorted inherited agents and the synthetic checkpoint are durable before execution",
-  );
-  const completed = await third.promise;
-  assert.equal(completed.status, "completed");
-  assert.equal(thirdCalls, 0);
-  assert.equal(thirdJournalEvents, 0);
-  assert.equal(completed.tokenUsage?.total, 0);
-});

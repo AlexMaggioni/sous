@@ -402,42 +402,6 @@ describe("managed identity-v1 persistence", () => {
       dirs.cleanup();
     }
   });
-
-  it("compacts a run fed a journal to its own result rows and drops inherited suffixes", async () => {
-    const dirs = tempDirs();
-    try {
-      const sourceJournal: JournalEntry[] = [];
-      await runWorkflow(
-        script(`await agent("first")\nreturn await agent("second")`, "compaction-source"),
-        {
-          runId: "source",
-          agent: { async run(prompt) { return prompt; } },
-          persistLogs: false,
-          onAgentJournal: (entry) => sourceJournal.push(entry),
-        },
-      );
-      const manager = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistenceRoot: dirs.root,
-        agent: { async run() { throw new Error("must replay"); } },
-      });
-      const resumed = await manager.runSync(
-        script(`return await agent("first")`, "compaction-target"),
-        undefined,
-        {
-          resumeJournal: new Map(sourceJournal.map((entry) => [entry.index, entry] as const)),
-        },
-      );
-      const persisted = manager.getPersistence().load(resumed.runId);
-      assert.equal(persisted?.legacyResume, true);
-      assert.deepEqual(persisted?.calls?.map((row) => [row.index, row.scope]), [[0, resumed.runId]]);
-      assert.deepEqual(persisted?.journal?.map((entry) => [entry.index, entry.scope]), [[0, resumed.runId]]);
-      assert.equal(persisted?.journal?.[0].kind, "agent");
-      assert.equal(persisted?.calls?.[0].outcome, "result");
-    } finally {
-      dirs.cleanup();
-    }
-  });
 });
 
 describe("critical legacy marking", () => {
@@ -469,29 +433,9 @@ describe("critical legacy marking", () => {
     return { persistence, states, failSave: (value) => { failing = value; } };
   }
 
-  it("exposes neither manual-journal nor same-ID execution when the permanent write fails", async () => {
+  it("starts no same-ID execution when the permanent write fails", async () => {
     const dirs = tempDirs();
     try {
-      const manualStore = failingPersistence(join(dirs.root, "manual"));
-      manualStore.failSave(true);
-      let manualCalls = 0;
-      const manualManager = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistence: manualStore.persistence,
-        agent: { async run() { manualCalls++; return "live"; } },
-      });
-      assert.throws(
-        () => manualManager.startInBackground(script(`return await agent("x")`), undefined, {
-          runId: "manual-target",
-          resumeJournal: new Map(),
-        }),
-        (error: unknown) => error instanceof WorkflowError && error.code === WorkflowErrorCode.PERSISTENCE_ERROR,
-      );
-      assert.equal(manualCalls, 0);
-      const manualLease = manualStore.persistence.acquireRunLease("manual-target");
-      assert.ok(manualLease, "failed initial save releases the target lease");
-      manualStore.persistence.releaseRunLease(manualLease);
-
       const sameStore = failingPersistence(join(dirs.root, "same-id"));
       const now = new Date().toISOString();
       sameStore.persistence.save({
