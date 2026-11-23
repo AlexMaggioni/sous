@@ -41,9 +41,6 @@ export enum WorkflowErrorCode {
   AGENT_EMPTY_OUTPUT = "AGENT_EMPTY_OUTPUT",
   AGENT_EXECUTION_ERROR = "AGENT_EXECUTION_ERROR",
   PERSISTENCE_ERROR = "PERSISTENCE_ERROR",
-  /** The re-executed script left the recording, or correspondence was unprovable.
-   *  Non-recoverable. details: ReplayDivergenceEvent. */
-  REPLAY_DIVERGENCE = "REPLAY_DIVERGENCE",
   UNKNOWN = "UNKNOWN",
 }
 

@@ -98,8 +98,7 @@ describe("WorkflowError.checkpointContext", () => {
 });
 
 describe("WorkflowError", () => {
-  it("exposes the replay and cancel error codes as stable wire literals", () => {
-    assert.equal(WorkflowErrorCode.REPLAY_DIVERGENCE, "REPLAY_DIVERGENCE");
+  it("exposes the cancel error code as a stable wire literal", () => {
     assert.equal(WorkflowErrorCode.AGENT_CANCELLED, "AGENT_CANCELLED");
   });
 

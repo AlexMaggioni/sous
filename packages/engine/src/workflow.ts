@@ -2140,10 +2140,8 @@ export async function runWorkflow<T = unknown>(
           if (checkpointTimeoutMs !== undefined) timeout = setTimeout(() => reject(waiting()), checkpointTimeoutMs);
         });
         reply = await Promise.race([answer, interruption]);
-      } catch (error) {
+      } catch {
         throwIfAborted();
-        // Isolation failures describe invalid replay, not an unavailable human channel.
-        if (error instanceof WorkflowError && error.code === WorkflowErrorCode.REPLAY_DIVERGENCE) throw error;
         throw waiting();
       } finally {
         if (timeout !== undefined) clearTimeout(timeout);

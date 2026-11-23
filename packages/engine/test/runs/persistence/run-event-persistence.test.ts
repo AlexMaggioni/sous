@@ -398,7 +398,7 @@ test(
       event: { type: "agentEnd", runId, scope: runId, label: "step", result: null, errorCode: WorkflowErrorCode.AUTH_REQUIRED, callIndex: 0 },
     });
     const withCode = (code: string) => `${JSON.stringify({ ...record, event: { ...record.event, errorCode: code } })}\n`;
-    for (const code of ["AGENT_TIMEOUT", "AGENT_IDLE_TIMEOUT", "RECORDING_UNUSABLE", "REPLAY_TARGET_INVALID"]) {
+    for (const code of ["AGENT_TIMEOUT", "AGENT_IDLE_TIMEOUT", "RECORDING_UNUSABLE", "REPLAY_TARGET_INVALID", "REPLAY_DIVERGENCE"]) {
       writeFileSync(eventPath(runId), withCode(code));
       const event = persistence.readEvents(runId).events[0]!.event;
       assert.equal(event.type === "agentEnd" ? (event.errorCode as string) : undefined, code);

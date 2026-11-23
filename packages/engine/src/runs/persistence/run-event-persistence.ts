@@ -37,14 +37,15 @@ const EVENT_TYPES = new Set([
   "stopped",
   "resumed",
 ]);
-// Retired errors stay readable in old event logs: the execution budget's, and the isolation
-// runs'. No run makes them now, and the error enum leaves them out.
+// Retired errors stay readable in old event logs: the execution budget's, the isolation runs',
+// and the old replay check's. No run makes them now, and the error enum leaves them out.
 const WORKFLOW_ERROR_CODES = new Set<string>([
   ...Object.values(WorkflowErrorCode),
   "AGENT_TIMEOUT",
   "AGENT_IDLE_TIMEOUT",
   "RECORDING_UNUSABLE",
   "REPLAY_TARGET_INVALID",
+  "REPLAY_DIVERGENCE",
 ]);
 const CONTINUATION_SKIP_REASONS = new Set([
   "hash-mismatch",
