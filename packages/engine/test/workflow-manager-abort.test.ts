@@ -34,7 +34,10 @@ function fakeAgent(usage: Partial<AgentUsage> = {}, result: unknown = "ok") {
   };
 }
 
-/** Agent that stays running until a single shared deferred resolve is called externally. */
+/**
+ * Agent that stays running until a single shared deferred resolve is called externally.
+ * `entered` settles when the first run() call starts.
+ */
 function deferredAgent() {
   let deferredResolve: ((value: unknown) => void) | null = null;
   let deferredReject: ((err: Error) => void) | null = null;
@@ -42,29 +45,52 @@ function deferredAgent() {
     deferredResolve = resolve;
     deferredReject = reject;
   });
+  let enter!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
   return {
+    entered,
     resolve: (value: unknown = "done") => deferredResolve?.(value),
     reject: (err: Error) => deferredReject?.(err),
     runner: {
       async run(_prompt: string, _options?: { onUsage?: (u: AgentUsage) => void }) {
+        enter();
         return promise;
       },
     },
   };
 }
 
-/** Agent runner where EACH run() call gets its OWN deferred promise, resolved by index. */
+/**
+ * Agent runner where EACH run() call gets its OWN deferred promise, resolved by index.
+ * `entered(i)` settles when call i starts, also when a test asks before the call.
+ */
 function perCallDeferredAgent() {
   const resolves: Array<(v: unknown) => void> = [];
+  const starts: Array<{ promise: Promise<void>; enter: () => void }> = [];
+  const start = (i: number) => {
+    if (!starts[i]) {
+      let enter!: () => void;
+      const promise = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      starts[i] = { promise, enter };
+    }
+    return starts[i]!;
+  };
   let idx = 0;
   return {
+    entered: (i: number) => start(i).promise,
     resolve: (i: number, v: unknown = "done") => resolves[i]?.(v),
     runner: {
       async run(_prompt: string, _options?: { onUsage?: (u: AgentUsage) => void }) {
         const i = idx++;
-        return new Promise((resolve) => {
+        const result = new Promise((resolve) => {
           resolves[i] = resolve;
         });
+        start(i).enter();
+        return result;
       },
     },
   };
@@ -308,7 +334,7 @@ test(
     });
 
     const { runId, promise } = manager.startInBackground(oneAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
+    await da.entered;
     manager.stop(runId);
 
     assert.ok(stoppedEvent, "stopped event should fire");
@@ -326,7 +352,7 @@ test(
     const manager = new WorkflowManager({ cwd, agent: da.runner });
     manager.on("error", () => {});
     const { runId, promise } = manager.startInBackground(oneAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
+    await da.entered;
 
     manager.stop(runId);
     assert.equal(manager.getRun(runId)?.status, "aborted");
@@ -384,7 +410,7 @@ test(
     const manager = new WorkflowManager({ cwd, agent: da.runner });
     manager.on("error", () => {});
     const { runId, promise } = manager.startInBackground(twoAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
+    await da.entered;
 
     assert.equal(manager.pause(runId), true);
     assert.equal(manager.pause(runId), true, "a repeat request while pending is the same request");
@@ -413,12 +439,13 @@ test(
     assert.equal(persisted?.pauseReason, "requested");
 
     // Resume runs everything live.
-    assert.equal((await manager.resumeInBackground(runId)).accepted, true);
-    await new Promise((r) => setTimeout(r, 20));
+    const resumed = await manager.resumeInBackground(runId);
+    if (!resumed.accepted) assert.fail("a paused run should be accepted for resume");
+    await agent.entered(0);
     agent.resolve(0, "a");
-    await new Promise((r) => setTimeout(r, 20));
+    await agent.entered(1);
     agent.resolve(1, "b");
-    await new Promise((r) => setTimeout(r, 50));
+    await resumed.promise;
     assert.equal(manager.getRun(runId)?.status, "completed");
     assert.equal(JSON.stringify(manager.getRun(runId)?.result?.result), JSON.stringify({ a: "a", b: "b" }));
   }),
@@ -437,7 +464,7 @@ return await parallel([
   () => agent('three', { label: 'three' }),
 ])`;
     const { runId, promise } = manager.startInBackground(script, undefined, { concurrency: 2 });
-    await new Promise((r) => setTimeout(r, 20));
+    await Promise.all([agent.entered(0), agent.entered(1)]);
     assert.equal(manager.getRun(runId)?.callsAllocated, 3, "all three are allocated, two execute, one queues");
 
     assert.equal(manager.pause(runId), true);
@@ -456,10 +483,11 @@ return await parallel([
     assert.equal(queued?.aborted, true, "the queued call never started and is recorded as interrupted");
     assert.equal(queued?.error?.code, WorkflowErrorCode.PAUSE_REQUESTED);
 
-    assert.equal((await manager.resumeInBackground(runId)).accepted, true);
-    await new Promise((r) => setTimeout(r, 30));
+    const resumed = await manager.resumeInBackground(runId);
+    if (!resumed.accepted) assert.fail("a paused run should be accepted for resume");
+    await agent.entered(2);
     agent.resolve(2, "three-done");
-    await new Promise((r) => setTimeout(r, 50));
+    await resumed.promise;
     assert.equal(manager.getRun(runId)?.status, "completed");
     assert.equal(JSON.stringify(manager.getRun(runId)?.result?.result), JSON.stringify(["one-done", "two-done", "three-done"]));
   }),
@@ -477,7 +505,7 @@ let b = 'skipped'
 try { b = await agent('second', { label: 'b' }) } catch (error) { log('caught ' + String(error)) }
 return { a, b }`;
     const { runId, promise } = manager.startInBackground(script);
-    await new Promise((r) => setTimeout(r, 20));
+    await agent.entered(0);
     assert.equal(manager.pause(runId), true);
     agent.resolve(0, "a-done");
     await promise.catch(() => {});
@@ -531,7 +559,7 @@ test(
     manager.on("error", () => {});
 
     const { runId, promise: origPromise } = manager.startInBackground(twoAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
+    await agent.entered(0);
 
     // Pause while agent a executes; it finishes and journals, b is refused.
     assert.equal(manager.pause(runId), true);
@@ -540,13 +568,14 @@ test(
     assert.equal(manager.getRun(runId)?.status, "paused");
 
     // Resume — a replays from the journal, b runs live.
-    const resumed = (await manager.resumeInBackground(runId)).accepted;
-    assert.equal(resumed, true, "resume should succeed");
+    const resumed = await manager.resumeInBackground(runId);
+    assert.equal(resumed.accepted, true, "resume should succeed");
+    if (!resumed.accepted) assert.fail("resume should succeed");
     assert.equal(manager.getRun(runId)?.status, "running", "resumed run should be running");
 
-    await new Promise((r) => setTimeout(r, 30));
+    await agent.entered(1);
     agent.resolve(1, "resumed-done");
-    await new Promise((r) => setTimeout(r, 50));
+    await resumed.promise;
 
     const finalRun = manager.getRun(runId);
     assert.equal(finalRun?.status, "completed", "resumed run should complete successfully");
