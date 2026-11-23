@@ -90,15 +90,16 @@ describe("resume manifests for unsettled calls", () => {
       assert.equal(persisted?.calls?.find((call) => call.index === 2)?.error?.code, WorkflowErrorCode.WORKFLOW_ABORTED);
 
       const live: string[] = [];
-      const resumed = await new WorkflowManager({
+      const continued = await new WorkflowManager({
         cwd: dirs.cwd,
         persistenceRoot: dirs.root,
         environmentKey: ENVIRONMENT_KEY,
         agent: { async run(prompt) { live.push(prompt); return `live:${prompt}`; } },
-      }).runSync(script, undefined, { resumeFromRunId: started.runId, concurrency: 8 });
+      }).resumeInBackground(started.runId, { concurrency: 8 });
+      assert.ok(continued.accepted);
+      const resumed = await continued.promise;
 
       assert.equal(resumed.status, "completed");
-      assert.equal(resumed.resumeReport?.strategy, "occurrence-v1");
       assert.deepEqual(resumed.result, [
         "source:complete-0",
         "source:complete-1",
@@ -106,54 +107,7 @@ describe("resume manifests for unsettled calls", () => {
         "live:usage",
       ]);
       assert.deepEqual(live, ["pending", "usage"]);
-      assert.equal(resumed.resumeReport?.replayed, 2);
-      assert.equal(resumed.resumeReport?.live, 2);
-      assert.ok((resumed.replayEligibility?.replayedPrefix ?? 0) > 0);
-    } finally {
-      dirs.cleanup();
-    }
-  });
-
-  it("preserves identity alignment around a non-zero interrupted index and replays later completions", async () => {
-    const dirs = tempDirs();
-    const release = deferred();
-    const prompts = ["complete-0", "pending-1", "complete-2", "usage"];
-    const script = parallelScript(prompts, "usage-alignment");
-    try {
-      const source = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistenceRoot: dirs.root,
-        environmentKey: ENVIRONMENT_KEY,
-        agent: usageLimitRunner(new Set(["complete-0", "complete-2"]), release.promise),
-      });
-      const started = source.startInBackground(script, undefined, { concurrency: 8 });
-      await waitUntil(
-        () => source.getPersistence().load(started.runId)?.journal?.length === 2,
-        "the results on both sides of the gap should be durable",
-      );
-      release.resolve();
-      await assert.rejects(started.promise, (error: unknown) =>
-        error instanceof WorkflowError && error.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT);
-
-      const live: string[] = [];
-      const resumed = await new WorkflowManager({
-        cwd: dirs.cwd,
-        persistenceRoot: dirs.root,
-        environmentKey: ENVIRONMENT_KEY,
-        agent: { async run(prompt) { live.push(prompt); return `live:${prompt}`; } },
-      }).runSync(script, undefined, { resumeFromRunId: started.runId, concurrency: 8 });
-
-      assert.deepEqual(resumed.result, [
-        "source:complete-0",
-        "live:pending-1",
-        "source:complete-2",
-        "live:usage",
-      ]);
-      assert.deepEqual(live, ["pending-1", "usage"]);
-      assert.deepEqual(
-        resumed.resumeReport?.calls.map((decision) => decision.action),
-        ["replayed", "live", "replayed", "live"],
-      );
+      assert.equal(resumed.continuation?.replayedPrefix, 2);
     } finally {
       dirs.cleanup();
     }

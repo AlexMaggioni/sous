@@ -40,7 +40,7 @@ async function waitForChildOutput(child: ChildProcess, needle: string): Promise<
   });
 }
 
-test("SIGKILL crash residue is lazily paused and reports environment drift without vetoing replay", async () => {
+test("SIGKILL crash residue is lazily paused and resumes under its own id", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orchestrator-crash-cwd-"));
   const persistenceRoot = mkdtempSync(join(tmpdir(), "orchestrator-crash-runs-"));
   const sourceRunId = "sigkill-source";
@@ -86,41 +86,25 @@ test("SIGKILL crash residue is lazily paused and reports environment drift witho
     assert.equal(child.kill("SIGKILL"), true);
     await exited;
 
-    const resumed = await manager.runSync(SCRIPT, undefined, {
-      runId: "sigkill-resumed",
-      resumeFromRunId: sourceRunId,
-    });
-    assert.equal(resumed.status, "completed");
-    const result = resumed.result as Record<string, unknown>;
-    assert.equal(result.first, "child:first");
-    assert.equal(result.second, "parent:second");
-    assert.equal(resumed.resumeReport?.strategy, "occurrence-v1");
-    assert.equal(resumed.resumeReport?.replayed, 1);
-    assert.equal(resumed.resumeReport?.live, 1);
-    assert.deepEqual(livePrompts, ["second"]);
+    // A new run may not reuse the crashed run. The refusal still reconciles it to paused first.
+    await assert.rejects(
+      manager.runSync(SCRIPT, undefined, { runId: "sigkill-reused", resumeFromRunId: sourceRunId }),
+      new RegExp(`resume source ${sourceRunId} is paused`),
+    );
     const reconciled = persistence.load(sourceRunId);
     assert.equal(reconciled?.status, "paused");
     assert.equal(reconciled?.pauseReason, "interrupted");
     assert.match(reconciled?.reason ?? "", new RegExp(`PID ${child.pid} exited`));
     assert.equal(existsSync(lockPath), false);
 
-    const drifted = await manager.runSync(SCRIPT, undefined, {
-      runId: "sigkill-drifted",
-      resumeFromRunId: sourceRunId,
-      environmentKey: "drifted-environment",
-    });
-    assert.equal(drifted.status, "completed");
-    assert.equal(drifted.resumeReport?.strategy, "occurrence-v1");
-    assert.equal(drifted.resumeReport?.replayed, 1);
-    assert.equal(drifted.resumeReport?.live, 1);
-    assert.equal(drifted.replayEligibility?.firstNonReplay?.reason, "not-recorded");
-    assert.deepEqual(drifted.replayEligibility?.provenanceChanges, [{
-      field: "environment.key",
-      source: "crash-environment",
-      current: "drifted-environment",
-      detail: "source recorded environment key=crash-environment; this run: drifted-environment",
-    }]);
-    assert.deepEqual(livePrompts, ["second", "second"]);
+    const continued = await manager.resumeInBackground(sourceRunId);
+    assert.ok(continued.accepted);
+    const resumed = await continued.promise;
+    assert.equal(resumed.status, "completed");
+    const result = resumed.result as Record<string, unknown>;
+    assert.equal(result.first, "child:first");
+    assert.equal(result.second, "parent:second");
+    assert.deepEqual(livePrompts, ["second"]);
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       child.kill("SIGKILL");

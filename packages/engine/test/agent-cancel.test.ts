@@ -7,7 +7,6 @@ import test from "node:test";
 import type { StepRequest } from "../src/steps/agent-run.js";
 import type { WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import { WorkflowManager } from "../src/workflow-manager.js";
 import {
   isStepFailedPause,
   runWorkflow,
@@ -157,70 +156,6 @@ return await agent("ignore", { label: "ignore", retries: 3 })`,
     assert.equal(rows[0]?.error?.code, WorkflowErrorCode.AGENT_CANCELLED);
     assert.equal(invocations, 1);
     assert.equal(cleaned, true);
-  } finally {
-    dirs.cleanup();
-  }
-});
-
-test("resume replays a completed sibling and reruns the cancelled occurrence", async () => {
-  const dirs = tempDirs("agent-cancel-resume");
-  try {
-    const sourcePrompts: string[] = [];
-    const source = new WorkflowManager({
-      cwd: dirs.cwd,
-      persistenceRoot: dirs.root,
-      environmentKey: "agent-cancel-resume",
-      agent: {
-        async run(prompt: string, options: StepRequest): Promise<unknown> {
-          sourcePrompts.push(prompt);
-          if (prompt === "peer") return "source-peer";
-          return new Promise((_resolve, reject) => {
-            options.signal?.addEventListener("abort", () => reject(options.signal?.reason), { once: true });
-          });
-        },
-      },
-    });
-    const first = source.startInBackground(parallelScript);
-    await waitUntil(
-      () => (source.getPersistence().load(first.runId)?.journal ?? []).some((entry) => entry.index === 0),
-      "the completed sibling should be journaled before cancellation",
-    );
-    assert.equal(source.cancelAgentSteps(first.runId, { label: "cancel" }), 1);
-    // The stopped step pauses the source run.
-    await assert.rejects(
-      first.promise,
-      (error: unknown) => error instanceof WorkflowError && error.code === WorkflowErrorCode.PAUSE_REQUESTED,
-    );
-    const sourceState = source.getPersistence().load(first.runId);
-    assert.equal(sourceState?.status, "paused");
-    assert.equal(sourceState?.pauseReason, "step_stopped");
-    assert.equal(sourceState?.abortSignaled, undefined);
-
-    const livePrompts: string[] = [];
-    const resumed = await new WorkflowManager({
-      cwd: dirs.cwd,
-      persistenceRoot: dirs.root,
-      environmentKey: "agent-cancel-resume",
-      agent: {
-        async run(prompt: string): Promise<unknown> {
-          livePrompts.push(prompt);
-          return `live:${prompt}`;
-        },
-      },
-    }).runSync(parallelScript, undefined, { resumeFromRunId: first.runId });
-
-    assert.equal(resumed.status, "completed");
-    assert.equal(
-      JSON.stringify(resumed.result),
-      JSON.stringify({ values: ["source-peer", "live:cancel"] }),
-    );
-    assert.deepEqual(livePrompts, ["cancel"]);
-    assert.equal(resumed.resumeReport?.replayed, 1);
-    assert.equal(resumed.resumeReport?.live, 1);
-    assert.equal(resumed.resumeReport?.calls.find((call) => call.index === 0)?.action, "replayed");
-    assert.equal(resumed.resumeReport?.calls.find((call) => call.index === 1)?.action, "live");
-    const sourceCalls = source.getPersistence().load(first.runId)?.calls as WorkflowCallRecord[];
-    assert.equal(sourceCalls.find((record) => record.index === 1)?.error?.code, WorkflowErrorCode.AGENT_CANCELLED);
   } finally {
     dirs.cleanup();
   }

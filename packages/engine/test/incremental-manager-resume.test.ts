@@ -143,6 +143,9 @@ async function assertDriftedCheckpointResume(
     assert.ok(paused.checkpointContext);
     assert.deepEqual(livePrompts, ["prefix-one", "prefix-two"]);
 
+    // A new run reuses only a run that has ended, so the paused source is stopped first.
+    assert.equal(manager.stop(paused.runId), true);
+    assert.equal(manager.getPersistence().load(paused.runId)?.status, "aborted");
     mutateSource(manager, paused.runId, dirs.cwd);
     livePrompts.length = 0;
     const started = manager.startInBackground(DRIFT_CHECKPOINT_SCRIPT, undefined, {
@@ -466,60 +469,6 @@ describe("WorkflowManager durable identity execution", () => {
     }
   });
 
-  it("retains only the remaining seed on pause and flattens grandparent provenance after a confirmed checkpoint", async () => {
-    const dirs = tempDirs();
-    try {
-      const store = memoryStore(dirs.root);
-      const manager = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
-        agent: { async run(prompt) { return `source:${prompt}`; } },
-      });
-      const sourceRunId = await recordSafeSource(manager, ["one", "two"]);
-      const paused = await manager.runSync(workflow(`
-await agent("one", { label: "one", resume: { filesystem: "read-only" } })
-await checkpoint("approve", { })
-return await agent("two", { label: "two", resume: { filesystem: "read-only" } })`, "paused-hop"), undefined, {
-        runId: "paused-hop",
-        resumeFromRunId: sourceRunId,
-      });
-      assert.equal(paused.status, "paused");
-      assert.ok(paused.checkpointContext);
-      assert.deepEqual(paused.resumeReport?.calls.map((decision) => decision.action), ["replayed", "live"]);
-      const pausedState = store.persistence.load("paused-hop");
-      assert.equal(pausedState?.resumeSeed?.candidates.length, 1);
-      assert.equal(pausedState?.resumeSeed?.candidates[0]?.sourceRunId, sourceRunId);
-      assert.equal(pausedState?.journal?.length, 1);
-      assert.equal(pausedState?.calls?.length, 2);
-      assert.ok(pausedState?.resume?.terminalEnvironment);
-
-      const final = await manager.runSync(workflow(`
-const one = await agent("one", { label: "one", resume: { filesystem: "read-only" } })
-const approval = await checkpoint("approve", { })
-const two = await agent("two", { label: "two", resume: { filesystem: "read-only" } })
-return { one, approval, two }`, "replied-hop"), undefined, {
-        runId: "replied-hop",
-        resumeFromRunId: "paused-hop",
-        confirm: async () => true,
-      });
-      assert.equal(final.status, "completed", JSON.stringify(final.resumeReport));
-      assert.deepEqual(JSON.parse(JSON.stringify(final.result)), {
-        one: "source:one",
-        approval: true,
-        two: "source:two",
-      });
-      assert.equal(final.resumeReport?.strategy, "occurrence-v1");
-      assert.equal(final.resumeReport?.replayed, 2);
-      const twoDecision = final.resumeReport?.calls[2];
-      assert.equal(twoDecision?.action, "replayed");
-      if (twoDecision?.action === "replayed") assert.equal(twoDecision.sourceRunId, sourceRunId);
-      assert.equal(store.persistence.load("replied-hop")?.resumeSeed, undefined);
-    } finally {
-      dirs.cleanup();
-    }
-  });
-
   it("retains and flattens the reduced seed after a failed execution", async () => {
     const dirs = tempDirs();
     try {
@@ -593,69 +542,6 @@ return await agent("two", { label: "two", resume: { filesystem: "read-only" } })
       assert.deepEqual(live, []);
       assert.equal(resumed.resumeReport?.replayed, 2);
       assert.equal(resumed.resumeReport?.live, 0);
-    } finally {
-      dirs.cleanup();
-    }
-  });
-
-  it("keeps an inherited step after a changed checkpoint across two reuses", async () => {
-    const dirs = tempDirs();
-    try {
-      const store = memoryStore(dirs.root);
-      const manager = new WorkflowManager({
-        cwd: dirs.cwd,
-        persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
-        agent: { async run(prompt) { return `source:${prompt}`; } },
-      });
-      const sourceScript = workflow(`
-await agent("one", { label: "one", resume: { filesystem: "read-only" } })
-await checkpoint("original checkpoint")
-return await agent("tail", { label: "tail", resume: { filesystem: "read-only" } })`, "positional-checkpoint-source");
-      const source = await manager.runSync(sourceScript, undefined, { confirm: async () => true });
-      assert.equal(source.status, "completed");
-      // A legacy resume marker no longer changes how the next hop pairs.
-      const sourceState = store.persistence.load(source.runId);
-      assert.ok(sourceState);
-      store.persistence.save({ ...sourceState, legacyResume: true });
-
-      const changedScript = workflow(`
-await agent("one", { label: "one", resume: { filesystem: "read-only" } })
-const approval = await checkpoint("changed checkpoint", { })
-const tail = await agent("tail", { label: "tail", resume: { filesystem: "read-only" } })
-return { approval, tail }`, "positional-checkpoint-target");
-      const paused = await manager.runSync(changedScript, undefined, {
-        runId: "positional-pause",
-        resumeFromRunId: source.runId,
-      });
-      assert.equal(paused.status, "paused");
-      assert.ok(paused.checkpointContext);
-      assert.equal(paused.resumeReport?.strategy, "occurrence-v1");
-      assert.deepEqual(store.persistence.load("positional-pause")?.journal?.map((entry) => entry.index), [0]);
-
-      const live: string[] = [];
-      const resumed = await new WorkflowManager({
-        cwd: dirs.cwd,
-        persistence: store.persistence,
-        environmentKey: ENVIRONMENT_KEY,
-        agent: { async run(prompt) { live.push(prompt); return `live:${prompt}`; } },
-      }).runSync(changedScript, undefined, {
-        runId: "positional-replied",
-        resumeFromRunId: "positional-pause",
-        confirm: async () => true,
-      });
-      assert.equal(resumed.status, "completed");
-      // The paused hop keeps the source's tail in its seed, so the second hop replays it.
-      assert.deepEqual(live, []);
-      assert.deepEqual(JSON.parse(JSON.stringify(resumed.result)), { approval: true, tail: "source:tail" });
-      assert.deepEqual(resumed.resumeReport?.calls.map((decision) => decision.action), [
-        "replayed",
-        "live",
-        "replayed",
-      ]);
-      const tail = resumed.resumeReport?.calls[2];
-      assert.ok(tail?.action === "replayed");
-      assert.equal(tail.sourceRunId, source.runId);
     } finally {
       dirs.cleanup();
     }

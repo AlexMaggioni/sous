@@ -226,7 +226,7 @@ export interface ExecOptions {
    * when the hashes agree.
    */
   resumeJournal?: Map<number, JournalEntry>;
-  /** Load this persisted run as the source for a new managed execution. */
+  /** Load this persisted run as the source for a new managed execution. The run must have ended: a paused one is refused. */
   resumeFromRunId?: string;
   /** Cap on total agents for this run. */
   maxAgents?: number;
@@ -680,6 +680,11 @@ export class WorkflowManager extends EventEmitter {
     try {
       const source = this.persistence.load(runId);
       if (!source) throw this.persistenceError(`resume source does not exist: ${runId}`);
+      // A new run reuses only a run that has ended, as the run rule says. A paused run goes on
+      // with a resume of its own id.
+      if (source.status === "paused" || source.status === "pending" || source.status === "running") {
+        throw this.scriptValidationError(`resume source ${runId} is ${source.status}. Resume it under its own id.`);
+      }
       return { lease, source };
     } catch (error) {
       this.persistence.releaseRunLease(lease);
@@ -793,11 +798,10 @@ export class WorkflowManager extends EventEmitter {
   ): WorkflowResume {
     const admission = admitResumeSource({ source, effectiveCwd: managed.effectiveCwd });
     if (source.resume === undefined || source.legacyResume === true) managed.legacyResume = true;
-    const preparedContinuation = this.buildPreparedContinuation(source);
     if (admission.strategy === "live") {
       managed.rows = reuseRows(managed.runId).rows;
       managed.resumeReporting = startResumeReport({ plan: admission, source, run: managed, predictedReplayablePrefix: 0 });
-      return { plan: admission, ...(preparedContinuation ? { continuation: preparedContinuation } : {}) };
+      return { plan: admission };
     }
 
     const chained = this.chainedRows(source.runId);
@@ -817,7 +821,7 @@ export class WorkflowManager extends EventEmitter {
       run: managed,
       predictedReplayablePrefix: started.prefix,
     });
-    return { rows: started.resume, plan: admission, ...(preparedContinuation ? { continuation: preparedContinuation } : {}) };
+    return { rows: started.resume, plan: admission };
   }
 
   private initializeRun(
