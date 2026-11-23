@@ -4,6 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { runFolders } from "./store.js";
 
 export type Place = "worktree" | "folder" | "none";
 
@@ -40,14 +41,10 @@ export function homePaths(home = orcHome()) {
   return {
     home,
     runs: join(home, "runs"),
-    records: join(home, "records"),
-    inbox: join(home, "inbox"),
-    slots: join(home, "slots"),
-    queue: join(home, "queue"),
+    ...runFolders(home),
     workflows: join(home, "workflows"),
     worktrees: join(home, "worktrees"),
     scratch: join(home, "scratch"),
-    logs: join(home, "logs"),
     config: join(home, "config.json"),
     secrets: join(home, "secrets.env"),
     accounts: join(home, "accounts.json"),
@@ -61,7 +58,7 @@ export function homePaths(home = orcHome()) {
 export type HomePaths = ReturnType<typeof homePaths>;
 
 export function ensureHome(paths: HomePaths = homePaths()): HomePaths {
-  for (const dir of [paths.runs, paths.records, paths.inbox, paths.slots, paths.queue, paths.worktrees, paths.scratch, paths.logs]) {
+  for (const dir of [paths.runs, ...Object.values(runFolders(paths.home)), paths.worktrees, paths.scratch]) {
     mkdirSync(dir, { recursive: true });
   }
   return paths;

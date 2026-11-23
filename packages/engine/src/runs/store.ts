@@ -15,6 +15,18 @@ export type StoreFs = Pick<FsLayer, "existsSync" | "readdirSync" | "readFileSync
 
 const DISK: StoreFs = { existsSync, readdirSync, readFileSync };
 
+/** The home's folders that hold run files orc writes: records, questions, the agent cap and the
+ *  worker logs. homePaths takes them from here. */
+export function runFolders(home: string) {
+  return {
+    records: join(home, "records"),
+    inbox: join(home, "inbox"),
+    slots: join(home, "slots"),
+    queue: join(home, "queue"),
+    logs: join(home, "logs"),
+  };
+}
+
 /** The run's record. */
 export function recordFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.json`);
