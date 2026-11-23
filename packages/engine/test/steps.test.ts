@@ -267,24 +267,22 @@ describe("steps on the fake programs", () => {
 
     it(`gives up on a ${harness} schema answer that never fits after its repair turns`, async () => {
       const schema = Type.Object({ city: Type.String() }, { additionalProperties: false });
-      for (const [maxSchemaRetries, requests] of [[undefined, 3], [0, 1], [-5, 1]] as const) {
-        const place = fakePlace([{ answer: { town: 1 } }]);
-        const steps = createSteps(onFakes(place));
-        try {
-          await assert.rejects(steps.run("name a city", routed(steps, { label: "lbl", model }, { schema, maxSchemaRetries })), (error: unknown) => {
-            assert.ok(error instanceof WorkflowError);
-            assert.equal(error.code, WorkflowErrorCode.SCHEMA_NONCOMPLIANCE);
-            assert.equal(error.recoverable, false);
-            assert.equal(error.agentLabel, "lbl");
-            return true;
-          });
-        } finally {
-          await steps.dispose();
-        }
-        // Two repair turns by default. A negative count is none.
-        assert.equal(place.lines().length, requests, `maxSchemaRetries ${maxSchemaRetries}`);
-        assert.ok(place.lines().every((line) => line.sessionId === place.lines()[0]?.sessionId));
+      const place = fakePlace([{ answer: { town: 1 } }]);
+      const steps = createSteps(onFakes(place));
+      try {
+        await assert.rejects(steps.run("name a city", routed(steps, { label: "lbl", model }, { schema })), (error: unknown) => {
+          assert.ok(error instanceof WorkflowError);
+          assert.equal(error.code, WorkflowErrorCode.SCHEMA_NONCOMPLIANCE);
+          assert.equal(error.recoverable, false);
+          assert.equal(error.agentLabel, "lbl");
+          return true;
+        });
+      } finally {
+        await steps.dispose();
       }
+      // The first answer, then two repair turns, all in one session.
+      assert.equal(place.lines().length, 3);
+      assert.ok(place.lines().every((line) => line.sessionId === place.lines()[0]?.sessionId));
     });
 
     it(`sends a ${harness} step's images with its prompt, and refuses a bad one before it starts`, async () => {

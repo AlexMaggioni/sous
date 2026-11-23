@@ -45,7 +45,6 @@ export function createCodexHarness(lookup: FindOptions = {}): Harness {
     async run(step: Step, events?: StepEvents) {
       return runCodex(await ready(), step, events);
     },
-    async close() {},
     login: codexLogin,
     env: codexEnv,
   };

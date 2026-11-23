@@ -69,9 +69,9 @@ export interface PromptImage {
  * on* callbacks, never through the return value. `mcpServers`, `runId` and the session hand-off
  * fields wire the call, so none enters the resume identity hash (hashAgentCall). A script's
  * configOptions, meta, promptMeta and keepSession stay in the call's identity and inputs, but no
- * step reads them, so they are not here. The engine never passes `maxSchemaRetries`. The call
- * identity context (`callIndex`, `callHash`, `callPath`, `callInputsHash`) is scoped to one engine
- * call and does not enter the resume identity hash.
+ * step reads them, so they are not here. The call identity context (`callIndex`, `callHash`,
+ * `callPath`, `callInputsHash`) is scoped to one engine call and does not enter the resume
+ * identity hash.
  */
 export interface EngineFields<S extends TSchema | undefined = TSchema | undefined> {
   /** Human label for logs/telemetry. NOT part of the resume identity hash. */
@@ -95,9 +95,6 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
   mode?: string;
   /** Working directory (e.g. an isolated git worktree). ABSOLUTE. The harness runs the step there. NOT hashed. */
   cwd?: string;
-  /** With `schema`: extra client-side repair turns before strict prose extraction. Leaf default 2.
-   *  Runner-internal — the engine never passes it and it is NOT plumbed to the MCP tool. */
-  maxSchemaRetries?: number;
   /** Real usage for one runner attempt. A runner MAY invoke this multiple times within
    *  an attempt; every report is a CUMULATIVE snapshot for that attempt, and the last
    *  report received before the attempt settles wins. Fires on success AND error. May

@@ -61,7 +61,7 @@ export interface StepsOptions {
 }
 
 
-/** Schema repair turns when the step sets none. */
+/** Repair turns for a schema answer that does not fit. */
 const REPAIRS = 2;
 
 const isFailure = (error: unknown): error is HarnessFailure => error instanceof Error && "failure" in error;
@@ -163,10 +163,6 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     // A runner that stands in for the programs answers for its own login.
     auth: { canResume: (harness) => options.inner?.auth?.canResume(harness) ?? true },
     async dispose() {
-      for (const pending of programs.values()) {
-        const program = await pending;
-        if (!("problem" in program)) await program.close();
-      }
       await options.inner?.dispose?.();
     },
   };
@@ -345,11 +341,10 @@ async function runOnHarness(
       if (!text) throw new WorkflowError("Subagent produced no assistant output", WorkflowErrorCode.AGENT_EMPTY_OUTPUT, { recoverable: true, agentLabel: label });
       return text;
     }
-    const repairs = Math.max(0, call.maxSchemaRetries ?? REPAIRS);
     for (let repair = 0; ; repair++) {
       const value = fits(answer, schema);
       if (value !== undefined) return value;
-      if (repair >= repairs || !answer.sessionId) break;
+      if (repair >= REPAIRS || !answer.sessionId) break;
       signal?.throwIfAborted();
       answer = await turn({ ...base, prompt: REPROMPT_TEXT, resume: answer.sessionId });
     }

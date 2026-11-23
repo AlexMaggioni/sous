@@ -139,7 +139,6 @@ export interface Harness {
   /** The models the program offers. Calls no model. */
   models(account?: Account): Promise<string[]>;
   run(step: Step, events?: StepEvents): Promise<StepResult>;
-  close(): Promise<void>;
   /**
    * The program's login in env, for callers that start no step, such as an account list.
    * variable moves the program's folder, value is what env sets it to, folder is the folder the

@@ -94,7 +94,6 @@ export async function checkPrograms(paths: HomePaths, config: OrcConfig, options
       live.error = message(error);
     }
     report.live = live;
-    await adapter.close();
   }
   return reports;
 }

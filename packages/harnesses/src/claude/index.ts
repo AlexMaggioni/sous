@@ -46,7 +46,6 @@ export function createClaudeHarness(lookup: FindOptions = {}): Harness {
     async run(step: Step, events?: StepEvents) {
       return runClaude(await ready(), step, events);
     },
-    async close() {},
     login: claudeLogin,
     env: claudeEnv,
   };
