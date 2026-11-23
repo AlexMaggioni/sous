@@ -6,12 +6,8 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { ensureHome, homePaths, type HomePaths } from "@orchestrator/engine";
-// orc does not import these, so the engine entry does not export them. The tests load the
-// engine's built modules by path.
-import { workflowProjectPaths } from "../../engine/dist/runs/persistence/project-paths.js";
-import { tick } from "../../engine/dist/runs/service.js";
-import { readState } from "../../engine/dist/runs/store.js";
-import { main } from "../src/cli.js";
+import { readState, tick, workflowProjectPaths } from "@orchestrator/engine/testing";
+import { orc } from "./orc.js";
 
 // orc's reads write nothing. The home below is planted with raw writes, the way the worker and
 // the engine leave it, so the test also shows that orc reads today's files.
@@ -150,24 +146,6 @@ function changes(before: Map<string, string>, after: Map<string, string>): strin
   }
   for (const path of after.keys()) if (!before.has(path)) lines.push(`added ${path}`);
   return lines;
-}
-
-async function orc(paths: HomePaths, argv: string[]): Promise<{ code: number; out: string }> {
-  const before = process.env.ORC_HOME;
-  process.env.ORC_HOME = paths.home;
-  const printed: string[] = [];
-  const write = process.stdout.write.bind(process.stdout);
-  const writeErr = process.stderr.write.bind(process.stderr);
-  process.stdout.write = ((chunk: string) => (printed.push(String(chunk)), true)) as typeof process.stdout.write;
-  process.stderr.write = ((chunk: string) => (printed.push(String(chunk)), true)) as typeof process.stderr.write;
-  try {
-    return { code: await main(argv), out: printed.join("") };
-  } finally {
-    process.stdout.write = write;
-    process.stderr.write = writeErr;
-    if (before === undefined) delete process.env.ORC_HOME;
-    else process.env.ORC_HOME = before;
-  }
 }
 
 describe("orc's reads", () => {

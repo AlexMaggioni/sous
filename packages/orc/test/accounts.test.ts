@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,8 +8,6 @@ import { describe, it } from "node:test";
 import {
   addAccount,
   currentAccount,
-  ensureHome,
-  homePaths,
   limitNotice,
   listAccounts,
   loadRecord,
@@ -18,16 +16,20 @@ import {
   workerProcess,
   type HomePaths,
 } from "@orchestrator/engine";
-// orc does not import these, so the engine entry does not export them. The tests load the
-// engine's built modules by path. They are the same modules the entry loads.
-import { WorkflowError, WorkflowErrorCode } from "../../engine/dist/errors.js";
-import { createRun } from "../../engine/dist/runs/launch.js";
-import { workflowProjectPaths } from "../../engine/dist/runs/persistence/project-paths.js";
-import { processAlive } from "../../engine/dist/runs/records.js";
-import { tick } from "../../engine/dist/runs/service.js";
-import { enginePersistence, readState } from "../../engine/dist/runs/store.js";
-import { runWorker } from "../../engine/dist/runs/worker.js";
-import type { AgentRunner } from "../../engine/dist/steps/agent-runner.js";
+import {
+  createRun,
+  enginePersistence,
+  fakeRunner,
+  plantState,
+  processAlive,
+  readState,
+  runWorker,
+  testHome,
+  tick,
+  WorkflowError,
+  WorkflowErrorCode,
+  type InnerRunner,
+} from "@orchestrator/engine/testing";
 import { cmdAccount } from "../src/account-cli.js";
 import { main } from "../src/cli.js";
 
@@ -46,16 +48,6 @@ const SPARE = "sk-ant-oat01-made-up-spare-token";
 const AGENT = "sk-ant-oat01-made-up-agent-token";
 const quiet = () => {};
 
-function setup(workflows: Record<string, string> = {}): { paths: HomePaths; projectDir: string } {
-  const root = mkdtempSync(join(tmpdir(), "orc-accounts-"));
-  const paths = ensureHome(homePaths(join(root, "home")));
-  writeFileSync(paths.config, JSON.stringify({ notify: false, defaultPlace: "folder" }));
-  const projectDir = join(root, "project");
-  mkdirSync(join(projectDir, ".orchestrator", "workflows"), { recursive: true });
-  for (const [name, script] of Object.entries(workflows)) writeFileSync(join(projectDir, ".orchestrator", "workflows", `${name}.js`), script);
-  return { paths, projectDir };
-}
-
 /** A cli file that does not exist. A worker process started with it ends at once. */
 const NO_CLI = "/nonexistent/orc/cli.js";
 
@@ -69,25 +61,22 @@ interface SeenAccount {
 }
 
 /** A runner that notes the account each step gets, and can stop at the usage limit. */
-function loginRunner(limited: () => boolean = () => false): { runner: AgentRunner; seen: SeenAccount[] } {
+function loginRunner(limited: () => boolean = () => false): { runner: InnerRunner; seen: SeenAccount[] } {
   const seen: SeenAccount[] = [];
-  const runner = {
-    async run(_prompt: string, options: Record<string, unknown> = {}) {
-      seen.push({ ...(options.account as SeenAccount | undefined) });
-      (options.onSessionOpen as ((ref: unknown) => void) | undefined)?.({ sessionId: `s${seen.length}`, backendId: "claude", cwd: options.cwd, reopen: { load: true, resume: true, list: true } });
-      if (limited()) {
-        const reset = new Date(Date.now() + 2 * 3600_000).toISOString();
-        throw new WorkflowError("You've hit your limit", WorkflowErrorCode.PROVIDER_USAGE_LIMIT, { recoverable: false, resetHint: `Resets at ${reset}` });
-      }
-      return "done";
-    },
-  } as unknown as AgentRunner;
+  const { runner } = fakeRunner((call) => {
+    seen.push({ ...(call.options.account as SeenAccount | undefined) });
+    if (limited()) {
+      const reset = new Date(Date.now() + 2 * 3600_000).toISOString();
+      throw new WorkflowError("You've hit your limit", WorkflowErrorCode.PROVIDER_USAGE_LIMIT, { recoverable: false, resetHint: `Resets at ${reset}` });
+    }
+    return "done";
+  });
   return { runner, seen };
 }
 
 /** A runner whose steps stop at the usage limit. The reset time, if any, is in the error's typed
  *  context alone, with no resetHint. */
-function typedLimitRunner(resetAt: string | undefined): AgentRunner {
+function typedLimitRunner(resetAt: string | undefined): InnerRunner {
   return {
     async run() {
       throw new WorkflowError("You've hit your limit", WorkflowErrorCode.PROVIDER_USAGE_LIMIT, {
@@ -95,14 +84,7 @@ function typedLimitRunner(resetAt: string | undefined): AgentRunner {
         providerUsageLimitContext: { backendId: "claude", source: "provider", ...(resetAt ? { resetAt } : {}) },
       });
     },
-  } as unknown as AgentRunner;
-}
-
-/** Write a run's state where the engine saves it, with no manager. */
-function plantState(paths: HomePaths, state: Record<string, unknown> & { runId: string }): void {
-  const { runsDir } = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
-  mkdirSync(runsDir, { recursive: true });
-  writeFileSync(join(runsDir, `${state.runId}.json`), JSON.stringify(state, null, 2));
+  } as unknown as InnerRunner;
 }
 
 /** Wait until the worker that orc account use started for a run is gone. Its cli file does not
@@ -131,7 +113,7 @@ async function withHome<T>(paths: HomePaths, body: () => Promise<T>): Promise<{ 
 
 describe("accounts", () => {
   it("adds, lists, switches and removes logins, in a file only the user can read", () => {
-    const { paths } = setup();
+    const { paths } = testHome();
     assert.equal(currentAccount(paths, "claude"), "default");
     addAccount(paths, "work", `  ${WORK}\n`);
     addAccount(paths, "claude/spare", SPARE);
@@ -162,7 +144,7 @@ describe("accounts", () => {
   });
 
   it("a run records orc's account, and its steps run on that login, as a named one whose API key the harness removes", async () => {
-    const { paths, projectDir } = setup({ one: ONE_STEP });
+    const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
     useAccount(paths, "work", quiet);
     process.env.ANTHROPIC_API_KEY = "sk-ant-api03-made-up";
@@ -187,7 +169,7 @@ describe("accounts", () => {
   });
 
   it("a run that a Claude Code session starts uses that session's login, also when the service resumes it", async () => {
-    const { paths, projectDir } = setup({ one: ONE_STEP });
+    const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
     addAccount(paths, "spare", SPARE);
     useAccount(paths, "spare", quiet);
@@ -224,7 +206,7 @@ describe("accounts", () => {
   });
 
   it("a run that an agent of another run starts takes that run's accounts", () => {
-    const { paths, projectDir } = setup({ one: ONE_STEP });
+    const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
     useAccount(paths, "work", quiet);
     const parent = createRun(paths, { workflow: "one", projectDir, inputs: {} });
@@ -234,7 +216,7 @@ describe("accounts", () => {
   });
 
   it("at the usage limit the run waits and says whose limit it is; orc account use moves it and it goes on", async () => {
-    const { paths, projectDir } = setup({ one: ONE_STEP });
+    const { paths, projectDir } = testHome({ one: ONE_STEP });
     let limited = true;
     const { runner, seen } = loginRunner(() => limited);
     const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
@@ -281,7 +263,7 @@ describe("accounts", () => {
   });
 
   it("a limit known only by its typed reset time says when it resets, and the service resumes the run 30 seconds after it", async () => {
-    const { paths, projectDir } = setup({ one: ONE_STEP });
+    const { paths, projectDir } = testHome({ one: ONE_STEP });
     const resetAt = new Date(Date.now() + 2 * 3600_000);
     const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
     const lines: string[] = [];
@@ -302,7 +284,7 @@ describe("accounts", () => {
   });
 
   it("a limit with no reset time is tried again 30 minutes after the pause, whatever saves the state later", async () => {
-    const { paths, projectDir } = setup({ one: ONE_STEP });
+    const { paths, projectDir } = testHome({ one: ONE_STEP });
     const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
     await runWorker(record.runId, "start", { paths, inner: typedLimitRunner(undefined), log: quiet });
     const persistence = enginePersistence(paths);
@@ -326,7 +308,7 @@ describe("accounts", () => {
   });
 
   it("remove is refused while an unfinished run uses the account", () => {
-    const { paths, projectDir } = setup({ one: ONE_STEP });
+    const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
     useAccount(paths, "work", quiet);
     const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
@@ -338,7 +320,7 @@ describe("accounts", () => {
   });
 
   it("orc account rm names every unfinished run on the account, waiting or not started, and exits 1", async () => {
-    const { paths, projectDir } = setup({ one: ONE_STEP });
+    const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
     useAccount(paths, "work", quiet);
     const waiting = createRun(paths, { workflow: "one", projectDir, inputs: {} });
@@ -365,7 +347,7 @@ describe("accounts", () => {
   });
 
   it("orc account lists, switches and removes; add reads the token from stdin off a terminal", async () => {
-    const { paths } = setup();
+    const { paths } = testHome();
     const here = dirname(dirname(fileURLToPath(import.meta.url)));
     const env: NodeJS.ProcessEnv = { ...process.env, ORC_HOME: paths.home };
     delete env.CLAUDECODE;
@@ -402,7 +384,7 @@ describe("accounts", () => {
   });
 
   it("orc account lists the runs waiting at the limit, and orc account use says which wait and which it moved", async () => {
-    const { paths, projectDir } = setup({ one: ONE_STEP });
+    const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "spare", SPARE);
     const lines: string[] = [];
     const out = (line: string) => lines.push(line);
@@ -446,7 +428,7 @@ describe("accounts", () => {
   });
 
   it("orc account use goes by the account whose limit a run hit, so a second use after a move whose worker did not start tries again", async () => {
-    const { paths, projectDir } = setup({ one: ONE_STEP });
+    const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "spare", SPARE);
     const lines: string[] = [];
     const out = (line: string) => lines.push(line);

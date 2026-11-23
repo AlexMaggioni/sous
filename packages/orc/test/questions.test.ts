@@ -1,17 +1,13 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, it } from "node:test";
-import { ensureHome, homePaths, runQuestions, type HomePaths, type RunQuestion } from "@orchestrator/engine";
-// orc does not import these, so the engine entry does not export them. The tests load the
-// engine's built modules by path.
-import { createRun } from "../../engine/dist/runs/launch.js";
-import { updateRecord } from "../../engine/dist/runs/records.js";
-import { runWorker } from "../../engine/dist/runs/worker.js";
-import type { AgentRunner } from "../../engine/dist/steps/agent-runner.js";
+import { runQuestions, type HomePaths, type RunQuestion } from "@orchestrator/engine";
+import { createRun, runWorker, testHome, updateRecord, type InnerRunner } from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
+import { capture, orc } from "./orc.js";
 
 // How orc shows a question, takes a reply and writes the answer, through its commands and the
 // prompt of `orc wait` in a terminal.
@@ -22,51 +18,9 @@ process.env.CODEX_HOME = join(harnessHome, ".codex");
 process.env.XDG_CONFIG_HOME = join(harnessHome, ".config");
 delete process.env.AGENTPRISM_DEFAULT_BACKEND;
 
-function setup(workflows: Record<string, string> = {}): { paths: HomePaths; projectDir: string } {
-  const root = mkdtempSync(join(tmpdir(), "orc-questions-"));
-  const paths = ensureHome(homePaths(join(root, "home")));
-  writeFileSync(paths.config, JSON.stringify({ notify: false, defaultPlace: "folder" }));
-  const projectDir = join(root, "project");
-  mkdirSync(join(projectDir, ".orchestrator", "workflows"), { recursive: true });
-  for (const [name, script] of Object.entries(workflows)) writeFileSync(join(projectDir, ".orchestrator", "workflows", `${name}.js`), script);
-  return { paths, projectDir };
-}
-
 /** These workflows ask and run no agent. */
-const runner = { run: async () => "unused" } as unknown as AgentRunner;
+const runner = { run: async () => "unused" } as unknown as InnerRunner;
 const quiet = () => {};
-
-/**
- * Keep what orc writes to stdout and stderr. The test runner reports through stdout in bytes,
- * and a wait in a terminal lasts long enough to meet its writes, so bytes pass through.
- */
-function capture(printed: string[]): () => void {
-  const write = process.stdout.write.bind(process.stdout);
-  const writeErr = process.stderr.write.bind(process.stderr);
-  const keep = (original: typeof write) =>
-    ((chunk: unknown, ...rest: unknown[]) => (typeof chunk === "string" ? (printed.push(chunk), true) : (original as (...args: unknown[]) => boolean)(chunk, ...rest))) as typeof write;
-  process.stdout.write = keep(write);
-  process.stderr.write = keep(writeErr);
-  return () => {
-    process.stdout.write = write;
-    process.stderr.write = writeErr;
-  };
-}
-
-/** Run orc on this home and keep what it prints, to stdout and stderr. */
-async function orc(paths: HomePaths, argv: string[]): Promise<{ code: number; out: string }> {
-  const before = process.env.ORC_HOME;
-  process.env.ORC_HOME = paths.home;
-  const printed: string[] = [];
-  const restore = capture(printed);
-  try {
-    return { code: await main(argv), out: printed.join("") };
-  } finally {
-    restore();
-    if (before === undefined) delete process.env.ORC_HOME;
-    else process.env.ORC_HOME = before;
-  }
-}
 
 /**
  * Run orc as in a terminal. Each time orc prompts, the next reply is typed. Returns the exit
@@ -117,7 +71,7 @@ return { color, name, ship, plan }`;
 
 describe("how orc shows a question", () => {
   it("inbox, show and wait name the commands that answer each kind, and the commands answer them", async () => {
-    const { paths, projectDir } = setup({ four });
+    const { paths, projectDir } = testHome({ four });
     const record = createRun(paths, { workflow: "four", projectDir, inputs: {} });
     const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     const [color, name, ship, plan] = await asked(paths, record.runId, 4);
@@ -262,7 +216,7 @@ describe("what a reply writes", () => {
   ];
 
   it("takes each kind's words, writes the value in the answer file, and refuses what does not fit", async () => {
-    const { paths } = setup();
+    const { paths } = testHome();
     const got: unknown[] = [];
     const want: unknown[] = [];
     for (const [n, [kind, [command, ...words], code, printed, value]] of cases.entries()) {
@@ -280,7 +234,7 @@ describe("what a reply writes", () => {
   });
 
   it("writes the answer file as indented JSON with the question's hash and the time", async () => {
-    const { paths } = setup();
+    const { paths } = testHome();
     const question: RunQuestion = { id: "r1--0", runId: "r1", scope: "r1", callIndex: 0, hash: "h0", workflow: "w", prompt: "?", kind: "input", breakpoint: false, askedAt: "2026-11-23T10:00:00.000Z" };
     writeFileSync(join(paths.inbox, "r1--0.json"), JSON.stringify(question, null, 2));
     assert.equal((await orc(paths, ["answer", "r1--0", "blue"])).code, 0);
@@ -300,7 +254,7 @@ const plan = await breakpoint('Check the plan', { show: 'the plan' })
 return { color, name, ship, plan }`;
 
   it("asks each question with the words it takes, and the wait goes on to the result", async () => {
-    const { paths, projectDir } = setup({ each });
+    const { paths, projectDir } = testHome({ each });
     const record = createRun(paths, { workflow: "each", projectDir, inputs: {} });
     const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     const wait = await inTerminal(paths, ["wait", record.runId], ["BLUE", "  Ann ", "y", ""]);
@@ -318,7 +272,7 @@ return { color, name, ship, plan }`;
   });
 
   it("a breakpoint's stop stops the run: the wait ends with exit code 3 and the run is stopped", async () => {
-    const { paths, projectDir } = setup({ each });
+    const { paths, projectDir } = testHome({ each });
     const record = createRun(paths, { workflow: "each", projectDir, inputs: {} });
     const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet, handleSignals: true });
     const wait = await inTerminal(paths, ["wait", record.runId], ["red", "Ann", "yes", " Stop "]);
@@ -330,7 +284,7 @@ return { color, name, ship, plan }`;
   });
 
   it("a reply that does not fit ends the wait with exit code 1, and the question still waits", async () => {
-    const { paths, projectDir } = setup({ each });
+    const { paths, projectDir } = testHome({ each });
     const record = createRun(paths, { workflow: "each", projectDir, inputs: {} });
     const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet, handleSignals: true });
     const wait = await inTerminal(paths, ["wait", record.runId], ["green"]);
@@ -358,7 +312,7 @@ return await breakpoint('Check the plan', { show: 'the plan' })`;
   }
 
   it("orc answer <q> stop stops a running run, as orc stop does", async () => {
-    const { paths, projectDir } = setup({ checked });
+    const { paths, projectDir } = testHome({ checked });
     const record = createRun(paths, { workflow: "checked", projectDir, inputs: {} });
     const running = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet, handleSignals: true });
     const [question] = await asked(paths, record.runId, 1);
@@ -368,7 +322,7 @@ return await breakpoint('Check the plan', { show: 'the plan' })`;
   });
 
   it("orc answer <q> stop stops a paused run at once, as orc stop does", async () => {
-    const { paths, projectDir } = setup({ held });
+    const { paths, projectDir } = testHome({ held });
     const record = createRun(paths, { workflow: "held", projectDir, inputs: {} });
     const paused = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal(paused?.status, "paused");
@@ -378,7 +332,7 @@ return await breakpoint('Check the plan', { show: 'the plan' })`;
   });
 
   it("a stop that an older orc wrote to a paused run's answer file stops the run on resume", async () => {
-    const { paths, projectDir } = setup({ held });
+    const { paths, projectDir } = testHome({ held });
     const record = createRun(paths, { workflow: "held", projectDir, inputs: {} });
     const paused = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal(paused?.status, "paused");

@@ -7,33 +7,37 @@ import { describe, it } from "node:test";
 import {
   checkWorkflow,
   dryRun,
-  ensureHome,
   fileSchedules,
   gcRuns,
-  homePaths,
   listRecords,
   loadRecord,
   logFile,
   rememberProject,
   runQuestions,
   saveSchedules,
+  stopStep,
   type HomePaths,
 } from "@orchestrator/engine";
-// orc does not import these, so the engine entry does not export them. The tests load the
-// engine's built modules by path. They are the same modules the entry loads.
-import { WorkflowError, WorkflowErrorCode } from "../../engine/dist/errors.js";
-import { createRun } from "../../engine/dist/runs/launch.js";
-import { knownProjects } from "../../engine/dist/runs/home.js";
-import { writeAnswer } from "../../engine/dist/runs/inbox.js";
-import { requestStepStop, saveRecord, updateRecord } from "../../engine/dist/runs/records.js";
-import { tick } from "../../engine/dist/runs/service.js";
-import { workflowProjectPaths } from "../../engine/dist/runs/persistence/project-paths.js";
-import type { PersistedRunState } from "../../engine/dist/runs/persistence/run-persistence.js";
-import { stopStep } from "../../engine/dist/runs/run.js";
-import { readState, stopRequestFile } from "../../engine/dist/runs/store.js";
-import { runWorker } from "../../engine/dist/runs/worker.js";
-import type { AgentRunner } from "../../engine/dist/steps/agent-runner.js";
+import {
+  createRun,
+  fakeRunner,
+  knownProjects,
+  plantState,
+  readState,
+  requestStepStop,
+  runWorker,
+  saveRecord,
+  stopRequestFile,
+  testHome,
+  tick,
+  updateRecord,
+  writeAnswer,
+  WorkflowError,
+  WorkflowErrorCode,
+  type Call,
+} from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
+import { orc } from "./orc.js";
 
 // Whole runs in this process, with a fake agent runner, the way `orc run` drives them.
 
@@ -47,42 +51,6 @@ delete process.env.AGENTPRISM_DEFAULT_BACKEND;
 function write(file: string, content: string): void {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, content);
-}
-
-/** Write a run's state where the engine saves it, as the engine leaves it, with no manager. */
-function plantState(paths: HomePaths, state: Partial<PersistedRunState> & { runId: string }): void {
-  const { runsDir } = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
-  mkdirSync(runsDir, { recursive: true });
-  writeFileSync(join(runsDir, `${state.runId}.json`), JSON.stringify(state, null, 2));
-}
-
-function setup(workflows: Record<string, string>, config: Record<string, unknown> = {}): { paths: HomePaths; projectDir: string } {
-  const root = mkdtempSync(join(tmpdir(), "orc-runs-"));
-  const paths = ensureHome(homePaths(join(root, "home")));
-  writeFileSync(paths.config, JSON.stringify({ notify: false, defaultPlace: "folder", ...config }));
-  const projectDir = join(root, "project");
-  mkdirSync(join(projectDir, ".orchestrator", "workflows"), { recursive: true });
-  for (const [name, script] of Object.entries(workflows)) writeFileSync(join(projectDir, ".orchestrator", "workflows", `${name}.js`), script);
-  return { paths, projectDir };
-}
-
-interface Call {
-  prompt: string;
-  label?: string;
-  options: Record<string, unknown>;
-}
-
-function fakeRunner(answer: (call: Call, calls: Call[]) => unknown): { runner: AgentRunner; calls: Call[] } {
-  const calls: Call[] = [];
-  const runner = {
-    async run(prompt: string, options: Record<string, unknown> = {}) {
-      const call = { prompt, label: options.label as string | undefined, options };
-      calls.push(call);
-      (options.onSessionOpen as ((ref: unknown) => void) | undefined)?.({ sessionId: `s${calls.length}`, backendId: "claude", cwd: options.cwd, reopen: { load: true, resume: true, list: true } });
-      return answer(call, calls);
-    },
-  } as unknown as AgentRunner;
-  return { runner, calls };
 }
 
 async function answerWhenAsked(paths: HomePaths, runId: string, reply: (prompt: string) => unknown, times = 1): Promise<string[]> {
@@ -102,28 +70,9 @@ async function answerWhenAsked(paths: HomePaths, runId: string, reply: (prompt: 
 
 const quiet = () => {};
 
-/** Run orc on this home and keep what it prints, to stdout and stderr. */
-async function orc(paths: HomePaths, argv: string[]): Promise<{ code: number; out: string }> {
-  const before = process.env.ORC_HOME;
-  process.env.ORC_HOME = paths.home;
-  const printed: string[] = [];
-  const write = process.stdout.write.bind(process.stdout);
-  const writeErr = process.stderr.write.bind(process.stderr);
-  process.stdout.write = ((chunk: string) => (printed.push(String(chunk)), true)) as typeof process.stdout.write;
-  process.stderr.write = ((chunk: string) => (printed.push(String(chunk)), true)) as typeof process.stderr.write;
-  try {
-    return { code: await main(argv), out: printed.join("") };
-  } finally {
-    process.stdout.write = write;
-    process.stderr.write = writeErr;
-    if (before === undefined) delete process.env.ORC_HOME;
-    else process.env.ORC_HOME = before;
-  }
-}
-
 describe("runs", () => {
   it("an agent asks a question, the answer comes through the inbox, and the same session goes on", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       asking: `export const meta = { name: 'asking', description: 'asks', inputs: { task: 'What to do' } }
 const out = await agent('Do ' + args.task, { label: 'worker', ask: true })
 return out`,
@@ -141,7 +90,7 @@ return out`,
   });
 
   it("a breakpoint sent back with a note runs the step again with that note, then approve goes on", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       checked: `export const meta = { name: 'checked', description: 'a breakpoint' }
 const draft = await breakpoint('Check the plan', (note) => agent('Plan it' + (note ? '. Change: ' + note : ''), { label: 'planner' }))
 return draft`,
@@ -160,7 +109,7 @@ return draft`,
   });
 
   it("a question whose text starts like a breakpoint's is a plain question, which send-back refuses", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       lookalike: `export const meta = { name: 'lookalike', description: 'asks' }
 return await ask('Breakpoint: not one')`,
     });
@@ -185,7 +134,7 @@ return await ask('Breakpoint: not one')`,
   });
 
   it("a step that keeps failing pauses the run on it, and resume runs it again while finished steps stay done", async () => {
-    const { paths, projectDir } = setup(
+    const { paths, projectDir } = testHome(
       {
         flaky: `export const meta = { name: 'flaky', description: 'a step that fails' }
 const first = await agent('first', { label: 'first' })
@@ -215,7 +164,7 @@ return { first, second }`,
   });
 
   it("a run paused for a lost login says why a resume cannot start, and resumes once the person logs in again", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       login: `export const meta = { name: 'login', description: 'loses its login' }
 const first = await agent('first', { label: 'first' })
 const second = await agent('second', { label: 'second' })
@@ -250,7 +199,7 @@ return { first, second }`,
   it("a run keeps the workflows it started with, and resume asks before it takes an edit", async () => {
     const childFile = (projectDir: string) => join(projectDir, ".orchestrator", "workflows", "child.js");
     const child = (version: string) => `export const meta = { name: 'child', description: 'child' }\nreturn await agent('${version}', { label: 'build' })`;
-    const { paths, projectDir } = setup(
+    const { paths, projectDir } = testHome(
       {
         child: child("v1"),
         parent: `export const meta = { name: 'parent', description: 'parent' }\nawait agent('look', { label: 'look' })\nreturn await workflow('child', {})`,
@@ -295,7 +244,7 @@ return { first, second }`,
   });
 
   it("stopping one step pauses the run on it, and resume runs it again", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       child: `export const meta = { name: 'child', description: 'child' }\nreturn await agent('build it', { label: 'build' })`,
       parent: `export const meta = { name: 'parent', description: 'parent' }
 const first = await agent('first', { label: 'first' })
@@ -344,7 +293,7 @@ return { first, built }`,
   });
 
   it("a step stop survives the worker saving a record it read before the request", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       one: `export const meta = { name: 'one', description: 'one' }\nreturn await agent('build it', { label: 'build' })`,
     });
     const { runner, calls } = fakeRunner((call) =>
@@ -372,7 +321,7 @@ return { first, built }`,
   });
 
   it("a step stop left by a worker that ended is dropped when the next worker starts", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       one: `export const meta = { name: 'one', description: 'one' }\nreturn await agent('build it', { label: 'build' })`,
     });
     const { runner, calls } = fakeRunner((call) =>
@@ -393,7 +342,7 @@ return { first, built }`,
   });
 
   it("a workflow's time limit stops the running steps and pauses the run, and resume runs them again", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       slow: `export const meta = { name: 'slow', description: 'slow', timeout: '200ms' }
 const first = await agent('first', { label: 'first' })
 const second = await agent('second', { label: 'second' })
@@ -419,7 +368,7 @@ return { first, second }`,
   });
 
   it("a step's time limit counts from when it starts running, not while it waits for a free slot", async () => {
-    const { paths, projectDir } = setup(
+    const { paths, projectDir } = testHome(
       {
         queue: `export const meta = { name: 'queue', description: 'two steps share one slot' }
 return await parallel([
@@ -457,7 +406,7 @@ return await parallel([
   });
 
   it("per-run step changes and a default model reach the agent", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       changes: `export const meta = { name: 'changes', description: 'step changes' }
 return await agent('review', { label: 'reviewer' })`,
     });
@@ -471,7 +420,7 @@ return await agent('review', { label: 'reviewer' })`,
   });
 
   it("per-run step changes reach the agent that choose() asks", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       picking: `export const meta = { name: 'picking', description: 'picks a step' }
 return await choose('Pick one', { label: 'picker', steps: { a: () => 'A', b: () => 'B' } })`,
     });
@@ -483,7 +432,7 @@ return await choose('Pick one', { label: 'picker', steps: { a: () => 'A', b: () 
   });
 
   it("show lists the step that runs now, before the run saves it", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       slow: `export const meta = { name: 'slow', description: 'slow' }
 await agent('first', { label: 'first' })
 return await agent('second', { label: 'second' })`,
@@ -521,7 +470,7 @@ return await agent('second', { label: 'second' })`,
   });
 
   it("a code step in a scratch folder finds the project through ORC_PROJECT", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       where: `export const meta = { name: 'where', description: 'where', place: 'none' }
 const step = await js('return { project: process.env.ORC_PROJECT, cwd: process.cwd() }', null)
 return step.result`,
@@ -535,7 +484,7 @@ return step.result`,
   });
 
   it("a nested workflow gets the defaults of its inputs, and a missing input fails the call", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       child: `export const meta = { name: 'child', description: 'child', inputs: {
   task: { type: 'string', required: true }, rounds: { type: 'number', default: 3 }, test: { type: 'string', default: 'npm test' } } }
 return args`,
@@ -554,7 +503,7 @@ return { given, missing }`,
   });
 
   it("show puts a nested workflow's steps under it, by the label the script gave it", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       child: `export const meta = { name: 'child', description: 'child', inputs: { task: 'The task' } }
 return await agent('do ' + args.task, { label: 'implementer' })`,
       parent: `export const meta = { name: 'parent', description: 'parent' }
@@ -585,7 +534,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { task: id 
   });
 
   it("the log starts a nested run's lines with its label", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       child: `export const meta = { name: 'child', description: 'child', inputs: { task: 'The task' } }
 phase('build')
 log('working on ' + args.task)
@@ -617,7 +566,7 @@ return await workflow('child', { task: 'B' })`,
 
 describe("agents and harnesses", () => {
   it("runs one rulesync agent on each harness with that harness's block, and stops a harness's own agent sent elsewhere", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       both: `export const meta = { name: 'both', description: 'one reviewer on two harnesses' }
 const a = await agent('Review it', { agentType: 'reviewer', label: 'on claude' })
 const b = await agent('Review it', { agentType: 'reviewer', label: 'on codex', model: 'codex' })
@@ -661,7 +610,7 @@ await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness 
 describe("places and reruns", () => {
   const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   const gitProject = (workflows: Record<string, string>) => {
-    const made = setup(workflows, { defaultPlace: "worktree" });
+    const made = testHome(workflows, { defaultPlace: "worktree" });
     git(made.projectDir, "init", "-q", "-b", "main");
     git(made.projectDir, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "start");
     return made;
@@ -726,7 +675,7 @@ describe("places and reruns", () => {
   });
 
   it("a rerun after an edit reuses the steps before the edit, in the same place", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       two: `export const meta = { name: 'two', description: 'two steps' }
 const plan = await agent('plan it', { label: 'planner' })
 const build = await agent('build ' + plan, { label: 'builder' })
@@ -747,7 +696,7 @@ return build`);
   });
 
   it("an agent cannot start a workflow kept for people, nor pick it", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       private: `export const meta = { name: 'private', description: 'people only', startedBy: 'people' }\nreturn 1`,
       open: `export const meta = { name: 'open', description: 'anyone' }\nreturn 2`,
       picker: `export const meta = { name: 'picker', description: 'lets an agent pick' }\nreturn await choose('Pick one', { any: true })`,
@@ -804,7 +753,7 @@ describe("the run tree", () => {
     new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted"))));
 
   it("two levels of nesting with two nested runs at once: show, the log and stop --step name each step by its path", async () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       check: `export const meta = { name: 'check', description: 'checks', inputs: { what: 'What to check' } }
 return await agent('check ' + args.what, { label: 'checker' })`,
       ticket: `export const meta = { name: 'ticket', description: 'one ticket', inputs: { id: 'The ticket' } }
@@ -884,7 +833,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('ticket', { id }, { 
   });
 
   it("an old record, whose nested runs name no parent, shows, stops, resumes and gcs as before", async () => {
-    const { paths, projectDir } = setup(
+    const { paths, projectDir } = testHome(
       {
         child: `export const meta = { name: 'child', description: 'builds', inputs: { id: 'The ticket' } }
 return await agent('build ' + args.id, { label: 'builder' })`,
@@ -977,7 +926,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
 
 describe("service", () => {
   it("starts a schedule once per matching minute, and skips it while its last run is unfinished", () => {
-    const { paths, projectDir } = setup({ nightly: `export const meta = { name: 'nightly', description: 'n' }\nreturn 1` });
+    const { paths, projectDir } = testHome({ nightly: `export const meta = { name: 'nightly', description: 'n' }\nreturn 1` });
     saveSchedules(paths, [{ name: "n", workflow: join(projectDir, ".orchestrator", "workflows", "nightly.js"), projectDir, cron: "0 3 * * *", inputs: {}, enabled: true, createdAt: "" }]);
     const started: string[] = [];
     const launch = (_paths: unknown, runId: string) => started.push(runId);
@@ -1000,7 +949,7 @@ describe("service", () => {
 
   it("starts a workflow on the cron in its meta, once orc has run in its project", () => {
     const nightly = `export const meta = { name: 'nightly', description: 'n', inputs: { who: 'Who' }, schedule: { cron: '0 3 * * *', inputs: { who: 'night' } } }\nreturn args.who`;
-    const { paths, projectDir } = setup({ nightly, hand: `export const meta = { name: 'hand', description: 'h' }\nreturn 1` });
+    const { paths, projectDir } = testHome({ nightly, hand: `export const meta = { name: 'hand', description: 'h' }\nreturn 1` });
     const file = join(projectDir, ".orchestrator", "workflows", "nightly.js");
     const started: string[] = [];
     const launch = (_paths: unknown, runId: string) => started.push(runId);
@@ -1022,7 +971,7 @@ describe("service", () => {
   });
 
   it("refuses a bad schedule in the meta, and runs a home workflow's schedule in a scratch folder", () => {
-    const { paths, projectDir } = setup({
+    const { paths, projectDir } = testHome({
       badCron: `export const meta = { name: 'badCron', description: 'b', schedule: '0 25 * * *' }\nreturn 1`,
       noInput: `export const meta = { name: 'noInput', description: 'b', inputs: { who: 'Who' }, schedule: '0 3 * * *' }\nreturn 1`,
     });
@@ -1043,7 +992,7 @@ describe("service", () => {
   });
 
   it("tells the user once about a run cut off by a crash and leaves it for them to resume, while a limit pause resumes", () => {
-    const { paths, projectDir } = setup({ job: `export const meta = { name: 'job', description: 'j' }\nreturn 1` });
+    const { paths, projectDir } = testHome({ job: `export const meta = { name: 'job', description: 'j' }\nreturn 1` });
     const cut = createRun(paths, { workflow: "job", projectDir, inputs: {} });
     const limited = createRun(paths, { workflow: "job", projectDir, inputs: {} });
     const at = new Date(2026, 10, 21, 10, 0).toISOString();
@@ -1065,7 +1014,7 @@ describe("service", () => {
 describe("dry runs", () => {
   const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   const gitProject = (workflows: Record<string, string>) => {
-    const made = setup(workflows, { defaultPlace: "folder" });
+    const made = testHome(workflows, { defaultPlace: "folder" });
     git(made.projectDir, "init", "-q", "-b", "main");
     git(made.projectDir, "add", "-A");
     git(made.projectDir, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "start");
@@ -1182,7 +1131,7 @@ describe("orc schedule", () => {
   const nightly = "~/project/.orchestrator/workflows/nightly.js";
 
   it("adds, lists, disables, enables, tests and removes a schedule, beside the one a workflow's meta sets", async () => {
-    const { paths, projectDir } = setup(workflows);
+    const { paths, projectDir } = testHome(workflows);
     const schedule = scheduleIn(paths, projectDir);
     const dailyFile = join(projectDir, ".orchestrator", "workflows", "daily.js");
     const nightlyFile = join(projectDir, ".orchestrator", "workflows", "nightly.js");
@@ -1234,7 +1183,7 @@ describe("orc schedule", () => {
   });
 
   it("refuses a name that exists, a bad cron, an unknown workflow, a bad place and a change to a schedule a meta sets, and writes nothing", async () => {
-    const { paths, projectDir } = setup(workflows);
+    const { paths, projectDir } = testHome(workflows);
     const schedule = scheduleIn(paths, projectDir);
     assert.equal((await schedule("add", "morning", "daily", "--cron", "0 9 * * *")).code, 0);
     const saved = readFileSync(paths.schedules, "utf8");

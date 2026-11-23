@@ -14,6 +14,19 @@ import type { PersistedRunState } from "./runs/persistence/run-persistence.js";
 import type { InnerRunner } from "./steps/steps.js";
 import type { WorkflowRunResult } from "./workflow-result.js";
 
+// Engine parts orc's tests use and orc's code does not, so the main entry leaves them out.
+export { WorkflowError, WorkflowErrorCode } from "./errors.js";
+export { knownProjects } from "./runs/home.js";
+export { writeAnswer } from "./runs/inbox.js";
+export { createRun } from "./runs/launch.js";
+export { processAlive, requestStepStop, saveRecord, updateRecord } from "./runs/records.js";
+export { tick } from "./runs/service.js";
+export { enginePersistence, readState, stopRequestFile } from "./runs/store.js";
+export { runWorker } from "./runs/worker.js";
+export { workflowProjectPaths } from "./runs/persistence/project-paths.js";
+export type { PersistedRunState } from "./runs/persistence/run-persistence.js";
+export type { InnerRunner } from "./steps/steps.js";
+
 /**
  * A new home and project folder in the temp folder. The config sends no notices and runs in the
  * project folder, unless `config` says otherwise. Each workflow goes in the project's workflow
