@@ -17,7 +17,7 @@ import { notify } from "./notify.js";
 import { loadRecord, loadSnapshot, saveSnapshot, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
 import { SlotPool } from "./slots.js";
-import { enginePersistence } from "./store.js";
+import { managerStore, slotFolders } from "./store.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
 import { programLookup } from "../programs.js";
 
@@ -68,10 +68,7 @@ export function currentWorkflows(paths: HomePaths, projectDir: string): Record<s
 function managerFor(paths: HomePaths, projectDir: string, extra: Partial<ConstructorParameters<typeof WorkflowManager>[0]> = {}) {
   const dirs = openWorkflowDir(workflowDirs(projectDir, paths));
   return new WorkflowManager({
-    // Run state is keyed to the manager's folder, so every orc manager uses the home folder.
-    cwd: paths.home,
-    persistenceRoot: paths.runs,
-    persistence: enginePersistence(paths),
+    ...managerStore(paths),
     // The manager leaves other runs' files alone. The pause rule names a run whose worker died,
     // and a resume repairs its own run.
     scanStaleRuns: false,
@@ -127,7 +124,8 @@ async function runOnAccounts(
   const settings = lookupSettings(paths, record.projectDir, config, base);
   const agents = lookupAgents(settings);
   const secrets = loadSecrets(paths);
-  const slots = new SlotPool(paths.slots, paths.queue, () => loadConfig(paths).maxAgents, record.priority);
+  const folders = slotFolders(paths);
+  const slots = new SlotPool(folders.slots, folders.queue, () => loadConfig(paths).maxAgents, record.priority);
   const inner = options.inner;
   const runner = createSteps({
     cwd: record.cwd,

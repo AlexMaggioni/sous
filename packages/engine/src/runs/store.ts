@@ -52,6 +52,11 @@ export function questionFiles(paths: HomePaths): string[] {
     .map((name) => join(paths.inbox, name));
 }
 
+/** The folders of the machine-wide cap on agents: a file per held slot, and a ticket per waiting agent. */
+export function slotFolders(paths: HomePaths): { slots: string; queue: string } {
+  return { slots: paths.slots, queue: paths.queue };
+}
+
 /** The run's worker log. The worker's output goes there. */
 export function logFile(paths: HomePaths, runId: string): string {
   return join(paths.logs, `${runId}.log`);
@@ -72,6 +77,12 @@ function engineFolders(paths: HomePaths) {
  *  until something saves or takes a lease through it. */
 export function enginePersistence(paths: HomePaths): RunEventPersistence {
   return createRunPersistence(paths.home, undefined, { persistenceRoot: paths.runs });
+}
+
+/** Where a manager of orc's runs keeps them. Run state is keyed to the manager's folder, so every
+ *  orc manager uses the home folder. */
+export function managerStore(paths: HomePaths): { cwd: string; persistenceRoot: string; persistence: RunEventPersistence } {
+  return { cwd: paths.home, persistenceRoot: paths.runs, persistence: enginePersistence(paths) };
 }
 
 /** The run's state as the engine last saved it. A run left running by a worker that died still
