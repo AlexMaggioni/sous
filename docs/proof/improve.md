@@ -179,6 +179,9 @@ These reach a program that calls the engine itself. orc's output does not change
 - A caller that passes no places object gets no home to make worktrees in. A step with
   `isolation: "worktree"` works in the run's folder, and the log says why. A nested run can ask
   only for place "folder".
+- `runSync` on a run that paused or failed returns the result the run saved, so its duration
+  matches the saved state's. It built a second result a few milliseconds later.
+- A stopped run's result has `abortSignaled`, as its saved state has.
 
 ## Still open
 
@@ -208,3 +211,7 @@ These are choices for the owner, not bugs the branch left.
   passes one.
 - A nested run gets each option of its parent but the root's resume inputs, so a new option
   reaches nested runs unless someone clears it there.
+- A stopped run's saved state has no duration and no reason, since `orc stop` saves it before the
+  run settles. `orc show` prints no duration for it. Main does the same.
+- The run manager reports a pause in two ways. A start's result says paused, and a resume's
+  promise rejects. The worker reads the saved state after both.
