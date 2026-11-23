@@ -12,6 +12,8 @@ import {
   listAccounts,
   loadRecord,
   removeAccount,
+  resumeRun,
+  startRun,
   useAccount,
   workerProcess,
   type HomePaths,
@@ -20,10 +22,10 @@ import {
   createRun,
   enginePersistence,
   fakeRunner,
+  inProcess,
   plantState,
   processAlive,
   readState,
-  runWorker,
   testHome,
   tick,
   WorkflowError,
@@ -149,11 +151,12 @@ describe("accounts", () => {
     useAccount(paths, "work", quiet);
     process.env.ANTHROPIC_API_KEY = "sk-ant-api03-made-up";
     try {
-      const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+      const { runner, seen } = loginRunner();
+      const workers = inProcess({ inner: runner });
+      const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
       assert.deepEqual(record.accounts, { claude: { name: "work", folder: process.env.CLAUDE_CONFIG_DIR }, codex: { name: "default", folder: process.env.CODEX_HOME } });
 
-      const { runner, seen } = loginRunner();
-      const done = await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+      const done = await workers.ended(record.runId);
       assert.equal(done?.status, "completed");
       assert.deepEqual(seen, [{ token: WORK, named: true, folder: process.env.CLAUDE_CONFIG_DIR }]);
       assert.equal(process.env.CLAUDE_CODE_OAUTH_TOKEN, undefined, "the worker leaves its own environment alone");
@@ -187,10 +190,13 @@ describe("accounts", () => {
     const plain = createRun(paths, { workflow: "one", projectDir, inputs: {} });
     assert.equal(plain.accounts?.claude?.name, "spare", "without the session flag, a run uses orc's account");
 
-    // The service starts the worker from its own environment, without the session's token.
+    // The service starts the worker from its own environment, without the session's token. So
+    // the test makes the record here and starts its worker once the token is gone.
     delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
     const { runner, seen } = loginRunner();
-    await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: runner });
+    workers.launch(paths, record.runId, "start");
+    await workers.ended(record.runId);
     assert.equal(seen[0]?.token, AGENT);
 
     // A session on Claude Code's own login keeps no token, and its steps get none.
@@ -198,7 +204,8 @@ describe("accounts", () => {
     assert.deepEqual(own.accounts?.claude, { name: "caller", folder: process.env.CLAUDE_CONFIG_DIR });
     process.env.CLAUDE_CODE_OAUTH_TOKEN = WORK;
     try {
-      await runWorker(own.runId, "start", { paths, inner: runner, log: quiet });
+      workers.launch(paths, own.runId, "start");
+      await workers.ended(own.runId);
       assert.equal(seen[1]?.token, undefined);
     } finally {
       delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
@@ -219,9 +226,10 @@ describe("accounts", () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP });
     let limited = true;
     const { runner, seen } = loginRunner(() => limited);
-    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
     const lines: string[] = [];
-    const paused = await runWorker(record.runId, "start", { paths, inner: runner, log: (line) => lines.push(line) });
+    const workers = inProcess({ inner: runner, log: (line) => lines.push(line) });
+    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const paused = await workers.ended(record.runId);
     assert.equal(paused?.status, "paused");
     assert.equal(readState(paths, record.runId)?.pauseReason, "usage_limit");
     assert.deepEqual({ ...loadRecord(paths, record.runId)?.limit, at: undefined }, { program: "claude", account: "default", at: undefined });
@@ -237,8 +245,8 @@ describe("accounts", () => {
     assert.equal(loadRecord(paths, record.runId)?.accounts?.claude?.folder, process.env.CLAUDE_CONFIG_DIR, "the run keeps its settings folder");
 
     // A run at the limit of the account orc uses now waits for the reset.
-    const second = createRun(paths, { workflow: "one", projectDir, inputs: {} });
-    await runWorker(second.runId, "start", { paths, inner: runner, log: quiet });
+    const second = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    await workers.ended(second.runId);
     const show = await withHome(paths, () => main(["show", second.runId]));
     assert.match(show.printed, /limit     Claude Code account spare hit its usage limit\. It resets at \d\d:\d\d\. orc account use <name> goes on now on another account\./);
     // orc goes back to default without moving the runs, which orc account use would do.
@@ -256,7 +264,8 @@ describe("accounts", () => {
 
     // The worker that resumes it runs the step on the new login, and the limit is gone from the record.
     limited = false;
-    const done = await runWorker(record.runId, "resume", { paths, inner: runner, log: quiet });
+    resumeRun(paths, workers.launch, record.runId);
+    const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.equal(seen.at(-1)?.token, SPARE);
     assert.equal(loadRecord(paths, record.runId)?.limit, undefined);
@@ -265,9 +274,10 @@ describe("accounts", () => {
   it("a limit known only by its typed reset time says when it resets, and the service resumes the run 30 seconds after it", async () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP });
     const resetAt = new Date(Date.now() + 2 * 3600_000);
-    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
     const lines: string[] = [];
-    const paused = await runWorker(record.runId, "start", { paths, inner: typedLimitRunner(resetAt.toISOString()), log: (line) => lines.push(line) });
+    const workers = inProcess({ inner: typedLimitRunner(resetAt.toISOString()), log: (line) => lines.push(line) });
+    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const paused = await workers.ended(record.runId);
     assert.equal(paused?.status, "paused");
     const hhmm = resetAt.toTimeString().slice(0, 5);
     assert.match(String(lines.find((line) => line.includes(" limit      "))), new RegExp(`hit its usage limit\\. It resets at ${hhmm}\\.`));
@@ -285,8 +295,9 @@ describe("accounts", () => {
 
   it("a limit with no reset time is tried again 30 minutes after the pause, whatever saves the state later", async () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP });
-    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
-    await runWorker(record.runId, "start", { paths, inner: typedLimitRunner(undefined), log: quiet });
+    const workers = inProcess({ inner: typedLimitRunner(undefined) });
+    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    await workers.ended(record.runId);
     const persistence = enginePersistence(paths);
     const first = persistence.load(record.runId)!;
     assert.equal(first.pauseReason, "usage_limit");
@@ -323,8 +334,9 @@ describe("accounts", () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
     useAccount(paths, "work", quiet);
-    const waiting = createRun(paths, { workflow: "one", projectDir, inputs: {} });
-    await runWorker(waiting.runId, "start", { paths, inner: loginRunner(() => true).runner, log: quiet });
+    const workers = inProcess({ inner: loginRunner(() => true).runner });
+    const waiting = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    await workers.ended(waiting.runId);
     assert.equal(readState(paths, waiting.runId)?.pauseReason, "usage_limit");
     const fresh = createRun(paths, { workflow: "one", projectDir, inputs: {} });
 
@@ -394,9 +406,9 @@ describe("accounts", () => {
     await use("spare");
     assert.deepEqual(lines.splice(0), ["orc uses Claude Code account spare for new runs."]);
 
-    const { runner } = loginRunner(() => true);
-    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
-    await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: loginRunner(() => true).runner });
+    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    await workers.ended(record.runId);
     assert.equal(readState(paths, record.runId)?.pauseReason, "usage_limit");
 
     const listed = await withHome(paths, () => main(["account"]));
@@ -434,9 +446,9 @@ describe("accounts", () => {
     const out = (line: string) => lines.push(line);
     const use = (name: string) => withHome(paths, () => cmdAccount(["use", name], { out, launch: workerProcess(() => NO_CLI) }));
 
-    const { runner } = loginRunner(() => true);
-    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
-    await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    const workers = inProcess({ inner: loginRunner(() => true).runner });
+    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    await workers.ended(record.runId);
     assert.equal(readState(paths, record.runId)?.pauseReason, "usage_limit");
 
     // The move to spare starts a worker that never runs, so the run still waits at default's limit.
