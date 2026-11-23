@@ -644,9 +644,23 @@ describe("places and reruns", () => {
     git(writer.worktree!, "add", "new.txt");
     git(writer.worktree!, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "work");
     git(projectDir, "merge", "-q", writer.branch!);
+    // orc gc prints the folders as git names them, so /var/... on macOS shows as /private/var/....
+    const waitingLine = `kept ${realpathSync(waiting.worktree!)} (${waiting.branch}): its run has not finished\n`;
+    const dry = await orc(paths, ["gc", "--dry-run"]);
+    assert.deepEqual(dry, { code: 0, out: `would remove ${realpathSync(writer.worktree!)} (${writer.branch}): merged\n${waitingLine}` });
+    assert.equal(existsSync(writer.worktree!), true, "a dry run removes nothing");
     const result = gcWorktrees(paths, [projectDir], { busy: busyWorktrees(paths) });
     assert.deepEqual(result.removed.map((r) => r.reason), ["merged"]);
     assert.equal(existsSync(writer.worktree!), false);
+    assert.equal(existsSync(waiting.worktree!), true);
+
+    // A finished run whose branch has nothing new is merged too, and orc gc removes its worktree.
+    const idle = createRun(paths, { workflow: "look", projectDir, inputs: {} });
+    const now = new Date().toISOString();
+    plantState(paths, { runId: idle.runId, status: "completed", startedAt: now, updatedAt: now, agents: [], logs: [], phases: [] });
+    const idleDir = realpathSync(idle.worktree!);
+    assert.deepEqual(await orc(paths, ["gc"]), { code: 0, out: `removed ${idleDir} (${idle.branch}): merged\n${waitingLine}` });
+    assert.equal(existsSync(idle.worktree!), false);
     assert.equal(existsSync(waiting.worktree!), true);
 
     // Discarding a run deletes its branch and worktree, but only with --yes.
