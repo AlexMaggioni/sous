@@ -8,21 +8,17 @@
 //  - removes finished runs older than keepDays, when config.json sets it;
 //  - once an hour, removes the worktrees whose branch was merged and that have nothing uncommitted.
 
-import { existsSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { openWorkflowDir } from "../workflows/dir.js";
-import { workflowProjectPaths } from "./persistence/project-paths.js";
 import { gcWorktrees, runWorktrees } from "../places/places.js";
-import { changedWorkflows } from "./control.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
-import { createRun, logFile, startWorker } from "./launch.js";
+import { createRun, startWorker } from "./launch.js";
 import { notify } from "./notify.js";
-import { processAlive, snapshotFile, type RunRecord } from "./records.js";
-import type { Verdict } from "./rule.js";
+import { processAlive } from "./records.js";
 import { readState } from "./store.js";
-import { listRuns, type RunView } from "./run.js";
-import { managerFor } from "./worker.js";
+import { changedWorkflows, listRuns, pruneRuns, startedAndUnfinished, workerRuns } from "./run.js";
 
 export interface Schedule {
   name: string;
@@ -109,17 +105,6 @@ function minuteKey(date: Date): string {
 }
 
 const RETRY_LIMIT_MS = 15 * 60 * 1000;
-
-/** A schedule waits for its last run, and prune keeps a run, while the run is unfinished. Here a
- *  run that never saved a state counts as finished. */
-function startedAndUnfinished(verdict: Verdict): boolean {
-  return verdict.unfinished && verdict.status !== "not started";
-}
-
-/** A worker runs the run now, or ran it when its view was read. Its view may be out of date. */
-function workerRuns(run: RunView): boolean {
-  return processAlive(run.record.pid) || (!run.resume.ok && run.resume.why === "running");
-}
 
 export interface TickDeps {
   now?: Date;
@@ -225,7 +210,7 @@ export function tick(paths: HomePaths, cliFile: string, deps: TickDeps = {}): vo
   // Pruning.
   if (config.keepDays !== undefined && (!state.lastPrune || now.getTime() - Date.parse(state.lastPrune) > 3600_000)) {
     state.lastPrune = now.toISOString();
-    const removed = prune(paths, config.keepDays, now);
+    const removed = pruneRuns(paths, config.keepDays, now);
     if (removed.length) log(`pruned ${removed.length} finished runs older than ${config.keepDays} days`);
   }
 
@@ -259,41 +244,6 @@ export function busyWorktrees(paths: HomePaths, runs = listRuns(paths)): Set<str
     for (const tree of runWorktrees(record)) dirs.add(tree.dir);
   }
   return dirs;
-}
-
-/** Delete a run's saved state, record, workflow snapshot and logs. Its worktrees stay. */
-export function forgetRun(paths: HomePaths, record: RunRecord): void {
-  managerFor(paths, record.projectDir).deleteRun(record.runId);
-  // The engine keeps its own copy of the log, in a folder named after where the run worked.
-  const engineLogs = workflowProjectPaths(record.cwd, { persistenceRoot: paths.runs });
-  const files = [`${paths.records}/${record.runId}.json`, snapshotFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
-  for (const file of files) {
-    try {
-      unlinkSync(file);
-    } catch {
-      // already gone
-    }
-  }
-  for (const dir of [engineLogs.runsDir, engineLogs.rootDir]) {
-    try {
-      rmdirSync(dir);
-    } catch {
-      // not empty, or gone
-    }
-  }
-}
-
-/** Remove finished runs older than `days`: the engine's state, orc's record and the log. Worktrees stay. */
-export function prune(paths: HomePaths, days: number, now = new Date()): string[] {
-  const cutoff = now.getTime() - days * 86_400_000;
-  const removed: string[] = [];
-  for (const run of listRuns(paths)) {
-    const { record } = run;
-    if (Date.parse(record.createdAt) > cutoff || workerRuns(run) || startedAndUnfinished(run)) continue;
-    forgetRun(paths, record);
-    removed.push(record.runId);
-  }
-  return removed;
 }
 
 export function daemonPid(paths: HomePaths): number | undefined {

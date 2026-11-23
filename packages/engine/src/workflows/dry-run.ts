@@ -12,7 +12,7 @@ import { isGitRepo, removeWorktree, runWorktrees } from "../places/places.js";
 import { loadConfig, type HomePaths } from "../runs/home.js";
 import { createRun } from "../runs/launch.js";
 import { loadRecord } from "../runs/records.js";
-import { forgetRun } from "../runs/service.js";
+import { forgetRun } from "../runs/run.js";
 import { readState } from "../runs/store.js";
 import { runWorker } from "../runs/worker.js";
 import type { PlannedRequest } from "../steps/agent-run.js";

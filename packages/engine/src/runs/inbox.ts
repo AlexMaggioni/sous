@@ -111,3 +111,37 @@ export function normalizeAnswer(question: Question, raw: unknown): unknown {
   }
   return raw;
 }
+
+/** A reply to a breakpoint: approve, stop, or a note that sends the work back. */
+export function breakpointValue(reply: string): unknown {
+  const lower = reply.trim().toLowerCase();
+  if (lower === "" || lower === "approve" || lower === "yes" || lower === "ok") return "approve";
+  if (lower === "stop") return "stop";
+  return { decision: "send back", note: reply.replace(/^send[ -]back\s*:?\s*/i, "").trim() };
+}
+
+export type AnswerKind = "answer" | "approve" | "send-back";
+
+/** The value a reply gives a question, or what is wrong with the command when it does not fit. */
+export function answerValue(question: Question, kind: AnswerKind, text: string, json = false): { value: unknown } | { usage: string } {
+  if (kind === "approve") return { value: question.breakpoint ? "approve" : question.kind === "confirm" ? true : "approve" };
+  if (kind === "send-back") {
+    if (!question.breakpoint) return { usage: `${question.id} is not a breakpoint. Use orc answer ${question.id} "..."` };
+    if (!text) return { usage: `orc send-back ${question.id} "what to change"` };
+    return { value: { decision: "send back", note: text } };
+  }
+  if (!text && question.kind !== "confirm") return { usage: `orc answer ${question.id} "your answer"` };
+  const value = question.breakpoint ? breakpointValue(text) : json ? parseJson(text) : normalizeAnswer(question, text);
+  if (question.kind === "select" && question.choices && !question.choices.includes(value as string)) {
+    return { usage: `answer one of: ${question.choices.join(", ")}` };
+  }
+  return { value };
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}

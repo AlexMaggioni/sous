@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  answerQuestion,
   busyWorktrees,
-  createRun,
   dryRun,
   ensureHome,
   fileSchedules,
@@ -18,12 +18,12 @@ import {
   rememberProject,
   runQuestions,
   saveSchedules,
-  writeAnswer,
   type HomePaths,
 } from "@orchestrator/engine";
 // orc does not import these, so the engine entry does not export them. The tests load the
 // engine's built modules by path. They are the same modules the entry loads.
 import { WorkflowError, WorkflowErrorCode } from "../../engine/dist/errors.js";
+import { createRun } from "../../engine/dist/runs/launch.js";
 import { knownProjects } from "../../engine/dist/runs/home.js";
 import { updateRecord } from "../../engine/dist/runs/records.js";
 import { tick } from "../../engine/dist/runs/service.js";
@@ -82,7 +82,7 @@ async function answerWhenAsked(paths: HomePaths, runId: string, reply: (prompt: 
     if (open.length) {
       const question = open[0]!;
       asked.push(question.prompt);
-      writeAnswer(paths, question, reply(question.prompt));
+      answerQuestion(paths, question, reply(question.prompt));
       while (runQuestions(paths, runId).some((q) => q.id === question.id)) await new Promise((r) => setTimeout(r, 20));
     }
     await new Promise((r) => setTimeout(r, 20));

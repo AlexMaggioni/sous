@@ -1,14 +1,17 @@
-// Reading a run: the list of runs, one run, its steps, its questions, and the wait for it to end.
-// Callers get views and never open a run file. Nothing here writes.
+// orc's runs. The reads: the list of runs, one run, its steps, its questions, and the wait for it
+// to end. The requests: start, stop, stop a step, pause, resume, run again, answer, discard the
+// worktrees, forget and prune. Callers get views and never open a run file. A read writes nothing.
 
-import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import type { PersistedRunState, RunStatus } from "./persistence/run-persistence.js";
-import type { HomePaths } from "./home.js";
-import { listQuestions, type Question } from "./inbox.js";
-import { logFile } from "./launch.js";
-import { findRecord, listRecords, loadRecord, processAlive, scopePrefix, type RunRecord } from "./records.js";
-import { judge, type Verdict } from "./rule.js";
-import { readEventsAfter, readState, readStates, type StoreFs } from "./store.js";
+import { removeWorktree, runWorktrees } from "../places/places.js";
+import type { HomePaths, Place } from "./home.js";
+import { listQuestions, readQuestion, removeRunQuestions, writeAnswer, type Question } from "./inbox.js";
+import { createRun, logFile, startWorker, type CreateRunRequest } from "./launch.js";
+import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, scopePrefix, updateRecord, type RunRecord } from "./records.js";
+import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
+import { readEventsAfter, readState, readStates, removeRunFiles, type StoreFs } from "./store.js";
+import { currentWorkflows, managerFor } from "./worker.js";
 
 /** A question a run asks, as the inbox holds it. */
 export type RunQuestion = Question;
@@ -284,4 +287,204 @@ export async function waitForRun(paths: HomePaths, runId: string, hooks: WaitHoo
     }
     await new Promise((r) => setTimeout(r, 400));
   }
+}
+
+// ── Requests ──
+
+/** Check the request, write the run's record and start its worker. */
+export function startRun(paths: HomePaths, cliFile: string, request: CreateRunRequest): RunRecord {
+  const record = createRun(paths, request);
+  startWorker(paths, cliFile, record.runId, "start");
+  return record;
+}
+
+/** How a stop went. */
+export type StopOutcome = "stopping" | "stopped" | "already-ended" | "never-started" | "held-elsewhere";
+
+/** Stop a run. A running one gets SIGTERM. A paused one is marked stopped here. */
+export function stopRun(paths: HomePaths, runId: string): { outcome: StopOutcome; status?: RunStatus } {
+  const record = needRecord(paths, runId);
+  if (processAlive(record.pid)) {
+    process.kill(record.pid!, "SIGTERM");
+    return { outcome: "stopping" };
+  }
+  const result = managerFor(paths, record.projectDir).stopPersistedRun(record.runId);
+  removeRunQuestions(paths, record.runId);
+  if (result.outcome === "already-terminal") return { outcome: "already-ended", ...(result.state?.status ? { status: result.state.status } : {}) };
+  if (result.outcome === "missing") return { outcome: "never-started" };
+  if (result.outcome === "owned-elsewhere") return { outcome: "held-elsewhere" };
+  return { outcome: "stopped" };
+}
+
+/** Stop one running step by its name in the log. The run pauses on it, and resume runs it again.
+ *  Returns false when the run is not running. */
+export function stopStep(paths: HomePaths, runId: string, step: string): boolean {
+  const record = needRecord(paths, runId);
+  if (!processAlive(record.pid)) return false;
+  const { running } = runDetail(paths, record.runId);
+  if (!running.includes(step)) {
+    const now = running.length ? `Running now: ${running.map((name) => `"${name}"`).join(", ")}.` : "No step runs now.";
+    throw new Error(`no step named "${step}" runs in ${record.runId}. ${now}`);
+  }
+  updateRecord(paths, record.runId, { stopSteps: [...(record.stopSteps ?? []), step] });
+  process.kill(record.pid!, "SIGUSR2");
+  return true;
+}
+
+/** Pause a running run: steps already running finish, nothing new starts. False when it does not run. */
+export function pauseRun(paths: HomePaths, runId: string): boolean {
+  const record = needRecord(paths, runId);
+  if (!processAlive(record.pid)) return false;
+  process.kill(record.pid!, "SIGUSR1");
+  return true;
+}
+
+/** The workflows of a run edited since it started: its own file, and the nested ones it used. */
+export function changedWorkflows(paths: HomePaths, record: RunRecord, state: PersistedRunState): string[] {
+  const snapshot = loadSnapshot(paths, record.runId);
+  const current = currentWorkflows(paths, record.projectDir);
+  const used = new Set(Object.values(record.nested ?? {}).map((child) => child.workflow));
+  return [
+    ...(existsSync(record.file) && readFileSync(record.file, "utf8") !== state.script ? [record.workflow] : []),
+    ...[...used].filter((name) => name !== record.workflow && snapshot[name] !== undefined && current[name] !== snapshot[name]),
+  ];
+}
+
+/** What resume says when the rule refuses it. */
+const RESUME_REFUSALS: Record<ResumeRefusal, (runId: string) => string> = {
+  running: (runId) => `${runId} is running already`,
+  "never-started": (runId) => `${runId} never started. orc rerun ${runId} starts it fresh.`,
+  completed: (runId) => `${runId} completed. orc rerun ${runId} runs it again.`,
+  stopped: (runId) => `${runId} was stopped. orc rerun ${runId} starts it again.`,
+};
+
+/**
+ * Resume a run in a new worker. A workflow edited since the run started reaches it only by
+ * choice: "latest" takes the edits, and "same" goes on with the version it started with. With
+ * no choice, an edit refuses the resume.
+ */
+export function resumeRun(paths: HomePaths, cliFile: string, runId: string, choice?: "latest" | "same"): RunRecord {
+  const { record, resume } = readRun(paths, runId);
+  if (!resume.ok) throw new Error(RESUME_REFUSALS[resume.why](record.runId));
+  // The rule lets a run resume only once it has a state. The check runs with a choice too, so a
+  // workflow folder that cannot be read stops the resume here.
+  const changed = changedWorkflows(paths, record, readState(paths, record.runId)!);
+  if (changed.length && !choice) {
+    throw new Error(
+      `${changed.join(", ")} changed since ${record.runId} started. ` +
+        `orc resume ${record.runId} --latest takes the new version, and the finished steps that match stay done. ` +
+        `orc resume ${record.runId} --same goes on with the version it started with.`,
+    );
+  }
+  if (choice === "latest") updateRecord(paths, record.runId, { resumeLatest: true });
+  startWorker(paths, cliFile, record.runId, "resume");
+  return record;
+}
+
+/** What rerun --reuse says when the rule refuses it. */
+const REUSE_REFUSALS: Record<ReuseRefusal, (runId: string) => string> = {
+  running: (runId) => `${runId} is still running. orc stop ${runId} first.`,
+  paused: (runId) => `${runId} is paused. orc resume ${runId} takes your edits and keeps the finished steps.`,
+};
+
+export interface RerunRequest {
+  place: Place;
+  /** Reuse the earlier run's unchanged steps. */
+  reuse?: boolean;
+  /** Inputs that replace the earlier run's. */
+  inputs?: Record<string, unknown>;
+  /** Step changes added to the earlier run's. */
+  overrides?: Record<string, Record<string, unknown>>;
+  defaultModel?: string;
+  startedByRun?: string;
+  caller?: boolean;
+}
+
+/** Start an earlier run again as a new run, with its inputs, step changes and model. */
+export function rerunRun(paths: HomePaths, cliFile: string, runId: string, request: RerunRequest): RunRecord {
+  const { record: old, reuse } = readRun(paths, runId);
+  if (request.reuse && !reuse.ok) throw new Error(REUSE_REFUSALS[reuse.why](old.runId));
+  const defaultModel = request.defaultModel ?? old.defaultModel;
+  return startRun(paths, cliFile, {
+    ...(request.reuse ? { reuseFrom: old } : {}),
+    workflow: old.file,
+    projectDir: old.projectDir,
+    inputs: { ...old.args, ...request.inputs },
+    place: request.place,
+    origin: "rerun",
+    rerunOf: old.runId,
+    ...(old.overrides || request.overrides ? { overrides: { ...old.overrides, ...request.overrides } } : {}),
+    ...(defaultModel ? { defaultModel } : {}),
+    ...(old.concurrency ? { concurrency: old.concurrency } : {}),
+    ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
+    caller: request.caller === true,
+  });
+}
+
+/** An open question by its id, a unique start of it, or the run that asks only it. */
+export function findQuestion(paths: HomePaths, id: string): RunQuestion {
+  const exact = readQuestion(paths, id);
+  if (exact) return exact;
+  const all = listQuestions(paths);
+  const byPrefix = all.filter((q) => q.id.startsWith(id));
+  if (byPrefix.length === 1) return byPrefix[0]!;
+  const record = findRecord(paths, id);
+  if (record) {
+    const forRun = all.filter((q) => q.runId === record.runId);
+    if (forRun.length === 1) return forRun[0]!;
+    if (forRun.length > 1) throw new Error(`run ${record.runId} asks ${forRun.length} questions. Name one: ${forRun.map((q) => q.id).join(", ")}`);
+    throw new Error(`run ${record.runId} asks nothing right now`);
+  }
+  throw new Error(`no open question "${id}". orc inbox lists them.`);
+}
+
+/** Write the answer. Returns whether the run still runs, so it reads the answer now. */
+export function answerQuestion(paths: HomePaths, question: RunQuestion, value: unknown): boolean {
+  writeAnswer(paths, question, value);
+  return processAlive(findRecord(paths, question.runId)?.pid);
+}
+
+/** A stopped run's worktrees. With `remove`, deletes each branch and folder and calls `deleted`
+ *  after each. */
+export function discardRun(paths: HomePaths, runId: string, options: { remove?: boolean; deleted?: (tree: { dir: string; branch: string }) => void } = {}): Array<{ dir: string; branch: string }> {
+  const record = needRecord(paths, runId);
+  if (processAlive(record.pid)) throw new Error(`${record.runId} is running. orc stop ${record.runId} first.`);
+  const trees = runWorktrees(record);
+  if (options.remove) {
+    for (const tree of trees) {
+      removeWorktree(record.projectDir, tree.dir, tree.branch);
+      options.deleted?.(tree);
+    }
+  }
+  return trees;
+}
+
+/** Delete a run's saved state, record, workflow snapshot and logs. Its worktrees stay. */
+export function forgetRun(paths: HomePaths, record: RunRecord): void {
+  managerFor(paths, record.projectDir).deleteRun(record.runId);
+  removeRunFiles(paths, record);
+}
+
+/** A schedule waits for its last run, and prune keeps a run, while the run is unfinished. Here a
+ *  run that never saved a state counts as finished. */
+export function startedAndUnfinished(verdict: Verdict): boolean {
+  return verdict.unfinished && verdict.status !== "not started";
+}
+
+/** A worker runs the run now, or ran it when its view was read. Its view may be out of date. */
+export function workerRuns(run: RunView): boolean {
+  return processAlive(run.record.pid) || (!run.resume.ok && run.resume.why === "running");
+}
+
+/** Remove finished runs older than `days`: the engine's state, orc's record and the log. Worktrees stay. */
+export function pruneRuns(paths: HomePaths, days: number, now = new Date()): string[] {
+  const cutoff = now.getTime() - days * 86_400_000;
+  const removed: string[] = [];
+  for (const run of listRuns(paths)) {
+    const { record } = run;
+    if (Date.parse(record.createdAt) > cutoff || workerRuns(run) || startedAndUnfinished(run)) continue;
+    forgetRun(paths, record);
+    removed.push(record.runId);
+  }
+  return removed;
 }

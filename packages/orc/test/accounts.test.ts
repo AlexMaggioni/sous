@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import {
   addAccount,
-  createRun,
   currentAccount,
   ensureHome,
   homePaths,
@@ -22,6 +21,7 @@ import {
 // orc does not import these, so the engine entry does not export them. The tests load the
 // engine's built modules by path. They are the same modules the entry loads.
 import { WorkflowError, WorkflowErrorCode } from "../../engine/dist/errors.js";
+import { createRun } from "../../engine/dist/runs/launch.js";
 import { managerFor, runWorker } from "../../engine/dist/runs/worker.js";
 import type { AgentRunner } from "../../engine/dist/steps/agent-runner.js";
 import { cmdAccount } from "../src/account-cli.js";

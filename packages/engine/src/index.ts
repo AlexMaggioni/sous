@@ -1,7 +1,7 @@
 // @orchestrator/engine runs saved workflows. It runs each agent step through the steps module,
 // which uses @orchestrator/harnesses. This entry exports only the names orc imports.
 
-// ── Runs: the orc home, run records, questions, schedules and control ──
+// ── Runs: the orc home, run records, questions, schedules, the reads and the requests ──
 export {
   daemonLog,
   ensureHome,
@@ -15,13 +15,32 @@ export {
   type Place,
 } from "./runs/home.js";
 export { findRecord, listRecords, loadRecord, processAlive, scopePath, type RunRecord } from "./runs/records.js";
-export { normalizeAnswer, readQuestion, writeAnswer } from "./runs/inbox.js";
+export { answerValue, breakpointValue, normalizeAnswer, readQuestion, type AnswerKind } from "./runs/inbox.js";
 export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
-export { createRun, InputProblems, logFile, startWorker } from "./runs/launch.js";
+export { InputProblems, logFile, startWorker } from "./runs/launch.js";
 export { workerMain } from "./runs/worker.js";
-export { busyWorktrees, daemonMain, daemonPid, fileSchedules, loadSchedules, prune, saveSchedules, unfinishedRuns, type Schedule } from "./runs/service.js";
-export { listRuns, readLogFrom, readRun, runDetail, runQuestions, waitForRun, type RunDetail, type RunQuestion, type RunView } from "./runs/run.js";
-export { answerQuestion, answerValue, breakpointValue, discardRun, findQuestion, pauseRun, rerun, resumeCheck, resumeRun, reuseCheck, stopRun, stopStep, type AnswerKind } from "./runs/control.js";
+export { busyWorktrees, daemonMain, daemonPid, fileSchedules, loadSchedules, saveSchedules, unfinishedRuns, type Schedule } from "./runs/service.js";
+export {
+  answerQuestion,
+  discardRun,
+  findQuestion,
+  listRuns,
+  pauseRun,
+  pruneRuns,
+  readLogFrom,
+  readRun,
+  rerunRun,
+  resumeRun,
+  runDetail,
+  runQuestions,
+  startRun,
+  stopRun,
+  stopStep,
+  waitForRun,
+  type RunDetail,
+  type RunQuestion,
+  type RunView,
+} from "./runs/run.js";
 export { gcWorktrees, isPlace } from "./places/places.js";
 
 // ── Saved workflows: the folders that hold them, their checked meta, the names a script refers to, and the dry run ──

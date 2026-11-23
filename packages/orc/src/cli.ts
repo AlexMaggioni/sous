@@ -7,7 +7,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { answerQuestion, answerValue, breakpointValue, busyWorktrees, createRun, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, prune, readLogFrom, readQuestion, readRun, rememberProject, rerun, resolveWorkflow, resumeCheck, resumeRun, reuseCheck, runDetail, runQuestions, saveSchedules, scopePath, startWorker, stopRun, stopStep, waitForRun, workerMain, workflowDirs, writeAnswer, type AnswerKind, type Answers, type HomePaths, type Place, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
+import { answerQuestion, answerValue, breakpointValue, busyWorktrees, cronMatches, daemonLog, daemonMain, daemonPid, describeAccount, discardRun, dryRun, ensureHome, fileSchedules, findProjectDir, findQuestion, findRecord, gcWorktrees, HARNESSES, harnessName, homePaths, InputProblems, isHarness, isPlace, limitNotice, listRecords, listRuns, loadConfig, loadSchedules, logFile, nextRun, normalizeAnswer, openWorkflowDir, parseCron, pauseRun, processAlive, pruneRuns, readLogFrom, readQuestion, readRun, rememberProject, rerunRun, resolveWorkflow, resumeRun, runDetail, runQuestions, saveSchedules, scopePath, startRun, stopRun, stopStep, waitForRun, workerMain, workflowDirs, type AnswerKind, type Answers, type HomePaths, type Place, type RunDetail, type RunQuestion, type RunRecord, type RunView, type Schedule } from "@orchestrator/engine";
 import { cmdAccount } from "./account-cli.js";
 import { checkWorkflow } from "./check.js";
 import { doctor } from "./doctor.js";
@@ -225,10 +225,10 @@ async function askHere(paths: HomePaths, questions: RunQuestion[], record: RunRe
     rl.close();
     if (!readQuestion(paths, question.id)) continue;
     if (question.breakpoint && reply.toLowerCase() === "stop") {
-      stopRun(paths, record);
+      stopRun(paths, record.runId);
       continue;
     }
-    writeAnswer(paths, question, question.breakpoint ? breakpointValue(reply) : normalizeAnswer(question, reply));
+    answerQuestion(paths, question, question.breakpoint ? breakpointValue(reply) : normalizeAnswer(question, reply));
   }
 }
 
@@ -270,7 +270,7 @@ async function cmdRun(parsed: Parsed): Promise<number> {
   const place = str(parsed.flags.place);
   if (place !== undefined && !isPlace(place)) throw new Usage(`--place is worktree, folder or none, got "${place}"`);
   const concurrency = str(parsed.flags.concurrency);
-  const record = createRun(paths, {
+  const record = startRun(paths, cliFile(), {
     workflow,
     projectDir,
     inputs: parsed.inputs,
@@ -283,7 +283,6 @@ async function cmdRun(parsed: Parsed): Promise<number> {
     // Claude Code marks the shells of its sessions. A run one starts uses its login.
     caller: process.env.CLAUDECODE === "1",
   });
-  startWorker(paths, cliFile(), record.runId, "start");
   return startedOrWait(paths, record, "start", parsed);
 }
 
@@ -397,21 +396,21 @@ function cmdStop(parsed: Parsed): number {
   const { record } = needRun(paths, parsed.positionals[0]);
   if (typeof parsed.flags.step === "string") {
     const step = parsed.flags.step;
-    if (!stopStep(paths, record, step)) {
+    if (!stopStep(paths, record.runId, step)) {
       out(`${record.runId} is not running, so no step runs`);
       return 1;
     }
     out(`stopping "${step}" in ${record.runId}. The run pauses on it, and orc resume ${record.runId} runs it again.`);
     return 0;
   }
-  out(stopText(record, stopRun(paths, record)));
+  out(stopText(record, stopRun(paths, record.runId)));
   return 0;
 }
 
 function cmdPause(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
   const { record } = needRun(paths, parsed.positionals[0]);
-  if (!pauseRun(record)) {
+  if (!pauseRun(paths, record.runId)) {
     out(`${record.runId} is not running`);
     return 1;
   }
@@ -421,31 +420,22 @@ function cmdPause(parsed: Parsed): number {
 
 async function cmdResume(parsed: Parsed): Promise<number> {
   const paths = ensureHome(homePaths());
-  const { record } = needRun(paths, parsed.positionals[0]);
-  const changed = resumeCheck(paths, record);
-  if (parsed.flags.latest && parsed.flags.same) throw new Usage("--latest or --same, not both");
-  if (changed.length && !parsed.flags.latest && !parsed.flags.same) {
-    throw new Error(
-      `${changed.join(", ")} changed since ${record.runId} started. ` +
-        `orc resume ${record.runId} --latest takes the new version, and the finished steps that match stay done. ` +
-        `orc resume ${record.runId} --same goes on with the version it started with.`,
-    );
-  }
-  resumeRun(paths, cliFile(), record, parsed.flags.latest === true);
+  const run = needRun(paths, parsed.positionals[0]);
+  // A run that cannot resume says so before this usage error. resumeRun refuses it.
+  if (parsed.flags.latest && parsed.flags.same && run.resume.ok) throw new Usage("--latest or --same, not both");
+  const record = resumeRun(paths, cliFile(), run.runId, parsed.flags.latest ? "latest" : parsed.flags.same ? "same" : undefined);
   return startedOrWait(paths, record, "resume", parsed);
 }
 
 async function cmdRerun(parsed: Parsed): Promise<number> {
   const paths = ensureHome(homePaths());
-  const { record: old } = needRun(paths, parsed.positionals[0]);
-  const place = str(parsed.flags.place) ?? old.place;
+  const run = needRun(paths, parsed.positionals[0]);
+  const place = str(parsed.flags.place) ?? run.record.place;
   if (!isPlace(place)) throw new Usage(`--place is worktree, folder or none, got "${place}"`);
   const reuse = Boolean(parsed.flags.reuse);
-  if (reuse) {
-    reuseCheck(paths, old);
-    if (parsed.flags.place) throw new Usage("--reuse works where the earlier run worked, so it takes no --place");
-  }
-  const record = rerun(paths, cliFile(), old, {
+  // A run that cannot be reused says so before this usage error. rerunRun refuses it.
+  if (reuse && parsed.flags.place && run.reuse.ok) throw new Usage("--reuse works where the earlier run worked, so it takes no --place");
+  const record = rerunRun(paths, cliFile(), run.runId, {
     place,
     reuse,
     inputs: parsed.inputs,
@@ -662,7 +652,7 @@ function cmdDiscard(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
   const { record } = needRun(paths, parsed.positionals[0]);
   const yes = parsed.flags.yes === true;
-  const trees = discardRun(paths, record, { remove: yes, deleted: (tree) => out(`deleted ${tree.branch} and ${tree.dir}`) });
+  const trees = discardRun(paths, record.runId, { remove: yes, deleted: (tree) => out(`deleted ${tree.branch} and ${tree.dir}`) });
   if (!trees.length) {
     out(`${record.runId} has no worktree left`);
     return 0;
@@ -679,7 +669,7 @@ function cmdPrune(parsed: Parsed): number {
   const paths = ensureHome(homePaths());
   const days = Number(str(parsed.flags.days) ?? loadConfig(paths).keepDays);
   if (!Number.isFinite(days) || days < 0) throw new Usage("orc prune --days N (or set keepDays in config.json)");
-  const removed = prune(paths, days);
+  const removed = pruneRuns(paths, days);
   out(removed.length ? `removed ${removed.length} finished runs older than ${days} days` : "nothing to remove");
   return 0;
 }

@@ -1,10 +1,13 @@
-// Plain reads of a run's engine files. Nothing here writes, and no manager is built.
+// Plain reads of a run's engine files, and the delete of orc's own files for a run that is
+// forgotten. Only removeRunFiles writes, and no manager is built.
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { workflowProjectPaths } from "./persistence/project-paths.js";
 import { createRunPersistence, loadRunState, type FsLayer, type PersistedRunState } from "./persistence/run-persistence.js";
 import type { HomePaths } from "./home.js";
+import { logFile } from "./launch.js";
+import { snapshotFile, type RunRecord } from "./records.js";
 
 /** The file calls the store reads through. Tests hand it one that counts the calls. */
 export type StoreFs = Pick<FsLayer, "existsSync" | "readdirSync" | "readFileSync">;
@@ -61,5 +64,26 @@ export function readEventsAfter(paths: HomePaths, runId: string, seq: number, vi
     for (const { event, timestamp } of page.events) visit({ event: event as unknown as Record<string, unknown>, timestamp });
     if (!page.hasMore || page.events.length === 0) break;
     after = page.events[page.events.length - 1]!.seq;
+  }
+}
+
+/** Delete a run's record, workflow snapshot and logs. The engine deletes its state itself. */
+export function removeRunFiles(paths: HomePaths, record: RunRecord): void {
+  // The engine keeps its own copy of the log, in a folder named after where the run worked.
+  const engineLogs = workflowProjectPaths(record.cwd, { persistenceRoot: paths.runs });
+  const files = [join(paths.records, `${record.runId}.json`), snapshotFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
+  for (const file of files) {
+    try {
+      unlinkSync(file);
+    } catch {
+      // already gone
+    }
+  }
+  for (const dir of [engineLogs.runsDir, engineLogs.rootDir]) {
+    try {
+      rmdirSync(dir);
+    } catch {
+      // not empty, or gone
+    }
   }
 }
