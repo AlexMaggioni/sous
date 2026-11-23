@@ -9,6 +9,7 @@ import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { PersistedRunState, RunPersistence } from "../src/runs/persistence/run-persistence.js";
 import { projectRunEventForPersistence } from "../src/run-observability.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
+import type { WorkflowCallRecord } from "../src/workflow-result.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
 import { journalResume } from "./helpers/journal-resume.js";
@@ -184,40 +185,60 @@ return await checkpoint('Proceed?')`, {
   await assert.rejects(running, (error: unknown) => error instanceof WorkflowError && error.code === WorkflowErrorCode.WORKFLOW_ABORTED);
 });
 
-for (const [label, invalidReply] of [
-  ["function", () => () => true],
-  ["non-finite number", () => Number.NaN],
-  ["undefined property", () => ({ approved: undefined })],
-  ["cyclic object", () => { const value: { self?: unknown } = {}; value.self = value; return value; }],
-] as const) {
-  test(`checkpoint(): invalid ${label} reply cannot be caught to bypass and can resume cold`, withTempPersistenceDirs(async (persistenceRoot, cwd) => {
-    let dispatched = 0;
-    const runner = { async run() { dispatched++; return "done"; } };
-    const script = `export const meta = { name: "invalid-checkpoint-answer", description: "must wait for valid JSON" };
+const INVALID_REPLY_SCRIPT = `export const meta = { name: "invalid-checkpoint-answer", description: "must wait for valid JSON" };
 let answer;
 try { answer = await checkpoint("Approve?"); } catch {}
 try { await agent("after explicit answer"); } catch {}
 return answer;`;
-    const first = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
-    const paused = await first.runSync(script, undefined, { confirm: async () => invalidReply() });
-    assert.equal(paused.status, "paused");
-    assert.equal(paused.reason, "checkpoint_required");
-    assert.equal(paused.checkpointContext?.callIndex, 0);
-    assert.equal(dispatched, 0, "invalid confirmation cannot authorize later live work");
-    const persisted = first.getPersistence().load(paused.runId)!;
-    assert.deepEqual(persisted.journal, []);
-    assert.equal(persisted.calls?.[0].checkpointDecision, undefined);
 
-    const cold = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
-    const resumed = await cold.resumeInBackground(paused.runId, { confirm: async () => false });
-    assert.equal(resumed.accepted, true);
-    if (!resumed.accepted) assert.fail("a later explicit valid reply should continue");
-    const completed = await resumed.promise;
-    assert.equal(completed.status, "completed");
-    assert.equal(completed.result, false);
-    assert.equal(dispatched, 1);
-    assert.equal(cold.getPersistence().load(paused.runId)?.journal?.[0].checkpointDecision, "explicit-v1");
-  }));
+// The reply is checked in the call, so the cases below run in memory. Only the function reply
+// goes through a manager on disk, for the cold resume. That half never reads the invalid reply.
+test("checkpoint(): invalid function reply cannot be caught to bypass and can resume cold", withTempPersistenceDirs(async (persistenceRoot, cwd) => {
+  let dispatched = 0;
+  const runner = { async run() { dispatched++; return "done"; } };
+  const first = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
+  const paused = await first.runSync(INVALID_REPLY_SCRIPT, undefined, { confirm: async () => () => true });
+  assert.equal(paused.status, "paused");
+  assert.equal(paused.reason, "checkpoint_required");
+  assert.equal(paused.checkpointContext?.callIndex, 0);
+  assert.equal(dispatched, 0, "invalid confirmation cannot authorize later live work");
+  const persisted = first.getPersistence().load(paused.runId)!;
+  assert.deepEqual(persisted.journal, []);
+  assert.equal(persisted.calls?.[0].checkpointDecision, undefined);
+
+  const cold = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
+  const resumed = await cold.resumeInBackground(paused.runId, { confirm: async () => false });
+  assert.equal(resumed.accepted, true);
+  if (!resumed.accepted) assert.fail("a later explicit valid reply should continue");
+  const completed = await resumed.promise;
+  assert.equal(completed.status, "completed");
+  assert.equal(completed.result, false);
+  assert.equal(dispatched, 1);
+  assert.equal(cold.getPersistence().load(paused.runId)?.journal?.[0].checkpointDecision, "explicit-v1");
+}));
+
+for (const [label, invalidReply] of [
+  ["non-finite number", () => Number.NaN],
+  ["undefined property", () => ({ approved: undefined })],
+  ["cyclic object", () => { const value: { self?: unknown } = {}; value.self = value; return value; }],
+] as const) {
+  test(`checkpoint(): invalid ${label} reply cannot be caught to bypass`, async () => {
+    let dispatched = 0;
+    const journal: JournalEntry[] = [];
+    const calls: WorkflowCallRecord[] = [];
+    await assert.rejects(runWorkflow(INVALID_REPLY_SCRIPT, {
+      agent: { async run() { dispatched++; return "unsafe"; } }, persistLogs: false, confirm: async () => invalidReply(),
+      onAgentJournal: entry => journal.push(entry), onCallRecord: record => calls.push(record),
+    }), (error: unknown) => {
+      assert.ok(error instanceof WorkflowError);
+      assert.equal(error.code, WorkflowErrorCode.CHECKPOINT_REQUIRED);
+      assert.equal(error.checkpointContext?.callIndex, 0);
+      return true;
+    });
+    assert.equal(dispatched, 0, "invalid confirmation cannot authorize later live work");
+    assert.deepEqual(journal, []);
+    assert.deepEqual(calls.map((call) => [call.index, call.outcome, call.checkpointDecision]), [[0, "error", undefined]]);
+  });
 }
 
 test("checkpoint(): replays the journaled reply on resume (no re-prompt)", async () => {
