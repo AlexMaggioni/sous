@@ -352,4 +352,48 @@ describe("accounts", () => {
     const json = await withHome(paths, () => main(["account", "--json"]));
     assert.deepEqual(JSON.parse(json.printed).accounts.map((row: { name: string }) => row.name), ["default", "default"]);
   });
+
+  it("orc account lists the runs waiting at the limit, and orc account use says which wait and which it moved", async () => {
+    const { paths, projectDir } = setup({ one: ONE_STEP });
+    addAccount(paths, "spare", SPARE);
+    const lines: string[] = [];
+    const out = (line: string) => lines.push(line);
+    // The worker it starts for a moved run never runs: the cli file does not exist.
+    const use = (name: string) => withHome(paths, () => cmdAccount(["use", name], { out, cliFile: () => NO_CLI }));
+
+    await use("spare");
+    assert.deepEqual(lines.splice(0), ["orc uses Claude Code account spare for new runs."]);
+
+    const { runner } = loginRunner(() => true);
+    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    await runWorker(record.runId, "start", { paths, inner: runner, log: quiet });
+    assert.equal(readState(paths, record.runId)?.pauseReason, "usage_limit");
+
+    const listed = await withHome(paths, () => main(["account"]));
+    assert.ok(
+      listed.printed.endsWith(`\nWaiting at the usage limit:\n  ${record.runId}  one  on spare\norc account use <name> moves them to another account and resumes them now.\n`),
+      listed.printed,
+    );
+    const json = JSON.parse((await withHome(paths, () => main(["account", "--json"]))).printed);
+    assert.equal(json.waiting.length, 1);
+    assert.deepEqual({ ...json.waiting[0], limit: { ...json.waiting[0].limit, at: undefined } }, { runId: record.runId, workflow: "one", limit: { program: "claude", account: "spare", at: undefined } });
+    assert.ok(Number.isFinite(Date.parse(json.waiting[0].limit.at)), "the limit says when it was hit");
+
+    // The run hit the limit of spare, the account orc uses now, so it waits for the reset.
+    await use("spare");
+    assert.deepEqual(lines.splice(0), [
+      "orc uses Claude Code account spare for new runs.",
+      `${record.runId}  one  waits at the limit of spare itself, and goes on after the reset`,
+    ]);
+    assert.equal(loadRecord(paths, record.runId)?.pid, undefined, "a run that waits gets no worker");
+
+    // Another account moves it and starts its worker.
+    await use("default");
+    assert.deepEqual(lines.splice(0), [
+      "orc uses Claude Code account default for new runs.",
+      `resumed ${record.runId}  one  on default, was waiting at the limit of spare`,
+    ]);
+    assert.equal(loadRecord(paths, record.runId)?.accounts?.claude?.name, "default");
+    assert.ok(loadRecord(paths, record.runId)?.pid, "the moved run has a worker");
+  });
 });
