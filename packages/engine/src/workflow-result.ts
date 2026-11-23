@@ -515,7 +515,7 @@ export interface WorkflowRunLimits {
   agentRetries: number;
 }
 
-/** Persisted run lifecycle (run-persistence.ts:11). A host-facing WorkflowRunResult
+/** A run's status, as its saved state gives it. A host-facing WorkflowRunResult
  *  always carries a TERMINAL value: "completed" | "paused" | "failed" | "aborted". */
 export type RunStatus = "pending" | "running" | "paused" | "completed" | "failed" | "aborted";
 

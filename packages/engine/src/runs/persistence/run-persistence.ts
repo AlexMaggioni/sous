@@ -21,6 +21,7 @@ import type { AgentResultProvenance, AgentUsage } from "../../steps/agent-run.js
 import type {
   AgentSessionRecord,
   JournalEntry,
+  RunStatus,
   WorkflowCallRecord,
   WorkflowCheckpointTaken,
   WorkflowContinuationResult,
@@ -35,7 +36,7 @@ import type { RunEnvironmentIdentity } from "../../run-environment.js";
 import { createRunEventLog, type RunEventPersistence } from "./run-event-persistence.js";
 import { workflowProjectPaths } from "./project-paths.js";
 
-export type RunStatus = "pending" | "running" | "paused" | "completed" | "failed" | "aborted";
+export type { RunStatus } from "../../workflow-result.js";
 
 export interface PersistedAgentState {
   id: number;
