@@ -85,7 +85,6 @@ function safeCalls(items: readonly string[], name = "safe-calls"): string {
 const items = ${JSON.stringify(items)}
 return await parallel(items.map((item) => () => agent(item, {
   label: item,
-  resume: { filesystem: "read-only" },
 })))`, name);
 }
 
@@ -101,16 +100,13 @@ async function recordSafeSource(
 const DRIFT_CHECKPOINT_SCRIPT = workflow(`
 const first = await agent("prefix-one", {
   label: "prefix-one",
-  resume: { filesystem: "read-only" },
 })
 const second = await agent("prefix-two", {
   label: "prefix-two",
-  resume: { filesystem: "read-only" },
 })
 const approval = await checkpoint("approve", { })
 const after = await agent("after-checkpoint", {
   label: "after-checkpoint",
-  resume: { filesystem: "read-only" },
 })
 return { first, second, approval, after }`, "drift-checkpoint");
 
@@ -332,7 +328,7 @@ describe("WorkflowManager resumeFromRunId admission", () => {
       });
       const sourceRunId = await recordSafeSource(manager, ["one"]);
       const paused = await manager.runSync(workflow(`
-await agent("one", { label: "one", resume: { filesystem: "read-only" } })
+await agent("one", { label: "one" })
 return await checkpoint("approve", { })`, "legacy-ancestry"), undefined, {
         runId: "legacy-ancestry",
         resumeFromRunId: sourceRunId,
@@ -481,7 +477,7 @@ describe("WorkflowManager durable identity execution", () => {
       });
       const sourceRunId = await recordSafeSource(manager, ["one", "two"]);
       const failed = await manager.runSync(workflow(`
-await agent("one", { label: "one", resume: { filesystem: "read-only" } })
+await agent("one", { label: "one" })
 throw new Error("stop after one")`, "failed-hop"), undefined, {
         runId: "failed-hop",
         resumeFromRunId: sourceRunId,
@@ -535,7 +531,7 @@ throw new Error("stop after unsafe work")`, "unsafe-barrier"), undefined, {
         agent: { async run(prompt) { live.push(prompt); return `next:${prompt}`; } },
       }).runSync(workflow(`
 await agent("changed", { label: "changed" })
-return await agent("two", { label: "two", resume: { filesystem: "read-only" } })`, "after-unsafe"), undefined, {
+return await agent("two", { label: "two" })`, "after-unsafe"), undefined, {
         runId: "after-unsafe",
         resumeFromRunId: "unsafe-barrier",
       });

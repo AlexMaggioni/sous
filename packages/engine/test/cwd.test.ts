@@ -93,7 +93,6 @@ const ADDITIVE_OPTIONS: Array<[name: string, option: string]> = [
   ["cwd", `cwd: ${JSON.stringify(tmpdir())}`],
   ["images", "images: [{ data: 'ZmFrZQ==', mimeType: 'image/png', uri: 'file:///tmp/a.png' }]"],
   ["mcpServers", "mcpServers: [{ name: 'fs', command: 'mcp-fs', args: [], env: [] }]"],
-  ["meta/promptMeta", "meta: { credsRef: 'vault://qa' }, promptMeta: { viewport: '1280x800' }"],
 ];
 
 describe("the resume identity hash", () => {

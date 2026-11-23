@@ -1,9 +1,6 @@
 {
   "resume": {
-    "format": "identity-v1",
-    "terminalEnvironment": {
-      "key": "workspace-v1"
-    }
+    "format": "identity-v1"
   },
   "runtime": {
     "checkpointInputsFormat": 2

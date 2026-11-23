@@ -20,21 +20,6 @@ export interface WorkflowMetaPhase {
   model?: string;
 }
 
-/** One backend a script declares in `meta.backends[name]`. The engine checks its shape and
- *  runs no step on it. Older run files may hold approved ones. */
-export interface WorkflowBackendConfig {
-  /** The command the script names. Nothing runs it. */
-  command: string;
-  /** Arguments for the command. */
-  args?: string[];
-  /** Environment for the command. */
-  env?: Record<string, string>;
-  /** Checked for shape only. */
-  sessionMeta?: Record<string, unknown>;
-  /** Checked for shape only. */
-  structuredOutputTool?: boolean;
-}
-
 /** The `export const meta = {...}` literal parsed from the head of a script. */
 export interface WorkflowMeta {
   name: string;
@@ -42,8 +27,6 @@ export interface WorkflowMeta {
   phases?: WorkflowMetaPhase[];
   /** Default model for agents whose phase has no route and that set no model. */
   model?: string;
-  /** Backends the script declares, by name. Checked for shape, never run. */
-  backends?: Record<string, WorkflowBackendConfig>;
   // The fields below are as the script wrote them. workflowExtras checks them and gives them types.
   inputs?: unknown;
   outputs?: unknown;
@@ -250,19 +233,10 @@ export type WorkflowResumeCallFailedReason =
   | "seed-persistence-error"
   | "resume-fatal-latch";
 
-/** Legacy source-world classifications retained for journal compatibility and diagnostics.
- * They never determine replay eligibility. */
-export type WorkflowResumeSafety =
-  | "declared-read-only"
-  | "isolated-worktree";
-
 export interface WorkflowCallReplayProvenance {
   sourceRunId: string;
   recordedIndex: number;
   match: WorkflowResumeMatch;
-  /** Agents only: legacy source-world classification retained as diagnostic
-   *  provenance. It never determines whether a call is replayable. */
-  sourceResumeSafety?: WorkflowResumeSafety;
   /** Checkpoints only: diagnostic origin marker for a host-confirmed or injected
    *  decision. It never determines whether a completed checkpoint can replay. */
   checkpointHostDecision?: true;
@@ -484,10 +458,6 @@ export interface WorkflowCallRecord {
   isolation?: "worktree";
   /** The post-resolution execution directory handed to the runner. */
   resolvedCwd?: string;
-  /** Legacy source-world classification retained for diagnostics and old journal
-   *  compatibility. Replay eligibility is based on recorded call correspondence,
-   *  not this marker. */
-  resumeSafety?: WorkflowResumeSafety;
   /** Manager-owned provenance for a resumeFromRunId journal replay. */
   replay?: WorkflowCallReplayProvenance;
   /** 1-based position of this call's terminal transition in the run's settlement

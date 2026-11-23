@@ -26,7 +26,6 @@ import type {
   WorkflowCallRecord,
   WorkflowCheckpointTaken,
   WorkflowResumeCallDecision,
-  WorkflowResumeSafety,
   WorkflowRunFallback,
   WorkflowRunLimits,
   WorkflowRunResult,
@@ -358,14 +357,11 @@ const AGENT_OPTION_KEYS = [
   "mode",
   "configOptions",
   "isolation",
-  "resume",
   "agentType",
   "retries",
   "cwd",
   "mcpServers",
   "images",
-  "meta",
-  "promptMeta",
   "keepSession",
   // orchestrator additions
   "timeout",
@@ -375,6 +371,15 @@ const AGENT_OPTION_KEYS = [
   "continue",
 ] as const;
 const AGENT_OPTION_KEY_SET = new Set<string>(AGENT_OPTION_KEYS);
+// Options a step once took. A step that sets one is refused with a message that names it.
+const REMOVED_AGENT_OPTIONS: ReadonlyArray<readonly [string, string]> = [
+  // tier read a model table from AgentPrism's home folder, and dropped the run's model when set.
+  ["tier", 'tier is gone. Set the model with model, such as "claude/haiku", or name an agent with agentType.'],
+  // The three below changed nothing a step did.
+  ["meta", "meta is gone. No harness read it. Remove it from the step."],
+  ["promptMeta", "promptMeta is gone. No harness read it. Remove it from the step."],
+  ["resume", "resume is gone. A resume replays the calls that match the recorded ones. Remove it from the step."],
+];
 
 export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema | undefined> {
   label?: string;
@@ -399,11 +404,6 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    */
   configOptions?: Record<string, string | boolean>;
   isolation?: "worktree";
-  /** Legacy replay-safety assertion retained for source and journal compatibility.
-   *  It is recorded as diagnostic provenance but does not enable, disable, or otherwise
-   *  affect journal replay. New workflows should omit it.
-   *  @deprecated Replay is determined by recorded call correspondence, not world state. */
-  resume?: { filesystem: "read-only" };
   /**
    * Name of an agent. The runner's route() finds it and binds its tools, model and prompt. An
    * explicit `model` overrides the agent's model, and the agent's model overrides the run's.
@@ -432,16 +432,6 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    * NOT part of the resume identity hash (hashAgentCall).
    */
   images?: readonly PromptImage[];
-  /**
-   * Accepted for older scripts. No harness reads it. It stays in the call's input
-   * fingerprint (hashCallInputs), not in the resume identity hash (hashAgentCall).
-   */
-  meta?: Record<string, unknown>;
-  /**
-   * Accepted for older scripts. No harness reads it. It stays in the call's input
-   * fingerprint (hashCallInputs), not in the resume identity hash (hashAgentCall).
-   */
-  promptMeta?: Record<string, unknown>;
   /**
    * Marks the agent's session record `keptOpen` and changes nothing else. It stays in
    * the call's input fingerprint (hashCallInputs), not in the resume identity hash
@@ -861,9 +851,9 @@ async function runLevel<T>(
   // either executing or still queued. Each call arms its ledger slot with the function
   // that settles it, and the ledger synchronously turns every remaining allocation into an
   // aborted engine row when the run stops. This preserves the dense manifest without
-  // waiting for a backend that may ignore cancellation during wind-down. Only a root
-  // set made entirely of declared-read-only agents can retire that pending activity;
-  // unsafe, nested, and checkpoint work keeps the existing quiescence barrier.
+  // waiting for a backend that may ignore cancellation during wind-down. No agent or
+  // checkpoint call is terminal-safe, so a root run retires its pending activity only when
+  // no call was unsettled. Any other halt keeps the quiescence barrier.
   const interruptUnsettledCalls = () => {
     const terminalSafe = ledger.interruptUnsettled();
     if (nested === undefined && terminalSafe && !nestedWorkflows && !resumeActivity.retired) {
@@ -921,7 +911,6 @@ async function runLevel<T>(
     codeSpec?: ExecSpec,
   ): Promise<unknown> => {
     validateAgentOptions(agentOptions, realmObjectPrototype);
-    const resumeDeclared = validateResumeDeclaration(agentOptions, realmObjectPrototype);
     throwIfAborted();
 
     checkAgentLimit();
@@ -1001,10 +990,11 @@ async function runLevel<T>(
       keepSession: agentOptions.keepSession === true,
       images: agentOptions.images ?? null,
       mcpServers: agentOptions.mcpServers ?? null,
-      meta: agentOptions.meta ?? null,
-      promptMeta: agentOptions.promptMeta ?? null,
+      // meta, promptMeta and backends are gone. Their keys stay, always null, so the inputs
+      // format does not change.
+      meta: null,
+      promptMeta: null,
       label,
-      // No run approves script backends now. The key stays, so the inputs format does not change.
       backends: null,
     };
     const callInputsHash = hashCallInputs(callInputs);
@@ -1060,14 +1050,6 @@ async function runLevel<T>(
       }));
     };
 
-    const legacyResumeSafety: WorkflowResumeSafety | undefined = resumeDeclared
-      ? resolvedIsolation === "worktree" && agentOptions.cwd === undefined
-        ? "isolated-worktree"
-        : resolvedIsolation === undefined
-          ? "declared-read-only"
-          : undefined
-      : undefined;
-
     // A halt settles the call as interrupted, and ends it when it has started.
     stepSlot.arm(() => {
       const error = pauseRequested()
@@ -1087,9 +1069,6 @@ async function runLevel<T>(
         origin: "engine",
         error: errorRecord,
         aborted: true,
-        ...(legacyResumeSafety === "declared-read-only"
-          ? { resumeSafety: legacyResumeSafety }
-          : {}),
       });
       if (agentStartEmitted) {
         emitAgentEnd({
@@ -1104,7 +1083,7 @@ async function runLevel<T>(
           errorRecord,
         });
       }
-    }, legacyResumeSafety === "declared-read-only");
+    }, false);
     interruptIfHalting(stepSlot);
 
     // options.cwd, when given, must be a string.
@@ -1117,20 +1096,10 @@ async function runLevel<T>(
         );
       }
     };
-    // Opens the step's worktree. A declared resume is tainted when the open fails or the
-    // worktree is not isolated.
+    // Opens the step's worktree.
     const openWorktree = (): StepWorktree => {
-      let opened: StepWorktree;
-      try {
-        opened = openStepWorktree(callIndex, label);
-      } catch (error) {
-        if (resumeDeclared) options.onResumeFilesystemTainted?.();
-        throw error;
-      }
-      if (!opened.isolated) {
-        log(`isolation ignored for "${label}" (${opened.reason})`);
-        if (resumeDeclared) options.onResumeFilesystemTainted?.();
-      }
+      const opened = openStepWorktree(callIndex, label);
+      if (!opened.isolated) log(`isolation ignored for "${label}" (${opened.reason})`);
       return opened;
     };
     // The cwd the runner gets: the worktree when it is isolated, else options.cwd under the base.
@@ -1230,14 +1199,6 @@ async function runLevel<T>(
         ...(slot?.sessionRef?.backendId ? { backendId: slot.sessionRef.backendId } : {}),
         ...(worktree?.isolated ? { worktree: true } : {}),
         ...(runCwd !== undefined && origin === "runner" ? { resolvedCwd: runCwd } : {}),
-        ...(resumeDeclared && resolvedIsolation === undefined
-          ? { resumeSafety: "declared-read-only" as const }
-          : resumeDeclared &&
-              resolvedIsolation === "worktree" &&
-              worktree?.isolated &&
-              agentOptions.cwd === undefined
-            ? { resumeSafety: "isolated-worktree" as const }
-            : {}),
         ...(slot?.provenance ? { provenance: slot.provenance } : {}),
       });
 
@@ -1602,7 +1563,6 @@ async function runLevel<T>(
 
     const replayAgent = async (pairing: Extract<Pairing<unknown>, { action: "replay" }>): Promise<unknown> => {
       const { row, value: resultSnapshot } = pairing;
-      const sourceResumeSafety = row.call?.resumeSafety;
       await Promise.resolve();
       // A halt that lands here must still settle this allocation: nothing downstream will.
       if (signal.aborted || pauseRequested()) stepSlot.interrupt();
@@ -1645,12 +1605,10 @@ async function runLevel<T>(
         outcome: "result",
         origin: "journal-replay",
         ...(cachedUsage ? { usage: cachedUsage } : {}),
-        ...(sourceResumeSafety ? { resumeSafety: sourceResumeSafety } : {}),
         replay: {
           sourceRunId: row.sourceRunId,
           recordedIndex: row.recordedIndex,
           match: pairing.match,
-          ...(sourceResumeSafety ? { sourceResumeSafety } : {}),
         },
       }, pairing.journaled ? undefined : entry);
       if (terminalRecord.outcome !== "result") return resultSnapshot;
@@ -1675,7 +1633,7 @@ async function runLevel<T>(
           ? pairing.failed.recordedIndex
           : undefined;
       }
-      if (legacyResumeSafety === undefined) options.onResumeFilesystemTainted?.();
+      options.onResumeFilesystemTainted?.();
       let reason = pairing.reason;
       // A run that reports decisions opens the step's worktree before it decides, so the
       // decision can say when the worktree is not isolated.
@@ -1694,9 +1652,7 @@ async function runLevel<T>(
           stepSlot.live("worktree-degraded");
           throw error;
         }
-        if (!precreatedWorktree.isolated || (resumeDeclared && agentOptions.cwd !== undefined)) {
-          reason = "worktree-degraded";
-        }
+        if (!precreatedWorktree.isolated) reason = "worktree-degraded";
         preparedRunCwd = stepCwd(precreatedWorktree);
       }
       stepSlot.live(reason);
@@ -2154,13 +2110,12 @@ function validateAgentOptions(
     const label = labelDescriptor && "value" in labelDescriptor && typeof labelDescriptor.value === "string"
       ? labelDescriptor.value.trim()
       : "";
-    // tier read a model table from AgentPrism's home folder, and dropped the run's model when set.
-    if (Reflect.getOwnPropertyDescriptor(options, "tier") !== undefined) {
-      throw new WorkflowError(
-        'tier is gone. Set the model with model, such as "claude/haiku", or name an agent with agentType.',
-        WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-        { recoverable: false, ...(label ? { agentLabel: label } : {}) },
-      );
+    for (const [key, message] of REMOVED_AGENT_OPTIONS) {
+      if (Reflect.getOwnPropertyDescriptor(options, key) === undefined) continue;
+      throw new WorkflowError(message, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
+        recoverable: false,
+        ...(label ? { agentLabel: label } : {}),
+      });
     }
     const unknown = Reflect.ownKeys(options).filter(
       (key): boolean => typeof key !== "string" || !AGENT_OPTION_KEY_SET.has(key),
@@ -2177,40 +2132,6 @@ function validateAgentOptions(
     if (error instanceof WorkflowError) throw error;
     throw new WorkflowError(
       "agent options must be a plain object with only documented keys",
-      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-      { recoverable: false },
-    );
-  }
-}
-
-function validateResumeDeclaration(
-  options: AgentOptions,
-  realmObjectPrototype: object | undefined,
-): boolean {
-  let present: boolean;
-  let resume: unknown;
-  try {
-    present = Reflect.has(options, "resume");
-    if (!present) return false;
-    resume = Reflect.get(options, "resume");
-    if (resume === null || typeof resume !== "object") throw new Error("not an object");
-    const prototype = Reflect.getPrototypeOf(resume);
-    if (prototype !== null && prototype !== realmObjectPrototype) throw new Error("wrong prototype");
-    const keys = Reflect.ownKeys(resume);
-    if (keys.length !== 1 || keys[0] !== "filesystem") throw new Error("invalid keys");
-    const descriptor = Reflect.getOwnPropertyDescriptor(resume, "filesystem");
-    if (
-      descriptor === undefined ||
-      descriptor.enumerable !== true ||
-      !("value" in descriptor) ||
-      descriptor.value !== "read-only"
-    ) {
-      throw new Error("invalid filesystem declaration");
-    }
-    return true;
-  } catch {
-    throw new WorkflowError(
-      'agent options.resume must be exactly { filesystem: "read-only" }',
       WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
       { recoverable: false },
     );

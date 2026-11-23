@@ -15,8 +15,8 @@ import {
 
 const parallelScript = `export const meta = { name: "agent-cancel", description: "per-agent cancellation" }
 const values = await parallel([
-  () => agent("peer", { label: "peer", retries: 3, resume: { filesystem: "read-only" } }),
-  () => agent("cancel", { label: "cancel", retries: 3, resume: { filesystem: "read-only" } }),
+  () => agent("peer", { label: "peer", retries: 3 }),
+  () => agent("cancel", { label: "cancel", retries: 3 }),
 ])
 return { values }`;
 

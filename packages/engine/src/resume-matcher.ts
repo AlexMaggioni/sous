@@ -2,7 +2,6 @@ import type {
   AgentSessionRecord,
   JournalEntry,
   WorkflowCallRecord,
-  WorkflowResumeSafety,
 } from "./workflow-result.js";
 import type { AgentUsage } from "./steps/agent-run.js";
 import { assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
@@ -20,7 +19,6 @@ import { cloneFrozenStrictJson, cloneStrictJsonValue, deepFreeze } from "./stric
 const SHA256 = /^[0-9a-f]{64}$/;
 const TERMINAL_STATUSES = new Set(["completed", "paused", "failed", "aborted"]);
 const RESUME_MATCHES = new Set(["path-hash", "unique-hash", "index-hash", "occurrence"]);
-const RESUME_SAFETY = new Set(["declared-read-only", "isolated-worktree"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -88,10 +86,6 @@ function isSession(value: unknown): value is AgentSessionRecord {
   );
 }
 
-function isResumeSafety(value: unknown): value is WorkflowResumeSafety {
-  return typeof value === "string" && RESUME_SAFETY.has(value);
-}
-
 function isReplayProvenance(value: unknown): value is NonNullable<WorkflowCallRecord["replay"]> {
   if (!isRecord(value)) return false;
   const allowed = new Set([
@@ -99,7 +93,6 @@ function isReplayProvenance(value: unknown): value is NonNullable<WorkflowCallRe
     "recordedIndex",
     "match",
     "logicalBudgetDebit",
-    "sourceResumeSafety",
     "checkpointHostDecision",
     "checkpointInjected",
   ]);
@@ -109,7 +102,6 @@ function isReplayProvenance(value: unknown): value is NonNullable<WorkflowCallRe
     isNonNegativeSafeInteger(value.recordedIndex) &&
     typeof value.match === "string" &&
     RESUME_MATCHES.has(value.match) &&
-    (value.sourceResumeSafety === undefined || isResumeSafety(value.sourceResumeSafety)) &&
     (value.checkpointHostDecision === undefined || value.checkpointHostDecision === true) &&
     (value.checkpointInjected === undefined || value.checkpointInjected === true) &&
     (value.checkpointInjected !== true || value.checkpointHostDecision === true) &&
@@ -139,10 +131,7 @@ function validateReplayForCall(call: WorkflowCallRecord): boolean {
       call.replay.checkpointInjected === undefined
     );
   }
-  return (
-    call.replay.sourceResumeSafety === undefined &&
-    (call.replay.checkpointInjected !== true || call.replay.checkpointHostDecision === true)
-  );
+  return call.replay.checkpointInjected !== true || call.replay.checkpointHostDecision === true;
 }
 
 function validateBasicCall(value: unknown, sourceRunId: string): value is WorkflowCallRecord {
@@ -159,7 +148,6 @@ function validateBasicCall(value: unknown, sourceRunId: string): value is Workfl
   }
   if (value.path !== undefined && typeof value.path !== "string") return false;
   if (value.inputsHash !== undefined && typeof value.inputsHash !== "string") return false;
-  if (value.resumeSafety !== undefined && !isResumeSafety(value.resumeSafety)) return false;
   if (value.isolation !== undefined && value.isolation !== "worktree") return false;
   if (value.worktree !== undefined && value.worktree !== true) return false;
   if (value.settlementOrdinal !== undefined && !isPositiveSafeInteger(value.settlementOrdinal)) return false;

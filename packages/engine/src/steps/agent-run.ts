@@ -68,7 +68,7 @@ export interface PromptImage {
  * Inputs go in (prompt, schema, images, cwd, signal, instructions). Reports come back through the
  * on* callbacks, never through the return value. `mcpServers`, `runId` and the session hand-off
  * fields wire the call, so none enters the resume identity hash (hashAgentCall). A script's
- * configOptions, meta, promptMeta and keepSession stay in the call's identity and inputs, but no
+ * configOptions and keepSession stay in the call's identity and inputs, but no
  * step reads them, so they are not here. The call identity context (`callIndex`, `callHash`,
  * `callPath`, `callInputsHash`) is scoped to one engine call and does not enter the resume
  * identity hash.
@@ -164,8 +164,8 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
   callPath?: string;
   /** The input fingerprint for THIS call: sha256 of the canonical strict-JSON of
    *  the call's resolved unhashed execution inputs (cwd/isolation/images/mcpServers/
-   *  meta/promptMeta/keepSession/label/effective timeout+retries/backends
-   *  digest). Identical across retry attempts. ABSENT when any component fails
+   *  keepSession/label/effective timeout+retries), with the meta, promptMeta and
+   *  backends keys always null. Identical across retry attempts. ABSENT when any component fails
    *  strict-JSON canonicalization — never fabricated. ADDITIVE, not a hash input. */
   callInputsHash?: string;
 }

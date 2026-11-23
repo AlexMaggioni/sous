@@ -54,10 +54,10 @@ describe("agent input fingerprints", () => {
   });
 
   it("sorts record keys recursively while preserving array order", async () => {
-    const keysA = await fingerprintFor("{ label: 'fixed', meta: { outer: { z: 1, a: 2 }, b: 3, a: 4 } }");
-    const keysB = await fingerprintFor("{ meta: { a: 4, b: 3, outer: { a: 2, z: 1 } }, label: 'fixed' }");
-    const ordered = await fingerprintFor("{ label: 'fixed', meta: { values: [1, 2, 3] } }");
-    const reordered = await fingerprintFor("{ label: 'fixed', meta: { values: [3, 2, 1] } }");
+    const keysA = await fingerprintFor("{ label: 'fixed', mcpServers: [{ name: 'tools', command: 'tool-server', args: ['--stdio'] }] }");
+    const keysB = await fingerprintFor("{ mcpServers: [{ args: ['--stdio'], command: 'tool-server', name: 'tools' }], label: 'fixed' }");
+    const ordered = await fingerprintFor("{ label: 'fixed', mcpServers: [{ name: 'a', command: 'a' }, { name: 'b', command: 'b' }] }");
+    const reordered = await fingerprintFor("{ label: 'fixed', mcpServers: [{ name: 'b', command: 'b' }, { name: 'a', command: 'a' }] }");
 
     assert.equal(keysA, keysB);
     assert.notEqual(ordered, reordered);
@@ -76,10 +76,6 @@ describe("agent input fingerprints", () => {
           "{ label: 'fixed', mcpServers: [{ name: 'tools', command: 'tool-server', args: ['--stdio'], env: [] }] }",
           { cwd: nonGitCwd },
         ),
-        fingerprintFor("{ label: 'fixed', meta: { channel: 'session', nested: { enabled: true } } }", {
-          cwd: nonGitCwd,
-        }),
-        fingerprintFor("{ label: 'fixed', promptMeta: { channel: 'turn' } }", { cwd: nonGitCwd }),
         fingerprintFor("{ label: 'fixed', keepSession: true }", { cwd: nonGitCwd }),
         fingerprintFor("{ label: 'fixed', isolation: 'worktree' }", { cwd: nonGitCwd }),
       ]);
@@ -175,7 +171,7 @@ return await agent('same-prompt', { label: 'fixed', isolation: 'worktree' })`;
   });
 
   it("omits the whole fingerprint when a vm-authored component is not strict JSON", async () => {
-    const fingerprint = await fingerprintFor("{ label: 'fixed', meta: { valid: 1, invalid: () => 2 } }");
+    const fingerprint = await fingerprintFor("{ label: 'fixed', mcpServers: [{ name: 'tools', command: 'tool-server', invalid: () => 2 }] }");
     assert.equal(fingerprint, undefined);
   });
 });

@@ -249,38 +249,9 @@ function validateMeta(meta: unknown): asserts meta is WorkflowMeta {
       }
     }
   }
-  if (value.backends !== undefined) validateMetaBackends(value.backends);
-}
-
-/** Checks the shape of `meta.backends`. A script may still declare it, and a bad one still
- *  fails, but no step runs on it. */
-function validateMetaBackends(backends: unknown): void {
-  if (!backends || typeof backends !== "object" || Array.isArray(backends)) {
-    throw new Error("meta.backends must be an object of { <name>: { command, args?, env?, sessionMeta?, structuredOutputTool? } }");
-  }
-  for (const [name, config] of Object.entries(backends as Record<string, unknown>)) {
-    if (!config || typeof config !== "object" || Array.isArray(config)) {
-      throw new Error(`meta.backends.${name} must be an object with at least { command }`);
-    }
-    const c = config as Record<string, unknown>;
-    if (typeof c.command !== "string" || !c.command.trim()) {
-      throw new Error(`meta.backends.${name}.command must be a non-empty string`);
-    }
-    if (c.args !== undefined && !(Array.isArray(c.args) && c.args.every((a) => typeof a === "string"))) {
-      throw new Error(`meta.backends.${name}.args must be an array of strings`);
-    }
-    if (
-      c.env !== undefined &&
-      (!c.env || typeof c.env !== "object" || Array.isArray(c.env) || Object.values(c.env).some((v) => typeof v !== "string"))
-    ) {
-      throw new Error(`meta.backends.${name}.env must be an object of string values`);
-    }
-    if (c.sessionMeta !== undefined && (!c.sessionMeta || typeof c.sessionMeta !== "object" || Array.isArray(c.sessionMeta))) {
-      throw new Error(`meta.backends.${name}.sessionMeta must be an object`);
-    }
-    if (c.structuredOutputTool !== undefined && typeof c.structuredOutputTool !== "boolean") {
-      throw new Error(`meta.backends.${name}.structuredOutputTool must be a boolean`);
-    }
+  // meta.backends declared ACP backends that no step ran.
+  if ((value as { backends?: unknown }).backends !== undefined) {
+    throw new Error("meta.backends is gone. No step ran on it. Remove it from meta.");
   }
 }
 

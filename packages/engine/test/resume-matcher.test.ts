@@ -48,7 +48,6 @@ function agentRow(index = 0, overrides: Partial<WorkflowCallRecord> = {}): Workf
     inputsHash: INPUT_A,
     outcome: "result",
     origin: "runner",
-    resumeSafety: "declared-read-only",
     scope: SOURCE_RUN_ID,
     ...overrides,
   };
@@ -170,13 +169,10 @@ describe("incremental resume admission", () => {
       origin: "engine",
       error: { form: "workflow-error", message: "stopped", code: WorkflowErrorCode.UNKNOWN },
     });
-    const unsafeRow = agentRow();
-    delete unsafeRow.resumeSafety;
     const cases: Array<[string, PersistedRunState]> = [
       ["current", sourceState()],
       ["legacy recording", legacy],
       ["legacy resume", sourceState(undefined, { legacyResume: true })],
-      ["unannotated row", sourceState([unsafeRow])],
       ["failed call", sourceState([failedCall])],
       ["interrupted call", sourceState([blocker().call])],
       ["nested", sourceState(undefined, { nestedWorkflows: true })],
@@ -224,8 +220,8 @@ describe("incremental resume admission", () => {
     const cwd = mkdtempSync(join(tmpdir(), "resume-knobs-cwd-"));
     const persistenceRoot = mkdtempSync(join(tmpdir(), "resume-knobs-runs-"));
     const script = `export const meta = { name: "resume-knobs", description: "resume knobs" };
-const first = await agent("first", { label: "first", resume: { filesystem: "read-only" } });
-const second = await agent("second", { label: "second", resume: { filesystem: "read-only" } });
+const first = await agent("first", { label: "first" });
+const second = await agent("second", { label: "second" });
 return { first, second };`;
     let liveCalls = 0;
     const manager = new WorkflowManager({
@@ -277,7 +273,6 @@ return { first, second };`;
         sourceRunId: "older-run",
         recordedIndex: 7,
         match: "unique-hash",
-        sourceResumeSafety: "declared-read-only",
       },
     });
     const legacyReplayCall = replayCall as WorkflowCallRecord & {
@@ -301,10 +296,6 @@ return { first, second };`;
     assert.equal(normalizeResumeSeed({ sourceRunId: SOURCE_RUN_ID, retainedBlockers: [invalidBlocker] }), undefined);
     assert.equal(cloneResumeCandidate(SOURCE_RUN_ID, entryFor(agentRow()), agentRow(0, { path: undefined })), undefined);
     assert.equal(cloneResumeCandidate(SOURCE_RUN_ID, entryFor(agentRow()), agentRow(0, { inputsHash: undefined })), undefined);
-    assert.equal(
-      cloneResumeCandidate(SOURCE_RUN_ID, entryFor(agentRow()), agentRow(0, { resumeSafety: "future-safety" as never })),
-      undefined,
-    );
 
     const collision = normalizeResumeSeed({
       sourceRunId: SOURCE_RUN_ID,

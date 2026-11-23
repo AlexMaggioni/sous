@@ -248,15 +248,13 @@ describe("live-boundary continuation", () => {
       const changed: Array<{ name: string; script: string }> = [
         { name: "images", script: workflow(`images: [{ data: "YQ==", mimeType: "image/png" }]`) },
         { name: "mcpServers", script: workflow(`mcpServers: [{ name: "tools", command: "tool-server" }]`) },
-        { name: "promptMeta", script: workflow(`promptMeta: { trace: "changed" }`) },
-        { name: "meta", script: workflow(`meta: { trace: "changed" }`) },
         { name: "keepSession", script: workflow("keepSession: true") },
         {
           name: "label",
           script: workflow("", `return await agent('task', { label: 'changed-label' })`),
         },
         { name: "cwd", script: workflow(`cwd: "changed-cwd"`) },
-        { name: "missing live fingerprint", script: workflow("meta: { invalid: undefined }") },
+        { name: "missing live fingerprint", script: workflow(`mcpServers: [{ name: "tools", command: "tool-server", invalid: undefined }]`) },
       ];
 
       for (const item of changed) {
@@ -333,7 +331,7 @@ describe("live-boundary continuation", () => {
 
       const fallbacks: WorkflowRunFallback[] = [];
       const changed = await runWorkflow(
-        workflow("retries: 1, meta: { changed: true }"),
+        workflow("retries: 1, keepSession: true"),
         {
           cwd: fixture.cwd,
           persistLogs: false,

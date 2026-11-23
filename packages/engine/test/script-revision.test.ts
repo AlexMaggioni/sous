@@ -176,35 +176,3 @@ test(
     assert.equal(result.status, "completed");
   }),
 );
-
-test(
-  "a revision may add or alter meta.backends, since no run approves or runs them",
-  withDirs(async ({ cwd, root }) => {
-    const agent = perCallRunner();
-    const manager = new WorkflowManager({ cwd, persistenceRoot: root, agent: agent.runner });
-    manager.on("error", () => {});
-    const withBackends = (declaration: string, second: string) => `export const meta = { name: 'backends', description: 'backends', model: 'claude', backends: { ${declaration} } }
-const a = await agent('first', { label: 'a' })
-const b = await agent('${second}', { label: 'b' })
-return { a, b }`;
-    const { runId, promise } = manager.startInBackground(
-      withBackends('browser: { command: "browser-acp", args: ["--headless"] }', "second"),
-    );
-    await waitUntil(() => agent.calls.length === 1, "a starts");
-    assert.equal(manager.stop(runId), true);
-    agent.calls[0].resolve("lost");
-    await promise.catch(() => {});
-
-    const kept = await manager.resumeInBackground(runId, {
-      script: withBackends('browser: { command: "browser-acp", args: ["--visible"] }, other: { command: "other-acp" }', "second, revised"),
-    });
-    assert.equal(kept.accepted, true);
-    if (!kept.accepted) return;
-    await waitUntil(() => agent.calls.length === 2, "a runs again");
-    agent.calls[1].resolve("a-done");
-    await waitUntil(() => agent.calls.length === 3, "b runs");
-    assert.equal(agent.calls[2].prompt, "second, revised");
-    agent.calls[2].resolve("b-done");
-    assert.equal((await kept.promise).status, "completed");
-  }),
-);

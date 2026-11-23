@@ -88,13 +88,12 @@ function initGitRepo(): { cwd: string; cleanup: () => void } {
   return { cwd, cleanup: () => rmSync(cwd, { recursive: true, force: true }) };
 }
 
-function fanout(items: readonly string[], worktree: boolean, declared = true): string {
+function fanout(items: readonly string[], worktree: boolean): string {
   return source(`
 const items = ${JSON.stringify(items)}
 return await parallel(items.map((item, index) => () => agent(item, {
   label: "item-" + index,
   ${worktree ? 'isolation: "worktree",' : ""}
-  ${declared ? 'resume: { filesystem: "read-only" },' : ""}
 })))`, worktree ? "worktree-fanout" : "reader-fanout");
 }
 
@@ -127,8 +126,8 @@ describe("PreparedResume occurrence engine integration", () => {
     };
     const recording = await record(source(`
 const values = await parallel([
-  () => agent("alpha", { label: "alpha", phase: "read", resume: { filesystem: "read-only" } }),
-  () => agent("beta", { label: "beta", phase: "read", resume: { filesystem: "read-only" } }),
+  () => agent("alpha", { label: "alpha", phase: "read" }),
+  () => agent("beta", { label: "beta", phase: "read" }),
 ])
 return values`), { runner: sourceRunner });
     const originalSessions = recording.journal.map((entry) => entry.session);
@@ -137,9 +136,9 @@ return values`), { runner: sourceRunner });
     const runnerPrompts: string[] = [];
     const result = await runWorkflow(source(`
 const values = await parallel([
-  () => agent("inserted", { label: "inserted", phase: "read", resume: { filesystem: "read-only" } }),
-  () => agent("alpha", { label: "alpha", phase: "read", resume: { filesystem: "read-only" } }),
-  () => agent("beta", { label: "beta", phase: "read", resume: { filesystem: "read-only" } }),
+  () => agent("inserted", { label: "inserted", phase: "read" }),
+  () => agent("alpha", { label: "alpha", phase: "read" }),
+  () => agent("beta", { label: "beta", phase: "read" }),
 ])
 return { values }`), {
       runId: "resume-target",
@@ -212,7 +211,6 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
         concurrency: 1,
         places: home.places("worktree-source"),
       });
-      assert.equal(recording.calls.every((call) => call.resumeSafety === "isolated-worktree"), true);
 
       const runnerPrompts: string[] = [];
       const orderedDecisions: number[] = [];
@@ -259,15 +257,14 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
         "replayed",
       ]);
 
-      const unsafeRecording = await record(fanout(original, true, false), {
+      const unsafeRecording = await record(fanout(original, true), {
         runId: "unsafe-worktree-source",
         cwd: repository.cwd,
         concurrency: 1,
         places: home.places("unsafe-worktree-source"),
       });
-      assert.equal(unsafeRecording.calls.every((call) => call.resumeSafety === undefined), true);
       let unsafeRunnerCalls = 0;
-      const unsafeResult = await runWorkflow(fanout(original, true, false), {
+      const unsafeResult = await runWorkflow(fanout(original, true), {
         runId: "unsafe-worktree-target",
         cwd: repository.cwd,
         concurrency: 2,
@@ -288,11 +285,11 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
   it("keeps root replay correspondence across a live nested workflow", async () => {
     const child = source(`return await agent("child", { label: "child" })`, "nested-child");
     const beforeRecording = await record(source(`
-return await agent("parent", { label: "parent", resume: { filesystem: "read-only" } })`, "nested-parent"));
+return await agent("parent", { label: "parent" })`, "nested-parent"));
     const beforePrompts: string[] = [];
     const beforeResult = await runWorkflow(source(`
 await workflow(${JSON.stringify(child)})
-return await agent("parent", { label: "parent", resume: { filesystem: "read-only" } })`, "nested-parent"), {
+return await agent("parent", { label: "parent" })`, "nested-parent"), {
       runId: "before-nested-target",
       agent: {
         async run(prompt) {
@@ -307,14 +304,14 @@ return await agent("parent", { label: "parent", resume: { filesystem: "read-only
     assert.equal(beforeResult.resumeReport?.calls[0]?.action, "replayed");
 
     const betweenRecording = await record(source(`
-const first = await agent("first", { label: "first", resume: { filesystem: "read-only" } })
-const second = await agent("second", { label: "second", resume: { filesystem: "read-only" } })
+const first = await agent("first", { label: "first" })
+const second = await agent("second", { label: "second" })
 return { first, second }`, "nested-between"));
     const betweenPrompts: string[] = [];
     const betweenResult = await runWorkflow(source(`
-const first = await agent("first", { label: "first", resume: { filesystem: "read-only" } })
+const first = await agent("first", { label: "first" })
 await workflow(${JSON.stringify(child)})
-const second = await agent("second", { label: "second", resume: { filesystem: "read-only" } })
+const second = await agent("second", { label: "second" })
 return { first, second }`, "nested-between"), {
       runId: "between-nested-target",
       agent: { async run(prompt) { betweenPrompts.push(prompt); return `live:${prompt}`; } },
@@ -338,7 +335,7 @@ return await checkpoint("approve", { kind: "confirm", timeoutMs: 50 })`), {
     const journal: JournalEntry[] = [];
     let confirms = 0;
     const result = await runWorkflow(source(`
-await agent("inserted", { label: "inserted", resume: { filesystem: "read-only" } })
+await agent("inserted", { label: "inserted" })
 return await checkpoint("approve", { kind: "confirm", timeoutMs: 50 })`), {
       runId: "checkpoint-target",
       agent: { async run() { return "inserted"; } },
@@ -371,12 +368,12 @@ return await checkpoint("approve", { kind: "confirm", timeoutMs: 50 })`), {
   it("keeps later rows after an explicit answer and while an unanswered checkpoint pauses", async () => {
     const recording = await record(source(`
 const decision = await checkpoint("source-decision", {})
-const later = await agent("later", { label: "later", resume: { filesystem: "read-only" } })
+const later = await agent("later", { label: "later" })
 return { decision, later }`), { confirm: async () => true });
 
     const confirmResult = await runWorkflow(source(`
 const decision = await checkpoint("changed-decision", {})
-const later = await agent("later", { label: "later", resume: { filesystem: "read-only" } })
+const later = await agent("later", { label: "later" })
 return { decision, later }`), {
       runId: "confirm-barrier-target",
       agent: { async run(prompt) { return `live:${prompt}`; } },
@@ -393,7 +390,7 @@ return { decision, later }`), {
     let waitingRunnerCalls = 0;
     await assert.rejects(runWorkflow(source(`
 const decision = await checkpoint("changed-decision")
-const later = await agent("later", { label: "later", resume: { filesystem: "read-only" } })
+const later = await agent("later", { label: "later" })
 return { decision, later }`), {
       runId: "waiting-target",
       agent: { async run() { waitingRunnerCalls += 1; return "must-not-run"; } },

@@ -43,7 +43,7 @@ function abortablePending(options: StepRequest): Promise<never> {
 function parallelScript(prompts: readonly string[], name: string): string {
   return `export const meta = { name: ${JSON.stringify(name)}, description: "resume interrupted calls" }
 return await parallel(${JSON.stringify(prompts)}.map((prompt) => () =>
-  agent(prompt, { label: prompt, resume: { filesystem: "read-only" } })
+  agent(prompt, { label: prompt })
 ))`;
 }
 
@@ -152,7 +152,7 @@ describe("resume manifests for unsettled calls", () => {
         const script = code === WorkflowErrorCode.CHECKPOINT_REQUIRED
           ? `export const meta = { name: "checkpoint-halt", description: "checkpoint halt" }
 return await parallel([
-  () => agent("pending", { label: "pending", resume: { filesystem: "read-only" } }),
+  () => agent("pending", { label: "pending" }),
   () => checkpoint("approval", { }),
 ])`
           : parallelScript(["pending", "halt"], "auth-halt");

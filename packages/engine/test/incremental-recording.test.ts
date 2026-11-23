@@ -61,195 +61,6 @@ function resultRow(overrides: Partial<WorkflowCallRecord> = {}): WorkflowCallRec
 }
 
 describe("resume authoring declaration and safety recording", () => {
-  it("accepts only the exact realm-local or null-prototype declaration before allocation", async () => {
-    let runnerCalls = 0;
-    const runner: AgentRunner = { async run() { runnerCalls++; return "ok"; } };
-    const valid = await runWorkflow(
-      script(`
-const nullProto = Object.create(null)
-nullProto.filesystem = "read-only"
-await agent("literal", { resume: { filesystem: "read-only" } })
-return await agent("null", { resume: nullProto })`),
-      { agent: runner, persistLogs: false },
-    );
-    assert.deepEqual(valid.calls?.map((row) => row.resumeSafety), ["declared-read-only", "declared-read-only"]);
-
-    const invalidDeclarations = [
-      "null",
-      "undefined",
-      "[]",
-      "{ filesystem: 'write' }",
-      "{ filesystem: 'read-only', extra: true }",
-      "Object.create({ filesystem: 'read-only' })",
-      "Object.defineProperty({}, 'filesystem', { enumerable: true, get() { return 'read-only' } })",
-      "({ filesystem: 'read-only', [Symbol('extra')]: true })",
-      "args.foreign",
-    ];
-    for (const declaration of invalidDeclarations) {
-      const allocations: number[] = [];
-      const before = runnerCalls;
-      await assert.rejects(
-        runWorkflow(
-          script(`return await agent("invalid", { resume: ${declaration} })`, "invalid-resume"),
-          {
-            args: { foreign: { filesystem: "read-only" } },
-            agent: runner,
-            persistLogs: false,
-            onResumeCallAllocated: (allocated) => allocations.push(allocated),
-          },
-        ),
-        (error: unknown) =>
-          error instanceof WorkflowError &&
-          error.code === WorkflowErrorCode.SCRIPT_VALIDATION_ERROR &&
-          error.recoverable === false,
-      );
-      assert.deepEqual(allocations, []);
-      assert.equal(runnerCalls, before);
-    }
-  });
-
-  it("records occurrence safety and carries only a validated source marker into a replay", async () => {
-    const rows: WorkflowCallRecord[] = [];
-    // The empty step fails on its last try, so the run pauses on it.
-    await assert.rejects(
-      runWorkflow(
-        script(`
-const safe = await agent("safe", { resume: { filesystem: "read-only" } })
-const unsafe = await agent("unsafe")
-const empty = await agent("empty", { resume: { filesystem: "read-only" } })
-return { safe, unsafe, empty }`),
-        {
-          agent: { async run(prompt) { return prompt === "empty" ? "" : prompt; } },
-          persistLogs: false,
-          onCallRecord: (row) => rows.push(row),
-        },
-      ),
-      (error: unknown) => isStepFailedPause(error as { code?: unknown; details?: unknown }),
-    );
-    assert.deepEqual(rows.map((row) => row.resumeSafety), ["declared-read-only", undefined, "declared-read-only"]);
-    assert.deepEqual(rows.map((row) => row.outcome), ["result", "result", "error"]);
-
-    const journal: JournalEntry = {
-      index: 0,
-      hash: rows[0].hash,
-      result: "cached",
-      kind: "agent",
-      scope: "source",
-    };
-    const source = resultRow({
-      hash: rows[0].hash,
-      path: rows[0].path,
-      inputsHash: rows[0].inputsHash,
-      resumeSafety: "declared-read-only",
-    });
-    const seed = normalizeResumeSeed({
-      sourceRunId: "source",
-      retained: [{ sourceRunId: "source", recordedIndex: 0, entry: journal, call: source }],
-    });
-    assert.ok(seed);
-    const prepared: OccurrenceResume = { strategy: "occurrence-v1", sourceRunId: "source", requestedPolicy: "auto" };
-    const replayed = await runWorkflow(
-      script(`return await agent("safe", { resume: { filesystem: "read-only" } })`),
-      {
-        runId: "target",
-        agent: { async run() { throw new Error("must replay"); } },
-        resume: { rows: resumeRows({ runId: "target", journal: [], calls: [], seed, key: "inputs" }), plan: prepared },
-        persistLogs: false,
-      },
-    );
-    assert.deepEqual(
-      {
-        safety: replayed.calls?.[0].resumeSafety,
-        sourceSafety: replayed.calls?.[0].replay?.sourceResumeSafety,
-        sourceRunId: replayed.calls?.[0].replay?.sourceRunId,
-      },
-      {
-        safety: "declared-read-only",
-        sourceSafety: "declared-read-only",
-        sourceRunId: "source",
-      },
-    );
-
-    // A worktree marker on a call that had no worktree is malformed. The seed that holds it fails
-    // validation, so the marker never reaches a replay.
-    const malformed = { ...source, resumeSafety: "isolated-worktree" as const, isolation: "worktree" as const, worktree: false };
-    assert.equal(
-      normalizeResumeSeed({
-        sourceRunId: "source",
-        retained: [{ sourceRunId: "source", recordedIndex: 0, entry: journal, call: malformed as WorkflowCallRecord }],
-      }),
-      undefined,
-    );
-  });
-
-  it("records isolated-worktree only for an annotated checkout derived from the run cwd", async () => {
-    const dirs = tempDirs();
-    const home = tempPlaces();
-    try {
-      initGitRepo(dirs.cwd);
-      const taints: string[] = [];
-      const isolated = await runWorkflow(
-        script(`return await agent("isolated", { isolation: "worktree", resume: { filesystem: "read-only" } })`),
-        {
-          runId: "isolated-safe",
-          cwd: dirs.cwd,
-          places: home.places("isolated-safe"),
-          agent: { async run(_prompt, options) { return options?.cwd ?? "missing"; } },
-          persistLogs: false,
-          onResumeFilesystemTainted: () => taints.push("tainted"),
-        },
-      );
-      assert.equal(isolated.calls?.[0].resumeSafety, "isolated-worktree");
-      assert.equal(isolated.calls?.[0].worktree, true);
-      assert.deepEqual<string[]>(taints, []);
-      assert.equal(existsSync(String(isolated.result)), false, "activity settles only after worktree cleanup");
-
-      const unsafeIsolated = await runWorkflow(
-        script(`return await agent("isolated", { isolation: "worktree" })`),
-        {
-          runId: "isolated-unsafe",
-          cwd: dirs.cwd,
-          places: home.places("isolated-unsafe"),
-          agent: { async run() { return "live"; } },
-          persistLogs: false,
-          onResumeFilesystemTainted: () => taints.push("unsafe-isolated"),
-        },
-      );
-      assert.equal(unsafeIsolated.calls?.[0].worktree, true);
-      assert.equal(unsafeIsolated.calls?.[0].resumeSafety, undefined);
-
-      const externalBase = await runWorkflow(
-        script(`return await agent("isolated", { cwd: ".", isolation: "worktree", resume: { filesystem: "read-only" } })`),
-        {
-          runId: "isolated-external",
-          cwd: dirs.cwd,
-          places: home.places("isolated-external"),
-          agent: { async run() { return "live"; } },
-          persistLogs: false,
-          onResumeFilesystemTainted: () => taints.push("external-base"),
-        },
-      );
-      assert.equal(externalBase.calls?.[0].worktree, true);
-      assert.equal(externalBase.calls?.[0].resumeSafety, undefined);
-
-      const degraded = await runWorkflow(
-        script(`return await agent("degraded", { isolation: "worktree", resume: { filesystem: "read-only" } })`),
-        {
-          cwd: mkdtempSync(join(tmpdir(), "degraded-worktree-")),
-          places: home.places("degraded"),
-          agent: { async run() { return "live"; } },
-          persistLogs: false,
-          onResumeFilesystemTainted: () => taints.push("degraded"),
-        },
-      );
-      assert.equal(degraded.calls?.[0].resumeSafety, undefined);
-      assert.equal(degraded.calls?.[0].worktree, undefined);
-      assert.deepEqual(taints, ["unsafe-isolated", "external-base", "degraded"]);
-    } finally {
-      dirs.cleanup();
-      home.cleanup();
-    }
-  });
 });
 
 describe("checkpoint input recording and byte compatibility", () => {
@@ -280,21 +91,6 @@ return "caught"`), {
     assert.equal(waiting[0].error?.code, WorkflowErrorCode.CHECKPOINT_REQUIRED);
     assert.equal(waiting[0].checkpointDecision, undefined);
   });
-
-  it("keeps agent hash and input bytes unchanged when the declaration is added", async () => {
-    const rows: WorkflowCallRecord[] = [];
-    const journal: JournalEntry[] = [];
-    for (const options of ["{ label: 'fixed' }", "{ label: 'fixed', resume: { filesystem: 'read-only' } }"]) {
-      await runWorkflow(script(`return await agent("same", ${options})`, "byte-compatible"), {
-        agent: { async run() { return "ok"; } },
-        persistLogs: false,
-        onCallRecord: (row) => rows.push(row),
-        onAgentJournal: (entry) => journal.push(entry),
-      });
-    }
-    assert.equal(journal[0].hash, journal[1].hash);
-    assert.equal(rows[0].inputsHash, rows[1].inputsHash);
-  });
 });
 
 describe("filesystem taint and quiescence accounting", () => {
@@ -317,10 +113,6 @@ describe("filesystem taint and quiescence accounting", () => {
     };
     assert.equal(await run("unannotated", `return await agent("write")`), 1);
     assert.equal(
-      await run("declared", `return await agent("read", { resume: { filesystem: "read-only" } })`),
-      0,
-    );
-    assert.equal(
       await run("confirm", `return await checkpoint("host")`, { confirm: async () => true }),
       1,
     );
@@ -335,7 +127,7 @@ describe("filesystem taint and quiescence accounting", () => {
     assert.equal(
       await run(
         "degraded",
-        `return await agent("worktree", { isolation: "worktree", resume: { filesystem: "read-only" } })`,
+        `return await agent("worktree", { isolation: "worktree" })`,
         { cwd: mkdtempSync(join(tmpdir(), "taint-degraded-")) },
       ),
       1,
@@ -348,7 +140,7 @@ describe("filesystem taint and quiescence accounting", () => {
     const allocations: number[] = [];
     await runWorkflow(
       script(`
-await agent("settled", { resume: { filesystem: "read-only" } })
+await agent("settled")
 await checkpoint("engine")
 return "done"`),
       {
@@ -436,7 +228,7 @@ describe("managed identity-v1 persistence", () => {
         agent: { async run() { return await pending.promise; } },
       });
       const started = manager.startInBackground(
-        script(`return await agent("safe", { resume: { filesystem: "read-only" } })`, "json-fixture"),
+        script(`return await agent("safe")`, "json-fixture"),
       );
       const runFile = join(runsDir(dirs.cwd, dirs.root), `${started.runId}.json`);
       const initial = JSON.parse(readFileSync(runFile, "utf8")) as PersistedRunState;
@@ -493,7 +285,7 @@ describe("managed identity-v1 persistence", () => {
         script(`return await workflow(${JSON.stringify(child)})`, "nested-key"),
       );
       const degraded = await keyManager.runSync(
-        script(`return await agent("worktree", { isolation: "worktree", resume: { filesystem: "read-only" } })`, "degraded-key"),
+        script(`return await agent("worktree", { isolation: "worktree" })`, "degraded-key"),
       );
       for (const run of [confirmed, nested, degraded]) {
         assert.deepEqual(keyManager.getPersistence().load(run.runId)?.resume, { format: "identity-v1" });
@@ -534,7 +326,6 @@ describe("managed identity-v1 persistence", () => {
 
   it("finalizes safe floated calls while unsafe activity omits terminal identity", async () => {
     const dirs = tempDirs();
-    const floatedAgent = deferred<string>();
     const unsafeAgent = deferred<string>();
     const floatedCheckpoint = deferred<unknown>();
     try {
@@ -544,18 +335,11 @@ describe("managed identity-v1 persistence", () => {
         environmentKey: "static-key",
         agent: {
           async run(prompt) {
-            return await (prompt === "unsafe" ? unsafeAgent.promise : floatedAgent.promise);
+            assert.equal(prompt, "unsafe");
+            return await unsafeAgent.promise;
           },
         },
       });
-      const agentRun = await manager.runSync(
-        script(`void agent("floated", { resume: { filesystem: "read-only" } })\nreturn "early"`, "floated-agent"),
-      );
-      assert.deepEqual(manager.getPersistence().load(agentRun.runId)?.resume?.terminalEnvironment, { key: "static-key" });
-      floatedAgent.resolve("late");
-      await new Promise((resolve) => setImmediate(resolve));
-      assert.deepEqual(manager.getPersistence().load(agentRun.runId)?.resume?.terminalEnvironment, { key: "static-key" });
-
       const unsafeRun = await manager.runSync(
         script(`void agent("unsafe")\nreturn "early"`, "floated-unsafe-agent"),
       );
@@ -581,6 +365,8 @@ describe("managed identity-v1 persistence", () => {
   it("records dense failures and fails closed on invalid activity", async () => {
     const dirs = tempDirs();
     try {
+      // In a git checkout a run that called an agent still records its terminal state.
+      initGitRepo(dirs.cwd);
       const failedManager = new WorkflowManager({
         cwd: dirs.cwd,
         persistenceRoot: dirs.root,
@@ -588,13 +374,13 @@ describe("managed identity-v1 persistence", () => {
         agent: { async run() { return "ok"; } },
       });
       const failed = await failedManager.runSync(
-        script(`await agent("safe", { resume: { filesystem: "read-only" } })\nthrow new Error("script")`, "dense-failure"),
+        script(`await agent("safe")\nthrow new Error("script")`, "dense-failure"),
       );
       const failedState = failedManager.getPersistence().load(failed.runId);
       assert.equal(failed.status, "failed");
       assert.equal(failedState?.callsAllocated, 1);
       assert.deepEqual(failedState?.calls?.map((row) => row.index), [0]);
-      assert.deepEqual(failedState?.resume?.terminalEnvironment, { key: "static-key" });
+      assert.ok(failedState?.resume?.terminalEnvironment?.git);
 
       const invalidPending = deferred<string>();
       const invalidManager = new WorkflowManager({
@@ -604,7 +390,7 @@ describe("managed identity-v1 persistence", () => {
         agent: { async run() { return await invalidPending.promise; } },
       });
       const invalid = invalidManager.startInBackground(
-        script(`return await agent("safe", { resume: { filesystem: "read-only" } })`, "invalid-counter"),
+        script(`return await agent("safe")`, "invalid-counter"),
       );
       const managed = invalidManager.getRun(invalid.runId);
       assert.ok(managed);
