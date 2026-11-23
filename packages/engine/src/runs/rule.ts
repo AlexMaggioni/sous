@@ -1,9 +1,13 @@
 // The pause rule: what a run's saved state, its worker and its open questions mean. One pure
 // function, so orc's readers, the worker's end and the service decide the same way.
 
+import type { RunPauseReason } from "../run-events.js";
 import type { RunStatus } from "./persistence/run-persistence.js";
 
-/** Why a paused run waits. */
+/**
+ * Why a paused run waits, in the rule's words. The saved reason "checkpoint_required" is "asks"
+ * here, and a saved reason the rule does not know is "other".
+ */
 export type PauseReason =
   | "usage_limit" | "auth_required" | "asks" | "requested"
   | "step_failed" | "step_stopped" | "time_limit" | "interrupted" | "other";
@@ -99,6 +103,10 @@ const ROWS = {
   "failed":                      { worker: "any",   status: "failed",      word: "failed",                exit: 1, unfinished: false, resume: OK,                  reuse: OK },
   "aborted":                     { worker: "any",   status: "stopped",     word: "stopped",               exit: 3, unfinished: false, resume: no("stopped"),       reuse: OK },
 } satisfies Record<string, Row>;
+
+// Each reason the engine pauses with, and the one a gone worker leaves, has a row of its own, so
+// none reads as "paused: <text>".
+ROWS satisfies Record<`paused, ${RunPauseReason | "interrupted"}`, Row>;
 
 type Key = keyof typeof ROWS;
 

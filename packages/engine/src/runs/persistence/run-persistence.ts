@@ -162,8 +162,9 @@ export interface PersistedRunState {
   reason?: string;
   /** Machine-readable terminal error kept on the saved run. */
   errorCode?: WorkflowErrorCode;
-  /** Why a paused run is paused (e.g. "usage_limit", "auth_required",
-   *  "checkpoint_required", or "interrupted"). Free-form string — no migration. */
+  /** Why a paused run is paused: a `RunPauseReason` from the paused event, or "interrupted"
+   *  when a worker left the run. Runs saved by older code may hold other text, so it stays a
+   *  string, and the pause rule reads an unknown one as "other". */
   pauseReason?: string;
   /** Provider reset hint for a usage-limit pause, e.g. "Resets in ~3h" (verbatim). */
   resetHint?: string;
