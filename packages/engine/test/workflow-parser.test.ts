@@ -29,17 +29,31 @@ test("parseWorkflowScript accepts static template literals", () => {
   assert.equal(parsed.meta.description, "static");
 });
 
-test("parseWorkflowScript requires meta export first", () => {
-  assert.throws(
-    () => parseWorkflowScript("const x = 1\nexport const meta = { name: 'demo', description: 'desc' }"),
-    /must be the first statement/,
-  );
-});
+const META_NOT_FIRST: Array<[name: string, script: string]> = [
+  ["code before it", "const x = 1\nexport const meta = { name: 'demo', description: 'desc' }"],
+  ["empty string", ""],
+  ["whitespace-only string", "   "],
+  ["no meta export", "return 42"],
+];
 
-test("parseWorkflowScript requires name and description", () => {
-  assert.throws(() => parseWorkflowScript("export const meta = { name: 'demo' }"), /meta.description/);
-  assert.throws(() => parseWorkflowScript("export const meta = { description: 'desc' }"), /meta.name/);
-});
+for (const [name, script] of META_NOT_FIRST) {
+  test(`parseWorkflowScript requires meta export first: ${name}`, () => {
+    assert.throws(() => parseWorkflowScript(script), /must be the first statement/);
+  });
+}
+
+const NAME_AND_DESCRIPTION: Array<[name: string, script: string, error: RegExp]> = [
+  ["no description", "export const meta = { name: 'demo' }", /meta.description/],
+  ["no name", "export const meta = { description: 'desc' }", /meta.name/],
+  ["empty name", "export const meta = { name: '', description: 'desc' }", /non-empty string/],
+  ["empty description", "export const meta = { name: 'demo', description: '' }", /non-empty string/],
+];
+
+for (const [name, script, error] of NAME_AND_DESCRIPTION) {
+  test(`parseWorkflowScript requires name and description: ${name}`, () => {
+    assert.throws(() => parseWorkflowScript(script), error);
+  });
+}
 
 test("parseWorkflowScript rejects non-literal metadata", () => {
   assert.throws(
@@ -95,18 +109,6 @@ test("parseWorkflowScript rejects template interpolation", () => {
 
 // ─── Negative / error-path tests ───────────────────────────────────────────────
 
-test("parseWorkflowScript rejects empty string", () => {
-  assert.throws(() => parseWorkflowScript(""), /must be the first statement/);
-});
-
-test("parseWorkflowScript rejects whitespace-only string", () => {
-  assert.throws(() => parseWorkflowScript("   "), /must be the first statement/);
-});
-
-test("parseWorkflowScript rejects script without meta export", () => {
-  assert.throws(() => parseWorkflowScript("return 42"), /must be the first statement/);
-});
-
 test("parseWorkflowScript rejects meta without const keyword", () => {
   assert.throws(
     () => parseWorkflowScript("export var meta = { name: 'demo', description: 'desc' }"),
@@ -130,14 +132,6 @@ test("parseWorkflowScript rejects multiple declarations", () => {
 
 test("parseWorkflowScript rejects meta without init value", () => {
   assert.throws(() => parseWorkflowScript("export const meta"), /SyntaxError|must have a literal value/);
-});
-
-test("parseWorkflowScript rejects empty name string", () => {
-  assert.throws(() => parseWorkflowScript("export const meta = { name: '', description: 'desc' }"), /non-empty string/);
-});
-
-test("parseWorkflowScript rejects empty description string", () => {
-  assert.throws(() => parseWorkflowScript("export const meta = { name: 'demo', description: '' }"), /non-empty string/);
 });
 
 test("parseWorkflowScript rejects phases that is not an array", () => {
