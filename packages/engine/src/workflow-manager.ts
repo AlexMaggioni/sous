@@ -40,7 +40,7 @@ import type {
   RunPauseReason,
 } from "./run-events.js";
 import type { RunEventLogRecord } from "./run-events.js";
-import { preview, recomputeWorkflowSnapshot, type WorkflowSnapshot } from "./display.js";
+import { foldStep, preview, recomputeWorkflowSnapshot, type WorkflowSnapshot } from "./display.js";
 import { isAbsolute } from "node:path";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
@@ -1569,17 +1569,7 @@ export class WorkflowManager extends EventEmitter {
         },
         onAgentStart: (event) => {
           if (this.dropPostTerminal(managed, "agentStart")) return;
-          managed.snapshot.agents.push({
-            id: managed.snapshot.agents.length + 1,
-            label: event.label,
-            phase: event.phase,
-            prompt: event.prompt,
-            status: "running",
-            model: event.model,
-            callIndex: event.callIndex,
-            scope: event.scope,
-            startedAt: new Date().toISOString(),
-          });
+          foldStep(managed.snapshot.agents, { type: "agentStart", ...event }, new Date().toISOString());
           publish(this.createRunEvent("agentStart", {
             runId: managed.runId,
             ...event,
@@ -1589,34 +1579,7 @@ export class WorkflowManager extends EventEmitter {
         },
         onAgentEnd: (event) => {
           if (this.dropPostTerminal(managed, "agentEnd")) return;
-          const agentSnapshot = event.callIndex === undefined
-            ? [...managed.snapshot.agents]
-                .reverse()
-                .find((a) => a.label === event.label && a.status === "running")
-            : managed.snapshot.agents.find(
-                (a) =>
-                  a.scope === event.scope &&
-                  a.callIndex === event.callIndex &&
-                  a.status === "running",
-              );
-          if (agentSnapshot) {
-            agentSnapshot.status =
-              event.errorRecord || (event.provenance?.source === "replay" && event.result === null)
-                ? "error"
-                : "done";
-            agentSnapshot.resultPreview = preview(event.result);
-            agentSnapshot.error = event.error;
-            agentSnapshot.errorCode = event.errorCode;
-            agentSnapshot.recoverable = event.recoverable;
-            agentSnapshot.tokens = event.tokens;
-            agentSnapshot.callIndex = event.callIndex;
-            agentSnapshot.scope = event.scope;
-            agentSnapshot.usage = event.usage;
-            agentSnapshot.provenance = event.provenance;
-            if (event.model) agentSnapshot.model = event.model;
-            if (event.session) agentSnapshot.session = event.session;
-            agentSnapshot.endedAt = new Date().toISOString();
-          }
+          foldStep(managed.snapshot.agents, { type: "agentEnd", ...event, resultPreview: preview(event.result) }, new Date().toISOString());
           publish(this.createRunEvent("agentEnd", {
             runId: managed.runId,
             ...event,

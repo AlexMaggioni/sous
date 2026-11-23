@@ -9,9 +9,12 @@ import { ensureHome, homePaths, type HomePaths } from "../../src/runs/home.js";
 import { createRun } from "../../src/runs/launch.js";
 import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
 import { listRuns, readLog, readRun, runDetail, waitingRuns } from "../../src/runs/run.js";
-import { logFile, type StoreFs } from "../../src/runs/store.js";
+import { updateRecord } from "../../src/runs/records.js";
+import { logFile, managerStore, readState, type StoreFs } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
-import { heldRunner, settle, setup, until } from "./fixture.js";
+import type { AgentRunner } from "../../src/steps/agent-runner.js";
+import { WorkflowManager } from "../../src/workflow-manager.js";
+import { heldRunner, plantState, settle, setup, until } from "./fixture.js";
 
 // The runs are planted with raw writes, the way the worker and the engine leave them.
 
@@ -323,5 +326,62 @@ return await Promise.allSettled([agent('bad', { label: 'bad', retries: 0 }), age
     assert.deepEqual(await settle(() => running(paths, record.runId), ["flaky"]), ["flaky"]);
     release("flaky");
     assert.equal((await worker)?.status, "completed");
+  });
+});
+
+describe("the steps while the worker runs", () => {
+  it("the event log gives each step what the saved state gives it", async () => {
+    const script = `export const meta = { name: 'three', description: 'three steps' }
+await agent('first', { label: 'first' })
+await agent('again', { label: 'again' })
+await agent('bad', { label: 'bad', retries: 0 })
+return 1`;
+    const { paths, projectDir } = setup({ three: script });
+    const record = createRun(paths, { workflow: "three", projectDir, inputs: {} });
+    // A library caller's runner may report a replayed result. orc's never does, so this test runs
+    // the manager itself.
+    const runner = {
+      async run(_prompt: string, options: { label?: string; onResultProvenance?: (provenance: unknown) => void }) {
+        if (options.label === "again") {
+          options.onResultProvenance?.({ source: "replay" });
+          return null;
+        }
+        if (options.label === "bad") throw new Error("the tests fail");
+        return `${options.label} done`;
+      },
+    } as unknown as AgentRunner;
+    const manager = new WorkflowManager({ ...managerStore(paths), agent: runner });
+    // A failed step pauses the run, also inside a try.
+    assert.equal((await manager.runSync(script, {}, { runId: record.runId })).status, "paused");
+    const saved = readState(paths, record.runId)!;
+    assert.deepEqual(saved.agents.map((step) => step.label), ["first", "again", "bad"]);
+
+    // The state as it was saved before the first step, under a live worker: the steps come from
+    // the event log alone.
+    plantState(paths, { ...saved, agents: [], eventSeq: 0 });
+    updateRecord(paths, record.runId, { pid: process.pid });
+    const view = (steps: typeof saved.agents) =>
+      steps.map(({ id, label, prompt, status, callIndex, scope, error, errorCode, recoverable, tokens, model, usage, provenance }) =>
+        JSON.parse(JSON.stringify({ id, label, prompt, status, callIndex, scope, error, errorCode, recoverable, tokens, model, usage, provenance })));
+    assert.deepEqual(view(runDetail(paths, record.runId).steps), view(saved.agents));
+  });
+
+  it("a call refused before it runs gives its place to the next call", async () => {
+    // The engine shows a call it refuses for a model in configOptions as started, under the index
+    // the next call then gets.
+    const script = `export const meta = { name: 'refused', description: 'a refused call' }
+try { await agent('refused', { label: 'refused', configOptions: { model: 'other' } }) } catch {}
+return await agent('next', { label: 'next' })`;
+    const { paths, projectDir } = setup({ refused: script });
+    const record = createRun(paths, { workflow: "refused", projectDir, inputs: {} });
+    const runner = { async run(_prompt: string, options: { label?: string }) { return `${options.label} done`; } } as unknown as AgentRunner;
+    const manager = new WorkflowManager({ ...managerStore(paths), agent: runner });
+    assert.equal((await manager.runSync(script, {}, { runId: record.runId })).status, "completed");
+    const saved = readState(paths, record.runId)!;
+    assert.deepEqual(saved.agents.map(({ id, label, status }) => ({ id, label, status })), [{ id: 1, label: "next", status: "done" }]);
+
+    plantState(paths, { ...saved, agents: [], eventSeq: 0 });
+    updateRecord(paths, record.runId, { pid: process.pid });
+    assert.deepEqual(runDetail(paths, record.runId).steps.map(({ id, label, status }) => ({ id, label, status })), [{ id: 1, label: "next", status: "done" }]);
   });
 });

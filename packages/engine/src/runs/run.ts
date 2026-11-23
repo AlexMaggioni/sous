@@ -7,6 +7,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 import type { PersistedRunState, RunStatus } from "./persistence/run-persistence.js";
 import { deleteAccount, DEFAULT, moveRunAccount, setCurrentAccount, type AccountName } from "../accounts.js";
 import type { Harness } from "../agents.js";
+import { foldStep } from "../display.js";
 import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
 import { listQuestions, readQuestion, removeRunQuestions, reply, type Question, type Reply } from "./inbox.js";
@@ -157,7 +158,6 @@ const ENDS_STEPS = new Set(["complete", "paused", "error", "stopped", "resumed"]
  */
 function liveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): { steps?: Step[]; running: string[] } {
   const agents: Step[] = (state?.agents ?? []).map((agent) => ({ ...agent }));
-  const byKey = new Map(agents.map((agent) => [stepKey(record, agent.scope, agent.callIndex), agent]));
   const running = new Map<string, { scope?: string; label: string }>();
   for (const agent of state?.agents ?? []) {
     if (agent.status === "running") running.set(stepKey(record, agent.scope, agent.callIndex), { ...(agent.scope ? { scope: agent.scope } : {}), label: agent.label });
@@ -168,36 +168,14 @@ function liveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState
     return [...running.values()].map((step) => `${scopePrefix(record.runId, step.scope, nested)}${step.label}`);
   };
   try {
-    readEventsAfter(paths, record.runId, state?.eventSeq ?? 0, ({ event: e, timestamp }) => {
-      const k = stepKey(record, e.scope, e.callIndex);
-      if (e.type === "agentStart") {
-        if (!byKey.has(k)) {
-          const step = {
-            id: agents.length + 1,
-            label: String(e.label ?? "agent"),
-            status: "running",
-            startedAt: timestamp,
-            ...(typeof e.phase === "string" ? { phase: e.phase } : {}),
-            ...(typeof e.model === "string" ? { model: e.model } : {}),
-            ...(typeof e.callIndex === "number" ? { callIndex: e.callIndex } : {}),
-            ...(typeof e.scope === "string" ? { scope: e.scope } : {}),
-          } as Step;
-          agents.push(step);
-          byKey.set(k, step);
-        }
-        // A step tried again starts again under the same key. It is listed once.
+    readEventsAfter(paths, record.runId, state?.eventSeq ?? 0, ({ event, timestamp }) => {
+      if (event.type === "agentStart" || event.type === "agentEnd") {
+        foldStep(agents, event, timestamp);
+        const k = stepKey(record, event.scope, event.callIndex);
+        // A step that starts again keeps one name, at the end.
         running.delete(k);
-        running.set(k, { ...(typeof e.scope === "string" ? { scope: e.scope } : {}), label: String(e.label ?? "agent") });
-      } else if (e.type === "agentEnd") {
-        const step = byKey.get(k);
-        if (step && step.status === "running") {
-          step.status = e.errorRecord ? "error" : "done";
-          step.endedAt = timestamp;
-          if (typeof e.tokens === "number") step.tokens = e.tokens;
-          if (typeof e.error === "string") step.error = e.error;
-        }
-        running.delete(k);
-      } else if (ENDS_STEPS.has(String(e.type)) && (e.scope === undefined || e.scope === record.runId)) {
+        if (event.type === "agentStart") running.set(k, { scope: event.scope, label: event.label });
+      } else if (ENDS_STEPS.has(event.type) && event.scope === record.runId) {
         running.clear();
       }
     });

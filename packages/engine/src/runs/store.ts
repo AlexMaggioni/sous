@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { workflowProjectPaths } from "./persistence/project-paths.js";
 import { createRunPersistence, loadRunState, type FsLayer, type PersistedRunState } from "./persistence/run-persistence.js";
 import type { RunEventPersistence } from "./persistence/run-event-persistence.js";
+import type { PersistedRunEvent } from "../run-events.js";
 import type { HomePaths } from "./home.js";
 import type { RunRecord } from "./records.js";
 import { SlotPool, type Priority } from "./slots.js";
@@ -141,7 +142,7 @@ export function readStates(paths: HomePaths, runIds: Iterable<string>, fs: Store
 
 /** An event the engine saved, with when it saved it. */
 export interface SavedEvent {
-  event: Record<string, unknown>;
+  event: PersistedRunEvent;
   timestamp: string;
 }
 
@@ -152,7 +153,7 @@ export function readEventsAfter(paths: HomePaths, runId: string, seq: number, vi
   let after = seq;
   for (;;) {
     const page = events.readEvents(runId, { after, limit: 1000 });
-    for (const { event, timestamp } of page.events) visit({ event: event as unknown as Record<string, unknown>, timestamp });
+    for (const { event, timestamp } of page.events) visit({ event, timestamp });
     if (!page.hasMore || page.events.length === 0) break;
     after = page.events[page.events.length - 1]!.seq;
   }
