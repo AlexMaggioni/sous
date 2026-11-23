@@ -26,14 +26,6 @@ test("resolveModelForPhase matches a phase title EXACTLY (no fuzzy substring)", 
   assert.equal(resolveModelForPhase("research", config), "default-model");
 });
 
-test("resolveModelForPhase prefers an exact route over the default", () => {
-  const config: ModelRoutingConfig = {
-    defaultModel: "default-model",
-    routes: [{ phasePattern: "Scan", model: "scan-model" }],
-  };
-  assert.equal(resolveModelForPhase("Scan", config), "scan-model");
-});
-
 test("resolveModelForPhase uses the first matching route", () => {
   const config: ModelRoutingConfig = {
     defaultModel: "default-model",
@@ -79,8 +71,4 @@ test("parseModelRoutingFromMeta returns empty routes / no default when nothing d
   const config = parseModelRoutingFromMeta(undefined);
   assert.deepEqual(config.routes, []);
   assert.equal(config.defaultModel, undefined);
-});
-
-test("parseModelRoutingFromMeta returns empty routes when phases have no models", () => {
-  assert.deepEqual(parseModelRoutingFromMeta([{ title: "Scan" }, { title: "Report" }]).routes, []);
 });

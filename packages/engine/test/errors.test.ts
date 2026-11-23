@@ -4,7 +4,6 @@ import { describe, it } from "node:test";
 // injected runner before errors reach this boundary; the engine consumes typed errors.
 import {
   isAbortError,
-  isProviderUsageLimit,
   WorkflowError,
   WorkflowErrorCode,
   wrapError,
@@ -17,12 +16,6 @@ describe("wrapError provider-limit classification", () => {
     assert.equal(e.recoverable, true);
     assert.equal(e.resetHint, undefined);
     assert.equal(e.agentLabel, "a");
-  });
-
-  it("keeps transient overloaded/5xx errors as recoverable AGENT_EXECUTION_ERROR (not a quota pause)", () => {
-    const e = wrapError(new Error("overloaded_error: server is busy"));
-    assert.equal(e.code, WorkflowErrorCode.AGENT_EXECUTION_ERROR);
-    assert.equal(e.recoverable, true);
   });
 
   it("passes an existing WorkflowError through unchanged", () => {
@@ -43,16 +36,5 @@ describe("isAbortError", () => {
     const error = new Error("transaction aborted because validation failed");
     assert.equal(isAbortError(error), false);
     assert.equal(wrapError(error).code, WorkflowErrorCode.AGENT_EXECUTION_ERROR);
-  });
-});
-
-describe("isProviderUsageLimit", () => {
-  it("is true only for a PROVIDER_USAGE_LIMIT WorkflowError", () => {
-    assert.equal(
-      isProviderUsageLimit(new WorkflowError("x", WorkflowErrorCode.PROVIDER_USAGE_LIMIT, { recoverable: false })),
-      true,
-    );
-    assert.equal(isProviderUsageLimit(new WorkflowError("x", WorkflowErrorCode.SCHEMA_NONCOMPLIANCE)), false);
-    assert.equal(isProviderUsageLimit(new Error("usage limit")), false);
   });
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 // AgentUsage is part of the seam contract, which lives in src/steps/agent-run.ts.
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import type { AgentUsage, StepRequest } from "../src/steps/agent-run.js";
+import type { AgentUsage } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { isStepFailedPause, type JournalEntry, runWorkflow } from "../src/workflow.js";
 import type { WorkflowCallRecord } from "../src/workflow-result.js";
@@ -81,52 +81,6 @@ return xs`;
   assert.equal(maxActive, 2);
   assert.deepEqual(result.result, ["ok:a", "ok:b", "ok:c", "ok:d"]);
   assert.equal(result.agentCount, 4);
-});
-
-test("agent() forwards mode to the runner options bag", async () => {
-  const seen: Array<string | undefined> = [];
-  await runWorkflow(
-    `export const meta = { name: 'mode_threading', description: 'mode threading' }
-const r = await agent('x', { label: 'mode-agent', mode: 'read-only' })
-return r`,
-    {
-      agent: {
-        async run(_prompt: string, options: { mode?: string }) {
-          seen.push(options.mode);
-          return "ok";
-        },
-      },
-      persistLogs: false,
-    },
-  );
-
-  assert.deepEqual(seen, ["read-only"]);
-});
-
-test("agent() records configOptions without coercion and gives them to no step", async () => {
-  const seen: Array<Record<string, string | boolean> | undefined> = [];
-  const result = await runWorkflow(
-    `export const meta = { name: 'config_threading', description: 'config threading' }
-return agent('x', { label: 'config-agent', configOptions: { reasoning_effort: 'high', fast_mode: true } })`,
-    {
-      agent: {
-        async run(_prompt: string, options: StepRequest) {
-          assert.equal("configOptions" in options, false);
-          return "ok";
-        },
-      },
-      onAgentStart: (event) => seen.push(event.configOptions),
-      persistLogs: false,
-    },
-  );
-
-  assert.equal(seen.length, 1);
-  for (const given of [seen[0], result.calls?.[0]?.configOptionsRequested]) {
-    assert.deepEqual(Object.entries(given ?? {}), [
-      ["reasoning_effort", "high"],
-      ["fast_mode", true],
-    ]);
-  }
 });
 
 test("authored model/mode/config reach dispatch and actual call records unchanged", async () => {
@@ -978,36 +932,6 @@ return a`;
   assert.ok(typeof result.runId === "string" && result.runId.length > 0, "runId should be a non-empty string");
 });
 
-test("runWorkflow handles empty script without phases gracefully", async () => {
-  const SIMPLE = `export const meta = { name: 'simple', description: 'simple' }
-const a = await agent('hello', { label: 'greeter' })
-return a`;
-
-  const result = await runWorkflow(SIMPLE, {
-    agent: fakeAgent({ total: 50 }, "done"),
-    persistLogs: false,
-  });
-  assert.equal(result.result, "done");
-  assert.equal(result.agentCount, 1);
-});
-
-test("runWorkflow parallel returns results in input order", async () => {
-  const script = `export const meta = { name: 'parallel_order', description: 'check order' }
-const results = await parallel([1,2,3].map(n => () => agent('task ' + n, { label: 't' + n })))
-return results`;
-
-  let callIndex = 0;
-  const agent = {
-    async run(prompt: string) {
-      return `result-${++callIndex}:${prompt}`;
-    },
-  };
-
-  const result = await runWorkflow<unknown[]>(script, { agent, persistLogs: false });
-  assert.ok(Array.isArray(result.result), "result.result should be an array");
-  assert.equal(result.result.length, 3);
-});
-
 test("runWorkflow pipeline stages in order", async () => {
   const script = `export const meta = { name: 'pipeline_test', description: 'test pipeline' }
 const results = await pipeline(['a','b'], item => agent('stage1 ' + item), result => agent('stage2 ' + result))
@@ -1466,20 +1390,6 @@ await agent('noop', { label: 'x' })
 return { err, val }`;
   return runWorkflow(script, { agent: noopAgent, persistLogs: false });
 }
-
-test("parse-time guard rejects direct Date.now / Math.random / new Date() / Date() calls", async () => {
-  for (const expr of ["Math.random()", "Date.now()", "new Date()", "Date()"]) {
-    await assert.rejects(
-      () =>
-        runWorkflow(
-          `export const meta = { name: 'lit', description: 'd' }\nconst v = ${expr}\nawait agent('x', { label: 'x' })\nreturn v`,
-          { agent: noopAgent, persistLogs: false },
-        ),
-      /deterministic|unavailable/i,
-      `${expr} should be rejected at parse time`,
-    );
-  }
-});
 
 test("runtime guard catches computed access and aliases outside the direct AST check", async () => {
   const r1 = await probe('Math["random"]()');

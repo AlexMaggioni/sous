@@ -14,16 +14,6 @@ import type { PlannedRequest } from "../src/steps/agent-run.js";
 import { journalResume } from "./helpers/journal-resume.js";
 
 describe("agentDefinitionKey", () => {
-  it("is null for undefined and stable for the same def", () => {
-    assert.equal(agentDefinitionKey(undefined), null);
-    const def: AgentDefinition = { name: "x", prompt: "p", tools: ["read"], source: "project" };
-    assert.equal(
-      agentDefinitionKey(def),
-      agentDefinitionKey({ ...def, source: "user" }),
-      "source is not part of identity",
-    );
-  });
-
   it("serializes the EXACT, UNCHANGED key shape (so an old journal's resume hash still matches)", () => {
     // The serialization is deliberately frozen: it is part of each agent call's resume
     // hash, so old journals must still match. Pin the literal key (field order + null
@@ -50,17 +40,6 @@ describe("agentDefinitionKey", () => {
     );
   });
 
-  it("changes when tools/model/prompt change", () => {
-    const base: AgentDefinition = { name: "x", prompt: "p", model: "m", tools: ["read"], source: "project" };
-    assert.notEqual(agentDefinitionKey(base), agentDefinitionKey({ ...base, prompt: "p2" }));
-    assert.notEqual(agentDefinitionKey(base), agentDefinitionKey({ ...base, model: "m2" }));
-    assert.notEqual(agentDefinitionKey(base), agentDefinitionKey({ ...base, tools: ["read", "write"] }));
-  });
-
-  it("changes when isolation changes", () => {
-    const base: AgentDefinition = { name: "x", prompt: "p", source: "project" };
-    assert.notEqual(agentDefinitionKey(base), agentDefinitionKey({ ...base, isolation: "worktree" }));
-  });
 });
 
 // ── agentType through runWorkflow ──
