@@ -62,7 +62,7 @@ describe("forget and prune on today's files", () => {
   it("forgetRun removes every file of the run but the home's project.json and the run's .lineage", () => {
     const { paths } = setup({});
     const record = plantTodayRun(paths);
-    forgetRun(paths, record);
+    assert.equal(forgetRun(paths, record), true);
     assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, lineage].sort());
   });
 
@@ -84,19 +84,20 @@ describe("forget and prune on today's files", () => {
     }
   });
 
-  it("with a lock held by a live process, forgetRun removes orc's files and the engine's files stay", () => {
+  it("with a lock held by a live process, forgetRun removes nothing and says so", () => {
     const { paths } = setup({});
     const record = plantTodayRun(paths, { liveLock: true });
-    forgetRun(paths, record);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...engineFiles, lock].sort());
+    assert.equal(forgetRun(paths, record), false);
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles, lock].sort());
   });
 
-  it("with a lock held by a live process, pruneRuns still prunes the finished run, and the engine's files stay", () => {
-    // The run's state says completed, so prune does not ask whether a worker holds it.
+  it("with a lock held by a live process, pruneRuns keeps the finished run whole", () => {
+    // The run's state says completed, so only the lock tells that a process holds it, such as a
+    // resume that has just started.
     const { paths } = setup({});
     const record = plantTodayRun(paths, { liveLock: true });
-    assert.deepEqual(pruneRuns(paths, 7, later), [TODAY_ID]);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...engineFiles, lock].sort());
+    assert.deepEqual(pruneRuns(paths, 7, later), []);
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles, lock].sort());
   });
 
   it("a .lineage left by an earlier forget stays, and forgetRun and pruneRuns remove the rest", () => {

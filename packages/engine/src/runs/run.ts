@@ -490,11 +490,13 @@ export function discardRun(paths: HomePaths, runId: string, options: { remove?: 
   return trees;
 }
 
-/** Delete a run's saved state, record, workflow snapshot, logs and open questions. Its worktrees stay. */
-export function forgetRun(paths: HomePaths, record: RunRecord): void {
-  removeEngineRun(paths, record.runId);
+/** Delete a run's saved state, record, workflow snapshot, logs and open questions. Its worktrees
+ *  stay. It returns false, and deletes nothing, when another process holds the run's lease. */
+export function forgetRun(paths: HomePaths, record: RunRecord): boolean {
+  if (!removeEngineRun(paths, record.runId)) return false;
   removeRunFiles(paths, record);
   removeRunQuestions(paths, record.runId);
+  return true;
 }
 
 /** A schedule waits for its last run, and prune keeps a run, while the run is unfinished. Here a
@@ -515,8 +517,7 @@ export function pruneRuns(paths: HomePaths, days: number, now = new Date()): str
   for (const run of listRuns(paths)) {
     const { record } = run;
     if (Date.parse(record.createdAt) > cutoff || workerRuns(run) || startedAndUnfinished(run)) continue;
-    forgetRun(paths, record);
-    removed.push(record.runId);
+    if (forgetRun(paths, record)) removed.push(record.runId);
   }
   return removed;
 }

@@ -152,13 +152,15 @@ export function readEventsAfter(paths: HomePaths, runId: string, seq: number, vi
 }
 
 /** Delete the engine's files for a run: its state, event log and lock. It takes the run's lease
- *  first, as the engine does, and returns false when another process holds it. */
+ *  first, as the engine does. It returns false, and deletes nothing, when another process holds
+ *  the lease. */
 export function removeEngineRun(paths: HomePaths, runId: string): boolean {
   const engine = enginePersistence(paths);
   const lease = engine.acquireRunLease(runId);
   if (!lease) return false;
   try {
-    return engine.delete(runId);
+    engine.delete(runId);
+    return true;
   } finally {
     engine.releaseRunLease(lease);
   }
