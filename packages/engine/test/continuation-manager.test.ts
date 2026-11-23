@@ -243,30 +243,6 @@ return { prefix, tail }`;
     }
   });
 
-  it("does not consume a candidate when execution admission is denied and preserves ancestry", async () => {
-    const test = fixture();
-    try {
-      const runner = new ContinuationRunner();
-      const manager = new WorkflowManager({ cwd: test.cwd, persistence: test.persistence, agent: runner });
-      await manager.runSync(script, undefined, { runId: "admission-source" });
-      runner.mode = "continue";
-      const callsBefore = runner.calls.length;
-      const started = manager.startInBackground(script, undefined, {
-        runId: "admission-target",
-        resumeFromRunId: "admission-source",
-        executionAdmission: Promise.resolve("denied"),
-      });
-      await assert.rejects(started.promise, (error: unknown) =>
-        error instanceof WorkflowError && error.code === WorkflowErrorCode.PERSISTENCE_ERROR);
-      assert.equal(runner.calls.length, callsBefore);
-      assert.deepEqual(runner.directives, []);
-      assert.equal(test.states.get("admission-target")?.fallbacks?.length ?? 0, 0);
-      assert.equal(test.states.get("admission-target")?.resumeSourceRunId, "admission-source");
-    } finally {
-      test.cleanup();
-    }
-  });
-
   it("runs the auth cold re-arm gate before same-ID candidate consumption", async () => {
     const test = fixture();
     try {

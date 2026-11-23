@@ -15,20 +15,20 @@ test("settled history yields to another owner's continuation even when both gene
     const initial = await first.runSync(`export const meta = { name: "owner-inspection", description: "same-run ownership" };
 const first = await checkpoint("First?");
 const second = await checkpoint("Second?");
-return [first, second];`, undefined, { requireAgentConfiguration: true });
+return [first, second];`);
     assert.equal(initial.status, "paused");
     const cached = first.getRun(initial.runId);
     assert.ok(cached, "the originating SDK retains its own settled history");
     assert.equal(first.getRun(initial.runId), cached);
 
-    const next = await second.continueRun(initial.runId, { checkpointReplies: { 0: true } });
+    const next = await second.resumeInBackground(initial.runId, { checkpointReplies: { 0: true } });
     assert.ok(next.accepted);
     await assert.rejects(next.promise);
     assert.equal(second.inspectRun(initial.runId)?.status, "paused");
     assert.equal(first.getRun(initial.runId), undefined, "an older cached pause does not represent the new owner");
     assert.deepEqual(first.inspectRun(initial.runId), second.inspectRun(initial.runId));
 
-    const last = await second.continueRun(initial.runId, { checkpointReplies: { 1: false } });
+    const last = await second.resumeInBackground(initial.runId, { checkpointReplies: { 1: false } });
     assert.ok(last.accepted);
     await last.promise;
     assert.equal(first.inspectRun(initial.runId)?.status, "completed");
@@ -48,8 +48,7 @@ test("another manager's whole stop supersedes a cached pause in the same generat
   const first = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
   const second = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
   try {
-    const paused = await first.runSync('export const meta = { name: "owner-stop", description: "same-generation stop" }; return await checkpoint("Continue?");',
-      undefined, { requireAgentConfiguration: true });
+    const paused = await first.runSync('export const meta = { name: "owner-stop", description: "same-generation stop" }; return await checkpoint("Continue?");');
     assert.equal(paused.status, "paused");
     const originalGeneration = first.getRun(paused.runId)?.continuation?.generation;
     assert.equal(second.stopPersistedRun(paused.runId).outcome, "stopped");

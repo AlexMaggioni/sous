@@ -184,27 +184,11 @@ uncertain, ambiguous, or mismatched call runs live. Same-ID `manager.resume(runI
 manual `resumeJournal` remain permanently legacy positional paths. A same-run continuation given
 `exec.script` that differs from the persisted text runs that revision through the identity matcher
 against the run's own terminal state (`continuation.scriptRevised`, `scriptRevisions`); a revision
-must parse and may declare only backends the admission approved.
+must parse.
 
-Before live dispatch, the host atomically persists format-3 admission:
-`{ format:3, strict:true, routingSnapshot:{ modelTiers:null|{tiers}, agentDefinitions, mainModel? }, defaultModel?, scriptBackends?, routingHash, recordedAt }`.
-The snapshot captures tier configuration and named-agent definitions, including their absence,
-so cold continuation does not reread changed routing files. The immutable script supplies phase
-and workflow models. `routingHash` binds the routing snapshot, optional host default, and approved
-script backends. Continuation validates the format and integrity and reuses these inputs without
-new routing discovery or provider selection.
-
-Every actual call must resolve a nonblank effective model before identity hashing or dispatch.
-Mock validation observes one path; additional configured live calls are valid, including nested
-and data-dependent calls. A missing live route fails before that call reaches the runner. There is
-no positional configuration map or uncovered-occurrence marker. Effective model, mode, and config
-options enter call identity and durable call records (`modelRequested`, `modeRequested`, and
-`configOptionsRequested`). Old or invalid admissions remain inspectable where supported but cannot
-execute through MCP; start a fresh Run. Supported SDK journal eras retain their separate contracts.
-
-MCP enables `requireAgentConfiguration` for actual-call checks. The optional
-`onMissingAgentConfiguration({ label, phase? })` callback supplies diagnostics only and cannot route
-a call. SDK promise-based APIs and `executionAdmission` remain independently supported.
+Effective model, mode, and config options enter call identity and durable call records
+(`modelRequested`, `modeRequested`, and `configOptionsRequested`). Supported SDK journal eras retain
+their separate contracts.
 
 Every execution/reuse path checks explicit checkpoint provenance. Checkpoint input fingerprints
 use format 2, binding explicit-answer semantics and `timeoutMs`; prompt, kind, and choices remain

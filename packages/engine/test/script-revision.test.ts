@@ -54,7 +54,7 @@ test(
     const agent = perCallRunner();
     const manager = new WorkflowManager({ cwd, persistenceRoot: root, agent: agent.runner });
     manager.on("error", () => {});
-    const { runId, promise } = manager.startInBackground(threeCalls("second"), undefined, { requireAgentConfiguration: true });
+    const { runId, promise } = manager.startInBackground(threeCalls("second"));
     await waitUntil(() => agent.calls.length === 1, "a starts");
     agent.calls[0].resolve("a-done");
     await waitUntil(() => agent.calls.length === 2, "b starts");
@@ -65,12 +65,12 @@ test(
     assert.equal(manager.getRun(runId)?.status, "paused");
 
     const revised = threeCalls("second, revised");
-    const started = await manager.continueRun(runId, { script: revised });
+    const started = await manager.resumeInBackground(runId, { script: revised });
     assert.equal(started.accepted, true);
     if (!started.accepted) return;
-    assert.equal(started.continuation.scriptRevised, true);
-    assert.equal(started.continuation.generation, 1);
     const persistedAfterAdmission = manager.getPersistence().load(runId);
+    assert.equal(persistedAfterAdmission?.continuation?.scriptRevised, true);
+    assert.equal(persistedAfterAdmission?.continuation?.generation, 1);
     assert.equal(persistedAfterAdmission?.script, revised, "the revision is the text that executes");
     assert.equal(persistedAfterAdmission?.scriptRevisions?.length, 1);
     assert.equal(persistedAfterAdmission?.scriptRevisions?.[0]?.generation, 1);
@@ -106,7 +106,7 @@ test(
 const a = await agent('first', { label: 'a' })
 const b = await agent('second', { label: 'b' })
 return { a, b }`;
-    const { runId, promise } = manager.startInBackground(original, undefined, { requireAgentConfiguration: true });
+    const { runId, promise } = manager.startInBackground(original);
     await waitUntil(() => agent.calls.length === 1, "a starts");
     agent.calls[0].resolve("a-done");
     await waitUntil(() => agent.calls.length === 2, "b starts");
@@ -120,7 +120,7 @@ const a = await agent('first', { label: 'a' })
 const x = await agent('extra', { label: 'x' })
 const b = await agent('second', { label: 'b' })
 return { a, x, b }`;
-    const started = await manager.continueRun(runId, { script: revised });
+    const started = await manager.resumeInBackground(runId, { script: revised });
     assert.equal(started.accepted, true);
     if (!started.accepted) return;
     await waitUntil(() => agent.calls.length === 3, "the inserted call runs live");
@@ -141,12 +141,12 @@ return { a, x, b }`;
 );
 
 test(
-  "a revision that does not parse is refused without touching the run, and the same text is not a revision",
+  "a revision that does not parse is refused and keeps the persisted script, and the same text is not a revision",
   withDirs(async ({ cwd, root }) => {
     const agent = perCallRunner();
     const manager = new WorkflowManager({ cwd, persistenceRoot: root, agent: agent.runner });
     manager.on("error", () => {});
-    const { runId, promise } = manager.startInBackground(threeCalls("second"), undefined, { requireAgentConfiguration: true });
+    const { runId, promise } = manager.startInBackground(threeCalls("second"));
     await waitUntil(() => agent.calls.length === 1, "a starts");
     agent.calls[0].resolve("a-done");
     await waitUntil(() => agent.calls.length === 2, "b starts");
@@ -155,16 +155,17 @@ test(
     await promise.catch(() => {});
     const before = manager.getPersistence().load(runId);
 
-    const invalid = await manager.continueRun(runId, { script: "not a workflow script" });
-    assert.deepEqual(invalid, { accepted: false, reason: "script-invalid" });
-    assert.deepEqual(manager.getPersistence().load(runId), before, "a refused revision changes nothing");
+    const invalid = await manager.resumeInBackground(runId, { script: "not a workflow script" });
+    assert.deepEqual(invalid, { accepted: false });
+    assert.equal(manager.getPersistence().load(runId)?.script, before!.script, "a refused revision keeps the persisted script");
     assert.equal(manager.getPersistence().inspectRunLease?.(runId), null, "the lease is released");
 
-    const same = await manager.continueRun(runId, { script: before!.script });
+    const same = await manager.resumeInBackground(runId, { script: before!.script });
     assert.equal(same.accepted, true);
     if (!same.accepted) return;
-    assert.equal(same.continuation.scriptRevised, undefined, "identical text continues the persisted script");
-    assert.equal(same.continuation.replayedPrefix, 1, "the journaled prefix replays in place");
+    const persistedSame = manager.getPersistence().load(runId);
+    assert.equal(persistedSame?.continuation?.scriptRevised, undefined, "identical text continues the persisted script");
+    assert.equal(persistedSame?.continuation?.replayedPrefix, 1, "the journaled prefix replays in place");
     assert.equal(manager.getPersistence().load(runId)?.scriptRevisions, undefined);
     await waitUntil(() => agent.calls.length === 3, "b runs again");
     agent.calls[2].resolve("b-done");
@@ -187,15 +188,13 @@ const b = await agent('${second}', { label: 'b' })
 return { a, b }`;
     const { runId, promise } = manager.startInBackground(
       withBackends('browser: { command: "browser-acp", args: ["--headless"] }', "second"),
-      undefined,
-      { requireAgentConfiguration: true },
     );
     await waitUntil(() => agent.calls.length === 1, "a starts");
     assert.equal(manager.stop(runId), true);
     agent.calls[0].resolve("lost");
     await promise.catch(() => {});
 
-    const kept = await manager.continueRun(runId, {
+    const kept = await manager.resumeInBackground(runId, {
       script: withBackends('browser: { command: "browser-acp", args: ["--visible"] }, other: { command: "other-acp" }', "second, revised"),
     });
     assert.equal(kept.accepted, true);
@@ -210,7 +209,7 @@ return { a, b }`;
 );
 
 test(
-  "the SDK resume() path continues a revision positionally when the run has no routing admission",
+  "the SDK resume() path continues a revision positionally",
   withDirs(async ({ cwd, root }) => {
     const agent = perCallRunner();
     const manager = new WorkflowManager({ cwd, persistenceRoot: root, agent: agent.runner });

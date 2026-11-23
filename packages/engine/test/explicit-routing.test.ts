@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
-import { WorkflowManager } from "../src/workflow-manager.js";
 import { runWorkflow } from "../src/workflow.js";
 
 test("parallel completion order and dynamic branches preserve their actual routes", async () => {
@@ -27,7 +26,7 @@ await parallel([
 const choice = await agent("choose", { model: "codex" });
 if (choice === "choose") return agent("live-branch", { model: "pi/provider/model" });
 return agent("mock-branch", { model: "opencode/provider/model" });`, {
-    agent, requireAgentConfiguration: true, concurrency: 2, persistLogs: false,
+    agent, concurrency: 2, persistLogs: false,
   });
   assert.deepEqual(calls, [
     { prompt: "slow", model: "claude" }, { prompt: "fast", model: "codex" },
@@ -36,9 +35,15 @@ return agent("mock-branch", { model: "opencode/provider/model" });`, {
   ]);
 });
 
-test("strict routing resolves definitions, tiers, phase defaults, and backend-only routes", async () => {
+test("routing resolves definitions, tiers, phase defaults, and backend-only routes", async () => {
   const routes: Array<string | undefined> = [];
-  await runWorkflow(`export const meta = { name: "route-sources", description: "Effective route sources", model: "codex", phases: [{ title: "General" }, { title: "Review", model: "claude" }] };
+  const previousHome = process.env.HOME;
+  const home = mkdtempSync(join(tmpdir(), "explicit-routing-home-"));
+  mkdirSync(join(home, ".agentprism", "workflows"), { recursive: true });
+  writeFileSync(join(home, ".agentprism", "workflows", "model-tiers.json"), JSON.stringify({ tiers: { small: "pi/provider/small" } }));
+  process.env.HOME = home;
+  try {
+    await runWorkflow(`export const meta = { name: "route-sources", description: "Effective route sources", model: "codex", phases: [{ title: "General" }, { title: "Review", model: "claude" }] };
 await agent("workflow default");
 await agent("definition", { agentType: "reviewer" });
 await agent("tier", { tier: "small" });
@@ -46,42 +51,21 @@ await agent("tier fallback", { tier: "big" });
 phase("Review");
 await agent("phase");
 return agent("explicit", { model: "opencode" });`, {
-    agent: { async run(_prompt, options) { routes.push(options.model); return "ok"; } },
-    requireAgentConfiguration: true, persistLogs: false,
-    routingSnapshot: {
-      modelTiers: { tiers: { small: "pi/provider/small" } }, mainModel: "pi/provider/main",
-      agentDefinitions: [{ name: "reviewer", prompt: "Review", source: "project", model: "claude/defined" }],
-    },
-  });
+      agent: { async run(_prompt, options) { routes.push(options.model); return "ok"; } },
+      persistLogs: false, mainModel: "pi/provider/main",
+      agentRegistry: new Map([["reviewer", { name: "reviewer", prompt: "Review", source: "project", model: "claude/defined" }]]),
+    });
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    rmSync(home, { recursive: true, force: true });
+  }
   assert.deepEqual(routes, ["codex", "claude/defined", "pi/provider/small", "pi/provider/main", "claude", "opencode"]);
-});
-
-test("an unseen missing route fails before dispatch and includes optional host discovery", async () => {
-  const calls: string[] = [];
-  const contexts: unknown[] = [];
-  await assert.rejects(runWorkflow(`export const meta = { name: "missing-live", description: "Unseen missing route" };
-const choice = await agent("choose", { model: "codex" });
-if (choice === "live") return agent("missing", { label: "repair-me", phase: "Review" });
-return "unused";`, {
-    agent: { async run(prompt) { calls.push(prompt); return "live"; } },
-    requireAgentConfiguration: true, persistLogs: false,
-    onMissingAgentConfiguration: async (context) => { contexts.push(context); return "available backend: codex"; },
-  }), /repair-me.*phase "Review"[\s\S]*available backend: codex/);
-  assert.deepEqual(calls, ["choose"]);
-  assert.deepEqual(contexts, [{ label: "repair-me", phase: "Review" }]);
-});
-
-test("diagnostic failures cannot mask missing routing or authorize dispatch", async () => {
-  await assert.rejects(runWorkflow(`export const meta = { name: "diagnostic-failure", description: "Diagnostic failure" }; return agent("missing");`, {
-    agent: { async run() { assert.fail("missing route must never dispatch"); } },
-    requireAgentConfiguration: true, persistLogs: false,
-    onMissingAgentConfiguration: async () => { throw new Error("offline"); },
-  }), /has no configured model route/);
 });
 
 test("aggregator selectors fail before dispatch", async () => {
   await assert.rejects(runWorkflow(`export const meta = { name: "selector", description: "Discovery is explicit" }; return agent("work", { model: "opencode/openrouter/*" });`, {
-    agent: { async run() { assert.fail("selectors must never dispatch"); } }, requireAgentConfiguration: true, persistLogs: false,
+    agent: { async run() { assert.fail("selectors must never dispatch"); } }, persistLogs: false,
   }), /discovery selector/);
 });
 
@@ -94,40 +78,8 @@ configOptions.reasoning_effort = "low";
 return await pending;`, {
     agent: { async run(_prompt, options) { assert.equal("configOptions" in options, false); return "ok"; } },
     onAgentStart: (event) => seen.push(event.configOptions),
-    requireAgentConfiguration: true, persistLogs: false,
+    persistLogs: false,
   });
   assert.deepEqual(seen, [{ reasoning_effort: "high" }]);
   assert.deepEqual(result.calls[0].configOptionsRequested, { reasoning_effort: "high" });
-});
-
-test("cold continuation uses admitted definitions despite configuration file changes", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "explicit-routing-"));
-  const agentsDir = join(cwd, "agents");
-  const persistenceRoot = join(cwd, "store");
-  mkdirSync(agentsDir);
-  const definition = join(agentsDir, "reviewer.md");
-  const models: Array<string | undefined> = [];
-  let fail = true;
-  const agent: AgentRunner = { async run(prompt, options) {
-    models.push(options.model);
-    if (prompt === "second" && fail) { fail = false; throw new Error("temporary failure"); }
-    return "done";
-  } };
-  try {
-    writeFileSync(definition, "---\nname: reviewer\nmodel: claude/original\n---\nOriginal instructions");
-    const first = new WorkflowManager({ cwd, persistenceRoot, agentsDir, agent });
-    const run = await first.runSync(`export const meta = { name: "definition-resume", description: "Durable definitions" };
-await agent("first", { agentType: "reviewer" });
-const result = await agent("second", { agentType: "reviewer" });
-if (result === null) throw new Error("second call is required");
-return result;`, undefined, { requireAgentConfiguration: true });
-    assert.equal(run.status, "failed");
-    writeFileSync(definition, "---\nname: reviewer\nmodel: codex/changed\n---\nChanged instructions");
-    const cold = new WorkflowManager({ cwd, persistenceRoot, agentsDir, agent });
-    const resumed = await cold.continueRun(run.runId);
-    assert.ok(resumed.accepted);
-    assert.equal((await resumed.promise).status, "completed");
-    assert.deepEqual(models, ["claude/original", "claude/original", "claude/original"]);
-    assert.equal(cold.getPersistence().load(run.runId)?.admission?.routingSnapshot.agentDefinitions[0].model, "claude/original");
-  } finally { rmSync(cwd, { recursive: true, force: true }); }
 });

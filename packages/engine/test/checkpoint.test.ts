@@ -257,9 +257,7 @@ await agent("before", { model: "claude/first" })
 await checkpoint("Continue?")
 return await agent("after", { model: "codex/second" })`;
   const first = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
-  const paused = await first.runSync(script, undefined, {
-    requireAgentConfiguration: true,
-  });
+  const paused = await first.runSync(script);
   assert.equal(paused.status, "paused");
   assert.deepEqual(models, ["claude/first"]);
   const cold = new WorkflowManager({ cwd, persistenceRoot, agent: runner });

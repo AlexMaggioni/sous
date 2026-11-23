@@ -24,7 +24,6 @@ import type {
   AgentSessionRecord,
   JournalEntry,
   WorkflowCallRecord,
-  WorkflowBackendConfig,
   WorkflowCheckpointTaken,
   WorkflowContinuationResult,
   WorkflowReplayEligibility,
@@ -34,7 +33,6 @@ import type {
 } from "../../workflow-result.js";
 import type { AuthErrorContext, CheckpointContext } from "../../errors.js";
 import { WorkflowError, WorkflowErrorCode } from "../../errors.js";
-import type { WorkflowRoutingSnapshot } from "../../workflow-routing.js";
 import type { ReplayReport } from "../../isolation.js";
 import type { RunEnvironmentIdentity } from "../../run-environment.js";
 import { withRunEventsUsingFs, type RunEventPersistence } from "./run-event-persistence.js";
@@ -77,18 +75,6 @@ export interface PersistedResumeFormat {
    *  terminal run, or a non-git run without meaningful terminal provenance. Presence,
    *  absence, and value are diagnostic only and never affect journal replay. */
   terminalEnvironment?: RunEnvironmentIdentity;
-}
-
-/** Immutable authored-routing context captured before the first live execution. */
-export interface PersistedRunAdmission {
-  format: 3;
-  strict: true;
-  routingSnapshot: WorkflowRoutingSnapshot;
-  defaultModel?: string;
-  /** Backends an older run approved. No run writes it now, but its hash still covers it. */
-  scriptBackends?: Record<string, WorkflowBackendConfig>;
-  routingHash: string;
-  recordedAt: string;
 }
 
 export interface PersistedResumeCandidate {
@@ -182,8 +168,6 @@ export interface PersistedRunState {
     checkpointInputsFormat?: number;
   };
   environment?: RunEnvironmentIdentity;
-  /** Required by same-ID continuation; deliberately absent on pre-contract runs. */
-  admission?: PersistedRunAdmission;
   continuation?: WorkflowContinuationResult;
   resume?: PersistedResumeFormat;
   /** Immediate run named by resumeFromRunId, written once by the engine at admission. */

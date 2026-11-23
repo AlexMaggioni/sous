@@ -150,7 +150,6 @@ return agent('two', { label: 'two', model: 'codex/gpt-5' })`,
           return "ok";
         },
       },
-      requireAgentConfiguration: true,
       persistLogs: false,
     },
   );
@@ -162,29 +161,6 @@ return agent('two', { label: 'two', model: 'codex/gpt-5' })`,
   ]);
   assert.deepEqual(result.calls.map((call) => call.modelRequested), ["claude/opus", "codex/gpt-5"]);
   assert.deepEqual(result.calls.map((call) => call.configOptionsRequested), [{ effort: "high", fast: false }, undefined]);
-});
-
-test("strict routing rejects a missing model before dispatch", async () => {
-  let calls = 0;
-  await assert.rejects(
-    () => runWorkflow(
-      `export const meta = { name: 'strict_host_config', description: 'strict host configuration' }
-return agent('uncovered', { label: 'uncovered' })`,
-      {
-        agent: { async run() { calls++; return "must not run"; } },
-        requireAgentConfiguration: true,
-        persistLogs: false,
-      },
-    ),
-    (error: unknown) => {
-      assert.ok(error instanceof WorkflowError);
-      assert.equal(error.code, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR);
-      assert.match(error.message, /uncovered/);
-      assert.match(error.message, /has no configured model route/);
-      return true;
-    },
-  );
-  assert.equal(calls, 0);
 });
 
 test('configOptions "model" is rejected before the runner can open a session', async () => {
@@ -681,7 +657,6 @@ test("actual effective configuration controls replay identity and unchanged-pref
   const journal: JournalEntry[] = [];
   const baseline = await runWorkflow(configuredResumeScript(), {
     agent: baselineAgent.runner,
-    requireAgentConfiguration: true,
     persistLogs: false,
     onAgentJournal: (entry) => journal.push(entry),
   });
@@ -703,7 +678,6 @@ test("actual effective configuration controls replay identity and unchanged-pref
     const replayAgent = markedAgent(`unexpected-${label}`);
     const replay = await runWorkflow(configuredResumeScript(selectedConfiguration), {
       agent: replayAgent.runner,
-      requireAgentConfiguration: true,
       persistLogs: false,
       resumeJournal,
     });
@@ -760,7 +734,6 @@ test("actual effective configuration controls replay identity and unchanged-pref
     const liveAgent = markedAgent(`live-${label}`);
     const changed = await runWorkflow(configuredResumeScript(selectedConfiguration), {
       agent: liveAgent.runner,
-      requireAgentConfiguration: true,
       persistLogs: false,
       resumeJournal,
     });

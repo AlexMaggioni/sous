@@ -16,7 +16,6 @@ import type {
   AgentSessionRecord,
   AgentSessionRef,
   JournalEntry,
-  WorkflowBackendConfig,
   WorkflowCallRecord,
   WorkflowCheckpointTaken,
   WorkflowResumeCallDecision,
@@ -51,7 +50,6 @@ import {
 import { createWorkflowLogger } from "./runs/persistence/logger.js";
 import { parseModelRoutingFromMeta, resolveModelForPhase } from "./model-routing.js";
 import { loadModelTierConfig, resolveTierModel } from "./model-tier-config.js";
-import type { WorkflowRoutingSnapshot } from "./workflow-routing.js";
 import { projectRecordedError } from "./recorded-error.js";
 import { registerRunTripwire } from "./rejection-tripwire.js";
 import type { PreparedContinuation, PreparedResume } from "./resume.js";
@@ -316,13 +314,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
     options: CheckpointOptions,
     context?: CheckpointCallContext,
   ) => Promise<unknown>;
-  /** Fail before dispatch when an actual call has no effective authored model route. */
-  requireAgentConfiguration?: boolean;
-  /** Optional host diagnostic enrichment; cannot select a route or authorize dispatch. */
-  onMissingAgentConfiguration?: (context: { label: string; phase?: string }) => string | Promise<string>;
-
-  /** Immutable named-agent and tier inputs captured for strict durable execution. */
-  routingSnapshot?: WorkflowRoutingSnapshot;
   /** Internal same-run continuation latch. Replays every exact index/hash journal hit. */
   sameRunContinuation?: boolean;
   /** Internal cumulative usage seed restored before a same-run continuation executes. */
@@ -656,7 +647,7 @@ export async function runWorkflow<T = unknown>(
   const routingConfig = parseModelRoutingFromMeta(meta.phases, meta.model);
   // Snapshot tier routing once per run. A missing/unparseable file preserves the
   // historical runner-default behavior unless a tier falls through to mainModel.
-  const modelTierConfig = options.routingSnapshot ? options.routingSnapshot.modelTiers : loadModelTierConfig();
+  const modelTierConfig = loadModelTierConfig();
   const effectiveLimits = resolveWorkflowRunLimits(options);
   const {
     maxAgents,
@@ -673,7 +664,7 @@ export async function runWorkflow<T = unknown>(
   // observe a mid-run edit (determinism); a later resume re-reads it. The agents
   // directory is parameterized via options.agentsDir (defaults to AGENTS_DIR).
   const agentRegistry =
-    (options.routingSnapshot ? new Map(options.routingSnapshot.agentDefinitions.map((definition) => [definition.name, definition])) : options.agentRegistry) ??
+    options.agentRegistry ??
     loadAgentRegistry(
       baseCwd,
       agentDirsFromOption(options.agentsDir),
@@ -1170,31 +1161,8 @@ export async function runWorkflow<T = unknown>(
     const phaseModel = agentOptions.tier ? undefined : resolveModelForPhase(assignedPhase, routingConfig);
     const authoredModel =
       explicitModel ??
-      (agentOptions.tier ? tierModel || (options.routingSnapshot ? options.routingSnapshot.mainModel : options.mainModel) : phaseModel ?? options.defaultModel);
+      (agentOptions.tier ? tierModel || options.mainModel : phaseModel ?? options.defaultModel);
     const modelSpec = authoredModel;
-    if (options.requireAgentConfiguration && (typeof modelSpec !== "string" || modelSpec.trim() === "")) {
-      const failure = new WorkflowError(
-        `agent ${JSON.stringify(pendingLabel)}${assignedPhase === undefined ? "" : ` in phase ${JSON.stringify(assignedPhase)}`} has no configured model route. ` +
-          'Set agent(..., { model: "codex" }) or configure a model in its agent definition, resolved tier, phase, or workflow meta.model. ' +
-          'A backend name alone intentionally uses its configured default model; mode and configOptions are optional. Use workflow action:"config" to discover available backends and exact model options.',
-        WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-        { recoverable: false, agentLabel: pendingLabel, details: {
-          missingAgentConfiguration: { label: pendingLabel, ...(assignedPhase === undefined ? {} : { phase: assignedPhase }) },
-        } },
-      );
-      if (!options.onMissingAgentConfiguration) throw failure;
-      return (async () => {
-        let diagnostic: string | undefined;
-        try {
-          diagnostic = await options.onMissingAgentConfiguration!({ label: pendingLabel, ...(assignedPhase === undefined ? {} : { phase: assignedPhase }) });
-        } catch { /* Discovery failure never masks the actionable configuration error. */ }
-        throwIfAborted();
-        if (!diagnostic) throw failure;
-        throw new WorkflowError(`${failure.message}\n${diagnostic}`, failure.code, {
-          recoverable: false, agentLabel: pendingLabel, details: failure.details,
-        });
-      })();
-    }
     if (modelSpec?.endsWith("/*")) {
       throw new WorkflowError(
         `agent ${JSON.stringify(pendingLabel)} model ${JSON.stringify(modelSpec)} is a discovery selector. Expand that provider with workflow action:"config" and modelFilter, then use an exact model route.`,
@@ -3204,20 +3172,6 @@ function captureCallPath(vmFilename: string, preludeLines: number): string | und
 function hashCanonicalStrictJson(value: unknown): string | undefined {
   const canonical = canonicalStrictJson(value);
   return canonical === undefined ? undefined : createHash("sha256").update(canonical).digest("hex");
-}
-
-/** Stable binding for immutable routing inputs admitted before live execution. */
-export function hashWorkflowAdmissionRouting(input: {
-  format: 3;
-  routingSnapshot: WorkflowRoutingSnapshot;
-  defaultModel?: string;
-  scriptBackends?: Record<string, WorkflowBackendConfig>;
-}): string {
-  const hash = hashCanonicalStrictJson(input);
-  if (hash === undefined) {
-    throw new WorkflowError("workflow admission routing must be strict JSON", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, { recoverable: false });
-  }
-  return hash;
 }
 
 function copyTokenUsageBaseline(

@@ -19,7 +19,7 @@ function fixture(runner: AgentRunner) {
   };
 }
 
-test("strict continuation keeps one run id, immutable inputs, admitted config, and cumulative usage", async () => {
+test("continuation keeps one run id, immutable inputs, config, and cumulative usage", async () => {
   let betaFails = true;
   const prompts: string[] = [];
   const runner: AgentRunner = {
@@ -47,18 +47,14 @@ if (beta === null) throw new Error("beta is required");
 return { alpha, beta, marker: args.marker };`;
     const first = await testRun.manager.runSync(script, { marker: "original" }, {
       runId: "same-run-usage",
-      requireAgentConfiguration: true,
     });
     assert.equal(first.status, "failed");
     assert.equal(first.tokenUsage?.total, 13);
     const beforeEvents = testRun.manager.getPersistence().readEvents(first.runId, { limit: 1_000 });
 
-    const started = await testRun.manager.continueRun(first.runId);
+    const started = await testRun.manager.resumeInBackground(first.runId);
     assert.equal(started.accepted, true);
-    if (!started.accepted) assert.fail(`continuation refused: ${started.reason}`);
-    assert.equal(started.runId, first.runId);
-    assert.equal(started.continuation.generation, 1);
-    assert.equal(started.continuation.replayedPrefix, 1);
+    if (!started.accepted) assert.fail("continuation refused");
     const completed = await started.promise;
 
     assert.equal(completed.runId, first.runId);
@@ -80,35 +76,14 @@ return { alpha, beta, marker: args.marker };`;
     assert.equal(continuationEvents.events[0]?.event.type, "resumed");
 
     const persisted = testRun.manager.getPersistence().load(first.runId);
-    assert.equal(persisted?.admission?.format, 3);
+    assert.equal(persisted?.continuation?.generation, 1);
+    assert.equal(persisted?.continuation?.replayedPrefix, 1);
     assert.deepEqual(persisted?.calls?.map((call) => call.modelRequested), ["claude/opus", "codex/gpt"]);
     assert.deepEqual(persisted?.args, { marker: "original" });
     assert.equal(persisted?.tokenUsage?.total, 20);
   } finally {
     testRun.cleanup();
   }
-});
-
-test("additional configured calls run and old positional admissions are inspectable but cannot continue", async () => {
-  let calls = 0;
-  const testRun = fixture({ async run() { calls++; return "configured"; } });
-  try {
-    const script = `export const meta = { name: "dynamic", description: "dynamic calls", model: "codex" };
-for (let index = 0; index < args.count; index++) await agent(String(index), { label: String(index) });
-throw new Error("inspect and retry");`;
-    const result = await testRun.manager.runSync(script, { count: 3 }, { requireAgentConfiguration: true });
-    assert.equal(result.status, "failed");
-    assert.equal(calls, 3);
-    const persistence = testRun.manager.getPersistence();
-    const persisted = persistence.load(result.runId)!;
-    persisted.admission = { format: 2, strict: true, agentConfigurations: { 0: { model: "claude" } }, selectionHash: "0".repeat(64), source: "mcp-setup", recordedAt: new Date().toISOString() } as never;
-    persistence.save(persisted);
-    assert.equal(testRun.manager.inspectRun(result.runId)?.status, "failed");
-    assert.deepEqual(await testRun.manager.continueRun(result.runId), { accepted: false, reason: "admission-invalid" });
-    assert.deepEqual(await testRun.manager.resumeInBackground(result.runId), { accepted: false });
-    await assert.rejects(testRun.manager.runSync(script, { count: 3 }, { resumeFromRunId: result.runId }), /incompatible routing admission/);
-    assert.equal(calls, 3);
-  } finally { testRun.cleanup(); }
 });
 
 test("the first leased checkpoint answer wins; repeats are idempotent and conflicts stay ignored", async () => {
@@ -118,36 +93,23 @@ test("the first leased checkpoint answer wins; repeats are idempotent and confli
 return await checkpoint("ship?", { kind: "select", choices: ["ship", "hold"], });`;
     const paused = await testRun.manager.runSync(script, undefined, {
       runId: "checkpoint-race",
-      requireAgentConfiguration: true,
     });
     assert.equal(paused.status, "paused");
 
     const [first, conflicting] = await Promise.all([
-      testRun.manager.continueRun(paused.runId, { checkpointReplies: { 0: "ship" } }),
-      testRun.manager.continueRun(paused.runId, { checkpointReplies: { 0: "hold" } }),
+      testRun.manager.resumeInBackground(paused.runId, { checkpointReplies: { 0: "ship" } }),
+      testRun.manager.resumeInBackground(paused.runId, { checkpointReplies: { 0: "hold" } }),
     ]);
     assert.equal(first.accepted, true);
-    if (!first.accepted) assert.fail(`first answer refused: ${first.reason}`);
+    if (!first.accepted) assert.fail("first answer refused");
     assert.equal(conflicting.accepted, false);
-    assert.deepEqual(conflicting.resolvedCheckpoints, [{
-      callIndex: 0,
-      outcome: "different",
-      decision: "ship",
-      ignored: "hold",
-    }]);
     const completed = await first.promise;
     assert.equal(completed.result, "ship");
 
-    const repeated = await testRun.manager.continueRun(paused.runId, {
+    const repeated = await testRun.manager.resumeInBackground(paused.runId, {
       checkpointReplies: { 0: "ship" },
     });
     assert.equal(repeated.accepted, false);
-    assert.equal(repeated.reason, "terminal");
-    assert.deepEqual(repeated.resolvedCheckpoints, [{
-      callIndex: 0,
-      outcome: "same",
-      decision: "ship",
-    }]);
 
     const persisted = testRun.manager.getPersistence().load(paused.runId);
     assert.equal(persisted?.journal?.find((entry) => entry.index === 0)?.result, "ship");
@@ -163,23 +125,19 @@ test("a mismatched checkpoint batch never reports or persists a provisional answ
 return await checkpoint("ship?", { });`;
     const paused = await testRun.manager.runSync(script, undefined, {
       runId: "checkpoint-batch",
-      requireAgentConfiguration: true,
     });
     assert.equal(paused.status, "paused");
 
-    const refused = await testRun.manager.continueRun(paused.runId, {
+    const refused = await testRun.manager.resumeInBackground(paused.runId, {
       checkpointReplies: { 0: true, 1: false },
     });
-    assert.deepEqual(refused, {
-      accepted: false,
-      reason: "checkpoint-mismatch",
-    });
+    assert.deepEqual(refused, { accepted: false });
     assert.equal(
       testRun.manager.getPersistence().load(paused.runId)?.journal?.some((entry) => entry.index === 0),
       false,
     );
 
-    const continued = await testRun.manager.continueRun(paused.runId, {
+    const continued = await testRun.manager.resumeInBackground(paused.runId, {
       checkpointReplies: { 0: true },
     });
     assert.equal(continued.accepted, true);
@@ -198,48 +156,34 @@ const second = await checkpoint("second?", { kind: "confirm" });
 return { first, second };`;
     const paused = await testRun.manager.runSync(script, undefined, {
       runId: "two-gates",
-      requireAgentConfiguration: true,
     });
     assert.equal(paused.status, "paused");
     assert.equal(paused.checkpointContext?.callIndex, 0);
 
-    const answered = await testRun.manager.continueRun("two-gates", {
+    const answered = await testRun.manager.resumeInBackground("two-gates", {
       checkpointReplies: { 0: false },
     });
     assert.equal(answered.accepted, true);
-    if (!answered.accepted) assert.fail(answered.reason);
+    if (!answered.accepted) assert.fail("answer refused");
     await answered.promise.catch(() => undefined);
     const pausedAgain = testRun.manager.getPersistence().load("two-gates");
     assert.equal(pausedAgain?.pauseReason, "checkpoint_required");
     assert.equal(pausedAgain?.checkpointContext?.callIndex, 1);
-    const before = testRun.manager.getPersistence().readEvents("two-gates", { limit: 1_000 });
 
-    // The idempotent repeat is reported, but it is not an answer for checkpoint 1: the run must
-    // stay paused rather than resolve the second gate to its authored default.
-    const repeated = await testRun.manager.continueRun("two-gates", { checkpointReplies: { 0: false } });
-    assert.deepEqual(repeated, {
-      accepted: false,
-      reason: "checkpoint-required",
-      resolvedCheckpoints: [{ callIndex: 0, outcome: "same", decision: false }],
-    });
-    const after = testRun.manager.getPersistence().readEvents("two-gates", {
-      after: before.endCursor,
-      limit: 1_000,
-      streamId: before.streamId,
-    });
-    assert.deepEqual(after.events.map((record) => record.event.type), []);
+    // A repeat of answer 0 is not an answer for checkpoint 1. The run must stay paused rather
+    // than resolve the second gate to its authored default.
+    const repeated = await testRun.manager.resumeInBackground("two-gates", { checkpointReplies: { 0: false } });
+    if (!repeated.accepted) assert.fail("the repeat should re-pause the run");
+    await assert.rejects(repeated.promise, /checkpoint "second\?" awaits a human decision/);
     assert.equal(testRun.manager.getPersistence().load("two-gates")?.status, "paused");
 
-    const conflicting = await testRun.manager.continueRun("two-gates", { checkpointReplies: { 0: true } });
-    assert.deepEqual(conflicting, {
-      accepted: false,
-      reason: "checkpoint-required",
-      resolvedCheckpoints: [{ callIndex: 0, outcome: "different", decision: false, ignored: true }],
-    });
+    const conflicting = await testRun.manager.resumeInBackground("two-gates", { checkpointReplies: { 0: true } });
+    if (!conflicting.accepted) assert.fail("the conflict should re-pause the run");
+    await assert.rejects(conflicting.promise, /checkpoint "second\?" awaits a human decision/);
 
-    const finished = await testRun.manager.continueRun("two-gates", { checkpointReplies: { 0: false, 1: false } });
+    const finished = await testRun.manager.resumeInBackground("two-gates", { checkpointReplies: { 0: false, 1: false } });
     assert.equal(finished.accepted, true);
-    if (!finished.accepted) assert.fail(finished.reason);
+    if (!finished.accepted) assert.fail("answers refused");
     const completed = await finished.promise;
     assert.equal(completed.status, "completed");
     assert.deepEqual(structuredClone(completed.result), { first: false, second: false });
@@ -305,15 +249,14 @@ return { alpha, beta };`;
     const warm = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
     const first = await warm.runSync(script, undefined, {
       runId: "cold-dispatch",
-      requireAgentConfiguration: true,
     });
     assert.equal(first.status, "failed");
     assert.deepEqual(dispatched.map((call) => call.model), ["claude/opus", "codex/gpt"]);
 
     const cold = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
-    const started = await cold.continueRun("cold-dispatch");
+    const started = await cold.resumeInBackground("cold-dispatch");
     assert.equal(started.accepted, true);
-    if (!started.accepted) assert.fail(started.reason);
+    if (!started.accepted) assert.fail("continuation refused");
     const completed = await started.promise;
     assert.equal(completed.status, "completed");
     assert.equal(dispatched.length, 3, "alpha replays from the journal; only beta runs live");

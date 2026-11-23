@@ -52,7 +52,6 @@ import {
   generateRunId,
   type PersistedResumeSeed,
   type PersistedResumeFormat,
-  type PersistedRunAdmission,
   type PersistedRunState,
   type RunLease,
   type RunPersistence,
@@ -84,13 +83,11 @@ import {
   type EngineRunResult,
   type WorkflowAgentAttemptControl,
   type WorkflowRunOptions,
-  hashWorkflowAdmissionRouting,
   isStepFailedPause,
   resolveWorkflowRunLimits,
   runWorkflow,
 } from "./workflow.js";
 import { parseWorkflowScript } from "./workflows/script.js";
-import { captureWorkflowRouting, isWorkflowRoutingSnapshot } from "./workflow-routing.js";
 import type { AgentRegistry } from "./agent-registry.js";
 import { createWorkflowLogTail, projectWorkflowRunStatus } from "./run-observability.js";
 import { assertExplicitCheckpointProvenance } from "./checkpoint-provenance.js";
@@ -140,7 +137,6 @@ export interface ManagedRun {
     checkpointInputsFormat?: number;
   };
   environment?: RunEnvironmentIdentity;
-  admission?: PersistedRunAdmission;
   continuation?: WorkflowContinuationResult;
   sameRunContinuation?: true;
   resume?: PersistedResumeFormat;
@@ -250,11 +246,7 @@ export type WorkflowContinuationRefusalReason =
   | "owned-elsewhere"
   | "missing"
   | "not-continuable"
-  | "admission-missing"
-  | "admission-invalid"
-  | "checkpoint-required"
   | "checkpoint-mismatch"
-  | "auth-required"
   /** The revised script does not parse (a `meta` or structure error). */
   | "script-invalid";
 
@@ -310,8 +302,7 @@ export interface ExecOptions {
   /**
    * Same-run continuation only: the script text read back from the run's file. When it differs
    * from the persisted script, the continuation runs the revision with an identity-matched replay
-   * of this run's own journal (unchanged calls replay, the rest run live). A revision must parse
-   * and may declare only backends the run's admission already approved.
+   * of this run's own journal (unchanged calls replay, the rest run live). A revision must parse.
    */
   script?: string;
   /** Replay these journaled agent results for the unchanged prefix (resume). */
@@ -322,12 +313,6 @@ export interface ExecOptions {
   resumePolicy?: ResumePolicy;
   /** Durable-checkpoint answer channel: pending checkpoint call index to the host's decision. */
   checkpointReplies?: Record<number, unknown>;
-  /**
-   * Optional host admission latch. Initialization and the first persisted save complete before
-   * startInBackground returns, but workflow VM evaluation waits for this decision. A denied
-   * admission settles through the normal abort/error path without evaluating authored code.
-   */
-  executionAdmission?: Promise<"admitted" | "denied">;
   /**
    * Whether THIS run writes/reads the engine persistence journal. Default is the
    * manager setting. When false, no run-state/log files are written and resume
@@ -351,10 +336,6 @@ export interface ExecOptions {
    * tier, or phase/meta route. Persisted with the run and included in call identity.
    */
   defaultModel?: string;
-  /** Refuse actual agent calls that have no effective configured model route. */
-  requireAgentConfiguration?: boolean;
-  /** Optional host diagnostic enrichment for a rejected missing route; never persisted. */
-  onMissingAgentConfiguration?: WorkflowRunOptions["onMissingAgentConfiguration"];
   /** Retry attempts after recoverable agent failures for this execution. */
   agentRetries?: number;
   /** Resolve a checkpoint() question with a human reply (only for UI-bearing runs). */
@@ -862,9 +843,6 @@ export class WorkflowManager extends EventEmitter {
     try {
       const source = this.persistence.load(runId);
       if (!source) throw this.persistenceError(`resume source does not exist: ${runId}`);
-      if (source.admission !== undefined && validatePersistedAdmission(source)) {
-        throw this.scriptValidationError(`resume source ${runId} has an incompatible routing admission; inspect it and start a fresh configured run`);
-      }
       return { lease, source };
     } catch (error) {
       this.persistence.releaseRunLease(lease);
@@ -1403,7 +1381,7 @@ export class WorkflowManager extends EventEmitter {
       }
       this.runs.set(managed.runId, managed);
       this.writeInlineScriptCopy(managed);
-      if (managed.journaling && (source || managed.admission || exec.resumeJournal)) {
+      if (managed.journaling && (source || exec.resumeJournal)) {
         this.persistRunOrThrow(managed);
       } else {
         this.persistRun(managed);
@@ -1496,7 +1474,6 @@ export class WorkflowManager extends EventEmitter {
     const capturedArgs = snapshotArgs(args);
     const effectiveCwd = exec.cwd ?? this.cwd;
     const startedAt = new Date();
-    const admission = createRunAdmission(exec, startedAt.toISOString(), effectiveCwd, this.agentsDir, this.mainModel, this.loadAgents);
     return {
       runId: identity.runId,
       cwd: exec.cwd,
@@ -1529,7 +1506,6 @@ export class WorkflowManager extends EventEmitter {
       effectiveCwd,
       runtime: runtimeIdentity(),
       environment: captureRunEnvironment(effectiveCwd, exec.environmentKey ?? this.environmentKey),
-      ...(admission ? { admission } : {}),
       ...(journaling ? { resume: { format: "identity-v1" as const } } : {}),
       resumeActivity: 0,
       resumeFilesystemTainted: false,
@@ -1811,13 +1787,6 @@ export class WorkflowManager extends EventEmitter {
       else hostSignal.addEventListener("abort", () => managed.controller.abort(), { once: true });
     }
     try {
-      if (exec.executionAdmission && await exec.executionAdmission !== "admitted") {
-        throw new WorkflowError(
-          "workflow execution was denied because host admission did not become durable",
-          WorkflowErrorCode.PERSISTENCE_ERROR,
-          { recoverable: false },
-        );
-      }
       if (!managed.journaling && resumeJournal) {
         throw new WorkflowError("journaling disabled for this run", WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, {
           recoverable: false,
@@ -1833,12 +1802,9 @@ export class WorkflowManager extends EventEmitter {
         args: argsForVm,
         agent,
         mainModel: managed.mainModel,
-        defaultModel: managed.admission?.defaultModel ?? managed.defaultModel,
-        routingSnapshot: managed.admission?.routingSnapshot,
-        requireAgentConfiguration: managed.admission?.strict ?? exec.requireAgentConfiguration,
-        onMissingAgentConfiguration: exec.onMissingAgentConfiguration,
+        defaultModel: managed.defaultModel,
         agentsDir: managed.agentsDir,
-        ...(this.loadAgents && !managed.admission?.routingSnapshot ? { agentRegistry: this.loadAgents(managed.effectiveCwd) } : {}),
+        ...(this.loadAgents ? { agentRegistry: this.loadAgents(managed.effectiveCwd) } : {}),
         signal: managed.controller.signal,
         pauseSignal: (managed.pauseController ??= new AbortController()).signal,
         concurrency: resolvedConcurrency,
@@ -2520,7 +2486,6 @@ export class WorkflowManager extends EventEmitter {
       ...(managed.resumeSeed ? { resumeSeed: managed.resumeSeed } : {}),
       ...(managed.resumeReport ? { resumeReport: managed.resumeReport } : {}),
       ...(managed.replayEligibility ? { replayEligibility: managed.replayEligibility } : {}),
-      ...(managed.admission ? { admission: managed.admission } : {}),
       ...(managed.continuation ? { continuation: managed.continuation } : {}),
       mainModel: managed.mainModel,
       defaultModel: managed.defaultModel,
@@ -2672,7 +2637,7 @@ export class WorkflowManager extends EventEmitter {
    * and run the rest live. Returns false if there is nothing resumable.
    */
   async resume(runId: string, exec: ExecOptions = {}): Promise<boolean> {
-    const { accepted } = await this.continueRunInternal(runId, exec, false);
+    const { accepted } = await this.continueRunInternal(runId, exec);
     return accepted;
   }
 
@@ -2688,24 +2653,15 @@ export class WorkflowManager extends EventEmitter {
     | { accepted: false; promise?: undefined }
     | { accepted: true; promise: Promise<WorkflowRunResult> }
   > {
-    const started = await this.continueRunInternal(runId, exec, false);
+    const started = await this.continueRunInternal(runId, exec);
     return started.accepted
       ? { accepted: true, promise: started.promise }
       : { accepted: false };
   }
 
-  /** Continue the exact persisted run under its lease without creating an execution child. */
-  async continueRun(
-    runId: string,
-    exec: ExecOptions = {},
-  ): Promise<WorkflowContinuationStart> {
-    return this.continueRunInternal(runId, exec, true);
-  }
-
   private async continueRunInternal(
     runId: string,
     exec: ExecOptions,
-    requireCanonicalAdmission: boolean,
   ): Promise<WorkflowContinuationStart> {
     if (
       exec.resumeFromRunId !== undefined ||
@@ -2714,7 +2670,6 @@ export class WorkflowManager extends EventEmitter {
       exec.resumeCalls !== undefined ||
       exec.cwd !== undefined ||
       exec.defaultModel !== undefined ||
-      exec.requireAgentConfiguration !== undefined ||
       exec.executionMode !== undefined ||
       exec.journaling === false
     ) {
@@ -2808,29 +2763,20 @@ export class WorkflowManager extends EventEmitter {
       this.persistence.releaseRunLease(lease);
       return { accepted: false, reason: "not-continuable" };
     }
-    if (requireCanonicalAdmission || persisted.admission !== undefined) {
-      const admissionProblem = validatePersistedAdmission(persisted);
-      if (admissionProblem) {
-        this.persistence.releaseRunLease(lease);
-        return { accepted: false, reason: admissionProblem };
+    // Same-ID recovery keeps its explicit legacy marker.
+    persisted.legacyResume = true;
+    try {
+      if (this.persistence.validateRunLease?.(lease) === false) {
+        throw new Error(`run ${runId} no longer owns its persistence lease`);
       }
-    } else {
-      // The lower-level SDK same-ID recovery API remains available independently of the MCP
-      // continuation contract. Preserve its explicit legacy marker; MCP never enters this branch.
-      persisted.legacyResume = true;
-      try {
-        if (this.persistence.validateRunLease?.(lease) === false) {
-          throw new Error(`run ${runId} no longer owns its persistence lease`);
-        }
-        this.persistence.save(persisted);
-      } catch (error) {
-        this.persistence.releaseRunLease(lease);
-        throw new WorkflowError(
-          `failed to persist legacy resume marker for ${runId}: ${errorMessage(error)}`,
-          WorkflowErrorCode.PERSISTENCE_ERROR,
-          { recoverable: false },
-        );
-      }
+      this.persistence.save(persisted);
+    } catch (error) {
+      this.persistence.releaseRunLease(lease);
+      throw new WorkflowError(
+        `failed to persist legacy resume marker for ${runId}: ${errorMessage(error)}`,
+        WorkflowErrorCode.PERSISTENCE_ERROR,
+        { recoverable: false },
+      );
     }
     const publication = this.prepareEventPublicationState(persisted, lease);
     const saveLegacyGate = () => {
@@ -2862,66 +2808,11 @@ export class WorkflowManager extends EventEmitter {
       const backendId = persisted.authContext?.backendId ?? "";
       const canResume = typeof authController?.canResume === "function" && authController.canResume(backendId);
       if (!canResume) {
-        if (!requireCanonicalAdmission) {
-          const backendLabel = persisted.authContext?.backendId ?? "the backend";
-          const reSupplyError = new WorkflowError(
-            `re-supply credentials for ${backendLabel} via runner auth before resuming`,
-            WorkflowErrorCode.AUTH_REQUIRED,
-            { recoverable: false, authContext: persisted.authContext },
-          );
-          const gateEventSeq = publication.eventSeq;
-          this.publishRunEvent(
-            publication,
-            this.createRunEvent("paused", {
-              runId,
-              scope: runId,
-              reason: "auth_required",
-              error: reSupplyError,
-              errorRecord: projectRecordedError(reSupplyError),
-              authContext: persisted.authContext,
-            }),
-            saveLegacyGate,
-            {
-              afterLive: () => {
-                if (publication.eventSeq !== gateEventSeq) saveLegacyGate();
-                this.persistence.releaseRunLease(lease);
-                publication.lease = undefined;
-              },
-            },
-          );
-          const promise = Promise.reject<WorkflowRunResult>(reSupplyError);
-          promise.catch(() => {});
-          return {
-            accepted: true,
-            runId,
-            continuation: persisted.continuation ?? deepFreeze({
-              generation: 0,
-              replayedPrefix: contiguousJournalPrefix(persisted.journal ?? [], runId),
-            }),
-            promise,
-          };
-        }
-        this.persistence.releaseRunLease(lease);
-        publication.lease = undefined;
-        return {
-          accepted: false,
-          reason: "auth-required",
-          ...(checkpointReplies.resolutions.length === 0
-            ? {}
-            : { resolvedCheckpoints: checkpointReplies.resolutions }),
-        };
-      }
-    }
-
-    // Durable checkpoint cold-resume gate. A keyed checkpointReplies value is the explicit
-    // out-of-band answer channel; a real confirm callback is the live answer channel. With
-    // neither, preserve the exact persisted pause without re-running any agent or script code.
-    if (persisted.pauseReason === "checkpoint_required" && !hasCheckpointReply && !exec.confirm) {
-      if (!requireCanonicalAdmission) {
-        const checkpointError = new WorkflowError(
-          `checkpoint "${checkpointContext?.prompt ?? "pending checkpoint"}" awaits a human decision`,
-          WorkflowErrorCode.CHECKPOINT_REQUIRED,
-          { recoverable: false, checkpointContext },
+        const backendLabel = persisted.authContext?.backendId ?? "the backend";
+        const reSupplyError = new WorkflowError(
+          `re-supply credentials for ${backendLabel} via runner auth before resuming`,
+          WorkflowErrorCode.AUTH_REQUIRED,
+          { recoverable: false, authContext: persisted.authContext },
         );
         const gateEventSeq = publication.eventSeq;
         this.publishRunEvent(
@@ -2929,10 +2820,10 @@ export class WorkflowManager extends EventEmitter {
           this.createRunEvent("paused", {
             runId,
             scope: runId,
-            reason: "checkpoint_required",
-            error: checkpointError,
-            errorRecord: projectRecordedError(checkpointError),
-            checkpointContext,
+            reason: "auth_required",
+            error: reSupplyError,
+            errorRecord: projectRecordedError(reSupplyError),
+            authContext: persisted.authContext,
           }),
           saveLegacyGate,
           {
@@ -2943,7 +2834,7 @@ export class WorkflowManager extends EventEmitter {
             },
           },
         );
-        const promise = Promise.reject<WorkflowRunResult>(checkpointError);
+        const promise = Promise.reject<WorkflowRunResult>(reSupplyError);
         promise.catch(() => {});
         return {
           accepted: true,
@@ -2955,14 +2846,47 @@ export class WorkflowManager extends EventEmitter {
           promise,
         };
       }
-      this.persistence.releaseRunLease(lease);
-      publication.lease = undefined;
+    }
+
+    // Durable checkpoint cold-resume gate. A keyed checkpointReplies value is the explicit
+    // out-of-band answer channel; a real confirm callback is the live answer channel. With
+    // neither, preserve the exact persisted pause without re-running any agent or script code.
+    if (persisted.pauseReason === "checkpoint_required" && !hasCheckpointReply && !exec.confirm) {
+      const checkpointError = new WorkflowError(
+        `checkpoint "${checkpointContext?.prompt ?? "pending checkpoint"}" awaits a human decision`,
+        WorkflowErrorCode.CHECKPOINT_REQUIRED,
+        { recoverable: false, checkpointContext },
+      );
+      const gateEventSeq = publication.eventSeq;
+      this.publishRunEvent(
+        publication,
+        this.createRunEvent("paused", {
+          runId,
+          scope: runId,
+          reason: "checkpoint_required",
+          error: checkpointError,
+          errorRecord: projectRecordedError(checkpointError),
+          checkpointContext,
+        }),
+        saveLegacyGate,
+        {
+          afterLive: () => {
+            if (publication.eventSeq !== gateEventSeq) saveLegacyGate();
+            this.persistence.releaseRunLease(lease);
+            publication.lease = undefined;
+          },
+        },
+      );
+      const promise = Promise.reject<WorkflowRunResult>(checkpointError);
+      promise.catch(() => {});
       return {
-        accepted: false,
-        reason: "checkpoint-required",
-        ...(checkpointReplies.resolutions.length === 0
-          ? {}
-          : { resolvedCheckpoints: checkpointReplies.resolutions }),
+        accepted: true,
+        runId,
+        continuation: persisted.continuation ?? deepFreeze({
+          generation: 0,
+          replayedPrefix: contiguousJournalPrefix(persisted.journal ?? [], runId),
+        }),
+        promise,
       };
     }
 
@@ -3036,7 +2960,6 @@ export class WorkflowManager extends EventEmitter {
       effectiveCwd,
       runtime: runtimeIdentity(),
       environment: persisted.environment,
-      admission: persisted.admission,
       ...(persisted.legacyResume ? { legacyResume: true as const } : {}),
       ...(persisted.resume ? { resume: { format: "identity-v1" as const } } : {}),
       ...(persisted.resumeSourceRunId ? { resumeSourceRunId: persisted.resumeSourceRunId } : {}),
@@ -3052,7 +2975,7 @@ export class WorkflowManager extends EventEmitter {
         agentRetries: exec.agentRetries ?? persisted.limits?.agentRetries ?? this.defaultAgentRetries,
       }),
       mainModel: persisted.mainModel ?? this.mainModel,
-      defaultModel: persisted.admission?.defaultModel ?? persisted.defaultModel,
+      defaultModel: persisted.defaultModel,
       agentsDir: persisted.agentsDir ?? this.agentsDir,
       sameRunContinuation: true,
       journaling: true,
@@ -3151,7 +3074,6 @@ export class WorkflowManager extends EventEmitter {
       onNestedWorkflow: exec.onNestedWorkflow,
       ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
       ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
-      onMissingAgentConfiguration: exec.onMissingAgentConfiguration,
       ...(revisedExecution ? {} : { resumeJournal }),
     }, revisedExecution ?? (checkpointReplies.accepted
       ? {
@@ -3536,52 +3458,6 @@ function validateScriptOrigin(origin: WorkflowScriptOrigin | undefined): void {
   if (origin.kind !== "path" || typeof origin.path !== "string" || !isAbsolute(origin.path) || Object.keys(origin).length !== 2) {
     throw invalid();
   }
-}
-
-function createRunAdmission(
-  exec: ExecOptions,
-  recordedAt: string,
-  cwd: string,
-  agentsDir?: string,
-  mainModel?: string,
-  loadAgents?: (cwd: string) => AgentRegistry,
-): PersistedRunAdmission | undefined {
-  if (exec.requireAgentConfiguration !== true) return undefined;
-  const routingSnapshot = captureWorkflowRouting(cwd, agentsDir, mainModel, loadAgents?.(cwd));
-  const captured = cloneFrozenStrictJson({
-    format: 3,
-    routingSnapshot,
-    ...(exec.defaultModel === undefined ? {} : { defaultModel: exec.defaultModel }),
-  });
-  if (!captured.ok) {
-    throw new WorkflowError(`workflow routing is not strict JSON at ${captured.path}`, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, { recoverable: false });
-  }
-  const routing = captured.clone as unknown as Parameters<typeof hashWorkflowAdmissionRouting>[0];
-  return deepFreeze({ ...routing, strict: true as const, routingHash: hashWorkflowAdmissionRouting(routing), recordedAt });
-}
-
-function validatePersistedAdmission(state: PersistedRunState): WorkflowContinuationRefusalReason | undefined {
-  const admission = state.admission;
-  if (!admission) return "admission-missing";
-  if (typeof admission !== "object" || Array.isArray(admission)) return "admission-invalid";
-  if (admission.format !== 3 || admission.strict !== true) return "admission-invalid";
-  if (
-    Object.keys(admission).some((key) => !["format", "strict", "routingSnapshot", "defaultModel", "scriptBackends", "routingHash", "recordedAt"].includes(key)) ||
-    !/^[0-9a-f]{64}$/.test(admission.routingHash) ||
-    !isWorkflowRoutingSnapshot(admission.routingSnapshot) ||
-    typeof admission.recordedAt !== "string" ||
-    !Number.isFinite(Date.parse(admission.recordedAt)) ||
-    (admission.defaultModel !== undefined && (typeof admission.defaultModel !== "string" || admission.defaultModel.trim() === ""))
-  ) return "admission-invalid";
-  try {
-    const routingHash = hashWorkflowAdmissionRouting({
-      format: 3,
-      routingSnapshot: admission.routingSnapshot,
-      ...(admission.defaultModel === undefined ? {} : { defaultModel: admission.defaultModel }),
-      ...(admission.scriptBackends === undefined ? {} : { scriptBackends: admission.scriptBackends }),
-    });
-    return routingHash === admission.routingHash ? undefined : "admission-invalid";
-  } catch { return "admission-invalid"; }
 }
 
 interface CheckpointReplyClassification {

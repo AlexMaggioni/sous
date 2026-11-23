@@ -97,15 +97,18 @@ test("a script origin must be inline or an absolute path, and no copy is written
 test("a failed initial save discards the orphaned inline copy", async () => {
   await inStore(async (paths) => {
     const disk = createRunPersistence(paths.cwd, undefined, { persistenceRoot: paths.persistenceRoot });
-    let failSave = true;
+    let failSave = false;
     const manager = new WorkflowManager({
       ...paths,
       agent: runner,
       persistence: { ...disk, save(state) { if (failSave) throw new Error("disk unavailable"); disk.save(state); } },
     });
-    await assert.rejects(manager.runSync(script("orphan"), undefined, { requireAgentConfiguration: true }), /failed to persist/);
+    // A reuse start saves before it returns, so a failed save surfaces here.
+    const source = await manager.runSync(script("source"));
+    failSave = true;
+    await assert.rejects(manager.runSync(script("orphan"), undefined, { runId: "orphan", resumeFromRunId: source.runId }), /failed to persist/);
     const copies = existsSync(disk.getRunsDir()) ? (await import("node:fs")).readdirSync(disk.getRunsDir()).filter((name) => name.endsWith(".script.js")) : [];
-    assert.deepEqual(copies, [], "no script copy survives a run that was never recorded");
+    assert.deepEqual(copies, [`${source.runId}.script.js`], "no script copy survives a run that was never recorded");
     failSave = false;
     const run = await manager.runSync(script("recorded"));
     assert.equal(readFileSync(inlineScriptFile(disk.getRunsDir(), run.runId), "utf8"), script("recorded"));
