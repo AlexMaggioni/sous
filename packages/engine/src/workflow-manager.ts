@@ -1955,21 +1955,22 @@ export class WorkflowManager extends EventEmitter {
   }
 
   /**
-   * Stop the in-flight steps of a run: those with `label`, or all of them, in the
-   * run itself or, with `scope`, in that nested run. Returns how many attempts it stopped. The
-   * run then pauses on them, and resume runs them again. `pauseReason`
+   * Stop the in-flight steps of a run: all of them, or those that match each of `label`,
+   * `scope` (the run itself or a nested run) and `callIndex` (one call in that scope). Returns how
+   * many attempts it stopped. The run then pauses on them, and resume runs them again. `pauseReason`
    * replaces the paused run's "step_stopped", and `message` says why in the run's reason.
    */
   cancelAgentSteps(
     runId: string,
-    select: { label?: string; scope?: string; pauseReason?: "time_limit"; message?: string } = {},
+    select: { label?: string; scope?: string; callIndex?: number; pauseReason?: "time_limit"; message?: string } = {},
   ): number {
     const managed = this.runs.get(runId);
     if (!managed || managed.status !== "running") return 0;
     const matching = this.currentAgentAttempts(runId).filter(
       (attempt) =>
         (select.label === undefined || attempt.label === select.label) &&
-        (select.scope === undefined || attempt.scope === select.scope),
+        (select.scope === undefined || attempt.scope === select.scope) &&
+        (select.callIndex === undefined || attempt.callIndex === select.callIndex),
     );
     for (const attempt of matching) {
       this.requestAgentCancellation(attempt, select.message, select.pauseReason).catch(() => {});

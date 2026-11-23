@@ -124,7 +124,7 @@ export function runDetail(paths: HomePaths, id: string): RunDetail {
   return {
     ...view,
     steps,
-    running: alive ? (live?.running ?? []) : [],
+    running: alive ? (live?.running.map((step) => step.name) ?? []) : [],
     ...(shown?.status === "completed" && shown.result !== undefined ? { result: shown.result } : {}),
     ...(shown?.tokenUsage ? { tokens: shown.tokenUsage.total } : {}),
     ...(shown?.durationMs === undefined ? {} : { durationMs: shown.durationMs }),
@@ -145,30 +145,43 @@ function stepKey(record: RunRecord, scope: unknown, callIndex: unknown): string 
 /** Events after which no step of the run runs. */
 const ENDS_STEPS = new Set(["complete", "paused", "error", "stopped", "resumed"]);
 
+/** A step that runs now: the name the log gives it, the run or nested run it runs in, its label
+ *  there, and its call index when known. */
+interface RunningStep {
+  name: string;
+  scope: string;
+  label: string;
+  callIndex?: number;
+}
+
 /**
- * A run's steps and the names of the steps that run now, if its worker runs. The saved state lags
+ * A run's steps and the steps that run now, if its worker runs. The saved state lags
  * the run: it is saved when a step ends. The event log has every step that started or ended since.
  * The steps are left unset when the run has no state or its event log cannot be read.
  */
-function liveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): { steps?: Step[]; running: string[] } {
+function liveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): { steps?: Step[]; running: RunningStep[] } {
   const agents: Step[] = (state?.agents ?? []).map((agent) => ({ ...agent }));
-  const running = new Map<string, { scope?: string; label: string }>();
-  for (const agent of state?.agents ?? []) {
-    if (agent.status === "running") running.set(stepKey(record, agent.scope, agent.callIndex), { ...(agent.scope ? { scope: agent.scope } : {}), label: agent.label });
-  }
-  const named = () => {
+  const running = new Map<string, Omit<RunningStep, "name">>();
+  const start = (scope: string | undefined, label: string, callIndex: number | undefined) => {
+    const step = { scope: typeof scope === "string" ? scope : record.runId, label, ...(callIndex === undefined ? {} : { callIndex }) };
+    running.set(stepKey(record, step.scope, callIndex), step);
+  };
+  const runningInState = () => {
+    for (const agent of state?.agents ?? []) if (agent.status === "running") start(agent.scope, agent.label, agent.callIndex);
+  };
+  runningInState();
+  const named = (): RunningStep[] => {
     // A nested run notes its label on the record when it starts, so the record is read again.
     const nested = loadRecord(paths, record.runId)?.nested ?? record.nested;
-    return [...running.values()].map((step) => `${scopePrefix(record.runId, step.scope, nested)}${step.label}`);
+    return [...running.values()].map((step) => ({ name: `${scopePrefix(record.runId, step.scope, nested)}${step.label}`, ...step }));
   };
   try {
     readEventsAfter(paths, record.runId, state?.eventSeq ?? 0, ({ event, timestamp }) => {
       if (event.type === "agentStart" || event.type === "agentEnd") {
         foldStep(agents, event, timestamp);
-        const k = stepKey(record, event.scope, event.callIndex);
         // A step that starts again keeps one name, at the end.
-        running.delete(k);
-        if (event.type === "agentStart") running.set(k, { scope: event.scope, label: event.label });
+        running.delete(stepKey(record, event.scope, event.callIndex));
+        if (event.type === "agentStart") start(event.scope, event.label, event.callIndex);
       } else if (ENDS_STEPS.has(event.type) && event.scope === record.runId) {
         running.clear();
       }
@@ -176,9 +189,7 @@ function liveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState
   } catch {
     // The steps stay as the state saved them, and so do the ones that run.
     running.clear();
-    for (const agent of state?.agents ?? []) {
-      if (agent.status === "running") running.set(stepKey(record, agent.scope, agent.callIndex), { ...(agent.scope ? { scope: agent.scope } : {}), label: agent.label });
-    }
+    runningInState();
     return { running: named() };
   }
   return { ...(state ? { steps: agents } : {}), running: named() };
@@ -313,16 +324,19 @@ export function stopRun(paths: HomePaths, runId: string): { outcome: StopOutcome
 }
 
 /** Stop one running step by its name in the log. The run pauses on it, and resume runs it again.
- *  Returns false when the run is not running. */
+ *  The worker gets the step's run or nested run and its call, so a step with the same label
+ *  elsewhere goes on. Returns false when the run is not running. */
 export function stopStep(paths: HomePaths, runId: string, step: string): boolean {
   const record = needRecord(paths, runId);
   if (!processAlive(record.pid)) return false;
-  const { running } = runDetail(paths, record.runId);
-  if (!running.includes(step)) {
-    const now = running.length ? `Running now: ${running.map((name) => `"${name}"`).join(", ")}.` : "No step runs now.";
+  const state = readState(paths, record.runId);
+  const running = state ? liveSteps(paths, record, state).running : [];
+  const calls = running.filter((call) => call.name === step).map(({ name: _name, ...call }) => call);
+  if (!calls.length) {
+    const now = running.length ? `Running now: ${running.map((call) => `"${call.name}"`).join(", ")}.` : "No step runs now.";
     throw new Error(`no step named "${step}" runs in ${record.runId}. ${now}`);
   }
-  requestStepStop(paths, record.runId, step);
+  requestStepStop(paths, record.runId, { step, calls });
   process.kill(record.pid!, "SIGUSR2");
   return true;
 }

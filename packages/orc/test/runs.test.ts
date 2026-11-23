@@ -296,6 +296,50 @@ return { first, built }`,
     assert.deepEqual(calls.map((c) => c.label), ["first", "build", "build"], "first is not run again");
   });
 
+  it("stopping a step by its name stops only that step, not a nested step with the same label", async () => {
+    const { paths, projectDir } = testHome({
+      child: `export const meta = { name: 'child', description: 'child' }\nreturn await agent('build nested', { label: 'build' })`,
+      parent: `export const meta = { name: 'parent', description: 'parent' }
+const [top, nested] = await parallel([() => agent('build top', { label: 'build' }), () => workflow('child', {}, { label: 'ticket A' })])
+return { top, nested }`,
+    });
+    let hang = true;
+    const stopped: string[] = [];
+    const finish: Array<() => void> = [];
+    const { runner, calls } = fakeRunner((call) =>
+      hang
+        ? new Promise((resolve, reject) => {
+            finish.push(() => resolve(`${call.prompt} done`));
+            const signal = call.options.signal as AbortSignal | undefined;
+            signal?.addEventListener("abort", () => (stopped.push(call.prompt), reject(new Error("aborted"))));
+          })
+        : `${call.prompt} done`,
+    );
+    const workers = inProcess({ inner: runner, handleSignals: true });
+    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const running = workers.ended(record.runId);
+    for (let i = 0; i < 500 && calls.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+
+    assert.equal(stopStep(paths, record.runId, "build"), true);
+    for (let i = 0; i < 300 && !stopped.length; i++) await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual(stopped, ["build top"], "the nested step named \"ticket A: build\" goes on");
+
+    hang = false;
+    for (const done of finish) done();
+    await running;
+    const state = readState(paths, record.runId);
+    assert.equal(state?.status, "paused");
+    assert.equal(state?.pauseReason, "step_stopped");
+    assert.match(readFileSync(logFile(paths, record.runId), "utf8"), /stopping   build\n/);
+
+    resumeRun(paths, workers.launch, record.runId);
+    const done = await workers.ended(record.runId);
+    assert.equal(done?.status, "completed");
+    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), { top: "build top done", nested: "build nested done" });
+    assert.deepEqual(calls.map((c) => c.prompt), ["build top", "build nested", "build top"], "only the stopped step runs again");
+  });
+
   it("a step stop survives the worker saving a record it read before the request", async () => {
     const { paths, projectDir } = testHome({
       one: `export const meta = { name: 'one', description: 'one' }\nreturn await agent('build it', { label: 'build' })`,
@@ -335,7 +379,7 @@ return { first, built }`,
     // The request is left before the worker starts, so the test makes the record and starts the
     // worker itself, as startRun does.
     const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
-    requestStepStop(paths, record.runId, "build");
+    requestStepStop(paths, record.runId, { step: "build", calls: [{ scope: record.runId, label: "build" }] });
     const file = logFile(paths, record.runId);
     const workers = inProcess({ inner: runner, handleSignals: true });
     workers.launch(paths, record.runId, "start");

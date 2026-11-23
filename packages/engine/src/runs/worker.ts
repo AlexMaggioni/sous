@@ -220,16 +220,12 @@ async function runOnAccounts(
     log(`${stamp()} pausing`);
     manager.pause(runId);
   };
-  // `orc stop --step` writes its request, then sends SIGUSR2.
+  // `orc stop --step` writes its request, with each call to stop, then sends SIGUSR2.
   const onStopSteps = () => {
-    for (const name of takeStepStops(paths, runId)) {
+    for (const { step, calls } of takeStepStops(paths, runId)) {
       let stopped = 0;
-      for (const scope of new Set([...prefixes.keys(), ...Object.keys(loadRecord(paths, runId)?.nested ?? {})])) {
-        const prefix = from(scope);
-        if (prefix && name.startsWith(prefix)) stopped += manager.cancelAgentSteps(runId, { label: name.slice(prefix.length), scope });
-      }
-      if (!stopped) stopped = manager.cancelAgentSteps(runId, { label: name });
-      log(`${stamp()} ${stopped ? `stopping   ${name}` : `no step    ${name} runs; nothing stopped`}`);
+      for (const call of calls) stopped += manager.cancelAgentSteps(runId, call);
+      log(`${stamp()} ${stopped ? `stopping   ${step}` : `no step    ${step} runs; nothing stopped`}`);
     }
   };
   const onStop = () => {

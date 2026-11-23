@@ -150,17 +150,25 @@ export function loadRecord(paths: HomePaths, runId: string): RunRecord | undefin
   return readRecord(file);
 }
 
+/** A request to stop a step: the name the log gives it, and each call that runs under that name,
+ *  by the run or nested run it runs in, its label there and its call index when the state has one. */
+export interface StepStop {
+  step: string;
+  calls: Array<{ scope: string; label: string; callIndex?: number }>;
+}
+
 /**
- * Ask the worker to stop a step, by the name the log gives it. The request goes to a file of its
- * own, not the record the worker writes. Each request is one appended line, so two at once both land.
+ * Ask the worker to stop a step. The request goes to a file of its own, not the record the worker
+ * writes. Each request is one appended line, so two at once both land.
  */
-export function requestStepStop(paths: HomePaths, runId: string, step: string): void {
-  appendFileSync(stopRequestFile(paths, runId), `${JSON.stringify(step)}\n`);
+export function requestStepStop(paths: HomePaths, runId: string, stop: StepStop): void {
+  appendFileSync(stopRequestFile(paths, runId), `${JSON.stringify(stop)}\n`);
 }
 
 /** The steps asked to stop since the last take. The file moves aside before the read, so a request
- *  that lands meanwhile starts a new file and waits for the next take. */
-export function takeStepStops(paths: HomePaths, runId: string): string[] {
+ *  that lands meanwhile starts a new file and waits for the next take. A line an older orc wrote,
+ *  a bare name, is dropped. */
+export function takeStepStops(paths: HomePaths, runId: string): StepStop[] {
   const file = stopRequestFile(paths, runId);
   const taken = `${file}.${process.pid}.taken`;
   try {
@@ -170,7 +178,7 @@ export function takeStepStops(paths: HomePaths, runId: string): string[] {
   }
   const lines = readFileSync(taken, "utf8").split("\n").filter(Boolean);
   unlinkSync(taken);
-  return lines.map((line) => JSON.parse(line) as string);
+  return lines.map((line) => JSON.parse(line) as StepStop | string).filter((stop): stop is StepStop => typeof stop === "object");
 }
 
 export function updateRecord(paths: HomePaths, runId: string, change: Partial<RunRecord>): RunRecord | undefined {
