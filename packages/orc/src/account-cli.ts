@@ -79,9 +79,11 @@ function runSetupToken(paths: HomePaths): void {
   if (ran.status !== 0) throw new Error(`claude setup-token stopped with exit ${ran.status ?? ran.signal}. Nothing was added.`);
 }
 
-function cliFile(options: AccountCommandOptions): string {
-  if (!options.cliFile) throw new Error("orc account use needs the path of orc's cli.js");
-  return options.cliFile();
+function cliFile(options: AccountCommandOptions): () => string {
+  return () => {
+    if (!options.cliFile) throw new Error("orc account use needs the path of orc's cli.js");
+    return options.cliFile();
+  };
 }
 
 export async function cmdAccount(positionals: string[], options: AccountCommandOptions = {}): Promise<number> {

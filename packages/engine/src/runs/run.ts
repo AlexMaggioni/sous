@@ -553,11 +553,11 @@ export interface UseResult extends AccountName {
 /**
  * Make the account orc's current one for its program. Then each run waiting at that program's
  * usage limit moves to it and resumes now, also the runs that agents started. `deps.spawn` starts
- * the worker in tests, as in the service's tick.
+ * the worker in tests, as in the service's tick. orc looks up `cliFile` only when a run resumes.
  */
-export function useAccount(paths: HomePaths, spec: string, cliFile: string, deps: { spawn?: (runId: string) => void } = {}): UseResult {
+export function useAccount(paths: HomePaths, spec: string, cliFile: () => string, deps: { spawn?: (runId: string) => void } = {}): UseResult {
   const { program, name } = setCurrentAccount(paths, spec);
-  const spawn = deps.spawn ?? ((runId: string) => startWorker(paths, cliFile, runId, "resume"));
+  const spawn = deps.spawn ?? ((runId: string) => startWorker(paths, cliFile(), runId, "resume"));
   const moved: Moved[] = [];
   const same: Moved[] = [];
   for (const run of waitingRuns(paths)) {
