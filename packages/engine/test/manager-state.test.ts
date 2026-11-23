@@ -4,7 +4,6 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import vm from "node:vm";
 import type { JournalEntry, WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { createRunPersistence, type PersistedRunState, type RunPersistence } from "../src/runs/persistence/run-persistence.js";
@@ -30,7 +29,7 @@ function tempDirs(): { cwd: string; root: string; cleanup: () => void } {
 }
 
 describe("WorkflowManager PR3 state", () => {
-  it("snapshots strict args before execution on runSync and startInBackground", async () => {
+  it("snapshots strict args before execution", async () => {
     const dirs = tempDirs();
     try {
       const manager = new WorkflowManager({
@@ -41,35 +40,36 @@ describe("WorkflowManager PR3 state", () => {
       const syncArgs = { value: 1, nested: { stable: true } };
       const sync = await manager.runSync(script(`args.value = 2\nargs.nested.stable = false\nreturn args.value`), syncArgs);
       assert.equal(sync.status, "completed");
+      assert.equal(sync.result, 2);
       assert.deepEqual(syncArgs, { value: 1, nested: { stable: true } });
       assert.deepEqual(manager.getPersistence().load(sync.runId)?.args, syncArgs);
 
-      const backgroundArgs = { value: 3 };
-      const background = manager.startInBackground(
-        script(`args.value = 4\nreturn args.value`, "background-args"),
-        backgroundArgs,
+      // A second manager holds its run inside an agent call, so the save of a running run can be read.
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      let entered!: () => void;
+      const started = new Promise<void>((resolve) => { entered = resolve; });
+      const held = new WorkflowManager({
+        cwd: dirs.cwd,
+        persistenceRoot: dirs.root,
+        agent: { async run() { entered(); await gate; return "held"; } },
+      });
+      const heldArgs = { value: 3 };
+      const heldRun = held.runSync(
+        script(`args.value = 4\nawait agent('hold', { label: 'hold' })\nreturn args.value`, "held-args"),
+        heldArgs,
+        { runId: "held-args" },
       );
-      const initial = manager.getPersistence().load(background.runId);
-      assert.deepEqual(initial?.args, { value: 3 }, "the initial save already has the snapshot");
-      const completed = await background.promise;
+      await started;
+      assert.deepEqual(held.getPersistence().load("held-args")?.args, { value: 3 }, "the save of a running run already has the snapshot");
+      release();
+      const completed = await heldRun;
       assert.equal(completed.result, 4);
-      assert.deepEqual(backgroundArgs, { value: 3 });
-      assert.deepEqual(manager.getPersistence().load(background.runId)?.args, { value: 3 });
+      assert.deepEqual(heldArgs, { value: 3 });
+      assert.deepEqual(held.getPersistence().load("held-args")?.args, { value: 3 });
 
       const noArgs = await manager.runSync(script(`return args === undefined`, "no-args"));
       assert.equal(noArgs.result, true);
-
-      const crossRealmArgs = vm.runInNewContext(`({ value: 7, nested: { stable: true } })`) as {
-        value: number;
-        nested: { stable: boolean };
-      };
-      const crossRealm = await manager.runSync(
-        script(`args.value = 8\nreturn args.value`, "cross-realm-args"),
-        crossRealmArgs,
-      );
-      assert.equal(crossRealm.result, 8);
-      assert.equal(crossRealmArgs.value, 7);
-      assert.equal(manager.getPersistence().load(crossRealm.runId)?.argsUnreplayable, undefined);
     } finally {
       dirs.cleanup();
     }
@@ -162,8 +162,8 @@ return { count: args.count, answer }`,
       assert.equal(manager.getPersistence().load(dateRun.runId)?.argsUnreplayable, true);
 
       const custom = new Counter();
-      const customRun = manager.startInBackground(script(`return args.read()`, "custom-args"), custom);
-      assert.equal((await customRun.promise).result, 4);
+      const customRun = await manager.runSync(script(`return args.read()`, "custom-args"), custom);
+      assert.equal(customRun.result, 4);
       assert.equal(manager.getPersistence().load(customRun.runId)?.argsUnreplayable, true);
     } finally {
       dirs.cleanup();

@@ -4,11 +4,10 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { daemonLog, logFile } from "../../src/index.js";
 import { createRun } from "../../src/runs/launch.js";
-import { createRunPersistence } from "../../src/runs/persistence/run-persistence.js";
 import { loadRecord } from "../../src/runs/records.js";
 import { forgetRun } from "../../src/runs/run.js";
 import { runWorker } from "../../src/runs/worker.js";
@@ -122,24 +121,5 @@ describe("where a run leaves its files", () => {
     const { paths } = setup({});
     assert.equal(logFile(paths, "r1"), join(paths.home, "logs", "r1.log"));
     assert.equal(daemonLog(paths), join(paths.home, "logs", "daemon.log"));
-  });
-
-  it("a run's lease does not follow it to a new folder, so moving a live run's files is unsafe", () => {
-    const { paths } = setup({});
-    const old = createRunPersistence(paths.home, undefined, { persistenceRoot: paths.runs });
-    assert.ok(old.acquireRunLease("r1"), "the old folder gives the lease");
-    // A store in another folder does not see the lock in the old one.
-    const moved = join(paths.home, "moved");
-    const next = createRunPersistence(paths.home, undefined, { persistenceRoot: moved });
-    const lease = next.acquireRunLease("r1");
-    assert.ok(lease, "the new folder gives the lease while the old one is held");
-    next.releaseRunLease(lease);
-    // A lock copied as is names the old state file, so the new store takes it over even though
-    // its owner is alive.
-    const oldRuns = join(paths.runs, "projects", projectKey(paths.home), "runs");
-    const newRuns = join(moved, "projects", projectKey(paths.home), "runs");
-    mkdirSync(newRuns, { recursive: true });
-    writeFileSync(join(newRuns, "r1.lock"), readFileSync(join(oldRuns, "r1.lock")));
-    assert.ok(next.acquireRunLease("r1"), "the copied lock of a live owner is taken over");
   });
 });

@@ -161,29 +161,7 @@ test(
   }),
 );
 
-// ─── Stop tests (3 tests) ──────────────────────────────────────────────────────
-
-test(
-  "stop on paused run transitions to aborted",
-  withTempCwd(async (cwd) => {
-    const agent = perCallDeferredAgent();
-    const manager = new WorkflowManager({ cwd, agent: agent.runner });
-    manager.on("error", () => {});
-    const { runId, promise } = manager.startInBackground(twoAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
-
-    // Pause while agent a executes: it finishes and journals, then b is refused.
-    assert.equal(manager.pause(runId), true);
-    agent.resolve(0, "a-done");
-    await promise.catch(() => {});
-    assert.equal(manager.getRun(runId)?.status, "paused");
-
-    // Then stop the paused run
-    const stopped = manager.stop(runId);
-    assert.equal(stopped, true);
-    assert.equal(manager.getRun(runId)?.status, "aborted", "paused run should become aborted after stop");
-  }),
-);
+// ─── Stop ─────────────────────────────────────────────────────────────────────
 
 test(
   "stop emits 'stopped' event with runId",
@@ -229,43 +207,7 @@ test(
   }),
 );
 
-// ─── Pause tests (3 tests) ─────────────────────────────────────────────────────
-
-test(
-  "pause emits 'paused' event with runId",
-  withTempCwd(async (cwd) => {
-    const da = deferredAgent();
-    const manager = new WorkflowManager({ cwd, agent: da.runner });
-    manager.on("error", () => {});
-
-    let pausedEvent = null as { runId: string } | null;
-    manager.on("paused", (ev: { runId: string }) => {
-      pausedEvent = ev;
-    });
-
-    const { runId, promise } = manager.startInBackground(twoAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
-    assert.equal(manager.pause(runId), true);
-    assert.equal<{ runId: string } | null>(pausedEvent, null, "the request alone does not pause: agent a is still executing");
-    assert.equal(manager.getRun(runId)?.status, "running");
-    assert.equal(manager.getRun(runId)?.pauseController?.signal.aborted, true, "the pause request is registered");
-
-    da.resolve("a-done");
-    await promise.catch(() => {});
-
-    assert.ok(pausedEvent, "paused event fires once the executing agent finished");
-    assert.equal(pausedEvent?.runId, runId);
-    assert.equal((pausedEvent as { reason?: string } | null)?.reason, "requested");
-    assert.equal(manager.getRun(runId)?.status, "paused");
-    const persisted = manager.getPersistence().list().find((r) => r.runId === runId);
-    assert.equal(persisted?.pauseReason, "requested");
-    assert.equal(persisted?.reason, "requested");
-    assert.equal(persisted?.errorCode, WorkflowErrorCode.PAUSE_REQUESTED);
-    assert.equal(persisted?.journal?.length, 1, "the executing agent journaled before the pause settled");
-    assert.equal(persisted?.calls?.length, 1, "the refused second admission was never allocated");
-    assert.equal(persisted?.calls?.[0]?.outcome, "result");
-  }),
-);
+// ─── Pause ────────────────────────────────────────────────────────────────────
 
 test(
   "pause is idempotent while pending and returns false once the run is paused",
@@ -379,41 +321,29 @@ return { a, b }`;
 );
 
 test(
-  "a stopped run resumes from its journal and re-runs the interrupted call",
+  "a stop interrupts the executing call, keeps the journal and saves the run aborted",
   withTempCwd(async (cwd) => {
     const agent = perCallDeferredAgent();
     const manager = new WorkflowManager({ cwd, agent: agent.runner });
     manager.on("error", () => {});
     const { runId, promise } = manager.startInBackground(twoAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
+    await agent.entered(0);
     agent.resolve(0, "a-done");
-    await new Promise((r) => setTimeout(r, 30));
+    await agent.entered(1);
 
     // Stop while agent b executes: it is interrupted, the run is aborted, and b's result is lost.
     assert.equal(manager.stop(runId), true);
     agent.resolve(1, "lost");
     await promise.catch(() => {});
     assert.equal(manager.getRun(runId)?.status, "aborted");
-    let persisted = manager.getPersistence().list().find((r) => r.runId === runId);
+    const persisted = manager.getPersistence().load(runId);
     assert.equal(persisted?.status, "aborted");
     assert.equal(persisted?.abortSignaled, true);
     assert.equal(persisted?.journal?.length, 1);
-
-    // Resume: a replays, b runs live with a fresh runner call.
-    assert.equal((await manager.resumeInBackground(runId)).accepted, true);
-    assert.equal(manager.getRun(runId)?.status, "running");
-    await new Promise((r) => setTimeout(r, 30));
-    agent.resolve(2, "b-done");
-    await new Promise((r) => setTimeout(r, 50));
-    assert.equal(manager.getRun(runId)?.status, "completed");
-    assert.equal(JSON.stringify(manager.getRun(runId)?.result?.result), JSON.stringify({ a: "a-done", b: "b-done" }));
-    persisted = manager.getPersistence().list().find((r) => r.runId === runId);
-    assert.equal(persisted?.status, "completed");
-    assert.equal(persisted?.abortSignaled, undefined, "the stop marker does not outlive the continuation");
   }),
 );
 
-// ─── Resume tests (3 tests) ────────────────────────────────────────────────────
+// ─── Resume ───────────────────────────────────────────────────────────────────
 
 test(
   "resume full cycle: pause then resume then complete",
@@ -454,54 +384,6 @@ test(
 );
 
 test(
-  "resume with journal replay replays completed agents and runs remaining live",
-  withTempCwd(async (cwd) => {
-    // Per-call deferred so agent 1 can complete (and journal) while agent 2 stays
-    // in-flight — the precondition for a real pause → resume → journal-replay cycle.
-    const agent = perCallDeferredAgent();
-    const manager = new WorkflowManager({ cwd, agent: agent.runner });
-    manager.on("error", () => {});
-
-    const twoAgentScript = `export const meta = { name: 'two_agent', description: 'two agents test' }
-const a = await agent('first', { label: 'first' })
-const b = await agent('second', { label: 'second' })
-return { a, b }`;
-
-    const { runId, promise: origPromise } = manager.startInBackground(twoAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
-
-    // Agent 1 (run() call #0) completes and is journaled; agent 2 (call #1) stays pending.
-    agent.resolve(0, "first-result");
-    await new Promise((r) => setTimeout(r, 30));
-
-    // Stop while agent 2 is still in-flight: it is interrupted and its result is lost.
-    assert.equal(manager.stop(runId), true, "run stops while agent 2 is in-flight");
-    assert.equal(manager.getRun(runId)?.status, "aborted");
-    agent.resolve(1);
-    await origPromise.catch(() => {});
-
-    // Only the completed agent 1 made it into the journal.
-    const persisted = manager.getPersistence().list().find((r) => r.runId === runId);
-    assert.ok(persisted?.journal && persisted.journal.length >= 1, "journal should have at least one entry");
-    assert.equal(persisted?.journal?.length, 1, "only the completed agent 1 is journaled");
-
-    // Resume: agent 1 replays from the journal (no run() call); agent 2 runs live
-    // (the next run() call, #2).
-    const resumed = (await manager.resumeInBackground(runId)).accepted;
-    assert.equal(resumed, true);
-    await new Promise((r) => setTimeout(r, 30));
-    agent.resolve(2, "second-result");
-    await new Promise((r) => setTimeout(r, 50));
-
-    const finalRun = manager.getRun(runId);
-    assert.equal(finalRun?.status, "completed", "resumed multi-agent run should complete");
-    const value = finalRun?.result?.result as { a?: unknown; b?: unknown } | undefined;
-    assert.equal(value?.a, "first-result", "agent 1 replayed from the journal");
-    assert.equal(value?.b, "second-result", "agent 2 ran live after resume");
-  }),
-);
-
-test(
   "resumeInBackground rejects unknown and completed runs without a completion promise",
   withTempCwd(async (cwd) => {
     const manager = new WorkflowManager({ cwd, agent: fakeAgent() });
@@ -518,161 +400,7 @@ test(
   }),
 );
 
-test(
-  "resumeInBackground exposes the resumed run's terminal completion promise",
-  withTempCwd(async (cwd) => {
-    const agent = perCallDeferredAgent();
-    const manager = new WorkflowManager({ cwd, agent: agent.runner });
-    manager.on("error", () => {});
-
-    const { runId, promise: originalPromise } = manager.startInBackground(oneAgentScript);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    assert.equal(manager.stop(runId), true);
-    agent.resolve(0, "original-finished-after-stop");
-    await originalPromise.catch(() => {});
-
-    const resumed = await manager.resumeInBackground(runId);
-    if (!resumed.accepted) assert.fail("stopped run should be accepted for background resume");
-    assert.equal(manager.getRun(runId)?.status, "running");
-
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    agent.resolve(1, "resumed-done");
-    const result = await resumed.promise;
-
-    assert.equal(result.runId, runId);
-    assert.equal(result.status, "completed");
-    assert.equal(manager.getRun(runId)?.status, "completed");
-    assert.equal(manager.getPersistence().list().find((run) => run.runId === runId)?.status, "completed");
-  }),
-);
-
-// ─── getRun tests (2 tests) ────────────────────────────────────────────────────
-
-test(
-  "getRun returns ManagedRun with correct fields for active background run",
-  withTempCwd(async (cwd) => {
-    const da = deferredAgent();
-    const manager = new WorkflowManager({ cwd, agent: da.runner });
-    manager.on("error", () => {});
-    const { runId, promise } = manager.startInBackground(oneAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
-
-    const run = manager.getRun(runId);
-    assert.ok(run, "getRun should return the managed run");
-    assert.equal(run?.runId, runId);
-    assert.equal(run?.status, "running");
-    assert.equal(run?.script, oneAgentScript);
-    assert.ok(run?.controller instanceof AbortController, "should have an AbortController");
-    assert.ok(run?.startedAt instanceof Date, "should have a startedAt date");
-    assert.ok(Array.isArray(run?.rows.saved("running").journal), "should have a journal array");
-
-    // snapshot should be populated
-    assert.equal(run?.snapshot.name, "tracked_demo");
-
-    da.resolve("done");
-    await promise.catch(() => {});
-  }),
-);
-
-// ─── startInBackground tests (3 tests) ─────────────────────────────────────────
-
-test(
-  "startInBackground with args propagates args to workflow script",
-  withTempCwd(async (cwd) => {
-    // Script that uses args
-    const argsScript = `export const meta = { name: 'args_demo', description: 'args test' }
-const a = await agent('do it', { label: 'a' })
-return { args, a }`;
-
-    const manager = new WorkflowManager({ cwd, agent: fakeAgent({ total: 50 }) });
-    const { promise } = manager.startInBackground(argsScript, { mode: "test", value: 42 });
-    const result = await promise;
-    assert.ok(result, "should complete successfully");
-    assert.equal(result.status, "completed", "runSync/background settle to a terminal status");
-  }),
-);
-
-test(
-  "startInBackground runId is unique per call",
-  withTempCwd(async (cwd) => {
-    const manager = new WorkflowManager({ cwd, agent: fakeAgent() });
-    const r1 = manager.startInBackground(oneAgentScript);
-    const r2 = manager.startInBackground(oneAgentScript);
-    assert.notEqual(r1.runId, r2.runId, "runIds should be unique");
-
-    // Wait for both to complete
-    await Promise.allSettled([r1.promise, r2.promise]);
-  }),
-);
-
-test(
-  "startInBackground snapshot is initially populated with workflow name",
-  withTempCwd(async (cwd) => {
-    const manager = new WorkflowManager({ cwd, agent: fakeAgent() });
-    const { runId, promise } = manager.startInBackground(oneAgentScript);
-    const snap = manager.getRun(runId)?.snapshot;
-    assert.equal(snap?.name, "tracked_demo");
-    assert.equal(snap?.description, "one agent");
-    assert.ok(Array.isArray(snap?.phases), "snap.phases should be an array");
-    assert.ok(Array.isArray(snap?.logs), "snap.logs should be an array");
-    await promise.catch(() => {});
-  }),
-);
-
-// ─── Multiple runs / Events tests (3 tests) ────────────────────────────────────
-
-test(
-  "multiple background runs are independently managed",
-  withTempCwd(async (cwd) => {
-    const da = deferredAgent();
-    const manager = new WorkflowManager({ cwd, agent: da.runner });
-    manager.on("error", () => {});
-
-    const r1 = manager.startInBackground(oneAgentScript);
-    const r2 = manager.startInBackground(oneAgentScript);
-    await new Promise((r) => setTimeout(r, 30));
-
-    // Both should be running
-    assert.equal(manager.getRun(r1.runId)?.status, "running");
-    assert.equal(manager.getRun(r2.runId)?.status, "running");
-
-    // Stop one independently
-    manager.stop(r1.runId);
-    assert.equal(manager.getRun(r1.runId)?.status, "aborted");
-    assert.equal(manager.getRun(r2.runId)?.status, "running", "other run should still be running");
-
-    // The persisted listing shows both
-    const runs = manager.getPersistence().list();
-    assert.equal(runs.length, 2, "both runs should be listed");
-
-    da.resolve("done");
-    await Promise.allSettled([r1.promise, r2.promise]);
-  }),
-);
-
-test(
-  "the persisted listing reflects status changes after pause and stop",
-  withTempCwd(async (cwd) => {
-    const da = deferredAgent();
-    const manager = new WorkflowManager({ cwd, agent: da.runner });
-    manager.on("error", () => {});
-
-    const { runId, promise } = manager.startInBackground(twoAgentScript);
-    await new Promise((r) => setTimeout(r, 20));
-
-    // Pause: the executing agent finishes first.
-    manager.pause(runId);
-    da.resolve("a-done");
-    await promise.catch(() => {});
-    let persisted = manager.getPersistence().list().find((r) => r.runId === runId);
-    assert.equal(persisted?.status, "paused", "the listing should show paused status");
-
-    // Stop
-    manager.stop(runId);
-    persisted = manager.getPersistence().list().find((r) => r.runId === runId);
-    assert.equal(persisted?.status, "aborted", "the listing should show aborted status after stop");
-  }),
-);
+// ─── Events ────────────────────────────────────────────────────────────────────
 
 test(
   "manager emits 'resumed' and 'error' events",

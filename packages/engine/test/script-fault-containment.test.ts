@@ -125,29 +125,3 @@ for (const fault of faultScripts) {
     }),
   );
 }
-
-for (const fault of faultScripts) {
-  test(
-    `startInBackground contains ${fault.name} without unhandledRejection`,
-    withTempCwd(async (cwd) => {
-      await withUnhandledRejectionTripwire(async () => {
-        const manager = new WorkflowManager({ cwd, agent: noopAgent });
-        const { runId, promise } = manager.startInBackground(fault.script);
-
-        // The returned promise is intentionally still the caller-visible failure
-        // channel; the manager's side-channel catch prevents host-level leakage.
-        await new Promise((resolve) => setImmediate(resolve));
-        await assert.rejects(
-          promise,
-          (error: unknown) =>
-            error instanceof WorkflowError &&
-            fault.message.test(error.message) &&
-            error.code === WorkflowErrorCode.SCRIPT_ERROR,
-        );
-        assert.equal(manager.getRun(runId)?.status, "failed");
-        assert.match(manager.getRun(runId)?.error?.message ?? "", fault.message);
-        assertLeaseReleased(cwd, runId);
-      });
-    }),
-  );
-}

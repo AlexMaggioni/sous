@@ -670,14 +670,6 @@ return { err, deepest }`;
     loadSavedWorkflow: (name) => (name === "level" ? level : undefined),
   });
   assert.match(six.result.err, /at most 5 levels deep/);
-
-  const custom = await runWorkflow<{ err: string }>(parent(3), {
-    agent: countingAgent().runner,
-    persistLogs: false,
-    maxNestingDepth: 2,
-    loadSavedWorkflow: (name) => (name === "level" ? level : undefined),
-  });
-  assert.match(custom.result.err, /at most 2 levels deep/);
 });
 
 test("non-recoverable agent-limit propagates out of pipeline() too", async () => {

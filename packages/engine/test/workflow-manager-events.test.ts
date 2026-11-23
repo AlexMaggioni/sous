@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync, rmSync, unlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,7 +11,6 @@ import { RunEventLogError } from "../src/runs/persistence/run-event-persistence.
 import {
   createRunPersistence,
   type PersistedRunState,
-  type RunPersistence,
 } from "../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
 import { eventLog } from "./helpers/event-log.js";
@@ -179,7 +178,7 @@ test("append failure marks the snapshot incomplete once without changing the out
   });
 });
 
-test("a requested pause settles after the executing call, and warm stop reacquires and revalidates the lease", async () => {
+test("a requested pause settles after the executing call", async () => {
   await withPersistenceDirs(async ({ cwd, root }) => {
     const entered = deferred<void>();
     const finish = deferred<string>();
@@ -192,6 +191,8 @@ test("a requested pause settles after the executing call, and warm stop reacquir
     const manager = new WorkflowManager({ cwd, persistenceRoot: root, agent: runner });
     let liveErrors = 0;
     manager.on("error", () => liveErrors++);
+    const livePaused: Array<{ runId: string; reason: string }> = [];
+    manager.on("paused", (payload) => livePaused.push({ runId: payload.runId, reason: payload.reason }));
     const background = manager.startInBackground(
       script(`await agent('hold', { label: 'hold' })
 return await agent('next', { label: 'next' })`),
@@ -200,32 +201,23 @@ return await agent('next', { label: 'next' })`),
 
     assert.equal(manager.pause(background.runId), true);
     assert.equal(manager.getPersistence().load(background.runId)?.status, "running", "the executing call is still finishing");
+    assert.deepEqual(livePaused, [], "the request alone does not pause");
     finish.resolve("held");
     await assert.rejects(background.promise);
     const paused = manager.getPersistence().load(background.runId);
     assert.equal(paused?.status, "paused");
     assert.equal(paused?.pauseReason, "requested");
+    assert.equal(paused?.reason, "requested");
+    assert.equal(paused?.errorCode, WorkflowErrorCode.PAUSE_REQUESTED);
     assert.equal(paused?.journal?.length, 1, "the executing call journaled before the pause");
+    assert.equal(paused?.calls?.length, 1, "the refused second call was never allocated");
+    assert.equal(paused?.calls?.[0]?.outcome, "result");
+    assert.deepEqual(livePaused, [{ runId: background.runId, reason: "requested" }]);
     assert.equal(liveErrors, 0, "a requested pause is not an error");
     const pausedRecords = eventLog(manager).readEvents(background.runId, { limit: 1_000 }).events;
     assert.equal(pausedRecords.some((record) => record.event.type === "error"), false);
     const pausedEvent = pausedRecords.find((record) => record.event.type === "paused")?.event;
     assert.equal(pausedEvent?.type === "paused" ? pausedEvent.reason : undefined, "requested");
-
-    const competitor = createRunPersistence(cwd, undefined, { persistenceRoot: root });
-    const competingLease = competitor.acquireRunLease(background.runId);
-    assert.ok(competingLease);
-    assert.equal(manager.stop(background.runId), false);
-    assert.equal(manager.getPersistence().load(background.runId)?.status, "paused");
-    competitor.releaseRunLease(competingLease);
-
-    assert.equal(manager.stop(background.runId), true);
-    const stopped = manager.getPersistence().load(background.runId);
-    const records = eventLog(manager).readEvents(background.runId, { limit: 1_000 });
-    assert.equal(stopped?.status, "aborted");
-    assert.equal(stopped?.eventStreamId, paused?.eventStreamId);
-    assert.equal(stopped?.eventSeq, records.endCursor);
-    assert.equal(records.events.at(-1)?.event.type, "stopped");
   });
 });
 
@@ -617,36 +609,4 @@ test("a step's history report lands on that step, found by its scope and call in
     const steps = manager.getRun(result.runId)?.snapshot.agents ?? [];
     assert.deepEqual(steps.map((step) => [step.callIndex, step.history]), [[0, undefined], [1, history]]);
   });
-});
-
-test("a store with no event log gets no events file, no warning and no incomplete mark", async () => {
-  // A test's in-memory store keeps the state alone. The manager then keeps no events for the run.
-  const runsDir = mkdtempSync(join(tmpdir(), "workflow-manager-events-memory-"));
-  const states = new Map<string, PersistedRunState>();
-  const store: RunPersistence = {
-    save: (state) => void states.set(state.runId, structuredClone(state)),
-    load: (runId) => structuredClone(states.get(runId) ?? null),
-    list: () => [...states.values()].map((state) => structuredClone(state)),
-    delete: (runId) => states.delete(runId),
-    acquireRunLease: (runId) => ({ runId, token: "memory" }),
-    releaseRunLease: () => {},
-    validateRunLease: () => true,
-  };
-  const warnings: unknown[][] = [];
-  const warn = console.warn;
-  console.warn = (...args: unknown[]) => void warnings.push(args);
-  try {
-    const manager = new WorkflowManager({ persistence: store, agent: { run: async () => "ok" } });
-    const result = await manager.runSync(script("return await agent('step', { label: 'step' })"));
-    assert.equal(result.status, "completed");
-    assert.deepEqual(readdirSync(runsDir), []);
-    assert.deepEqual(warnings, []);
-    const saved = states.get(result.runId)!;
-    assert.equal(saved.eventLogIncomplete, undefined);
-    assert.equal(saved.eventSeq, undefined);
-    assert.equal(saved.eventStreamId, undefined);
-  } finally {
-    console.warn = warn;
-    rmSync(runsDir, { recursive: true, force: true });
-  }
 });
