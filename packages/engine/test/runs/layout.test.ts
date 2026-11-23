@@ -58,7 +58,6 @@ const runFiles = [
   "home/runs/projects/<home key>/runs/<id>.events.jsonl",
   "home/runs/projects/<home key>/runs/<id>.json",
   "home/runs/projects/<home key>/runs/<id>.json.bak",
-  "home/runs/projects/<home key>/runs/<id>.script.js",
 ];
 
 describe("where a run leaves its files", () => {
@@ -95,7 +94,7 @@ describe("where a run leaves its files", () => {
     assert.equal(readFileSync(manifest, "utf8"), `${JSON.stringify({ projectDir: paths.home })}\n`);
   });
 
-  it("the top workflow's text sits in five files and the nested workflow's text in two", async () => {
+  it("the top workflow's text sits in four files and the nested workflow's text in two", async () => {
     const { paths, projectDir } = setup({ top, child });
     const { runner } = heldRunner(() => "ok");
     const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
@@ -108,7 +107,6 @@ describe("where a run leaves its files", () => {
     assert.equal(readFileSync(join(projectDir, ".orchestrator", "workflows", "top.js"), "utf8"), top);
     assert.equal(state.script, top);
     assert.equal(backup.script, top);
-    assert.equal(readFileSync(join(runs, `${record.runId}.script.js`), "utf8"), top);
     const holders = (text: string) => {
       const found: string[] = [];
       const walk = (dir: string) => {
@@ -125,7 +123,6 @@ describe("where a run leaves its files", () => {
       "home/records/<id>.workflows",
       "home/runs/projects/<home key>/runs/<id>.json",
       "home/runs/projects/<home key>/runs/<id>.json.bak",
-      "home/runs/projects/<home key>/runs/<id>.script.js",
       "project/.orchestrator/workflows/top.js",
     ]);
     assert.deepEqual(holders("// the child workflow"), ["home/records/<id>.workflows", "project/.orchestrator/workflows/child.js"]);

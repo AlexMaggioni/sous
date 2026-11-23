@@ -1139,7 +1139,6 @@ export class WorkflowManager extends EventEmitter {
         managed.journal = latestRows([...exec.resumeJournal.values()]);
       }
       this.runs.set(managed.runId, managed);
-      this.writeInlineScriptCopy(managed);
       if (managed.journaling && (source || exec.resumeJournal)) {
         this.persistRunOrThrow(managed);
       } else {
@@ -1147,7 +1146,6 @@ export class WorkflowManager extends EventEmitter {
       }
       return { managed, resumeExecution };
     } catch (error) {
-      if (identity) this.persistence.discardInlineScript?.(identity.runId);
       if (identity) this.persistence.releaseRunLease(identity.lease);
       if (identity) this.runs.delete(identity.runId);
       throw error;
@@ -1286,23 +1284,6 @@ export class WorkflowManager extends EventEmitter {
       lease: identity.lease,
       ...(journaling ? { eventStreamId: generateEventStreamId(), eventSeq: 0 } : {}),
     };
-  }
-
-  /**
-   * Materialize the store's working copy of an inline script before the run record is saved, so
-   * a persisted run always has its editable file; a failed copy fails the admission.
-   */
-  private writeInlineScriptCopy(managed: ManagedRun): void {
-    if (managed.scriptOrigin?.kind !== "inline" || !managed.journaling) return;
-    try {
-      this.persistence.writeInlineScript?.(managed.runId, managed.script);
-    } catch (error) {
-      throw new WorkflowError(
-        `failed to write the script copy for ${managed.runId}: ${errorMessage(error)}`,
-        WorkflowErrorCode.PERSISTENCE_ERROR,
-        { recoverable: false },
-      );
-    }
   }
 
   private resolveJournaling(exec: ExecOptions): boolean {
