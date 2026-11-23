@@ -38,7 +38,7 @@ import {
   type Call,
 } from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
-import { orc } from "./orc.js";
+import { orc, waitFor } from "./orc.js";
 
 // Whole runs in this process, with a fake agent runner, the way `orc run` drives them.
 
@@ -70,12 +70,6 @@ async function answerWhenAsked(paths: HomePaths, runId: string, reply: (prompt: 
 }
 
 const quiet = () => {};
-
-/** Poll until `ready` holds. It fails after 20 seconds, which a slow machine does not reach. */
-async function waitFor(ready: () => boolean): Promise<void> {
-  for (let i = 0; i < 2000 && !ready(); i++) await new Promise((r) => setTimeout(r, 10));
-  assert.ok(ready(), "timed out");
-}
 
 describe("runs", () => {
   it("an agent asks a question, the answer comes through the inbox, and the same session goes on", async () => {
@@ -126,7 +120,7 @@ return await ask('Breakpoint: not one')`,
     const workers = inProcess({ inner: runner });
     const record = startRun(paths, workers.launch, { workflow: "lookalike", projectDir, inputs: {} });
     const running = workers.ended(record.runId);
-    for (let i = 0; i < 750 && !runQuestions(paths, record.runId).length; i++) await new Promise((r) => setTimeout(r, 20));
+    await waitFor(() => runQuestions(paths, record.runId).length > 0, "the question");
     const id = runQuestions(paths, record.runId)[0]!.id;
     const inbox = await orc(paths, ["inbox", "--json"]);
     const sendBack = await orc(paths, ["send-back", id, "shorter"]);
@@ -306,7 +300,7 @@ return { top, nested }`,
     const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
     const file = logFile(paths, record.runId);
     const running = workers.ended(record.runId);
-    for (let i = 0; i < 500 && !calls.some((c) => c.label === "build"); i++) await new Promise((r) => setTimeout(r, 10));
+    await waitFor(() => calls.some((c) => c.label === "build"), "the step to start");
 
     // The worker writes the record while it runs, for a nested run or a step's worktree. Here it
     // saves one it read just before `orc stop --step`, in the same tick, before the signal lands.

@@ -35,6 +35,7 @@ import {
 } from "@orchestrator/engine/testing";
 import { cmdAccount } from "../src/account-cli.js";
 import { main } from "../src/cli.js";
+import { waitFor } from "./orc.js";
 
 // orc's accounts: one per program, the program's own login by default. Tokens here are made up.
 
@@ -95,8 +96,7 @@ function typedLimitRunner(resetAt: string | undefined): InnerRunner {
 async function workerGone(paths: HomePaths, runId: string): Promise<void> {
   const pid = loadRecord(paths, runId)?.pid;
   assert.ok(pid, "the run has a worker");
-  for (let i = 0; i < 400 && processAlive(pid); i++) await new Promise((done) => setTimeout(done, 25));
-  assert.ok(!processAlive(pid), `worker ${pid} ended`);
+  await waitFor(() => !processAlive(pid), `worker ${pid} to end`);
 }
 
 async function withHome<T>(paths: HomePaths, body: () => Promise<T>): Promise<{ value: T; printed: string }> {

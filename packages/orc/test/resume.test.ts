@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { rerunRun, resumeRun, runQuestions, startRun, type HomePaths, type RunRecord } from "@orchestrator/engine";
 import { fakeRunner, inProcess, plantState, readState, testHome, writeAnswer, WorkflowError, WorkflowErrorCode } from "@orchestrator/engine/testing";
-import { orc } from "./orc.js";
+import { orc, waitFor } from "./orc.js";
 
 // Which steps run again when a run resumes. Each test pauses a run with a fake agent, resumes it
 // as `orc resume` does, and checks the prompts the fake gets on the resume. A failed step,
@@ -234,7 +234,7 @@ return await agent('Build ' + name, { label: 'build' })`,
     const agent = fake(undefined, true);
     const record = start(paths, projectDir, "asks", agent);
     const running = agent.ended(record.runId);
-    for (let i = 0; i < 500 && runQuestions(paths, record.runId).length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+    await waitFor(() => runQuestions(paths, record.runId).length > 0, "the question");
     const [question] = runQuestions(paths, record.runId);
     assert.equal(question?.id, `${record.runId}--1`);
 

@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import { logFile, runQuestions, startRun, type HomePaths, type RunQuestion } from "@orchestrator/engine";
 import { inProcess, testHome, type InnerRunner } from "@orchestrator/engine/testing";
 import { main } from "../src/cli.js";
-import { capture, orc } from "./orc.js";
+import { capture, orc, waitFor } from "./orc.js";
 
 // How orc shows a question, takes a reply and writes the answer, through its commands and the
 // prompt of `orc wait` in a terminal.
@@ -53,7 +53,7 @@ async function inTerminal(paths: HomePaths, argv: string[], replies: string[]): 
 }
 
 async function asked(paths: HomePaths, runId: string, count: number): Promise<RunQuestion[]> {
-  for (let i = 0; i < 250 && runQuestions(paths, runId).length < count; i++) await new Promise((r) => setTimeout(r, 20));
+  await waitFor(() => runQuestions(paths, runId).length >= count, "the run to ask");
   const open = runQuestions(paths, runId);
   assert.equal(open.length, count, "the run asks");
   return open;

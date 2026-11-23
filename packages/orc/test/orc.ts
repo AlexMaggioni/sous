@@ -1,5 +1,6 @@
 // Run orc's main in this process, on a test's home, and keep what it prints.
 
+import assert from "node:assert/strict";
 import type { HomePaths } from "@orchestrator/engine";
 import { main, type MainOptions } from "../src/cli.js";
 
@@ -34,4 +35,10 @@ export async function orc(paths: HomePaths, argv: string[], options: MainOptions
     if (before === undefined) delete process.env.ORC_HOME;
     else process.env.ORC_HOME = before;
   }
+}
+
+/** Poll until `ready` holds, and fail after 20 seconds, which a slow machine does not reach. */
+export async function waitFor(ready: () => boolean, what = "the condition"): Promise<void> {
+  for (let i = 0; i < 2000 && !ready(); i++) await new Promise((r) => setTimeout(r, 10));
+  assert.ok(ready(), `timed out waiting for ${what}`);
 }
