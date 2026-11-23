@@ -29,6 +29,13 @@ function workers(): Launcher {
   return workerProcess(() => file);
 }
 
+/** What a caller of main may put in place of orc's own parts. */
+export interface MainOptions {
+  /** Starts the workers of the runs a command starts or resumes. By default each worker is a
+   *  process of its own. Tests pass one that runs the worker in their process. */
+  launch?: Launcher;
+}
+
 interface Parsed {
   positionals: string[];
   flags: Record<string, string | true>;
@@ -249,7 +256,7 @@ async function startedOrWait(paths: HomePaths, record: RunRecord, mode: "start" 
 
 // ── commands ──
 
-async function cmdRun(parsed: Parsed): Promise<number> {
+async function cmdRun(parsed: Parsed, options: MainOptions): Promise<number> {
   const { paths, projectDir } = context(parsed);
   const workflow = parsed.positionals[0];
   if (!workflow) throw new Usage("orc run <workflow> [--name value ...]");
@@ -257,7 +264,7 @@ async function cmdRun(parsed: Parsed): Promise<number> {
   const place = str(parsed.flags.place);
   if (place !== undefined && !isPlace(place)) throw new Usage(`--place is worktree, folder or none, got "${place}"`);
   const concurrency = str(parsed.flags.concurrency);
-  const record = startRun(paths, workers(), {
+  const record = startRun(paths, options.launch ?? workers(), {
     workflow,
     projectDir,
     inputs: parsed.inputs,
@@ -404,16 +411,16 @@ function cmdPause(parsed: Parsed): number {
   return 0;
 }
 
-async function cmdResume(parsed: Parsed): Promise<number> {
+async function cmdResume(parsed: Parsed, options: MainOptions): Promise<number> {
   const paths = ensureHome(homePaths());
   const run = needRun(paths, parsed.positionals[0]);
   // A run that cannot resume says so before this usage error. resumeRun refuses it.
   if (parsed.flags.latest && parsed.flags.same && run.resume.ok) throw new Usage("--latest or --same, not both");
-  const record = resumeRun(paths, workers(), run.runId, parsed.flags.latest ? "latest" : parsed.flags.same ? "same" : undefined);
+  const record = resumeRun(paths, options.launch ?? workers(), run.runId, parsed.flags.latest ? "latest" : parsed.flags.same ? "same" : undefined);
   return startedOrWait(paths, record, "resume", parsed);
 }
 
-async function cmdRerun(parsed: Parsed): Promise<number> {
+async function cmdRerun(parsed: Parsed, options: MainOptions): Promise<number> {
   const paths = ensureHome(homePaths());
   const run = needRun(paths, parsed.positionals[0]);
   const place = str(parsed.flags.place) ?? run.record.place;
@@ -421,7 +428,7 @@ async function cmdRerun(parsed: Parsed): Promise<number> {
   const reuse = Boolean(parsed.flags.reuse);
   // A run that cannot be reused says so before this usage error. rerunRun refuses it.
   if (reuse && parsed.flags.place && run.reuse.ok) throw new Usage("--reuse works where the earlier run worked, so it takes no --place");
-  const record = rerunRun(paths, workers(), run.runId, {
+  const record = rerunRun(paths, options.launch ?? workers(), run.runId, {
     place,
     reuse,
     inputs: parsed.inputs,
@@ -586,14 +593,14 @@ function cmdSchedule(parsed: Parsed): number {
   }
 }
 
-async function cmdDaemon(parsed: Parsed): Promise<number> {
+async function cmdDaemon(parsed: Parsed, options: MainOptions): Promise<number> {
   const paths = ensureHome(homePaths());
   const action = parsed.positionals[0] ?? "status";
   const pid = daemonPid(paths);
   const log = daemonLog(paths);
   switch (action) {
     case "run":
-      await daemonMain(paths, workers());
+      await daemonMain(paths, options.launch ?? workers());
       return 0;
     case "start": {
       if (pid) {
@@ -712,7 +719,7 @@ installed on this machine, on the account orc account names. A run that a Claude
 an agent starts uses that session's account.`;
 
 /** Each command by its name, and the other names it answers to. */
-const COMMANDS: Record<string, (parsed: Parsed) => number | Promise<number>> = {
+const COMMANDS: Record<string, (parsed: Parsed, options: MainOptions) => number | Promise<number>> = {
   run: cmdRun,
   wait: (parsed) => {
     const paths = ensureHome(homePaths());
@@ -740,12 +747,12 @@ const COMMANDS: Record<string, (parsed: Parsed) => number | Promise<number>> = {
   gc: cmdGc,
   prune: cmdPrune,
   discard: cmdDiscard,
-  account: (parsed) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message), launch: workerProcess(cliFile) }),
-  accounts: (parsed) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message), launch: workerProcess(cliFile) }),
+  account: (parsed, options) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message), launch: options.launch ?? workerProcess(cliFile) }),
+  accounts: (parsed, options) => cmdAccount(parsed.positionals, { json: parsed.flags.json === true, usage: (message) => new Usage(message), launch: options.launch ?? workerProcess(cliFile) }),
   doctor: (parsed) => doctor({ live: parsed.flags.live === true, model: str(parsed.flags.model), json: parsed.flags.json === true }),
 };
 
-export async function main(argv: string[]): Promise<number> {
+export async function main(argv: string[], options: MainOptions = {}): Promise<number> {
   const [command, ...rest] = argv;
   try {
     if (command === "_worker") return await workerMain(rest[0]!, rest[1] === "resume" ? "resume" : "start");
@@ -756,7 +763,7 @@ export async function main(argv: string[]): Promise<number> {
     }
     const run = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : undefined;
     if (!run) throw new Usage(`unknown command "${command}". orc help lists them.`);
-    return await run(parsed);
+    return await run(parsed, options);
   } catch (error) {
     if (error instanceof Usage) process.stderr.write(`usage: ${error.message}\n`);
     else if (error instanceof InputProblems) process.stderr.write(`${error.message}\n`);
