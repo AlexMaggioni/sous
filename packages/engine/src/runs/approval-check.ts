@@ -10,7 +10,7 @@ import { nestedLookup } from "./consent.js";
 import type { HomePaths } from "./home.js";
 import { recordAndTell } from "./notify.js";
 import type { RunRecord } from "./records.js";
-import { Refusal } from "./refusal.js";
+import { Refusal, word } from "./refusal.js";
 
 /** A text with no yes: the name the person gives `sous workflows approve`, and the text's hash. */
 export interface Unapproved {
@@ -30,15 +30,16 @@ export class NotApproved extends Refusal {
     const change =
       `Show the person the change the call gives${texts.length > 1 ? ", and the same call for each other workflow named," : ""} and ask them. ` +
       `Once they agree, run ${approve}, or the person types the same in their own terminal.`;
-    super("not_approved", message, change, `sous workflows show ${texts[0]!.workflow} --diff --json`);
+    super("not_approved", message, change, `sous workflows show ${word(texts[0]!.workflow)} --diff --json`);
     this.workflow = texts[0]!.workflow;
   }
 }
 
 /** The call that records the person's yes to a workflow's text, by the name `approvalName` gives.
- *  The not_approved refusal and `sous workflows show` both give it. */
-export function approveCall(workflow: string): string {
-  return `sous workflows approve ${workflow} --by person --json`;
+ *  The not_approved refusal and `sous workflows show` both give it to an agent. `typed` gives the
+ *  command the person types in their own terminal, as the service's notice does. */
+export function approveCall(workflow: string, typed = false): string {
+  return `sous workflows approve ${word(workflow)}${typed ? "" : " --by person --json"}`;
 }
 
 /** The name the person gives `sous workflows approve`: the workflow's name, or its file when that
@@ -94,6 +95,15 @@ export function needApproval(paths: HomePaths, projectDir: string, resolved: Pic
   if (missing.length) throw new NotApproved(missing, unapproved(missing, root));
 }
 
+/**
+ * The saved workflows a script starts by name, and the ones those start, that have no yes for
+ * their text, as needApproval reads them. A start of the script by an agent is refused for them.
+ */
+export function unapprovedNamed(paths: HomePaths, projectDir: string, resolved: Pick<ResolvedWorkflow, "refs">): string[] {
+  const view = projectWorkflows(paths, projectDir);
+  return namedWorkflows(view, view.list(), resolved.refs.workflows).filter(({ file, text }) => !isApproved(paths, file, text)).map(({ name }) => name);
+}
+
 /** A workflow `sous workflows approve` looked at: its name, its file, and the hash of its text. */
 export interface ApprovedText {
   workflow: string;
@@ -119,7 +129,7 @@ export function approveWorkflows(paths: HomePaths, projectDir: string, target: s
   if (who.by !== "person") {
     const what = target ?? "--all";
     const message = `Only the person approves a workflow. sous does not approve ${target ?? "the changed workflows"} on an agent's word alone.`;
-    const change = `Show the person each change with sous workflows show ${target ?? "<name>"} --diff and ask them. Once they agree, make the call. Or they type sous workflows approve ${what} in their own terminal.`;
+    const change = `Show the person each change with sous workflows show ${target === undefined ? "<name>" : word(target)} --diff and ask them. Once they agree, make the call. Or they type ${approveCall(what, true)} in their own terminal.`;
     throw new Refusal("needs_person", message, change, approveCall(what));
   }
   const approved: ApprovedText[] = [];

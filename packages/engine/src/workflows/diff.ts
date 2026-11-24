@@ -9,22 +9,38 @@ function linesOf(text: string): string[] {
   return lines;
 }
 
-/**
- * The lines of `after` against `before`, in order: "- " for a line only before, "+ " for a line
- * only after, and two spaces for a line both keep. A changed line gives its "- " line, then its
- * "+ " line. The matched lines are a longest common run of lines, so a diff is as short as it can be.
- */
-export function lineDiff(before: string, after: string): string[] {
+/** The most cells of the table lineDiff compares the middle lines in. Above it the middle is all
+ *  its "- " lines, then all its "+ " lines, since the table would take too long to fill. */
+const MAX_CELLS = 4_000_000;
+
+/** The lines both texts start and end with, which match as they are, and the middles between. */
+function split(before: string, after: string) {
   const a = linesOf(before);
   const b = linesOf(after);
-  // The lines both texts start and end with match as they are, so only the middle is compared.
   let start = 0;
   while (start < a.length && start < b.length && a[start] === b[start]) start++;
   let end = 0;
   while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end++;
-  const from = a.slice(start, a.length - end);
-  const to = b.slice(start, b.length - end);
-  return [...a.slice(0, start).map(same), ...middle(from, to), ...a.slice(a.length - end).map(same)];
+  return { a, start, end, from: a.slice(start, a.length - end), to: b.slice(start, b.length - end) };
+}
+
+/** True when the changed middle of two texts is too long to match line by line, so lineDiff gives
+ *  it as every old line, then every new one. */
+export function diffTooLong(before: string, after: string): boolean {
+  const { from, to } = split(before, after);
+  return from.length * to.length > MAX_CELLS;
+}
+
+/**
+ * The lines of `after` against `before`, in order: "- " for a line only before, "+ " for a line
+ * only after, and two spaces for a line both keep. A changed line gives its "- " line, then its
+ * "+ " line. The matched lines are a longest common run of lines, so a diff is as short as it can
+ * be, unless diffTooLong.
+ */
+export function lineDiff(before: string, after: string): string[] {
+  const { a, start, end, from, to } = split(before, after);
+  const changed = from.length * to.length > MAX_CELLS ? [...from.map((line) => `- ${line}`), ...to.map((line) => `+ ${line}`)] : middle(from, to);
+  return [...a.slice(0, start).map(same), ...changed, ...a.slice(a.length - end).map(same)];
 }
 
 const same = (line: string) => `  ${line}`;

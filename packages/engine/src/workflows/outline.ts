@@ -4,13 +4,13 @@
 
 import { dirname, resolve } from "node:path";
 import type { Who } from "../runs/actions.js";
-import { approvalName } from "../runs/approval-check.js";
+import { approvalName, unapprovedNamed } from "../runs/approval-check.js";
 import { approvalFor, approvedText, type Approval } from "../runs/approvals.js";
 import type { HomePaths } from "../runs/home.js";
 import { listRecords } from "../runs/records.js";
 import { runDetail, shortRun } from "../runs/run.js";
 import { checkWorkflow } from "./check.js";
-import { lineDiff } from "./diff.js";
+import { diffTooLong, lineDiff } from "./diff.js";
 import { projectWorkflows, resolveWorkflow, type ResolvedWorkflow } from "./dir.js";
 import type { InputSpec } from "./meta.js";
 import type { ScriptCall } from "./script.js";
@@ -59,6 +59,12 @@ export interface Target {
   target: string;
 }
 
+/** The saved workflows it starts by name, or that those start, with no yes for their text. An
+ *  agent's run of the workflow is refused until the person approves them. */
+export interface WaitsOn {
+  waitsOn: string[];
+}
+
 /** The runs of a file the outline lists. */
 const LAST_RUNS = 3;
 
@@ -101,7 +107,7 @@ function targetOf(paths: HomePaths, projectDir: string, resolved: ResolvedWorkfl
 }
 
 /** The outline of a saved workflow, by name, or of a workflow file, by path. It writes nothing. */
-export function workflowOutline(paths: HomePaths, projectDir: string, nameOrPath: string, now = new Date()): WorkflowOutline & Target {
+export function workflowOutline(paths: HomePaths, projectDir: string, nameOrPath: string, now = new Date()): WorkflowOutline & Target & WaitsOn {
   const resolved = resolveWorkflow(paths, projectDir, nameOrPath);
   const { extras, refs } = resolved;
   const { problems, notes } = checkWorkflow(paths, projectDir, nameOrPath);
@@ -120,6 +126,7 @@ export function workflowOutline(paths: HomePaths, projectDir: string, nameOrPath
     approved: approvalView(approvalFor(paths, resolved.file, resolved.script)),
     lastRuns: lastRuns(paths, resolved.file, now),
     target: targetOf(paths, projectDir, resolved),
+    waitsOn: unapprovedNamed(paths, projectDir, resolved),
   };
 }
 
@@ -131,6 +138,9 @@ export interface WorkflowDiff {
   diff: string[];
   /** True when the approved text's copy is gone, so the diff shows the file as new. */
   approvedTextGone?: true;
+  /** True when the changed part is too long to match line by line, so the diff gives every old
+   *  line of it, then every new one. */
+  tooLong?: true;
 }
 
 /** What changed in a workflow since the person's yes that speaks for it. It writes nothing. */
@@ -144,6 +154,7 @@ export function workflowDiff(paths: HomePaths, projectDir: string, nameOrPath: s
     approved: approvalView(found),
     diff: lineDiff(before ?? "", resolved.script),
     ...(before === undefined ? { approvedTextGone: true as const } : {}),
+    ...(diffTooLong(before ?? "", resolved.script) ? { tooLong: true as const } : {}),
     target: targetOf(paths, projectDir, resolved),
   };
 }

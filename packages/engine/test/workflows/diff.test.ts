@@ -13,33 +13,22 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { lineDiff } from "../../src/workflows/diff.js";
 
-type LineDiff = (before: string, after: string) => string[];
-
-/** lineDiff from engine/src/workflows/diff.ts, which piece 10 adds. */
-async function loadLineDiff(): Promise<LineDiff> {
-  return lineDiff;
-}
-
 describe("piece 10: lineDiff", () => {
-  it("one changed line gives one - and one +, and keeps the matching lines with two spaces", async () => {
-    const lineDiff = await loadLineDiff();
+  it("one changed line gives one - and one +, and keeps the matching lines with two spaces", () => {
     assert.deepEqual(lineDiff("one\ntwo\nthree\n", "one\nTWO\nthree\n"), ["  one", "- two", "+ TWO", "  three"]);
   });
 
-  it("a new file, with nothing before, gives each line with +", async () => {
-    const lineDiff = await loadLineDiff();
+  it("a new file, with nothing before, gives each line with +", () => {
     assert.deepEqual(lineDiff("", "export const meta = {}\n\nreturn 1\n"), ["+ export const meta = {}", "+ ", "+ return 1"]);
   });
 
-  it("an identical text gives no - and no + line", async () => {
-    const lineDiff = await loadLineDiff();
+  it("an identical text gives no - and no + line", () => {
     const text = "a\nb\nc\n";
     const diff = lineDiff(text, text);
     assert.deepEqual(diff, ["  a", "  b", "  c"]);
   });
 
-  it("an added line and a removed line, apart, each give one line and leave the rest matched", async () => {
-    const lineDiff = await loadLineDiff();
+  it("an added line and a removed line, apart, each give one line and leave the rest matched", () => {
     assert.deepEqual(lineDiff("a\nb\nc\nd\n", "a\nc\nd\ne\n"), ["  a", "- b", "  c", "  d", "+ e"]);
   });
 });

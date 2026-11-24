@@ -381,15 +381,17 @@ export interface ListedAgent {
   file: string;
 }
 
-/** The agents a step of this project can name, by name, as lookupAgents finds them. */
-export function listAgents(paths: HomePaths, projectDir: string, env: Record<string, string | undefined> = process.env): ListedAgent[] {
-  const { agents } = lookupAgents(lookupSettings(paths, projectDir, loadConfig(paths), env));
-  return [...agents.values()]
+/** The agents a step of this project can name, by name, as lookupAgents finds them, and the
+ *  names a step can't use as they are, with what is wrong. */
+export function listAgents(paths: HomePaths, projectDir: string, env: Record<string, string | undefined> = process.env): { agents: ListedAgent[]; problems: AgentProblem[] } {
+  const { agents, problems } = lookupAgents(lookupSettings(paths, projectDir, loadConfig(paths), env));
+  const listed = [...agents.values()]
     .map((agent) => {
       const model = settingsFor(agent, agent.harness).model;
       return { name: agent.name, ...(agent.description ? { description: agent.description } : {}), harness: agent.harness, ...(model ? { model: withHarness(agent.harness, model) } : {}), file: agent.file };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
+  return { agents: listed, problems: [...problems.values()].sort((a, b) => a.name.localeCompare(b.name)) };
 }
 
 /** The model spec for a harness: the block's model, else the run's model when it is on that

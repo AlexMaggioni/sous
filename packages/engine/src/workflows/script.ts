@@ -45,10 +45,10 @@ export interface ScriptRefs {
 
 /** One step call as the script writes it. Only literal values are read. */
 export interface ScriptCall {
-  kind: "agent" | "sh" | "js" | "py" | "ask" | "breakpoint" | "workflow";
+  kind: "agent" | "sh" | "js" | "py" | "ask" | "breakpoint" | "checkpoint" | "workflow";
   /** The literal label option. A label made at run time is left out. */
   label?: string;
-  /** The literal first argument of an ask() or a breakpoint(). */
+  /** The literal first argument of an ask(), a breakpoint() or a checkpoint(). */
   title?: string;
   /** The literal agentType of an agent call. */
   agent?: string;
@@ -60,7 +60,7 @@ export interface ScriptCall {
   workflow?: string;
 }
 
-/** Where each step call takes its options, by the index of its argument. ask and breakpoint take none here. */
+/** Where each step call takes its options, by the index of its argument. ask, breakpoint and checkpoint take no label. */
 const OPTIONS_AT: Record<ScriptCall["kind"], number | undefined> = {
   agent: 1,
   sh: 1,
@@ -69,6 +69,7 @@ const OPTIONS_AT: Record<ScriptCall["kind"], number | undefined> = {
   workflow: 2,
   ask: undefined,
   breakpoint: undefined,
+  checkpoint: undefined,
 };
 
 /** A name workflow() looks up as a saved workflow. Other text is an inline script. */
@@ -317,7 +318,7 @@ function scriptCall(node: AnyNode): ScriptCall | undefined {
   const option = (key: string) => (options?.type === "ObjectExpression" ? ownProperty(options, key)?.value : undefined);
   const label = staticString(option("label"));
   if (label !== undefined) call.label = label;
-  if (kind === "ask" || kind === "breakpoint") {
+  if (kind === "ask" || kind === "breakpoint" || kind === "checkpoint") {
     const title = staticString(node.arguments[0]);
     if (title !== undefined) call.title = title;
   }

@@ -20,7 +20,7 @@ starts it from you, a run or a schedule only after they approve it, by saying ye
 When they say yes to you, run `sous workflows approve <name> --by person --json`. Without
 `--by person` an agent's approve is refused with `needs_person`. Never approve without their yes.
 A person's own `sous run <name>` approves the text it runs. Never edit, move or delete
-`approvals.json` or `approved/` in sous's home.
+`approvals.json` or `approved/` in sous's home. Without them no workflow counts as approved.
 
 ## The file
 

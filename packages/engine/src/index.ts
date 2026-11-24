@@ -15,7 +15,7 @@ export {
 export { listRecords, loadRecord, scopePath, type RunRecord } from "./runs/records.js";
 export { hint, questionView, type Reply } from "./runs/inbox.js";
 export { answerCalls, mayStart } from "./runs/consent.js";
-export { Refusal } from "./runs/refusal.js";
+export { Refusal, word } from "./runs/refusal.js";
 export { recordAction, traceCall, type Through, type Who } from "./runs/actions.js";
 export { approveCall, approveWorkflows } from "./runs/approval-check.js";
 export { seedApprovals } from "./runs/approvals.js";
@@ -58,7 +58,8 @@ export { isPlace } from "./places/places.js";
 // ── Saved workflows: the folders that hold them, the check and the dry run ──
 export { projectWorkflows, resolveWorkflow } from "./workflows/dir.js";
 export { checkWorkflow } from "./workflows/check.js";
-export { workflowDiff, workflowOutline } from "./workflows/outline.js";
+export { isRequired, type InputSpec } from "./workflows/meta.js";
+export { workflowDiff, workflowOutline, type OutlineApproval, type WorkflowOutline } from "./workflows/outline.js";
 export { dryRun, type Answers } from "./workflows/dry-run.js";
 
 // ── Accounts, agents and the installed programs ──

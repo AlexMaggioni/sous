@@ -184,7 +184,9 @@ describe("piece 10: sous workflows show", () => {
     assert.ok(calls(outline).some((call) => call.startsWith("sous check greet ")), `next gives the check: ${calls(outline).join("\n")}`);
     assert.ok(!calls(outline).some((call) => call.startsWith("sous run greet")), `next gives no run, which would be refused: ${calls(outline).join("\n")}`);
     parses(outline);
-    assert.equal(events(paths), before, "a show adds no line to events.jsonl");
+    await show(paths, projectDir, "greet", ["--diff"]);
+    assert.equal((await sous(paths, ["agents", "--json", "--project", projectDir])).code, 0);
+    assert.equal(events(paths), before, "a show, a diff and the agents list add no line to events.jsonl");
   });
 
   it("after the person approves, approved holds by, at and changedSince false, and next gives run and check, not approve", async () => {

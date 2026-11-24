@@ -47,3 +47,5 @@ export class Refusal extends Error {
     return MISSING.has(this.code);
   }
 }
+
+export const word = (text: string) => (/^[\w./-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`);

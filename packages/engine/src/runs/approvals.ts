@@ -105,10 +105,10 @@ export function approvalFor(paths: HomePaths, file: string, text: string): { app
   return newest ? { approval: newest, changedSince: true } : null;
 }
 
-/** The text an approval kept, or undefined when its copy is gone. */
+/** The text an approval kept, or undefined when its copy is gone or is not the text of that hash. */
 export function approvedText(paths: HomePaths, hash: string): string | undefined {
   const kept = readJsonFile<{ text?: unknown }>(join(paths.approved, `${hash}.json`));
-  return typeof kept?.text === "string" ? kept.text : undefined;
+  return typeof kept?.text === "string" && workflowHash(kept.text) === hash ? kept.text : undefined;
 }
 
 /** Record a yes to this text of this file and keep the text. A text already the newest yes is
