@@ -234,7 +234,7 @@ const NEVER_REACH = [
 ];
 
 /**
- * The 36 behavior changes of docs/proof/improve.md, each with the tests that hold it. A test is a
+ * The 36 behavior changes of docs/history/improve.md, each with the tests that hold it. A test is a
  * file and the title its test() or it() call gets, or the title of a describe() with a test under
  * it. The rule fails when a title is no longer a test of its file, or when the test is skipped.
  * A title that the source builds from a template stays as the source writes it, ${...} included,
@@ -1083,7 +1083,7 @@ test("no more test files build a WorkflowManager themselves", () => assert.equal
 test("the manager's methods and the run's options stay at their caps", () => assert.equal(now.members.join("\n"), "", now.members.join("\n")));
 
 test("each behavior change keeps the test that holds it", () => {
-  assert.equal(PINS.length, 36, "docs/proof/improve.md lists 36 behavior changes, and the table holds one row for each");
+  assert.equal(PINS.length, 36, "docs/history/improve.md lists 36 behavior changes, and the table holds one row for each");
   const lines = [];
   const read = new Map();
   for (const { change, tests = [], waiting } of PINS) {
