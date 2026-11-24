@@ -128,6 +128,19 @@ function sous(o, rep, args) {
   return { exit: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
+/**
+ * The person approves the fixtures before the session, as they would after installing a
+ * workflow by hand. A build with no approvals has no such command, and nothing to approve.
+ * A workflow the setup edits, or one the agent writes, stays unapproved, so scenarios 5b
+ * and 6 still see whether the agent asks first.
+ */
+function approveFixtures(o, rep) {
+  const help = sous(o, rep, ["--help"]);
+  if (!/sous workflows approve\b/.test(`${help.stdout}${help.stderr}`)) return;
+  const r = sous(o, rep, ["workflows", "approve", "--all", "--json"]);
+  if (r.exit !== 0) throw new Error(`setup: sous workflows approve --all exited ${r.exit}: ${r.stdout}${r.stderr}`);
+}
+
 function cleanEnv() {
   const env = {};
   for (const [k, v] of Object.entries(process.env)) if (!/^(CLAUDECODE|CLAUDE_CODE_.*|CODEX_THREAD_ID|CODEX_SESSION_ID|CODEX_SANDBOX.*|SOUS_.*)$/.test(k)) env[k] = v;
@@ -201,6 +214,7 @@ async function runRep(o, id, k) {
   const result = { scenario: id, title: scenario.title, rep: k, dir: rep.dir, turns: [], error: undefined };
   let setupRunIds = [];
   try {
+    approveFixtures(o, rep);
     if (scenario.setup) setupRunIds = (await scenario.setup(setupEnv(o, rep))) ?? [];
     if (setupRunIds.length) git(rep.project, "commit", "-q", "-am", "setup", "--allow-empty");
   } catch (err) {
