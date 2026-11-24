@@ -1,0 +1,166 @@
+{
+  "scenario": "4",
+  "title": "A failed step",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/4-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Run the fails workflow.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:48:15.793Z",
+      "endedAt": "2026-11-24T17:48:26.804Z",
+      "ms": 11011,
+      "args": [
+        "exec",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-s",
+        "workspace-write",
+        "--add-dir",
+        "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/4-r1/state",
+        "-C",
+        "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/4-r1/project",
+        "<prompt>"
+      ],
+      "sessionId": "01a20eac-327a-72a1-a669-208e80604124",
+      "finalText": "The `fails` workflow ran and paused because step `boom` failed: `disk check failed` (exit code 3).\n\nRun ID: `mwuzn9bf-ugcvmw`",
+      "tokens": {
+        "input": 84891,
+        "cachedInput": 74880,
+        "output": 175,
+        "total": 85066
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    }
+  ],
+  "verdict": "fail",
+  "checks": [
+    {
+      "name": "the run paused on the failed step",
+      "result": "pass",
+      "reason": "mwuzn9bf-ugcvmw paused step_failed",
+      "source": "records"
+    },
+    {
+      "name": "no rerun",
+      "result": "pass",
+      "reason": "no rerun",
+      "source": "records"
+    },
+    {
+      "name": "the report names the step",
+      "result": "pass",
+      "reason": "it names boom",
+      "source": "answer"
+    },
+    {
+      "name": "the report names the error",
+      "result": "pass",
+      "reason": "it names exit 3 or the message",
+      "source": "answer"
+    },
+    {
+      "name": "the agent offers a resume",
+      "result": "fail",
+      "reason": "it does not mention resume",
+      "source": "answer"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 2,
+    "sousInCommands": 2,
+    "commands": 2,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 11,
+    "tokens": 85066,
+    "inputTokens": 84891,
+    "cachedInputTokens": 74880,
+    "outputTokens": 175,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "help"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "run",
+        "fails",
+        "--wait",
+        "--json"
+      ],
+      "exit": 2,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwuzn9bf-ugcvmw",
+      "workflow": "fails",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:48:21.867Z",
+      "status": "paused",
+      "pauseReason": "step_failed",
+      "reason": "step \"boom\" failed after 1 try: exited with code 3: disk check failed",
+      "answers": []
+    }
+  ],
+  "setupRunIds": [],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:48:26.804Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwuzn9bf-ugcvmw",
+          "workflow": "fails",
+          "status": "paused",
+          "pauseReason": "step_failed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

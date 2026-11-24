@@ -14,6 +14,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, resolve as resolvePath } from "node:path";
 import { workflowDirs, type HomePaths } from "../runs/home.js";
+import { Refusal } from "../runs/refusal.js";
 import type { WorkflowMeta } from "../workflow-result.js";
 import { workflowExtras, type WorkflowExtras } from "./meta.js";
 import { parseWorkflowScript, readWorkflowScript, type ScriptRefs } from "./script.js";
@@ -136,6 +137,16 @@ export function projectWorkflows(paths: HomePaths, projectDir: string): Workflow
   return openWorkflowDir(workflowDirs(projectDir, paths));
 }
 
+/** A listed workflow's text, read from its file, or undefined when the file is gone. It reads a
+ *  file whose name is no plain workflow name too, which resolve() does not find. */
+export function workflowText(file: string): string | undefined {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
 /** A saved workflow, read once: its meta as written, the meta checked, and the names it uses. */
 export interface ResolvedWorkflow {
   name: string;
@@ -158,11 +169,16 @@ export function resolveWorkflow(paths: HomePaths, projectDir: string, nameOrPath
     const entry = entries.find((candidate) => candidate.name === nameOrPath);
     if (!entry) {
       const names = entries.map((candidate) => candidate.name);
-      throw new Error(
+      throw new Refusal(
+        "no_such_workflow",
         `no workflow "${nameOrPath}". Looked in ${view.dirs.join(" and ")}.${names.length ? ` Saved workflows: ${names.join(", ")}.` : ""}`,
+        "Give the name of a saved workflow, or the path of a workflow file.",
+        "sous workflows --json",
       );
     }
-    if (entry.error) throw new Error(`${entry.file} does not parse: ${entry.error}`);
+    if (entry.error) {
+      throw new Refusal("workflow_invalid", `${entry.file} does not parse: ${entry.error}`, `Fix the workflow file ${entry.file}.`, `sous check ${entry.name} --json`);
+    }
     file = entry.file;
   }
   const script = readFileSync(file, "utf8");

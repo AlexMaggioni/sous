@@ -127,14 +127,17 @@ async function step(world, args, options) {
 
 async function start(world, workflow, extra = []) {
   const result = await sous(world, ["run", workflow, "--json", ...extra]);
-  let runId;
+  let printed;
   try {
-    runId = JSON.parse(result.stdout).runId;
+    printed = JSON.parse(result.stdout);
   } catch {
-    throw new Error(`sous run ${workflow} printed no run id:\n${result.stdout}${result.stderr}`);
+    throw new Error(`sous run ${workflow} printed no JSON:\n${result.stdout}${result.stderr}`);
   }
+  const { runId } = printed;
+  if (!runId) throw new Error(`sous run ${workflow} printed no run id:\n${result.stdout}${result.stderr}`);
   world.runIds.push(runId);
-  world.transcript.push(transcriptEntry(result));
+  // The run reply's lastRuns has the seconds of earlier runs, which change with each capture.
+  world.transcript.push(transcriptEntry({ ...result, stdout: `${JSON.stringify(scrubJson(printed), null, 2)}\n` }));
   return runId;
 }
 
@@ -168,20 +171,20 @@ const workerLogged = (world, runId, pattern) =>
 
 async function stepDone(world, runId, label) {
   await until(`step ${label} to end`, async () => {
-    const shown = await sous(world, ["show", runId, "--json"]);
-    const agents = JSON.parse(shown.stdout).state?.agents ?? [];
-    return agents.some((agent) => agent.label === label && agent.status === "done");
+    const shown = await sous(world, ["show", runId, "--full", "--json"]);
+    const steps = JSON.parse(shown.stdout).state?.agents ?? [];
+    return steps.some((step) => step.label === label && step.status === "done");
   });
 }
 
 const gate = (world, name) => writeFileSync(join(world.fakeDir, name), "");
 
-/** The world's runs as show and show --json print them, and the requests the fakes logged. */
+/** The world's runs as show and show --full --json print them, and the requests the fakes logged. */
 async function snapshot(world) {
   const parts = [];
   for (const runId of world.runIds) {
     parts.push(transcriptEntry(await sous(world, ["show", runId])));
-    const json = await sous(world, ["show", runId, "--json"]);
+    const json = await sous(world, ["show", runId, "--full", "--json"]);
     try {
       json.stdout = `${JSON.stringify(scrubJson(JSON.parse(json.stdout)), null, 2)}\n`;
     } catch {
@@ -212,7 +215,7 @@ function cleanup(world) {
 
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 const ISO = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g;
-const TIME_KEY = /(?:At|Ms|^duration\w*|^pid|^heartbeat\w*|^lastSeen\w*|^timestamp)$/;
+const TIME_KEY = /(?:At|Ms|^duration\w*|^pid|^heartbeat\w*|^lastSeen\w*|^timestamp|^seconds|^minutes)$/;
 // Values that change with each run or each machine: a random stream id, the node and v8 versions.
 const MACHINE_KEY = /^(?:eventStreamId|node|v8)$/;
 

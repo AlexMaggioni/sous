@@ -4,7 +4,25 @@ exit 0
   "runId": "<run-1>",
   "workflow": "harnesses",
   "cwd": "<tmp>/scenario-harnesses/sous-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-harnesses/sous-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-harnesses/sous-home/logs/<run-1>.log",
+  "status": "starting",
+  "asks": 0,
+  "lastRuns": {
+    "count": 0,
+    "seconds": "<seconds>",
+    "tokens": 0
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous wait <run-1> --json
@@ -24,7 +42,27 @@ exit 0
       "sure": true
     },
     "codexAgent": "Fake codex answer."
-  }
+  },
+  "review": {
+    "result": {
+      "claude": {
+        "answer": "fake-answer",
+        "sure": true
+      },
+      "codex": {
+        "answer": "fake-answer",
+        "sure": true
+      },
+      "codexAgent": "Fake codex answer."
+    }
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous show <run-1>
@@ -55,9 +93,38 @@ result
   "codexAgent": "Fake codex answer."
 }
 
-$ sous show <run-1> --json
+$ sous show <run-1> --full --json
 exit 0
 {
+  "runId": "<run-1>",
+  "workflow": "harnesses",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-harnesses/sous-home/scratch/<run-1>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 450,
+  "steps": [
+    {
+      "label": "on claude",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "on codex",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "codex agent",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-1>",
     "workflow": "harnesses",
@@ -69,6 +136,10 @@ exit 0
     "priority": "user",
     "origin": "cli",
     "createdAt": "<createdAt>",
+    "through": {
+      "kind": "person"
+    },
+    "workflowHash": "b9b7003cf60274e0ecf95675ed772d186e08eed28f241267a07985df8531c0be",
     "accounts": {
       "claude": {
         "name": "default",
@@ -280,10 +351,11 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "notes": [],
+  "next": []
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--effort=low","--model=opus","--json-schema={\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\"},\"sure\":{\"type\":\"boolean\"}},\"required\":[\"answer\",\"sure\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-harnesses/sous-home/scratch/<run-1>","model":"opus","effort":"low","sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"answer":{"type":"string"},"sure":{"type":"boolean"}},"required":["answer","sure"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: on claude\n\nHARNESS-CLAUDE Answer on Claude Code.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--effort=low","--model=opus","--json-schema={\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\"},\"sure\":{\"type\":\"boolean\"}},\"required\":[\"answer\",\"sure\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-harnesses/sous-home/scratch/<run-1>","model":"opus","effort":"low","permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"answer":{"type":"string"},"sure":{"type":"boolean"}},"required":["answer","sure"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: on claude\n\nHARNESS-CLAUDE Answer on Claude Code.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}
 {"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-harnesses/sous-home/scratch/<run-1>","model":"gpt-fake","effort":"high","sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":"You answer on Codex.","login":[],"prompt":"Task label: codex agent\n\nHARNESS-CODEX-AGENT Answer as the Codex agent.","rule":null,"outcome":"answer"}
 {"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-harnesses/sous-home/scratch/<run-1>","model":"gpt-fake","effort":"high","sessionId":"<id-2>","resume":false,"schema":{"type":"object","properties":{"answer":{"type":"string"},"sure":{"type":"boolean"}},"required":["answer","sure"],"additionalProperties":false},"mcpServers":[],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":null,"login":[],"prompt":"Task label: on codex\n\nHARNESS-CODEX Answer on Codex.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}

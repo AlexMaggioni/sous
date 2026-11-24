@@ -10,7 +10,7 @@ import type { RunStatus } from "./persistence/run-persistence.js";
  */
 export type PauseReason =
   | "usage_limit" | "auth_required" | "asks" | "requested"
-  | "step_failed" | "step_stopped" | "time_limit" | "interrupted" | "other";
+  | "step_failed" | "step_stopped" | "time_limit" | "budget" | "interrupted" | "other";
 
 /** What a reader sees. RunStatus is the one the state saves. */
 export type ViewStatus =
@@ -35,10 +35,13 @@ export interface RunFacts {
   /** Older code saved the state in a shape today's code no longer reads. Such a run shows, and
    *  never resumes or seeds a new run. */
   older?: boolean;
+  /** The run is a dry run (sous check --dry-run). It ran no step for real, so it never resumes
+   *  as a real run: the check runs it again. */
+  dryRun?: boolean;
 }
 
 /** Why resume or reuse says no. */
-export type ResumeRefusal = "running" | "never-started" | "completed" | "stopped" | "older";
+export type ResumeRefusal = "running" | "never-started" | "completed" | "stopped" | "older" | "dry-run";
 export type ReuseRefusal = "running" | "paused" | "older";
 
 export interface Verdict {
@@ -100,6 +103,7 @@ const ROWS = {
   "paused, step_failed":         { worker: "any",   status: "paused",      word: "paused: failed step",   exit: 2, unfinished: true,  pause: "step_failed",   resume: OK, reuse: no("paused") },
   "paused, step_stopped":        { worker: "any",   status: "paused",      word: "paused: stopped step",  exit: 2, unfinished: true,  pause: "step_stopped",  resume: OK, reuse: no("paused") },
   "paused, time_limit":          { worker: "any",   status: "paused",      word: "paused: time limit",    exit: 2, unfinished: true,  pause: "time_limit",    resume: OK, reuse: no("paused") },
+  "paused, budget":              { worker: "any",   status: "paused",      word: "paused: budget",        exit: 2, unfinished: true,  pause: "budget",        resume: OK, reuse: no("paused") },
   "paused, interrupted":         { worker: "any",   status: "interrupted", word: "interrupted",           exit: 2, unfinished: true,  pause: "interrupted",   resume: OK, reuse: no("paused") },
   "paused, other text":          { worker: "any",   status: "paused",      word: "paused: <text>",        exit: 2, unfinished: true,  pause: "other",         resume: OK, reuse: no("paused") },
   "completed":                   { worker: "any",   status: "completed",   word: "completed",             exit: 0, unfinished: false, resume: no("completed"),     reuse: OK },
@@ -132,6 +136,14 @@ export function judge(facts: RunFacts): Verdict {
     reuse = no("older");
     if (saved?.resumeAt) {
       const { resumeAt: _resumeAt, ...rest } = saved;
+      pause = rest;
+    }
+  }
+  // A dry run that may go on says it cannot, and the service never resumes it.
+  if (facts.dryRun && resume.ok) {
+    resume = no("dry-run");
+    if (pause?.resumeAt) {
+      const { resumeAt: _resumeAt, ...rest } = pause;
       pause = rest;
     }
   }

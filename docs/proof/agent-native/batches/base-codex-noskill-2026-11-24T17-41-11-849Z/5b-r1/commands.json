@@ -1,0 +1,52 @@
+[
+  {
+    "tool": "shell",
+    "command": "sous help",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "sous runs saved workflows in the background.\n\n  sous run <workflow> [--name value ...] [-- --name value ...]\n        --place worktree|folder|none    where the run works (default: the workflow's, else config)\n        --model <spec>                  model for steps that name none, such as claude/haiku\n        --set <step>.<key>=<value>      change one step for this run, such as --set reviewer.model=claude/opus\n        --concurrency N                 steps at once in this run\n        --wait                          follow the run until it ends; in a terminal, answer here\n        --json                          machine-readable output\n  sous wait <run> [--json]              wait for a run to end, pause or ask (exit 0 done, 1 failed,\n                                        2 paused, 3 stopped, 4 waits for an answer)\n  sous list [--all]                     runs, newest first\n  sous show <run>                       one run: status, steps, questions, result\n  sous log <run> [-f]                   the run's log\n  sous inbox [run]                      questions waiting for you\n  sous answer <question> <text>         answer a question (a run id works when it asks one thing)\n  sous approve <question>               approve a breakpoint\n  sous send-back <question> <note>      send a breakpoint's step back with a note\n  sous pause <run>                      finish running steps, start nothing new\n  sous resume <run> [--wait]            go on from where the run paused, failed or was cut off\n        --latest | --same               after an edit: take the new version, or keep the run's own\n  sous stop <run>                       end the run; its worktree stays\n        --step <name>                   stop one running step instead; the run pauses on it\n  sous rerun <run> [--name value ...]   start the same workflow again with the same inputs\n        --reuse                         keep the results of the steps you did not edit, in the same place\n  sous workflows                        ",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous list --all",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "RUN              WORKFLOW STATUS               AGE   WHERE\nmwuzohd2-65hksj  fails    paused: failed step  7s    scratch\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous show mwuzohd2-65hksj",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "fails  mwuzohd2-65hksj\nstatus    paused: failed step\nreason    step \"boom\" failed after 1 try: exited with code 3: disk check failed\nplace     none  /tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/5b-r1/state/home/scratch/mwuzohd2-65hksj\nstarted   2026-11-24T17:49:18.951Z  by cli\naccount   Claude Code: default, Claude Code's own login in ~/.claude\naccount   Codex: default, Codex's own login in ~/.codex\ntokens    0  in 0s\nsteps\n  done  prepare  (0s)  exec\n  error boom  (0s)  exited with code 3: disk check failed\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous resume mwuzohd2-65hksj --latest --wait",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "17:49:19 run        fails in /tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/5b-r1/state/home/scratch/mwuzohd2-65hksj\n17:49:19 start      prepare (exec)\n17:49:19 done       prepare\n17:49:19 start      boom (exec)\n17:49:19 log        agent boom attempt 1/1 failed: exited with code 3: disk check failed\n17:49:19 log        step \"boom\" failed after 1 try: exited with code 3: disk check failed. The run pauses: fix the cause and resume it.\n17:49:19 failed     boom: exited with code 3: disk check failed\n17:49:19 paused     fails (step_failed): step \"boom\" failed after 1 try: exited with code 3: disk check failed\n17:49:30 resume     fails\n17:49:30 start      prepare (exec)\n17:49:30 done       prepare\n17:49:30 start      boom (exec)\n17:49:31 done       boom\n17:49:31 log        Logs persisted to /tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/5b-r1/state/home/runs/projects/mwuzohd2-65hksj-2eb12a2a0f18/runs/mwuzohd2-65hksj.log\n17:49:31 completed  fails\nresult:\ndone\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous show mwuzohd2-65hksj",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "fails  mwuzohd2-65hksj\nstatus    completed\nplace     none  /tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/5b-r1/state/home/scratch/mwuzohd2-65hksj\nstarted   2026-11-24T17:49:18.951Z  by cli\naccount   Claude Code: default, Claude Code's own login in ~/.claude\naccount   Codex: default, Codex's own login in ~/.codex\ntokens    0  in 0s\nsteps\n  done  prepare  (0s)  exec\n  done  boom  (0s)  exec\nresult\ndone\n",
+    "turn": 1
+  }
+]

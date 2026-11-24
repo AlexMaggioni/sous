@@ -4,7 +4,25 @@ exit 0
   "runId": "<run-1>",
   "workflow": "limit",
   "cwd": "<tmp>/scenario-limit-codex/sous-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-limit-codex/sous-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-limit-codex/sous-home/logs/<run-1>.log",
+  "status": "starting",
+  "asks": 0,
+  "lastRuns": {
+    "count": 0,
+    "seconds": "<seconds>",
+    "tokens": 0
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous wait <run-1> --json
@@ -16,7 +34,21 @@ exit 2
   "pauseReason": "usage_limit",
   "resetHint": "Resets at 2100-01-01T12:00:00.000Z",
   "reason": "usage_limit",
-  "cwd": "<tmp>/scenario-limit-codex/sous-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-limit-codex/sous-home/scratch/<run-1>",
+  "resumesAt": "2100-01-01T12:00:30.000Z",
+  "notes": [
+    "The service resumes this run by itself at 2100-01-01T12:00:30.000Z. Until then sous wait returns at once, so call it after that time."
+  ],
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits for the run once the service resumed it"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous resume <run-1>
@@ -34,7 +66,20 @@ exit 0
   "result": {
     "before": "before",
     "answer": "Fake codex answer."
-  }
+  },
+  "review": {
+    "result": {
+      "before": "before",
+      "answer": "Fake codex answer."
+    }
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous show <run-1>
@@ -57,9 +102,31 @@ result
   "answer": "Fake codex answer."
 }
 
-$ sous show <run-1> --json
+$ sous show <run-1> --full --json
 exit 0
 {
+  "runId": "<run-1>",
+  "workflow": "limit",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-limit-codex/sous-home/scratch/<run-1>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 156,
+  "steps": [
+    {
+      "label": "before",
+      "status": "done",
+      "seconds": "<seconds>"
+    },
+    {
+      "label": "worker",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-1>",
     "workflow": "limit",
@@ -73,6 +140,10 @@ exit 0
     "priority": "user",
     "origin": "cli",
     "createdAt": "<createdAt>",
+    "through": {
+      "kind": "person"
+    },
+    "workflowHash": "42d77b98135254b8e7f12de528b61bbd592fe92099e8fcc832e7e1a01fe982a3",
     "accounts": {
       "claude": {
         "name": "default",
@@ -224,7 +295,8 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "notes": [],
+  "next": []
 }
 
 fake requests (sorted):

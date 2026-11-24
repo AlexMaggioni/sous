@@ -1,0 +1,336 @@
+{
+  "scenario": "3",
+  "title": "A question anyone may answer",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-57-44-884Z/3-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Run the asks-anyone workflow.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:58:44.434Z",
+      "endedAt": "2026-11-24T17:59:07.391Z",
+      "ms": 22957,
+      "args": [
+        "exec",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-s",
+        "workspace-write",
+        "--add-dir",
+        "/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-57-44-884Z/3-r1/state",
+        "-C",
+        "/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-57-44-884Z/3-r1/project",
+        "<prompt>"
+      ],
+      "sessionId": "01a20eb5-ca1b-7552-9559-618b207d55b0",
+      "finalText": "Completed `asks-anyone` (run `mwv00vnx-90399h`). I selected **blue**, since its question allowed agent answers, and verified the result was `{\"color\":\"blue\"}`. No branch or code changes were produced.",
+      "tokens": {
+        "input": 205522,
+        "cachedInput": 192128,
+        "output": 388,
+        "total": 205910
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    }
+  ],
+  "verdict": "pass",
+  "checks": [
+    {
+      "name": "one answer by agent",
+      "result": "pass",
+      "reason": "mwv00vnx-90399h--0 took blue by agent",
+      "source": "records"
+    },
+    {
+      "name": "the asks-anyone run completed",
+      "result": "pass",
+      "reason": "mwv00vnx-90399h completed",
+      "source": "records"
+    },
+    {
+      "name": "the report names the answer",
+      "result": "pass",
+      "reason": "it names blue",
+      "source": "answer"
+    },
+    {
+      "name": "sous showed answeredBy to the agent",
+      "result": "note",
+      "reason": "a sous reply carried answeredBy",
+      "source": "commands"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 7,
+    "sousInCommands": 7,
+    "commands": 8,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 23,
+    "tokens": 205910,
+    "inputTokens": 205522,
+    "cachedInputTokens": 192128,
+    "outputTokens": 388,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "status",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "workflows",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "workflows",
+        "show",
+        "asks-anyone",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "run",
+        "asks-anyone",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "wait",
+        "mwv00vnx-90399h",
+        "--timeout",
+        "540",
+        "--json"
+      ],
+      "exit": 4,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "answer",
+        "mwv00vnx-90399h--0",
+        "blue",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "wait",
+        "mwv00vnx-90399h",
+        "--timeout",
+        "540",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwv00vnx-90399h",
+      "workflow": "asks-anyone",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:58:57.357Z",
+      "status": "completed",
+      "result": {
+        "color": "blue"
+      },
+      "answers": [
+        {
+          "runId": "mwv00vnx-90399h",
+          "question": "mwv00vnx-90399h--0",
+          "value": "blue",
+          "at": "2026-11-24T17:59:02.139Z"
+        }
+      ]
+    }
+  ],
+  "homeEvents": [
+    {
+      "at": "2026-11-24T17:58:44.412Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks",
+      "hash": "c8ef2dfe595f3fd33b07791afc12c65b24d7f086fe3a7639353bf7f7f6c72992"
+    },
+    {
+      "at": "2026-11-24T17:58:44.416Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks-anyone",
+      "hash": "6499283149e2745d2cf7f2bc4d67db70c7882d7146af7d1e81d67fa06dcfeb3b"
+    },
+    {
+      "at": "2026-11-24T17:58:44.419Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "deploy",
+      "hash": "0d6ead89c160894eb646df97e2b3013a749e92f11cc07e5ee66c28532d7b8f99"
+    },
+    {
+      "at": "2026-11-24T17:58:44.422Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "fails",
+      "hash": "e36c6881b2922702af39c332fd93ab65468bb3f7a27a5b4554c2bbe262f1ca41"
+    },
+    {
+      "at": "2026-11-24T17:58:44.425Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "hello",
+      "hash": "8c061f17ea3f5e5c8686b4982781340e6acc52eee4cdc080d1459b0f007ec65f"
+    },
+    {
+      "at": "2026-11-24T17:58:44.428Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "review",
+      "hash": "476aa61bdc2ece3e7fb5127fe472f0d5d5c5ef6ee28fec126b8b228f53046c18"
+    },
+    {
+      "at": "2026-11-24T17:58:57.359Z",
+      "act": "run",
+      "by": "agent",
+      "through": {
+        "kind": "agent",
+        "program": "codex",
+        "session": "01a20eb5-ca1b-7552-9559-618b207d55b0"
+      },
+      "runId": "mwv00vnx-90399h",
+      "workflow": "asks-anyone"
+    },
+    {
+      "at": "2026-11-24T17:59:01.841Z",
+      "act": "answer",
+      "by": "agent",
+      "through": {
+        "kind": "agent",
+        "program": "codex",
+        "session": "01a20eb5-ca1b-7552-9559-618b207d55b0"
+      },
+      "runId": "mwv00vnx-90399h",
+      "question": "mwv00vnx-90399h--0",
+      "prompt": "Which color?",
+      "value": "blue"
+    }
+  ],
+  "setupRunIds": [],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:59:07.391Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwv00vnx-90399h",
+          "workflow": "asks-anyone",
+          "status": "completed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

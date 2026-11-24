@@ -1,5 +1,7 @@
 // The one interface the engine runs a step through, on Claude Code or on Codex.
 
+import type { Steer } from "./seam.js";
+
 export type HarnessId = "claude" | "codex";
 
 /** The installed program an adapter found, or why it found none. */
@@ -129,6 +131,11 @@ export interface StepEvents {
   /** The step's running total. */
   usage?(usage: Usage): void;
   history?(entry: HistoryEntry): void;
+  /**
+   * The adapter gives a Steer when the turn starts, and undefined when the turn ends. A message
+   * goes into the step's history once it is delivered.
+   */
+  steer?(send: Steer | undefined): void;
 }
 
 export interface Harness {
@@ -145,6 +152,8 @@ export interface Harness {
    * program uses, and token is a Claude Code login token.
    */
   login(env?: Record<string, string | undefined>): { variable: string; value?: string; folder: string; token?: string };
+  /** Where the program looks for skills in env, and its settings file when it has one. */
+  places(env?: Record<string, string | undefined>): { skills: string; settings?: string };
   /** base with the account's variables set, for the program started outside run(). Default base process.env. */
   env(account: Account | undefined, base?: Record<string, string | undefined>): Record<string, string | undefined>;
 }

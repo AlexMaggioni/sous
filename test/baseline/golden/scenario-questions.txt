@@ -4,7 +4,25 @@ exit 0
   "runId": "<run-1>",
   "workflow": "questions",
   "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-questions/sous-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-questions/sous-home/logs/<run-1>.log",
+  "status": "starting",
+  "asks": 2,
+  "lastRuns": {
+    "count": 0,
+    "seconds": "<seconds>",
+    "tokens": 0
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous wait <run-1> --json
@@ -12,7 +30,7 @@ exit 4
 {
   "runId": "<run-1>",
   "workflow": "questions",
-  "status": "running",
+  "status": "asks",
   "questions": [
     {
       "id": "<run-1>--0",
@@ -22,10 +40,23 @@ exit 4
         "red",
         "blue"
       ],
-      "breakpoint": false
+      "breakpoint": false,
+      "askedAt": "<time>",
+      "answeredBy": "people"
     }
   ],
-  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
+  "notes": [],
+  "next": [
+    {
+      "call": "sous answer <run-1>--0 <red|blue> --json",
+      "does": "answers \"Pick a color for the draft\""
+    },
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits again once the answer is in"
+    }
+  ]
 }
 
 $ sous inbox
@@ -37,22 +68,37 @@ exit 0
 $ sous answer <run-1> blue
 exit 0
 answered <run-1>--0
+next: sous wait <run-1> --json  (waits for the run, which goes on with the answer)
 
 $ sous wait <run-1> --json
 exit 4
 {
   "runId": "<run-1>",
   "workflow": "questions",
-  "status": "running",
+  "status": "asks",
   "questions": [
     {
       "id": "<run-1>--2",
+      "step": "asker",
       "prompt": "asker asks: Which file should I edit?",
       "kind": "input",
-      "breakpoint": false
+      "breakpoint": false,
+      "askedAt": "<time>",
+      "answeredBy": "people"
     }
   ],
-  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
+  "notes": [],
+  "next": [
+    {
+      "call": "sous answer <run-1>--2 \"<answer>\" --json",
+      "does": "answers \"asker asks: Which file should I edit?\""
+    },
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits again once the answer is in"
+    }
+  ]
 }
 
 $ sous inbox <run-1>
@@ -64,48 +110,85 @@ exit 0
 $ sous answer <run-1> src/textkit.js
 exit 0
 answered <run-1>--2
+next: sous wait <run-1> --json  (waits for the run, which goes on with the answer)
 
 $ sous wait <run-1> --json
 exit 4
 {
   "runId": "<run-1>",
   "workflow": "questions",
-  "status": "running",
+  "status": "asks",
   "questions": [
     {
       "id": "<run-1>--5",
       "prompt": "Breakpoint: Check the draft\n\nDraft: Fake claude answer.\n\nReply approve, stop, or send back with a note.",
       "kind": "input",
-      "breakpoint": true
+      "breakpoint": true,
+      "askedAt": "<time>",
+      "answeredBy": "people"
     }
   ],
-  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
+  "notes": [],
+  "next": [
+    {
+      "call": "sous approve <run-1>--5 --json",
+      "does": "approves \"Breakpoint: Check the draft\""
+    },
+    {
+      "call": "sous send-back <run-1>--5 \"<note>\" --json",
+      "does": "sends the run back with a note"
+    },
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits again once the answer is in"
+    }
+  ]
 }
 
 $ sous send-back <run-1> "Make it shorter"
 exit 0
 answered <run-1>--5
+next: sous wait <run-1> --json  (waits for the run, which goes on with the answer)
 
 $ sous wait <run-1> --json
 exit 4
 {
   "runId": "<run-1>",
   "workflow": "questions",
-  "status": "running",
+  "status": "asks",
   "questions": [
     {
       "id": "<run-1>--7",
       "prompt": "Breakpoint: Check the draft\n\nDraft: Fake claude answer.\n\nReply approve, stop, or send back with a note.",
       "kind": "input",
-      "breakpoint": true
+      "breakpoint": true,
+      "askedAt": "<time>",
+      "answeredBy": "people"
     }
   ],
-  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
+  "notes": [],
+  "next": [
+    {
+      "call": "sous approve <run-1>--7 --json",
+      "does": "approves \"Breakpoint: Check the draft\""
+    },
+    {
+      "call": "sous send-back <run-1>--7 \"<note>\" --json",
+      "does": "sends the run back with a note"
+    },
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits again once the answer is in"
+    }
+  ]
 }
 
 $ sous approve <run-1>
 exit 0
 answered <run-1>--7
+next: sous wait <run-1> --json  (waits for the run, which goes on with the answer)
 
 $ sous wait <run-1> --json
 exit 0
@@ -118,7 +201,21 @@ exit 0
     "color": "blue",
     "asked": "Fake claude answer.",
     "draft": "Fake claude answer."
-  }
+  },
+  "review": {
+    "result": {
+      "color": "blue",
+      "asked": "Fake claude answer.",
+      "draft": "Fake claude answer."
+    }
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous show <run-1>
@@ -143,9 +240,44 @@ result
   "draft": "Fake claude answer."
 }
 
-$ sous show <run-1> --json
+$ sous show <run-1> --full --json
 exit 0
 {
+  "runId": "<run-1>",
+  "workflow": "questions",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 600,
+  "steps": [
+    {
+      "label": "asker",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "asker (answer 1)",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "drafter",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "drafter",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-1>",
     "workflow": "questions",
@@ -157,6 +289,10 @@ exit 0
     "priority": "user",
     "origin": "cli",
     "createdAt": "<createdAt>",
+    "through": {
+      "kind": "person"
+    },
+    "workflowHash": "15219e1142420a512afcaa5bc2f84d04c6bdddd98983842bb6e4e071fca6588e",
     "accounts": {
       "claude": {
         "name": "default",
@@ -449,11 +585,12 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "notes": [],
+  "next": []
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: asker\n\nASKER Which file should change?\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.","rule":0,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: drafter\n\nDRAFT again in blue: Make it shorter","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: drafter\n\nDRAFT first in blue","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--resume=<id-1>","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: asker (answer 1)\n\nThe user answered: src/textkit.js\n\nContinue the task.\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: asker\n\nASKER Which file should change?\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.","rule":0,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: drafter\n\nDRAFT again in blue: Make it shorter","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: drafter\n\nDRAFT first in blue","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--resume=<id-1>","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: asker (answer 1)\n\nThe user answered: src/textkit.js\n\nContinue the task.\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.","rule":null,"outcome":"answer"}

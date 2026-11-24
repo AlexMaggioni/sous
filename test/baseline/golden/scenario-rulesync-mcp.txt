@@ -4,7 +4,25 @@ exit 0
   "runId": "<run-1>",
   "workflow": "rulesync-mcp",
   "cwd": "<tmp>/scenario-rulesync-mcp/sous-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-rulesync-mcp/sous-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-rulesync-mcp/sous-home/logs/<run-1>.log",
+  "status": "starting",
+  "asks": 0,
+  "lastRuns": {
+    "count": 0,
+    "seconds": "<seconds>",
+    "tokens": 0
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous wait <run-1> --json
@@ -19,7 +37,22 @@ exit 0
     "onCodex": "Fake codex answer.",
     "ownServer": "Fake claude answer.",
     "codexServer": "Fake codex answer."
-  }
+  },
+  "review": {
+    "result": {
+      "onClaude": "Fake claude answer.",
+      "onCodex": "Fake codex answer.",
+      "ownServer": "Fake claude answer.",
+      "codexServer": "Fake codex answer."
+    }
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous show <run-1>
@@ -46,9 +79,44 @@ result
   "codexServer": "Fake codex answer."
 }
 
-$ sous show <run-1> --json
+$ sous show <run-1> --full --json
 exit 0
 {
+  "runId": "<run-1>",
+  "workflow": "rulesync-mcp",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-rulesync-mcp/sous-home/scratch/<run-1>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 600,
+  "steps": [
+    {
+      "label": "researcher",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "researcher on codex",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "docs step",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "docs step on codex",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-1>",
     "workflow": "rulesync-mcp",
@@ -60,6 +128,10 @@ exit 0
     "priority": "user",
     "origin": "cli",
     "createdAt": "<createdAt>",
+    "through": {
+      "kind": "person"
+    },
+    "workflowHash": "c93a6386b85fbfbfb980443ed80dbcb5f9a27b752e41e143578421b401335286",
     "accounts": {
       "claude": {
         "name": "default",
@@ -311,11 +383,12 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "notes": [],
+  "next": []
 }
 
 fake requests (sorted):
 {"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--effort=high","--model=haiku","--permission-prompt-tool=stdio","--allowedTools=Skill(lookup)","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--await-initialize","--session-id=<id-1>"],"cwd":"<tmp>/scenario-rulesync-mcp/sous-home/scratch/<run-1>","model":"haiku","effort":"high","sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[{"name":"notes","transport":"stdio"}],"allowedTools":["Skill(lookup)"],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"You look things up in the notes and the docs, then answer in one line.","skills":["lookup"],"login":[],"prompt":"Task label: researcher\n\nMCP-CLAUDE Look it up.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--await-initialize","--session-id=<id-3>"],"cwd":"<tmp>/scenario-rulesync-mcp/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"},{"name":"notes","transport":"stdio"}],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: docs step\n\nMCP-STEP Use the docs.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--await-initialize","--session-id=<id-3>"],"cwd":"<tmp>/scenario-rulesync-mcp/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"},{"name":"notes","transport":"stdio"}],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: docs step\n\nMCP-STEP Use the docs.","rule":null,"outcome":"answer"}
 {"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-rulesync-mcp/sous-home/scratch/<run-1>","model":"gpt-fake","effort":"low","sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"},{"name":"notes","transport":"stdio"}],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":"You look things up in the notes and the docs, then answer in one line.","login":[],"prompt":"Task label: researcher on codex\n\nMCP-CODEX Look it up.","rule":null,"outcome":"answer"}
 {"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-rulesync-mcp/sous-home/scratch/<run-1>","model":"gpt-fake","effort":null,"sessionId":"<id-4>","resume":false,"schema":null,"mcpServers":[{"name":"docs","transport":"http"}],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":null,"login":[],"prompt":"Task label: docs step on codex\n\nMCP-STEP-CODEX Use the docs.","rule":null,"outcome":"answer"}

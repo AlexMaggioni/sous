@@ -21,7 +21,9 @@ import {
   waitingRuns,
   type HomePaths,
   type Launcher,
+  type Who,
 } from "@sous/engine";
+import { reply, type Reply } from "./reply.js";
 
 export interface AccountCommandOptions {
   json?: boolean;
@@ -34,6 +36,8 @@ export interface AccountCommandOptions {
   out?: (line: string) => void;
   /** Starts the workers of the runs `sous account use` moves. */
   launch?: Launcher;
+  /** Who calls, for the events line of `sous account use`. */
+  who: Who;
 }
 
 /** Read a line without showing it. Pasted text works. */
@@ -89,9 +93,12 @@ function launcher(options: AccountCommandOptions): Launcher {
   );
 }
 
-export async function cmdAccount(positionals: string[], options: AccountCommandOptions = {}): Promise<number> {
+export async function cmdAccount(positionals: string[], options: AccountCommandOptions): Promise<number | Reply<object>> {
   const paths = ensureHome(homePaths());
-  const out = options.out ?? ((line: string) => process.stdout.write(`${line}\n`));
+  const json = options.json === true;
+  // With --json the lines stay off stdout, and the command gives what it did as data.
+  const out = json ? () => {} : (options.out ?? ((line: string) => process.stdout.write(`${line}\n`)));
+  const done = (data: object): number | Reply<object> => (json ? reply(data) : 0);
   const usage = options.usage ?? ((message: string) => new Error(message));
   const [action, spec, ...extra] = positionals;
   if (extra.length) throw usage(`sous account ${action} takes one name. Extra words: ${extra.join(" ")}`);
@@ -103,7 +110,7 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
   switch (action) {
     case undefined:
     case "list":
-      return listCommand(paths, out, options.json === true);
+      return listCommand(paths, out, json);
     case "add": {
       // Check the name before the browser login, so a wrong one costs nothing.
       const { name } = checkNewAccount(paths, needName());
@@ -115,34 +122,32 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
       const token = await (options.readToken ?? (terminal ? () => readHidden("Paste the token it printed (it stays hidden): ") : readStdin))();
       addAccount(paths, needName(), token);
       out(`added Claude Code account ${name}. sous account use ${name} makes sous use it.`);
-      return 0;
+      return done({ added: name, program: "claude" });
     }
     case "use": {
-      const result = useAccount(paths, needName(), launcher(options));
+      const result = useAccount(paths, needName(), launcher(options), options.who);
       const label = accountLabel(result.program, result.name);
       out(`sous uses ${harnessName(result.program)} account ${label} for new runs.`);
       for (const run of result.moved) out(`resumed ${run.runId}  ${run.workflow}  on ${label}, was waiting at the limit of ${run.from}`);
       for (const run of result.same) out(`${run.runId}  ${run.workflow}  waits at the limit of ${label} itself, and goes on after the reset`);
-      return 0;
+      return done({ program: result.program, name: result.name, moved: result.moved, same: result.same });
     }
     case "remove":
     case "rm": {
       const { program, name } = removeAccount(paths, needName());
       out(`removed ${harnessName(program)} account ${accountLabel(program, name)}.${currentAccount(paths, program) === "default" ? " sous uses default." : ""}`);
-      return 0;
+      return done({ removed: name, program, current: currentAccount(paths, program) });
     }
     default:
       throw usage(`sous account [add|use|remove <name>], got "${action}"`);
   }
 }
 
-function listCommand(paths: HomePaths, out: (line: string) => void, json: boolean): number {
+/** The accounts, printed, or with json a reply for main to print. */
+function listCommand(paths: HomePaths, out: (line: string) => void, json: boolean): number | Reply<object> {
   const rows = listAccounts(paths);
   const waiting = waitingRuns(paths);
-  if (json) {
-    out(JSON.stringify({ accounts: rows, waiting: waiting.map((run) => ({ runId: run.runId, workflow: run.workflow, limit: run.limit })) }, null, 2));
-    return 0;
-  }
+  if (json) return reply({ accounts: rows, waiting: waiting.map((run) => ({ runId: run.runId, workflow: run.workflow, limit: run.limit })) });
   const width = Math.max(...rows.map((row) => accountLabel(row.program, row.name).length)) + 2;
   for (const program of HARNESSES) {
     out(harnessName(program));

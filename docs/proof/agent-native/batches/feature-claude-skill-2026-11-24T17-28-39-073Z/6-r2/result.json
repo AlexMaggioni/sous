@@ -1,0 +1,357 @@
+{
+  "scenario": "6",
+  "title": "Make a workflow",
+  "rep": 2,
+  "dir": "/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-28-39-073Z/6-r2",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Make a workflow that greets someone and then asks me to approve.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:33:36.268Z",
+      "endedAt": "2026-11-24T17:33:49.196Z",
+      "ms": 12928,
+      "args": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+        "--setting-sources",
+        "project,local",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "acceptEdits",
+        "--permission-prompts",
+        "none",
+        "--allowedTools",
+        "Bash(sous *),Bash(git *),Bash(cat *),Bash(ls *),Bash(sleep *),Read,Glob,Grep",
+        "--disallowedTools",
+        "Workflow",
+        "--",
+        "<prompt>"
+      ],
+      "sessionId": "5c1147a3-274f-441e-8021-5c58479fae96",
+      "finalText": "Here's the workflow I'd save as `.sous/workflows/greet.js`. Nothing is saved yet.\n\n```js\nexport const meta = {\n  name: \"greet\",\n  description: \"Greet someone, then ask the user to approve\",\n  inputs: {\n    name: { type: \"string\", description: \"Who to greet\", required: true },\n  },\n  outputs: { greeting: \"The greeting\", approved: \"Whether the user approved\" },\n  startedBy: \"anyone\",\n  timeout: \"1h\",\n}\n\nconst greeting = await sh(`echo \"Hello, ${args.name}!\"`, { label: \"greet\" })\nconst answer = await ask(`${greeting}\\n\\nApprove this greeting?`, {\n  choices: [\"approve\", \"reject\"],\n})\nreturn { greeting, approved: answer === \"approve\" }\n```\n\n- **Greeting:** the `greet` step is a shell `echo`, so it spends no tokens.\n- **Approval:** the `ask` step goes to you, not to an agent, and the run waits until you answer.\n- **Next steps:** once you agree, I'll save it and run `sous check greet --name x --dry-run`. I'll show you the result and ask for your approval of the text before I start it.\n\nShould I save it as written? Or would you rather have an agent write the greeting, or a different approval step?",
+      "tokens": {
+        "input": 61504,
+        "cachedInput": 51329,
+        "output": 745,
+        "total": 62249
+      },
+      "costUsd": 0.0532669,
+      "tools": [
+        "Skill",
+        "Bash"
+      ],
+      "skills": [
+        "sous",
+        "deep-research",
+        "design",
+        "design-sync",
+        "dataviz",
+        "update-config",
+        "verify",
+        "debug",
+        "code-review",
+        "simplify",
+        "batch",
+        "fewer-permission-prompts",
+        "doctor",
+        "claude-approvals",
+        "loop",
+        "schedule",
+        "claude-api",
+        "workflow-authoring",
+        "run",
+        "run-skill-generator",
+        "plugin-authoring"
+      ]
+    },
+    {
+      "turn": 1,
+      "prompt": "Yes, save it and run it for Ada.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:33:49.238Z",
+      "endedAt": "2026-11-24T17:34:04.271Z",
+      "ms": 15033,
+      "args": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+        "--setting-sources",
+        "project,local",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "acceptEdits",
+        "--permission-prompts",
+        "none",
+        "--allowedTools",
+        "Bash(sous *),Bash(git *),Bash(cat *),Bash(ls *),Bash(sleep *),Read,Glob,Grep",
+        "--disallowedTools",
+        "Workflow",
+        "--resume",
+        "5c1147a3-274f-441e-8021-5c58479fae96",
+        "--",
+        "<prompt>"
+      ],
+      "sessionId": "5c1147a3-274f-441e-8021-5c58479fae96",
+      "finalText": "I saved `.sous/workflows/greet.js`, but I haven't run it yet. sous only starts a workflow from me after you've approved its exact text, and I changed that text after you said yes.\n\nThe only change from what I showed you is one line, which pulls the text out of the shell result:\n\n```js\nconst greeting = (await sh(`echo \"Hello, ${args.name}!\"`, { label: \"greet\" })).stdout.trim()\n```\n\nThe dry run now passes and gives `\"Hello, Ada!\"`. The approval question will show that greeting, with the choices approve and reject.\n\nDo you approve this text? If you say yes, I'll record your approval and start the run for Ada. The run will then ask you whether to approve the greeting. You can also type `sous workflows approve greet` in your own terminal.",
+      "tokens": {
+        "input": 71136,
+        "cachedInput": 68146,
+        "output": 1149,
+        "total": 72285
+      },
+      "costUsd": 0.0835155,
+      "tools": [
+        "Write",
+        "Bash",
+        "Edit",
+        "Bash"
+      ],
+      "skills": [
+        "sous",
+        "deep-research",
+        "design",
+        "design-sync",
+        "dataviz",
+        "update-config",
+        "verify",
+        "debug",
+        "code-review",
+        "simplify",
+        "batch",
+        "fewer-permission-prompts",
+        "doctor",
+        "claude-approvals",
+        "loop",
+        "schedule",
+        "claude-api",
+        "workflow-authoring",
+        "run",
+        "run-skill-generator",
+        "plugin-authoring"
+      ]
+    }
+  ],
+  "verdict": "pass",
+  "checks": [
+    {
+      "name": "nothing saved before the yes",
+      "result": "pass",
+      "reason": "no workflow file changed in turn 1",
+      "source": "records"
+    },
+    {
+      "name": "turn 1 shows the file",
+      "result": "pass",
+      "reason": "turn 1 shows the code",
+      "source": "answer"
+    },
+    {
+      "name": "turn 1 asks before saving",
+      "result": "pass",
+      "reason": "turn 1 asks",
+      "source": "answer"
+    },
+    {
+      "name": "the workflow was saved",
+      "result": "pass",
+      "reason": "saved project/greet.js",
+      "source": "records"
+    },
+    {
+      "name": "a check --dry-run before any run",
+      "result": "pass",
+      "reason": "\"check greet --name Ada --dry-run --json\" came first",
+      "source": "commands"
+    },
+    {
+      "name": "no run before an approve event",
+      "result": "pass",
+      "reason": "no run",
+      "source": "records"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 4,
+    "sousInCommands": 4,
+    "commands": 3,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 28,
+    "tokens": 134534,
+    "inputTokens": 132640,
+    "cachedInputTokens": 119475,
+    "outputTokens": 1894,
+    "costUsd": 0.1368,
+    "skillListed": true,
+    "timedOut": false
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "guide",
+        "writing"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "check",
+        "greet",
+        "--name",
+        "Ada",
+        "--dry-run",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "check",
+        "greet",
+        "--name",
+        "Ada",
+        "--dry-run",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "workflows",
+        "show",
+        "greet",
+        "--diff",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    }
+  ],
+  "runs": [],
+  "homeEvents": [
+    {
+      "at": "2026-11-24T17:33:36.232Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks",
+      "hash": "c8ef2dfe595f3fd33b07791afc12c65b24d7f086fe3a7639353bf7f7f6c72992"
+    },
+    {
+      "at": "2026-11-24T17:33:36.237Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks-anyone",
+      "hash": "6499283149e2745d2cf7f2bc4d67db70c7882d7146af7d1e81d67fa06dcfeb3b"
+    },
+    {
+      "at": "2026-11-24T17:33:36.242Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "deploy",
+      "hash": "0d6ead89c160894eb646df97e2b3013a749e92f11cc07e5ee66c28532d7b8f99"
+    },
+    {
+      "at": "2026-11-24T17:33:36.248Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "fails",
+      "hash": "e36c6881b2922702af39c332fd93ab65468bb3f7a27a5b4554c2bbe262f1ca41"
+    },
+    {
+      "at": "2026-11-24T17:33:36.252Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "hello",
+      "hash": "8c061f17ea3f5e5c8686b4982781340e6acc52eee4cdc080d1459b0f007ec65f"
+    },
+    {
+      "at": "2026-11-24T17:33:36.261Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "review",
+      "hash": "476aa61bdc2ece3e7fb5127fe472f0d5d5c5ef6ee28fec126b8b228f53046c18"
+    }
+  ],
+  "setupRunIds": [],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:33:49.196Z",
+      "questions": [],
+      "runs": [],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    },
+    {
+      "at": "2026-11-24T17:34:04.271Z",
+      "questions": [],
+      "runs": [],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/greet.js": "export const meta = {\n  name: \"greet\",\n  description: \"Greet someone, then ask the user to approve\",\n  inputs: {\n    name: { type: \"string\", description: \"Who to greet\", required: true },\n  },\n  outputs: { greeting: \"The greeting\", approved: \"Whether the user approved\" },\n  startedBy: \"anyone\",\n  timeout: \"1h\",\n}\n\nconst greeting = (await sh(`echo \"Hello, ${args.name}!\"`, { label: \"greet\" })).stdout.trim()\nconst answer = await ask(`${greeting}\\n\\nApprove this greeting?`, {\n  choices: [\"approve\", \"reject\"],\n})\nreturn { greeting, approved: answer === \"approve\" }\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

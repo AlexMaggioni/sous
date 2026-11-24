@@ -1,0 +1,221 @@
+{
+  "scenario": "3",
+  "title": "A question anyone may answer",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/base-claude-noskill-2026-11-24T17-41-10-191Z/3-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Run the asks-anyone workflow.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:42:08.550Z",
+      "endedAt": "2026-11-24T17:42:17.131Z",
+      "ms": 8581,
+      "args": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+        "--setting-sources",
+        "project,local",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "acceptEdits",
+        "--permission-prompts",
+        "none",
+        "--allowedTools",
+        "Bash(sous *),Bash(git *),Bash(cat *),Bash(ls *),Bash(sleep *),Read,Glob,Grep",
+        "--disallowedTools",
+        "Workflow",
+        "--",
+        "<prompt>"
+      ],
+      "sessionId": "0a2129e0-0e70-46fe-adea-e6e41bfc62b8",
+      "finalText": "The workflow is paused on a question: **Which color?** The choices are `red` or `blue`. Which one do you want? I'll send your answer to the run.",
+      "tokens": {
+        "input": 84969,
+        "cachedInput": 74498,
+        "output": 279,
+        "total": 85248
+      },
+      "costUsd": 0.0521078,
+      "tools": [
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "skills": [
+        "deep-research",
+        "design",
+        "design-sync",
+        "dataviz",
+        "update-config",
+        "verify",
+        "debug",
+        "code-review",
+        "simplify",
+        "batch",
+        "fewer-permission-prompts",
+        "doctor",
+        "claude-approvals",
+        "loop",
+        "schedule",
+        "claude-api",
+        "workflow-authoring",
+        "run",
+        "run-skill-generator",
+        "plugin-authoring"
+      ]
+    }
+  ],
+  "verdict": "fail",
+  "checks": [
+    {
+      "name": "one answer by agent",
+      "result": "fail",
+      "reason": "answers: none",
+      "source": "records, by from commands"
+    },
+    {
+      "name": "the asks-anyone run completed",
+      "result": "fail",
+      "reason": "mwuzfdge-4e44lj is running",
+      "source": "records"
+    },
+    {
+      "name": "the report names the answer",
+      "result": "fail",
+      "reason": "nothing was answered",
+      "source": "answer"
+    },
+    {
+      "name": "sous showed answeredBy to the agent",
+      "result": "note",
+      "reason": "no sous reply carried answeredBy",
+      "source": "commands"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 5,
+    "sousInCommands": 5,
+    "commands": 3,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 9,
+    "tokens": 85248,
+    "inputTokens": 84969,
+    "cachedInputTokens": 74498,
+    "outputTokens": 279,
+    "costUsd": 0.0521,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "help"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "asks-anyone",
+        "--help"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "workflows"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "check",
+        "asks-anyone"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "run",
+        "asks-anyone",
+        "--wait",
+        "--json"
+      ],
+      "exit": 4,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwuzfdge-4e44lj",
+      "workflow": "asks-anyone",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:42:13.982Z",
+      "status": "running",
+      "answers": []
+    }
+  ],
+  "setupRunIds": [],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:42:17.132Z",
+      "questions": [
+        {
+          "id": "mwuzfdge-4e44lj--0",
+          "runId": "mwuzfdge-4e44lj",
+          "prompt": "Which color?"
+        }
+      ],
+      "runs": [
+        {
+          "runId": "mwuzfdge-4e44lj",
+          "workflow": "asks-anyone",
+          "status": "running"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

@@ -12,19 +12,24 @@ import { engineRunFiles, logFile } from "./runs/store.js";
 import { runWorker } from "./runs/worker.js";
 import type { PersistedRunState } from "./runs/persistence/run-persistence.js";
 import type { InnerRunner } from "./steps/steps.js";
+import type { Who } from "./runs/actions.js";
 import type { WorkflowRunResult } from "./workflow-result.js";
 
 // Engine parts sous's tests use and sous's code does not, so the main entry leaves them out.
 export { WorkflowError, WorkflowErrorCode } from "./errors.js";
+export { readActions } from "./runs/actions.js";
 export { knownProjects } from "./runs/home.js";
 export { writeAnswer } from "./runs/inbox.js";
 export { createRun } from "./runs/launch.js";
-export { processAlive, requestStepStop, saveRecord, updateRecord } from "./runs/records.js";
+export { processAlive, requestStepStop, requestTell, saveRecord, updateRecord } from "./runs/records.js";
 export { tick } from "./runs/service.js";
 export { enginePersistence, readState, stopRequestFile } from "./runs/store.js";
 export { workflowProjectPaths } from "./runs/persistence/project-paths.js";
 export type { PersistedRunState } from "./runs/persistence/run-persistence.js";
 export type { InnerRunner } from "./steps/steps.js";
+
+/** The person at their own terminal, as the writes of tests that call the engine pass it. */
+export const PERSON: Who = { by: "person", through: { kind: "person" } };
 
 /**
  * A new home and project folder in the temp folder. The config sends no notices and runs in the

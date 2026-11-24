@@ -1,5 +1,7 @@
 $ sous --help
 exit 0
+Agents: run `sous guide`.
+
 sous runs saved workflows in the background.
 
   sous run <workflow> [--name value ...] [-- --name value ...]
@@ -7,25 +9,45 @@ sous runs saved workflows in the background.
         --model <spec>                  model for steps that name none, such as claude/haiku
         --set <step>.<key>=<value>      change one step for this run, such as --set reviewer.model=claude/opus
         --concurrency N                 steps at once in this run
+        --budget N                      tokens one go may spend; at N the run pauses (default: config, else none)
         --wait                          follow the run until it ends; in a terminal, answer here
         --json                          machine-readable output
-  sous wait <run> [--json]              wait for a run to end, pause or ask (exit 0 done, 1 failed,
-                                        2 paused, 3 stopped, 4 waits for an answer)
+  sous wait <run> [--timeout N] [--json]  wait for a run to end, pause or ask (exit 0 done, 1 failed,
+                                        2 paused, 3 stopped, 4 waits for an answer, 5 timed out)
+  sous status [--since 3d] [--json]     what needs you, what runs, what waits and what finished
+        --line                          one line for a new agent session, or nothing
   sous list [--all]                     runs, newest first
-  sous show <run>                       one run: status, steps, questions, result
+  sous show <run> [--full]              one run: status, steps, questions, result
   sous log <run> [-f]                   the run's log
+        --json --after <seq>            the run's events after a seq, 100 at most
+  sous step <run> <label>               one step: status, prompt or command, failure, what it did
+        --call N | --tail N | --full    another call; the last N activity entries; all of it
   sous inbox [run]                      questions waiting for you
   sous answer <question> <text>         answer a question (a run id works when it asks one thing)
+        --value-json                    the text is JSON, such as {"a": 1}, not words
+        --by person                     the person decided; an agent passes on their word
   sous approve <question>               approve a breakpoint
+        --by person                     the person decided; an agent passes on their word
   sous send-back <question> <note>      send a breakpoint's step back with a note
+        --by person                     the person decided; an agent passes on their word
   sous pause <run>                      finish running steps, start nothing new
   sous resume <run> [--wait]            go on from where the run paused, failed or was cut off
         --latest | --same               after an edit: take the new version, or keep the run's own
+        --budget N                      the run's new budget, from this go on
+        --note <msg> [--step <name>]    give the first agent call that runs a note, or that step's
   sous stop <run>                       end the run; its worktree stays
         --step <name>                   stop one running step instead; the run pauses on it
+  sous tell <run> --step <name> <msg>   give a running agent step a message it reads after its tool call
+        --call n                        tell only the nth call of the step
   sous rerun <run> [--name value ...]   start the same workflow again with the same inputs
         --reuse                         keep the results of the steps you did not edit, in the same place
+        --budget N                      tokens one go of the new run may spend (default: the run's)
   sous workflows                        saved workflows and their inputs
+  sous workflows show <name> [--full]   one workflow: its steps, its approval, its last runs
+        --diff                          what changed since the person's yes
+  sous agents                           the agents a step can name
+  sous workflows approve <name> | --all the person's yes to a workflow's text as it is now
+        --by person                     the person decided; an agent passes on their word
   sous check <workflow> [--name value]  check a workflow without running it
         --dry-run                       then run it once with stand-in agents; code steps run, in a copy
         --answers <file.json>           what the stand-ins answer, by step label: {"reviewer *": {...}}
@@ -34,7 +56,8 @@ sous runs saved workflows in the background.
                                         schedule: "0 9 * * 1-5" in a workflow's meta also schedules it
   sous daemon start|stop|status         the service that starts schedules and resumes runs after the limit
   sous gc [--dry-run]                   remove worktrees whose branch is merged
-  sous discard <run> [--yes]            delete the run's branches and worktrees, merged or not
+  sous discard <run> [--yes]            delete the run's branches and worktrees, merged or not;
+                                        without --yes, list what it would delete
   sous prune --days N                   remove finished runs older than N days
   sous account                          the accounts sous's steps can use, and the one they use now
   sous account add <name>               add a Claude Code login: runs claude setup-token, then asks
@@ -42,9 +65,18 @@ sous runs saved workflows in the background.
   sous account use <name>               use it for new runs, and move the runs waiting at the usage
                                         limit to it; default is Claude Code's own login
   sous account remove <name>            forget a login
-  sous doctor [--live]                  the installed Claude Code and Codex the steps run on, and
-                                        whether sous talks to them; --live runs one tiny step on each
+  sous doctor [--live]                  the installed Claude Code and Codex the steps run on, whether
+                                        sous talks to them, where each finds the skill, and whether
+                                        sous can write its home; --live runs one tiny step on each
         --model <spec>                  with --live, check this model only, such as codex/gpt-6.1-sol
+  sous guide [topic]                    how an agent drives sous for a person, one topic at a time
+  sous skill install|path|check         link the sous skill for Claude Code and Codex, print its
+                                        folder, or show where each program finds it
+  sous hook install|remove              add or remove the Claude Code session-start hook that runs
+                                        sous status --line; it keeps a backup of settings.json
+
+With --json, a command prints one JSON object, with its notes and the calls to make next. A
+request that changes nothing, such as pausing a paused run, exits 0 with a note.
 
 Home: <tmp>/help/sous-home (set SOUS_HOME to change). A project's .sous/ folder holds its
 workflows, and wins over the home folder's. Agents and MCP servers come from the project's

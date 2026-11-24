@@ -1,0 +1,212 @@
+{
+  "batch": "feature-codex-skill-2026-11-24T18-02-36-880Z",
+  "sous": "feature",
+  "cli": "<code>/orchestrator-agent-native/packages/cli/dist/cli.js",
+  "driver": "codex",
+  "driverBin": "/opt/homebrew/bin/codex",
+  "driverVersion": "codex-cli 0.169.0",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "skill": "<code>/orchestrator-agent-native/packages/cli/skill/sous/SKILL.md",
+  "scenarios": [
+    "4"
+  ],
+  "repsEach": 3,
+  "startedAt": "2026-11-24T18:02:41.095Z",
+  "reps": [
+    {
+      "scenario": "4",
+      "title": "A failed step",
+      "rep": 1,
+      "verdict": "pass",
+      "checks": [
+        {
+          "name": "the run paused on the failed step",
+          "result": "pass",
+          "reason": "mwv060so-jz2hvs paused step_failed",
+          "source": "records"
+        },
+        {
+          "name": "no rerun",
+          "result": "pass",
+          "reason": "no rerun",
+          "source": "records"
+        },
+        {
+          "name": "the report names the step",
+          "result": "pass",
+          "reason": "it names boom",
+          "source": "answer"
+        },
+        {
+          "name": "the report names the error",
+          "result": "pass",
+          "reason": "it names exit 3 or the message",
+          "source": "answer"
+        },
+        {
+          "name": "the agent offers a resume",
+          "result": "pass",
+          "reason": "it offers a resume",
+          "source": "answer"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 6,
+        "sousInCommands": 6,
+        "commands": 7,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 27,
+        "tokens": 159821,
+        "inputTokens": 159482,
+        "cachedInputTokens": 135552,
+        "outputTokens": 339,
+        "skillListed": false,
+        "timedOut": false
+      },
+      "refusals": []
+    },
+    {
+      "scenario": "4",
+      "title": "A failed step",
+      "rep": 2,
+      "verdict": "pass",
+      "checks": [
+        {
+          "name": "the run paused on the failed step",
+          "result": "pass",
+          "reason": "mwv06nno-2dw6wk paused step_failed",
+          "source": "records"
+        },
+        {
+          "name": "no rerun",
+          "result": "pass",
+          "reason": "no rerun",
+          "source": "records"
+        },
+        {
+          "name": "the report names the step",
+          "result": "pass",
+          "reason": "it names boom",
+          "source": "answer"
+        },
+        {
+          "name": "the report names the error",
+          "result": "pass",
+          "reason": "it names exit 3 or the message",
+          "source": "answer"
+        },
+        {
+          "name": "the agent offers a resume",
+          "result": "pass",
+          "reason": "it offers a resume",
+          "source": "answer"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 6,
+        "sousInCommands": 6,
+        "commands": 7,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 26,
+        "tokens": 181815,
+        "inputTokens": 181464,
+        "cachedInputTokens": 168320,
+        "outputTokens": 351,
+        "skillListed": false,
+        "timedOut": false
+      },
+      "refusals": []
+    },
+    {
+      "scenario": "4",
+      "title": "A failed step",
+      "rep": 3,
+      "verdict": "pass",
+      "checks": [
+        {
+          "name": "the run paused on the failed step",
+          "result": "pass",
+          "reason": "mwv07bmy-qv2i2k paused step_failed",
+          "source": "records"
+        },
+        {
+          "name": "no rerun",
+          "result": "pass",
+          "reason": "no rerun",
+          "source": "records"
+        },
+        {
+          "name": "the report names the step",
+          "result": "pass",
+          "reason": "it names boom",
+          "source": "answer"
+        },
+        {
+          "name": "the report names the error",
+          "result": "pass",
+          "reason": "it names exit 3 or the message",
+          "source": "answer"
+        },
+        {
+          "name": "the agent offers a resume",
+          "result": "pass",
+          "reason": "it offers a resume",
+          "source": "answer"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 6,
+        "sousInCommands": 6,
+        "commands": 7,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 30,
+        "tokens": 182030,
+        "inputTokens": 181623,
+        "cachedInputTokens": 157568,
+        "outputTokens": 407,
+        "skillListed": false,
+        "timedOut": false
+      },
+      "refusals": []
+    }
+  ],
+  "aggregate": [
+    {
+      "scenario": "4",
+      "title": "A failed step",
+      "reps": 3,
+      "passed": 3,
+      "na": 0,
+      "errors": 0,
+      "medianSousCalls": 6,
+      "sleeps": 0,
+      "polled": 0,
+      "medianSeconds": 27,
+      "medianTokens": 181815,
+      "checks": {
+        "the run paused on the failed step": "pass pass pass",
+        "no rerun": "pass pass pass",
+        "the report names the step": "pass pass pass",
+        "the report names the error": "pass pass pass",
+        "the agent offers a resume": "pass pass pass"
+      }
+    }
+  ],
+  "endedAt": "2026-11-24T18:04:10.880Z"
+}

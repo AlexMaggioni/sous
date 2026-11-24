@@ -1,0 +1,476 @@
+{
+  "scenario": "5b",
+  "title": "A refused call: resume after an edit",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/5b-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "I fixed the fails workflow. Resume my paused run of it so it finishes.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:59:00.628Z",
+      "endedAt": "2026-11-24T17:59:16.844Z",
+      "ms": 16216,
+      "args": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+        "--setting-sources",
+        "project,local",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "acceptEdits",
+        "--permission-prompts",
+        "none",
+        "--allowedTools",
+        "Bash(sous *),Bash(git *),Bash(cat *),Bash(ls *),Bash(sleep *),Read,Glob,Grep",
+        "--disallowedTools",
+        "Workflow",
+        "--",
+        "<prompt>"
+      ],
+      "sessionId": "dca22388-6eff-422b-93d6-98a484f65777",
+      "finalText": "Resuming your run needs your approval of the changed workflow text first, and I can't give that for you. Here is the change since your last approval:\n\n```\n  await sh(\"echo prepared\", { label: \"prepare\" })\n- await sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\n+ await sh(\"echo 'disk check failed' >&2; exit 0\", { label: \"boom\" })\n  return \"done\"\n```\n\nThe `boom` step used to exit with code 3. Now it still prints \"disk check failed\" but exits 0, so it always passes.\n\nIf that is the fix you meant, tell me to approve it. You can also run `sous workflows approve fails` yourself. After that I'll run `sous resume mwv00xjq-wigalf --latest --json`, which keeps the finished `prepare` step and reruns `boom`.",
+      "tokens": {
+        "input": 147318,
+        "cachedInput": 136683,
+        "output": 747,
+        "total": 148065
+      },
+      "costUsd": 0.0636463,
+      "tools": [
+        "Skill",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "skills": [
+        "sous",
+        "deep-research",
+        "design",
+        "design-sync",
+        "dataviz",
+        "update-config",
+        "verify",
+        "debug",
+        "code-review",
+        "simplify",
+        "batch",
+        "fewer-permission-prompts",
+        "doctor",
+        "claude-approvals",
+        "loop",
+        "schedule",
+        "claude-api",
+        "workflow-authoring",
+        "run",
+        "run-skill-generator",
+        "plugin-authoring"
+      ]
+    },
+    {
+      "turn": 1,
+      "prompt": "Yes, I approve that change. Go on.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:59:16.849Z",
+      "endedAt": "2026-11-24T17:59:28.140Z",
+      "ms": 11291,
+      "args": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+        "--setting-sources",
+        "project,local",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "acceptEdits",
+        "--permission-prompts",
+        "none",
+        "--allowedTools",
+        "Bash(sous *),Bash(git *),Bash(cat *),Bash(ls *),Bash(sleep *),Read,Glob,Grep",
+        "--disallowedTools",
+        "Workflow",
+        "--resume",
+        "dca22388-6eff-422b-93d6-98a484f65777",
+        "--",
+        "<prompt>"
+      ],
+      "sessionId": "dca22388-6eff-422b-93d6-98a484f65777",
+      "finalText": "Run `mwv00xjq-wigalf` has finished with status completed and the result `done`.\n\n- **Approval:** I approved the changed `fails` workflow, as you told me to.\n- **Resume:** I resumed with `--latest`, so the run used your fixed version. The finished `prepare` step stayed done, and `boom` ran again and passed.\n- **Not checked:** The workflow only runs shell echo commands, so there is no git branch or diff to review. I didn't look at anything beyond the run's result.\n\nThe fix makes `boom` always exit 0. It no longer checks the disk, so it can't fail even if the disk check would.",
+      "tokens": {
+        "input": 69420,
+        "cachedInput": 68385,
+        "output": 360,
+        "total": 69780
+      },
+      "costUsd": 0.07820880000000001,
+      "tools": [
+        "Bash",
+        "Bash"
+      ],
+      "skills": [
+        "sous",
+        "deep-research",
+        "design",
+        "design-sync",
+        "dataviz",
+        "update-config",
+        "verify",
+        "debug",
+        "code-review",
+        "simplify",
+        "batch",
+        "fewer-permission-prompts",
+        "doctor",
+        "claude-approvals",
+        "loop",
+        "schedule",
+        "claude-api",
+        "workflow-authoring",
+        "run",
+        "run-skill-generator",
+        "plugin-authoring"
+      ]
+    }
+  ],
+  "verdict": "pass",
+  "checks": [
+    {
+      "name": "the call after a refusal is the refusal's call",
+      "result": "pass",
+      "reason": "\"resume mwv00xjq-wigalf --json\" was refused, then \"resume mwv00xjq-wigalf --latest --json\" as named; \"resume mwv00xjq-wigalf --latest --json\" was refused, then \"workflows show fails --diff --json\" as named",
+      "source": "commands"
+    },
+    {
+      "name": "the paused run finished",
+      "result": "pass",
+      "reason": "mwv00xjq-wigalf completed",
+      "source": "records"
+    },
+    {
+      "name": "no new run",
+      "result": "pass",
+      "reason": "no new fails run",
+      "source": "records"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 8,
+    "sousInCommands": 8,
+    "commands": 7,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 28,
+    "tokens": 217845,
+    "inputTokens": 216738,
+    "cachedInputTokens": 205068,
+    "outputTokens": 1107,
+    "costUsd": 0.1419,
+    "skillListed": true,
+    "timedOut": false
+  },
+  "refusals": [
+    {
+      "sub": "resume",
+      "call": "resume mwv00xjq-wigalf --json",
+      "exit": 64,
+      "named": [
+        "sous resume mwv00xjq-wigalf --same --json",
+        "sous resume mwv00xjq-wigalf --latest",
+        "sous resume mwv00xjq-wigalf --same"
+      ],
+      "from": "error.call",
+      "next": "resume mwv00xjq-wigalf --latest --json",
+      "followed": true
+    },
+    {
+      "sub": "resume",
+      "call": "resume mwv00xjq-wigalf --latest --json",
+      "exit": 66,
+      "named": [
+        "sous workflows show fails --diff --json"
+      ],
+      "from": "error.call",
+      "next": "workflows show fails --diff --json",
+      "followed": true
+    }
+  ],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "status",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "show",
+        "mwv00xjq-wigalf",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "resume",
+        "mwv00xjq-wigalf",
+        "--json"
+      ],
+      "exit": 64,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "resume",
+        "mwv00xjq-wigalf",
+        "--latest",
+        "--json"
+      ],
+      "exit": 66,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "workflows",
+        "show",
+        "fails",
+        "--diff",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "workflows",
+        "approve",
+        "fails",
+        "--by",
+        "person",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "resume",
+        "mwv00xjq-wigalf",
+        "--latest",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "wait",
+        "mwv00xjq-wigalf",
+        "--timeout",
+        "540",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwv00xjq-wigalf",
+      "workflow": "fails",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:58:59.798Z",
+      "status": "completed",
+      "result": "done",
+      "answers": []
+    }
+  ],
+  "homeEvents": [
+    {
+      "at": "2026-11-24T17:58:59.529Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks",
+      "hash": "c8ef2dfe595f3fd33b07791afc12c65b24d7f086fe3a7639353bf7f7f6c72992"
+    },
+    {
+      "at": "2026-11-24T17:58:59.533Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks-anyone",
+      "hash": "6499283149e2745d2cf7f2bc4d67db70c7882d7146af7d1e81d67fa06dcfeb3b"
+    },
+    {
+      "at": "2026-11-24T17:58:59.536Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "deploy",
+      "hash": "0d6ead89c160894eb646df97e2b3013a749e92f11cc07e5ee66c28532d7b8f99"
+    },
+    {
+      "at": "2026-11-24T17:58:59.538Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "fails",
+      "hash": "e36c6881b2922702af39c332fd93ab65468bb3f7a27a5b4554c2bbe262f1ca41"
+    },
+    {
+      "at": "2026-11-24T17:58:59.544Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "hello",
+      "hash": "8c061f17ea3f5e5c8686b4982781340e6acc52eee4cdc080d1459b0f007ec65f"
+    },
+    {
+      "at": "2026-11-24T17:58:59.547Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "review",
+      "hash": "476aa61bdc2ece3e7fb5127fe472f0d5d5c5ef6ee28fec126b8b228f53046c18"
+    },
+    {
+      "at": "2026-11-24T17:58:59.799Z",
+      "act": "run",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "runId": "mwv00xjq-wigalf",
+      "workflow": "fails"
+    },
+    {
+      "at": "2026-11-24T17:59:20.897Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "agent",
+        "program": "claude",
+        "session": "dca22388-6eff-422b-93d6-98a484f65777"
+      },
+      "workflow": "fails",
+      "hash": "74a652ec71d9c2620b853c02d35a9c2f11b9f1b92b734cb0ede3e83e00b65e3c"
+    },
+    {
+      "at": "2026-11-24T17:59:21.160Z",
+      "act": "resume",
+      "by": "agent",
+      "through": {
+        "kind": "agent",
+        "program": "claude",
+        "session": "dca22388-6eff-422b-93d6-98a484f65777"
+      },
+      "runId": "mwv00xjq-wigalf"
+    }
+  ],
+  "setupRunIds": [
+    "mwv00xjq-wigalf"
+  ],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:59:16.844Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwv00xjq-wigalf",
+          "workflow": "fails",
+          "status": "paused",
+          "pauseReason": "step_failed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 0\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    },
+    {
+      "at": "2026-11-24T17:59:28.140Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwv00xjq-wigalf",
+          "workflow": "fails",
+          "status": "completed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 0\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

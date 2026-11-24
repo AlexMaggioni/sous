@@ -446,6 +446,7 @@ export function projectRunEventForPersistence(
         case "step_failed":
         case "step_stopped":
         case "time_limit":
+        case "budget":
           projected = {
             type: "paused",
             ...origin(),

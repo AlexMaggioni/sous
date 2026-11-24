@@ -34,6 +34,7 @@ import {
   WorkflowError,
   WorkflowErrorCode,
   type Call,
+  PERSON,
 } from "@sous/engine/testing";
 import { main } from "../src/cli.js";
 import { sous, waitFor } from "./sous.js";
@@ -75,7 +76,7 @@ return out`,
     });
     const { runner, calls } = fakeRunner((call) => (call.label === "worker" ? "QUESTION: Postgres or SQLite?" : `built with ${/answered: (\w+)/.exec(call.prompt)?.[1]}`));
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "asking", projectDir, inputs: { task: "the store" } });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "asking", projectDir, inputs: { task: "the store" } });
     const running = workers.ended(record.runId);
     const asked = await answerWhenAsked(paths, record.runId, () => "SQLite");
     const result = await running;
@@ -94,7 +95,7 @@ return draft`,
     });
     const { runner, calls } = fakeRunner((call) => (call.prompt.includes("Change: shorter") ? "short plan" : "long plan"));
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "checked", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "checked", projectDir, inputs: {} });
     const running = workers.ended(record.runId);
     const replies = [{ decision: "send back", note: "shorter" }, "approve"];
     const asked = await answerWhenAsked(paths, record.runId, () => replies.shift(), 2);
@@ -113,7 +114,7 @@ return await ask('Breakpoint: not one')`,
     });
     const { runner } = fakeRunner(() => "unused");
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "lookalike", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "lookalike", projectDir, inputs: {} });
     const running = workers.ended(record.runId);
     await waitFor(() => runQuestions(paths, record.runId).length > 0, "the question");
     const id = runQuestions(paths, record.runId)[0]!.id;
@@ -122,7 +123,7 @@ return await ask('Breakpoint: not one')`,
     const answer = await sous(paths, ["answer", id, "fine"]);
     const result = await running;
     assert.deepEqual(
-      (JSON.parse(inbox.out) as Array<{ prompt: string; breakpoint: boolean }>).map((q) => [q.prompt, q.breakpoint]),
+      (JSON.parse(inbox.out) as { questions: Array<{ prompt: string; breakpoint: boolean }> }).questions.map((q) => [q.prompt, q.breakpoint]),
       [["Breakpoint: not one", false]],
     );
     assert.equal(sendBack.code, 64, sendBack.out);
@@ -148,7 +149,7 @@ return { first, second }`,
       return `${call.label} done`;
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "flaky", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "flaky", projectDir, inputs: {} });
     const paused = await workers.ended(record.runId);
     assert.equal(paused?.status, "paused");
     const state = readState(paths, record.runId);
@@ -157,7 +158,7 @@ return { first, second }`,
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"]);
 
     broken = false;
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const resumed = await workers.ended(record.runId);
     assert.equal(resumed?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(resumed?.result)), { first: "first done", second: "second done" });
@@ -179,21 +180,21 @@ return { first, second }`,
       return `${call.label} done`;
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "login", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "login", projectDir, inputs: {} });
     await workers.ended(record.runId);
     assert.equal(readState(paths, record.runId)?.pauseReason, "auth_required");
     assert.deepEqual(calls.map((c) => c.label), ["first", "second"]);
 
     const lines: string[] = [];
     const watched = inProcess({ inner: runner, log: (line) => lines.push(line) });
-    resumeRun(paths, watched.launch, record.runId);
+    resumeRun(paths, watched.launch, record.runId, PERSON);
     await watched.ended(record.runId);
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"], "the step tries again, and first is not run again");
     assert.equal(readState(paths, record.runId)?.pauseReason, "auth_required");
     assert.match(lines.at(-1)!, /paused +login \(auth_required\): .*not logged in/, "the log says why the run paused again");
 
     loggedIn = true;
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), { first: "first done", second: "second done" });
@@ -218,13 +219,20 @@ return { first, second }`,
       return `${call.prompt} done`;
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     assert.equal((await workers.ended(record.runId))?.status, "paused");
     assert.deepEqual(calls.filter((c) => c.label === "build").map((c) => c.prompt), ["v1", "v1"], "the edit did not reach the run");
 
     const asks = await sous(paths, ["resume", record.runId], { launch: workers.launch });
-    assert.equal(asks.code, 1);
+    assert.equal(asks.code, 64, "a resume that must choose is a usage error");
     assert.match(asks.out, /child changed since .*--latest takes the new version.*--same goes on with the version it started with/);
+    const choose = await sous(paths, ["resume", record.runId, "--json"], { launch: workers.launch });
+    assert.equal(choose.code, 64, choose.out);
+    const error = (JSON.parse(choose.out) as { error: { code: string; change: string; call: string | null } }).error;
+    assert.equal(error.code, "bad_argument");
+    assert.match(error.call ?? "", new RegExp(`^sous resume ${record.runId} --same --json$`), "its call is --same");
+    assert.match(error.change, /--latest/, "its change names --latest");
+    assert.match(error.change, /--same/, "its change names --same");
     assert.equal(workers.launched.length, 1, "a resume that asks starts no worker");
 
     assert.equal((await sous(paths, ["resume", record.runId, "--same"], { launch: workers.launch })).code, 0);
@@ -260,12 +268,12 @@ return { top, nested }`,
         : `${call.prompt} done`,
     );
     const workers = inProcess({ inner: runner, handleSignals: true });
-    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     const file = logFile(paths, record.runId);
     const running = workers.ended(record.runId);
     await waitFor(() => calls.length === 2);
 
-    assert.equal(stopStep(paths, record.runId, "build"), true);
+    assert.equal(stopStep(paths, record.runId, "build", PERSON), true);
     // The worker logs "stopping build" once it has aborted every step the request names.
     await waitFor(() => readFileSync(file, "utf8").includes("stopping   build\n"));
     assert.deepEqual(stopped, ["build top"], "the nested step named \"ticket A: build\" goes on");
@@ -277,7 +285,7 @@ return { top, nested }`,
     assert.equal(state?.status, "paused");
     assert.equal(state?.pauseReason, "step_stopped");
 
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), { top: "build top done", nested: "build nested done" });
@@ -292,7 +300,7 @@ return { top, nested }`,
       new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted")))),
     );
     const workers = inProcess({ inner: runner, handleSignals: true });
-    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     const file = logFile(paths, record.runId);
     const running = workers.ended(record.runId);
     await waitFor(() => calls.some((c) => c.label === "build"), "the step to start");
@@ -300,7 +308,7 @@ return { top, nested }`,
     // The worker writes the record while it runs, for a nested run or a step's worktree. Here it
     // saves one it read just before `sous stop --step`, in the same tick, before the signal lands.
     const before = loadRecord(paths, record.runId)!;
-    assert.equal(stopStep(paths, record.runId, "build"), true);
+    assert.equal(stopStep(paths, record.runId, "build", PERSON), true);
     saveRecord(paths, before);
 
     const ended = await Promise.race([running.then(() => "ended"), new Promise((r) => setTimeout(() => r("waiting"), 3000))]);
@@ -322,7 +330,7 @@ return { top, nested }`,
     );
     // The request is left before the worker starts, so the test makes the record and starts the
     // worker itself, as startRun does.
-    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     requestStepStop(paths, record.runId, { step: "build", calls: [{ scope: record.runId, label: "build" }] });
     const file = logFile(paths, record.runId);
     const workers = inProcess({ inner: runner, handleSignals: true });
@@ -335,7 +343,7 @@ return { top, nested }`,
     process.kill(process.pid, "SIGUSR2");
     await handled;
     assert.doesNotMatch(readFileSync(file, "utf8"), /stopping|no step/);
-    assert.equal(stopStep(paths, record.runId, "build"), true);
+    assert.equal(stopStep(paths, record.runId, "build", PERSON), true);
     await running;
     assert.equal(readState(paths, record.runId)?.pauseReason, "step_stopped");
   });
@@ -348,12 +356,12 @@ const second = await agent('second', { label: 'second' })
 return { first, second }`,
       vague: `export const meta = { name: 'vague', description: 'vague', timeout: 'soon' }\nreturn 1`,
     });
-    assert.throws(() => createRun(paths, { workflow: "vague", projectDir, inputs: {} }), /meta.timeout must be a time such as "90s", "10m" or "2h", got "soon"/);
+    assert.throws(() => createRun(paths, { who: PERSON, workflow: "vague", projectDir, inputs: {} }), /meta.timeout must be a time such as "90s", "10m" or "2h", got "soon"/);
 
     let hang = true;
     const { runner, calls } = fakeRunner((call) => (call.label === "second" && hang ? new Promise(() => {}) : `${call.label} done`));
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "slow", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "slow", projectDir, inputs: {} });
     assert.equal(record.timeout, "200ms");
     await workers.ended(record.runId);
     const state = readState(paths, record.runId);
@@ -362,7 +370,7 @@ return { first, second }`,
     assert.match(String(state?.reason), /step "second" was stopped: the workflow's time limit of 200ms was reached/);
 
     hang = false;
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"]);
@@ -388,7 +396,7 @@ return await parallel([
       return "b done";
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "queue", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "queue", projectDir, inputs: {} });
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["a done", "b done"]);
@@ -402,7 +410,7 @@ return await agent('review', { label: 'reviewer' })`,
     });
     const { runner, calls } = fakeRunner(() => "ok");
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "changes", projectDir, inputs: {}, overrides: { reviewer: { model: "claude/opus" } } });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "changes", projectDir, inputs: {}, overrides: { reviewer: { model: "claude/opus" } } });
     await workers.ended(record.runId);
     assert.equal(calls[0]!.options.model, "claude/opus");
     // Each step keeps its own start and end time.
@@ -417,7 +425,7 @@ return await choose('Pick one', { label: 'picker', steps: { a: () => 'A', b: () 
     });
     const { runner, calls } = fakeRunner(() => ({ choice: "b", reason: "b fits" }));
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "picking", projectDir, inputs: {}, overrides: { picker: { model: "claude/opus" } } });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "picking", projectDir, inputs: {}, overrides: { picker: { model: "claude/opus" } } });
     const done = await workers.ended(record.runId);
     assert.equal(calls[0]!.options.model, "claude/opus");
     assert.equal((done?.result as { result?: unknown } | undefined)?.result, "B");
@@ -441,7 +449,7 @@ return await agent('second', { label: 'second' })`,
       return "ok";
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "slow", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "slow", projectDir, inputs: {} });
     const running = workers.ended(record.runId);
     await started;
     const before = process.env.SOUS_HOME;
@@ -450,7 +458,7 @@ return await agent('second', { label: 'second' })`,
     const write = process.stdout.write.bind(process.stdout);
     process.stdout.write = ((chunk: string) => (printed.push(String(chunk)), true)) as typeof process.stdout.write;
     try {
-      assert.equal(await main(["show", record.runId, "--json"]), 0);
+      assert.equal(await main(["show", record.runId, "--full", "--json"]), 0);
     } finally {
       process.stdout.write = write;
       if (before === undefined) delete process.env.SOUS_HOME;
@@ -470,7 +478,7 @@ return step.result`,
     });
     const { runner } = fakeRunner(() => "ok");
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "where", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "where", projectDir, inputs: {} });
     const result = await workers.ended(record.runId);
     const found = result!.result as { project: string; cwd: string };
     assert.equal(found.project, projectDir);
@@ -490,7 +498,7 @@ return { given, missing }`,
     });
     const { runner } = fakeRunner(() => "ok");
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     const result = await workers.ended(record.runId);
     const out = result!.result as { given: Record<string, unknown>; missing: string };
     assert.deepEqual(out.given, { task: "fix it", rounds: 2, test: "npm test" });
@@ -511,7 +519,7 @@ return await workflow('child', { task: 'B' })`,
     const { runner } = fakeRunner(() => "ok");
     const lines: string[] = [];
     const workers = inProcess({ inner: runner, log: (line) => lines.push(line.slice(9)) });
-    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     await workers.ended(record.runId);
     const kept = lines.filter((l) => /^(start|done|phase|log) /.test(l) && !l.includes("Logs persisted"));
     assert.deepEqual(kept.map((l) => l.replace(/, \d+ tokens$/, "")), [
@@ -550,7 +558,7 @@ await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness 
       return `${call.label} done`;
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "both", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "both", projectDir, inputs: {} });
     const result = await workers.ended(record.runId);
     assert.equal(result?.status, "completed");
     const [claude, codex] = calls;
@@ -564,7 +572,7 @@ await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness 
     assert.deepEqual(state?.agents.map((step) => [step.label, step.model]), [["on claude", "claude/haiku"], ["on codex", "codex/gpt-test"]]);
 
     const before = calls.length;
-    const wrong = startRun(paths, workers.launch, { workflow: "wrong", projectDir, inputs: { harness: "claude" } });
+    const wrong = startRun(paths, workers.launch, { who: PERSON, workflow: "wrong", projectDir, inputs: { harness: "claude" } });
     const stopped = await workers.ended(wrong.runId);
     assert.notEqual(stopped?.status, "completed");
     const wrongState = readState(paths, wrong.runId);
@@ -591,8 +599,8 @@ describe("places and reruns", () => {
       return "done";
     });
     // Both runs get their worktree before either worker starts. The workers run one after the other.
-    const reader = createRun(paths, { workflow: "look", projectDir, inputs: {} });
-    const writer = createRun(paths, { workflow: "write", projectDir, inputs: {} });
+    const reader = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {} });
+    const writer = createRun(paths, { who: PERSON, workflow: "write", projectDir, inputs: {} });
     assert.ok(existsSync(reader.worktree!) && existsSync(writer.worktree!));
     const workers = inProcess({ inner: runner });
     workers.launch(paths, reader.runId, "start");
@@ -605,22 +613,22 @@ describe("places and reruns", () => {
 
     // Cleanup keeps the worktree of a run that has not finished, even with no commit yet, and
     // removes a finished run's worktree once its branch is merged.
-    const waiting = createRun(paths, { workflow: "look", projectDir, inputs: {} });
+    const waiting = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {} });
     git(writer.worktree!, "add", "new.txt");
     commit(writer.worktree!, "commit", "-q", "-m", "work");
     git(projectDir, "merge", "-q", writer.branch!);
     // sous gc prints the folders as git names them, so /var/... on macOS shows as /private/var/....
     const waitingLine = `kept ${realpathSync(waiting.worktree!)} (${waiting.branch}): its run has not finished\n`;
     const dry = await sous(paths, ["gc", "--dry-run"]);
-    assert.deepEqual(dry, { code: 0, out: `would remove ${realpathSync(writer.worktree!)} (${writer.branch}): merged\n${waitingLine}` });
+    assert.deepEqual(dry, { code: 0, out: `would remove ${realpathSync(writer.worktree!)} (${writer.branch}): merged\n${waitingLine}next: sous gc --json  (removes the merged worktrees)\n` });
     assert.equal(existsSync(writer.worktree!), true, "a dry run removes nothing");
-    const result = gcRuns(paths);
+    const result = gcRuns(paths, PERSON);
     assert.deepEqual(result.removed.map((r) => r.reason), ["merged"]);
     assert.equal(existsSync(writer.worktree!), false);
     assert.equal(existsSync(waiting.worktree!), true);
 
     // A finished run whose branch has nothing new is merged too, and sous gc removes its worktree.
-    const idle = createRun(paths, { workflow: "look", projectDir, inputs: {} });
+    const idle = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {} });
     const now = new Date().toISOString();
     plantState(paths, { runId: idle.runId, status: "completed", startedAt: now, updatedAt: now, agents: [], logs: [], phases: [] });
     const idleDir = realpathSync(idle.worktree!);
@@ -628,11 +636,19 @@ describe("places and reruns", () => {
     assert.equal(existsSync(idle.worktree!), false);
     assert.equal(existsSync(waiting.worktree!), true);
 
-    // Discarding a run deletes its branch and worktree, but only with --yes.
+    // Discarding a run deletes its branch and worktree, but only with --yes. Without it, sous says
+    // what it would delete and gives the call that deletes it.
+    const would = await sous(paths, ["discard", waiting.runId, "--json"]);
+    assert.equal(would.code, 0, would.out);
+    const wouldReply = JSON.parse(would.out) as { worktrees: Array<{ dir: string; branch: string }>; notes: string[]; next: Array<{ call: string }> };
+    assert.deepEqual(wouldReply.worktrees.map((tree) => tree.branch), [waiting.branch], "the reply names what it would delete");
+    assert.ok(Array.isArray(wouldReply.notes), would.out);
+    assert.ok(wouldReply.next.some((next) => next.call === `sous discard ${waiting.runId} --yes --json`), would.out);
+    assert.equal(existsSync(waiting.worktree!), true, "without --yes nothing is deleted");
     const before = process.env.SOUS_HOME;
     process.env.SOUS_HOME = paths.home;
     try {
-      assert.equal(await main(["discard", waiting.runId]), 1);
+      assert.equal(await main(["discard", waiting.runId]), 0, "a discard without --yes changes nothing and exits 0");
       assert.equal(existsSync(waiting.worktree!), true);
       assert.equal(await main(["discard", waiting.runId, "--yes"]), 0);
     } finally {
@@ -649,11 +665,11 @@ describe("places and reruns", () => {
       open: `export const meta = { name: 'open', description: 'anyone' }\nreturn 2`,
       picker: `export const meta = { name: 'picker', description: 'lets an agent pick' }\nreturn await choose('Pick one', { any: true })`,
     });
-    assert.throws(() => createRun(paths, { workflow: "private", projectDir, inputs: {}, startedByRun: "r1" }), /started by people only/);
-    assert.ok(createRun(paths, { workflow: "private", projectDir, inputs: {} }), "a person can");
+    assert.throws(() => createRun(paths, { who: { by: "agent", through: { kind: "run", runId: "r1" } }, workflow: "private", projectDir, inputs: {}, startedByRun: "r1" }), /started by people only/);
+    assert.ok(createRun(paths, { who: PERSON, workflow: "private", projectDir, inputs: {} }), "a person can");
     const { runner, calls } = fakeRunner(() => ({ choice: "open", reason: "it is open" }));
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "picker", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "picker", projectDir, inputs: {} });
     const result = await workers.ended(record.runId);
     assert.match(calls[0]!.prompt, /- open: anyone/);
     assert.doesNotMatch(calls[0]!.prompt, /private/);
@@ -709,7 +725,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('ticket', { id }, { 
     let hang = true;
     const { runner, calls } = fakeRunner((call) => (call.prompt === "check A" && hang ? hangUntilAborted(call) : `${call.label} done`));
     const workers = inProcess({ inner: runner, handleSignals: true });
-    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     const file = logFile(paths, record.runId);
     const running = workers.ended(record.runId);
     await waitFor(() => calls.some((c) => c.prompt === "check A") && calls.some((c) => c.prompt === "check B"));
@@ -728,7 +744,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('ticket', { id }, { 
     );
 
     const wrong = await sous(paths, "stop", record.runId, "--step", "checker");
-    assert.equal(wrong.code, 1);
+    assert.equal(wrong.code, 65, "a step that is not there is a missing thing");
     assert.match(wrong.err, /no step named "checker" runs .*Running now: "ticket A \/ check A: checker"/);
     assert.equal((await sous(paths, "stop", record.runId, "--step", "ticket A / check A: checker")).code, 0);
     await running;
@@ -738,7 +754,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('ticket', { id }, { 
     assert.equal(existsSync(stopRequestFile(paths, record.runId)), false, "the worker took the request");
 
     hang = false;
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), [
@@ -800,7 +816,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
       return "built";
     });
     const workers = inProcess({ inner: runner, handleSignals: true });
-    const { runId } = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const { runId } = startRun(paths, workers.launch, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     const file = logFile(paths, runId);
     const running = workers.ended(runId);
     await waitFor(() => calls.some((c) => c.prompt === "build A") && readFileSync(file, "utf8").includes("done       ticket B: builder"));
@@ -841,7 +857,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
     // A paused run keeps its nested worktrees, merged or not.
     git(projectDir, "merge", "-q", trees[1]!.branch);
     toOldShape();
-    const paused = gcRuns(paths);
+    const paused = gcRuns(paths, PERSON);
     assert.deepEqual(paused.removed, []);
     assert.deepEqual(
       paused.kept.filter((k) => k.branch.startsWith(`sous/${runId}-nested`)).map((k) => [k.branch, k.reason]),
@@ -850,7 +866,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
 
     toOldShape();
     hang = false;
-    resumeRun(paths, workers.launch, runId);
+    resumeRun(paths, workers.launch, runId, PERSON);
     const done = await workers.ended(runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(calls.map((c) => c.prompt).sort(), ["build A", "build A", "build B", "look"]);
@@ -859,7 +875,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
     // Once the run ended, gc removes each merged nested worktree.
     commit(projectDir, "merge", "-q", "--no-edit", trees[0]!.branch);
     toOldShape();
-    const ended = gcRuns(paths);
+    const ended = gcRuns(paths, PERSON);
     assert.deepEqual(
       ended.removed.filter((r) => r.branch.startsWith(`sous/${runId}-nested`)).map((r) => [r.branch, r.reason]),
       trees.map((tree) => [tree.branch, "merged"]),
@@ -900,7 +916,7 @@ describe("service", () => {
     tick(paths, launch, { now: new Date(2026, 10, 21, 3, 0), log: quiet });
     assert.equal(started.length, 0, "the service does not know the project yet");
 
-    createRun(paths, { workflow: "hand", projectDir, inputs: {} });
+    createRun(paths, { who: PERSON, workflow: "hand", projectDir, inputs: {} });
     assert.deepEqual(knownProjects(paths), [projectDir]);
     assert.deepEqual(fileSchedules(paths).map((schedule) => [schedule.name, schedule.cron]), [[file, "0 3 * * *"]]);
     tick(paths, launch, { now: new Date(2026, 10, 22, 2, 59), log: quiet });
@@ -937,8 +953,8 @@ describe("service", () => {
 
   it("tells the user once about a run cut off by a crash and leaves it for them to resume, while a limit pause resumes", () => {
     const { paths, projectDir } = testHome({ job: `export const meta = { name: 'job', description: 'j' }\nreturn 1` });
-    const cut = createRun(paths, { workflow: "job", projectDir, inputs: {} });
-    const limited = createRun(paths, { workflow: "job", projectDir, inputs: {} });
+    const cut = createRun(paths, { who: PERSON, workflow: "job", projectDir, inputs: {} });
+    const limited = createRun(paths, { who: PERSON, workflow: "job", projectDir, inputs: {} });
     const at = new Date(2026, 10, 21, 10, 0).toISOString();
     const base = { startedAt: at, updatedAt: at, agents: [], logs: [], phases: [] };
     plantState(paths, { ...base, runId: cut.runId, status: "paused", pauseReason: "interrupted" });
@@ -980,7 +996,7 @@ return { out: made.stdout.trim(), approved: verdict.approved, rounds: round, kep
   it("a dry run runs the code steps in a copy, gives stand-in answers, and leaves nothing behind", async () => {
     const { paths, projectDir } = gitProject({ review });
     const lines: string[] = [];
-    const dry = await dryRun(paths, { workflow: "review", projectDir, inputs: {}, log: (line) => lines.push(line.slice(9)) });
+    const dry = await dryRun(paths, { who: PERSON, workflow: "review", projectDir, inputs: {}, log: (line) => lines.push(line.slice(9)) });
     assert.equal(dry.status, "completed");
     assert.deepEqual(dry.result, { out: "hi", approved: true, rounds: 1, kept: "stand-in answer from writer" });
     assert.deepEqual(dry.agents, ["reviewer 1", "writer"]);
@@ -999,7 +1015,7 @@ return { out: made.stdout.trim(), approved: verdict.approved, rounds: round, kep
   it("answers given by step label, in turn, drive a dry run through a loop", async () => {
     const { paths, projectDir } = gitProject({ review });
     const answers = { "reviewer *": [{ approved: false, review: "Add a test" }, { approved: true, review: "Good" }], writer: "the text" };
-    const dry = await dryRun(paths, { workflow: "review", projectDir, inputs: {}, answers });
+    const dry = await dryRun(paths, { who: PERSON, workflow: "review", projectDir, inputs: {}, answers });
     assert.equal(dry.status, "completed");
     assert.deepEqual(dry.result, { out: "hi", approved: true, rounds: 2, kept: "the text" });
   });
@@ -1010,7 +1026,7 @@ return { out: made.stdout.trim(), approved: verdict.approved, rounds: round, kep
 const verdict = await agent('Review', { label: 'reviewer', schema: { type: 'object', properties: { approved: { type: 'boolean' } }, required: ['approved'] } })
 return verdict.details.length`,
     });
-    const dry = await dryRun(paths, { workflow: "broken", projectDir, inputs: {} });
+    const dry = await dryRun(paths, { who: PERSON, workflow: "broken", projectDir, inputs: {} });
     assert.equal(dry.status, "failed");
     assert.match(dry.reason ?? "", /Cannot read properties of undefined \(reading 'length'\)/);
     assert.deepEqual(listRecords(paths), []);
@@ -1021,7 +1037,7 @@ return verdict.details.length`,
       scratch: `export const meta = { name: 'scratch', description: 'works in a scratch folder', place: 'none' }
 return (await sh('pwd', { label: 'where' })).stdout.trim()`,
     });
-    const dry = await dryRun(paths, { workflow: "scratch", projectDir, inputs: {} });
+    const dry = await dryRun(paths, { who: PERSON, workflow: "scratch", projectDir, inputs: {} });
     assert.equal(dry.status, "completed");
     assert.equal(String(dry.result).startsWith(realpathSync(paths.scratch)), true, String(dry.result));
     assert.equal(existsSync(String(dry.result)), false);
@@ -1096,14 +1112,14 @@ describe("sous schedule", () => {
 
     const json = await schedule("list", "--json");
     assert.equal(json.code, 0);
-    const [morning, often] = JSON.parse(json.out) as Array<{ createdAt: string }>;
+    const [morning, often] = (JSON.parse(json.out) as { schedules: Array<{ createdAt: string }> }).schedules;
     for (const one of [morning!, often!]) assert.match(one.createdAt, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
     const stored = [
       { name: "morning", workflow: dailyFile, projectDir, cron: "0 9 * * 1-5", inputs: { who: "me" }, enabled: true, createdAt: morning!.createdAt },
       { name: "often", workflow: nightlyFile, projectDir, cron: "* * * * *", inputs: {}, place: "folder", enabled: true, createdAt: often!.createdAt },
       { name: nightlyFile, workflow: nightlyFile, projectDir, cron: "0 3 * * *", inputs: { who: "night" }, enabled: true, createdAt: "", fromFile: true },
     ];
-    assert.equal(json.out, `${JSON.stringify(stored, null, 2)}\n`);
+    assert.equal(json.out, `${JSON.stringify({ schedules: stored, notes: [], next: [] }, null, 2)}\n`);
 
     assert.deepEqual(await schedule("disable", "morning"), { code: 0, out: "disabled morning\n" });
     assert.deepEqual(timed(await schedule("list")), { code: 0, out: listed.replace(`${daily}  next <time>`, `${daily}  disabled`) });
@@ -1135,13 +1151,13 @@ describe("sous schedule", () => {
     assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 25 * * *"), { code: 1, out: 'sous: bad hour in cron: "25" (allowed 0-23)\n' });
     assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 9 * *"), { code: 1, out: 'sous: cron needs five fields (minute hour day month weekday), got "0 9 * *"\n' });
     assert.deepEqual(await schedule("add", "late", "nope", "--cron", "0 9 * * *"), {
-      code: 1,
-      out: `sous: no workflow "nope". Looked in ${join(projectDir, ".sous", "workflows")} and ${paths.workflows}. Saved workflows: daily, nightly.\n`,
+      code: 65,
+      out: `no workflow "nope". Looked in ${join(projectDir, ".sous", "workflows")} and ${paths.workflows}. Saved workflows: daily, nightly.\n  change: Give the name of a saved workflow, or the path of a workflow file.\n  try: sous workflows --json --project ${projectDir}\n`,
     });
-    assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 9 * * *", "--place", "moon"), { code: 64, out: 'usage: --place is worktree, folder or none, got "moon"\n' });
+    assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 9 * * *", "--place", "moon"), { code: 64, out: 'usage: --place is worktree, folder or none, got "moon"\n  change: Fix the command line. sous help lists the commands and their flags.\n' });
     // With two mistakes, the name that exists comes before the bad place.
     assert.deepEqual(await schedule("add", "morning", "daily", "--cron", "0 9 * * *", "--place", "moon"), { code: 1, out: 'sous: a schedule "morning" exists. Remove it first.\n' });
-    assert.deepEqual(await schedule("add", "late", "daily"), { code: 64, out: 'usage: sous schedule add <name> <workflow> --cron "0 9 * * 1-5" [--name value ...]\n' });
+    assert.deepEqual(await schedule("add", "late", "daily"), { code: 64, out: 'usage: sous schedule add <name> <workflow> --cron "0 9 * * 1-5" [--name value ...]\n  change: Fix the command line. sous help lists the commands and their flags.\n' });
     assert.equal(readFileSync(paths.schedules, "utf8"), saved, "a refused add writes nothing");
 
     // Once sous schedule list has remembered the project, the schedule in nightly's meta is known,
@@ -1150,8 +1166,203 @@ describe("sous schedule", () => {
     assert.equal((await schedule("list")).code, 0);
     const inMeta = `sous: the schedule of ${nightly} is set in its meta. Change or remove meta.schedule there.\n`;
     for (const action of ["remove", "disable", "enable"]) assert.deepEqual(await schedule(action, nightlyFile), { code: 1, out: inMeta }, action);
-    for (const action of ["remove", "disable", "enable", "test"]) assert.deepEqual(await schedule(action, "nope"), { code: 1, out: 'sous: no schedule "nope". sous schedule list shows them.\n' }, action);
-    assert.deepEqual(await schedule("launch"), { code: 64, out: "usage: sous schedule add|list|remove|enable|disable|test\n" });
+    const missing = `no schedule "nope".\n  change: Name a schedule that sous schedule list shows.\n  try: sous schedule list --json --project ${projectDir}\n`;
+    for (const action of ["remove", "disable", "enable", "test"]) assert.deepEqual(await schedule(action, "nope"), { code: 65, out: missing }, action);
+    const asJson = await schedule("remove", "nope", "--json");
+    assert.equal(asJson.code, 65, asJson.out);
+    assert.equal((JSON.parse(asJson.out) as { error: { code: string } }).error.code, "no_such_schedule");
+    assert.deepEqual(await schedule("launch"), { code: 64, out: "usage: sous schedule add|list|remove|enable|disable|test\n  change: Fix the command line. sous help lists the commands and their flags.\n" });
     assert.equal(readFileSync(paths.schedules, "utf8"), saved, "a refused change writes nothing");
+  });
+});
+
+describe("control replies", () => {
+  const ONE = `export const meta = { name: 'one', description: 'one step' }\nreturn await agent('do it', { label: 'worker' })`;
+  type Status = NonNullable<Parameters<typeof plantState>[1]["status"]>;
+
+  /** A run of the "one" workflow, with no worker. With a status it has a saved state, and with
+   *  `alive` its record names this process, which counts as a live worker. Never stop or pause an
+   *  alive run: sous would signal the test process. */
+  function planted(status?: Status, options: { alive?: boolean; state?: Record<string, unknown> } = {}) {
+    const { paths, projectDir } = testHome({ one: ONE });
+    const record = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {} });
+    if (options.alive) saveRecord(paths, { ...record, pid: process.pid });
+    const now = new Date().toISOString();
+    if (status) plantState(paths, { runId: record.runId, status, startedAt: now, updatedAt: now, agents: [], logs: [], phases: [], ...options.state });
+    return { paths, projectDir, runId: record.runId };
+  }
+
+  /** The JSON reply sous printed, with its notes and next checked. */
+  function replyOf(out: string): { notes: string[]; next: Array<{ call: string; does: string }> } & Record<string, unknown> {
+    let parsed: unknown;
+    assert.doesNotThrow(() => (parsed = JSON.parse(out)), `stdout is not one JSON object:\n${out}`);
+    const reply = parsed as Record<string, unknown>;
+    assert.ok(reply && typeof reply === "object" && !Array.isArray(reply), out);
+    assert.equal("error" in reply, false, out);
+    assert.ok(Array.isArray(reply.notes), `notes is an array: ${out}`);
+    assert.ok(Array.isArray(reply.next), `next is an array: ${out}`);
+    for (const next of reply.next as Array<Record<string, unknown>>) assert.ok(typeof next.call === "string" && typeof next.does === "string", JSON.stringify(next));
+    return reply as ReturnType<typeof replyOf>;
+  }
+
+  /** The JSON error sous printed. */
+  const errorOf = (out: string) => (JSON.parse(out) as { error: { code: string; message: string; change: string; call: string | null } }).error;
+
+  it("pausing a paused run exits 0 with a note", async () => {
+    const { paths, runId } = planted("paused", { state: { pauseReason: "requested" } });
+    const json = await sous(paths, ["pause", runId, "--json"]);
+    assert.equal(json.code, 0, json.out);
+    const reply = replyOf(json.out);
+    assert.equal(reply.runId, runId);
+    assert.equal(reply.status, "paused");
+    assert.ok(reply.notes.length > 0, `a wrong state says why in a note: ${json.out}`);
+    const text = await sous(paths, ["pause", runId]);
+    assert.equal(text.code, 0, text.out);
+    assert.match(text.out, /^note: /m, "the text form prints the note");
+  });
+
+  it("stopping a completed run exits 0 with a note", async () => {
+    const { paths, runId } = planted("completed");
+    const json = await sous(paths, ["stop", runId, "--json"]);
+    assert.equal(json.code, 0, json.out);
+    const reply = replyOf(json.out);
+    assert.equal(reply.runId, runId);
+    assert.equal(reply.status, "completed");
+    assert.ok(reply.notes.length > 0, `a wrong state says why in a note: ${json.out}`);
+  });
+
+  it("resuming a completed run exits 0 with next holding the rerun call", async () => {
+    const { paths, runId } = planted("completed");
+    const { runner } = fakeRunner(() => "unused");
+    const workers = inProcess({ inner: runner });
+    const json = await sous(paths, ["resume", runId, "--json"], { launch: workers.launch });
+    assert.equal(json.code, 0, json.out);
+    const reply = replyOf(json.out);
+    assert.equal(reply.runId, runId);
+    assert.equal(reply.status, "completed");
+    assert.ok(reply.notes.length > 0, `a wrong state says why in a note: ${json.out}`);
+    assert.ok(reply.next.some((next) => next.call === `sous rerun ${runId} --json`), `next holds the rerun call: ${json.out}`);
+    const text = await sous(paths, ["resume", runId], { launch: workers.launch });
+    assert.equal(text.code, 0, text.out);
+    assert.match(text.out, /^note: /m, "the text form prints the note");
+    assert.equal(workers.launched.length, 0, "nothing starts");
+  });
+
+  it("resuming a stopped, a never-started or a running run exits 0 with a note and the call that fits", async () => {
+    const { runner } = fakeRunner(() => "unused");
+    const cases: Array<[string, ReturnType<typeof planted>, string, (runId: string) => string]> = [
+      ["stopped", planted("aborted"), "stopped", (id) => `sous rerun ${id} --json`],
+      ["never started", planted(), "not started", (id) => `sous rerun ${id} --json`],
+      // A live worker: resume and discard refuse before they signal anything, so this is safe.
+      ["running", planted("running", { alive: true }), "running", (id) => `sous wait ${id} --json`],
+    ];
+    for (const [what, { paths, runId }, status, call] of cases) {
+      const workers = inProcess({ inner: runner });
+      const json = await sous(paths, ["resume", runId, "--json"], { launch: workers.launch });
+      assert.equal(json.code, 0, `${what}: ${json.out}`);
+      const reply = replyOf(json.out);
+      assert.equal(reply.status, status, what);
+      assert.ok(reply.notes.length > 0, `${what}: a wrong state says why in a note: ${json.out}`);
+      assert.ok(reply.next.some((next) => next.call === call(runId)), `${what}: next holds ${call(runId)}: ${json.out}`);
+      assert.equal(workers.launched.length, 0, `${what}: nothing starts`);
+    }
+  });
+
+  it("resuming a run an older sous saved exits 66 with cannot_resume and the rerun call", async () => {
+    const { paths, runId } = planted("paused", { state: { pauseReason: "requested", executionMode: { kind: "isolation", baselineRunId: "older-run" } } });
+    const { runner } = fakeRunner(() => "unused");
+    const workers = inProcess({ inner: runner });
+    const json = await sous(paths, ["resume", runId, "--json"], { launch: workers.launch });
+    assert.equal(json.code, 66, json.out);
+    const error = errorOf(json.out);
+    assert.equal(error.code, "cannot_resume");
+    assert.equal(error.call, `sous rerun ${runId} --json`);
+    assert.equal(workers.launched.length, 0, "nothing starts");
+  });
+
+  it("discard of a running run exits 66 with run_is_running and the call sous stop <run>", async () => {
+    const { paths, runId } = planted("running", { alive: true });
+    const json = await sous(paths, ["discard", runId, "--json"]);
+    assert.equal(json.code, 66, json.out);
+    const error = errorOf(json.out);
+    assert.equal(error.code, "run_is_running");
+    assert.equal(error.call, `sous stop ${runId} --json`);
+    const text = await sous(paths, ["discard", runId, "--yes"]);
+    assert.equal(text.code, 66, text.out);
+  });
+
+  it("each control and question command takes --json and replies with notes and next", async () => {
+    const { paths, projectDir, runId } = planted("completed");
+    const { runner } = fakeRunner(() => "done");
+    const workers = inProcess({ inner: runner });
+    // Questions for a run with no record, as the inbox holds them.
+    const ask = (n: number, extra: Record<string, unknown> = {}) => {
+      const id = `r1--${n}`;
+      writeFileSync(join(paths.inbox, `${id}.json`), JSON.stringify({ id, runId: "r1", scope: "r1", callIndex: n, hash: `h${n}`, workflow: "w", prompt: "?", kind: "input", breakpoint: false, askedAt: "2026-11-24T10:00:00.000Z", ...extra }));
+      return id;
+    };
+    const breakpoint = { breakpoint: true, prompt: "Breakpoint: Check\n\nReply approve, stop, or send back with a note." };
+    const commands: string[][] = [
+      ["log", runId],
+      ["pause", runId],
+      ["stop", runId],
+      ["resume", runId],
+      ["discard", runId],
+      ["rerun", runId],
+      ["answer", ask(0), "blue"],
+      ["approve", ask(1, breakpoint)],
+      ["send-back", ask(2, breakpoint), "shorter"],
+      ["gc"],
+      ["prune", "--days", "5"],
+    ];
+    for (const argv of commands) {
+      const result = await sous(paths, [...argv, "--json"], { launch: workers.launch });
+      assert.equal(result.code, 0, `${argv.join(" ")}: ${result.out}`);
+      const reply = replyOf(result.out);
+      if (argv[0] === "log") assert.equal(reply.runId, runId, "log --json names its run");
+      if (argv[0] === "rerun") await workers.ended(String(reply.runId));
+    }
+    assert.ok(existsSync(projectDir), "prune keeps the project");
+    assert.ok(listRecords(paths).some((record) => record.runId === runId), "prune keeps a run made a minute ago");
+  });
+
+  it("stop --step on a run with no worker refuses a name the run never had, and gives one data shape", async () => {
+    const step = { label: "worker", status: "done", callIndex: 0, scope: undefined };
+    const { paths, runId } = planted("paused", { state: { pauseReason: "requested", agents: [step] } });
+    const typo = await sous(paths, ["stop", runId, "--step", "wroker", "--json"]);
+    assert.equal(typo.code, 65, typo.out);
+    assert.deepEqual(errorOf(typo.out), { code: "no_such_step", message: `no step named "wroker" ran in ${runId}.`, change: "Name a step that runs now, by the name sous log gives it.", call: `sous show ${runId} --json` });
+
+    const known = await sous(paths, ["stop", runId, "--step", "worker", "--json"]);
+    assert.equal(known.code, 0, known.out);
+    const reply = replyOf(known.out);
+    assert.deepEqual(Object.keys(reply).sort(), ["next", "notes", "runId", "status", "step", "stopping"]);
+    assert.equal(reply.stopping, false);
+    assert.ok(reply.notes.length > 0, known.out);
+    assert.deepEqual(reply.next.map((next) => next.call), [`sous resume ${runId} --json`], "a paused run resumes");
+  });
+
+  it("pause and stop in the wrong state give the call that fits in next", async () => {
+    const paused = planted("paused", { state: { pauseReason: "requested" } });
+    const pause = replyOf((await sous(paused.paths, ["pause", paused.runId, "--json"])).out);
+    assert.deepEqual(pause.next.map((next) => next.call), [`sous resume ${paused.runId} --json`]);
+    const completed = planted("completed");
+    const stop = replyOf((await sous(completed.paths, ["stop", completed.runId, "--json"])).out);
+    assert.deepEqual(stop.next.map((next) => next.call), [`sous rerun ${completed.runId} --json`]);
+    const pauseDone = replyOf((await sous(completed.paths, ["pause", completed.runId, "--json"])).out);
+    assert.deepEqual(pauseDone.next.map((next) => next.call), [`sous rerun ${completed.runId} --json`]);
+    const text = await sous(paused.paths, ["pause", paused.runId]);
+    // The text form prints the notes, then the next calls, as the JSON form gives them.
+    assert.equal(text.out, `note: ${paused.runId} is not running (paused), so there is nothing to pause.\nnext: sous resume ${paused.runId} --json  (goes on with the run)\n`);
+  });
+
+  it("resume with --latest and --same, and prune with no days, give a call to paste", async () => {
+    const { paths, runId } = planted("paused", { state: { pauseReason: "requested" } });
+    const both = await sous(paths, ["resume", runId, "--latest", "--same", "--json"]);
+    assert.equal(both.code, 64, both.out);
+    assert.equal(errorOf(both.out).call, `sous resume ${runId} --same --json`);
+    const prune = await sous(paths, ["prune", "--days", "soon", "--json"]);
+    assert.equal(prune.code, 64, prune.out);
+    assert.equal(errorOf(prune.out).call, "sous prune --days 30");
   });
 });

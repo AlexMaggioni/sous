@@ -1,12 +1,11 @@
 // One run, in its own background process. `sous run` and `sous resume` start it detached, and it
 // keeps running when the terminal closes. It holds the run's lease, asks questions through the
-// inbox, and answers `sous pause` (SIGUSR1), `sous stop --step` (SIGUSR2) and `sous stop` (SIGTERM).
+// inbox, and answers `sous pause` (SIGUSR1), `sous stop --step` and `sous tell` (SIGUSR2) and `sous stop` (SIGTERM).
 
 import { readFileSync, existsSync } from "node:fs";
 import type { WorkflowRunResult } from "../workflow-result.js";
 import { limitNotice, runAccounts } from "../accounts.js";
 import { envFor, lookupAgents, lookupMcpServers, lookupSettings } from "../agents.js";
-import { parseDurationSeconds } from "../duration.js";
 import { projectWorkflows } from "../workflows/dir.js";
 import type { CheckpointCallContext } from "../checkpoint-call.js";
 import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";
@@ -14,10 +13,17 @@ import { dropUnchangedWorktrees, runPlaces, runWorktrees } from "../places/place
 import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
 import { ask, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
-import { loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
+import { approvedLookup } from "./approval-check.js";
+import { workflowHash } from "./approvals.js";
+import { authorAnsweredBy } from "./consent.js";
+import { Refusal } from "./refusal.js";
+import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeNote, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type NoteRequest, type RunRecord, type TellOutcome } from "./records.js";
+import { goLimits } from "./limits.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
-import { createSteps, type InnerRunner } from "../steps/steps.js";
+import { createSteps, type InnerRunner, type StepsNote } from "../steps/steps.js";
+import { SteeringBoard } from "../steps/steering.js";
+import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";
 import { programLookup } from "../programs.js";
 
 export interface WorkerOptions {
@@ -55,33 +61,79 @@ export function currentWorkflows(paths: HomePaths, projectDir: string): Record<s
   return out;
 }
 
-/** The engine's manager for a project's runs. Only this file builds one. */
-function managerFor(paths: HomePaths, projectDir: string, extra: Partial<ConstructorParameters<typeof WorkflowManager>[0]> = {}) {
-  const dirs = projectWorkflows(paths, projectDir);
+/**
+ * Send the tells `sous tell` wrote through the steering board, before the step stops of the same
+ * signal. Each call gets one receipt in its activity, which the cli waits for. A call with no turn
+ * open gets no_turn, and the cli tells from the run's steps whether the call still runs. A call an
+ * older state saved with no call index gets the first open call of its label not told yet.
+ */
+function sendTells(paths: HomePaths, runId: string, steering: SteeringBoard, onActivity: OnActivity, log: (line: string) => void): void {
+  for (const { id, step, text, calls } of takeTells(paths, runId)) {
+    const taken = new Set<string>();
+    for (const call of calls) {
+      const callIndex = call.callIndex ?? steering.openOf(call.label, call.scope).find((open) => !taken.has(`${call.scope}#${open.callIndex}`))?.callIndex;
+      if (callIndex !== undefined) taken.add(`${call.scope}#${callIndex}`);
+      const told = callIndex === undefined ? Promise.resolve([]) : steering.tell({ label: call.label, scope: call.scope, callIndex }, text, id);
+      // A call with no index and no open call to take has a receipt under its label alone.
+      const receipt = onActivity as (step: Omit<ActivityStep, "callIndex"> & { callIndex?: number }, entry: ActivityEntry) => void;
+      void told.then((outcomes) => {
+        const outcome: TellOutcome = outcomes[0]?.outcome ?? "no_turn";
+        receipt({ scope: call.scope, label: call.label, ...(callIndex === undefined ? {} : { callIndex }) }, { kind: "tell", id, text: TELL_RECEIPTS[outcome] });
+        log(`${stamp()} tell       ${step}: ${TELL_RECEIPTS[outcome]}`);
+      });
+    }
+  }
+}
+
+/** What SIGUSR2 does in this process: each run whose steps run takes its tells and step stops. */
+const steerHandlers = new Set<() => void>();
+const onSteerSignal = () => {
+  for (const handler of steerHandlers) handler();
+};
+let steerHolders = 0;
+
+/** Keep the SIGUSR2 handler in place until the call it returns, so the signal never ends the process
+ *  before a run's steps start or after they end. Holds nest, and the last release removes it. */
+function holdSteerSignal(): () => void {
+  if (steerHolders++ === 0) process.on("SIGUSR2", onSteerSignal);
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    if (--steerHolders === 0) process.off("SIGUSR2", onSteerSignal);
+  };
+}
+
+/** The engine's manager for a run's project. Only this file builds one. A nested workflow() or
+ *  choose() finds its workflow by `lookup`, the project's live ones by default, and a run an agent
+ *  started finds no people workflow there. */
+function managerFor(paths: HomePaths, record: RunRecord, lookup?: (name: string) => string | undefined) {
+  const dirs = projectWorkflows(paths, record.projectDir);
+  const guard = approvedLookup(paths, record, lookup ?? ((name) => dirs.resolve(name)));
   return new WorkflowManager({
     ...managerStore(paths),
     defaultAgentRetries: loadConfig(paths).retries,
-    loadSavedWorkflow: (name) => dirs.resolve(name),
+    loadSavedWorkflow: guard.lookup,
     sous: {
       maxNestingDepth: 5,
-      // What an agent may pick with choose({ any: true }). Workflows for people only stay out.
+      // What an agent may pick with choose({ any: true }). Workflows for people only stay out, and
+      // so do those the guard refuses the run.
       listSavedWorkflows: () =>
         dirs
           .list()
-          .filter((entry) => entry.extras && entry.extras.startedBy !== "people")
+          .filter((entry) => entry.extras && entry.extras.startedBy !== "people" && guard.offers(entry))
           .map((entry) => ({ name: entry.name, ...(entry.meta?.description ? { description: entry.meta.description } : {}) })),
       // A run tree's nested runs and step worktrees go under this home's worktrees folder, and its
       // root run's record names them.
       places: (rootRunId) => runPlaces(paths, placeNotes(paths, rootRunId)),
     },
-    ...extra,
   });
 }
 
 /** Stop a run that no worker runs: a paused run, or one whose worker died. The manager saves it
  *  as stopped under the run's lease and changes no other run's files. */
 export function stopColdRun(paths: HomePaths, record: RunRecord): PersistedRunStopResult {
-  return managerFor(paths, record.projectDir).stopPersistedRun(record.runId);
+  return managerFor(paths, record).stopPersistedRun(record.runId);
 }
 
 /** Run or resume one run in this process. Resolves with the engine's result. */
@@ -89,25 +141,71 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
   const paths = ensureHome(options.paths ?? homePaths());
   const record = loadRecord(paths, runId);
   if (!record) throw new Error(`no run ${runId}`);
+  // A resume's note goes to this go only, so it is taken before any check that ends the go.
+  const note = mode === "resume" ? takeNote(paths, runId) : undefined;
+  const script = checkedText(paths, record, mode);
   // The steps run on the run's recorded accounts, also when the service resumes it with its own
   // environment. A dry run talks to no agent.
   const accounts = options.dryRun ? {} : runAccounts(paths, record.accounts);
-  return runOnAccounts(paths, record, mode, options, accounts);
+  return runOnAccounts(paths, record, mode, options, accounts, script, note);
 }
 
+/** A resume's note for the steps of this go. The log says whom it is for, and at the end of the go
+ *  that it reached no step when no agent call took it, since the note is gone after this go. */
+function noteForGo(note: NoteRequest | undefined, log: (line: string) => void): { steps?: StepsNote; end(): void } {
+  if (!note) return { end: () => {} };
+  const noteFor = note.step ? note.step.name : "the first agent call";
+  log(`${stamp()} note       for ${noteFor}`);
+  let taken = false;
+  return {
+    steps: { text: note.text, ...(note.step ? { step: note.step.label, scopes: note.step.scopes } : {}), taken: () => (taken = true) },
+    end: () => {
+      if (!taken) log(`${stamp()} note       for ${noteFor} reached no step in this go`);
+    },
+  };
+}
+
+/**
+ * The workflow's text a start runs, or a resume after `sous resume --latest`, read once. It is
+ * the text sous checked: the one whose hash it wrote in the record, or at resume --latest. A
+ * changed or missing file is refused, and the record keeps why, so `sous show` gives it. Another
+ * resume runs the text the run started with, and gets undefined.
+ */
+function checkedText(paths: HomePaths, record: RunRecord, mode: "start" | "resume"): string | undefined {
+  if (mode === "resume" && record.resumeLatest !== true) return undefined;
+  const text = existsSync(record.file) ? readFileSync(record.file, "utf8") : undefined;
+  const checked = mode === "start" ? record.workflowHash : record.latestHash;
+  // A record from before the hash resumes with the text it started with.
+  if (mode === "resume" && checked === undefined) return undefined;
+  if (text !== undefined && (checked === undefined || workflowHash(text) === checked)) return text;
+  const what = text === undefined ? "is gone" : "changed after sous checked it";
+  const refused =
+    mode === "start"
+      ? `${record.file} ${what}, so run ${record.runId} did not start. Start it again, which checks the text again.`
+      : `${record.file} ${what} at sous resume --latest, so run ${record.runId} did not resume. Resume it again, which checks the text again.`;
+  updateRecord(paths, record.runId, { refused, ...(mode === "resume" ? { resumeLatest: undefined, latestHash: undefined } : {}) });
+  const call = mode === "start" ? `sous rerun ${record.runId} --json` : `sous resume ${record.runId} --latest --json`;
+  throw new Refusal("not_approved", refused, "Start or resume the run again. sous checks the text as it is now.", call);
+}
+
+/** Run one go of the run on its accounts, with `note`, the note `sous resume --note` left for it. */
 async function runOnAccounts(
   paths: HomePaths,
   record: RunRecord,
   mode: "start" | "resume",
   options: WorkerOptions,
   accounts: ReturnType<typeof runAccounts>,
+  /** The checked text a start or a resume --latest runs. */
+  script: string | undefined,
+  note: NoteRequest | undefined,
 ): Promise<WorkflowRunResult | undefined> {
   const runId = record.runId;
   const config = loadConfig(paths);
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
-  updateRecord(paths, runId, { pid: process.pid, limit: undefined });
+  updateRecord(paths, runId, { pid: process.pid, limit: undefined, refused: undefined });
   // A step stop the last worker never took names a step of that worker, not this one.
   takeStepStops(paths, runId);
+  const goNote = noteForGo(note, log);
 
   // The environment with the run's accounts on it, for code steps and the agent lookup.
   const base = envFor("codex", accounts.codex, envFor("claude", accounts.claude, process.env));
@@ -116,6 +214,11 @@ async function runOnAccounts(
   const secrets = loadSecrets(paths);
   const slots = agentSlots(paths, () => loadConfig(paths).maxAgents, record.priority);
   const inner = options.inner;
+  // It reads the file at its first write, once the run manager holds the run's lease.
+  const onActivity = activityWriter(paths, runId, Object.values(secrets));
+  const steering = new SteeringBoard();
+  // The time limit and the budget of this go.
+  const limits = goLimits(record, log);
   const runner = createSteps({
     cwd: record.cwd,
     ...(inner ? { inner } : {}),
@@ -142,17 +245,20 @@ async function runOnAccounts(
     onNotes: ({ label, notes }) => {
       for (const note of notes) log(`${stamp()} note       ${label ?? "agent"}: ${oneLine(note, 400)}`);
     },
+    onActivity,
+    steering,
+    gate: limits.gate,
+    onUsage: limits.onUsage,
+    ...(goNote.steps ? { note: goNote.steps } : {}),
   });
   // A run keeps the workflows as they were when it started. A resume takes the edited ones only
   // after `sous resume --latest`.
   const takeLatest = mode === "resume" && record.resumeLatest === true;
   if (mode === "start" || takeLatest) saveSnapshot(paths, runId, currentWorkflows(paths, record.projectDir));
-  if (takeLatest) updateRecord(paths, runId, { resumeLatest: undefined });
+  if (takeLatest) updateRecord(paths, runId, { resumeLatest: undefined, latestHash: undefined });
   const snapshot = loadSnapshot(paths, runId);
   const live = projectWorkflows(paths, record.projectDir);
-  const manager = managerFor(paths, record.projectDir, {
-    loadSavedWorkflow: (name) => snapshot[name] ?? live.resolve(name),
-  });
+  const manager = managerFor(paths, record, (name) => snapshot[name] ?? live.resolve(name));
 
   const waits = new AbortController();
   const pollMs = options.pollMs ?? 500;
@@ -170,7 +276,9 @@ async function runOnAccounts(
       prompt,
       kind: checkpoint.kind ?? "confirm",
       ...(checkpoint.choices ? { choices: [...checkpoint.choices] } : {}),
-      breakpoint: context?.purpose === "breakpoint",
+      breakpoint: context?.purpose?.breakpoint === true,
+      answeredBy: authorAnsweredBy({ answeredBy: context?.purpose?.answeredBy, breakpoint: context?.purpose?.breakpoint }),
+      ...(context?.purpose?.step ? { step: context.purpose.step } : {}),
       askedAt: new Date().toISOString(),
     };
     if (options.dryRun) {
@@ -222,38 +330,40 @@ async function runOnAccounts(
       log(`${stamp()} ${stopped ? `stopping   ${step}` : `no step    ${step} runs; nothing stopped`}`);
     }
   };
+  // The tells go first. sendTells hands each message to its call's seam at once, so a call told and
+  // stopped by the same signal is handed the message before the stop aborts it.
+  const onSteer = () => {
+    sendTells(paths, runId, steering, onActivity, log);
+    onStopSteps();
+  };
   const onStop = () => {
     stopping = true;
     log(`${stamp()} stopping`);
     manager.stop(runId);
   };
+  const releaseSteer = options.handleSignals ? holdSteerSignal() : undefined;
   if (options.handleSignals) {
     process.on("SIGUSR1", onPause);
-    process.on("SIGUSR2", onStopSteps);
+    steerHandlers.add(onSteer);
     process.on("SIGTERM", onStop);
     process.on("SIGINT", onStop);
   }
+  // A tell sent before the steps start gets its receipt now. No call is open yet, so it is no_turn,
+  // and the cli tells from the run's steps whether its call runs.
+  sendTells(paths, runId, steering, onActivity, log);
 
   const exec = {
     agent: runner,
     cwd: record.cwd,
     confirm: confirm as never,
     // Code steps also get the project folder, since a run may work elsewhere (a worktree, a scratch folder).
-    codeEnv: { env: { ...secrets, SOUS_PROJECT: record.projectDir }, base },
+    codeEnv: { env: { ...secrets, SOUS_PROJECT: record.projectDir }, base, onActivity },
     ...(record.concurrency ? { concurrency: record.concurrency } : {}),
     ...(record.overrides ? { stepOverrides: record.overrides } : {}),
     ...(record.defaultModel ?? config.defaultModel ? { defaultModel: record.defaultModel ?? config.defaultModel } : {}),
   };
 
-  // The workflow's time limit: the running steps stop and the run pauses on them.
-  const limit = record.timeout ? parseDurationSeconds(record.timeout) : undefined;
-  const limitTimer = limit
-    ? setTimeout(() => {
-        log(`${stamp()} time limit ${record.timeout} reached: the running steps stop and the run pauses`);
-        const message = `the workflow's time limit of ${record.timeout} was reached`;
-        if (!manager.cancelAgentSteps(runId, { pauseReason: "time_limit", message })) manager.pause(runId);
-      }, limit * 1000)
-    : undefined;
+  limits.watch(manager);
 
   let result: WorkflowRunResult | undefined;
   // Why a resumed run stopped again, so the log can say it. A run paused for a lost login runs
@@ -262,14 +372,13 @@ async function runOnAccounts(
   try {
     if (mode === "start") {
       log(`${stamp()} run        ${record.workflow} in ${record.cwd}`);
-      result = await manager.runSync(readFileSync(record.file, "utf8"), record.args, {
+      result = await manager.runSync(script!, record.args, {
         ...exec,
         runId,
         ...(record.reuseFrom ? { resumeFromRunId: record.reuseFrom } : {}),
       });
     } else {
       log(`${stamp()} resume     ${record.workflow}`);
-      const script = takeLatest && existsSync(record.file) ? readFileSync(record.file, "utf8") : undefined;
       // The engine keeps the place and the model from the start, so a resume passes neither.
       const { cwd: _cwd, defaultModel: _model, ...controls } = exec as typeof exec & { defaultModel?: string };
       const resumed = await manager.resumeInBackground(runId, { ...controls, ...(script ? { script } : {}) });
@@ -283,17 +392,19 @@ async function runOnAccounts(
       });
     }
   } finally {
-    clearTimeout(limitTimer);
+    limits.end();
     waits.abort();
     if (options.handleSignals) {
       process.off("SIGUSR1", onPause);
-      process.off("SIGUSR2", onStopSteps);
+      steerHandlers.delete(onSteer);
       process.off("SIGTERM", onStop);
       process.off("SIGINT", onStop);
     }
+    releaseSteer?.();
     await runner.dispose().catch(() => {});
   }
 
+  goNote.end();
   const state = manager.getPersistence().load(runId);
   const status = result?.status ?? state?.status ?? "unknown";
   // The worker ends, so it judges its run as gone. The run's result wins over the saved status.
@@ -329,13 +440,20 @@ async function runOnAccounts(
 export async function workerMain(runId: string, mode: "start" | "resume"): Promise<number> {
   // The agents' shells inherit it, so `sous run` knows when an agent starts a workflow.
   process.env.SOUS_RUN_ID = runId;
+  // The record names this process from its launch, so `sous tell` and `sous stop --step` may signal
+  // it before the steps start or after they end. The handler stays until the pid clears.
+  const release = holdSteerSignal();
   try {
     const result = await runWorker(runId, mode, { handleSignals: true });
     return result?.status === "failed" ? 1 : 0;
   } catch (error) {
-    process.stderr.write(`${stamp()} error      ${(error as Error).stack ?? String(error)}\n`);
+    // A refusal says why in one line, and the record keeps it for sous show.
+    const why = error instanceof Refusal ? error.message : ((error as Error).stack ?? String(error));
+    process.stderr.write(`${stamp()} ${error instanceof Refusal ? "refused   " : "error     "} ${why}\n`);
     const paths = homePaths();
     if (loadRecord(paths, runId)) updateRecord(paths, runId, { pid: undefined });
     return 1;
+  } finally {
+    release();
   }
 }

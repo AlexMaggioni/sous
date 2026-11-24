@@ -1,0 +1,255 @@
+{
+  "scenario": "5b",
+  "title": "A refused call: resume after an edit",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/5b-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "I fixed the fails workflow. Resume my paused run of it so it finishes.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:49:19.774Z",
+      "endedAt": "2026-11-24T17:49:34.106Z",
+      "ms": 14332,
+      "args": [
+        "exec",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-s",
+        "workspace-write",
+        "--add-dir",
+        "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/5b-r1/state",
+        "-C",
+        "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/5b-r1/project",
+        "<prompt>"
+      ],
+      "sessionId": "01a20ead-2c63-7a32-9604-041e1e6ccb07",
+      "finalText": "Resumed `fails` run `mwuzohd2-65hksj` using the updated workflow. It completed successfully with result: `done`.",
+      "tokens": {
+        "input": 107408,
+        "cachedInput": 96768,
+        "output": 208,
+        "total": 107616
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    },
+    {
+      "turn": 1,
+      "prompt": "Yes, I approve that change. Go on.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:49:34.108Z",
+      "endedAt": "2026-11-24T17:49:41.367Z",
+      "ms": 7259,
+      "args": [
+        "exec",
+        "resume",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-c",
+        "sandbox_mode=\"workspace-write\"",
+        "-c",
+        "sandbox_workspace_write.writable_roots=[\"/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/5b-r1/state\"]",
+        "01a20ead-2c63-7a32-9604-041e1e6ccb07",
+        "<prompt>"
+      ],
+      "sessionId": "01a20ead-2c63-7a32-9604-041e1e6ccb07",
+      "finalText": "The run is already completed successfully. Both `prepare` and `boom` finished, with result `done`. Nothing remains to resume.",
+      "tokens": {
+        "input": 153999,
+        "cachedInput": 141952,
+        "output": 317,
+        "total": 154316
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    }
+  ],
+  "verdict": "na",
+  "checks": [
+    {
+      "name": "the call after a refusal is the refusal's call",
+      "result": "na",
+      "reason": "sous refused no resume call",
+      "source": "commands"
+    },
+    {
+      "name": "the paused run finished",
+      "result": "pass",
+      "reason": "mwuzohd2-65hksj completed",
+      "source": "records"
+    },
+    {
+      "name": "no new run",
+      "result": "pass",
+      "reason": "no new fails run",
+      "source": "records"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 5,
+    "sousInCommands": 5,
+    "commands": 5,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 22,
+    "tokens": 261932,
+    "inputTokens": 261407,
+    "cachedInputTokens": 238720,
+    "outputTokens": 525,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "help"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "list",
+        "--all"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "show",
+        "mwuzohd2-65hksj"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "resume",
+        "mwuzohd2-65hksj",
+        "--latest",
+        "--wait"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "show",
+        "mwuzohd2-65hksj"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwuzohd2-65hksj",
+      "workflow": "fails",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:49:18.951Z",
+      "status": "completed",
+      "result": "done",
+      "answers": []
+    }
+  ],
+  "setupRunIds": [
+    "mwuzohd2-65hksj"
+  ],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:49:34.106Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwuzohd2-65hksj",
+          "workflow": "fails",
+          "status": "completed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 0\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    },
+    {
+      "at": "2026-11-24T17:49:41.367Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwuzohd2-65hksj",
+          "workflow": "fails",
+          "status": "completed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 0\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

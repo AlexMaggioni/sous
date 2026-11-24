@@ -6,6 +6,7 @@
 // Internal: not exported from index.ts.
 
 import { WorkflowError, WorkflowErrorCode, wrapError } from "./errors.js";
+import { hostStopOf } from "./host-pause.js";
 
 /** Codes the host already turns into a pause, a stop or a reply. A failed step with one of them does not pause the run on it. */
 export const HOST_HANDLED_CODES: ReadonlySet<WorkflowErrorCode> = new Set([
@@ -18,7 +19,7 @@ export const HOST_HANDLED_CODES: ReadonlySet<WorkflowErrorCode> = new Set([
 
 /** The next move after a failed attempt. The first three come before the thrown value is read. */
 export type FailedAttempt =
-  /** The host stopped this attempt. The run pauses on the step. */
+  /** The host stopped this attempt, or the step refused to start at a limit of the run. The run pauses on the step. */
   | { next: "host-stopped"; reason: WorkflowError }
   /** The run stopped. The call settles as interrupted and the error goes up. */
   | { next: "run-stopped" }
@@ -47,6 +48,10 @@ export function afterFailedAttempt(input: {
   if (input.hostStop) return { next: "host-stopped", reason: input.hostStop };
   if (input.runStopped) return { next: "run-stopped" };
   if (input.pausePending) return { next: "pause-pending" };
+  // A step stopped at the run's time limit or budget pauses the run with that reason. A retry
+  // would only meet the same limit.
+  const limit = hostStopOf(input.thrown);
+  if (limit) return { next: "host-stopped", reason: limit };
   const error = wrapError(input.thrown, { agentLabel: input.label });
   if (error.recoverable && input.attempt < input.maxAttempts) return { next: "retry", error };
   if (!HOST_HANDLED_CODES.has(error.code)) return { next: "pause-run", error };

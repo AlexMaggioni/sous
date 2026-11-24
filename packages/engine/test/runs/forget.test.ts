@@ -3,6 +3,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { SERVICE } from "../../src/runs/actions.js";
 import type { HomePaths } from "../../src/runs/home.js";
 import type { RunRecord } from "../../src/runs/records.js";
 import { forgetRun, pruneRuns } from "../../src/runs/run.js";
@@ -47,8 +48,11 @@ const later = new Date(Date.parse("2026-11-23T06:21:32.322Z") + 30 * 86_400_000)
 /** The two ways a run's files go, which remove the same files. */
 const removers = {
   forgetRun: (paths: HomePaths, record: RunRecord) => forgetRun(paths, record),
-  pruneRuns: (paths: HomePaths) => void pruneRuns(paths, 7, later),
+  pruneRuns: (paths: HomePaths) => void pruneRuns(paths, 7, SERVICE, later),
 };
+
+/** A prune that removes a run adds its line to the home's events.jsonl. forgetRun records nothing. */
+const recorded: Record<string, string[]> = { forgetRun: [], pruneRuns: ["home/events.jsonl"] };
 
 describe("forget and prune on today's files", () => {
   it("forgetRun removes every file of the run but the home's project.json", () => {
@@ -61,8 +65,8 @@ describe("forget and prune on today's files", () => {
   it("pruneRuns removes the same files once the run is older than the days given", () => {
     const { paths } = setup({});
     const record = plantTodayRun(paths);
-    assert.deepEqual(pruneRuns(paths, 7, later), [TODAY_ID]);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept].sort());
+    assert.deepEqual(pruneRuns(paths, 7, SERVICE, later), [TODAY_ID]);
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...recorded.pruneRuns!].sort());
   });
 
   it("with a worktree cwd, forgetRun and pruneRuns remove the engine log in the worktree's folder, and the worktree stays", () => {
@@ -72,7 +76,7 @@ describe("forget and prune on today's files", () => {
       assert.equal(record.cwd, `${paths.home}/worktrees/${TODAY_ID}`);
       assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...sousFiles, ...engineFiles, "home/worktrees/<id>/"].sort());
       remove(paths, record);
-      assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, "home/worktrees/<id>/"].sort(), name);
+      assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...recorded[name]!, "home/worktrees/<id>/"].sort(), name);
     }
   });
 
@@ -88,7 +92,7 @@ describe("forget and prune on today's files", () => {
     // resume that has just started.
     const { paths } = setup({});
     const record = plantTodayRun(paths, { liveLock: true });
-    assert.deepEqual(pruneRuns(paths, 7, later), []);
+    assert.deepEqual(pruneRuns(paths, 7, SERVICE, later), []);
     assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...sousFiles, ...engineFiles, lock].sort());
   });
 

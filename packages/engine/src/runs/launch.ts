@@ -7,11 +7,17 @@ import { generateRunId } from "./persistence/run-persistence.js";
 import { resolveWorkflow } from "../workflows/dir.js";
 import { checkInputs } from "../workflows/meta.js";
 import { preparePlace } from "../places/places.js";
-import { loadConfig, rememberProject, type HomePaths, type Place } from "./home.js";
+import { loadConfig, rememberProject, type HomePaths, type OrcConfig, type Place } from "./home.js";
 import { accountsForRun } from "../accounts.js";
 import { saveRecord, updateRecord, type RunRecord } from "./records.js";
 import { logFile } from "./store.js";
 import type { Priority } from "./slots.js";
+import { Refusal } from "./refusal.js";
+import { recordAction, type Who } from "./actions.js";
+import { recordAndTell, type Tell } from "./notify.js";
+import { letAgentAnswerBy, mayStart } from "./consent.js";
+import { needApproval } from "./approval-check.js";
+import { workflowHash } from "./approvals.js";
 
 export interface CreateRunRequest {
   workflow: string;
@@ -24,6 +30,8 @@ export interface CreateRunRequest {
   overrides?: Record<string, Record<string, unknown>>;
   defaultModel?: string;
   concurrency?: number;
+  /** --budget: the most tokens one go of the run may spend. Default: the config's budgetTokens, else none. */
+  budget?: number;
   rerunOf?: string;
   /** Reuse the results of this run's steps that did not change. The new run works in its place. */
   reuseFrom?: RunRecord;
@@ -31,6 +39,14 @@ export interface CreateRunRequest {
   startedByRun?: string;
   /** Set when a Claude Code session starts the run. Its Claude Code steps then use that session's login. */
   caller?: boolean;
+  /** Who starts the run. A start is recorded as run, or rerun with rerunOf. A dry run records nothing. */
+  who: Who;
+  /** The command the person types to start the run, for a refusal. Default: sous run and the workflow. */
+  command?: string;
+  /** --let-agent-answer: agents may answer the run's people questions. Only the person sets it. */
+  letAgentAnswer?: boolean;
+  /** How the notice of a --let-agent-answer passed on by an agent reaches the person. Default: a macOS notice. */
+  tell?: Tell;
 }
 
 export class InputProblems extends Error {
@@ -45,11 +61,22 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   const checked = checkInputs(resolved.extras, request.inputs);
   const args = checked.args;
   const problems = [...(resolved.extras.metaProblems ?? []), ...checked.problems];
-  if (problems.length) throw new InputProblems(resolved.name, problems);
-  if (request.startedByRun && resolved.extras.startedBy === "people") {
-    throw new Error(`${resolved.name} is started by people only, so the agent in run ${request.startedByRun} cannot start it.`);
+  // A problem in the workflow's own meta is no wrong input, so the file must change.
+  if (resolved.extras.metaProblems?.length) {
+    const message = new InputProblems(resolved.name, problems).message;
+    throw new Refusal("workflow_invalid", message, `Fix the workflow file ${resolved.file}.`, `sous check ${resolved.name} --json`);
   }
+  if (problems.length) throw new InputProblems(resolved.name, problems);
+  mayStart(resolved, request.who, request.command ?? `sous run ${resolved.name}`);
+  const letAgentAnswer = request.letAgentAnswer ? letAgentAnswerBy(request.who, request.command ?? `sous run ${resolved.name} --let-agent-answer`, new Date()) : undefined;
+  // A person's start makes its project known before the check, so a first use there seeds its
+  // workflows. Another start makes it known only once the record is written, so each start calls
+  // rememberProject once. A dry run runs no step for real, so it needs no yes and gives none.
+  const person = request.who.through.kind === "person";
+  if (person) rememberProject(paths, request.projectDir);
+  if (request.origin !== "check") needApproval(paths, request.projectDir, resolved, request.who);
   const config = loadConfig(paths);
+  const budget = request.budget ?? configBudget(paths, config, request.command ?? `sous run ${resolved.name}`);
   const runId = generateRunId();
   const reuse = request.reuseFrom;
   // A run that reuses another's results needs that run's files too, so it works where it did.
@@ -74,14 +101,36 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
     ...(request.defaultModel ? { defaultModel: request.defaultModel } : {}),
     ...((request.concurrency ?? resolved.extras.concurrency) ? { concurrency: request.concurrency ?? resolved.extras.concurrency } : {}),
     ...(resolved.extras.timeout ? { timeout: resolved.extras.timeout } : {}),
+    ...(budget ? { budget } : {}),
     ...(request.rerunOf ? { rerunOf: request.rerunOf } : {}),
     ...(reuse ? { reuseFrom: reuse.runId } : {}),
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
+    through: request.who.through,
+    ...(letAgentAnswer ? { letAgentAnswer } : {}),
+    workflowHash: workflowHash(resolved.script),
     accounts: accountsForRun(paths, process.env, { caller: request.caller, parentRunId: request.startedByRun }),
   };
   saveRecord(paths, record);
-  rememberProject(paths, request.projectDir);
+  if (!person) rememberProject(paths, request.projectDir);
+  if (record.origin !== "check") recordAction(paths, { act: request.rerunOf ? "rerun" : "run", ...request.who, runId, workflow: resolved.name, ...(budget ? { budget } : {}) });
+  if (letAgentAnswer && record.origin !== "check") recordAndTell(paths, { act: "let-agent-answer", ...request.who, runId, workflow: resolved.name }, request.tell);
   return record;
+}
+
+/** The config's budgetTokens, refused when it is not a whole number of tokens above 0. The
+ *  refusal's call is the command with a --budget, which wins over the config. */
+function configBudget(paths: HomePaths, config: OrcConfig, command: string): number | undefined {
+  const budget: unknown = config.budgetTokens;
+  if (budget === undefined || (Number.isSafeInteger(budget) && (budget as number) > 0)) return budget as number | undefined;
+  const split = command.indexOf(" -- ");
+  const flags = /(^| )--json( |$)/.test(command) ? " --budget 100000" : " --budget 100000 --json";
+  const call = split === -1 ? `${command}${flags}` : `${command.slice(0, split)}${flags}${command.slice(split)}`;
+  throw new Refusal(
+    "broken_record",
+    `budgetTokens in ${paths.config} is ${JSON.stringify(budget)}, not a number of tokens above 0`,
+    `Set budgetTokens in ${paths.config} to a whole number above 0, or remove it. A --budget on the command wins over it.`,
+    call,
+  );
 }
 
 /**

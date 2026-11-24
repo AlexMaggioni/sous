@@ -11,6 +11,7 @@ import { runWorker } from "../../src/runs/worker.js";
 import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
 import type { PersistedRunState } from "../../src/runs/persistence/run-persistence.js";
 import { deadPid, heldRunner, layout, plantState, setup } from "./fixture.js";
+import { PERSON } from "../../src/testing.js";
 
 // A run of the workflow "two", which runs the steps "first" and "second". Its worker died while
 // "second" ran, and it holds the lock that worker left; its pids are __PID__. The fixture holds
@@ -91,14 +92,14 @@ describe("a run saved by older code", () => {
   it("sous resume refuses it, says why and what to do instead, and starts no worker", () => {
     const { paths, runId } = plantOldRun(DEAD, olderShape);
     const launched: string[] = [];
-    assert.throws(() => resumeRun(paths, (_paths, id) => launched.push(id), runId), { message: refusal(runId) });
+    assert.throws(() => resumeRun(paths, (_paths, id) => launched.push(id), runId, PERSON), { message: refusal(runId) });
     assert.deepEqual(launched, []);
   });
 
   it("sous rerun --reuse refuses it and points to a rerun without --reuse", () => {
     const { paths, runId } = plantOldRun(DEAD, olderShape);
     const launched: string[] = [];
-    assert.throws(() => rerunRun(paths, (_paths, id) => launched.push(id), runId, { place: "folder", reuse: true }), {
+    assert.throws(() => rerunRun(paths, (_paths, id) => launched.push(id), runId, { who: PERSON, place: "folder", reuse: true }), {
       message: `${runId} was saved by an older sous, and this sous cannot reuse its steps. sous rerun ${runId} without --reuse starts it again.`,
     });
     assert.deepEqual(launched, []);
@@ -107,7 +108,7 @@ describe("a run saved by older code", () => {
   it("sous resume refuses a run with the resume safety marker of the last release on a replay row", () => {
     const { paths, runId } = plantOldRun(DEAD, replayMarker);
     const launched: string[] = [];
-    assert.throws(() => resumeRun(paths, (_paths, id) => launched.push(id), runId), { message: refusal(runId) });
+    assert.throws(() => resumeRun(paths, (_paths, id) => launched.push(id), runId, PERSON), { message: refusal(runId) });
     assert.deepEqual(launched, []);
   });
 
@@ -210,7 +211,7 @@ describe("forget and prune on an old run's files", () => {
     const { paths, runId } = plantOldRun(DEAD);
     const record = loadRecord(paths, runId)!;
     const before = runFiles(paths, record);
-    assert.deepEqual(pruneRuns(paths, 7, later), []);
+    assert.deepEqual(pruneRuns(paths, 7, PERSON, later), []);
     assert.deepEqual(runFiles(paths, record), before);
   });
 });

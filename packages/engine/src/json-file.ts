@@ -2,10 +2,11 @@
  * Read and write the JSON files under the sous home. A write never lets a reader see half of a
  * file. The value goes to a temporary file next to the target, then a rename replaces the target.
  * The temporary name carries the process id, so two processes writing the same file never share
- * one.
+ * one. A JSON lines file only grows, a line at a time, and its reader skips a torn last line.
  */
 
-import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 /** A JSON file's value, or undefined when the file is missing or does not parse. */
 export function readJsonFile<T>(file: string): T | undefined {
@@ -37,4 +38,36 @@ export function writeJsonFile(file: string, value: unknown, mode?: number): void
   // writeFileSync applies the mode only when it creates the file, and the umask can narrow it.
   if (mode !== undefined) chmodSync(temp, mode);
   renameSync(temp, file);
+}
+
+/** writeJsonFile, making the file's folder first when it is missing. */
+export function writeJsonFileInDir(file: string, value: unknown): void {
+  mkdirSync(dirname(file), { recursive: true });
+  writeJsonFile(file, value);
+}
+
+/** Append `value` to a JSON lines file as one line. The file is made when missing. */
+export function appendJsonLine(file: string, value: unknown): void {
+  appendFileSync(file, `${JSON.stringify(value)}\n`);
+}
+
+/** The values of a JSON lines file, in order. A missing file gives none. A line that does not
+ *  parse is skipped, such as the torn last line a crash in the middle of a write leaves. */
+export function readJsonLines<T>(file: string): T[] {
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    return [];
+  }
+  const values: T[] = [];
+  for (const line of text.split("\n")) {
+    if (!line) continue;
+    try {
+      values.push(JSON.parse(line) as T);
+    } catch {
+      // a torn line
+    }
+  }
+  return values;
 }

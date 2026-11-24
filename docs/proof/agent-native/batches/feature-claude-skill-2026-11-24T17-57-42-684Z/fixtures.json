@@ -1,0 +1,64 @@
+{
+  "asks-anyone": {
+    "check": {
+      "exit": 0,
+      "output": "asks-anyone  /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/project/.sous/workflows/asks-anyone.js\n  note: declares no inputs, so it takes any\nok"
+    },
+    "dryRun": {
+      "exit": 0,
+      "output": "asks-anyone  /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/project/.sous/workflows/asks-anyone.js\n  note: declares no inputs, so it takes any\nok\ndry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.\n  17:57:45 run        asks-anyone in /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/state/home/scratch/mwuzzc4e-nmpry3\n  17:57:45 question   Which color?\n           answered   \"red\" (dry run)\n  17:57:45 log        Logs persisted to /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/state/home/runs/projects/mwuzzc4e-nmpry3-af152c75553c/runs/mwuzzc4e-nmpry3.log\n  17:57:45 completed  asks-anyone\ndry run completed, with 0 agent steps answered by stand-ins\n{\n  \"color\": \"red\"\n}"
+    },
+    "answeredBy": "the fixture sets answeredBy, and sous check exits 0"
+  },
+  "asks": {
+    "check": {
+      "exit": 0,
+      "output": "asks  /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/project/.sous/workflows/asks.js\n  note: declares no inputs, so it takes any\nok"
+    },
+    "dryRun": {
+      "exit": 0,
+      "output": "asks  /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/project/.sous/workflows/asks.js\n  note: declares no inputs, so it takes any\nok\ndry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.\n  17:57:45 run        asks in /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/state/home/scratch/mwuzzck7-h443vn\n  17:57:45 question   Which color?\n           answered   \"red\" (dry run)\n  17:57:45 log        Logs persisted to /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/state/home/runs/projects/mwuzzck7-h443vn-6137854a2086/runs/mwuzzck7-h443vn.log\n  17:57:46 completed  asks\ndry run completed, with 0 agent steps answered by stand-ins\n{\n  \"color\": \"red\"\n}"
+    }
+  },
+  "deploy": {
+    "check": {
+      "exit": 0,
+      "output": "deploy  /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/project/.sous/workflows/deploy.js\nok"
+    },
+    "dryRun": {
+      "exit": 0,
+      "output": "deploy  /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/project/.sous/workflows/deploy.js\nok\ndry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.\n  17:57:46 run        deploy in /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/state/home/scratch/mwuzzd9u-5howdm\n  17:57:46 start      deploy (exec)\n  17:57:46 done       deploy\n  17:57:46 log        Logs persisted to /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/state/home/runs/projects/mwuzzd9u-5howdm-a1500a66abe4/runs/mwuzzd9u-5howdm.log\n  17:57:46 completed  deploy\ndry run completed, with 0 agent steps answered by stand-ins\n\"deployed to staging\""
+    }
+  },
+  "fails": {
+    "check": {
+      "exit": 0,
+      "output": "fails  /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/project/.sous/workflows/fails.js\n  note: declares no inputs, so it takes any\nok"
+    },
+    "dryRun": {
+      "exit": 1,
+      "output": "fails  /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/project/.sous/workflows/fails.js\n  note: declares no inputs, so it takes any\nok\ndry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.\n  17:57:47 run        fails in /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/state/home/scratch/mwuzzdqs-4e33o3\n  17:57:47 start      prepare (exec)\n  17:57:47 done       prepare\n  17:57:47 start      boom (exec)\n  17:57:47 log        agent boom attempt 1/1 failed: exited with code 3: disk check failed\n  17:57:47 log        step \"boom\" failed after 1 try: exited with code 3: disk check failed. The run pauses: fix the cause and resume it.\n  17:57:47 failed     boom: exited with code 3: disk check failed\n  17:57:47 paused     fails (step_failed): step \"boom\" failed after 1 try: exited with code 3: disk check failed\nthe dry run did not complete: paused (step \"boom\" failed after 1 try: exited with code 3: disk check failed)",
+      "expected": "fails on purpose with exit 3"
+    }
+  },
+  "hello": {
+    "check": {
+      "exit": 0,
+      "output": "hello  /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/project/.sous/workflows/hello.js\nok"
+    },
+    "dryRun": {
+      "exit": 0,
+      "output": "hello  /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/project/.sous/workflows/hello.js\nok\ndry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.\n  17:57:49 run        hello in /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/state/home/scratch/mwuzzf1f-v67y7d\n  17:57:49 start      greet (exec)\n  17:57:49 done       greet\n  17:57:49 log        Logs persisted to /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/state/home/runs/projects/mwuzzf1f-v67y7d-fa3c54a1353c/runs/mwuzzf1f-v67y7d.log\n  17:57:49 completed  hello\ndry run completed, with 0 agent steps answered by stand-ins\n\"hello Ada\""
+    }
+  },
+  "review": {
+    "check": {
+      "exit": 0,
+      "output": "review  /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/project/.sous/workflows/review.js\n  note: declares no inputs, so it takes any\nok"
+    },
+    "dryRun": {
+      "exit": 0,
+      "output": "review  /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/project/.sous/workflows/review.js\n  note: declares no inputs, so it takes any\nok\ndry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.\n  17:57:49 run        review in /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/state/home/scratch/mwuzzfi4-714f8j\n  17:57:49 start      draft (exec)\n  17:57:49 done       draft\n  17:57:49 question   Breakpoint: Approve the release notes v1.2: faster start Reply approve, stop, or send back with a note.\n           answered   \"approve\" (dry run)\n  17:57:49 log        Logs persisted to /tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/fixtures/state/home/runs/projects/mwuzzfi4-714f8j-8ca0bafad07e/runs/mwuzzfi4-714f8j.log\n  17:57:49 completed  review\ndry run completed, with 0 agent steps answered by stand-ins\n{\n  \"notes\": \"v1.2: faster start\"\n}"
+    }
+  }
+}

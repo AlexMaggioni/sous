@@ -6,12 +6,16 @@
 // replaces the whole file, so two writers at once would lose one's change.
 
 import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
-import type { HarnessId } from "@sous/harnesses";
-import { readJsonFile, writeJsonFile } from "../json-file.js";
+import type { HarnessId, SteerOutcome } from "@sous/harnesses";
+import { appendJsonLine, readJsonFile, readJsonLines, writeJsonFile } from "../json-file.js";
+import { redactText } from "../redact.js";
+import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";
 import type { PlaceNotes } from "../places/places.js";
+import type { By, Through } from "./actions.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
-import { recordFile, recordFiles, snapshotFile, stopRequestFile } from "./store.js";
+import { activityFile, noteFile, recordFile, recordFiles, snapshotFile, stopRequestFile, tellRequestFile } from "./store.js";
+import { Refusal } from "./refusal.js";
 
 export interface RunRecord {
   runId: string;
@@ -41,18 +45,35 @@ export interface RunRecord {
   concurrency?: number;
   /** The workflow's time limit, such as "2h". Each start and resume gets the whole of it. */
   timeout?: string;
+  /** The most tokens one go of the run may spend, from --budget or the config's budgetTokens.
+   *  Each start and resume gets the whole of it. None means no limit. */
+  budget?: number;
   /** Set when the run was started again from another run. */
   rerunOf?: string;
   /** The run whose unchanged steps this run reuses. */
   reuseFrom?: string;
   /** The run whose agent started this one. */
   startedByRun?: string;
+  /** How the start reached sous. A run an agent or a step started may not reach a people
+   *  workflow inside itself, through workflow() or choose(). Older records have none. */
+  through?: Through;
+  /** The person let agents answer this run's people questions, and its nested runs', never its
+   *  breakpoints: who said so, through what, and when. Set by --let-agent-answer. */
+  letAgentAnswer?: { by: By; through: Through; at: string };
+  /** The sha256 of the workflow's text that sous checked when it wrote the record. The worker
+   *  starts only that text. Older records have none. */
+  workflowHash?: string;
+  /** Why the worker did not run the workflow: its file changed after sous checked it. A worker that
+   *  runs the run clears it. */
+  refused?: string;
   /** Workflows this run started inside itself, by child run id. */
   nested?: Record<string, NestedRun>;
   /** Worktrees of steps with `isolation: "worktree"` that exist now. A step removes its own when it ends. */
   stepWorktrees?: Array<{ dir: string; branch: string }>;
   /** Set by `sous resume --latest`: the next resume takes the edited workflows. */
   resumeLatest?: boolean;
+  /** The sha256 of the text sous checked at `sous resume --latest`. The worker resumes only that text. */
+  latestHash?: string;
   /** The installed Claude Code and Codex the run's steps used, by harness, from its last start. */
   programs?: Record<string, { path: string; version?: string }>;
   /** The account each program's steps use, kept across pauses and resumes (sous's accounts.ts). */
@@ -169,7 +190,13 @@ export function requestStepStop(paths: HomePaths, runId: string, stop: StepStop)
  *  that lands meanwhile starts a new file and waits for the next take. A line an older sous wrote,
  *  a bare name, is dropped. */
 export function takeStepStops(paths: HomePaths, runId: string): StepStop[] {
-  const file = stopRequestFile(paths, runId);
+  return takeLines(stopRequestFile(paths, runId))
+    .map((line) => JSON.parse(line) as StepStop | string)
+    .filter((stop): stop is StepStop => typeof stop === "object");
+}
+
+/** A request file's lines since the last take. It moves aside before the read. */
+function takeLines(file: string): string[] {
   const taken = `${file}.${process.pid}.taken`;
   try {
     renameSync(file, taken);
@@ -178,7 +205,97 @@ export function takeStepStops(paths: HomePaths, runId: string): StepStop[] {
   }
   const lines = readFileSync(taken, "utf8").split("\n").filter(Boolean);
   unlinkSync(taken);
-  return lines.map((line) => JSON.parse(line) as StepStop | string).filter((stop): stop is StepStop => typeof stop === "object");
+  return lines;
+}
+
+/** A message `sous tell` sends: its id, the step's name in the log, the text, and each call it
+ *  reaches, by its run or nested run, its label and its call index when the state has one. */
+export interface TellRequest {
+  id: string;
+  step: string;
+  text: string;
+  calls: Array<{ scope: string; label: string; callIndex?: number }>;
+}
+
+/** Ask the worker to give a running step a message. Each request is one appended line, as a step stop is. */
+export function requestTell(paths: HomePaths, runId: string, tell: TellRequest): void {
+  appendFileSync(tellRequestFile(paths, runId), `${JSON.stringify(tell)}\n`);
+}
+
+/** What became of a tell at one call: what its turn said, or no_turn when the call was in no turn
+ *  that reads a message, such as while it starts, waits for a slot, or between two turns. */
+export type TellOutcome = SteerOutcome | "no_turn";
+
+/** The text of a tell's receipt in the step's activity, by what became of the message. */
+export const TELL_RECEIPTS: Record<TellOutcome, string> = {
+  delivered: "delivered",
+  not_steerable: "not delivered, the turn takes no message now",
+  ended: "not delivered, the turn ended first",
+  no_turn: "not delivered, the step is not in a turn that can read a message now",
+};
+
+/** The tells sent since the last take, as takeStepStops takes the stops. */
+export function takeTells(paths: HomePaths, runId: string): TellRequest[] {
+  return takeLines(tellRequestFile(paths, runId)).map((line) => JSON.parse(line) as TellRequest);
+}
+
+/** A note `sous resume --note` gives the resumed run: its text, and the step it is for, by its
+ *  name in the log, the runs or nested runs that name covers and its label there. Without a step
+ *  it goes to the first agent call that runs. */
+export interface NoteRequest {
+  text: string;
+  step?: { name: string; scopes: string[]; label: string };
+}
+
+/** Leave a note for the next worker of the run. The latest note wins. */
+export function requestNote(paths: HomePaths, runId: string, note: NoteRequest): void {
+  appendFileSync(noteFile(paths, runId), `${JSON.stringify(note)}\n`);
+}
+
+/** The note left for this worker, if any. It moves aside before the read, as the tells do. */
+export function takeNote(paths: HomePaths, runId: string): NoteRequest | undefined {
+  const last = takeLines(noteFile(paths, runId)).at(-1);
+  return last === undefined ? undefined : (JSON.parse(last) as NoteRequest);
+}
+
+/** One saved activity entry: its number in the run's file, when it happened, its step and what it says. */
+export type ActivityLine = { seq: number; at: string } & ActivityStep & ActivityEntry;
+
+/** The most a saved entry's text holds. */
+const ACTIVITY_TEXT = 2_000;
+
+/** A loaded secret shorter than this stays in the text, since it would hide common words. */
+const SECRET_MIN = 8;
+
+/**
+ * The worker's writer of the run's activity file. It numbers the entries on from the last one the
+ * file holds, read at the first write, once the worker holds the run's lease, so a resume goes on
+ * from there. Each text loses its credentials, as the event log's do, and the values of the
+ * secrets given, before it is cut. A text longer than 2,000 characters is cut: an output keeps its
+ * end, where a failure shows, and the rest keep their start. A write that fails loses the entry
+ * and never fails the step.
+ */
+export function activityWriter(paths: HomePaths, runId: string, secrets: readonly string[] = []): OnActivity {
+  const file = activityFile(paths, runId);
+  const hidden = secrets.filter((value) => value.length >= SECRET_MIN);
+  let seq: number | undefined;
+  return (step, entry) => {
+    const { kind, tool, id } = entry;
+    const text = hidden.reduce((out, value) => out.split(value).join("[REDACTED]"), redactText(entry.text).value);
+    const cut = text.length <= ACTIVITY_TEXT ? text : kind === "output" ? text.slice(-ACTIVITY_TEXT) : text.slice(0, ACTIVITY_TEXT);
+    try {
+      seq ??= readActivity(paths, runId).reduce((last, line) => Math.max(last, line.seq), 0);
+      appendJsonLine(file, { seq: seq + 1, at: new Date().toISOString(), ...step, kind, ...(tool === undefined ? {} : { tool }), text: cut, ...(id === undefined ? {} : { id }) });
+      seq += 1;
+    } catch {
+      // The activity is for people to read. The step goes on.
+    }
+  };
+}
+
+/** The run's saved activity, oldest first. */
+export function readActivity(paths: HomePaths, runId: string): ActivityLine[] {
+  return readJsonLines<ActivityLine>(activityFile(paths, runId));
 }
 
 export function updateRecord(paths: HomePaths, runId: string, change: Partial<RunRecord>): RunRecord | undefined {
@@ -208,7 +325,10 @@ export function findRecord(paths: HomePaths, idOrPrefix: string): RunRecord | un
   const exact = loadRecord(paths, idOrPrefix);
   if (exact) return exact;
   const matches = listRecords(paths).filter((record) => record.runId.startsWith(idOrPrefix));
-  if (matches.length > 1) throw new Error(`"${idOrPrefix}" matches ${matches.length} runs. Give more of the id.`);
+  if (matches.length > 1) {
+    const ids = matches.map((record) => record.runId).join(", ");
+    throw new Refusal("no_such_run", `"${idOrPrefix}" matches ${matches.length} runs: ${ids}. Give more of the id.`, "Give the id of a run, or a unique start of one.", "sous list --json");
+  }
   return matches[0];
 }
 

@@ -40,7 +40,7 @@ describe("sous check --json", () => {
     assert.equal(result.file, join(projectDir, ".sous", "workflows", "review.js"));
     assert.equal(result.description, "loops with a reviewer");
     assert.deepEqual(result.problems, []);
-    assert.deepEqual(Object.keys(result).sort(), ["description", "file", "inputs", "notes", "problems", "workflow"], "no dry run unless asked");
+    assert.deepEqual(Object.keys(result).sort(), ["description", "file", "inputs", "next", "notes", "problems", "workflow"], "no dry run unless asked");
   });
 
   it("prints the problems as JSON, and exits 1", async () => {
@@ -134,7 +134,7 @@ describe("sous workflows --json", () => {
     });
     const run = await sous(paths, ["workflows", "--json", "--project", projectDir]);
     assert.equal(run.code, 0);
-    const entries = JSON.parse(run.out) as Array<Record<string, unknown>>;
+    const entries = (JSON.parse(run.out) as { workflows: Array<Record<string, unknown>> }).workflows;
     const byName = Object.fromEntries(entries.map((entry) => [entry.name, entry]));
     assert.deepEqual(Object.keys(byName).sort(), ["broken", "plain", "review"]);
     const dir = join(projectDir, ".sous", "workflows");
@@ -152,6 +152,6 @@ describe("sous workflows --json", () => {
     const { paths, projectDir } = testHome({});
     const run = await sous(paths, ["workflows", "--json", "--project", projectDir]);
     assert.equal(run.code, 0);
-    assert.deepEqual(JSON.parse(run.out), []);
+    assert.deepEqual(JSON.parse(run.out), { workflows: [], notes: [], next: [] });
   });
 });

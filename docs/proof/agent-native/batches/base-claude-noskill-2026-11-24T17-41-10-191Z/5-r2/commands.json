@@ -1,0 +1,34 @@
+[
+  {
+    "tool": "Bash",
+    "command": "sous help",
+    "background": false,
+    "error": false,
+    "output": "sous runs saved workflows in the background.\n\n  sous run <workflow> [--name value ...] [-- --name value ...]\n        --place worktree|folder|none    where the run works (default: the workflow's, else config)\n        --model <spec>                  model for steps that name none, such as claude/haiku\n        --set <step>.<key>=<value>      change one step for this run, such as --set reviewer.model=claude/opus\n        --concurrency N                 steps at once in this run\n        --wait                          follow the run until it ends; in a terminal, answer here\n        --json                          machine-readable output\n  sous wait <run> [--json]              wait for a run to end, pause or ask (exit 0 done, 1 failed,\n                                        2 paused, 3 stopped, 4 waits for an answer)\n  sous list [--all]                     runs, newest first\n  sous show <run>                       one run: status, steps, questions, result\n  sous log <run> [-f]                   the run's log\n  sous inbox [run]                      questions waiting for you\n  sous answer <question> <text>         answer a question (a run id works when it asks one thing)\n  sous approve <question>               approve a breakpoint\n  sous send-back <question> <note>      send a breakpoint's step back with a note\n  sous pause <run>                      finish running steps, start nothing new\n  sous resume <run> [--wait]            go on from where the run paused, failed or was cut off\n        --latest | --same               after an edit: take the new version, or keep the run's own\n  sous stop <run>                       end the run; its worktree stays\n        --step <name>                   stop one running step instead; the run pauses on it\n  sous rerun <run> [--name value ...]   start the same workflow again with the same inputs\n        --reuse                         keep the results of the steps you did not edit, in the same place\n  sous workflows                        ",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "sous workflows",
+    "background": false,
+    "error": false,
+    "output": "asks  Ask a person to pick a color\nasks-anyone  Ask for a color that anyone may pick\ndeploy  Deploy the app\n  --env  string, optional, default \"staging\"  Where to deploy\nfails  Prepare, then run a check that fails\nhello  Say hello to someone\n  --name  string, required  Who to greet\nreview  Draft release notes, then stop for a person to approve them",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "sous run review --wait --json",
+    "background": false,
+    "error": true,
+    "output": "Exit code 4\n{\n  \"runId\": \"mwuzgsgl-seybv5\",\n  \"workflow\": \"review\",\n  \"status\": \"running\",\n  \"questions\": [\n    {\n      \"id\": \"mwuzgsgl-seybv5--1\",\n      \"prompt\": \"Breakpoint: Approve the release notes\\n\\nv1.2: faster start\\n\\nReply approve, stop, or send back with a note.\",\n      \"kind\": \"input\",\n      \"breakpoint\": true\n    }\n  ],\n  \"cwd\": \"/tmp/sous-proofs/base-claude-noskill-2026-11-24T17-41-10-191Z/5-r2/state/home/scratch/mwuzgsgl-seybv5\"\n}",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "sous approve mwuzgsgl-seybv5--1 && sous wait mwuzgsgl-seybv5",
+    "background": false,
+    "error": false,
+    "output": "answered mwuzgsgl-seybv5--1\n17:43:20 run        review in /tmp/sous-proofs/base-claude-noskill-2026-11-24T17-41-10-191Z/5-r2/state/home/scratch/mwuzgsgl-seybv5\n17:43:20 start      draft (exec)\n17:43:20 done       draft\n17:43:20 question   mwuzgsgl-seybv5--1: Breakpoint: Approve the release notes v1.2: faster start Reply approve, stop, or send back with a note.\n           answer with: sous approve mwuzgsgl-seybv5--1  |  sous send-back mwuzgsgl-seybv5--1 \"note\"  |  sous stop mwuzgsgl-seybv5\n17:43:21 answered   mwuzgsgl-seybv5--1: \"approve\"\n17:43:21 log        Logs persisted to /tmp/sous-proofs/base-claude-noskill-2026-11-24T17-41-10-191Z/5-r2/state/home/runs/projects/mwuzgsgl-seybv5-a8632cee30a3/runs/mwuzgsgl-seybv5.log\n17:43:21 completed  review\nresult:\n{\n  \"notes\": \"v1.2: faster start\"\n}",
+    "turn": 0
+  }
+]

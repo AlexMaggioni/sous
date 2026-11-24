@@ -17,6 +17,8 @@ import type { AgentSessionRef } from "../src/workflow-result.js";
 import { lookupAgents, lookupMcpServers } from "../src/agents.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { createSteps, type StepsOptions } from "../src/steps/steps.js";
+import { CONTINUATION_INSTRUCTION } from "../src/steps/answer.js";
+import { runWorkflow } from "../src/workflow.js";
 import { waitUntil } from "./helpers/async.js";
 import { write } from "./helpers/files.js";
 
@@ -558,5 +560,228 @@ describe("steps with a runner of their own", () => {
     await steps.run("one", routed(steps, { label: "a", model: "claude/haiku" }));
     await steps.run("two", routed(steps, { label: "b", model: "codex/gpt-6.1-sol" }));
     assert.deepEqual(seen, [{ token: "t", named: true }, { folder: "/codex" }]);
+  });
+});
+
+// Piece 5. The steps module reports what happens inside a step through onActivity, so the
+// worker can save it. StepsOptions has no onActivity yet, so the cast keeps the types right.
+interface ActivityStep {
+  scope: string;
+  callIndex: number;
+  label?: string;
+}
+interface ActivityEntry {
+  kind: string;
+  tool?: string;
+  text: string;
+}
+type WithActivity = Partial<StepsOptions> & { onActivity: (step: ActivityStep, entry: ActivityEntry) => void };
+
+describe("piece 5: step activity", () => {
+  for (const [harness, model] of [
+    ["claude", "claude/haiku"],
+    ["codex", "codex/gpt-6.1-sol"],
+  ] as const) {
+    it(`reports a ${harness} step's prompt first, then one entry per history item`, async () => {
+      const place = fakePlace([{ match: "List the files", tool: "echo hi", answer: "Two files." }]);
+      const seen: Array<{ step: ActivityStep; entry: ActivityEntry }> = [];
+      const extra: WithActivity = { onActivity: (step, entry) => seen.push({ step, entry }) };
+      const steps = createSteps(onFakes(place, extra as Partial<StepsOptions>));
+      try {
+        const answer = await steps.run("List the files here.", routed(steps, { label: "look", model }, { runId: "run-activity", callIndex: 4 }));
+        assert.equal(answer, "Two files.");
+      } finally {
+        await steps.dispose();
+      }
+      assert.deepEqual(
+        seen.map(({ entry }) => entry.kind),
+        ["prompt", "tool", "tool-result", "text"],
+      );
+      const [prompt, tool, result, text] = seen.map(({ entry }) => entry);
+      assert.match(prompt!.text, /List the files here\./);
+      // The prompt is reported once, by the steps module, not again from the harness's own copy.
+      assert.equal(seen.filter(({ entry }) => /List the files here\./.test(entry.text)).length, 1);
+      assert.equal(tool!.tool, "Bash");
+      assert.match(tool!.text, /echo hi/);
+      assert.equal(result!.text, "ok");
+      assert.equal(text!.text, "Two files.");
+      // Every entry names the step it belongs to.
+      for (const { step } of seen) assert.deepEqual(step, { scope: "run-activity", callIndex: 4, label: "look" });
+    });
+  }
+});
+
+// Piece 14. The budget and the time limit stop a step through a gate the steps module asks
+// before each agent step, and the worker counts a step's tokens while it runs through onUsage.
+// The fake codex sends its token count only when the turn ends, so the mid-step test runs on the
+// fake claude alone.
+type GateStop = ReturnType<NonNullable<StepsOptions["gate"]>>;
+type UsageStep = Parameters<NonNullable<StepsOptions["onUsage"]>>[0];
+
+describe("piece 14: budget", () => {
+  for (const stop of [
+    { pauseReason: "budget", message: "the run reached its budget of 1500 tokens" },
+    { pauseReason: "time_limit", message: "the run reached its time limit of 1s" },
+  ] as const) {
+    it(`a gate that returns ${stop.pauseReason} stops the next agent step before it starts`, async () => {
+      const ran: string[] = [];
+      let closed: GateStop | undefined;
+      const options: StepsOptions = {
+        cwd: temp("gate"),
+        inner: { run: async (prompt: string) => { ran.push(prompt); return `${prompt} done`; } },
+        gate: () => closed,
+      };
+      const steps = createSteps(options);
+      assert.equal(await steps.run("first", routed(steps, { label: "a" })), "first done", "an open gate lets the step run");
+      closed = stop;
+      await assert.rejects(steps.run("second", routed(steps, { label: "b" })), (error: unknown) => {
+        assert.ok(error instanceof WorkflowError, String(error));
+        assert.equal(error.code, WorkflowErrorCode.AGENT_CANCELLED);
+        assert.equal((error.details as { pauseReason?: unknown } | undefined)?.pauseReason, stop.pauseReason);
+        assert.match(error.message, new RegExp(stop.message));
+        return true;
+      });
+      assert.deepEqual(ran, ["first"], "the stopped step never reached the agent");
+    });
+  }
+
+  it("reports a claude step's usage while the step still runs", async () => {
+    // The fake writes its tool call, with the tokens of that message, then holds until "release".
+    const place = fakePlace([{ match: "Work long", tool: "echo hi", hold: "release", answer: "Done." }]);
+    const seen: Array<{ step: UsageStep; usage: AgentUsage }> = [];
+    const steps = createSteps(onFakes(place, { onUsage: (step, usage) => seen.push({ step, usage }) }));
+    const answer = steps.run("Work long.", routed(steps, { label: "long", model: "claude/haiku" }, { runId: "run-usage", callIndex: 2 }));
+    try {
+      await waitUntil(() => seen.length > 0, "no usage came while the step ran");
+      const [first] = seen;
+      assert.deepEqual(first!.step, { scope: "run-usage", callIndex: 2, label: "long" });
+      assert.equal(first!.usage.total, 150, "the tool call's message spent 120 input and 30 output tokens");
+    } finally {
+      // Let the held turn end either way, so a failure does not leave the fake waiting.
+      place.gate("release");
+      const ended = await answer.catch((error: unknown) => error);
+      await steps.dispose();
+      assert.equal(ended, "Done.");
+    }
+  });
+
+  it("gives a running count the cost Claude Code's result reports, as only the session's new spend on a resumed turn", async () => {
+    // The fake's result reports a total of 0.0012. A stop that lands after it reports the running count.
+    const place = fakePlace();
+    const running: number[] = [];
+    const steps = createSteps(onFakes(place, { onUsage: (_step, usage, ended) => void (ended || running.push(usage.cost)) }));
+    let first: AgentSessionRef | undefined;
+    try {
+      await steps.run("first", routed(steps, { label: "a", model: "claude/haiku" }, { runId: "run-cost", callIndex: 0, onSessionOpen: (ref: AgentSessionRef) => (first ??= ref) }));
+      const fresh = running.splice(0);
+      // A resumed session restores its total, so a reading equal to the recorded one adds nothing.
+      await steps.run("next", routed(steps, { label: "a", model: "claude/haiku" }, { runId: "run-cost", callIndex: 1, continueFromSession: { ...first!, costGauge: 0.0012 } }));
+      assert.equal(fresh.at(-1), 0.0012, `the count at the result keeps its cost: ${fresh}`);
+      assert.equal(running.at(-1), 0, `a resumed turn adds only what it spent: ${running}`);
+    } finally {
+      await steps.dispose();
+    }
+  });
+});
+
+// Piece 13, resume with a note. `sous resume <run> --note "..." [--step <step>]` hands the worker
+// a note, and the worker passes it to createSteps as StepsOptions.note (design, "Resume with a
+// note"). The steps module adds it to the first agent call that runs in this go, or to the first
+// with that label when `step` is given: at the end of the fresh prompt, or after the continuation
+// instruction. An activity line of kind note records its use. The note stays outside the call
+// hash. StepsOptions has no note yet, so the cast keeps the types right.
+type WithNote = Partial<StepsOptions> & { note: { text: string; step?: string }; onActivity?: (step: ActivityStep, entry: ActivityEntry) => void };
+const withNote = (extra: WithNote) => extra as Partial<StepsOptions>;
+
+const NOTE = "Use the v2 API this time.";
+/** The prompt each request the fakes logged got, in order. */
+const prompts = (place: ReturnType<typeof fakePlace>) => place.lines().map((line) => line.prompt);
+
+describe("piece 13: resume with a note", () => {
+  it("with a note, the first agent call's prompt ends with it and says so in its activity, and the second's has none", async () => {
+    const place = fakePlace();
+    const seen: Array<{ step: ActivityStep; entry: ActivityEntry }> = [];
+    const steps = createSteps(onFakes(place, withNote({ note: { text: NOTE }, onActivity: (step, entry) => seen.push({ step, entry }) })));
+    try {
+      await steps.run("Build part A.", routed(steps, { label: "a", model: "claude/haiku" }, { runId: "run-note", callIndex: 0 }));
+      await steps.run("Build part B.", routed(steps, { label: "b", model: "claude/haiku" }, { runId: "run-note", callIndex: 1 }));
+    } finally {
+      await steps.dispose();
+    }
+    const [first, second] = prompts(place);
+    assert.match(first ?? "", /Build part A\./);
+    assert.ok((first ?? "").trimEnd().endsWith(NOTE), `the first call's prompt ends with the note:\n${first}`);
+    assert.match(second ?? "", /Build part B\./);
+    assert.ok(!(second ?? "").includes(NOTE), `the second call's prompt has no note:\n${second}`);
+    const notes = seen.filter(({ entry }) => entry.kind === "note");
+    assert.equal(notes.length, 1, `one note line in the activity: ${JSON.stringify(notes)}`);
+    assert.deepEqual(notes[0]!.step, { scope: "run-note", callIndex: 0, label: "a" }, "the note line belongs to the first call");
+    assert.ok(notes[0]!.entry.text.includes(NOTE), `the note line holds the note: ${notes[0]!.entry.text}`);
+  });
+
+  it("with step b, only the first call labeled b gets the note", async () => {
+    const place = fakePlace();
+    const steps = createSteps(onFakes(place, withNote({ note: { text: NOTE, step: "b" } })));
+    try {
+      await steps.run("Build part A.", routed(steps, { label: "a", model: "claude/haiku" }, { runId: "run-note", callIndex: 0 }));
+      await steps.run("Build part B.", routed(steps, { label: "b", model: "claude/haiku" }, { runId: "run-note", callIndex: 1 }));
+      await steps.run("Build part B again.", routed(steps, { label: "b", model: "claude/haiku" }, { runId: "run-note", callIndex: 2 }));
+      await steps.run("Build part C.", routed(steps, { label: "c", model: "claude/haiku" }, { runId: "run-note", callIndex: 3 }));
+    } finally {
+      await steps.dispose();
+    }
+    const [a, b, again, c] = prompts(place);
+    assert.ok(!(a ?? "").includes(NOTE), `a has no note:\n${a}`);
+    assert.ok((b ?? "").trimEnd().endsWith(NOTE), `the first call of b ends with the note:\n${b}`);
+    assert.ok(!(again ?? "").includes(NOTE), `the second call of b has no note:\n${again}`);
+    assert.ok(!(c ?? "").includes(NOTE), `c has no note:\n${c}`);
+  });
+
+  it("in a continued session, the note follows the continuation instruction", async () => {
+    const place = fakePlace();
+    let first: AgentSessionRef | undefined;
+    const before = createSteps(onFakes(place));
+    try {
+      await before.run("Build part A.", routed(before, { label: "a", model: "claude/haiku" }, { onSessionOpen: (ref: AgentSessionRef) => (first ??= ref) }));
+    } finally {
+      await before.dispose();
+    }
+    assert.ok(first);
+    // The resumed go: the same call continues its recorded session, with the note.
+    const steps = createSteps(onFakes(place, withNote({ note: { text: NOTE } })));
+    try {
+      await steps.run("Build part A.", routed(steps, { label: "a", model: "claude/haiku" }, { continueFromSession: first }));
+    } finally {
+      await steps.dispose();
+    }
+    const lines = place.lines();
+    assert.deepEqual([lines[1]?.resume, lines[1]?.sessionId], [true, first!.sessionId], "the second request continues the session");
+    const prompt = lines[1]?.prompt ?? "";
+    const instruction = prompt.indexOf(CONTINUATION_INSTRUCTION);
+    assert.ok(instruction >= 0, `the continued prompt holds the continuation instruction:\n${prompt}`);
+    const note = prompt.indexOf(NOTE);
+    assert.ok(note > instruction, `the note comes after the continuation instruction:\n${prompt}`);
+    assert.ok(prompt.trimEnd().endsWith(NOTE), `the continued prompt ends with the note:\n${prompt}`);
+  });
+
+  it("the call hash is the same with and without the note, while the note reaches the prompt", async () => {
+    const script = `export const meta = { name: 'hash', description: 'one step' }
+return await agent('Build it.', { label: 'impl', model: 'claude/haiku' })`;
+    const hashes: string[][] = [];
+    for (const note of [undefined, { text: NOTE }]) {
+      const place = fakePlace();
+      const agent = createSteps(onFakes(place, note ? withNote({ note }) : {}));
+      try {
+        const result = await runWorkflow(script, { agent, persistLogs: false });
+        hashes.push((result.calls ?? []).map((call) => call.hash));
+      } finally {
+        await agent.dispose();
+      }
+      const prompt = prompts(place)[0] ?? "";
+      if (note) assert.ok(prompt.trimEnd().endsWith(NOTE), `the run with a note sent it in the prompt:\n${prompt}`);
+      else assert.ok(!prompt.includes(NOTE), `the run without a note sent none:\n${prompt}`);
+    }
+    assert.equal(hashes[0]?.length, 1, `one call: ${JSON.stringify(hashes)}`);
+    assert.deepEqual(hashes[1], hashes[0], "the note stays outside the call hash");
   });
 });

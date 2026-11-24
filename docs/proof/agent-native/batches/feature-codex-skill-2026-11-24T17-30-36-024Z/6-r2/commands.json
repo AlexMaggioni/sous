@@ -1,0 +1,122 @@
+[
+  {
+    "tool": "shell",
+    "command": "cat .agents/skills/sous/SKILL.md",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "---\nname: sous\ndescription: Start, watch, answer and write sous workflows. sous runs workflows of Claude Code and Codex agents in the background on this machine. Use when the user mentions sous, a workflow, a run, the inbox or a schedule, asks to run agents in the background or overnight, or asks what their runs are doing.\n---\n\n# sous\n\nsous runs workflows in the background. A workflow is a JavaScript file of steps. A run is one\nexecution of it. A run goes on when this session ends, so the run's record is the truth and\nyour memory of it is not.\n\nTreat a run like a subagent you started, with three differences. It outlives you. It can ask\nthe user. Its work lands on a git branch for review.\n\n## Start here\n\nRun `sous status --json`. It says what needs the user, what runs and what finished.\nEvery reply has `next`, the exact calls you can make now. Use them as written. A call may hold\na placeholder such as `<red|blue>` or `\"<note>\"`. Fill it in, and keep the rest.\nFor the rest, run `sous guide`.\n\n## Start a run\n\n1. `sous workflows --json` lists the workflows and their inputs.\n2. `sous run <name> --<input> <value> --json` starts it and returns at once.\n3. Tell the user the run id, what it will do, what it may ask, and what the last runs cost.\n\nDo not start a workflow marked `startedBy: \"people\"`. Give the user the `sous run` command to\ntype. Never try to get around it.\n\n## Wait for it\n\nIn Claude Code, run `sous wait <run> --json` as a background command. You are called\nwhen it returns. Elsewhere, run `sous wait <run> --timeout 540 --json`, and call it again\nwhile it exits 5. Never wait with sleep or a loop of `sous show`.\nIf the user wants a running step to change course, use `sous tell`. Stop a step only to redo\nit. See `sous guide steer`.\n\nThe exit code says why: 0 completed, 1 failed, 2 paused, 3 stopped, 4 asks.\n\n## When it asks\n\nA question with `answeredBy: \"people\"` is the user's. Show it in full, with its choices.\nPass their words on with the call in `next`. If the ",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous status --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"needsYou\": [],\n  \"running\": [],\n  \"waiting\": [],\n  \"finished\": [],\n  \"service\": {\n    \"running\": false\n  },\n  \"notes\": [],\n  \"next\": []\n}\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous guide writing",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "# Write or change a workflow\n\nWrite or change a workflow only with the person's yes. Show them what you will save, and save\nonly after they agree. Save in the project's `.sous/workflows/<name>.js`. Change\n`~/.sous/workflows/`, a schedule, or `startedBy` only when the person asked for that.\n\nStart from a workflow that exists. `sous workflows --json` lists them. Before you change or run\none you don't know, read `sous workflows show <name> --json`: its steps, inputs, approval and\nlast runs. `sous agents --json` lists the agents a step can name.\n\n## The person approves it\n\nsous keeps the person's yes for each workflow's exact text. A new or changed workflow does not\nstart from an agent, a step of a run or a schedule until the person approves it. A scheduled run of\nit is skipped, and the person gets a notice. Once you saved it and the check passes, show them\n`sous workflows show <name> --diff --json`, what changed since their last yes. Tell them sous\nstarts it from you, a run or a schedule only after they approve it, by saying yes to you or with\n`sous workflows approve <name>` in their own terminal.\n\nWhen they say yes to you, run `sous workflows approve <name> --by person --json`. A yes they gave\nto the whole text you showed them counts, if you saved that text unchanged. If the check made you\nchange it, show them the diff and ask again. Without\n`--by person` an agent's approve is refused with `needs_person`. Never approve without their yes.\nA person's own `sous run <name>` approves the text it runs. Never edit, move or delete\n`approvals.json` or `approved/` in sous's home. Without them no workflow counts as approved.\n\n## The file\n\n```js\nexport const meta = {\n  name: \"ticket\",\n  description: \"Implement a ticket, review it\",\n  inputs: {\n    ticket: { type: \"string\", description: \"What to build\", required: true },\n    rounds: { type: \"number\", default: 3 },\n  },\n  outputs: { summary: \"What was built\" },\n  place: \"worktree\",\n  startedBy: \"anyone\",\n  timeout: \"2h\",\n}\n\nconst b",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous workflows --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"workflows\": [\n    {\n      \"name\": \"asks\",\n      \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/project/.sous/workflows/asks.js\",\n      \"description\": \"Ask a person to pick a color\",\n      \"inputs\": {},\n      \"place\": \"none\",\n      \"startedBy\": \"anyone\"\n    },\n    {\n      \"name\": \"asks-anyone\",\n      \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/project/.sous/workflows/asks-anyone.js\",\n      \"description\": \"Ask for a color that anyone may pick\",\n      \"inputs\": {},\n      \"place\": \"none\",\n      \"startedBy\": \"anyone\"\n    },\n    {\n      \"name\": \"deploy\",\n      \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/project/.sous/workflows/deploy.js\",\n      \"description\": \"Deploy the app\",\n      \"inputs\": {\n        \"env\": {\n          \"type\": \"string\",\n          \"description\": \"Where to deploy\",\n          \"default\": \"staging\"\n        }\n      },\n      \"place\": \"none\",\n      \"startedBy\": \"people\"\n    },\n    {\n      \"name\": \"fails\",\n      \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/project/.sous/workflows/fails.js\",\n      \"description\": \"Prepare, then run a check that fails\",\n      \"inputs\": {},\n      \"place\": \"none\",\n      \"startedBy\": \"anyone\"\n    },\n    {\n      \"name\": \"hello\",\n      \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/project/.sous/workflows/hello.js\",\n      \"description\": \"Say hello to someone\",\n      \"inputs\": {\n        \"name\": {\n          \"type\": \"string\",\n          \"description\": \"Who to greet\",\n          \"required\": true\n        }\n      },\n      \"place\": \"none\",\n      \"startedBy\": \"anyone\"\n    },\n    {\n      \"name\": \"review\",\n      \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/project/.sous/workflows/review.js\",\n      \"description\": \"Draft release notes, then stop for a person to approve them\",\n      \"inputs\": {},\n      \"place\": \"none\",",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous workflows show hello --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"name\": \"hello\",\n  \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/project/.sous/workflows/hello.js\",\n  \"from\": \"project\",\n  \"description\": \"Say hello to someone\",\n  \"inputs\": {\n    \"name\": {\n      \"type\": \"string\",\n      \"description\": \"Who to greet\",\n      \"required\": true\n    }\n  },\n  \"place\": \"none\",\n  \"startedBy\": \"anyone\",\n  \"steps\": [\n    {\n      \"step\": \"greet\",\n      \"kind\": \"js\"\n    }\n  ],\n  \"asks\": 0,\n  \"workflows\": [],\n  \"check\": {\n    \"problems\": [],\n    \"notes\": []\n  },\n  \"approved\": {\n    \"by\": \"person\",\n    \"at\": \"2026-11-24T17:37:59.664Z\",\n    \"changedSince\": false\n  },\n  \"lastRuns\": [],\n  \"notes\": [\n    \"steps lists the steps in the order the file writes them. A loop or a branch shows its steps once. A dry run of sous check shows the order a run takes.\"\n  ],\n  \"next\": [\n    {\n      \"call\": \"sous run hello --name <name> --json\",\n      \"does\": \"start a run, with each input's value in place of <...>\"\n    },\n    {\n      \"call\": \"sous check hello --json\",\n      \"does\": \"check the workflow without running it: its inputs, agents, MCP servers and nested workflows\"\n    }\n  ]\n}\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous workflows show review --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"name\": \"review\",\n  \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/project/.sous/workflows/review.js\",\n  \"from\": \"project\",\n  \"description\": \"Draft release notes, then stop for a person to approve them\",\n  \"inputs\": {},\n  \"place\": \"none\",\n  \"startedBy\": \"anyone\",\n  \"steps\": [\n    {\n      \"kind\": \"breakpoint\",\n      \"title\": \"Approve the release notes\"\n    },\n    {\n      \"step\": \"draft\",\n      \"kind\": \"js\"\n    }\n  ],\n  \"asks\": 1,\n  \"workflows\": [],\n  \"check\": {\n    \"problems\": [],\n    \"notes\": [\n      \"declares no inputs, so it takes any\"\n    ]\n  },\n  \"approved\": {\n    \"by\": \"person\",\n    \"at\": \"2026-11-24T17:37:59.669Z\",\n    \"changedSince\": false\n  },\n  \"lastRuns\": [],\n  \"notes\": [\n    \"steps lists the steps in the order the file writes them. A loop or a branch shows its steps once. A dry run of sous check shows the order a run takes.\"\n  ],\n  \"next\": [\n    {\n      \"call\": \"sous run review --json\",\n      \"does\": \"start a run\"\n    },\n    {\n      \"call\": \"sous check review --json\",\n      \"does\": \"check the workflow without running it: its inputs, agents, MCP servers and nested workflows\"\n    }\n  ]\n}\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "cat .sous/workflows/hello.js .sous/workflows/review.js",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\nexport const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous check greet-approve --name Ada --dry-run --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"workflow\": \"greet-approve\",\n  \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/project/.sous/workflows/greet-approve.js\",\n  \"description\": \"Greet someone, then ask for approval\",\n  \"inputs\": {\n    \"name\": {\n      \"type\": \"string\",\n      \"required\": true,\n      \"description\": \"Who to greet\"\n    }\n  },\n  \"problems\": [],\n  \"dryRun\": {\n    \"runId\": \"mwuzam80-v1q3bk\",\n    \"status\": \"completed\",\n    \"result\": {\n      \"greeting\": \"Hello, Ada!\"\n    },\n    \"agents\": []\n  },\n  \"notes\": [],\n  \"next\": []\n}\n",
+    "turn": 1
+  },
+  {
+    "tool": "shell",
+    "command": "sous workflows show greet-approve --diff --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"name\": \"greet-approve\",\n  \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/project/.sous/workflows/greet-approve.js\",\n  \"approved\": null,\n  \"diff\": [\n    \"+ export const meta = {\",\n    \"+   name: \\\"greet-approve\\\",\",\n    \"+   description: \\\"Greet someone, then ask for approval\\\",\",\n    \"+   inputs: {\",\n    \"+     name: { type: \\\"string\\\", required: true, description: \\\"Who to greet\\\" },\",\n    \"+   },\",\n    \"+   place: \\\"none\\\",\",\n    \"+ }\",\n    \"+ \",\n    \"+ const greeting = await breakpoint(\",\n    \"+   \\\"Approve the greeting\\\",\",\n    \"+   () => js(\\\"return `Hello, ${input.name}!`\\\", { name: args.name }, { label: \\\"greet\\\" }),\",\n    \"+   { show: (step) => step.result },\",\n    \"+ )\",\n    \"+ return { greeting: greeting.result }\"\n  ],\n  \"notes\": [\n    \"greet-approve has no approval yet, so the diff shows the whole file.\",\n    \"Show the person this diff and ask them. Make the approve call only once they agree.\"\n  ],\n  \"next\": [\n    {\n      \"call\": \"sous check greet-approve --json\",\n      \"does\": \"check the workflow without running it: its inputs, agents, MCP servers and nested workflows\"\n    },\n    {\n      \"call\": \"sous workflows approve greet-approve --by person --json\",\n      \"does\": \"record the person's yes to this text, once they read the diff and agreed\"\n    }\n  ]\n}\n",
+    "turn": 1
+  },
+  {
+    "tool": "shell",
+    "command": "sous workflows approve greet-approve --by person --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"approved\": [\n    {\n      \"workflow\": \"greet-approve\",\n      \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/project/.sous/workflows/greet-approve.js\",\n      \"hash\": \"aced28a0bdfa4293eb1ce789e9c6dc5870cb7fc1ea8d4172bfce7e55c38e0ba2\"\n    }\n  ],\n  \"unchanged\": [],\n  \"notes\": [],\n  \"next\": []\n}\n",
+    "turn": 1
+  },
+  {
+    "tool": "shell",
+    "command": "sous run greet-approve --name Ada --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"runId\": \"mwuzarif-3lpla4\",\n  \"workflow\": \"greet-approve\",\n  \"cwd\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/state/home/scratch/mwuzarif-3lpla4\",\n  \"log\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/state/home/logs/mwuzarif-3lpla4.log\",\n  \"status\": \"starting\",\n  \"asks\": 1,\n  \"lastRuns\": {\n    \"count\": 0,\n    \"seconds\": 0,\n    \"tokens\": 0\n  },\n  \"notes\": [],\n  \"next\": [\n    {\n      \"call\": \"sous wait mwuzarif-3lpla4 --json\",\n      \"does\": \"waits until the run ends, pauses or asks\"\n    },\n    {\n      \"call\": \"sous show mwuzarif-3lpla4 --json\",\n      \"does\": \"shows the run and its steps\"\n    }\n  ]\n}\n",
+    "turn": 1
+  },
+  {
+    "tool": "shell",
+    "command": "sous wait mwuzarif-3lpla4 --timeout 540 --json",
+    "background": false,
+    "exit": 4,
+    "error": true,
+    "denied": false,
+    "output": "{\n  \"runId\": \"mwuzarif-3lpla4\",\n  \"workflow\": \"greet-approve\",\n  \"status\": \"asks\",\n  \"questions\": [\n    {\n      \"id\": \"mwuzarif-3lpla4--1\",\n      \"prompt\": \"Breakpoint: Approve the greeting\\n\\nHello, Ada!\\n\\nReply approve, stop, or send back with a note.\",\n      \"kind\": \"input\",\n      \"breakpoint\": true,\n      \"askedAt\": \"2026-11-24T17:38:39.277Z\",\n      \"answeredBy\": \"people\"\n    }\n  ],\n  \"cwd\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/6-r2/state/home/scratch/mwuzarif-3lpla4\",\n  \"notes\": [],\n  \"next\": [\n    {\n      \"call\": \"sous approve mwuzarif-3lpla4--1 --by person --json\",\n      \"does\": \"approves \\\"Breakpoint: Approve the greeting\\\"\"\n    },\n    {\n      \"call\": \"sous send-back mwuzarif-3lpla4--1 \\\"<note>\\\" --by person --json\",\n      \"does\": \"sends the run back with a note\"\n    },\n    {\n      \"call\": \"sous wait mwuzarif-3lpla4 --timeout 540 --json\",\n      \"does\": \"waits again once the answer is in\"\n    }\n  ]\n}\n",
+    "turn": 1
+  }
+]

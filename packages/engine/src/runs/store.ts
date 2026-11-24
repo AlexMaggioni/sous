@@ -46,6 +46,21 @@ export function stopRequestFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.stop`);
 }
 
+/** The messages `sous tell` sent a running run's steps, one per line, until the worker takes them. */
+export function tellRequestFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.tell`);
+}
+
+/** The note `sous resume --note` gave the next worker, until that worker takes it. */
+export function noteFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.note`);
+}
+
+/** What the run's steps did, one JSON line per entry. Only the worker appends to it. */
+export function activityFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.activity.jsonl`);
+}
+
 /** Every record file, in the order the folder lists them. */
 export function recordFiles(paths: HomePaths): string[] {
   if (!existsSync(paths.records)) return [];
@@ -139,23 +154,30 @@ export function readStates(paths: HomePaths, runIds: Iterable<string>, fs: Store
   return states;
 }
 
-/** An event the engine saved, with when it saved it. */
+/** An event the engine saved, with when it saved it and its number in the run's log. */
 export interface SavedEvent {
   event: PersistedRunEvent;
   timestamp: string;
+  seq: number;
 }
 
-/** Each event saved after `seq`, in order. Throws when the run has no event log. */
-export function readEventsAfter(paths: HomePaths, runId: string, seq: number, visit: (saved: SavedEvent) => void): void {
+/** Each event saved after `seq`, in order, until `visit` returns false. Throws when the run has no
+ *  event log, or when `seq` is past its last event. */
+export function readEventsAfter(paths: HomePaths, runId: string, seq: number, visit: (saved: SavedEvent) => unknown): void {
   // Built on each call: it writes nothing, since nothing saves through it.
   const events = enginePersistence(paths);
   let after = seq;
   for (;;) {
     const page = events.readEvents(runId, { after, limit: 1000 });
-    for (const { event, timestamp } of page.events) visit({ event, timestamp });
+    for (const { event, timestamp, seq: number } of page.events) if (visit({ event, timestamp, seq: number }) === false) return;
     if (!page.hasMore || page.events.length === 0) break;
     after = page.events[page.events.length - 1]!.seq;
   }
+}
+
+/** The seq of the run's last saved event, 0 for an empty log. Throws when the run has no event log. */
+export function lastEventSeq(paths: HomePaths, runId: string): number {
+  return enginePersistence(paths).readEvents(runId, { after: 0, limit: 1 }).endCursor;
 }
 
 /** Delete the engine's files for a run: its state, event log and lock. It takes the run's lease
@@ -173,11 +195,11 @@ export function removeEngineRun(paths: HomePaths, runId: string): boolean {
   }
 }
 
-/** Delete a run's record, workflow snapshot, step stop requests and logs. removeEngineRun deletes the engine's files. */
+/** Delete a run's record, workflow snapshot, step stop, tell and note requests, and logs. removeEngineRun deletes the engine's files. */
 export function removeRunFiles(paths: HomePaths, record: RunRecord): void {
   // The engine keeps its own copy of the log, in a folder named after where the run worked.
   const engineLogs = workflowProjectPaths(record.cwd, { persistenceRoot: paths.runs });
-  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
+  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), tellRequestFile(paths, record.runId), noteFile(paths, record.runId), activityFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
   for (const file of files) {
     try {
       unlinkSync(file);

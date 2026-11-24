@@ -13,6 +13,7 @@ import { runWorkflow } from "../src/workflow.js";
 import { placesIn } from "./helpers/places.js";
 import { heldRunner, setup, until } from "./runs/fixture.js";
 import { git, initGitRepo } from "./helpers/git.js";
+import { PERSON } from "../src/testing.js";
 
 // A step with `isolation: "worktree"` gets its worktree from the places module, named like every
 // other worktree sous makes: a folder under the home's worktrees folder, on branch sous/<name>.
@@ -178,7 +179,7 @@ return await agent('edit', { label: 'editor', isolation: 'worktree' })`,
     git(projectDir, "init", "-q", "-b", "main");
     git(projectDir, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
     const { runner, calls, release } = heldRunner(() => "wait");
-    const record = createRun(paths, { workflow: "iso", projectDir, inputs: {}, place: "folder" });
+    const record = createRun(paths, { who: PERSON, workflow: "iso", projectDir, inputs: {}, place: "folder" });
     const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: () => {} });
     await until(() => calls.length === 1);
     const tree = { dir: join(paths.worktrees, `${record.runId}-0-editor`), branch: `sous/${record.runId}-0-editor` };
@@ -199,12 +200,12 @@ return await agent('edit', { label: 'editor', isolation: 'worktree' })`,
     git(projectDir, "init", "-q", "-b", "main");
     git(projectDir, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
     const { runner, calls, release } = heldRunner(() => "wait");
-    const record = createRun(paths, { workflow: "iso", projectDir, inputs: {}, place: "folder" });
+    const record = createRun(paths, { who: PERSON, workflow: "iso", projectDir, inputs: {}, place: "folder" });
     const paused = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: () => {} });
     assert.equal(paused?.status, "paused");
     const [question] = runQuestions(paths, record.runId);
     assert.ok(question);
-    answerQuestion(paths, question, { via: "answer", text: "yes" });
+    answerQuestion(paths, question, { via: "answer", text: "yes" }, PERSON);
     updateRecord(paths, record.runId, { timeout: undefined });
 
     const worker = runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: () => {} });
@@ -349,7 +350,7 @@ describe("gc and a step's worktree a crash left behind", () => {
     });
     git(projectDir, "init", "-q", "-b", "main");
     git(projectDir, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
-    const record = createRun(paths, { workflow: "look", projectDir, inputs: {}, place: "folder" });
+    const record = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {}, place: "folder" });
     // A step that made its worktree and committed in it, then its worker died.
     const made = placesIn(paths, record.runId).makeStepWorktree(projectDir, { runId: record.runId, index: 3, label: "fixer" });
     assert.ok("tree" in made);
@@ -381,7 +382,7 @@ describe("gc and a step's worktree a crash left behind", () => {
     });
     git(projectDir, "init", "-q", "-b", "main");
     git(projectDir, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
-    const record = createRun(paths, { workflow: "look", projectDir, inputs: {}, place: "folder" });
+    const record = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {}, place: "folder" });
     const made = placesIn(paths, record.runId).makeStepWorktree(projectDir, { runId: record.runId, index: 3, label: "fixer" });
     assert.ok("tree" in made);
     const lines: string[] = [];

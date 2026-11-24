@@ -30,6 +30,11 @@ export interface InputSpec {
   choices?: unknown[];
 }
 
+/** An input a run must be given: one with no default that its spec does not mark required: false. */
+export function isRequired(spec: InputSpec): boolean {
+  return spec.required !== false && spec.default === undefined;
+}
+
 export interface WorkflowExtras {
   description?: string;
   inputs: Record<string, InputSpec>;
@@ -150,7 +155,7 @@ export function checkInputs(extras: WorkflowExtras, given: Record<string, unknow
   for (const [name, spec] of Object.entries(extras.inputs)) {
     if (name in args) continue;
     if (spec.default !== undefined) args[name] = spec.default;
-    else if (spec.required !== false) problems.push(`missing input --${name}${spec.description ? ` (${spec.description})` : ""}`);
+    else if (isRequired(spec)) problems.push(`missing input --${name}${spec.description ? ` (${spec.description})` : ""}`);
   }
   return { args, problems };
 }

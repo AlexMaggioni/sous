@@ -46,6 +46,7 @@ import {
   wrapError,
 } from "./errors.js";
 import { afterFailedAttempt } from "./failed-attempt.js";
+import { pauseRequestError } from "./host-pause.js";
 import { createWorkflowLogger } from "./runs/persistence/logger.js";
 import { parseModelRoutingFromMeta, resolveModelForPhase } from "./model-routing.js";
 import { projectRecordedError } from "./recorded-error.js";
@@ -717,12 +718,8 @@ async function runLevel<T>(
   // checkpoint, the refusal is remembered so a script that catches it cannot keep the run going.
   // A failed or stopped step sets pendingPause, which gates admissions the same way.
   const pauseRequested = () => (pauseSignal?.aborted === true || shared.pendingPause !== undefined) && !signal.aborted;
-  const pauseError = () =>
-    (shared.pendingPause ??= new WorkflowError(
-      "workflow paused by host request: executing agent calls finished, nothing new was admitted",
-      WorkflowErrorCode.PAUSE_REQUESTED,
-      { recoverable: false },
-    ));
+  // A pause the host asked for at the run's time limit or budget carries that reason.
+  const pauseError = () => (shared.pendingPause ??= pauseRequestError(pauseSignal?.reason));
   // Resolves once every allocated call in the root run and its nested engines has settled.
   const drainLiveCalls = (): Promise<void> =>
     liveCalls.count === 0 ? Promise.resolve() : new Promise((resolve) => liveCalls.waiters.add(resolve));
@@ -1305,7 +1302,7 @@ async function runLevel<T>(
               beginResumeActivity();
               try {
                 rawRunnerPromise = codeSpec ? runCodeStep(codeSpec, {
-                  ...options.codeEnv,
+                  ...options.codeEnv, step: { scope: runId, callIndex, label },
                   cwd: runCwd,
                   signal: attemptSignal,
                   timeoutMs: millis(agentOptions.timeout),
@@ -1870,11 +1867,11 @@ async function runLevel<T>(
   };
   const askCheckpoint = (promptText: string, checkpointOptions: CheckpointOptions, purpose: CheckpointCallContext["purpose"]): Promise<unknown> =>
     startCall((open) => checkpointCall(checkpointRun, promptText, checkpointOptions, open, purpose));
-  // The script's checkpoint() takes two arguments, so it never marks a question a breakpoint.
+  // The script's checkpoint() takes two arguments, so a script never marks a question by hand.
   const checkpoint = (promptText: string, checkpointOptions: CheckpointOptions = {}): Promise<unknown> =>
     askCheckpoint(promptText, checkpointOptions, undefined);
-  const breakpointCheckpoint = (promptText: string, checkpointOptions: CheckpointOptions = {}): Promise<unknown> =>
-    askCheckpoint(promptText, checkpointOptions, "breakpoint");
+  const markedCheckpoint = (promptText: string, checkpointOptions: CheckpointOptions, purpose: CheckpointCallContext["purpose"]): Promise<unknown> =>
+    askCheckpoint(promptText, checkpointOptions, purpose);
 
   // Adopt every engine-returned promise into the SCRIPT's realm at the context boundary.
   // This is what makes the rejection tripwire's realm-identity attribution complete: the
@@ -1895,7 +1892,7 @@ async function runLevel<T>(
     agent: agent as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
     code,
     checkpoint: checkpoint as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
-    breakpointCheckpoint: breakpointCheckpoint as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
+    markedCheckpoint: markedCheckpoint as (prompt: string, options: Record<string, unknown>, purpose: CheckpointCallContext["purpose"]) => Promise<unknown>,
     workflow: workflowFn,
     log,
     listSavedWorkflows: options.listSavedWorkflows,

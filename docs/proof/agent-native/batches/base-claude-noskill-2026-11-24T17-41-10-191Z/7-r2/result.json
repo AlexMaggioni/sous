@@ -1,0 +1,238 @@
+{
+  "scenario": "7",
+  "title": "What is going on",
+  "rep": 2,
+  "dir": "/tmp/sous-proofs/base-claude-noskill-2026-11-24T17-41-10-191Z/7-r2",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "What is going on with my runs?",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:45:03.032Z",
+      "endedAt": "2026-11-24T17:45:13.194Z",
+      "ms": 10162,
+      "args": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+        "--setting-sources",
+        "project,local",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "acceptEdits",
+        "--permission-prompts",
+        "none",
+        "--allowedTools",
+        "Bash(sous *),Bash(git *),Bash(cat *),Bash(ls *),Bash(sleep *),Read,Glob,Grep",
+        "--disallowedTools",
+        "Workflow",
+        "--",
+        "<prompt>"
+      ],
+      "sessionId": "21ea6491-fe77-463f-8f49-3423d4fef0d6",
+      "finalText": "You have two runs, and neither is progressing.\n\n**`mwuzizcc-r3qopp` (workflow `asks`) is waiting on you.**\n- It asked \"Which color?\" and the options are `red` or `blue`.\n- To answer: `sous answer mwuzizcc-r3qopp--0 red` (or `blue`).\n\n**`mwuziyj7-m5d4sr` (workflow `fails`) is paused on a failed step.**\n- Step `prepare` finished.\n- Step `boom` exited with code 3 and the message \"disk check failed\". It had one try and no retries.\n- The run paused rather than failing outright. Once the cause is fixed, `sous resume mwuziyj7-m5d4sr` continues from `boom`.\n- The log doesn't say which disk check failed. I'd check free disk space on the machine first, and then look at what the `boom` step runs.\n\nI haven't answered the question or resumed the run. Tell me which color you want, or whether you'd like me to dig into the `boom` step.",
+      "tokens": {
+        "input": 81262,
+        "cachedInput": 71799,
+        "output": 616,
+        "total": 81878
+      },
+      "costUsd": 0.0511759,
+      "tools": [
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "skills": [
+        "deep-research",
+        "design",
+        "design-sync",
+        "dataviz",
+        "update-config",
+        "verify",
+        "debug",
+        "code-review",
+        "simplify",
+        "batch",
+        "fewer-permission-prompts",
+        "doctor",
+        "claude-approvals",
+        "loop",
+        "schedule",
+        "claude-api",
+        "workflow-authoring",
+        "run",
+        "run-skill-generator",
+        "plugin-authoring"
+      ]
+    }
+  ],
+  "verdict": "fail",
+  "checks": [
+    {
+      "name": "the first sous call is status",
+      "result": "fail",
+      "reason": "the first call was \"help\"",
+      "source": "commands"
+    },
+    {
+      "name": "the answer names the paused run",
+      "result": "pass",
+      "reason": "it names fails",
+      "source": "answer"
+    },
+    {
+      "name": "the answer names the open question",
+      "result": "pass",
+      "reason": "it names asks",
+      "source": "answer"
+    },
+    {
+      "name": "nothing changed",
+      "result": "pass",
+      "reason": "no run changed",
+      "source": "records"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 5,
+    "sousInCommands": 5,
+    "commands": 3,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 10,
+    "tokens": 81878,
+    "inputTokens": 81262,
+    "cachedInputTokens": 71799,
+    "outputTokens": 616,
+    "costUsd": 0.0512,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "help"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "list",
+        "--all"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "inbox"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "show",
+        "mwuziyj7-m5d4sr"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "log",
+        "mwuziyj7-m5d4sr"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwuziyj7-m5d4sr",
+      "workflow": "fails",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:45:01.268Z",
+      "status": "paused",
+      "pauseReason": "step_failed",
+      "reason": "step \"boom\" failed after 1 try: exited with code 3: disk check failed",
+      "answers": []
+    },
+    {
+      "runId": "mwuzizcc-r3qopp",
+      "workflow": "asks",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:45:02.317Z",
+      "status": "running",
+      "answers": []
+    }
+  ],
+  "setupRunIds": [
+    "mwuziyj7-m5d4sr",
+    "mwuzizcc-r3qopp"
+  ],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:45:13.195Z",
+      "questions": [
+        {
+          "id": "mwuzizcc-r3qopp--0",
+          "runId": "mwuzizcc-r3qopp",
+          "prompt": "Which color?"
+        }
+      ],
+      "runs": [
+        {
+          "runId": "mwuziyj7-m5d4sr",
+          "workflow": "fails",
+          "status": "paused",
+          "pauseReason": "step_failed"
+        },
+        {
+          "runId": "mwuzizcc-r3qopp",
+          "workflow": "asks",
+          "status": "running"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

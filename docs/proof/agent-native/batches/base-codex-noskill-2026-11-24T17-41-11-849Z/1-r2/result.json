@@ -1,0 +1,185 @@
+{
+  "scenario": "1",
+  "title": "Run hello for Ada",
+  "rep": 2,
+  "dir": "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/1-r2",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Run the hello workflow for Ada and tell me what it returned.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:41:28.987Z",
+      "endedAt": "2026-11-24T17:41:41.424Z",
+      "ms": 12437,
+      "args": [
+        "exec",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-s",
+        "workspace-write",
+        "--add-dir",
+        "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/1-r2/state",
+        "-C",
+        "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/1-r2/project",
+        "<prompt>"
+      ],
+      "sessionId": "01a20ea6-0013-7c60-b2c1-7faed83812cb",
+      "finalText": "The hello workflow completed successfully and returned: `hello Ada`.",
+      "tokens": {
+        "input": 106837,
+        "cachedInput": 96640,
+        "output": 182,
+        "total": 107019
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    }
+  ],
+  "verdict": "pass",
+  "checks": [
+    {
+      "name": "one run",
+      "result": "pass",
+      "reason": "one hello run, mwuzeled-fdnuor",
+      "source": "records"
+    },
+    {
+      "name": "it returned hello Ada",
+      "result": "pass",
+      "reason": "the run completed with hello Ada",
+      "source": "records"
+    },
+    {
+      "name": "one wait",
+      "result": "pass",
+      "reason": "one wait: run hello --name Ada --wait --json",
+      "source": "commands"
+    },
+    {
+      "name": "no sleep",
+      "result": "pass",
+      "reason": "no sleep",
+      "source": "commands"
+    },
+    {
+      "name": "the answer holds hello Ada",
+      "result": "pass",
+      "reason": "it does",
+      "source": "answer"
+    },
+    {
+      "name": "six sous calls at most",
+      "result": "pass",
+      "reason": "3 sous calls",
+      "source": "commands"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 3,
+    "sousInCommands": 3,
+    "commands": 3,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 12,
+    "tokens": 107019,
+    "inputTokens": 106837,
+    "cachedInputTokens": 96640,
+    "outputTokens": 182,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "help"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "workflows"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "run",
+        "hello",
+        "--name",
+        "Ada",
+        "--wait",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwuzeled-fdnuor",
+      "workflow": "hello",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:41:37.621Z",
+      "status": "completed",
+      "result": "hello Ada",
+      "answers": []
+    }
+  ],
+  "setupRunIds": [],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:41:41.424Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwuzeled-fdnuor",
+          "workflow": "hello",
+          "status": "completed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

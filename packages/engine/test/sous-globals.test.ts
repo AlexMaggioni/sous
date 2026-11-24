@@ -14,6 +14,7 @@ import { homePaths } from "../src/runs/home.js";
 import { placesIn } from "./helpers/places.js";
 import { lookupAgents, lookupMcpServers } from "../src/agents.js";
 import { WorkflowManager } from "../src/workflow-manager.js";
+import { createSousGlobals } from "../src/sous-globals.js";
 import { journalResume } from "./helpers/journal-resume.js";
 
 // Code steps, questions, breakpoints, choose(), and the per-step options.
@@ -195,6 +196,126 @@ return 'went on'`;
       () => runWorkflow(script, { agent: runner, persistLogs: false, confirm: async () => "stop" }),
       /Stopped at breakpoint "Check"/,
     );
+  });
+});
+
+// Piece 8, questions. The author of a question says who may answer it: ask(q, { answeredBy }) takes
+// "people", the default, or "anyone". An "anyone" question goes through markedCheckpoint with
+// { answeredBy: "anyone" }, a breakpoint with { breakpoint: true }, and an agent's question with
+// the asking step's label. A breakpoint is always for people. The fake deps below give
+// markedCheckpoint, the dep the design names, and no breakpointCheckpoint.
+describe("piece 8: who may answer a question", () => {
+  interface Asked {
+    via: "checkpoint" | "markedCheckpoint";
+    prompt: string;
+    options: unknown;
+    purpose?: unknown;
+  }
+  function globals(reply: unknown = "blue", agentReplies: unknown[] = []) {
+    const asked: Asked[] = [];
+    const agentCalls: Array<{ prompt: string; options: Record<string, unknown> }> = [];
+    const deps = {
+      agent: async (prompt: string, options: Record<string, unknown> = {}) => {
+        agentCalls.push({ prompt, options });
+        return agentReplies.shift() ?? "done";
+      },
+      code: async () => undefined,
+      checkpoint: async (prompt: string, options?: unknown) => {
+        asked.push({ via: "checkpoint", prompt, options });
+        return reply;
+      },
+      markedCheckpoint: async (prompt: string, options?: unknown, purpose?: unknown) => {
+        asked.push({ via: "markedCheckpoint", prompt, options, purpose });
+        return reply;
+      },
+      workflow: async () => undefined,
+      log: () => {},
+    };
+    const made = createSousGlobals(deps as unknown as Parameters<typeof createSousGlobals>[0]) as unknown as Record<"ask" | "breakpoint" | "agent", (...args: unknown[]) => Promise<unknown>>;
+    return { ask: made.ask, breakpoint: made.breakpoint, agent: made.agent, asked, agentCalls };
+  }
+  const plain = (value: unknown) => JSON.parse(JSON.stringify(value ?? null)) as unknown;
+
+  it("ask(q, { choices, answeredBy: 'anyone' }) asks through markedCheckpoint with { answeredBy: 'anyone' }", async () => {
+    const { ask, asked } = globals();
+    assert.equal(await ask("Which color?", { choices: ["red", "blue"], answeredBy: "anyone" }), "blue");
+    assert.equal(asked.length, 1, JSON.stringify(asked));
+    assert.equal(asked[0]!.via, "markedCheckpoint", JSON.stringify(asked));
+    assert.equal(asked[0]!.prompt, "Which color?");
+    assert.deepEqual(plain(asked[0]!.options), { kind: "select", choices: ["red", "blue"] });
+    assert.deepEqual(plain(asked[0]!.purpose), { answeredBy: "anyone" });
+
+    // "people" is the default, and neither asks as anyone.
+    for (const options of [{ choices: ["red", "blue"] }, { choices: ["red", "blue"], answeredBy: "people" }]) {
+      const people = globals();
+      assert.equal(await people.ask("Which color?", options), "blue");
+      assert.equal(people.asked.length, 1);
+      assert.notEqual((people.asked[0]!.purpose as { answeredBy?: string } | undefined)?.answeredBy, "anyone", JSON.stringify(people.asked));
+    }
+  });
+
+  it("ask(q, { answeredBy: 'robots' }) fails the script and asks nothing", async () => {
+    const { ask, asked } = globals();
+    await assert.rejects(() => ask("Which color?", { choices: ["red", "blue"], answeredBy: "robots" }), /answeredBy/);
+    await assert.rejects(() => ask("Which color?", { answeredBy: true }), /answeredBy/);
+    assert.equal(asked.length, 0);
+  });
+
+  it("breakpoint(..., { answeredBy: 'anyone' }) fails, with options or with a step, and asks nothing", async () => {
+    const { breakpoint, asked } = globals("approve");
+    await assert.rejects(() => breakpoint("Check the plan", { show: "all good?", answeredBy: "anyone" }), /answeredBy/);
+    let ran = 0;
+    await assert.rejects(() => breakpoint("Check the plan", () => ran++, { answeredBy: "anyone" }), /answeredBy/);
+    assert.equal(ran, 0, "the step does not run");
+    assert.equal(asked.length, 0);
+  });
+
+  it("breakpoint() asks through markedCheckpoint with { breakpoint: true }", async () => {
+    const { breakpoint, asked } = globals("approve");
+    await breakpoint("Check the plan", { show: "all good?" });
+    assert.equal(asked.length, 1, JSON.stringify(asked));
+    assert.equal(asked[0]!.via, "markedCheckpoint");
+    assert.deepEqual(plain(asked[0]!.purpose), { breakpoint: true });
+  });
+
+  it("agent(..., { ask: true, answeredBy }) keeps answeredBy from the agent, and its question carries the step's label", async () => {
+    for (const [answeredBy, purpose] of [
+      ["anyone", { answeredBy: "anyone", step: "builder" }],
+      [undefined, { step: "builder" }],
+    ] as const) {
+      const { agent, asked, agentCalls } = globals("blue", ["QUESTION: Which color?", "built it"]);
+      const result = await agent("Build it", { label: "builder", ask: true, ...(answeredBy ? { answeredBy } : {}) });
+      assert.equal(result, "built it");
+      assert.equal(asked.length, 1, JSON.stringify(asked));
+      assert.equal(asked[0]!.via, "markedCheckpoint", JSON.stringify(asked));
+      assert.match(asked[0]!.prompt, /Which color\?/);
+      assert.deepEqual(plain(asked[0]!.purpose), purpose);
+      for (const call of agentCalls) assert.equal("answeredBy" in call.options, false, `the agent gets no answeredBy: ${JSON.stringify(call.options)}`);
+    }
+  });
+
+  it("agent(..., { ask: true, answeredBy: 'robots' }) fails the script before the agent runs", async () => {
+    const { agent, agentCalls } = globals();
+    await assert.rejects(() => agent("Build it", { label: "builder", ask: true, answeredBy: "robots" }), /answeredBy/);
+    assert.equal(agentCalls.length, 0);
+  });
+
+  it("in a run, the host's confirm gets the purpose of each: ask anyone, breakpoint and an agent's question", async () => {
+    const { runner } = recordingRunner((_prompt, options) => (options.label === "builder" ? "QUESTION: Which shade?" : "built it"));
+    const purposes: unknown[] = [];
+    const script = `export const meta = { name: 'p8', description: 'p8' }
+const color = await ask('Which color?', { choices: ['red', 'blue'], answeredBy: 'anyone' })
+await breakpoint('Check', { show: color })
+return await agent('Build it', { label: 'builder', ask: true })`;
+    await runWorkflow(script, {
+      agent: runner,
+      persistLogs: false,
+      confirm: async (_prompt, _options, context) => {
+        purposes.push(plain(context?.purpose));
+        return purposes.length === 1 ? "blue" : purposes.length === 2 ? "approve" : "dark";
+      },
+    });
+    assert.deepEqual(purposes, [{ answeredBy: "anyone" }, { breakpoint: true }, { step: "builder" }]);
   });
 });
 

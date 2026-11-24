@@ -14,7 +14,7 @@ factory  Take open bug tickets from Linear, or from tickets/ without a key, and 
 fanout  Parallel agent steps, a shell step and a nested workflow
 harnesses  A Claude Code step and a Codex step
 limit  A step that hits the usage limit, which pauses the run
-  --model  string, optional, default "claude"  Model of the step
+  -- --model  string, optional, default "claude"  Model of the step
 pause  The test pauses the run during its first step, then resumes it
 places  Report where the run works
 questions  A question, an agent that asks, and a breakpoint sent back once

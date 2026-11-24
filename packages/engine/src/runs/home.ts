@@ -1,7 +1,7 @@
 // The sous home folder (~/.sous, or $SOUS_HOME) and a project's .sous folder.
 // A project's workflows win over the home folder's.
 
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { readStrictJsonFile, writeJsonFile } from "../json-file.js";
@@ -30,6 +30,8 @@ export interface OrcConfig {
   claudePath?: string;
   /** The Codex program, when sous should not look for it on PATH. */
   codexPath?: string;
+  /** The most tokens one go of a run may spend, when the command gives no --budget. None by default. */
+  budgetTokens?: number;
 }
 
 const DEFAULT_CONFIG: OrcConfig = { maxAgents: 4, defaultPlace: "worktree", notify: true, retries: 2 };
@@ -51,8 +53,18 @@ export function homePaths(home = sousHome()) {
     accounts: join(home, "accounts.json"),
     schedules: join(home, "schedules.json"),
     projects: join(home, "projects.json"),
+    /** The person's yes to each workflow file's text, by hash. */
+    approvals: join(home, "approvals.json"),
+    /** The approved texts, one <hash>.json each. */
+    approved: join(home, "approved"),
+    /** When sous seeded the approvals at first use. With it there, sous never seeds again. */
+    seeded: join(home, "seeded.json"),
     daemonPid: join(home, "daemon.pid"),
     daemonState: join(home, "daemon-state.json"),
+    /** Who did what: one line per write. */
+    actions: join(home, "events.jsonl"),
+    /** Each call of the cli, with SOUS_TRACE_CALLS=1. */
+    calls: join(home, "calls.jsonl"),
   };
 }
 
@@ -63,6 +75,20 @@ export function ensureHome(paths: HomePaths = homePaths()): HomePaths {
     mkdirSync(dir, { recursive: true });
   }
   return paths;
+}
+
+/** Why sous can't write to its home, or undefined when a probe file goes in and out. Under the
+ *  Codex sandbox the home is often outside the folders it lets a command write. */
+export function homeWriteProblem(paths: HomePaths = homePaths()): string | undefined {
+  const probe = join(paths.home, `.write-check-${process.pid}`);
+  try {
+    mkdirSync(paths.home, { recursive: true });
+    writeFileSync(probe, "");
+    unlinkSync(probe);
+    return undefined;
+  } catch (error) {
+    return (error as Error).message;
+  }
 }
 
 export function loadConfig(paths: HomePaths = homePaths()): OrcConfig {

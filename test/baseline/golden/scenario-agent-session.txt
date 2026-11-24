@@ -4,7 +4,25 @@ exit 0
   "runId": "<run-1>",
   "workflow": "agent-session",
   "cwd": "<tmp>/scenario-agent-session/sous-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-agent-session/sous-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-agent-session/sous-home/logs/<run-1>.log",
+  "status": "starting",
+  "asks": 0,
+  "lastRuns": {
+    "count": 0,
+    "seconds": "<seconds>",
+    "tokens": 0
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous wait <run-1> --json
@@ -23,7 +41,26 @@ exit 0
       "done": true
     },
     "more": "Fake claude answer."
-  }
+  },
+  "review": {
+    "result": {
+      "plan": {
+        "steps": [
+          "fake-steps-1"
+        ],
+        "size": "small",
+        "done": true
+      },
+      "more": "Fake claude answer."
+    }
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous show <run-1>
@@ -52,9 +89,32 @@ result
   "more": "Fake claude answer."
 }
 
-$ sous show <run-1> --json
+$ sous show <run-1> --full --json
 exit 0
 {
+  "runId": "<run-1>",
+  "workflow": "agent-session",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-agent-session/sous-home/scratch/<run-1>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 300,
+  "steps": [
+    {
+      "label": "planner",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "planner again",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-1>",
     "workflow": "agent-session",
@@ -68,6 +128,10 @@ exit 0
     "priority": "user",
     "origin": "cli",
     "createdAt": "<createdAt>",
+    "through": {
+      "kind": "person"
+    },
+    "workflowHash": "8258b01087c7cfe67c291c1bb33b369ebdc027c9c567fada7d03940efe60c121",
     "accounts": {
       "claude": {
         "name": "default",
@@ -250,9 +314,10 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "notes": [],
+  "next": []
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"steps\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"size\":{\"type\":\"string\",\"enum\":[\"small\",\"large\"]},\"done\":{\"type\":\"boolean\"}},\"required\":[\"steps\",\"size\",\"done\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-agent-session/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"steps":{"type":"array","items":{"type":"string"}},"size":{"type":"string","enum":["small","large"]},"done":{"type":"boolean"}},"required":["steps","size","done"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: planner\n\nSESSION-1 Plan a small change.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--resume=<id-1>","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local"],"cwd":"<tmp>/scenario-agent-session/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: planner again\n\nSESSION-2 Add one more step to: fake-steps-1","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"steps\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"size\":{\"type\":\"string\",\"enum\":[\"small\",\"large\"]},\"done\":{\"type\":\"boolean\"}},\"required\":[\"steps\",\"size\",\"done\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-agent-session/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"steps":{"type":"array","items":{"type":"string"}},"size":{"type":"string","enum":["small","large"]},"done":{"type":"boolean"}},"required":["steps","size","done"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: planner\n\nSESSION-1 Plan a small change.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--resume=<id-1>","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local"],"cwd":"<tmp>/scenario-agent-session/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: planner again\n\nSESSION-2 Add one more step to: fake-steps-1","rule":null,"outcome":"answer"}
