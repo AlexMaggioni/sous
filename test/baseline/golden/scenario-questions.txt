@@ -288,6 +288,9 @@ exit 0
     "priority": "user",
     "origin": "cli",
     "createdAt": "<createdAt>",
+    "through": {
+      "kind": "person"
+    },
     "accounts": {
       "claude": {
         "name": "default",

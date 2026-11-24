@@ -12,7 +12,7 @@ import type { HomePaths } from "../../src/runs/home.js";
 import { createRun } from "../../src/runs/launch.js";
 import { readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
-import { fakeRunner } from "../../src/testing.js";
+import { PERSON, fakeRunner } from "../../src/testing.js";
 import { quiet, setup } from "./fixture.js";
 
 interface ActivityLine {
@@ -71,7 +71,7 @@ return 1`;
 
 /** Run a workflow to its end, or to its pause, and give its id. */
 async function ran(paths: HomePaths, projectDir: string, workflow: string): Promise<{ runId: string; status: string | undefined }> {
-  const record = createRun(paths, { workflow, projectDir, inputs: {} });
+  const record = createRun(paths, { who: PERSON, workflow, projectDir, inputs: {} });
   const result = await runWorker(record.runId, "start", { paths, inner: fakeRunner(() => "ok").runner, pollMs: 20, log: quiet });
   return { runId: record.runId, status: result?.status };
 }
@@ -249,7 +249,7 @@ describe("piece 5 review: stepView", () => {
   it("gives no result for a step whose result is null, never the string null", async () => {
     const { stepView } = await stepViewModule();
     const { paths, projectDir } = setup({ thrice: TWICE });
-    const record = createRun(paths, { workflow: "thrice", projectDir, inputs: {} });
+    const record = createRun(paths, { workflow: "thrice", projectDir, inputs: {}, who: PERSON });
     await runWorker(record.runId, "start", { paths, inner: fakeRunner(() => null).runner, pollMs: 20, log: quiet });
     const view = stepView(paths, record.runId, "go");
     assert.equal(view.status, "done");
@@ -295,7 +295,7 @@ describe("piece 5 review: logAfter", () => {
   it("gives no events for a run that has no event log yet", async () => {
     const { logAfter } = await stepViewModule();
     const { paths, projectDir } = setup({ fails: FAILS });
-    const { runId } = createRun(paths, { workflow: "fails", projectDir, inputs: {} });
+    const { runId } = createRun(paths, { who: PERSON, workflow: "fails", projectDir, inputs: {} });
     assert.deepEqual(logAfter(paths, runId, 0), { events: [], after: 0, more: false });
   });
 });

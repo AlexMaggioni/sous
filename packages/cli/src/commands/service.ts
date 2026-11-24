@@ -1,7 +1,25 @@
 // sous schedule and daemon: the service that starts runs on its own.
 
 import { resolve } from "node:path";
-import { cronMatches, daemonLog, daemonMain, daemonPid, fileSchedules, isPlace, loadSchedules, nextRun, parseCron, Refusal, rememberProject, resolveWorkflow, saveSchedules, type Place, type Schedule } from "@sous/engine";
+import {
+  cronMatches,
+  daemonLog,
+  daemonMain,
+  daemonPid,
+  fileSchedules,
+  isPlace,
+  loadSchedules,
+  mayStart,
+  nextRun,
+  parseCron,
+  recordAction,
+  Refusal,
+  rememberProject,
+  resolveWorkflow,
+  saveSchedules,
+  type Place,
+  type Schedule,
+} from "@sous/engine";
 import { str, Usage, type Parsed } from "../args.js";
 import { reply, type Next, type Reply } from "../reply.js";
 import { projectDir } from "./common.js";
@@ -34,6 +52,9 @@ export function cmdSchedule(args: Parsed, ctx: Ctx): Reply<object> {
       if (schedules.some((schedule) => schedule.name === name)) throw new Error(`a schedule "${name}" exists. Remove it first.`);
       parseCron(cron);
       const resolved = resolveWorkflow(paths, dir, workflow);
+      // A schedule starts the workflow with no one at the terminal, so an agent may not add one
+      // for a workflow people start.
+      mayStart(resolved, ctx.who, ctx.command);
       const place = str(args.flags.place);
       if (place !== undefined && !isPlace(place)) throw new Usage(`--place is worktree, folder or none, got "${place}"`);
       const schedule: Schedule = {
@@ -47,6 +68,7 @@ export function cmdSchedule(args: Parsed, ctx: Ctx): Reply<object> {
         createdAt: ctx.now().toISOString(),
       };
       saveSchedules(paths, [...schedules, schedule]);
+      recordAction(paths, { act: "schedule-add", ...ctx.who, schedule: name, workflow: resolved.name, value: { cron } });
       const next = nextRun(parseCron(cron));
       out(`schedule ${name}: ${resolved.name} at "${cron}"${next ? `, next ${next.toLocaleString()}` : ""}`);
       const notes: string[] = [];
@@ -80,14 +102,24 @@ export function cmdSchedule(args: Parsed, ctx: Ctx): Reply<object> {
     case "remove":
       find();
       saveSchedules(paths, schedules.filter((schedule) => schedule.name !== name));
+      recordAction(paths, { act: "schedule-remove", ...ctx.who, schedule: name });
       out(`removed ${name}`);
       return done({ removed: name });
     case "enable":
-    case "disable":
-      find().enabled = action === "enable";
-      saveSchedules(paths, schedules);
+    case "disable": {
+      const schedule = find();
+      const enabled = action === "enable";
+      // Enabling starts the workflow again with no one at the terminal, as adding does.
+      if (enabled) mayStart(resolveWorkflow(paths, schedule.projectDir, schedule.workflow), ctx.who, ctx.command);
+      // A schedule already in that state changes nothing, so nothing is recorded.
+      if (schedule.enabled !== enabled) {
+        schedule.enabled = enabled;
+        saveSchedules(paths, schedules);
+        recordAction(paths, { act: `schedule-${action}`, ...ctx.who, schedule: schedule.name });
+      }
       out(`${action}d ${name}`);
-      return done({ name, enabled: action === "enable" });
+      return done({ name, enabled });
+    }
     case "test": {
       const schedule = find(true);
       const cron = parseCron(schedule.cron);

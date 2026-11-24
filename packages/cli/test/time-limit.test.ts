@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { resumeRun, runQuestions, startRun } from "@sous/engine";
-import { fakeRunner, inProcess, readState, testHome, writeAnswer } from "@sous/engine/testing";
+import { PERSON, fakeRunner, inProcess, readState, testHome, writeAnswer } from "@sous/engine/testing";
 import { sous } from "./sous.js";
 
 // A workflow's time limit reached while a code step runs, and while no step runs. runs.test.ts
@@ -21,7 +21,7 @@ return await agent('check ' + built.stdout.trim(), { label: 'check' })`,
     const { runner, calls } = fakeRunner((call) => `${call.prompt} done`);
     const lines: string[] = [];
     const workers = inProcess({ inner: runner, log: (line) => lines.push(line) });
-    const record = startRun(paths, workers.launch, { workflow: "build", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "build", projectDir, inputs: {} });
 
     const paused = await workers.ended(record.runId);
     assert.equal(paused?.status, "paused", lines.join("\n"));
@@ -30,7 +30,7 @@ return await agent('check ' + built.stdout.trim(), { label: 'check' })`,
     assert.equal(calls.length, 0, "the agent step after it did not start");
 
     writeFileSync(join(projectDir, "go"), "");
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed", lines.join("\n"));
     assert.equal(done?.result, "check built done");
@@ -48,7 +48,7 @@ return await agent('Build ' + name, { label: 'build' })`,
     const { runner, calls } = fakeRunner((call) => `${call.prompt} done`);
     const lines: string[] = [];
     const workers = inProcess({ inner: runner, log: (line) => lines.push(line) });
-    const record = startRun(paths, workers.launch, { workflow: "asks", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "asks", projectDir, inputs: {} });
 
     const paused = await workers.ended(record.runId);
     assert.equal(paused?.status, "paused", lines.join("\n"));
@@ -60,7 +60,7 @@ return await agent('Build ' + name, { label: 'build' })`,
     assert.equal(calls.length, 0, "no agent step ran");
 
     writeAnswer(paths, question!, "sous");
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed", lines.join("\n"));
     assert.equal(done?.result, "Build sous done");

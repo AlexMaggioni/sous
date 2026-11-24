@@ -8,6 +8,7 @@ import { readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
 import { boom, quiet, setup } from "./fixture.js";
+import { PERSON } from "../../src/testing.js";
 
 // A reuse run that pauses, then resumes. Its source's steps after the pause wait in the seed, and
 // replay on the resume.
@@ -29,12 +30,12 @@ async function pauseThenResume(): Promise<{ first: string[]; journal: string[]; 
       return `${prompt} done`;
     },
   } as unknown as AgentRunner;
-  const source = createRun(paths, { workflow: "three", projectDir, inputs: {} });
+  const source = createRun(paths, { who: PERSON, workflow: "three", projectDir, inputs: {} });
   await runWorker(source.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
   assert.equal(readState(paths, source.runId)?.status, "completed");
 
   writeFileSync(join(projectDir, ".sous", "workflows", "three.js"), three("B2"));
-  const reuse = createRun(paths, { workflow: "three", projectDir, inputs: {}, reuseFrom: loadRecord(paths, source.runId)! });
+  const reuse = createRun(paths, { who: PERSON, workflow: "three", projectDir, inputs: {}, reuseFrom: loadRecord(paths, source.runId)! });
   let mark = prompts.length;
   await runWorker(reuse.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
   assert.equal(readState(paths, reuse.runId)?.status, "paused");

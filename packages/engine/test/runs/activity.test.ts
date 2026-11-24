@@ -11,7 +11,7 @@ import type { HomePaths } from "../../src/runs/home.js";
 import { createRun } from "../../src/runs/launch.js";
 import { readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
-import { fakeRunner } from "../../src/testing.js";
+import { PERSON, fakeRunner } from "../../src/testing.js";
 import { quiet, setup } from "./fixture.js";
 
 interface ActivityLine {
@@ -47,7 +47,7 @@ const run = (paths: HomePaths, runId: string, mode: "start" | "resume") =>
 describe("piece 5: the worker's activity file", () => {
   it("holds each step's entries in the design's format, numbered from 1", async () => {
     const { paths, projectDir } = setup({ fails: FAILS });
-    const { runId } = createRun(paths, { workflow: "fails", projectDir, inputs: {} });
+    const { runId } = createRun(paths, { who: PERSON, workflow: "fails", projectDir, inputs: {} });
     await run(paths, runId, "start");
     const lines = readActivity(paths, runId);
     assert.deepEqual(
@@ -80,7 +80,7 @@ await sh("for i in $(seq 1700); do printf 'ab '; done; printf END", { label: "lo
 await agent('${long}', { label: "wordy" })
 return 1`,
     });
-    const { runId } = createRun(paths, { workflow: "long", projectDir, inputs: {} });
+    const { runId } = createRun(paths, { who: PERSON, workflow: "long", projectDir, inputs: {} });
     const result = await run(paths, runId, "start");
     assert.equal(result?.status, "completed");
     const lines = readActivity(paths, runId);
@@ -94,7 +94,7 @@ return 1`,
 
   it("goes on from the last seq after a resume", async () => {
     const { paths, projectDir } = setup({ fails: FAILS });
-    const { runId } = createRun(paths, { workflow: "fails", projectDir, inputs: {} });
+    const { runId } = createRun(paths, { who: PERSON, workflow: "fails", projectDir, inputs: {} });
     assert.equal((await run(paths, runId, "start"))?.status, "paused");
     const before = readActivity(paths, runId);
     assert.ok(before.length > 0);
@@ -120,7 +120,7 @@ describe("piece 5 review: the activity file", () => {
 await sh("echo started; sleep 5", { label: "slow", timeout: 0.5 })
 return 1`,
     });
-    const { runId } = createRun(paths, { workflow: "slow", projectDir, inputs: {} });
+    const { runId } = createRun(paths, { who: PERSON, workflow: "slow", projectDir, inputs: {} });
     assert.equal((await run(paths, runId, "start"))?.status, "paused");
     const slow = readActivity(paths, runId).filter((line) => line.label === "slow");
     assert.deepEqual(slow.map((line) => line.kind), ["command", "output"]);
@@ -136,7 +136,7 @@ await agent('use ${secret} to log in', { label: "agent" })
 return 1`,
     });
     writeFileSync(paths.secrets, `DEPLOY_KEY=${secret}\n`);
-    const { runId } = createRun(paths, { workflow: "leaks", projectDir, inputs: {} });
+    const { runId } = createRun(paths, { who: PERSON, workflow: "leaks", projectDir, inputs: {} });
     assert.equal((await run(paths, runId, "start"))?.status, "completed");
     const lines = readActivity(paths, runId);
     const raw = readFileSync(activityFile(paths, runId), "utf8");

@@ -12,6 +12,7 @@ import { loadRecord } from "../../src/runs/records.js";
 import { forgetRun } from "../../src/runs/run.js";
 import { runWorker } from "../../src/runs/worker.js";
 import { heldRunner, layout, projectKey, quiet, setup } from "./fixture.js";
+import { PERSON } from "../../src/testing.js";
 
 const top = `export const meta = { name: 'top', description: 'top' }
 // the top workflow
@@ -28,6 +29,8 @@ return await agent('build it', { label: 'build' })`;
 const home = [
   "home/",
   "home/config.json",
+  // Who started the run. It is the home's history, so it outlives the run.
+  "home/events.jsonl",
   "home/inbox/",
   "home/logs/",
   "home/projects.json",
@@ -61,7 +64,7 @@ describe("where a run leaves its files", () => {
   it("a finished run with a nested run leaves its files in records and in two project folders, each workflow's text in its files, and the nested run leaves none", async () => {
     const { paths, projectDir } = setup({ top, child });
     const { runner } = heldRunner(() => "ok");
-    const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "top", projectDir, inputs: {} });
     const result = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal(result?.status, "completed");
     assert.equal(record.cwd, projectDir);
@@ -101,7 +104,7 @@ describe("where a run leaves its files", () => {
   it("a run paused on a failed step leaves the same files as a finished run", async () => {
     const { paths, projectDir } = setup({ top: single });
     const { runner } = heldRunner(() => new Error("boom"));
-    const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "top", projectDir, inputs: {} });
     const result = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal(result?.status, "paused");
     assert.deepEqual(layout(paths, record.runId, record.cwd), [...home, ...runFiles].sort());
@@ -110,7 +113,7 @@ describe("where a run leaves its files", () => {
   it("a forgotten run leaves only the home's folders", async () => {
     const { paths, projectDir } = setup({ top, child });
     const { runner } = heldRunner(() => "ok");
-    const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "top", projectDir, inputs: {} });
     await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     forgetRun(paths, loadRecord(paths, record.runId)!);
     assert.deepEqual(layout(paths, record.runId, record.cwd), [...home].sort());

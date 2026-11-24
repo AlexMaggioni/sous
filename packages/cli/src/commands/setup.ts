@@ -2,7 +2,7 @@
 // what an agent that drives sous reads, and the line a new Claude Code session gets.
 
 import { join, resolve } from "node:path";
-import { installHook, installSkill, Refusal, removeHook } from "@sous/engine";
+import { installHook, installSkill, recordAction, Refusal, removeHook } from "@sous/engine";
 import { cmdAccount as accountCommand } from "../account-cli.js";
 import { str, Usage, type Parsed } from "../args.js";
 import { checkSkill, doctor } from "../doctor.js";
@@ -13,7 +13,7 @@ export async function cmdAccount(args: Parsed, ctx: Ctx): Promise<Reply<object>>
   // account-cli.ts prints as it goes, since add asks in the terminal, and gives an exit code, or a
   // reply with --json. The workers start through ctx.launch, read only when one starts, so a
   // listing needs no build.
-  const done = await accountCommand(args.positional, { json: ctx.json, usage: (message) => new Usage(message), launch: (...start) => ctx.launch(...start) });
+  const done = await accountCommand(args.positional, { json: ctx.json, usage: (message) => new Usage(message), launch: (...start) => ctx.launch(...start), who: ctx.who });
   return typeof done === "number" ? reply({}, { exit: done }) : done;
 }
 
@@ -61,6 +61,7 @@ export function cmdSkill(args: Parsed, ctx: Ctx): Reply<object> {
   if (action === "path") return reply({ path: folder }, { text: [folder] });
   if (action === "install") {
     const { programs, replaced } = installSkill(folder, ctx.env);
+    if (programs.some((program) => !program.already)) recordAction(ctx.paths, { act: "skill-install", ...ctx.who, value: programs.filter((program) => !program.already).map((program) => program.program) });
     const notes = replaced.map(({ place, target }) => `${place} linked to ${target}, which is gone. It now links to this skill.`);
     return reply(
       { programs },
@@ -83,7 +84,7 @@ export function cmdSkill(args: Parsed, ctx: Ctx): Reply<object> {
 export function cmdHook(args: Parsed, ctx: Ctx): Reply<object> {
   const action = args.positional[0];
   if (action === "install") {
-    const { settings, command, changed, backup } = installHook(ctx.env);
+    const { settings, command, changed, backup } = installHook(ctx.paths, ctx.env, ctx.who);
     return reply(
       { settings, command, already: !changed, backup },
       {
@@ -98,7 +99,7 @@ export function cmdHook(args: Parsed, ctx: Ctx): Reply<object> {
     );
   }
   if (action === "remove") {
-    const { settings, command, changed } = removeHook(ctx.env);
+    const { settings, command, changed } = removeHook(ctx.paths, ctx.env, ctx.who);
     return reply(
       { settings, command, removed: changed },
       {

@@ -25,7 +25,7 @@ export function cmdStop(args: Parsed, ctx: Ctx): Reply<object> {
   const runId = record.runId;
   if (typeof args.flags.step === "string") {
     const step = args.flags.step;
-    const stopping = stopStep(paths, runId, step);
+    const stopping = stopStep(paths, runId, step, ctx.who);
     const view = readRun(paths, runId);
     const data = { runId, step, stopping, status: view.status };
     if (!stopping) return reply(data, { notes: [`${runId} is not running (${view.status}), so no step runs and nothing stops.`], next: stateNext(view) });
@@ -34,7 +34,7 @@ export function cmdStop(args: Parsed, ctx: Ctx): Reply<object> {
       next: [waitNext(runId, "waits until the run pauses on the step")],
     });
   }
-  const stop = stopRun(paths, runId);
+  const stop = stopRun(paths, runId, ctx.who);
   const view = readRun(paths, runId);
   const answer = stopReply(runId, stop, { runId, outcome: stop.outcome, status: view.status });
   if (stop.outcome === "stopping") answer.next.push(waitNext(runId, "waits until the run stops"));
@@ -46,7 +46,7 @@ export function cmdPause(args: Parsed, ctx: Ctx): Reply<object> {
   const { paths } = ctx;
   const { record } = needRun(paths, args.positional[0]);
   const runId = record.runId;
-  const pausing = pauseRun(paths, runId);
+  const pausing = pauseRun(paths, runId, ctx.who);
   const view = readRun(paths, runId);
   const data = { runId, status: view.status, pausing };
   if (!pausing) return reply(data, { notes: [`${runId} is not running (${view.status}), so there is nothing to pause.`], next: stateNext(view) });
@@ -58,7 +58,7 @@ export function cmdPause(args: Parsed, ctx: Ctx): Reply<object> {
 
 export function cmdGc(args: Parsed, ctx: Ctx): Reply<object> {
   const dryRun = args.flags["dry-run"] === true;
-  const { removed, kept } = gcRuns(ctx.paths, { dryRun });
+  const { removed, kept } = gcRuns(ctx.paths, ctx.who, { dryRun });
   const text = [
     ...removed.map((item) => `${dryRun ? "would remove" : "removed"} ${item.dir} (${item.branch}): ${item.reason}`),
     ...kept.map((item) => `kept ${item.dir} (${item.branch}): ${item.reason}`),
@@ -74,7 +74,7 @@ export function cmdDiscard(args: Parsed, ctx: Ctx): Reply<object> {
   const runId = record.runId;
   const yes = args.flags.yes === true;
   const text: string[] = [];
-  const worktrees = discardRun(paths, runId, { remove: yes, deleted: (tree) => text.push(`deleted ${tree.branch} and ${tree.dir}`) });
+  const worktrees = discardRun(paths, runId, ctx.who, { remove: yes, deleted: (tree) => text.push(`deleted ${tree.branch} and ${tree.dir}`) });
   if (!worktrees.length) return reply({ runId, worktrees, deleted: false }, { notes: [`${runId} has no worktree left, so there is nothing to discard.`] });
   if (yes) return reply({ runId, worktrees, deleted: true }, { text });
   return reply(
@@ -94,7 +94,7 @@ export function cmdPrune(args: Parsed, ctx: Ctx): Reply<object> {
   const paths = ctx.paths;
   const days = Number(str(args.flags.days) ?? loadConfig(paths).keepDays);
   if (!Number.isFinite(days) || days < 0) throw new Usage("sous prune --days N (or set keepDays in config.json)", "bad_argument", "Give the number of days to keep finished runs.", "sous prune --days 30");
-  const removed = pruneRuns(paths, days);
+  const removed = pruneRuns(paths, days, ctx.who);
   const notes = ctx.json && removed.length > PRUNED_MAX ? [`${removed.length - PRUNED_MAX} more removed run ids not shown.`] : [];
   return reply(
     { days, removed: removed.length, runIds: removed.slice(0, PRUNED_MAX) },

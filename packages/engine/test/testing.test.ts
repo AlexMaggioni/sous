@@ -8,7 +8,7 @@ import { loadRecord } from "../src/runs/records.js";
 import { resumeRun, startRun } from "../src/runs/run.js";
 import { logFile, readEventsAfter, readState, type SavedEvent } from "../src/runs/store.js";
 import type { PersistedRunState } from "../src/runs/persistence/run-persistence.js";
-import { fakeRunner, inProcess, plantState, testHome } from "../src/testing.js";
+import { PERSON, fakeRunner, inProcess, plantState, testHome } from "../src/testing.js";
 import { quiet } from "./runs/fixture.js";
 
 // The test kit at @sous/engine/testing.
@@ -48,7 +48,7 @@ describe("test kit", () => {
     const { runner, calls } = fakeRunner(() => "done");
     const lines: string[] = [];
     const workers = inProcess({ inner: runner, log: (line) => lines.push(line) });
-    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     assert.equal(loadRecord(paths, record.runId)?.pid, process.pid);
     assert.deepEqual(workers.launched, [{ runId: record.runId, mode: "start" }]);
 
@@ -70,11 +70,11 @@ describe("test kit", () => {
       return "done";
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     assert.equal((await workers.ended(record.runId))?.status, "paused");
 
     fail = false;
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     assert.deepEqual(
       workers.launched.map((launch) => launch.mode),
       ["start", "resume"],
@@ -86,7 +86,7 @@ describe("test kit", () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP });
     const workers = inProcess({ inner: fakeRunner(() => "done").runner });
     // A run that never started has nothing to resume, so its worker throws.
-    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     workers.launch(paths, record.runId, "resume");
     assert.equal(loadRecord(paths, record.runId)?.pid, process.pid);
     await assert.rejects(workers.ended(record.runId), /cannot resume/);

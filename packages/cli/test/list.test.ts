@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { loadRecord } from "@sous/engine";
-import { createRun, testHome, updateRecord } from "@sous/engine/testing";
+import { PERSON, createRun, testHome, updateRecord } from "@sous/engine/testing";
 import { describe, it } from "node:test";
 import { sous } from "./sous.js";
 import { git } from "./helpers/git.js";
@@ -19,7 +19,7 @@ describe("sous list", () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP }, { defaultPlace: "folder" });
     const start = Date.parse("2026-11-20T10:00:00.000Z");
     const ids = Array.from({ length: count }, (_, i) => {
-      const { runId } = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+      const { runId } = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {} });
       updateRecord(paths, runId, { createdAt: new Date(start + i * 60_000).toISOString() });
       return runId;
     });
@@ -60,7 +60,7 @@ describe("sous list", () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP }, { defaultPlace: "folder" });
     git(projectDir, "init", "-q", "-b", "main");
     git(projectDir, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "start");
-    const made = (place: "worktree" | "folder" | "none") => createRun(paths, { workflow: "one", projectDir, inputs: {}, place });
+    const made = (place: "worktree" | "folder" | "none") => createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {}, place });
     const worktree = made("worktree");
     const folder = made("folder");
     const scratch = made("none");

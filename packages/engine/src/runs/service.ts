@@ -12,6 +12,7 @@ import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { readJsonFile, writeJsonFile } from "../json-file.js";
 import { openWorkflowDir } from "../workflows/dir.js";
+import { recordAction, SERVICE } from "./actions.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
 import { createRun, type Launcher } from "./launch.js";
@@ -140,6 +141,8 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
         priority: "schedule",
         origin: "schedule",
         schedule: schedule.name,
+        // The person added the schedule, so sous starts it, whatever markers the service has.
+        who: { by: "sous", through: { kind: "schedule", schedule: schedule.name } },
       });
       launch(paths, record.runId, "start");
       log(`schedule ${schedule.name}: started run ${record.runId}`);
@@ -189,13 +192,14 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
     }
     state.resumes[record.runId] = { count: (tried?.count ?? 0) + 1, lastAt: now.toISOString() };
     launch(paths, record.runId, "resume");
+    recordAction(paths, { act: "resume", ...SERVICE, runId: record.runId, workflow: record.workflow });
     log(`resumed run ${record.runId} (${persisted.pauseReason})`);
   }
 
   // Pruning.
   if (config.keepDays !== undefined && (!state.lastPrune || now.getTime() - Date.parse(state.lastPrune) > 3600_000)) {
     state.lastPrune = now.toISOString();
-    const removed = pruneRuns(paths, config.keepDays, now);
+    const removed = pruneRuns(paths, config.keepDays, SERVICE, now);
     if (removed.length) log(`pruned ${removed.length} finished runs older than ${config.keepDays} days`);
   }
 
@@ -203,7 +207,7 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
   if (!state.lastGc || now.getTime() - Date.parse(state.lastGc) > 3600_000) {
     state.lastGc = now.toISOString();
     try {
-      const { removed } = gcRuns(paths, { runs });
+      const { removed } = gcRuns(paths, SERVICE, { runs });
       for (const entry of removed) log(`removed worktree ${entry.dir} (${entry.reason})`);
     } catch (error) {
       log(`worktree cleanup failed: ${(error as Error).message}`);

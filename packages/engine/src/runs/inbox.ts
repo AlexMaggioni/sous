@@ -210,13 +210,15 @@ export function reply(paths: HomePaths, question: Question, typed: Reply): Answe
   const meaning = meaningOf(question, typed);
   if (!("value" in meaning)) return meaning;
   writeAnswer(paths, question, meaning.value);
-  return meaning.notJson ? { answered: true, notJson: true } : { answered: true };
+  return meaning.notJson ? { answered: true, value: meaning.value, notJson: true } : { answered: true, value: meaning.value };
 }
 
-/** A written answer. `notJson` says that --value-json was given, the text did not parse, and the
+/** A written answer and its value. `notJson` says that --value-json was given, the text did not parse, and the
  *  answer went as text. */
 export interface Answered {
   answered: true;
+  /** The value written. */
+  value: unknown;
   notJson?: true;
 }
 

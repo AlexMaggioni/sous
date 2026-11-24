@@ -7,6 +7,7 @@ import { readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
 import { boom, quiet, setup } from "./fixture.js";
+import { PERSON } from "../../src/testing.js";
 
 // A same-ID resume of a parallel run. The replays end in branch order, so a step that opens after
 // them can take another index than it had. A replayed row then lives at its new index, and a
@@ -35,7 +36,7 @@ it("runs a step live after two failed resumes moved an identical step's row", as
       return `${prompt} done, call ${prompts.length}`;
     },
   } as unknown as AgentRunner;
-  const record = createRun(paths, { workflow: "two", projectDir, inputs: {} });
+  const record = createRun(paths, { who: PERSON, workflow: "two", projectDir, inputs: {} });
   const saved = () => readState(paths, record.runId)!;
 
   await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
@@ -103,7 +104,7 @@ return await parallel([
       return `${prompt} ran in ${where}`;
     },
   } as unknown as AgentRunner;
-  const record = createRun(paths, { workflow: "fan", projectDir, inputs: {} });
+  const record = createRun(paths, { who: PERSON, workflow: "fan", projectDir, inputs: {} });
 
   await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
   assert.equal(readState(paths, record.runId)?.status, "paused");

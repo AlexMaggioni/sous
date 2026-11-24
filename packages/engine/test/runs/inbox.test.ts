@@ -10,6 +10,7 @@ import { runQuestions } from "../../src/runs/run.js";
 import { runWorker } from "../../src/runs/worker.js";
 import { dryRun } from "../../src/workflows/dry-run.js";
 import { heldRunner, setup, until } from "./fixture.js";
+import { PERSON } from "../../src/testing.js";
 
 describe("a breakpoint's decision", () => {
   it("reads every answer a breakpoint can get", () => {
@@ -171,7 +172,7 @@ describe("reply", () => {
 describe("a run that waits for an answer", () => {
   it("takes the answer whose hash matches, removes both files, and logs the question and the answer", async () => {
     const { paths, projectDir } = setup({ pick });
-    const record = createRun(paths, { workflow: "pick", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "pick", projectDir, inputs: {} });
     const lines: string[] = [];
     const worker = runWorker(record.runId, "start", { paths, inner: heldRunner(() => "unused").runner, pollMs: 20, log: (line) => lines.push(line) });
 
@@ -221,7 +222,7 @@ describe("a run that waits for an answer", () => {
 const name = await ask('Your name?')
 return 'hello ' + name`,
     });
-    const record = createRun(paths, { workflow: "named", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "named", projectDir, inputs: {} });
     const { runner } = heldRunner(() => "unused");
     const paused = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: () => {} });
     assert.equal(paused?.status, "paused");
@@ -250,7 +251,7 @@ const plan = await breakpoint('Check the plan', { show: 'the plan' })
 return { color, name, ship, plan }`,
     });
     const lines: string[] = [];
-    const dry = await dryRun(paths, { workflow: "dry", projectDir, inputs: {}, log: (line) => lines.push(line) });
+    const dry = await dryRun(paths, { who: PERSON, workflow: "dry", projectDir, inputs: {}, log: (line) => lines.push(line) });
     assert.equal(dry.status, "completed");
     assert.deepEqual(dry.result, { color: "red", name: "stand-in answer", ship: true, plan: { decision: "approve" } });
     assert.deepEqual(questionLines(lines, dry.runId), [

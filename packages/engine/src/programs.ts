@@ -8,6 +8,7 @@ import { CALLER, currentAccount, DEFAULT, stepAccount } from "./accounts.js";
 import { envFor, HARNESSES, harnessName, loginOf, routeHarness, stepModel } from "./agents.js";
 import type { HomePaths, OrcConfig } from "./runs/home.js";
 import { HOOK_COMMAND, type Settings, withoutSessionHook, withSessionHook } from "./hook-settings.js";
+import { recordAction, type Who } from "./runs/actions.js";
 import { Refusal } from "./runs/refusal.js";
 
 /** Where to look for each program: the path config.json gives, then the harness's own order. */
@@ -266,25 +267,27 @@ const modeOf = (file: string): number => statSync(file).mode & 0o7777;
 
 /** Add sous's SessionStart hook to Claude Code's settings in env. Before the first change to a
  *  file that is there, copy it byte for byte to settings.json.sous-backup. A later install keeps
- *  that first copy. */
-export function installHook(env: Env): HookChange {
+ *  that first copy. A change adds a hook-install line by `who` to events.jsonl. */
+export function installHook(paths: HomePaths, env: Env, who: Who): HookChange {
   const { file, real: target, next } = readSettings(env, "install", withSessionHook);
   if (!next) return { settings: file, command: HOOK_COMMAND, changed: false, backup: null };
   const backup = target ? `${file}.sous-backup` : null;
   if (backup && !existsSync(backup)) copyFileSync(target!, backup, constants.COPYFILE_EXCL);
   if (!target) mkdirSync(dirname(file), { recursive: true });
   writeSettings(target ?? file, next, target ? modeOf(target) : undefined);
+  recordAction(paths, { act: "hook-install", ...who, value: file });
   return { settings: file, command: HOOK_COMMAND, changed: true, backup };
 }
 
 /** Take sous's SessionStart hook out of Claude Code's settings in env. A file with no hook of
  *  sous's, or no file, stays as it is. A file the remove leaves empty goes when sous made it: it is
- *  no link and has no backup. */
-export function removeHook(env: Env): HookChange {
+ *  no link and has no backup. A change adds a hook-remove line by `who` to events.jsonl. */
+export function removeHook(paths: HomePaths, env: Env, who: Who): HookChange {
   const { file, real: target, next } = readSettings(env, "remove", withoutSessionHook);
   if (!target || !next) return { settings: file, command: HOOK_COMMAND, changed: false, backup: null };
   const made = !existsSync(`${file}.sous-backup`) && kindAt(file) === "other";
   if (made && !Object.keys(next).length) unlinkSync(file);
   else writeSettings(target, next, modeOf(target));
+  recordAction(paths, { act: "hook-remove", ...who, value: file });
   return { settings: file, command: HOOK_COMMAND, changed: true, backup: null };
 }

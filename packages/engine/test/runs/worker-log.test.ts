@@ -5,13 +5,14 @@ import { describe, it } from "node:test";
 import { createRun } from "../../src/runs/launch.js";
 import { runWorker } from "../../src/runs/worker.js";
 import { heldRunner, setup } from "./fixture.js";
+import { PERSON } from "../../src/testing.js";
 
 describe("the worker's last line", () => {
   it("says why a step failed, on a start and on a resume alike", async () => {
     const { paths, projectDir } = setup({
       two: `export const meta = { name: 'two', description: 'one step' }\nreturn await agent('write it', { label: 'writer' })`,
     });
-    const record = createRun(paths, { workflow: "two", projectDir, inputs: {}, place: "folder" });
+    const record = createRun(paths, { who: PERSON, workflow: "two", projectDir, inputs: {}, place: "folder" });
     const { runner } = heldRunner(() => new Error("the disk is full"));
     const last = async (mode: "start" | "resume") => {
       const lines: string[] = [];

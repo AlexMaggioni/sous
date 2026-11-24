@@ -5,13 +5,14 @@ import { createRun } from "../../src/runs/launch.js";
 import { updateRecord } from "../../src/runs/records.js";
 import { tick } from "../../src/runs/service.js";
 import { plantState, setup } from "./fixture.js";
+import { PERSON } from "../../src/testing.js";
 
 describe("usage limit", () => {
   it("does not resume a run whose workflow changed since it started, tells the user once, and resumes it after --latest", () => {
     const job = (version: string) => `export const meta = { name: 'job', description: 'j' }\nreturn '${version}'`;
     const { paths, projectDir } = setup({ job: job("v1") });
-    const kept = createRun(paths, { workflow: "job", projectDir, inputs: {} });
-    const edited = createRun(paths, { workflow: "job", projectDir, inputs: {} });
+    const kept = createRun(paths, { who: PERSON, workflow: "job", projectDir, inputs: {} });
+    const edited = createRun(paths, { who: PERSON, workflow: "job", projectDir, inputs: {} });
     const at = "2026-11-21T10:00:00.000Z";
     const paused = { startedAt: at, updatedAt: at, agents: [], logs: [], phases: [], status: "paused" as const, pauseReason: "usage_limit", resetHint: "Resets at 2026-11-21T10:30:00.000Z" };
     plantState(paths, { ...paused, runId: kept.runId, script: readFileSync(kept.file, "utf8") });

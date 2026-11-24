@@ -273,6 +273,9 @@ return 1`;
   it("let sous stop on a paused run change only that run's files", async () => {
     const { root, paths, ids } = plant();
     const engine = workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
+    // The home's events.jsonl records the stop. It is there before, so the home folder stays as it was.
+    const events = join(paths.home, "events.jsonl");
+    writeFileSync(events, "");
     const before = walk(root);
     const { code, out } = await sous(paths, ["stop", ids.limit]);
     assert.equal(code, 0, out);
@@ -281,11 +284,13 @@ return 1`;
 
     // Each file that changed is the stopped run's, and each folder that changed holds one of them.
     const changed = changes(before, walk(root)).map((line) => line.replace(/^\w+ /, ""));
-    const files = changed.filter((path) => !path.endsWith("/"));
+    const files = changed.filter((path) => !path.endsWith("/") && path !== events);
     const folders = changed.filter((path) => path.endsWith("/")).map((path) => path.slice(0, -1));
     assert.ok(files.includes(join(engine.runsDir, `${ids.limit}.json`)), changed.join("\n"));
     assert.deepEqual(files.filter((file) => !basename(file).startsWith(`${ids.limit}.`)), [], "no other run's file changed");
     assert.deepEqual(folders.filter((folder) => !files.some((file) => dirname(file) === folder)), [], "no other folder changed");
+    const lines = readFileSync(events, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as { act: string; runId?: string });
+    assert.deepEqual(lines.map(({ act, runId }) => ({ act, runId })), [{ act: "stop", runId: ids.limit }], "events.jsonl gained one stop line");
   });
 
   it("leave every file but the service's own state as it was after a tick", async () => {

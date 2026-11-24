@@ -53,6 +53,10 @@ export function homePaths(home = sousHome()) {
     projects: join(home, "projects.json"),
     daemonPid: join(home, "daemon.pid"),
     daemonState: join(home, "daemon-state.json"),
+    /** Who did what: one line per write. */
+    actions: join(home, "events.jsonl"),
+    /** Each call of the cli, with SOUS_TRACE_CALLS=1. */
+    calls: join(home, "calls.jsonl"),
   };
 }
 

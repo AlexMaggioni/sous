@@ -21,6 +21,7 @@ import {
   waitingRuns,
   type HomePaths,
   type Launcher,
+  type Who,
 } from "@sous/engine";
 import { reply, type Reply } from "./reply.js";
 
@@ -35,6 +36,8 @@ export interface AccountCommandOptions {
   out?: (line: string) => void;
   /** Starts the workers of the runs `sous account use` moves. */
   launch?: Launcher;
+  /** Who calls, for the events line of `sous account use`. */
+  who: Who;
 }
 
 /** Read a line without showing it. Pasted text works. */
@@ -90,7 +93,7 @@ function launcher(options: AccountCommandOptions): Launcher {
   );
 }
 
-export async function cmdAccount(positionals: string[], options: AccountCommandOptions = {}): Promise<number | Reply<object>> {
+export async function cmdAccount(positionals: string[], options: AccountCommandOptions): Promise<number | Reply<object>> {
   const paths = ensureHome(homePaths());
   const json = options.json === true;
   // With --json the lines stay off stdout, and the command gives what it did as data.
@@ -122,7 +125,7 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
       return done({ added: name, program: "claude" });
     }
     case "use": {
-      const result = useAccount(paths, needName(), launcher(options));
+      const result = useAccount(paths, needName(), launcher(options), options.who);
       const label = accountLabel(result.program, result.name);
       out(`sous uses ${harnessName(result.program)} account ${label} for new runs.`);
       for (const run of result.moved) out(`resumed ${run.runId}  ${run.workflow}  on ${label}, was waiting at the limit of ${run.from}`);

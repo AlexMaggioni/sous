@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { rerunRun, resumeRun, runQuestions, startRun, type HomePaths, type RunRecord } from "@sous/engine";
-import { fakeRunner, inProcess, plantState, readState, testHome, writeAnswer, WorkflowError, WorkflowErrorCode, type PersistedRunState } from "@sous/engine/testing";
+import { PERSON, fakeRunner, inProcess, plantState, readState, testHome, writeAnswer, WorkflowError, WorkflowErrorCode, type PersistedRunState } from "@sous/engine/testing";
 import { sous, waitFor } from "./sous.js";
 
 // Which steps run again when a run resumes. Each test pauses a run with a fake agent, resumes it
@@ -35,16 +35,16 @@ type Fake = ReturnType<typeof fake>;
 const boom = () => new WorkflowError("boom", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true });
 
 /** Start the workflow as `sous run` does. `agent.ended` gives the worker's result. */
-const start = (paths: HomePaths, projectDir: string, workflow: string, agent: Fake) => startRun(paths, agent.launch, { workflow, projectDir, inputs: {} });
+const start = (paths: HomePaths, projectDir: string, workflow: string, agent: Fake) => startRun(paths, agent.launch, { who: PERSON, workflow, projectDir, inputs: {} });
 
 /** Resume the run as `sous resume` does, with --latest or --same when given, and wait for its worker. */
 function resume(paths: HomePaths, runId: string, agent: Fake, choice?: "latest" | "same") {
-  resumeRun(paths, agent.launch, runId, choice);
+  resumeRun(paths, agent.launch, runId, PERSON, choice);
   return agent.ended(runId);
 }
 
 /** Run it again as `sous rerun --reuse` does. `agent.ended` gives the new run's result. */
-const reuse = (paths: HomePaths, first: RunRecord, agent: Fake) => rerunRun(paths, agent.launch, first.runId, { place: first.place, reuse: true });
+const reuse = (paths: HomePaths, first: RunRecord, agent: Fake) => rerunRun(paths, agent.launch, first.runId, { who: PERSON, place: first.place, reuse: true });
 
 /** A hand edit of the saved state that stands in for any change that moves only the inputs hash of step a. */
 function moveInputsHashOfA(paths: HomePaths, runId: string): void {

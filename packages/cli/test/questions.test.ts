@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, it } from "node:test";
 import { logFile, runQuestions, startRun, type HomePaths, type RunQuestion } from "@sous/engine";
-import { inProcess, testHome, type InnerRunner } from "@sous/engine/testing";
+import { PERSON, inProcess, testHome, type InnerRunner } from "@sous/engine/testing";
 import { main } from "../src/cli.js";
 import { capture, sous, waitFor } from "./sous.js";
 
@@ -66,7 +66,7 @@ describe("how sous shows a question", () => {
   it("inbox, show and wait name the commands that answer each kind, and the commands answer them", async () => {
     const { paths, projectDir } = testHome({ four });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "four", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "four", projectDir, inputs: {} });
     const [color, name, ship, plan] = await asked(paths, record.runId, 4);
     const id = record.runId;
     const ids = (text: string) => text.split(id).join("<id>");
@@ -260,7 +260,7 @@ return { color, name, ship, plan }`;
   it("asks each question with the words it takes, and the wait goes on to the result", async () => {
     const { paths, projectDir } = testHome({ each });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "each", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "each", projectDir, inputs: {} });
     const wait = await inTerminal(paths, ["wait", record.runId], ["BLUE", "  Ann ", "y", ""]);
     const result = await workers.ended(record.runId);
     assert.equal(wait.code, 0, wait.out);
@@ -278,7 +278,7 @@ return { color, name, ship, plan }`;
   it("a breakpoint's stop stops the run: the wait ends with exit code 3 and the run is stopped", async () => {
     const { paths, projectDir } = testHome({ each });
     const workers = inProcess({ inner: runner, handleSignals: true });
-    const record = startRun(paths, workers.launch, { workflow: "each", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "each", projectDir, inputs: {} });
     const wait = await inTerminal(paths, ["wait", record.runId], ["red", "Ann", "yes", " Stop "]);
     const result = await workers.ended(record.runId);
     assert.equal(wait.code, 3, wait.out);
@@ -290,7 +290,7 @@ return { color, name, ship, plan }`;
   it("a reply that does not fit ends the wait with exit code 1, and the question still waits", async () => {
     const { paths, projectDir } = testHome({ each });
     const workers = inProcess({ inner: runner, handleSignals: true });
-    const record = startRun(paths, workers.launch, { workflow: "each", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "each", projectDir, inputs: {} });
     const wait = await inTerminal(paths, ["wait", record.runId], ["green"]);
     assert.equal(wait.code, 1);
     assert.ok(wait.out.endsWith("sous: answer one of: red, blue\n"), wait.out);
@@ -318,7 +318,7 @@ return await breakpoint('Check the plan', { show: 'the plan' })`;
   it("sous answer <q> stop stops a running run, as sous stop does", async () => {
     const { paths, projectDir } = testHome({ checked });
     const workers = inProcess({ inner: runner, handleSignals: true });
-    const record = startRun(paths, workers.launch, { workflow: "checked", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "checked", projectDir, inputs: {} });
     const [question] = await asked(paths, record.runId, 1);
     assert.deepEqual(await sous(paths, ["answer", question!.id, "Stop"]), { code: 0, out: `stopping ${record.runId}\n` });
     assert.equal((await workers.ended(record.runId))?.status, "aborted");
@@ -328,7 +328,7 @@ return await breakpoint('Check the plan', { show: 'the plan' })`;
   it("sous answer <q> stop stops a paused run at once, as sous stop does", async () => {
     const { paths, projectDir } = testHome({ held });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "held", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "held", projectDir, inputs: {} });
     const paused = await workers.ended(record.runId);
     assert.equal(paused?.status, "paused");
     const [question] = runQuestions(paths, record.runId);
@@ -339,7 +339,7 @@ return await breakpoint('Check the plan', { show: 'the plan' })`;
   it("sous answer <q> stop --json replies with the keys of any answer, answered true", async () => {
     const { paths, projectDir } = testHome({ held });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "held", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "held", projectDir, inputs: {} });
     await workers.ended(record.runId);
     const [question] = runQuestions(paths, record.runId);
     const done = await sous(paths, ["answer", question!.id, "stop", "--json"]);

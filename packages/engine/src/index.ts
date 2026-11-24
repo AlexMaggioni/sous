@@ -15,6 +15,8 @@ export {
 export { listRecords, loadRecord, scopePath, type RunRecord } from "./runs/records.js";
 export { answerCalls, answerCommand, hint, type Reply } from "./runs/inbox.js";
 export { Refusal } from "./runs/refusal.js";
+export { recordAction, traceCall, type Through, type Who } from "./runs/actions.js";
+export { mayStart } from "./runs/consent.js";
 export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
 export { InputProblems, workerProcess, type Launcher } from "./runs/launch.js";
 export { daemonLog, logFile } from "./runs/store.js";

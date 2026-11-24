@@ -72,7 +72,7 @@ export async function cmdCheck(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   const answersFile = str(args.flags.answers);
   const answers = answersFile ? readAnswers(ctx, resolve(answersFile)) : undefined;
   if (!json) out("dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.");
-  const dry = await dryRun(paths, { workflow: name, projectDir: dir, inputs: args.inputs, ...(answers ? { answers } : {}), ...(json ? {} : { log: (line: string) => out(`  ${line}`) }) });
+  const dry = await dryRun(paths, { workflow: name, projectDir: dir, inputs: args.inputs, who: ctx.who, command: ctx.command, ...(answers ? { answers } : {}), ...(json ? {} : { log: (line: string) => out(`  ${line}`) }) });
   if (json) return reply({ ...checked, dryRun: dry }, { notes, exit: dry.status === "completed" ? 0 : 1 });
   if (dry.status === "completed") {
     out(`dry run completed, with ${dry.agents.length} agent step${dry.agents.length === 1 ? "" : "s"} answered by stand-ins`);

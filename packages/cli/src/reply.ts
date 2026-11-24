@@ -90,7 +90,11 @@ function unwritableHome(error: unknown): string | undefined {
 }
 
 /** The lines under an error's first line in text, as its JSON has them. */
-const below = (body: ErrorBody): string[] => [`  change: ${body.change}`, ...(body.call ? [`  try: ${body.call}`] : [])];
+const below = (body: ErrorBody): string[] => [
+  `  change: ${body.change}`,
+  ...(body.call ? [`  try: ${body.call}`] : []),
+  ...(body.forPerson ? [`  for the person: ${body.forPerson}`] : []),
+];
 
 /** The error's body and exit code, and its first line in text. */
 function shapeOf(error: unknown): { body: ErrorBody; exit: number; first: string } {
@@ -116,6 +120,11 @@ function shapeOf(error: unknown): { body: ErrorBody; exit: number; first: string
   const change = "The command is fine. sous itself failed. Read the message, fix the cause and run the same command again.";
   // A fault keeps today's one line in text.
   return { body: { code: "internal", message, change, call: null }, exit: 1, first: `sous: ${message}` };
+}
+
+/** The code an error prints with, such as started_by_people, or internal when sous itself failed. */
+export function errorCode(error: unknown): string {
+  return shapeOf(error).body.code;
 }
 
 /** Print an error, as JSON or as text, and return its exit code: 64 for a usage error, 65 for a

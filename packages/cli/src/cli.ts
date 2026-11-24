@@ -8,10 +8,11 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { daemonLog, ensureHome, homePaths, workerMain, workerProcess, type HomePaths, type Launcher } from "@sous/engine";
+import { daemonLog, ensureHome, homePaths, traceCall, workerMain, workerProcess, type HomePaths, type Launcher, type Who } from "@sous/engine";
 import { parseArgs, str, Usage, type Parsed } from "./args.js";
 import { ALIASES, COMMANDS, type CommandSpec, type Ctx, type Machine } from "./commands/index.js";
-import { print, printError } from "./reply.js";
+import { errorCode, print, printError } from "./reply.js";
+import { personCommand, whoIsCalling } from "./through.js";
 
 /** The built command-line file, which also runs the worker. */
 export function cliFile(): string {
@@ -34,10 +35,9 @@ export interface MainOptions {
   /** Starts the workers of the runs a command starts or resumes. By default each worker is a
    *  process of its own. Tests pass one that runs the worker in their process. */
   launch?: Launcher;
-  /** The environment the commands read: today SOUS_RUN_ID and CLAUDECODE in run and rerun, HOME in
+  /** The environment the commands read: the markers of who calls and SOUS_TRACE_CALLS, HOME in
    *  schedule, HOME and Claude Code's config folder variable in skill, hook and doctor, and
-   *  CODEX_THREAD_ID in doctor.
-   *  The home and the accounts still read process.env. Default: process.env. */
+   *  CODEX_THREAD_ID in doctor. The home and the accounts still read process.env. Default: process.env. */
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
   /** What the commands do on the machine. Tests pass one to fake a terminal. */
@@ -76,9 +76,11 @@ function machine(): Machine {
 }
 
 /** The context of one command. The home and the launcher are made when the command first uses them. */
-function contextOf(json: boolean, options: MainOptions, machine: Machine): Ctx {
+function contextOf(json: boolean, options: MainOptions, machine: Machine, who: Who, command: string): Ctx {
   let paths: HomePaths | undefined;
   return {
+    who,
+    command,
     get paths() {
       return (paths ??= ensureHome(homePaths()));
     },
@@ -116,8 +118,11 @@ sous runs saved workflows in the background.
   sous inbox [run]                      questions waiting for you
   sous answer <question> <text>         answer a question (a run id works when it asks one thing)
         --value-json                    the text is JSON, such as {"a": 1}, not words
+        --by person                     the person decided; an agent passes on their word
   sous approve <question>               approve a breakpoint
+        --by person                     the person decided; an agent passes on their word
   sous send-back <question> <note>      send a breakpoint's step back with a note
+        --by person                     the person decided; an agent passes on their word
   sous pause <run>                      finish running steps, start nothing new
   sous resume <run> [--wait]            go on from where the run paused, failed or was cut off
         --latest | --same               after an edit: take the new version, or keep the run's own
@@ -169,7 +174,20 @@ function commandNamed(name: string): CommandSpec | undefined {
   return Object.hasOwn(ALIASES, name) ? ALIASES[name] : undefined;
 }
 
+/** Run one sous command and give its exit code. With SOUS_TRACE_CALLS=1 in the env, each call
+ *  but a worker's adds a line to calls.jsonl, a refused one with its code. */
 export async function main(argv: string[], options: MainOptions = {}): Promise<number> {
+  const env = options.env ?? process.env;
+  let code: string | undefined;
+  const exit = await call(argv, options, (error) => (code = errorCode(error)));
+  if (env.SOUS_TRACE_CALLS === "1" && argv[0] !== "_worker") {
+    traceCall(ensureHome(homePaths()), { argv, exit, ...(code ? { code } : {}), through: whoIsCalling(env).through });
+  }
+  return exit;
+}
+
+/** Run one command. `failed` hears the error a command ends with. */
+async function call(argv: string[], options: MainOptions, failed: (error: unknown) => void): Promise<number> {
   const [command, ...rest] = argv;
   const host = options.machine ?? machine();
   let json: boolean | undefined;
@@ -184,15 +202,23 @@ export async function main(argv: string[], options: MainOptions = {}): Promise<n
       return 0;
     }
     if (!spec) throw new Usage(`unknown command "${command}". sous help lists them.`);
-    const result = await spec.run(parsed, contextOf(json, options, host));
+    const by = str(parsed.flags.by);
+    const who = whoIsCalling(options.env ?? process.env, by);
+    const result = await spec.run(parsed, contextOf(json, options, host, who, personCommand(argv)));
+    // A read decides nothing, so --by person on it is only a note.
+    if (by !== undefined && !spec.flags.some((flag) => flag.name === "by")) result.notes.push(READ_BY);
     // The text form prints the text, then a note: line for each note, then a next: line for each call.
     return print(result, json, (line) => host.out(line));
   } catch (error) {
+    failed(error);
     // A command line that does not parse is read again for --json, before any "--".
     const asJson = json ?? (rest.includes("--") ? rest.slice(0, rest.indexOf("--")) : rest).includes("--json");
     return printError(error, asJson, (line) => (asJson ? host.out(line) : host.err(line)), withProject(str(parsed?.flags.project)));
   }
 }
+
+/** The note of --by person on a read. */
+const READ_BY = "--by person changes nothing here: this command only reads, and sous records who decided only for a write.";
 
 /** A call in an error keeps the command's --project, when the command it calls takes one. */
 function withProject(project: string | undefined): ((call: string) => string) | undefined {

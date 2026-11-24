@@ -24,8 +24,11 @@ sous runs saved workflows in the background.
   sous inbox [run]                      questions waiting for you
   sous answer <question> <text>         answer a question (a run id works when it asks one thing)
         --value-json                    the text is JSON, such as {"a": 1}, not words
+        --by person                     the person decided; an agent passes on their word
   sous approve <question>               approve a breakpoint
+        --by person                     the person decided; an agent passes on their word
   sous send-back <question> <note>      send a breakpoint's step back with a note
+        --by person                     the person decided; an agent passes on their word
   sous pause <run>                      finish running steps, start nothing new
   sous resume <run> [--wait]            go on from where the run paused, failed or was cut off
         --latest | --same               after an edit: take the new version, or keep the run's own
