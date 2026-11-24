@@ -398,8 +398,9 @@ and `ended`. An event of a nested run also has `scope`. `after` is the seq of th
 the next page. A page holds at most 100 events and stays under 8,000 characters. `more` is true
 when more events wait, and `next` then holds the call for the next page. An `--after` past the last event gives
 no events, a note with the last seq, and the call to read the log from the start. A broken event
-log exits 66 with the code `broken_record`. A question a step asks while it runs has no `asks`
-event, only its `answered` event, so use `sous wait` to catch questions.
+log exits 66 with the code `broken_record`. A question gives an `asks` event when it is asked,
+and an `answered` event with the same `call` when the answer reaches the run. An `asks` event has
+the question in `prompt`, and an agent step's question adds `step`.
 
 `sous step <run> <label> --json` gives `runId`, `step`, the step's name in `sous log`, `scope`, `call`, `calls`, `status` and
 `kind`, which is `agent` or `exec`. `scope` is the run the step ran in: the run's id, or a nested

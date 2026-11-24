@@ -40,6 +40,9 @@ export interface CheckpointCallContext {
   path?: string;
   /** Set when breakpoint(), ask() for anyone or an asking agent asks. */
   purpose?: CheckpointPurpose;
+  /** Set by the run manager. The host calls it once it has asked the question, and the run's
+   *  event log gets an "asked" event. */
+  asked?: () => void;
 }
 
 /** The host's answer to a checkpoint() question. */

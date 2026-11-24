@@ -179,12 +179,14 @@ function logEvent(runId: string, event: PersistedRunEvent): Omit<LogEvent, "seq"
     case "agentEnd":
       return { kind: "step-end", step: event.label, call: event.callIndex, status: event.error === undefined ? "done" : "error", ...(event.tokens ? { tokens: event.tokens } : {}), ...(event.error === undefined ? {} : { failure: brief(event.error) }), ...where };
     case "paused":
-      if (event.reason === "checkpoint_required") return { kind: "asks", ...(event.checkpointContext?.prompt ? { prompt: brief(event.checkpointContext.prompt) } : {}), ...where };
+      if (event.reason === "checkpoint_required") return { kind: "asks", ...(event.checkpointContext ? { call: event.checkpointContext.callIndex, prompt: brief(event.checkpointContext.prompt) } : {}), ...where };
       return { kind: "paused", ...(event.reason ? { reason: event.reason } : {}), ...where };
     case "callRecord":
       return event.record.kind === "checkpoint" && event.record.origin === "confirm" && event.record.outcome === "result" ? { kind: "answered", call: event.record.index, ...where } : undefined;
     case "resumed":
       return { kind: "resumed", ...where };
+    case "asked":
+      return { kind: "asks", call: event.callIndex, prompt: brief(event.prompt), ...(event.step ? { step: event.step } : {}), ...where };
     case "complete":
       return { kind: "ended", status: "completed", ...where };
     case "stopped":

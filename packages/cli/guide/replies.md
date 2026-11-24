@@ -52,7 +52,8 @@ last one. When `more` is true, `next` holds the call for the next page:
 sous log <run> --json --after <seq>
 ```
 
-A question that waits while the run runs has no event in the log. Use `sous wait` to catch it.
+A question gives an `asks` event when it is asked, and an `answered` event with the same `call`
+when the answer reaches the run.
 
 `step --json` gives the last 20 entries of `activity`. `--tail N` gives N, and `--full` gives all
 of them and the whole prompt. `--call N` shows another call of a step that ran more than once.

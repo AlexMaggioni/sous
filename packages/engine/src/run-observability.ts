@@ -502,6 +502,15 @@ export function projectRunEventForPersistence(
     case "resumed":
       projected = { type: "resumed", ...origin() };
       break;
+    case "asked":
+      projected = {
+        type: "asked",
+        ...origin(),
+        callIndex: event.callIndex,
+        prompt: projectText(event.prompt, state),
+        ...(event.step === undefined ? {} : { step: projectText(event.step, state) }),
+      };
+      break;
     default: {
       const exhaustive: never = event;
       throw new TypeError(`Unsupported run event ${(exhaustive as { type?: unknown }).type as string}`);
