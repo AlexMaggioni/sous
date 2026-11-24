@@ -161,7 +161,7 @@ export function cut<T>(items: T[], max: number, flag: string, what: string): { i
 export type RefusalCode =
   | "no_such_run" | "no_such_workflow" | "no_such_question" | "no_such_step" | "step_not_running"
   | "started_by_people" | "not_approved" | "question_for_people" | "needs_person" | "no_person_here"
-  | "step_takes_no_message" | "turn_not_steerable" | "run_is_running" | "cannot_resume" | "not_ours";
+  | "step_takes_no_message" | "turn_not_steerable" | "run_is_running" | "cannot_resume" | "not_ours" | "workflow_invalid";
 export class Refusal extends Error {
   constructor(
     readonly code: RefusalCode,
@@ -209,6 +209,7 @@ export class Refusal extends Error {
 | `step_takes_no_message` | `tell` to a shell, js or py step | `sous stop <run> --step <step>` |
 | `turn_not_steerable` | Codex is in a compact or review turn | the same `tell` |
 | `run_is_running` | `discard` of a running run | `sous stop <run>` |
+| `workflow_invalid` | the workflow file does not parse, or its settings are wrong | `sous check <name> --json` |
 | `cannot_resume` | an older sous saved the run | `sous rerun <run>` |
 | `not_ours` | a skill or hook place holds something sous didn't put there | null |
 
