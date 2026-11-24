@@ -25,7 +25,7 @@ nearest folder up from where you run `sous` that has `.sous/` or `.git`, or the 
 | `secrets.env` | `KEY=value` lines. Code steps get them in their environment, and an MCP server's settings can use them as `${KEY}`. Agents don't get them. The shell environment works too. |
 | `config.json` | `maxAgents` (4), `defaultPlace` ("worktree"), `defaultModel`, `defaultHarness`, `rulesyncGlobal`, `notify` (true), `keepDays` (all kept), `retries` (2) |
 | `runs/`, `records/`, `inbox/`, `logs/` | run state, one record per run, open questions, one log per run |
-| `events.jsonl` | one line per write: who did it (`by`: person, agent or sous), through what (`through`: the person's terminal, Claude Code, Codex, a step of a run, or a schedule), and the run, question or value |
+| `events.jsonl` | one line per write: who did it (`by`: person, agent or sous), through what (`through`: the person's terminal, Claude Code, Codex, a step of a run, a schedule, or the service), and the run, question, schedule or value. Free text is redacted and cut to 1,000 bytes |
 | `calls.jsonl` | with `SOUS_TRACE_CALLS=1`, one line per call: its words, exit code, error code and where it came from |
 | `worktrees/`, `scratch/` | the places runs work in |
 
@@ -507,9 +507,11 @@ through an agent records `by: "agent"`. An agent that passes on the person's own
 approval or send-back through an agent sends the person a notice.
 
 sous refuses to start a workflow with `startedBy: "people"` through an agent or a run, also with
-`--by person`, and also as a rerun, a dry run or a schedule. It exits 66 with
+`--by person`, and also as a rerun, a dry run or a schedule. A run that an agent or a run started
+cannot start one either, through a nested `workflow()` or `choose()`, and its rerun and resume keep
+that rule. An agent cannot add or enable a schedule for one. It exits 66 with
 `started_by_people`, and the error's `forPerson` holds the command for the person to type in a
-plain terminal. A schedule the person added starts it. A run uses the account of the
+plain terminal. A schedule the person added or enabled starts it. A run uses the account of the
 session or the run that started it, as in [Accounts](#accounts).
 
 `sous guide` lists the topics an agent reads to drive sous for a person, and `sous guide <topic>`

@@ -11,11 +11,13 @@
 // that runs the tests never count.
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, mock } from "node:test";
-import { listRecords, loadRecord, readRun, runQuestions, type HomePaths } from "@sous/engine";
-import { inProcess, plantState, testHome, tick, updateRecord, type InnerRunner } from "@sous/engine/testing";
+import { addAccount, listRecords, loadRecord, logFile, readRun, runQuestions, type HomePaths } from "@sous/engine";
+import { createRun, fakeRunner, inProcess, plantState, testHome, tick, updateRecord, PERSON as PERSON_WHO, type InnerRunner } from "@sous/engine/testing";
 import { sous, waitFor } from "./sous.js";
 import { deadPid } from "./helpers/process.js";
 
@@ -50,7 +52,7 @@ interface TraceLine {
 const through = async () => (await import("../src/through.js" as string)) as { whoIsCalling(env: NodeJS.ProcessEnv, by?: string): Who };
 
 /** The keys the design gives a line of events.jsonl. */
-const ACTION_KEYS = new Set(["at", "act", "by", "through", "runId", "workflow", "question", "step", "value", "text", "hash"]);
+const ACTION_KEYS = new Set(["at", "act", "by", "through", "runId", "workflow", "question", "prompt", "schedule", "step", "value", "text", "hash"]);
 
 const PERSON: NodeJS.ProcessEnv = {};
 const CLAUDE: NodeJS.ProcessEnv = { CLAUDECODE: "1", CLAUDE_CODE_SESSION_ID: "s1" };
@@ -539,6 +541,302 @@ describe("piece 7: the wait of an agent", () => {
       // A wait still going ends once its run's worker is dead, so no wait outlives the test.
       for (const run of [agent, person]) if (loadRecord(run.paths, run.runId)?.pid === process.pid) run.end();
       mock.timers.reset();
+    }
+  });
+});
+
+// Review fixes. A run an agent or a step started may not reach a people workflow through a nested
+// workflow() or choose(), and its resume and rerun by an agent stay refused. A person's start and
+// rerun reach it. The record keeps who started the run, so the worker knows it.
+describe("piece 7: people workflows inside a run", () => {
+  const wrapper = `export const meta = { name: "wrapper", description: "Runs deploy inside", place: "none" }\nreturn await workflow("deploy")`;
+
+  /** Start the wrapper as `env`, and give its run and how it ended. */
+  async function wrapped(paths: HomePaths, projectDir: string, env: NodeJS.ProcessEnv, workers = inProcess({ inner: runner })) {
+    const run = await sous(paths, ["run", "wrapper", "--json", "--project", projectDir], { env, launch: workers.launch });
+    assert.equal(run.code, 0, run.out);
+    const runId = json(run).runId as string;
+    return { runId, ended: await workers.ended(runId).catch((error: unknown) => ({ status: "threw", error })), workers };
+  }
+
+  it("an open workflow that calls workflow(\"deploy\") does not deploy for an agent or a step of a run", async () => {
+    for (const env of [CLAUDE, CODEX, RUN_STEP]) {
+      const { paths, projectDir } = testHome({ deploy: fixture("deploy"), wrapper });
+      const { runId, ended } = await wrapped(paths, projectDir, env);
+      assert.notEqual(ended?.status, "completed", `${JSON.stringify(env)}: the wrapper ran deploy to the end`);
+      assert.match(JSON.stringify(readRun(paths, runId)), /started_by_people|started by people/, `${JSON.stringify(env)}: the run says why`);
+      assert.doesNotMatch(readFileSync(logFile(paths, runId), "utf8"), /deployed to/, "deploy's step never ran");
+    }
+  });
+
+  it("a resume or a rerun of that run stays refused, and a person's start and rerun deploy", async () => {
+    const { paths, projectDir } = testHome({ deploy: fixture("deploy"), wrapper });
+    const workers = inProcess({ inner: runner });
+    const { runId } = await wrapped(paths, projectDir, CLAUDE, workers);
+    for (const [env, argv] of [[PERSON, ["resume", runId]], [CLAUDE, ["rerun", runId]]] as const) {
+      const again = await sous(paths, [...argv, "--json"], { env, launch: workers.launch });
+      const id = (json(again).runId as string | undefined) ?? runId;
+      const ended = await workers.ended(id).catch(() => undefined);
+      assert.notEqual(ended?.status, "completed", `${argv.join(" ")}: ${again.out}`);
+    }
+    const person = await wrapped(paths, projectDir, PERSON, workers);
+    assert.equal(person.ended?.status, "completed", JSON.stringify(person.ended));
+    const rerun = await sous(paths, ["rerun", runId, "--json"], { env: PERSON, launch: workers.launch });
+    assert.equal(rerun.code, 0, rerun.out);
+    assert.equal((await workers.ended(json(rerun).runId as string))?.status, "completed", "a person's rerun deploys");
+  });
+
+  it("choose() in a run an agent started does not pick a people workflow", async () => {
+    const picker = `export const meta = { name: "picker", description: "lets an agent pick", place: "none" }\nreturn await choose("Pick one", { workflows: ["deploy"] })`;
+    const { paths, projectDir } = testHome({ deploy: fixture("deploy"), picker });
+    const { runner: picks } = fakeRunner(() => ({ choice: "deploy", reason: "it ships" }));
+    const workers = inProcess({ inner: picks });
+    const run = await sous(paths, ["run", "picker", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch });
+    assert.equal(run.code, 0, run.out);
+    const runId = json(run).runId as string;
+    const ended = await workers.ended(runId).catch(() => undefined);
+    assert.notEqual(ended?.status, "completed", "the agent's run picked deploy and ran it");
+    assert.doesNotMatch(readFileSync(logFile(paths, runId), "utf8"), /deployed to/);
+  });
+});
+
+describe("piece 7: every write once", () => {
+  const STEP = `export const meta = { name: "one", description: "one step", place: "none" }\nreturn await agent("build it", { label: "build" })`;
+  const commitAll = (dir: string) => execFileSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "start"], { cwd: dir });
+
+  /** A home whose project is a git repository, with one finished run in a worktree of its own. */
+  function finishedInWorktree() {
+    const made = testHome({ hello: fixture("hello").replace('place: "none"', 'place: "worktree"') }, { defaultPlace: "worktree" });
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: made.projectDir });
+    commitAll(made.projectDir);
+    const record = createRun(made.paths, { who: PERSON_WHO, workflow: "hello", projectDir: made.projectDir, inputs: { name: "Ada" } });
+    const at = new Date().toISOString();
+    plantState(made.paths, { runId: record.runId, status: "completed", startedAt: at, updatedAt: at, agents: [], logs: [], phases: [] });
+    return { ...made, record };
+  }
+
+  /** A home with one schedule of hello, enabled or not. */
+  function scheduled(enabled: boolean, workflow = "hello") {
+    const made = testHome({ hello: fixture("hello"), deploy: fixture("deploy") });
+    const file = join(made.projectDir, ".sous", "workflows", `${workflow}.js`);
+    writeFileSync(made.paths.schedules, JSON.stringify([{ name: "morning", workflow: file, projectDir: made.projectDir, cron: "0 9 * * *", inputs: { name: "Ada" }, enabled, createdAt: new Date().toISOString() }]));
+    return made;
+  }
+
+  /** A home of its own for skill and hook, under the temporary folder: HOME and CLAUDE_CONFIG_DIR
+   *  point there, in process.env and in the env main reads. */
+  function ownHome() {
+    const home = mkdtempSync(join(tmpdir(), "sous-who-home-"));
+    return { ...testHome(), moved: { HOME: home, CLAUDE_CONFIG_DIR: join(home, "claude-config") } };
+  }
+  async function inHome(made: ReturnType<typeof ownHome>, argv: string[], env: NodeJS.ProcessEnv) {
+    const saved = { HOME: process.env.HOME, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR };
+    Object.assign(process.env, made.moved);
+    try {
+      return await sous(made.paths, argv, { env: { ...env, ...made.moved } });
+    } finally {
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  }
+
+  interface Write {
+    act: string;
+    env: NodeJS.ProcessEnv;
+    /** Makes the home, and gives the call, how to make it and what else the line holds. */
+    prepare(): Promise<{ paths: HomePaths; argv: string[]; call?: (argv: string[], env: NodeJS.ProcessEnv) => Promise<{ code: number; out: string }>; expect?: Record<string, unknown>; done?: () => Promise<unknown> }>;
+  }
+
+  const WRITES: Write[] = [
+    {
+      act: "send-back",
+      env: CLAUDE,
+      async prepare() {
+        const { paths, projectDir } = testHome({ review: fixture("review") });
+        const workers = inProcess({ inner: runner, handleSignals: true });
+        const runId = json(await sous(paths, ["run", "review", "--json", "--project", projectDir], { env: PERSON, launch: workers.launch })).runId as string;
+        const id = await asked(paths, runId);
+        const done = async () => (await sous(paths, ["stop", runId, "--json"], { env: PERSON }), await workers.ended(runId).catch(() => undefined));
+        return { paths, argv: ["send-back", id, "shorter", "--by", "person"], expect: { runId, question: id, text: "shorter", by: "person" }, done };
+      },
+    },
+    {
+      act: "stop-step",
+      env: CODEX,
+      async prepare() {
+        const { paths, projectDir } = testHome({ one: STEP });
+        const { runner: hangs, calls } = fakeRunner((call) => new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted")))));
+        const workers = inProcess({ inner: hangs, handleSignals: true });
+        const runId = json(await sous(paths, ["run", "one", "--json", "--project", projectDir], { env: PERSON, launch: workers.launch })).runId as string;
+        await waitFor(() => calls.some((call) => call.label === "build"), "the step to start");
+        return { paths, argv: ["stop", runId, "--step", "build"], expect: { runId, step: "build" }, done: () => workers.ended(runId).catch(() => undefined) };
+      },
+    },
+    {
+      act: "discard",
+      env: CLAUDE,
+      async prepare() {
+        const { paths, record } = finishedInWorktree();
+        return { paths, argv: ["discard", record.runId, "--yes"], expect: { runId: record.runId, workflow: "hello" } };
+      },
+    },
+    {
+      act: "gc",
+      env: PERSON,
+      async prepare() {
+        const { paths, record } = finishedInWorktree();
+        return { paths, argv: ["gc"], expect: { value: [record.branch] } };
+      },
+    },
+    {
+      act: "prune",
+      env: CODEX,
+      async prepare() {
+        const { paths, projectDir } = testHome({ hello: fixture("hello") });
+        const record = createRun(paths, { who: PERSON_WHO, workflow: "hello", projectDir, inputs: { name: "Ada" } });
+        updateRecord(paths, record.runId, { createdAt: new Date(Date.now() - 10 * 86_400_000).toISOString() });
+        const at = new Date().toISOString();
+        plantState(paths, { runId: record.runId, status: "completed", startedAt: at, updatedAt: at, agents: [], logs: [], phases: [] });
+        return { paths, argv: ["prune", "--days", "5"], expect: { value: [record.runId] } };
+      },
+    },
+    {
+      act: "schedule-add",
+      env: CLAUDE,
+      async prepare() {
+        const { paths, projectDir } = testHome({ hello: fixture("hello") });
+        return { paths, argv: ["schedule", "add", "morning", "hello", "--cron", "0 9 * * *", "--name", "Ada", "--project", projectDir], expect: { schedule: "morning", workflow: "hello" } };
+      },
+    },
+    { act: "schedule-remove", env: CLAUDE, prepare: async () => ({ paths: scheduled(true).paths, argv: ["schedule", "remove", "morning"], expect: { schedule: "morning" } }) },
+    { act: "schedule-enable", env: CODEX, prepare: async () => ({ paths: scheduled(false).paths, argv: ["schedule", "enable", "morning"], expect: { schedule: "morning" } }) },
+    { act: "schedule-disable", env: PERSON, prepare: async () => ({ paths: scheduled(true).paths, argv: ["schedule", "disable", "morning"], expect: { schedule: "morning" } }) },
+    {
+      act: "account-use",
+      env: CLAUDE,
+      async prepare() {
+        const { paths } = testHome();
+        addAccount(paths, "spare", "sk-ant-oat01-made-up-spare-token");
+        return { paths, argv: ["account", "use", "spare"], expect: { value: "claude/spare" } };
+      },
+    },
+    {
+      act: "skill-install",
+      env: CLAUDE,
+      async prepare() {
+        const made = ownHome();
+        return { paths: made.paths, argv: ["skill", "install"], call: (argv, env) => inHome(made, argv, env) };
+      },
+    },
+    {
+      act: "hook-install",
+      env: CLAUDE,
+      async prepare() {
+        const made = ownHome();
+        return { paths: made.paths, argv: ["hook", "install"], call: (argv, env) => inHome(made, argv, env) };
+      },
+    },
+    {
+      act: "hook-remove",
+      env: PERSON,
+      async prepare() {
+        const made = ownHome();
+        assert.equal((await inHome(made, ["hook", "install", "--json"], PERSON)).code, 0);
+        return { paths: made.paths, argv: ["hook", "remove"], call: (argv, env) => inHome(made, argv, env) };
+      },
+    },
+  ];
+
+  const whoOf = (env: NodeJS.ProcessEnv): Through =>
+    env === CLAUDE ? { kind: "agent", program: "claude", session: "s1" } : env === CODEX ? { kind: "agent", program: "codex", session: "t1" } : { kind: "person" };
+
+  for (const write of WRITES) {
+    it(`sous ${write.act} adds exactly one ${write.act} line`, async () => {
+      const { paths, argv, call, expect = {}, done } = await write.prepare();
+      try {
+        const before = actions(paths).length;
+        const printed = await (call ?? ((args, env) => sous(paths, args, { env })))([...argv, "--json"], write.env);
+        assert.equal(printed.code, 0, `${argv.join(" ")}:\n${printed.out}`);
+        const line = oneNew(paths, before, `sous ${argv.join(" ")}`);
+        assert.equal(line.act, write.act, JSON.stringify(line));
+        assert.equal(line.by, expect.by ?? (write.env === PERSON ? "person" : "agent"), JSON.stringify(line));
+        assert.deepEqual(line.through, whoOf(write.env), JSON.stringify(line));
+        for (const [key, value] of Object.entries(expect)) if (key !== "by") assert.deepEqual(line[key], value, `${key}: ${JSON.stringify(line)}`);
+        if (write.act === "send-back") assert.match(String(line.prompt), /Approve the release notes/, "the line keeps the question's text");
+      } finally {
+        await done?.();
+      }
+    });
+  }
+
+  it("a read adds no line: schedule list and test, account list, skill path and check, discard without --yes, gc --dry-run", async () => {
+    const { paths, record } = finishedInWorktree();
+    writeFileSync(paths.schedules, JSON.stringify([{ name: "morning", workflow: record.file, projectDir: record.projectDir, cron: "0 9 * * *", inputs: { name: "Ada" }, enabled: true, createdAt: new Date().toISOString() }]));
+    const made = { ...ownHome(), paths };
+    const before = actions(paths).length;
+    for (const argv of [["schedule", "list"], ["schedule", "test", "morning"], ["account", "list"], ["skill", "path"], ["skill", "check"], ["discard", record.runId], ["gc", "--dry-run"], ["guide", "start"]]) {
+      const printed = await inHome(made, [...argv, "--json"], CLAUDE);
+      assert.equal(printed.code, 0, `${argv.join(" ")}:\n${printed.out}`);
+      assert.equal(actions(paths).length, before, `sous ${argv.join(" ")} is a read and adds no line`);
+    }
+  });
+
+  it("a write that changes nothing adds no line", async () => {
+    const made = ownHome();
+    assert.equal((await inHome(made, ["skill", "install", "--json"], CLAUDE)).code, 0);
+    const before = actions(made.paths).length;
+    assert.equal(before, 1, "the first install adds its line");
+    for (const argv of [["skill", "install"], ["hook", "remove"], ["gc"], ["prune", "--days", "5"]]) {
+      const printed = await inHome(made, [...argv, "--json"], CLAUDE);
+      assert.equal(printed.code, 0, `${argv.join(" ")}:\n${printed.out}`);
+      assert.equal(actions(made.paths).length, before, `sous ${argv.join(" ")} changed nothing and adds no line`);
+    }
+    const { paths } = scheduled(true);
+    for (const argv of [["schedule", "enable", "morning"], ["schedule", "disable", "morning"], ["schedule", "disable", "morning"]]) await sous(paths, [...argv, "--json"], { env: CLAUDE });
+    assert.deepEqual(actions(paths).map((line) => line.act), ["schedule-disable"], "enabling an enabled schedule and disabling a disabled one add no line");
+
+    // A run with no worktree has nothing to discard.
+    const none = testHome({ hello: fixture("hello") });
+    const record = createRun(none.paths, { who: PERSON_WHO, workflow: "hello", projectDir: none.projectDir, inputs: { name: "Ada" } });
+    const at = new Date().toISOString();
+    plantState(none.paths, { runId: record.runId, status: "completed", startedAt: at, updatedAt: at, agents: [], logs: [], phases: [] });
+    const started = actions(none.paths).length;
+    const discarded = await sous(none.paths, ["discard", record.runId, "--yes", "--json"], { env: CLAUDE });
+    assert.equal(discarded.code, 0, discarded.out);
+    assert.equal(actions(none.paths).length, started, "a discard that removed nothing adds no line");
+  });
+
+  it("an agent may not enable a people schedule the person disabled, and the refusal adds no line", async () => {
+    const { paths } = scheduled(false, "deploy");
+    const refused = await sous(paths, ["schedule", "enable", "morning", "--json"], { env: CLAUDE });
+    assert.equal(refused.code, 66, refused.out);
+    const { error } = json(refused);
+    assert.equal(error?.code, "started_by_people", refused.out);
+    assert.match(error.forPerson, /^sous schedule enable morning/, refused.out);
+    assert.equal(JSON.parse(readFileSync(paths.schedules, "utf8"))[0].enabled, false, "the schedule stays disabled");
+    assert.deepEqual(actions(paths), []);
+    const person = await sous(paths, ["schedule", "enable", "morning", "--json"], { env: PERSON });
+    assert.equal(person.code, 0, person.out);
+  });
+
+  it("the text form of started_by_people prints the command for the person on its own line", async () => {
+    const { paths, projectDir } = testHome({ deploy: fixture("deploy") });
+    const refused = await sous(paths, ["run", "deploy", "--project", projectDir], { env: CLAUDE, launch: inProcess({ inner: runner }).launch });
+    assert.equal(refused.code, 66, refused.out);
+    assert.match(refused.out, /\n  for the person: sous run deploy( |\n)/, refused.out);
+  });
+
+  it("sous help lists --by person on answer, approve and send-back", async () => {
+    const { paths } = testHome();
+    const help = (await sous(paths, ["help"])).out.split("\n");
+    for (const command of ["answer", "approve", "send-back"]) {
+      const at = help.findIndex((line) => line.trimStart().startsWith(`sous ${command} `));
+      assert.ok(at >= 0, `sous help lists ${command}`);
+      let end = at + 1;
+      while (/^ {8}-/.test(help[end] ?? "")) end++;
+      assert.match(help.slice(at + 1, end).join("\n"), /--by person/, `the flags of sous ${command} give --by person:\n${help.slice(at, end).join("\n")}`);
     }
   });
 });

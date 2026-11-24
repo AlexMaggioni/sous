@@ -373,15 +373,15 @@ describe("accounts", () => {
     const lines: string[] = [];
     const out = (line: string) => lines.push(line);
     await withHome(paths, async () => {
-      await cmdAccount(["use", "work"], { out, launch: () => assert.fail("no run waits, so sous account use starts no worker") });
-      await cmdAccount([], { out });
+      await cmdAccount(["use", "work"], { who: PERSON, out, launch: () => assert.fail("no run waits, so sous account use starts no worker") });
+      await cmdAccount([], { who: PERSON, out });
       process.env.CLAUDECODE = "1";
       try {
-        await cmdAccount(["list"], { out });
+        await cmdAccount(["list"], { who: PERSON, out });
       } finally {
         delete process.env.CLAUDECODE;
       }
-      await cmdAccount(["rm", "work"], { out });
+      await cmdAccount(["rm", "work"], { who: PERSON, out });
     });
     const text = lines.join("\n");
     assert.match(text, /^sous uses Claude Code account work for new runs\.$/m);
@@ -400,7 +400,7 @@ describe("accounts", () => {
     const lines: string[] = [];
     const out = (line: string) => lines.push(line);
     // The worker it starts for a moved run never runs: the cli file does not exist.
-    const use = (name: string) => withHome(paths, () => cmdAccount(["use", name], { out, launch: workerProcess(() => NO_CLI) }));
+    const use = (name: string) => withHome(paths, () => cmdAccount(["use", name], { who: PERSON, out, launch: workerProcess(() => NO_CLI) }));
 
     await use("spare");
     assert.deepEqual(lines.splice(0), ["sous uses Claude Code account spare for new runs."]);
@@ -443,7 +443,7 @@ describe("accounts", () => {
     addAccount(paths, "spare", SPARE);
     const lines: string[] = [];
     const out = (line: string) => lines.push(line);
-    const use = (name: string) => withHome(paths, () => cmdAccount(["use", name], { out, launch: workerProcess(() => NO_CLI) }));
+    const use = (name: string) => withHome(paths, () => cmdAccount(["use", name], { who: PERSON, out, launch: workerProcess(() => NO_CLI) }));
 
     const workers = inProcess({ inner: loginRunner(() => true).runner });
     const record = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });

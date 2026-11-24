@@ -90,7 +90,11 @@ function unwritableHome(error: unknown): string | undefined {
 }
 
 /** The lines under an error's first line in text, as its JSON has them. */
-const below = (body: ErrorBody): string[] => [`  change: ${body.change}`, ...(body.call ? [`  try: ${body.call}`] : [])];
+const below = (body: ErrorBody): string[] => [
+  `  change: ${body.change}`,
+  ...(body.call ? [`  try: ${body.call}`] : []),
+  ...(body.forPerson ? [`  for the person: ${body.forPerson}`] : []),
+];
 
 /** The error's body and exit code, and its first line in text. */
 function shapeOf(error: unknown): { body: ErrorBody; exit: number; first: string } {

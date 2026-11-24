@@ -689,13 +689,13 @@ export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: R
   // approve and send-back keep their name, and an answer at the prompt is an answer.
   const act = typed.via === "approve" || typed.via === "send-back" ? typed.via : "answer";
   const said = act === "send-back" ? { text: decisionOf(result.value).note ?? "" } : { value: result.value };
-  const notice = noticeOf(recordAction(paths, { act, ...who, runId: question.runId, question: question.id, ...said }));
+  const notice = noticeOf(recordAction(paths, { act, ...who, runId: question.runId, question: question.id, prompt: question.prompt, ...said }));
   if (notice) notify(notice.title, notice.message, loadConfig(paths).notify);
   return { answered: true, running: processAlive(findRecord(paths, question.runId)?.pid), ...(result.notJson ? { notJson: true as const } : {}) };
 }
 
 /** A stopped run's worktrees. With `remove`, deletes each branch and folder and calls `deleted`
- *  after each. */
+ *  after each. A discard that removed something records it. */
 export function discardRun(paths: HomePaths, runId: string, who: Who, options: { remove?: boolean; deleted?: (tree: { dir: string; branch: string }) => void } = {}): Array<{ dir: string; branch: string }> {
   const record = needRecord(paths, runId);
   if (processAlive(record.pid)) throw new Refusal("run_is_running", `${record.runId} is running. sous stop ${record.runId} first.`, "Stop the run, then discard it.", `sous stop ${record.runId} --json`);
@@ -705,7 +705,7 @@ export function discardRun(paths: HomePaths, runId: string, who: Who, options: {
       removeWorktree(record.projectDir, tree.dir, tree.branch);
       options.deleted?.(tree);
     }
-    recordAction(paths, { act: "discard", ...who, runId: record.runId, workflow: record.workflow });
+    if (trees.length) recordAction(paths, { act: "discard", ...who, runId: record.runId, workflow: record.workflow });
   }
   return trees;
 }
@@ -731,8 +731,8 @@ export function workerRuns(run: RunView): boolean {
 }
 
 /** Remove finished runs older than `days`: the engine's state, sous's record and the log. Worktrees
- *  stay. `who` is null for the service's own clean up, which records nothing. */
-export function pruneRuns(paths: HomePaths, days: number, who: Who | null, now = new Date()): string[] {
+ *  stay. A prune that removed a run records it, the service's own as SERVICE. */
+export function pruneRuns(paths: HomePaths, days: number, who: Who, now = new Date()): string[] {
   const cutoff = now.getTime() - days * 86_400_000;
   const removed: string[] = [];
   for (const run of listRuns(paths)) {
@@ -740,7 +740,7 @@ export function pruneRuns(paths: HomePaths, days: number, who: Who | null, now =
     if (Date.parse(record.createdAt) > cutoff || workerRuns(run) || startedAndUnfinished(run)) continue;
     if (forgetRun(paths, record)) removed.push(record.runId);
   }
-  if (who && removed.length) recordAction(paths, { act: "prune", ...who, value: removed });
+  if (removed.length) recordAction(paths, { act: "prune", ...who, value: removed });
   return removed;
 }
 
@@ -757,14 +757,14 @@ export function busyWorktrees(paths: HomePaths, runs = listRuns(paths)): Set<str
 
 /**
  * Remove sous's merged worktrees in each project a run used, and keep those of the runs that have
- * not finished. The service passes the scan it already made as `runs`, and null as `who`, so its
- * clean up records nothing. A dry run, or a gc that removes nothing, records nothing either.
+ * not finished. The service passes the scan it already made as `runs`, and SERVICE as `who`. A
+ * dry run, or a gc that removes nothing, records nothing.
  */
-export function gcRuns(paths: HomePaths, who: Who | null, options: { dryRun?: boolean; runs?: RunView[] } = {}): GcResult {
+export function gcRuns(paths: HomePaths, who: Who, options: { dryRun?: boolean; runs?: RunView[] } = {}): GcResult {
   const runs = options.runs ?? listRuns(paths);
   const projects = [...new Set(runs.map((run) => run.record.projectDir))];
   const result = gcWorktrees(paths, projects, { dryRun: options.dryRun, busy: busyWorktrees(paths, runs) });
-  if (who && result.removed.length && !options.dryRun) recordAction(paths, { act: "gc", ...who, value: result.removed.map((tree) => tree.branch) });
+  if (result.removed.length && !options.dryRun) recordAction(paths, { act: "gc", ...who, value: result.removed.map((tree) => tree.branch) });
   return result;
 }
 

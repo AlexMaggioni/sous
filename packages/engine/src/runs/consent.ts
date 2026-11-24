@@ -2,7 +2,9 @@
 // person's own terminal, or from a schedule the person added.
 
 import type { ResolvedWorkflow } from "../workflows/dir.js";
-import type { Who } from "./actions.js";
+import { workflowExtras } from "../workflows/meta.js";
+import { parseWorkflowScript } from "../workflows/script.js";
+import type { Through, Who } from "./actions.js";
 import { Refusal } from "./refusal.js";
 
 /**
@@ -18,4 +20,21 @@ export function mayStart(resolved: Pick<ResolvedWorkflow, "name" | "extras">, wh
   const change =
     "Give the person the command to type in their own terminal. A person who typed it inside Claude Code or Codex types it again in a plain terminal.";
   throw new Refusal("started_by_people", message, change, null, command);
+}
+
+/**
+ * The nested lookup of a run, guarded: a run an agent or a step of a run started may not reach a
+ * people workflow through workflow() or choose(), also in its resume and its rerun by an agent.
+ * `through` is how the run's own start reached sous. A run a person or a schedule started, and an
+ * older record with none, reach every workflow.
+ */
+export function nestedLookup(through: Through | undefined, lookup: (name: string) => string | undefined): (name: string) => string | undefined {
+  if (through?.kind !== "agent" && through?.kind !== "run") return lookup;
+  return (name) => {
+    const script = lookup(name);
+    if (script === undefined) return script;
+    const extras = workflowExtras(parseWorkflowScript(script).meta);
+    mayStart({ name, extras }, { by: "agent", through }, `sous run ${name}`);
+    return script;
+  };
 }

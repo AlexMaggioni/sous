@@ -87,6 +87,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
     ...(request.rerunOf ? { rerunOf: request.rerunOf } : {}),
     ...(reuse ? { reuseFrom: reuse.runId } : {}),
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
+    through: request.who.through,
     accounts: accountsForRun(paths, process.env, { caller: request.caller, parentRunId: request.startedByRun }),
   };
   saveRecord(paths, record);

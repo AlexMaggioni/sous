@@ -84,7 +84,7 @@ export function cmdSkill(args: Parsed, ctx: Ctx): Reply<object> {
 export function cmdHook(args: Parsed, ctx: Ctx): Reply<object> {
   const action = args.positional[0];
   if (action === "install") {
-    const { settings, command, changed, backup } = installHook(ctx.env);
+    const { settings, command, changed, backup } = installHook(ctx.paths, ctx.env, ctx.who);
     return reply(
       { settings, command, already: !changed, backup },
       {
@@ -99,7 +99,7 @@ export function cmdHook(args: Parsed, ctx: Ctx): Reply<object> {
     );
   }
   if (action === "remove") {
-    const { settings, command, changed } = removeHook(ctx.env);
+    const { settings, command, changed } = removeHook(ctx.paths, ctx.env, ctx.who);
     return reply(
       { settings, command, removed: changed },
       {
