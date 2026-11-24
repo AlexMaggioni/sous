@@ -34,8 +34,10 @@ export interface MainOptions {
   /** Starts the workers of the runs a command starts or resumes. By default each worker is a
    *  process of its own. Tests pass one that runs the worker in their process. */
   launch?: Launcher;
-  /** The environment the commands read: today SOUS_RUN_ID and CLAUDECODE in run and rerun, and
-   *  HOME in schedule, skill, hook and doctor. The home and the accounts still read process.env. Default: process.env. */
+  /** The environment the commands read: today SOUS_RUN_ID and CLAUDECODE in run and rerun, HOME in
+   *  schedule, HOME and Claude Code's config folder variable in skill, hook and doctor, and
+   *  CODEX_THREAD_ID in doctor.
+   *  The home and the accounts still read process.env. Default: process.env. */
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
   /** What the commands do on the machine. Tests pass one to fake a terminal. */

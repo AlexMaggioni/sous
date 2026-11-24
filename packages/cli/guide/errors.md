@@ -36,7 +36,7 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | `step_not_running` | The step is not running now. Read `sous show <run> --json`. |
 | `run_is_running` | Stop the run first, if the person wants that. |
 | `cannot_resume` | An older sous saved the run. Rerun it, after asking. |
-| `not_ours` | A skill place holds something sous did not put there, or Claude Code's `settings.json` does not parse. Tell the person. |
+| `not_ours` | A skill place holds something sous did not put there, or Claude Code's `settings.json` does not parse, has a shape sous can't edit, or is a broken link. Tell the person. |
 | `home_not_writable` | sous can't write to its home. Under Codex the sandbox blocks it. Tell the person what `change` says. |
 | `broken_record` | A file sous keeps, such as a run's event log, does not parse. Tell the person. |
 

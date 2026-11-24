@@ -3,7 +3,7 @@
 // prints its lines, then its notes and next calls, and an error goes to stderr.
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import { homePaths, InputProblems, Refusal } from "@sous/engine";
+import { homePaths, homeWriteProblem, InputProblems, Refusal } from "@sous/engine";
 import { Usage } from "./args.js";
 
 /** A command the caller can run next, and what it does. */
@@ -63,6 +63,7 @@ const FIX_COMMAND = "Fix the command line. sous help lists the commands and thei
 
 /** The caller is a Codex session. The one place the cli reads CODEX_THREAD_ID, until who is calling
  *  comes with the context. */
+// The raw variable, not piece 7's whoIsCalling: a Codex step of a run is still sandboxed, and whoIsCalling reports it as `through: run`.
 export const underCodex = (env: NodeJS.ProcessEnv): boolean => Boolean(env.CODEX_THREAD_ID);
 
 /** What to do when sous can't write to its home. The Codex sandbox lets a command write only in its
@@ -73,7 +74,7 @@ export const homeAdvice = (home: string): string =>
 /** The codes of a write the system refused. */
 const NOT_WRITABLE = ["EACCES", "EPERM", "EROFS"];
 /** The calls that write. A refused read, such as scandir of a folder sous can't list, stays internal.
- *  open is both, and counts as a write, since sous reads only files it wrote. */
+ *  open is both, so a refused open counts only when a write to the home fails too. */
 const WRITES = ["open", "mkdir", "mkdtemp", "rename", "unlink", "rmdir", "rm", "write", "copyfile", "symlink", "link", "chmod", "utime", "ftruncate"];
 
 /** The sous home, when error is a write the system refused under it. */
@@ -84,7 +85,8 @@ function unwritableHome(error: unknown): string | undefined {
   const home = homePaths().home;
   const inside = relative(home, resolve(path));
   const outside = inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside);
-  return outside ? undefined : home;
+  if (outside) return undefined;
+  return syscall !== "open" || homeWriteProblem() !== undefined ? home : undefined;
 }
 
 /** The lines under an error's first line in text, as its JSON has them. */

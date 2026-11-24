@@ -507,11 +507,14 @@ gone. It refuses with `not_ours` when either place holds anything else, and then
 `sous hook install` adds a SessionStart hook to Claude Code's `settings.json`, in
 `CLAUDE_CONFIG_DIR` or `~/.claude`. It runs `sous status --line 2>/dev/null || true`, so a new
 session hears what needs the person, and nothing when nothing does. sous finds its entry by that
-exact command. A second install changes nothing. Before it changes a file that is there, install
-copies it to `settings.json.sous-backup`. `sous hook remove` deletes only sous's entry, and the
-`SessionStart` list or `hooks` key when nothing else is left in it. A `settings.json` that does not
-parse is refused with `not_ours` and stays as it is. The hook is off until you install it. Codex
-gets no hook yet, since its hook format is not checked.
+exact command. A second install changes nothing. Before it first changes a file that is there,
+install copies it to `settings.json.sous-backup`, and a later install keeps that first copy. When
+`settings.json` is a link, sous writes the file it points to, and the link stays. `sous hook remove`
+deletes only sous's entry, and the `SessionStart` list or `hooks` key when nothing else is left in
+it. When sous made the file and the remove leaves it empty, the file goes too. A `settings.json`
+that does not parse, has a shape sous can't edit, or is a broken link is refused with `not_ours`
+and stays as it is. The hook is off until you install it. Codex gets no hook yet, since its hook
+format is not checked.
 
 ## Status
 

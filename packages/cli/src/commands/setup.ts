@@ -89,11 +89,11 @@ export function cmdHook(args: Parsed, ctx: Ctx): Reply<object> {
       {
         text: [changed ? `${settings} now runs ${command} when a Claude Code session starts.` : `${settings} already runs ${command} when a Claude Code session starts.`],
         notes: [
-          ...(backup ? [`The file as it was is in ${backup}.`] : []),
+          ...(backup ? [`The file as it was before sous first edited it is in ${backup}.`] : []),
           "A new session runs the hook. A session that is open now does not.",
           "Codex gets no hook. Its hook format is not checked yet.",
         ],
-        next: [{ call: "sous status --line", does: "prints the line the hook gives a new session, or nothing" }],
+        next: [{ call: "sous status --line --json", does: "gives the line the hook prints in a new session, empty when nothing needs you" }],
       },
     );
   }
@@ -102,8 +102,8 @@ export function cmdHook(args: Parsed, ctx: Ctx): Reply<object> {
     return reply(
       { settings, command, removed: changed },
       {
-        text: [changed ? `Removed ${command} from ${settings}.` : `${settings} has no hook of sous's.`],
-        notes: changed ? [] : [`Nothing to remove. ${settings} does not run ${command}.`],
+        text: [changed ? `Removed ${command} from ${settings}.` : `Left ${settings} as it was.`],
+        notes: changed ? [] : ["No sous hook to remove."],
       },
     );
   }

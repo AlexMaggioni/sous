@@ -1,13 +1,13 @@
 // The installed Claude Code and Codex, as `sous doctor` and `sous account add` see them. Each check
 // goes through the harness: find, version, models, and for `--live` one step.
 
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, renameSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { createHarness, type FindOptions, type HarnessId } from "@sous/harnesses";
 import { CALLER, currentAccount, DEFAULT, stepAccount } from "./accounts.js";
 import { envFor, HARNESSES, harnessName, loginOf, routeHarness, stepModel } from "./agents.js";
 import type { HomePaths, OrcConfig } from "./runs/home.js";
-import { HOOK_COMMAND, withoutSessionHook, withSessionHook } from "./hook-settings.js";
+import { HOOK_COMMAND, type Settings, withoutSessionHook, withSessionHook } from "./hook-settings.js";
 import { Refusal } from "./runs/refusal.js";
 
 /** Where to look for each program: the path config.json gives, then the harness's own order. */
@@ -204,60 +204,87 @@ export function installSkill(skillDir: string, env: Env): { programs: Array<{ pr
 
 // ── The session-start hook in Claude Code's settings ──
 
-type Settings = Record<string, unknown>;
-
 export interface HookChange {
   /** Claude Code's settings file. */
   settings: string;
   command: string;
   /** The edit changed the file. */
   changed: boolean;
-  /** The copy of the file as it was, when the edit changed a file that was there. */
+  /** The copy of the file as it was before sous first edited it, when there was a file. */
   backup: string | null;
 }
 
-/** Claude Code's settings file in env, and its value. A file that does not parse, or has a shape
- *  sous can't edit, refuses with not_ours and changes nothing. */
-function readSettings(env: Env, action: "install" | "remove", edit: (value: unknown, command: string) => Settings | undefined): { file: string; existed: boolean; next: Settings | undefined } {
+interface SettingsRead {
+  file: string;
+  /** The file the edit writes: file, or the end of the link file is. Undefined when there is no file. */
+  real: string | undefined;
+  next: Settings | undefined;
+}
+
+/** Claude Code's settings file in env, and its value. A file that does not parse, has a shape
+ *  sous can't edit, or is a broken link, refuses with not_ours and changes nothing. */
+function readSettings(env: Env, action: "install" | "remove", edit: (value: unknown, command: string) => Settings | undefined): SettingsRead {
   const file = createHarness("claude").places(env).settings!;
-  const existed = existsSync(file);
-  const refuse = (why: string) =>
-    new Refusal("not_ours", `${file} ${why}, so sous can't edit it.`, `Fix ${file} so it is a JSON object, or move it aside, then run the same command again.`, `sous hook ${action} --json`);
-  let value: unknown = {};
-  if (existed) {
-    try {
-      value = JSON.parse(readFileSync(file, "utf8"));
-    } catch {
-      throw refuse("does not parse as JSON");
-    }
+  const call = `sous hook ${action} --json`;
+  const refuse = (why: string) => new Refusal("not_ours", `${file} ${why}, so sous can't edit it.`, `Fix ${file} so it is a JSON object, or move it aside, then run the same command again.`, call);
+  const kind = kindAt(file);
+  if (kind === undefined) return { file, real: undefined, next: edit({}, HOOK_COMMAND) };
+  const target = kind === "link" ? real(file) : file;
+  if (target === undefined) {
+    const points = resolve(dirname(file), readlinkSync(file));
+    throw new Refusal("not_ours", `${file} is a broken link to ${points}, so sous can't edit it.`, `Point the link at ${file} to a settings file that is there, or remove the link, then run the same command again.`, call);
+  }
+  const text = readFileSync(target, "utf8");
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw refuse("does not parse as JSON");
   }
   try {
-    return { file, existed, next: edit(value, HOOK_COMMAND) };
+    return { file, real: target, next: edit(value, HOOK_COMMAND) };
   } catch (error) {
     throw refuse((error as Error).message);
   }
 }
 
-/** Write the settings in place, which keeps a link to a dotfiles folder a link. */
-const writeSettings = (file: string, value: Settings) => writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+/** Write value over target in one step: a file next to it, renamed over it, with the old file's
+ *  mode. target is the real file, so a link to a dotfiles folder stays a link. */
+function writeSettings(target: string, value: Settings, mode: number | undefined): void {
+  const temp = `${target}.sous-${process.pid}.tmp`;
+  writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`);
+  try {
+    if (mode !== undefined) chmodSync(temp, mode);
+    renameSync(temp, target);
+  } catch (error) {
+    unlinkSync(temp);
+    throw error;
+  }
+}
 
-/** Add sous's SessionStart hook to Claude Code's settings in env. Before a change to a file that
- *  is there, copy it byte for byte to settings.json.sous-backup. */
+const modeOf = (file: string): number => statSync(file).mode & 0o7777;
+
+/** Add sous's SessionStart hook to Claude Code's settings in env. Before the first change to a
+ *  file that is there, copy it byte for byte to settings.json.sous-backup. A later install keeps
+ *  that first copy. */
 export function installHook(env: Env): HookChange {
-  const { file, existed, next } = readSettings(env, "install", withSessionHook);
+  const { file, real: target, next } = readSettings(env, "install", withSessionHook);
   if (!next) return { settings: file, command: HOOK_COMMAND, changed: false, backup: null };
-  const backup = existed ? `${file}.sous-backup` : null;
-  if (backup) copyFileSync(file, backup);
-  else mkdirSync(dirname(file), { recursive: true });
-  writeSettings(file, next);
+  const backup = target ? `${file}.sous-backup` : null;
+  if (backup && !existsSync(backup)) copyFileSync(target!, backup, constants.COPYFILE_EXCL);
+  if (!target) mkdirSync(dirname(file), { recursive: true });
+  writeSettings(target ?? file, next, target ? modeOf(target) : undefined);
   return { settings: file, command: HOOK_COMMAND, changed: true, backup };
 }
 
 /** Take sous's SessionStart hook out of Claude Code's settings in env. A file with no hook of
- *  sous's, or no file, stays as it is. */
+ *  sous's, or no file, stays as it is. A file the remove leaves empty goes when sous made it: it is
+ *  no link and has no backup. */
 export function removeHook(env: Env): HookChange {
-  const { file, existed, next } = readSettings(env, "remove", withoutSessionHook);
-  if (!existed || !next) return { settings: file, command: HOOK_COMMAND, changed: false, backup: null };
-  writeSettings(file, next);
+  const { file, real: target, next } = readSettings(env, "remove", withoutSessionHook);
+  if (!target || !next) return { settings: file, command: HOOK_COMMAND, changed: false, backup: null };
+  const made = !existsSync(`${file}.sous-backup`) && kindAt(file) === "other";
+  if (made && !Object.keys(next).length) unlinkSync(file);
+  else writeSettings(target, next, modeOf(target));
   return { settings: file, command: HOOK_COMMAND, changed: true, backup: null };
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
@@ -228,6 +228,43 @@ describe("sous doctor, the skill", () => {
       ],
     );
     assert.ok(!reply.next.some((next) => next.call.startsWith("sous skill install")), JSON.stringify(reply.next));
+  });
+});
+
+describe("sous doctor, the home", () => {
+  it("gives the home's path and says it is writable", async () => {
+    const h = placesHome();
+    const printed = await within(h, ["doctor", "--json"]);
+    assert.deepEqual(replyOf(printed).home, { path: h.paths.home, writable: true }, printed.out);
+  });
+
+  it("says a read-only home is not writable, and why", { skip: asRoot && "root writes anywhere" }, async () => {
+    const h = placesHome();
+    const restore = readOnly(h.paths.home);
+    try {
+      const printed = await within(h, ["doctor", "--json"]);
+      assert.equal(printed.code, 1, printed.out);
+      const home = replyOf(printed).home as { path: string; writable: boolean; problem?: unknown };
+      assert.equal(home.path, h.paths.home);
+      assert.equal(home.writable, false, printed.out);
+      assert.equal(typeof home.problem, "string", printed.out);
+    } finally {
+      restore();
+    }
+  });
+
+  it("a refused write outside the home stays internal", { skip: asRoot && "root writes anywhere" }, async () => {
+    const h = placesHome();
+    const config = join(h.home, "claude-config");
+    mkdirSync(config, { recursive: true });
+    chmodSync(config, 0o555);
+    try {
+      const printed = await within(h, ["hook", "install", "--json"], { CODEX_THREAD_ID: "thread-1" });
+      assert.equal(printed.code, 1, printed.out);
+      assert.equal((JSON.parse(printed.out) as { error: { code: string } }).error.code, "internal", printed.out);
+    } finally {
+      chmodSync(config, 0o755);
+    }
   });
 });
 

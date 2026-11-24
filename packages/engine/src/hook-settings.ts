@@ -4,7 +4,8 @@
 /** The one command sous's hook runs. It prints the status line, or nothing, and never fails. */
 export const HOOK_COMMAND = "sous status --line 2>/dev/null || true";
 
-type Settings = Record<string, unknown>;
+/** Claude Code's settings, as JSON.parse gives a file whose shape sous can edit. */
+export type Settings = Record<string, unknown>;
 interface HookGroup {
   matcher?: string;
   hooks: Array<{ type: string; command?: string }>;

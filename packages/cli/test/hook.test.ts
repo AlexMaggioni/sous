@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
@@ -96,7 +96,10 @@ function replyOf(printed: { code: number; out: string }): Parsed {
   assert.ok(!("error" in parsed!), printed.out);
   assert.ok(Array.isArray(parsed!.notes), `no notes array: ${printed.out}`);
   assert.ok(Array.isArray(parsed!.next), `no next array: ${printed.out}`);
-  for (const next of parsed!.next) assert.equal(callProblem(next.call), undefined);
+  for (const next of parsed!.next) {
+    assert.equal(callProblem(next.call), undefined);
+    assert.ok(next.call.split(" ").includes("--json"), `a next call without --json: ${next.call}`);
+  }
   return parsed!;
 }
 
@@ -177,17 +180,73 @@ describe("sous hook install", () => {
   });
 });
 
+describe("sous hook install, the backup and links", () => {
+  it("keeps the first backup byte for byte through install, remove, install", async () => {
+    const h = newHome();
+    const first = plantSettings(h);
+    assert.equal((await call(h, ["hook", "install"])).code, 0);
+    assert.equal((await call(h, ["hook", "remove"])).code, 0);
+    plantSettings(h, { ...PERSONS_SETTINGS, model: "sonnet" });
+    const printed = await call(h, ["hook", "install", "--json"]);
+    assert.equal(printed.code, 0, printed.out);
+    assert.equal(replyOf(printed).backup, h.backup, printed.out);
+    assert.equal(readFileSync(h.backup, "utf8"), first, "the second install wrote over the first backup");
+    assert.equal(readSettings(h).model, "sonnet");
+  });
+
+  it("keeps a linked settings.json a link, and writes the hook into its target", async () => {
+    const h = newHome();
+    const target = join(h.home, "dotfiles", "claude-settings.json");
+    mkdirSync(dirname(target), { recursive: true });
+    const text = `${JSON.stringify(PERSONS_SETTINGS, null, 2)}\n`;
+    writeFileSync(target, text);
+    mkdirSync(dirname(h.settings), { recursive: true });
+    symlinkSync(target, h.settings);
+    const printed = await call(h, ["hook", "install", "--json"]);
+    assert.equal(printed.code, 0, printed.out);
+    assert.ok(lstatSync(h.settings).isSymbolicLink(), "the install replaced the link with a file");
+    assert.equal(readlinkSync(h.settings), target);
+    assert.ok(readFileSync(target, "utf8").includes(COMMAND), "the link's target has no hook");
+    assert.equal(readFileSync(h.backup, "utf8"), text);
+  });
+
+  it("refuses a settings.json that links into a missing folder with not_ours, naming the link", async () => {
+    const h = newHome();
+    const gone = join(h.home, "gone", "settings.json");
+    mkdirSync(dirname(h.settings), { recursive: true });
+    symlinkSync(gone, h.settings);
+    const printed = await call(h, ["hook", "install", "--json"]);
+    assert.equal(printed.code, 66, printed.out);
+    const { error } = JSON.parse(printed.out) as { error: { code: string; message: string; change: string; call: string | null } };
+    assert.equal(error.code, "not_ours", printed.out);
+    assert.ok(error.change.includes(h.settings), `the change does not name the link ${h.settings}: ${error.change}`);
+    assert.ok(error.message.includes(gone), `the message does not name where the link points: ${error.message}`);
+    assert.equal(callProblem(error.call!), undefined);
+    assert.ok(!existsSync(dirname(gone)), "the install made the missing folder");
+    assert.equal(readlinkSync(h.settings), gone);
+  });
+});
+
 describe("sous hook remove", () => {
   it("leaves the file as it was before the install", async () => {
     const h = newHome();
-    plantSettings(h);
-    const before = readSettings(h);
+    const before = plantSettings(h);
     assert.equal((await call(h, ["hook", "install"])).code, 0);
     assert.equal(ours(h), 1);
     const printed = await call(h, ["hook", "remove", "--json"]);
     assert.equal(printed.code, 0, printed.out);
     assert.equal(replyOf(printed).removed, true, printed.out);
-    assert.deepEqual(readSettings(h), before);
+    assert.equal(readFileSync(h.settings, "utf8"), before, "remove did not give back the bytes from before the install");
+  });
+
+  it("deletes the settings file it created when the remove leaves it empty", async () => {
+    const h = newHome();
+    assert.equal((await call(h, ["hook", "install"])).code, 0);
+    assert.ok(existsSync(h.settings));
+    const printed = await call(h, ["hook", "remove", "--json"]);
+    assert.equal(printed.code, 0, printed.out);
+    assert.equal(replyOf(printed).removed, true, printed.out);
+    assert.ok(!existsSync(h.settings), "remove left an empty settings file that sous made");
   });
 
   it("deletes only sous's entry, and keeps a SessionStart hook the person added after the install", async () => {
