@@ -20,7 +20,16 @@ const OLD_CODEX = "This Codex has no turn/steer, so a message could not reach th
 export function steerTurn(turn: TurnSeam): { send: Steer; close(): boolean } {
   let open = true;
   let noted = false;
-  const send: Steer = async (text, id) => {
+  // Every message sent, by id, so a repeated id gets the first one's outcome and sends nothing.
+  const sent = new Map<string, Promise<SteerOutcome>>();
+  const send: Steer = (text, id) => {
+    const earlier = sent.get(id);
+    if (earlier) return earlier;
+    const outcome = deliver(text, id);
+    sent.set(id, outcome);
+    return outcome;
+  };
+  const deliver = async (text: string, id: string): Promise<SteerOutcome> => {
     if (!open) return "ended";
     try {
       await turn.server.request("turn/steer", {
@@ -30,12 +39,12 @@ export function steerTurn(turn: TurnSeam): { send: Steer; close(): boolean } {
         expectedTurnId: turn.turnId,
       });
     } catch (error) {
-      const outcome = refused(error);
-      if (outcome === "not_steerable" && error instanceof RpcError && error.code === -32601 && !noted) {
+      if (unknownMethod(error)) {
+        if (!noted) turn.note(OLD_CODEX);
         noted = true;
-        turn.note(OLD_CODEX);
+        return "not_steerable";
       }
-      return outcome;
+      return refused(error);
     }
     turn.delivered(text);
     return "delivered";
@@ -51,13 +60,21 @@ export function steerTurn(turn: TurnSeam): { send: Steer; close(): boolean } {
 }
 
 /**
- * The outcome of a refused turn/steer. activeTurnNotSteerable, as during a compact turn, and a
- * Codex without the method are not_steerable. Anything else, such as -32600 "no active turn to
- * steer" or a server that has exited, means the turn is over.
+ * A Codex before 0.169.0 has no turn/steer. It answers -32601, or -32600 with a message that
+ * names the method, as a request it cannot parse.
+ */
+function unknownMethod(error: unknown): boolean {
+  if (!(error instanceof RpcError)) return false;
+  return error.code === -32601 || (error.code === -32600 && error.message.includes("turn/steer"));
+}
+
+/**
+ * The outcome of a refused turn/steer. activeTurnNotSteerable, as during a compact turn, is
+ * not_steerable. Anything else, such as -32600 "no active turn to steer" or a server that has
+ * exited, means the turn is over.
  */
 function refused(error: unknown): SteerOutcome {
   if (!(error instanceof RpcError)) return "ended";
-  if (error.code === -32601) return "not_steerable";
   const info = (error.data as { codexErrorInfo?: unknown } | null | undefined)?.codexErrorInfo;
   return info !== null && typeof info === "object" && "activeTurnNotSteerable" in info ? "not_steerable" : "ended";
 }

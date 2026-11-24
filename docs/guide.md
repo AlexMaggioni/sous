@@ -216,6 +216,10 @@ agent, which works around it or fails the step. With neither list, the agent may
 An allow list names whole tools: `Bash(npm test)` allows all of Bash. A name matches without case,
 and also when one name holds the other, so `Edit` also matches `NotebookEdit`.
 
+On Claude Code, a step that names no `mode` runs in auto mode when its model offers it.
+`mode: default` does not keep your own setting. It runs Claude Code's own default mode, whatever
+`defaultMode` your Claude Code settings name.
+
 Codex has no allow list. sous declines each approval Codex asks for that the allow list does not
 cover, but Codex runs the actions its sandbox allows without asking. A deny entry for an MCP tool
 turns that tool off on Codex too.

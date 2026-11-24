@@ -27,6 +27,10 @@
 //               tool       run this shell command as one tool call before the answer. The
 //                          delayMs and hold then last through the tool call, so a message sent
 //                          meanwhile lands mid-turn. The program reads it after the tool call.
+//               mark       Claude writes a file of this name next to FAKE_LOG once the turn
+//                          has sent its result, so a test can tell the turn ran to its end
+//               noSteer    Codex fails turn/steer during the turn as a Codex before 0.169.0
+//                          does, with -32600 for a method it cannot parse
 //               notSteerable  Codex refuses turn/steer during the turn with
 //                          activeTurnNotSteerable and this turn kind, such as "compact"
 //               times      apply the rule to the first N matching requests only. The count
@@ -36,7 +40,8 @@
 // Steering. A message sent into a running turn (Claude: a user message with priority next,
 // Codex: turn/steer) adds a line to FAKE_LOG with `steer: { id, text }` and a `state`. Claude
 // logs "queued" when it gets the message and "read" when the turn reads it, after its tool call.
-// Codex logs "read", or why it refused: "no_active_turn", "wrong_turn" or "not_steerable".
+// Codex logs "read", or why it refused: "no_active_turn", "wrong_turn", "not_steerable" or
+// "unknown_method".
 
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -85,7 +90,7 @@ function loadRules() {
 
 /**
  * The answer for one request. Returns { rule, kind, text, value, delayMs, hold, message,
- * resetsAt, first, silent, usage, approval, listTools, tool, notSteerable, stop, errorInfo, code }. kind is "answer", "fail",
+ * resetsAt, first, silent, usage, approval, listTools, tool, notSteerable, noSteer, mark, stop, errorInfo, code }. kind is "answer", "fail",
  * "limit", "auth" or "exit".
  */
 export function decide(program, prompt, schema) {
@@ -103,7 +108,7 @@ export function decide(program, prompt, schema) {
     break;
   }
   const rule = picked?.rule ?? {};
-  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, tool: rule.tool, notSteerable: rule.notSteerable, stop: rule.stop, errorInfo: rule.errorInfo };
+  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, tool: rule.tool, notSteerable: rule.notSteerable, noSteer: rule.noSteer === true, mark: rule.mark, stop: rule.stop, errorInfo: rule.errorInfo };
   if (rule.exit !== undefined) return { ...out, kind: "exit", code: rule.exit };
   if (rule.limit) return { ...out, kind: "limit", resetsAt: rule.limit.resetsAt, first: rule.limit.first === true, silent: rule.limit.silent === true };
   if (rule.auth) return { ...out, kind: "auth" };

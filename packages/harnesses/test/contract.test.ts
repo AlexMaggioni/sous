@@ -422,6 +422,28 @@ for (const kit of KITS) {
       }
     });
 
+    test("sends a repeated id once, and answers it with the first one's outcome", async () => {
+      const c = newCase(kit);
+      c.rules([{ tool: "seq 1 10", hold: "go", answer: "Stopped at five." }]);
+      const held = heldStep(c, "Count to ten.");
+      try {
+        await until(() => held.history.some((entry) => entry.kind === "toolCall"), 10_000, "the fake's tool call never reached the history");
+        const send = await held.seam();
+        const id = randomUUID();
+        const first = send(TELL, id);
+        const again = send(TELL, id);
+        assert.equal(again, first, "a repeated id did not get the first one's outcome");
+        await until(() => steerLines(c).some((line) => line.steer?.id === id), 10_000, "the tell never reached the program");
+        held.open();
+        assert.deepEqual(await Promise.all([first, again]), ["delivered", "delivered"]);
+        await held.run;
+        assert.equal(steerLines(c).filter((line) => line.steer?.id === id && line.state === "read").length, 1, "the program read the tell more than once");
+        assert.equal(held.history.filter((entry) => entry.role === "user" && entry.text === TELL).length, 1, "the history has the tell more than once");
+      } finally {
+        await held.finish();
+      }
+    });
+
     test("answers ended to a tell after the result, and sends nothing", async () => {
       const c = newCase(kit);
       const seams: Array<Steer | undefined> = [];
@@ -457,6 +479,26 @@ describe("the codex adapter's steer seam, when Codex refuses", () => {
     }
   });
 
+  test("answers not_steerable on a Codex without turn/steer, with one note", async () => {
+    const c = newCase(CODEX);
+    c.rules([{ tool: "seq 1 10", hold: "go", noSteer: true, answer: "Counted to ten." }]);
+    const held = heldStep(c, "Count to ten.");
+    try {
+      await until(() => held.history.some((entry) => entry.kind === "toolCall"), 10_000, "the fake's tool call never reached the history");
+      const send = await held.seam();
+      assert.equal(await send(TELL, randomUUID()), "not_steerable");
+      assert.equal(await send("And say why.", randomUUID()), "not_steerable");
+      assert.deepEqual(steerLines(c).map((line) => line.state), ["unknown_method", "unknown_method"]);
+      held.open();
+      const result = await held.run;
+      assert.equal(result.text, "Counted to ten.");
+      assert.equal(result.notes?.filter((note) => note.includes("0.169.0")).length, 1, JSON.stringify(result.notes));
+      assert.equal(tellIn(held.history), -1, "a tell Codex refused is in the history");
+    } finally {
+      await held.finish();
+    }
+  });
+
   test("answers ended when the turn ends before Codex takes the tell", async () => {
     const c = newCase(CODEX);
     c.rules([{ answer: "All done." }]);
@@ -480,8 +522,9 @@ describe("the claude adapter's steer seam, on what Claude Code does", () => {
   test("answers ended to a tell still waiting when the result comes", async () => {
     const c = newCase(CLAUDE);
     // No tool call, so the turn never reads the tell. The fake then runs it as a second turn,
-    // as Claude Code does, and that turn must not become the step's answer.
-    c.rules([{ hold: "go", answer: "Done.", times: 1 }, { answer: "A second turn." }]);
+    // as Claude Code does. That turn must not become the step's answer, and must not run to its
+    // end: the step reports the tell ended, so the agent must never act on it.
+    c.rules([{ hold: "go", answer: "Done.", times: 1 }, { hold: "go2", answer: "A second turn.", mark: "second-turn-ended" }]);
     const held = heldStep(c, "Say done.");
     try {
       const send = await held.seam();
@@ -490,10 +533,17 @@ describe("the claude adapter's steer seam, on what Claude Code does", () => {
       await until(() => steerLines(c).some((line) => line.steer?.id === id && line.state === "queued"), 10_000, "the tell never reached the program");
       held.open();
       assert.equal(await told, "ended");
-      const result = await held.run;
+      let timer: NodeJS.Timeout | undefined;
+      const waited = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("the step waited on the tell's second turn")), 10_000)));
+      const result = await Promise.race([held.run, waited]).finally(() => clearTimeout(timer));
       assert.equal(result.text, "Done.");
       assert.equal(tellIn(held.history), -1, "a tell the turn never read is in the history");
+      // The second turn may go on only if Claude Code still runs. Let it, and see that it can't.
+      writeFileSync(join(c.dir, "go2"), "");
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      assert.equal(existsSync(join(c.dir, "second-turn-ended")), false, "the tell's second turn ran to its end");
     } finally {
+      writeFileSync(join(c.dir, "go2"), "");
       await held.finish();
     }
   });

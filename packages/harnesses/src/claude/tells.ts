@@ -11,6 +11,8 @@ import type { Steer, SteerOutcome } from "../seam.js";
 export class Tells {
   private readonly outbox: SDKUserMessage[] = [];
   private readonly waiting = new Map<string, { text: string; settle(outcome: SteerOutcome): void }>();
+  /** Every tell sent, by id, so a repeated id gets the first one's outcome and sends nothing. */
+  private readonly sent = new Map<string, Promise<SteerOutcome>>();
   private state: "new" | "open" | "closed" = "new";
   private wake?: () => void;
 
@@ -24,14 +26,18 @@ export class Tells {
     return (text, id) => this.send(text, id);
   }
 
-  /** Ends the seam. Each tell still waiting resolves ended. True when the seam was open. */
-  close(): boolean {
-    const was = this.state === "open";
+  /**
+   * Ends the seam. Each tell still waiting resolves ended. open is true when the seam was open,
+   * and unread when a tell was still waiting, which Claude Code would run as a turn of its own.
+   */
+  close(): { open: boolean; unread: boolean } {
+    const open = this.state === "open";
+    const unread = this.waiting.size > 0;
     this.state = "closed";
     this.outbox.length = 0;
     for (const id of [...this.waiting.keys()]) this.settle(id, "ended");
     this.wake?.();
-    return was;
+    return { open, unread };
   }
 
   /** A command_lifecycle frame from Claude Code. */
@@ -55,8 +61,10 @@ export class Tells {
   }
 
   private send(text: string, id: string): Promise<SteerOutcome> {
-    if (this.state !== "open" || this.waiting.has(id)) return Promise.resolve("ended");
-    return new Promise((settle) => {
+    const earlier = this.sent.get(id);
+    if (earlier) return earlier;
+    if (this.state !== "open") return Promise.resolve("ended");
+    const outcome = new Promise<SteerOutcome>((settle) => {
       this.waiting.set(id, { text, settle });
       this.outbox.push({
         type: "user",
@@ -67,6 +75,8 @@ export class Tells {
       });
       this.wake?.();
     });
+    this.sent.set(id, outcome);
+    return outcome;
   }
 
   private settle(id: string, outcome: SteerOutcome) {

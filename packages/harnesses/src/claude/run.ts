@@ -126,8 +126,11 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
   // The prompt stays open until the first result, so the SDK keeps answering permission requests
   // and the step's tells reach the turn. The result closes it.
   const tells = new Tells((told) => history({ role: "user", kind: "text", text: told }));
+  /** Closes the seam. True when a tell was still unread, so the query must end now. */
   const release = () => {
-    if (tells.close()) events.steer?.(undefined);
+    const { open, unread } = tells.close();
+    if (open) events.steer?.(undefined);
+    return unread;
   };
   let started!: (query: Query) => void;
   const ready = new Promise<Query>((resolve) => (started = resolve));
@@ -158,6 +161,7 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
   let failure: Failure | undefined;
   let failureText = "";
   let resulted = false;
+  let unreadTell = false;
 
   const fail = (message: string, failure: Failure): never => {
     throw new StepFailure(message, failure, { usage: total(), ...(opened ? { sessionId } : {}), notes });
@@ -168,7 +172,7 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
     q = query({ prompt: prompt(), options });
     started(q);
     for await (const message of q as AsyncIterable<SDKMessage | Lifecycle>) {
-      // A queued tell may run as a turn of its own after the first result. The step ignores it.
+      // The step ends at the first result. A later frame belongs to no turn of this step.
       if (resulted) continue;
       switch (message.type) {
         case "command_lifecycle":
@@ -248,10 +252,13 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
           }
           tells.consumed(message.user_message_uuids);
           resulted = true;
-          release();
+          // Claude Code would run a tell it never read as a turn of its own, unseen and unpaid
+          // for here. Closing the query stops it.
+          unreadTell = release();
           break;
         }
       }
+      if (unreadTell) break;
     }
   } catch (error) {
     if (!abort.signal.aborted) failureText ||= stderr.trim() || (error instanceof Error ? error.message : String(error));
@@ -261,8 +268,9 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
     q?.close();
   }
 
-  if (step.signal?.aborted) fail("The step was stopped.", { kind: "stopped" });
+  // A stop after the result keeps the answer.
   if (answer) return answer;
+  if (step.signal?.aborted) fail("The step was stopped.", { kind: "stopped" });
   if (failure) fail(failureText, failure);
   if (/No conversation found/i.test(stderr)) fail(`No Claude Code session ${sessionId} to resume.`, { kind: "no_session", sessionId });
   if (limit || limitSeen) fail(failureText || "Claude Code hit its usage limit.", { kind: "usage_limit", ...limit });

@@ -13,7 +13,7 @@
 // sends one. Each session keeps the user messages it read in claude-sessions/<id>, one per line.
 
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { appendLog, debug, decide, loginPresent, mcpSummary, readJsonLines, waitFor } from "./lib.mjs";
 
@@ -255,12 +255,12 @@ function result(fields) {
 
 let initSent = false;
 
-async function runTurn(message) {
+async function runTurn(message, fromTell = false) {
   const prompt = promptText(message);
   const images = promptImages(message);
   const decision = decide("claude", prompt, schema);
   // queue holds the messages sent into the turn, read the uuids of those it has read.
-  const turn = { interrupted: false, uuid: message.uuid, queue: [], read: [] };
+  const turn = { interrupted: false, uuid: message.uuid, queue: [], read: [], fromTell };
   state.turn = turn;
   if (message.uuid) lifecycle(message.uuid, "started");
   appendLog({
@@ -361,9 +361,12 @@ async function runTurn(message) {
     result({ subtype: "success", is_error: false, result: decision.text, ...(decision.stop ? { stop_reason: decision.stop } : {}), ...(schema ? { structured_output: decision.value } : {}) });
   }
   sessionState("idle");
+  if (decision.mark) writeFileSync(join(dirname(process.env.FAKE_LOG ?? "."), decision.mark), "");
   state.turn = undefined;
   // A message the turn never read runs as a turn of its own.
-  for (const queued of turn.queue.splice(0)) chain = chain.then(() => runTurn(queued));
+  const unread = turn.queue.splice(0);
+  for (const queued of unread) chain = chain.then(() => runTurn(queued, true));
+  if (inputEnded && !unread.length) process.exit(0);
 }
 
 function onUser(message) {
@@ -389,7 +392,12 @@ readJsonLines(process.stdin, (message) => {
 });
 // The SDK closes stdin when its caller is done, also when it stops a step in the middle of a
 // turn. The program exits then. Without this, a held turn keeps it up until the SDK's SIGTERM,
-// two seconds later.
-process.stdin.on("end", () => process.exit(0));
+// two seconds later. A turn run for a message the first turn never read is the exception: it
+// runs to its end first, as Claude Code drains the messages it queued.
+let inputEnded = false;
+process.stdin.on("end", () => {
+  inputEnded = true;
+  if (!state.turn?.fromTell) process.exit(0);
+});
 process.on("SIGTERM", () => process.exit(143));
 debug("claude", "argv", argv);

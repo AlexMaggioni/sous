@@ -78,6 +78,8 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
 
   // The seam onto the turn, from turn/start to turn/completed.
   let seam: ReturnType<typeof steerTurn> | undefined;
+  // The turn can end before the turn/start reply comes. The seam then never opens.
+  let turnEnded = false;
   const closeSeam = () => seam?.close() && events.steer?.(undefined);
   let finish!: (turn: Pick<Turn, "status" | "error">) => void;
   const turnDone = new Promise<Pick<Turn, "status" | "error">>((resolve) => (finish = resolve));
@@ -147,6 +149,7 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
       case "turn/completed": {
         const p = params as TurnCompletedNotification;
         if (p.threadId !== threadId || (turnId && p.turn.id !== turnId)) break;
+        turnEnded = true;
         closeSeam();
         finish(p.turn);
         break;
@@ -255,8 +258,10 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
       ...(step.schema ? { outputSchema: toStrictJsonSchema(step.schema) as Record<string, never> } : {}),
     });
     turnId ??= started.turn.id;
-    seam = steerTurn({ server, threadId, turnId, delivered: (told) => history({ role: "user", kind: "text", text: told }), note: (note) => notes.push(note) });
-    events.steer?.(seam.send);
+    if (!turnEnded) {
+      seam = steerTurn({ server, threadId, turnId, delivered: (told) => history({ role: "user", kind: "text", text: told }), note: (note) => notes.push(note) });
+      events.steer?.(seam.send);
+    }
     if (step.signal?.aborted) stop();
     const exited = server.exited.then((why): never => {
       throw new RpcError(server?.stderr.trim() || why, -32000);

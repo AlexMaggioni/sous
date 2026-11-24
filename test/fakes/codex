@@ -250,6 +250,10 @@ function steer(params, reply) {
     log("wrong_turn");
     return { code: -32600, message: `expected active turn id \`${params.expectedTurnId}\` but found \`${turn.id}\`` };
   }
+  if (turn.noSteer) {
+    log("unknown_method");
+    return { code: -32600, message: "Invalid request: unknown variant `turn/steer`, expected one of `initialize`, `thread/start`, `turn/start`, `turn/interrupt`" };
+  }
   if (turn.notSteerable) {
     log("not_steerable");
     const message = `cannot steer a ${turn.notSteerable} turn`;
@@ -337,7 +341,7 @@ async function runTurn(thread, turnId, params) {
   const images = promptImages(params.input);
   const schema = params.outputSchema ?? null;
   const decision = decide("codex", prompt, schema);
-  const turn = { id: turnId, interrupted: false, notSteerable: decision.notSteerable };
+  const turn = { id: turnId, interrupted: false, notSteerable: decision.notSteerable, noSteer: decision.noSteer };
   thread.turn = turn;
   const model = params.model ?? thread.model;
   const base = { threadId: thread.id, turnId };
