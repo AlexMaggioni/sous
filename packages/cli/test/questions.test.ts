@@ -3,7 +3,7 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, it } from "node:test";
-import { listRecords, loadRecord, logFile, runQuestions, startRun, type HomePaths, type RunQuestion } from "@sous/engine";
+import { listRecords, loadRecord, logFile, rememberProject, runQuestions, startRun, type HomePaths, type RunQuestion } from "@sous/engine";
 import { PERSON, inProcess, testHome, type InnerRunner } from "@sous/engine/testing";
 import { main } from "../src/cli.js";
 import { capture, sous, waitFor } from "./sous.js";
@@ -502,6 +502,8 @@ describe("piece 8: who may answer", () => {
   /** A home with the workflows, workers that run in this process, and a way to stop every run. */
   function world(...names: string[]) {
     const home = testHome(Object.fromEntries(names.map((name) => [name, fixture(name)])));
+    // sous has run in this project before, so piece 9's seed approved its workflows as they are.
+    rememberProject(home.paths, home.projectDir);
     const workers = inProcess({ inner: runner, handleSignals: true });
     const call = (env: NodeJS.ProcessEnv, argv: string[]) => sous(home.paths, argv, { env, launch: workers.launch });
     const start = async (env: NodeJS.ProcessEnv, name: string, ...flags: string[]) => {

@@ -39,6 +39,8 @@ sous runs saved workflows in the background.
   sous rerun <run> [--name value ...]   start the same workflow again with the same inputs
         --reuse                         keep the results of the steps you did not edit, in the same place
   sous workflows                        saved workflows and their inputs
+  sous workflows approve <name> | --all the person's yes to a workflow's text as it is now
+        --by person                     the person decided; an agent passes on their word
   sous check <workflow> [--name value]  check a workflow without running it
         --dry-run                       then run it once with stand-in agents; code steps run, in a copy
         --answers <file.json>           what the stand-ins answer, by step label: {"reviewer *": {...}}

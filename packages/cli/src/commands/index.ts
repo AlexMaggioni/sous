@@ -88,7 +88,7 @@ export const COMMANDS: Record<string, CommandSpec> = {
   stop: { run: cmdStop, flags: takes("step", "by", "json") },
   tell: { run: cmdTell, flags: takes("step", "call", "by", "json") },
   rerun: { run: cmdRerun, flags: takes("place", "reuse", "set", "model", "wait", "let-agent-answer", "by", "json"), inputs: true },
-  workflows: { run: cmdWorkflows, flags: takes("project", "json") },
+  workflows: { run: cmdWorkflows, flags: takes("project", "all", "by", "json") },
   check: { run: cmdCheck, flags: takes("project", "dry-run", "answers", "json"), inputs: true },
   schedule: { run: cmdSchedule, flags: takes("cron", "place", "project", "by", "json"), inputs: true },
   daemon: { run: cmdDaemon, flags: takes("json") },

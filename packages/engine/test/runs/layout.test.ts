@@ -4,6 +4,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { daemonLog, logFile } from "../../src/index.js";
@@ -26,8 +27,15 @@ const single = `export const meta = { name: 'top', description: 'top' }
 // the top workflow
 return await agent('build it', { label: 'build' })`;
 
+/** The copy of an approved text: a person's run approves each text it starts, and the copy is
+ *  the home's history too, so it outlives the run. */
+const approved = (...texts: string[]) => texts.map((text) => `home/approved/${createHash("sha256").update(text).digest("hex")}.json`);
+
 const home = [
   "home/",
+  // The person's yes to each workflow's text.
+  "home/approvals.json",
+  "home/approved/",
   "home/config.json",
   // Who started the run. It is the home's history, so it outlives the run.
   "home/events.jsonl",
@@ -41,6 +49,8 @@ const home = [
   "home/runs/projects/<home key>/",
   "home/runs/projects/<home key>/runs/",
   "home/scratch/",
+  // When sous seeded the approvals, so it never seeds again.
+  "home/seeded.json",
   "home/slots/",
   "home/worktrees/",
   "project/",
@@ -68,7 +78,7 @@ describe("where a run leaves its files", () => {
     const result = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal(result?.status, "completed");
     assert.equal(record.cwd, projectDir);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...home, ...runFiles].sort());
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...home, ...approved(top, child), ...runFiles].sort());
     assert.deepEqual(loadRecord(paths, record.runId)?.nested, {
       [`${record.runId}-nested1`]: { parent: record.runId, workflow: "child", label: "c" },
     });
@@ -93,12 +103,13 @@ describe("where a run leaves its files", () => {
       return found.sort();
     };
     assert.deepEqual(holders("// the top workflow"), [
+      ...approved(top),
       "home/records/<id>.workflows",
       "home/runs/projects/<home key>/runs/<id>.json",
       "home/runs/projects/<home key>/runs/<id>.json.bak",
       "project/.sous/workflows/top.js",
     ]);
-    assert.deepEqual(holders("// the child workflow"), ["home/records/<id>.workflows", "project/.sous/workflows/child.js"]);
+    assert.deepEqual(holders("// the child workflow"), [...approved(child), "home/records/<id>.workflows", "project/.sous/workflows/child.js"]);
   });
 
   it("a run paused on a failed step leaves the same files as a finished run", async () => {
@@ -107,7 +118,7 @@ describe("where a run leaves its files", () => {
     const record = createRun(paths, { who: PERSON, workflow: "top", projectDir, inputs: {} });
     const result = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal(result?.status, "paused");
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...home, ...runFiles].sort());
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...home, ...approved(single), ...runFiles].sort());
   });
 
   it("a forgotten run leaves only the home's folders", async () => {
@@ -116,7 +127,7 @@ describe("where a run leaves its files", () => {
     const record = createRun(paths, { who: PERSON, workflow: "top", projectDir, inputs: {} });
     await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     forgetRun(paths, loadRecord(paths, record.runId)!);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...home].sort());
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...home, ...approved(top, child)].sort());
   });
 
   it("a run's worker log and the service's log sit in the home's logs folder", () => {

@@ -25,6 +25,7 @@ nearest folder up from where you run `sous` that has `.sous/` or `.git`, or the 
 | `secrets.env` | `KEY=value` lines. Code steps get them in their environment, and an MCP server's settings can use them as `${KEY}`. Agents don't get them. The shell environment works too. |
 | `config.json` | `maxAgents` (4), `defaultPlace` ("worktree"), `defaultModel`, `defaultHarness`, `rulesyncGlobal`, `notify` (true), `keepDays` (all kept), `retries` (2) |
 | `runs/`, `records/`, `inbox/`, `logs/` | run state, one record per run, open questions, one log per run |
+| `approvals.json`, `approved/`, `seeded.json` | the person's yes to each workflow's exact text. See [Approving workflows](#approving-workflows) |
 | `events.jsonl` | one line per write: who did it (`by`: person, agent or sous), through what (`through`: the person's terminal, Claude Code, Codex, a step of a run, a schedule, or the service), and the run, question, schedule or value. Free text is redacted and cut to 1,000 bytes |
 | `calls.jsonl` | with `SOUS_TRACE_CALLS=1`, one line per call: its words, exit code, error code and where it came from |
 | `worktrees/`, `scratch/` | the places runs work in |
@@ -334,6 +335,7 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous list [--all]`, `sous show <run>`, `sous log <run> -f` | the last 20 runs, or every run with `--all`; one run's steps with the time and tokens of each, its questions and result; its log |
 | `sous step <run> <label> [--call N] [--tail N] [--full]` | one step of a run: its status, time and tokens, its prompt or its command, its failure, and the last 20 entries of what it did. A step that ran more than once shows its last call, and `--call N` shows another. A label only nested runs have shows the first nested run that has it, and a note names the others. `--tail N` shows N entries, and `--full` shows the whole prompt and every entry. A label the run never had exits 65. |
 | `sous workflows` | the saved workflows and their inputs |
+| `sous workflows approve <name>`, `--all` | approve a workflow's text as it is now, as in [Approving workflows](#approving-workflows) |
 | `sous inbox`, `sous answer <q> <text>` | questions waiting for you, and answering one. `--value-json` reads the text as JSON, such as `'{"a": 1}'`. Without it the text is the answer, and text that starts with `{` or `[` gets a note. The answer file keeps `by` and `through`. |
 | `sous approve <q>`, `sous send-back <q> <note>` | answer a breakpoint. `sous answer <q> stop` stops the run. |
 | `sous pause <run>`, `sous resume <run> [--latest \| --same]` | finish the running steps and start nothing new; go on from there |
@@ -533,6 +535,38 @@ that rule. An agent cannot add or enable a schedule for one. It exits 66 with
 `started_by_people`, and the error's `forPerson` holds the command for the person to type in a
 plain terminal. A schedule the person added or enabled starts it. A run uses the account of the
 session or the run that started it, as in [Accounts](#accounts).
+
+### Approving workflows
+
+An agent may write or change a workflow, with the person's yes. sous then keeps a second yes, to
+the workflow's exact text. An agent, a step of a run or a schedule starts a workflow only once the
+person approved that text. Each workflow it calls by name with `workflow("name")` needs its yes
+too. Otherwise the start exits 66 with `not_approved`, and the error's `change` gives the approve
+call. A nested `workflow()` in such a run is refused the same way, and `choose()` offers only the
+approved ones.
+
+- `sous workflows approve <name>` approves the text in the file now. `--all` approves every
+  workflow of the project and the home. An agent passes the person's yes on with `--by person`.
+  Without it, an agent's approve exits 66 with `needs_person`. Each approve adds one
+  `approve-workflow` line to `events.jsonl`, and one through an agent sends the person a notice.
+- A person's own `sous run`, and their `sous resume --latest`, approve the texts they run.
+- A dry run needs no yes and gives none. A dry run that was cut off never resumes as a real run.
+  `sous resume` and `sous rerun --reuse` refuse it with `cannot_resume`, and the call runs the dry
+  run again.
+- When the edited workflow has a schedule, the service skips it each time it comes due, logs why,
+  and sends the person one notice per edit with the approve command.
+- An agent that writes or edits a workflow tells the person its name, what changed, and that sous
+  waits for their yes.
+
+At the first command, or when the service starts, sous approves every workflow of every project
+where sous ran, of each project a schedule names, and of the home, as they are. It does this once
+per home, and `seeded.json` marks it done. `approvals.json` in the home keeps each file's last 20
+approvals by hash, and `approved/<hash>.json` keeps each approved text. Never edit or delete them.
+Without `approvals.json`, no workflow counts as approved. A broken one makes each start that needs a
+yes exit 66 with `broken_record`. A run records the hash of the text sous checked, and
+`sous resume --latest` records the hash of the edit it checked. The worker reads the file once and
+runs that text only if the hash matches. Otherwise the run does not start or resume, and
+`sous show` gives why as its failure.
 
 `sous guide` lists the topics an agent reads to drive sous for a person, and `sous guide <topic>`
 prints one. The topics are in `packages/cli/guide/`. `sous skill install` links the sous skill

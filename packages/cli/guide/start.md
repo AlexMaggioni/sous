@@ -55,6 +55,12 @@ Do not start a workflow with `startedBy: "people"`. sous refuses it with `starte
 exit 66, and the error's `forPerson` holds the command. Give it to the person to type in their own
 terminal. `--by person` does not change this. Never try to get around it.
 
+## New or changed workflows
+
+sous starts a workflow from an agent only when the person approved its exact text. A new or edited
+one exits 66 with `not_approved`. Show the person the change, as `sous guide writing` says, and
+ask. Do not edit the file to get around it.
+
 ## Codex
 
 Under Codex, the sandbox may block writes to the sous home. A command that can't write there

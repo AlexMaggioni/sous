@@ -5,7 +5,8 @@
  * one. A JSON lines file only grows, a line at a time, and its reader skips a torn last line.
  */
 
-import { appendFileSync, chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 /** A JSON file's value, or undefined when the file is missing or does not parse. */
 export function readJsonFile<T>(file: string): T | undefined {
@@ -37,6 +38,12 @@ export function writeJsonFile(file: string, value: unknown, mode?: number): void
   // writeFileSync applies the mode only when it creates the file, and the umask can narrow it.
   if (mode !== undefined) chmodSync(temp, mode);
   renameSync(temp, file);
+}
+
+/** writeJsonFile, making the file's folder first when it is missing. */
+export function writeJsonFileInDir(file: string, value: unknown): void {
+  mkdirSync(dirname(file), { recursive: true });
+  writeJsonFile(file, value);
 }
 
 /** Append `value` to a JSON lines file as one line. The file is made when missing. */

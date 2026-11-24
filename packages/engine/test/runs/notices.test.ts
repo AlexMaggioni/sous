@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { Who } from "../../src/runs/actions.js";
+import { rememberProject } from "../../src/runs/home.js";
 import { readQuestion, type Question } from "../../src/runs/inbox.js";
 import { createRun } from "../../src/runs/launch.js";
 import { answerQuestion, rerunRun, resumeRun } from "../../src/runs/run.js";
@@ -27,6 +28,8 @@ const passedOn = (runId: string) => `sous: your decision was passed on: Claude C
 describe("piece 8 review: the --let-agent-answer notice", () => {
   it("a start an agent passes on tells the person, and the person's own start tells nothing", () => {
     const { paths, projectDir } = testHome({ job });
+    // sous has run in this project before, so piece 9's seed approved job as it is.
+    rememberProject(paths, projectDir);
     const { told, tell } = fakeTell();
     const passed = createRun(paths, { who: PASSED_ON, workflow: "job", projectDir, inputs: {}, letAgentAnswer: true, tell });
     assert.deepEqual(told, [passedOn(passed.runId)]);

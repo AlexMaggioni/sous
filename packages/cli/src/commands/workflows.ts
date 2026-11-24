@@ -1,13 +1,14 @@
-// sous workflows and check: the saved workflows.
+// sous workflows, workflows approve and check: the saved workflows.
 
 import { resolve } from "node:path";
-import { checkWorkflow, dryRun, projectWorkflows, rememberProject, type Answers } from "@sous/engine";
+import { approveWorkflows, checkWorkflow, dryRun, projectWorkflows, rememberProject, type Answers } from "@sous/engine";
 import { RESERVED, str, Usage, type Parsed } from "../args.js";
 import { reply, type Reply } from "../reply.js";
 import { projectDir } from "./common.js";
 import type { Ctx } from "./index.js";
 
 export function cmdWorkflows(args: Parsed, ctx: Ctx): Reply<object> {
+  if (args.positional[0] === "approve") return cmdApprove(args, ctx);
   const paths = ctx.paths;
   const text: string[] = [];
   const out = (line: string) => text.push(line);
@@ -33,6 +34,18 @@ export function cmdWorkflows(args: Parsed, ctx: Ctx): Reply<object> {
     }
   }
   return reply({}, { text });
+}
+
+/** sous workflows approve <name|path> | --all: the person's yes to the text as it is now. */
+function cmdApprove(args: Parsed, ctx: Ctx): Reply<object> {
+  const target = args.positional[1];
+  const all = args.flags.all === true;
+  if (Boolean(target) === all || args.positional.length > 2) throw new Usage("sous workflows approve <name or path> | --all [--by person]");
+  const { approved, unchanged } = approveWorkflows(ctx.paths, projectDir(args), all ? undefined : target, ctx.who);
+  const notes = unchanged.length && !all ? [`${unchanged[0]!.workflow} is approved as it is already.`] : [];
+  if (all && !approved.length) notes.push("Every workflow is approved as it is already.");
+  const text = approved.map((entry) => `approved ${entry.workflow}  ${entry.file}`);
+  return reply({ approved, unchanged }, { notes, text });
 }
 
 function readAnswers(ctx: Ctx, file: string): Answers {
