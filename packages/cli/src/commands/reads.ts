@@ -5,11 +5,11 @@ import { str, Usage, type Parsed } from "../args.js";
 import { cut, reply, type Next, type Reply } from "../reply.js";
 import { age, needRun, runIdArg, waitFor } from "./common.js";
 import type { Ctx } from "./index.js";
-import { nextCalls, promptLine } from "./next.js";
+import { nextCalls, promptLine, waitNext } from "./next.js";
 
 type Step = RunDetail["steps"][number];
 
-export function cmdWait(args: Parsed, ctx: Ctx): Promise<number | Reply<object>> {
+export function cmdWait(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   const timeout = str(args.flags.timeout);
   const seconds = Number(timeout);
   if (timeout !== undefined && !(seconds > 0)) throw new Usage(`--timeout takes a number of seconds above 0, got "${timeout}"`);
@@ -187,17 +187,52 @@ function printSteps(out: (line: string) => void, record: RunRecord, agents: read
   printScope(record.runId, "  ");
 }
 
-export async function cmdLog(args: Parsed, ctx: Ctx): Promise<number> {
+/** How long the printed reply of sous log --json may be, as every JSON reply. */
+const LOG_REPLY_MAX = 8000;
+
+/** The longest end of the log whose printed reply fits LOG_REPLY_MAX. Quotes, backslashes and
+ *  control characters print longer than they are, so the cut is measured on the printed reply. */
+function logTail(text: string, printed: (log: string, cut: boolean) => string): { log: string; cut: boolean } {
+  if (printed(text, false).length <= LOG_REPLY_MAX) return { log: text, cut: false };
+  // A cut between the two halves of a surrogate pair drops the half that is left.
+  const end = (keep: number) => {
+    const start = text.length - keep;
+    return text.slice(start > 0 && /[\udc00-\udfff]/.test(text[start]!) ? start + 1 : start);
+  };
+  const fits = (keep: number) => printed(end(keep), true).length <= LOG_REPLY_MAX;
+  // The search keeps `low` fitting and `high` not.
+  let low = 0;
+  let high = Math.min(text.length, LOG_REPLY_MAX) + 1;
+  while (high - low > 1) {
+    const mid = Math.floor((low + high) / 2);
+    if (fits(mid)) low = mid;
+    else high = mid;
+  }
+  return { log: end(low), cut: true };
+}
+
+export async function cmdLog(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   const { paths, machine } = ctx;
   let read = readLog(paths, runIdArg(args.positional[0]));
+  if (ctx.json) {
+    const { runId, running, text } = read;
+    const next: Next[] = running ? [waitNext(runId, "waits for the run")] : [];
+    const notesOf = (log: string, cut: boolean): string[] => [
+      ...(cut ? [`The log is longer. This is its last ${log.length} characters. sous log ${runId} prints all of it.`] : []),
+      ...(args.flags.follow ? ["--follow does not work with --json. This is the log so far."] : []),
+    ];
+    const printed = (log: string, cut: boolean) => JSON.stringify({ runId, running, log, notes: notesOf(log, cut), next }, null, 2);
+    const { log, cut } = logTail(text, printed);
+    return reply({ runId, running, log }, { notes: notesOf(log, cut), next });
+  }
   if (read.text) machine.write(read.text);
-  if (!args.flags.follow) return 0;
+  if (!args.flags.follow) return reply({});
   while (read.running) {
     await machine.sleep(400);
     read = followOn(paths, read);
     if (read.text) machine.write(read.text);
   }
-  return 0;
+  return reply({});
 }
 
 /** The log after `read`. A run that goes away while sous follows it is no wrong id, so its

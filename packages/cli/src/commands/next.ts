@@ -13,6 +13,15 @@ interface RunAt {
   resumesAt?: string;
 }
 
+/** The call that waits for a run, in JSON, with the --timeout of the wait before it. */
+export const waitNext = (runId: string, does: string, timeout?: number): Next => ({ call: `sous wait ${runId}${timeout ? ` --timeout ${timeout}` : ""} --json`, does });
+
+/** The call that resumes a run, in JSON. */
+export const resumeNext = (runId: string, does: string): Next => ({ call: `sous resume ${runId} --json`, does });
+
+/** The call that starts a run's workflow again with the same inputs, in JSON. */
+export const rerunNext = (runId: string, does: string): Next => ({ call: `sous rerun ${runId} --json`, does });
+
 /** A step label as one shell word, in single quotes when it needs them. */
 const word = (text: string) => (/^[\w./-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`);
 
@@ -34,9 +43,9 @@ function answerNext(question: Pick<RunQuestion, "id" | "kind" | "choices" | "bre
  *  out the call to itself. A wait with a timeout suggests the same timeout again. */
 export function nextCalls(run: RunAt, from: "wait" | "show", timeout?: number): { next: Next[]; notes: string[] } {
   const id = run.runId;
-  const wait = { call: `sous wait ${id}${timeout ? ` --timeout ${timeout}` : ""} --json`, does: "waits until the run ends, pauses or asks" };
+  const wait = waitNext(id, "waits until the run ends, pauses or asks", timeout);
   const show = { call: `sous show ${id} --json`, does: "shows the run and its steps" };
-  const resume = { call: `sous resume ${id} --json`, does: "resumes the run where it stopped" };
+  const resume = resumeNext(id, "resumes the run where it stopped");
   const calls: Next[] = [];
   const notes: string[] = [];
   if (run.status === "asks") {
@@ -50,7 +59,7 @@ export function nextCalls(run: RunAt, from: "wait" | "show", timeout?: number): 
   } else if (run.status === "completed") {
     calls.push(show);
   } else if (run.status === "stopped") {
-    calls.push({ call: `sous rerun ${id} --json`, does: "starts the workflow again with the same inputs" }, show);
+    calls.push(rerunNext(id, "starts the workflow again with the same inputs"), show);
   } else if (run.status === "paused" && run.resumesAt) {
     notes.push(`The service resumes this run by itself at ${run.resumesAt}. Until then sous wait returns at once, so call it after that time.`);
     calls.push({ ...wait, does: "waits for the run once the service resumed it" }, show);

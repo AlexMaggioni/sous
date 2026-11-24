@@ -223,8 +223,15 @@ return { first, second }`,
     assert.deepEqual(calls.filter((c) => c.label === "build").map((c) => c.prompt), ["v1", "v1"], "the edit did not reach the run");
 
     const asks = await sous(paths, ["resume", record.runId], { launch: workers.launch });
-    assert.equal(asks.code, 1);
+    assert.equal(asks.code, 64, "a resume that must choose is a usage error");
     assert.match(asks.out, /child changed since .*--latest takes the new version.*--same goes on with the version it started with/);
+    const choose = await sous(paths, ["resume", record.runId, "--json"], { launch: workers.launch });
+    assert.equal(choose.code, 64, choose.out);
+    const error = (JSON.parse(choose.out) as { error: { code: string; change: string; call: string | null } }).error;
+    assert.equal(error.code, "bad_argument");
+    assert.match(error.call ?? "", new RegExp(`^sous resume ${record.runId} --same( --json)?$`), "its call is --same");
+    assert.match(error.change, /--latest/, "its change names --latest");
+    assert.match(error.change, /--same/, "its change names --same");
     assert.equal(workers.launched.length, 1, "a resume that asks starts no worker");
 
     assert.equal((await sous(paths, ["resume", record.runId, "--same"], { launch: workers.launch })).code, 0);
@@ -628,11 +635,19 @@ describe("places and reruns", () => {
     assert.equal(existsSync(idle.worktree!), false);
     assert.equal(existsSync(waiting.worktree!), true);
 
-    // Discarding a run deletes its branch and worktree, but only with --yes.
+    // Discarding a run deletes its branch and worktree, but only with --yes. Without it, sous says
+    // what it would delete and gives the call that deletes it.
+    const would = await sous(paths, ["discard", waiting.runId, "--json"]);
+    assert.equal(would.code, 0, would.out);
+    const wouldReply = JSON.parse(would.out) as { worktrees: Array<{ dir: string; branch: string }>; notes: string[]; next: Array<{ call: string }> };
+    assert.deepEqual(wouldReply.worktrees.map((tree) => tree.branch), [waiting.branch], "the reply names what it would delete");
+    assert.ok(Array.isArray(wouldReply.notes), would.out);
+    assert.ok(wouldReply.next.some((next) => next.call === `sous discard ${waiting.runId} --yes --json`), would.out);
+    assert.equal(existsSync(waiting.worktree!), true, "without --yes nothing is deleted");
     const before = process.env.SOUS_HOME;
     process.env.SOUS_HOME = paths.home;
     try {
-      assert.equal(await main(["discard", waiting.runId]), 1);
+      assert.equal(await main(["discard", waiting.runId]), 0, "a discard without --yes changes nothing and exits 0");
       assert.equal(existsSync(waiting.worktree!), true);
       assert.equal(await main(["discard", waiting.runId, "--yes"]), 0);
     } finally {
@@ -1150,8 +1165,202 @@ describe("sous schedule", () => {
     assert.equal((await schedule("list")).code, 0);
     const inMeta = `sous: the schedule of ${nightly} is set in its meta. Change or remove meta.schedule there.\n`;
     for (const action of ["remove", "disable", "enable"]) assert.deepEqual(await schedule(action, nightlyFile), { code: 1, out: inMeta }, action);
-    for (const action of ["remove", "disable", "enable", "test"]) assert.deepEqual(await schedule(action, "nope"), { code: 1, out: 'sous: no schedule "nope". sous schedule list shows them.\n' }, action);
+    const missing = `no schedule "nope".\n  change: Name a schedule that sous schedule list shows.\n  try: sous schedule list --json --project ${projectDir}\n`;
+    for (const action of ["remove", "disable", "enable", "test"]) assert.deepEqual(await schedule(action, "nope"), { code: 65, out: missing }, action);
+    const asJson = await schedule("remove", "nope", "--json");
+    assert.equal(asJson.code, 65, asJson.out);
+    assert.equal((JSON.parse(asJson.out) as { error: { code: string } }).error.code, "no_such_schedule");
     assert.deepEqual(await schedule("launch"), { code: 64, out: "usage: sous schedule add|list|remove|enable|disable|test\n  change: Fix the command line. sous help lists the commands and their flags.\n" });
     assert.equal(readFileSync(paths.schedules, "utf8"), saved, "a refused change writes nothing");
+  });
+});
+
+describe("control replies", () => {
+  const ONE = `export const meta = { name: 'one', description: 'one step' }\nreturn await agent('do it', { label: 'worker' })`;
+  type Status = NonNullable<Parameters<typeof plantState>[1]["status"]>;
+
+  /** A run of the "one" workflow, with no worker. With a status it has a saved state, and with
+   *  `alive` its record names this process, which counts as a live worker. Never stop or pause an
+   *  alive run: sous would signal the test process. */
+  function planted(status?: Status, options: { alive?: boolean; state?: Record<string, unknown> } = {}) {
+    const { paths, projectDir } = testHome({ one: ONE });
+    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    if (options.alive) saveRecord(paths, { ...record, pid: process.pid });
+    const now = new Date().toISOString();
+    if (status) plantState(paths, { runId: record.runId, status, startedAt: now, updatedAt: now, agents: [], logs: [], phases: [], ...options.state });
+    return { paths, projectDir, runId: record.runId };
+  }
+
+  /** The JSON reply sous printed, with its notes and next checked. */
+  function replyOf(out: string): { notes: string[]; next: Array<{ call: string; does: string }> } & Record<string, unknown> {
+    let parsed: unknown;
+    assert.doesNotThrow(() => (parsed = JSON.parse(out)), `stdout is not one JSON object:\n${out}`);
+    const reply = parsed as Record<string, unknown>;
+    assert.ok(reply && typeof reply === "object" && !Array.isArray(reply), out);
+    assert.equal("error" in reply, false, out);
+    assert.ok(Array.isArray(reply.notes), `notes is an array: ${out}`);
+    assert.ok(Array.isArray(reply.next), `next is an array: ${out}`);
+    for (const next of reply.next as Array<Record<string, unknown>>) assert.ok(typeof next.call === "string" && typeof next.does === "string", JSON.stringify(next));
+    return reply as ReturnType<typeof replyOf>;
+  }
+
+  /** The JSON error sous printed. */
+  const errorOf = (out: string) => (JSON.parse(out) as { error: { code: string; message: string; change: string; call: string | null } }).error;
+
+  it("pausing a paused run exits 0 with a note", async () => {
+    const { paths, runId } = planted("paused", { state: { pauseReason: "requested" } });
+    const json = await sous(paths, ["pause", runId, "--json"]);
+    assert.equal(json.code, 0, json.out);
+    const reply = replyOf(json.out);
+    assert.equal(reply.runId, runId);
+    assert.equal(reply.status, "paused");
+    assert.ok(reply.notes.length > 0, `a wrong state says why in a note: ${json.out}`);
+    const text = await sous(paths, ["pause", runId]);
+    assert.equal(text.code, 0, text.out);
+    assert.match(text.out, /^note: /m, "the text form prints the note");
+  });
+
+  it("stopping a completed run exits 0 with a note", async () => {
+    const { paths, runId } = planted("completed");
+    const json = await sous(paths, ["stop", runId, "--json"]);
+    assert.equal(json.code, 0, json.out);
+    const reply = replyOf(json.out);
+    assert.equal(reply.runId, runId);
+    assert.equal(reply.status, "completed");
+    assert.ok(reply.notes.length > 0, `a wrong state says why in a note: ${json.out}`);
+  });
+
+  it("resuming a completed run exits 0 with next holding the rerun call", async () => {
+    const { paths, runId } = planted("completed");
+    const { runner } = fakeRunner(() => "unused");
+    const workers = inProcess({ inner: runner });
+    const json = await sous(paths, ["resume", runId, "--json"], { launch: workers.launch });
+    assert.equal(json.code, 0, json.out);
+    const reply = replyOf(json.out);
+    assert.equal(reply.runId, runId);
+    assert.equal(reply.status, "completed");
+    assert.ok(reply.notes.length > 0, `a wrong state says why in a note: ${json.out}`);
+    assert.ok(reply.next.some((next) => next.call === `sous rerun ${runId} --json`), `next holds the rerun call: ${json.out}`);
+    const text = await sous(paths, ["resume", runId], { launch: workers.launch });
+    assert.equal(text.code, 0, text.out);
+    assert.match(text.out, /^note: /m, "the text form prints the note");
+    assert.equal(workers.launched.length, 0, "nothing starts");
+  });
+
+  it("resuming a stopped, a never-started or a running run exits 0 with a note and the call that fits", async () => {
+    const { runner } = fakeRunner(() => "unused");
+    const cases: Array<[string, ReturnType<typeof planted>, string, (runId: string) => string]> = [
+      ["stopped", planted("aborted"), "stopped", (id) => `sous rerun ${id} --json`],
+      ["never started", planted(), "not started", (id) => `sous rerun ${id} --json`],
+      // A live worker: resume and discard refuse before they signal anything, so this is safe.
+      ["running", planted("running", { alive: true }), "running", (id) => `sous wait ${id} --json`],
+    ];
+    for (const [what, { paths, runId }, status, call] of cases) {
+      const workers = inProcess({ inner: runner });
+      const json = await sous(paths, ["resume", runId, "--json"], { launch: workers.launch });
+      assert.equal(json.code, 0, `${what}: ${json.out}`);
+      const reply = replyOf(json.out);
+      assert.equal(reply.status, status, what);
+      assert.ok(reply.notes.length > 0, `${what}: a wrong state says why in a note: ${json.out}`);
+      assert.ok(reply.next.some((next) => next.call === call(runId)), `${what}: next holds ${call(runId)}: ${json.out}`);
+      assert.equal(workers.launched.length, 0, `${what}: nothing starts`);
+    }
+  });
+
+  it("resuming a run an older sous saved exits 66 with cannot_resume and the rerun call", async () => {
+    const { paths, runId } = planted("paused", { state: { pauseReason: "requested", executionMode: { kind: "isolation", baselineRunId: "older-run" } } });
+    const { runner } = fakeRunner(() => "unused");
+    const workers = inProcess({ inner: runner });
+    const json = await sous(paths, ["resume", runId, "--json"], { launch: workers.launch });
+    assert.equal(json.code, 66, json.out);
+    const error = errorOf(json.out);
+    assert.equal(error.code, "cannot_resume");
+    assert.equal(error.call, `sous rerun ${runId}`);
+    assert.equal(workers.launched.length, 0, "nothing starts");
+  });
+
+  it("discard of a running run exits 66 with run_is_running and the call sous stop <run>", async () => {
+    const { paths, runId } = planted("running", { alive: true });
+    const json = await sous(paths, ["discard", runId, "--json"]);
+    assert.equal(json.code, 66, json.out);
+    const error = errorOf(json.out);
+    assert.equal(error.code, "run_is_running");
+    assert.equal(error.call, `sous stop ${runId}`);
+    const text = await sous(paths, ["discard", runId, "--yes"]);
+    assert.equal(text.code, 66, text.out);
+  });
+
+  it("each control and question command takes --json and replies with notes and next", async () => {
+    const { paths, projectDir, runId } = planted("completed");
+    const { runner } = fakeRunner(() => "done");
+    const workers = inProcess({ inner: runner });
+    // Questions for a run with no record, as the inbox holds them.
+    const ask = (n: number, extra: Record<string, unknown> = {}) => {
+      const id = `r1--${n}`;
+      writeFileSync(join(paths.inbox, `${id}.json`), JSON.stringify({ id, runId: "r1", scope: "r1", callIndex: n, hash: `h${n}`, workflow: "w", prompt: "?", kind: "input", breakpoint: false, askedAt: "2026-11-24T10:00:00.000Z", ...extra }));
+      return id;
+    };
+    const breakpoint = { breakpoint: true, prompt: "Breakpoint: Check\n\nReply approve, stop, or send back with a note." };
+    const commands: string[][] = [
+      ["log", runId],
+      ["pause", runId],
+      ["stop", runId],
+      ["resume", runId],
+      ["discard", runId],
+      ["rerun", runId],
+      ["answer", ask(0), "blue"],
+      ["approve", ask(1, breakpoint)],
+      ["send-back", ask(2, breakpoint), "shorter"],
+      ["gc"],
+      ["prune", "--days", "5"],
+    ];
+    for (const argv of commands) {
+      const result = await sous(paths, [...argv, "--json"], { launch: workers.launch });
+      assert.equal(result.code, 0, `${argv.join(" ")}: ${result.out}`);
+      const reply = replyOf(result.out);
+      if (argv[0] === "log") assert.equal(reply.runId, runId, "log --json names its run");
+      if (argv[0] === "rerun") await workers.ended(String(reply.runId));
+    }
+    assert.ok(existsSync(projectDir), "prune keeps the project");
+    assert.ok(listRecords(paths).some((record) => record.runId === runId), "prune keeps a run made a minute ago");
+  });
+
+  it("stop --step on a run with no worker refuses a name the run never had, and gives one data shape", async () => {
+    const step = { label: "worker", status: "done", callIndex: 0, scope: undefined };
+    const { paths, runId } = planted("paused", { state: { pauseReason: "requested", agents: [step] } });
+    const typo = await sous(paths, ["stop", runId, "--step", "wroker", "--json"]);
+    assert.equal(typo.code, 65, typo.out);
+    assert.deepEqual(errorOf(typo.out), { code: "no_such_step", message: `no step named "wroker" ran in ${runId}.`, change: "Name a step that runs now, by the name sous log gives it.", call: `sous show ${runId} --json` });
+
+    const known = await sous(paths, ["stop", runId, "--step", "worker", "--json"]);
+    assert.equal(known.code, 0, known.out);
+    const reply = replyOf(known.out);
+    assert.deepEqual(Object.keys(reply).sort(), ["next", "notes", "runId", "status", "step", "stopping"]);
+    assert.equal(reply.stopping, false);
+    assert.ok(reply.notes.length > 0, known.out);
+    assert.deepEqual(reply.next.map((next) => next.call), [`sous resume ${runId} --json`], "a paused run resumes");
+  });
+
+  it("pause and stop in the wrong state give the call that fits in next", async () => {
+    const paused = planted("paused", { state: { pauseReason: "requested" } });
+    const pause = replyOf((await sous(paused.paths, ["pause", paused.runId, "--json"])).out);
+    assert.deepEqual(pause.next.map((next) => next.call), [`sous resume ${paused.runId} --json`]);
+    const completed = planted("completed");
+    const stop = replyOf((await sous(completed.paths, ["stop", completed.runId, "--json"])).out);
+    assert.deepEqual(stop.next.map((next) => next.call), [`sous rerun ${completed.runId} --json`]);
+    const pauseDone = replyOf((await sous(completed.paths, ["pause", completed.runId, "--json"])).out);
+    assert.deepEqual(pauseDone.next.map((next) => next.call), [`sous rerun ${completed.runId} --json`]);
+    const text = await sous(paused.paths, ["pause", paused.runId]);
+    assert.doesNotMatch(text.out, /^next: /m, "the text form leaves out the next calls, which take --json");
+  });
+
+  it("resume with --latest and --same, and prune with no days, give a call to paste", async () => {
+    const { paths, runId } = planted("paused", { state: { pauseReason: "requested" } });
+    const both = await sous(paths, ["resume", runId, "--latest", "--same", "--json"]);
+    assert.equal(both.code, 64, both.out);
+    assert.equal(errorOf(both.out).call, `sous resume ${runId} --same`);
+    const prune = await sous(paths, ["prune", "--days", "soon", "--json"]);
+    assert.equal(prune.code, 64, prune.out);
+    assert.equal(errorOf(prune.out).call, "sous prune --days 30");
   });
 });

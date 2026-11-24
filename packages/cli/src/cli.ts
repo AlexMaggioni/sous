@@ -107,6 +107,7 @@ const HELP = `sous runs saved workflows in the background.
   sous log <run> [-f]                   the run's log
   sous inbox [run]                      questions waiting for you
   sous answer <question> <text>         answer a question (a run id works when it asks one thing)
+        --value-json                    the text is JSON, such as {"a": 1}, not words
   sous approve <question>               approve a breakpoint
   sous send-back <question> <note>      send a breakpoint's step back with a note
   sous pause <run>                      finish running steps, start nothing new
@@ -125,7 +126,8 @@ const HELP = `sous runs saved workflows in the background.
                                         schedule: "0 9 * * 1-5" in a workflow's meta also schedules it
   sous daemon start|stop|status         the service that starts schedules and resumes runs after the limit
   sous gc [--dry-run]                   remove worktrees whose branch is merged
-  sous discard <run> [--yes]            delete the run's branches and worktrees, merged or not
+  sous discard <run> [--yes]            delete the run's branches and worktrees, merged or not;
+                                        without --yes, list what it would delete
   sous prune --days N                   remove finished runs older than N days
   sous account                          the accounts sous's steps can use, and the one they use now
   sous account add <name>               add a Claude Code login: runs claude setup-token, then asks
@@ -136,6 +138,9 @@ const HELP = `sous runs saved workflows in the background.
   sous doctor [--live]                  the installed Claude Code and Codex the steps run on, and
                                         whether sous talks to them; --live runs one tiny step on each
         --model <spec>                  with --live, check this model only, such as codex/gpt-6.1-sol
+
+With --json, a command prints one JSON object, with its notes and the calls to make next. A
+request that changes nothing, such as pausing a paused run, exits 0 with a note.
 
 Home: ${homePaths().home} (set SOUS_HOME to change). A project's .sous/ folder holds its
 workflows, and wins over the home folder's. Agents and MCP servers come from the project's
@@ -166,7 +171,9 @@ export async function main(argv: string[], options: MainOptions = {}): Promise<n
     }
     if (!spec) throw new Usage(`unknown command "${command}". sous help lists them.`);
     const result = await spec.run(parsed, contextOf(json, options, host));
-    return typeof result === "number" ? result : print(result, json, (line) => host.out(line));
+    // Each next call takes --json, so only the JSON form prints them. The text lines name the
+    // command to run in words.
+    return print(json ? result : { ...result, next: [] }, json, (line) => host.out(line));
   } catch (error) {
     // A command line that does not parse is read again for --json, before any "--".
     const asJson = json ?? (rest.includes("--") ? rest.slice(0, rest.indexOf("--")) : rest).includes("--json");

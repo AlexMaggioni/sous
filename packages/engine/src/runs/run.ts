@@ -496,19 +496,26 @@ export function stopRun(paths: HomePaths, runId: string): { outcome: StopOutcome
 
 /** Stop one running step by its name in the log. The run pauses on it, and resume runs it again.
  *  The worker gets the step's run or nested run and its call, so a step with the same label
- *  elsewhere goes on. Returns false when the run is not running. */
+ *  elsewhere goes on. Returns false when the run is not running, and refuses a name the run never had. */
 export function stopStep(paths: HomePaths, runId: string, step: string): boolean {
   const record = needRecord(paths, runId);
-  if (!processAlive(record.pid)) return false;
+  const alive = processAlive(record.pid);
   const state = readState(paths, record.runId);
   const live = state ? liveSteps(paths, record, state) : { running: [] };
+  // With no event log to read, the steps are the ones the state saved.
+  const ran = (live.steps ?? state?.agents ?? []).some((agent) => `${scopePrefix(record.runId, typeof agent.scope === "string" ? agent.scope : undefined, record.nested)}${agent.label}` === step);
+  const change = "Name a step that runs now, by the name sous log gives it.";
+  // With no worker no step runs, so a step the run has stops nothing. A name it lacks is a typo.
+  if (!alive) {
+    if (ran) return false;
+    throw new Refusal("no_such_step", `no step named "${step}" ran in ${record.runId}.`, change, `sous show ${record.runId} --json`);
+  }
   const running = live.running;
   const calls = running.filter((call) => call.name === step).map(({ name: _name, ...call }) => call);
   if (!calls.length) {
     const now = running.length ? `Running now: ${running.map((call) => `"${call.name}"`).join(", ")}.` : "No step runs now.";
-    const ran = (live.steps ?? []).some((agent) => `${scopePrefix(record.runId, typeof agent.scope === "string" ? agent.scope : undefined, record.nested)}${agent.label}` === step);
     const message = ran ? `"${step}" does not run now in ${record.runId}. ${now}` : `no step named "${step}" runs in ${record.runId}. ${now}`;
-    throw new Refusal(ran ? "step_not_running" : "no_such_step", message, "Name a step that runs now, by the name sous log gives it.", `sous show ${record.runId} --json`);
+    throw new Refusal(ran ? "step_not_running" : "no_such_step", message, change, `sous show ${record.runId} --json`);
   }
   requestStepStop(paths, record.runId, { step, calls });
   process.kill(record.pid!, "SIGUSR2");
@@ -534,36 +541,51 @@ export function changedWorkflows(paths: HomePaths, record: RunRecord, state: Per
   ];
 }
 
-/** What resume says when the rule refuses it. */
-const RESUME_REFUSALS: Record<ResumeRefusal, (runId: string) => string> = {
-  running: (runId) => `${runId} is running already`,
-  "never-started": (runId) => `${runId} never started. sous rerun ${runId} starts it fresh.`,
-  completed: (runId) => `${runId} completed. sous rerun ${runId} runs it again.`,
-  stopped: (runId) => `${runId} was stopped. sous rerun ${runId} starts it again.`,
-  older: (runId) => `${runId} was saved by an older sous, and this sous cannot resume it. sous rerun ${runId} starts it again, and sous stop ${runId} ends it.`,
+/** Why a resume changes nothing: the run runs, never started, completed or was stopped. */
+export type ResumeWrongState = Exclude<ResumeRefusal, "older">;
+
+/** What resume says of a run in a state it does not resume from. */
+const WRONG_STATE: Record<ResumeWrongState, (runId: string) => string> = {
+  running: (runId) => `${runId} is running already, so there is nothing to resume.`,
+  "never-started": (runId) => `${runId} never started, so there is nothing to resume. sous rerun ${runId} starts it fresh.`,
+  completed: (runId) => `${runId} completed, so there is nothing to resume. sous rerun ${runId} runs it again.`,
+  stopped: (runId) => `${runId} was stopped, so it does not resume. sous rerun ${runId} starts it again.`,
 };
+
+/** How a resume went: it started a worker, or the run is in a state that has nothing to resume,
+ *  or the workflow changed and the caller must choose a version. Nothing changes in the last two. */
+export type ResumeOutcome =
+  | { resumed: RunRecord }
+  | { wrongState: ResumeWrongState; view: RunView; message: string }
+  | { mustChoose: string[]; message: string };
 
 /**
  * Resume a run in a new worker. A workflow edited since the run started reaches it only by
  * choice: "latest" takes the edits, and "same" goes on with the version it started with. With
- * no choice, an edit refuses the resume.
+ * no choice, an edit makes the caller choose. A run an older sous saved is refused.
  */
-export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, choice?: "latest" | "same"): RunRecord {
-  const { record, resume } = readRun(paths, runId);
-  if (!resume.ok) throw new Error(RESUME_REFUSALS[resume.why](record.runId));
+export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, choice?: "latest" | "same"): ResumeOutcome {
+  const view = readRun(paths, runId);
+  const { record, resume } = view;
+  const why = resume.ok ? undefined : resume.why;
+  if (why === "older") {
+    const message = `${record.runId} was saved by an older sous, and this sous cannot resume it. sous rerun ${record.runId} starts it again, and sous stop ${record.runId} ends it.`;
+    throw new Refusal("cannot_resume", message, "Start the run again with sous rerun, or end it with sous stop.", `sous rerun ${record.runId}`);
+  }
+  if (why) return { wrongState: why, view, message: WRONG_STATE[why](record.runId) };
   // The rule lets a run resume only once it has a state. The check runs with a choice too, so a
   // workflow folder that cannot be read stops the resume here.
   const changed = changedWorkflows(paths, record, readState(paths, record.runId)!);
   if (changed.length && !choice) {
-    throw new Error(
+    const message =
       `${changed.join(", ")} changed since ${record.runId} started. ` +
-        `sous resume ${record.runId} --latest takes the new version, and the finished steps that match stay done. ` +
-        `sous resume ${record.runId} --same goes on with the version it started with.`,
-    );
+      `sous resume ${record.runId} --latest takes the new version, and the finished steps that match stay done. ` +
+      `sous resume ${record.runId} --same goes on with the version it started with.`;
+    return { mustChoose: changed, message };
   }
   if (choice === "latest") updateRecord(paths, record.runId, { resumeLatest: true });
   launch(paths, record.runId, "resume");
-  return record;
+  return { resumed: record };
 }
 
 /** What rerun --reuse says when the rule refuses it. */
@@ -640,15 +662,18 @@ function ownRun(paths: HomePaths, scope: string): RunRecord | undefined {
 }
 
 /** What an answer did. It was written, and `running` says whether the run reads it now or on
- *  resume. Or it stopped the run, or it does not fit the command, or the prompt's question was
- *  already closed. */
-export type AnswerOutcome = { answered: true; running: boolean } | { stopped: ReturnType<typeof stopRun> } | Misfit | { gone: true };
+ *  resume, and `notJson` that --value-json text went as text. Or it stopped the run, or it does
+ *  not fit the command, or the prompt's question was already closed. */
+export type AnswerOutcome = { answered: true; running: boolean; notJson?: true } | { stopped: ReturnType<typeof stopRun> } | Misfit | { gone: true };
 
-/** Answer a question with what a person typed. A reply that stops the run stops it as sous stop does. */
+/** Answer a question with what a person typed. A reply that stops the run stops it as sous stop
+ *  does. Only a reply typed at a prompt finds the question gone. */
+export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply & { via: Exclude<Reply["via"], "prompt"> }): Exclude<AnswerOutcome, { gone: true }>;
+export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply): AnswerOutcome;
 export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply): AnswerOutcome {
   const result = reply(paths, question, typed);
   if ("stop" in result) return { stopped: stopRun(paths, question.runId) };
-  if ("answered" in result) return { answered: true, running: processAlive(findRecord(paths, question.runId)?.pid) };
+  if ("answered" in result) return { answered: true, running: processAlive(findRecord(paths, question.runId)?.pid), ...(result.notJson ? { notJson: true as const } : {}) };
   return result;
 }
 
@@ -656,7 +681,7 @@ export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: R
  *  after each. */
 export function discardRun(paths: HomePaths, runId: string, options: { remove?: boolean; deleted?: (tree: { dir: string; branch: string }) => void } = {}): Array<{ dir: string; branch: string }> {
   const record = needRecord(paths, runId);
-  if (processAlive(record.pid)) throw new Error(`${record.runId} is running. sous stop ${record.runId} first.`);
+  if (processAlive(record.pid)) throw new Refusal("run_is_running", `${record.runId} is running. sous stop ${record.runId} first.`, "Stop the run, then discard it.", `sous stop ${record.runId}`);
   const trees = runWorktrees(record);
   if (options.remove) {
     for (const tree of trees) {

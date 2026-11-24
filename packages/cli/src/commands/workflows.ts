@@ -7,15 +7,16 @@ import { reply, type Reply } from "../reply.js";
 import { projectDir } from "./common.js";
 import type { Ctx } from "./index.js";
 
-export function cmdWorkflows(args: Parsed, ctx: Ctx): number | Reply<object> {
+export function cmdWorkflows(args: Parsed, ctx: Ctx): Reply<object> {
   const paths = ctx.paths;
-  const out = ctx.machine.out;
+  const text: string[] = [];
+  const out = (line: string) => text.push(line);
   const view = projectWorkflows(paths, projectDir(args));
   const entries = view.list();
   if (ctx.json) return reply({ workflows: entries.map((entry) => ({ name: entry.name, file: entry.file, ...(entry.error ? { error: entry.error } : { ...entry.extras }) })) });
   if (!entries.length) {
     out(`no saved workflows. Put them in ${view.dirs.join(" or ")}.`);
-    return 0;
+    return reply({}, { text });
   }
   for (const entry of entries) {
     if (entry.error) {
@@ -31,7 +32,7 @@ export function cmdWorkflows(args: Parsed, ctx: Ctx): number | Reply<object> {
       out(`  ${RESERVED.includes(name) ? "-- " : ""}--${name}  ${bits.join(", ")}${spec.description ? `  ${spec.description}` : ""}`);
     }
   }
-  return 0;
+  return reply({}, { text });
 }
 
 function readAnswers(ctx: Ctx, file: string): Answers {
@@ -42,7 +43,7 @@ function readAnswers(ctx: Ctx, file: string): Answers {
   return parsed as Answers;
 }
 
-export async function cmdCheck(args: Parsed, ctx: Ctx): Promise<number | Reply<object>> {
+export async function cmdCheck(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   const paths = ctx.paths;
   const dir = projectDir(args);
   const out = ctx.machine.out;
@@ -66,7 +67,7 @@ export async function cmdCheck(args: Parsed, ctx: Ctx): Promise<number | Reply<o
   const { notes, ...checked } = result;
   if (result.problems.length || !wantsDryRun) {
     const exit = result.problems.length ? 1 : 0;
-    return json ? reply(checked, { notes, exit }) : exit;
+    return json ? reply(checked, { notes, exit }) : reply({}, { exit });
   }
   const answersFile = str(args.flags.answers);
   const answers = answersFile ? readAnswers(ctx, resolve(answersFile)) : undefined;
@@ -79,5 +80,5 @@ export async function cmdCheck(args: Parsed, ctx: Ctx): Promise<number | Reply<o
   } else {
     out(`the dry run did not complete: ${dry.status}${dry.reason ? ` (${dry.reason.replace(/\s+/g, " ")})` : ""}`);
   }
-  return dry.status === "completed" ? 0 : 1;
+  return reply({}, { exit: dry.status === "completed" ? 0 : 1 });
 }
