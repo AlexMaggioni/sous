@@ -9,7 +9,7 @@ import { cmdList, cmdLog, cmdShow, cmdStatus, cmdWait } from "./reads.js";
 import { cmdRerun, cmdResume, cmdRun } from "./runs.js";
 import { cmdStep } from "./step.js";
 import { cmdDaemon, cmdSchedule } from "./service.js";
-import { cmdAccount, cmdDoctor } from "./setup.js";
+import { cmdAccount, cmdDoctor, cmdGuide, cmdSkill } from "./setup.js";
 import { cmdCheck, cmdWorkflows } from "./workflows.js";
 
 /** What the commands do on the machine. Only cli.ts makes the real one. */
@@ -89,6 +89,8 @@ export const COMMANDS: Record<string, CommandSpec> = {
   prune: { run: cmdPrune, flags: takes("days", "json") },
   account: { run: cmdAccount, flags: takes("json") },
   doctor: { run: cmdDoctor, flags: takes("live", "model", "json") },
+  guide: { run: cmdGuide, flags: takes("json") },
+  skill: { run: cmdSkill, flags: takes("json") },
 };
 
 /** The other names a command answers to. Help does not list them. */

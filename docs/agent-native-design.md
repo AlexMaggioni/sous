@@ -159,7 +159,7 @@ export function cut<T>(items: T[], max: number, flag: string, what: string): { i
 ```ts
 // engine runs/refusal.ts
 export type RefusalCode =
-  | "no_such_run" | "no_such_workflow" | "no_such_question" | "no_such_step" | "step_not_running"
+  | "no_such_run" | "no_such_workflow" | "no_such_question" | "no_such_step" | "no_such_topic" | "step_not_running"
   | "started_by_people" | "not_approved" | "question_for_people" | "needs_person" | "no_person_here"
   | "step_takes_no_message" | "turn_not_steerable" | "run_is_running" | "cannot_resume" | "not_ours" | "workflow_invalid";
 export class Refusal extends Error {
@@ -200,6 +200,7 @@ export class Refusal extends Error {
 | `no_such_workflow` | no workflow has that name | `sous workflows --json` |
 | `no_such_question` | the question is answered or gone | `sous wait <run> --json` |
 | `no_such_step` | the run has no step with that label | `sous show <run> --json` |
+| `no_such_topic` | `sous guide` has no topic by that name | `sous guide --json` |
 | `step_not_running` | the step exists but doesn't run now | `sous resume <run> --note "..." --step <step>` when it can resume, else `sous show` |
 | `started_by_people` | an agent or a run starts a people workflow | null, with `forPerson` set to the command |
 | `not_approved` | a new or changed workflow has no yes | `sous workflows show <name> --diff --json` |
@@ -208,10 +209,10 @@ export class Refusal extends Error {
 | `no_person_here` | `--by person` from a step of a run | null |
 | `step_takes_no_message` | `tell` to a shell, js or py step | `sous stop <run> --step <step>` |
 | `turn_not_steerable` | Codex is in a compact or review turn | the same `tell` |
-| `run_is_running` | `discard` of a running run | `sous stop <run>` |
+| `run_is_running` | `discard` of a running run | `sous stop <run> --json` |
 | `workflow_invalid` | the workflow file does not parse, or its settings are wrong | `sous check <name> --json` |
-| `cannot_resume` | an older sous saved the run | `sous rerun <run>` |
-| `not_ours` | a skill or hook place holds something sous didn't put there | null |
+| `cannot_resume` | an older sous saved the run | `sous rerun <run> --json` |
+| `not_ours` | a skill or hook place holds something sous didn't put there, a broken link or a link to another folder included | the same install, such as `sous skill install --json`, with `change` naming each place to move aside |
 
 Requests in the wrong state change nothing and exit 0 with a note. That covers pause and stop of an ended run, and the `RESUME_REFUSALS` cases `running`, `never-started`, `completed` and `stopped`. Their next is `wait` for a running run and `rerun` for the others. A resume of a run whose workflow changed, with neither `--latest` nor `--same`, fails with `bad_argument`. Its call is `--same`, and its change names both.
 
@@ -496,7 +497,7 @@ export function statusLine(paths: HomePaths, now: Date): string; // "" when noth
 - Each later piece updates its topic.
 - `packages/cli/skill/sous/SKILL.md` starts from the draft in the proposal, for the owner to rewrite.
 - `Harness.places(env)` returns `{ skills: string; settings?: string }` and keeps each program's folders in its adapter. Claude gives `<CLAUDE_CONFIG_DIR or ~/.claude>/skills` and its `settings.json`. Codex gives `~/.agents/skills`.
-- `sous skill install` links `<skills>/sous` to the skill folder for each program, through a helper in `programs.ts`. A link that is already ours is fine. Anything else in that place fails with `not_ours`, and sous writes nothing. `sous skill path` prints the folder. `sous skill check` reports `{program, place, installed, ours}` for each program.
+- `sous skill install` links `<skills>/sous` to the skill folder for each program, through a helper in `programs.ts`. A link that is already ours is fine. A broken link whose target ends in the skill folder's own tail, `cli/skill/sous`, is one sous made from a checkout or worktree that is gone, so install replaces it and a note names the old target. Anything else in that place, a real folder, a live link to another folder or a broken link to anything else, fails with `not_ours`, and sous writes nothing. `sous skill path` prints the folder. `sous skill check` reports `{program, place, installed, ours}` for each program.
 - `sous hook install` adds one SessionStart command, `sous status --line 2>/dev/null || true`, to the Claude settings file. It keeps a backup next to it, and finds its own entry again by that exact command. `sous hook remove` deletes only that entry. The Codex hook format is a live check, so until then the reply notes that Codex has no hook.
 - `sous status --line` prints `statusLine`, or nothing. A SessionStart hook's output goes into the model's context, so the line speaks to the agent. For example, "sous: 1 run asks a question and 1 failed. Tell the person, and run sous status for details."
 - `sous doctor` adds the skill check per program. When `through` is Codex and a probe write to the sous home fails, it adds a note. The note says to add the sous home to `sandbox_workspace_write.writable_roots` in the Codex config, or to start Codex with `--add-dir <home>`. A write error under the home (EACCES, EPERM, EROFS) maps to `home_not_writable` with the same text. The `start` guide topic has the same line.
@@ -610,7 +611,7 @@ Goldens are updated with `BASELINE_UPDATE=1`, and the diff is reviewed.
 **Tests first.** `cli/test/questions.test.ts` and `cli/test/runs.test.ts`:
 - Pausing a paused run exits 0 with a note.
 - Resuming a completed run exits 0 with `next` holding the `rerun` call.
-- `discard` of a running run exits 66 with `run_is_running` and `call` `sous stop <run>`.
+- `discard` of a running run exits 66 with `run_is_running` and `call` `sous stop <run> --json`.
 - `answer <id> '{"a":1}' --value-json` passes an object.
 - `answer <id> '{"a":1}'` on an input question passes the text, with a note naming `--value-json`.
 

@@ -229,7 +229,7 @@ return { first, second }`,
     assert.equal(choose.code, 64, choose.out);
     const error = (JSON.parse(choose.out) as { error: { code: string; change: string; call: string | null } }).error;
     assert.equal(error.code, "bad_argument");
-    assert.match(error.call ?? "", new RegExp(`^sous resume ${record.runId} --same( --json)?$`), "its call is --same");
+    assert.match(error.call ?? "", new RegExp(`^sous resume ${record.runId} --same --json$`), "its call is --same");
     assert.match(error.change, /--latest/, "its change names --latest");
     assert.match(error.change, /--same/, "its change names --same");
     assert.equal(workers.launched.length, 1, "a resume that asks starts no worker");
@@ -1275,7 +1275,7 @@ describe("control replies", () => {
     assert.equal(json.code, 66, json.out);
     const error = errorOf(json.out);
     assert.equal(error.code, "cannot_resume");
-    assert.equal(error.call, `sous rerun ${runId}`);
+    assert.equal(error.call, `sous rerun ${runId} --json`);
     assert.equal(workers.launched.length, 0, "nothing starts");
   });
 
@@ -1285,7 +1285,7 @@ describe("control replies", () => {
     assert.equal(json.code, 66, json.out);
     const error = errorOf(json.out);
     assert.equal(error.code, "run_is_running");
-    assert.equal(error.call, `sous stop ${runId}`);
+    assert.equal(error.call, `sous stop ${runId} --json`);
     const text = await sous(paths, ["discard", runId, "--yes"]);
     assert.equal(text.code, 66, text.out);
   });
@@ -1359,7 +1359,7 @@ describe("control replies", () => {
     const { paths, runId } = planted("paused", { state: { pauseReason: "requested" } });
     const both = await sous(paths, ["resume", runId, "--latest", "--same", "--json"]);
     assert.equal(both.code, 64, both.out);
-    assert.equal(errorOf(both.out).call, `sous resume ${runId} --same`);
+    assert.equal(errorOf(both.out).call, `sous resume ${runId} --same --json`);
     const prune = await sous(paths, ["prune", "--days", "soon", "--json"]);
     assert.equal(prune.code, 64, prune.out);
     assert.equal(errorOf(prune.out).call, "sous prune --days 30");

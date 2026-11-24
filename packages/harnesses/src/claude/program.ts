@@ -43,6 +43,12 @@ export function claudeLogin(env: Record<string, string | undefined> = process.en
   return { variable: "CLAUDE_CONFIG_DIR", ...(value ? { value } : {}), folder: value ?? join(homedir(), ".claude"), ...(token ? { token } : {}) };
 }
 
+/** Where Claude Code looks for skills and its settings file in env, HOME included. */
+export function claudePlaces(env: Record<string, string | undefined> = process.env) {
+  const folder = env.CLAUDE_CONFIG_DIR || join(env.HOME || homedir(), ".claude");
+  return { skills: join(folder, "skills"), settings: join(folder, "settings.json") };
+}
+
 /**
  * The environment of one step. It starts from the caller's, since it replaces the whole
  * environment, then puts the step on its account.

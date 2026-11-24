@@ -4,7 +4,7 @@ import { StepFailure } from "../failure.js";
 import { findProgram } from "../lookup.js";
 import type { Account, FindOptions, Found, Harness, Step, StepEvents } from "../types.js";
 import type { ModelListResponse } from "./generated/v2/ModelListResponse.js";
-import { CODEX, codexEnv, codexLogin, codexVersion } from "./program.js";
+import { CODEX, codexEnv, codexLogin, codexPlaces, codexVersion } from "./program.js";
 import { openServer, runCodex } from "./run.js";
 
 export function createCodexHarness(lookup: FindOptions = {}): Harness {
@@ -46,6 +46,7 @@ export function createCodexHarness(lookup: FindOptions = {}): Harness {
       return runCodex(await ready(), step, events);
     },
     login: codexLogin,
+    places: codexPlaces,
     env: codexEnv,
   };
 }

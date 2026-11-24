@@ -281,7 +281,7 @@ describe("errors through sous", () => {
     assert.equal(answered.code, 64, answered.stdout + answered.stderr);
     const error = errorOf(answered);
     assert.equal(error.code, "not_a_choice");
-    assert.match(error.call ?? "", new RegExp(`^sous answer ${question.id} <red\\|blue>`));
+    assert.match(error.call ?? "", new RegExp(`^sous answer ${question.id} <red\\|blue> --json$`));
     assert.equal(existsSync(join(paths.inbox, `${question.id}.answer.json`)), false, "no answer is written");
   });
 
@@ -293,7 +293,7 @@ describe("errors through sous", () => {
     assert.equal(answered.stdout, "");
     const lines = answered.stderr.trimEnd().split("\n");
     assert.ok(lines.some((line) => line.startsWith("  change: ")), answered.stderr);
-    assert.ok(lines.some((line) => line.startsWith(`  try: sous answer ${question.id} <red|blue>`)), answered.stderr);
+    assert.ok(lines.some((line) => line === `  try: sous answer ${question.id} <red|blue> --json`), answered.stderr);
   });
 
   it("sous answer on a question that is gone exits 65 with no_such_question", async () => {
