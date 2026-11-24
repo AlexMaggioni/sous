@@ -74,8 +74,9 @@ export function cmdStep(args: Parsed, ctx: Ctx): Reply<object> {
   if (promptCut) notes.push("The prompt is cut to 2,000 characters. Add --full to see all of it.");
   if (view.calls > 1 && call === undefined) notes.push(`This is the last of ${view.calls} calls. Add --call n to see another.`);
   if (alsoIn?.length) {
-    const here = view.scope === view.runId ? "the run itself" : `nested run ${view.scope}`;
-    notes.push(`${alsoIn.length === 1 ? "Nested run" : "Nested runs"} ${alsoIn.join(", ")} ${alsoIn.length === 1 ? "also has" : "also have"} a step "${label}". This is the one in ${here}.`);
+    const runName = (scope: string) => (scope === view.runId ? "the run itself" : `nested run ${scope}`);
+    const others = alsoIn.map(runName).join(", ");
+    notes.push(`${others[0]!.toUpperCase()}${others.slice(1)} ${alsoIn.length === 1 ? "also has" : "also have"} a step with this label, under another name in sous log. This is the one in ${runName(view.scope)}.`);
   }
   const next = stepNext(view.runId, view.step, view.status);
   if (!ctx.json) return reply(view, { notes: earlier ? [`${earlier} older activity entries are not shown. Add --tail ${earlier + view.activity.length} to see them.`, ...notes] : notes, next, text: stepText(view) });

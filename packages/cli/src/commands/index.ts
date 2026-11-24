@@ -3,7 +3,7 @@
 import type { HomePaths, Launcher, Who } from "@sous/engine";
 import { flagsNamed, RESERVED, type FlagSpec, type Parsed } from "../args.js";
 import type { Reply } from "../reply.js";
-import { cmdDiscard, cmdGc, cmdPause, cmdPrune, cmdStop } from "./control.js";
+import { cmdDiscard, cmdGc, cmdPause, cmdPrune, cmdStop, cmdTell } from "./control.js";
 import { cmdAnswer, cmdInbox } from "./questions.js";
 import { cmdList, cmdLog, cmdShow, cmdStatus, cmdWait } from "./reads.js";
 import { cmdRerun, cmdResume, cmdRun } from "./runs.js";
@@ -49,6 +49,8 @@ export interface Ctx {
   readonly launch: Launcher;
   machine: Machine;
   now: () => Date;
+  /** How long sous tell waits for the worker's receipt, in ms. */
+  tellWaitMs: number;
 }
 
 /** A command gives a reply, which main prints. */
@@ -84,6 +86,7 @@ export const COMMANDS: Record<string, CommandSpec> = {
   pause: { run: cmdPause, flags: takes("by", "json") },
   resume: { run: cmdResume, flags: takes("latest", "same", "wait", "let-agent-answer", "by", "json") },
   stop: { run: cmdStop, flags: takes("step", "by", "json") },
+  tell: { run: cmdTell, flags: takes("step", "call", "by", "json") },
   rerun: { run: cmdRerun, flags: takes("place", "reuse", "set", "model", "wait", "let-agent-answer", "by", "json"), inputs: true },
   workflows: { run: cmdWorkflows, flags: takes("project", "all", "by", "json") },
   check: { run: cmdCheck, flags: takes("project", "dry-run", "answers", "json"), inputs: true },

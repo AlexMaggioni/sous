@@ -28,7 +28,7 @@ const TOPICS: ReadonlyArray<{ name: string; about: string }> = [
   { name: "asks", about: "a run asks a question: the person answers, you pass it on" },
   { name: "ends", about: "a run ended: read the result and the diff before you report" },
   { name: "pauses", about: "failures, the usage limit and pauses: resume, rerun or stop" },
-  { name: "steer", about: "pause the run, or stop one step or the whole run" },
+  { name: "steer", about: "tell a running step more, pause the run, or stop one step or the whole run" },
   { name: "writing", about: "write a workflow and check it before it runs" },
   { name: "errors", about: "the error shape, the exit codes and what to do with each" },
   { name: "inside", about: "you are a step of a run: what you call and what you leave" },

@@ -42,6 +42,8 @@ export interface MainOptions {
   now?: () => Date;
   /** What the commands do on the machine. Tests pass one to fake a terminal. */
   machine?: Machine;
+  /** How long sous tell waits for the worker's receipt, in ms. Default 5000. */
+  tellWaitMs?: number;
 }
 
 function machine(): Machine {
@@ -98,6 +100,7 @@ function contextOf(json: boolean, options: MainOptions, machine: Machine, who: W
     },
     machine,
     now: options.now ?? (() => new Date()),
+    tellWaitMs: options.tellWaitMs ?? 5000,
   };
 }
 
@@ -135,6 +138,8 @@ sous runs saved workflows in the background.
         --latest | --same               after an edit: take the new version, or keep the run's own
   sous stop <run>                       end the run; its worktree stays
         --step <name>                   stop one running step instead; the run pauses on it
+  sous tell <run> --step <name> <msg>   give a running agent step a message it reads after its tool call
+        --call n                        tell only the nth call of the step
   sous rerun <run> [--name value ...]   start the same workflow again with the same inputs
         --reuse                         keep the results of the steps you did not edit, in the same place
   sous workflows                        saved workflows and their inputs

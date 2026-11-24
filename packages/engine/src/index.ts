@@ -15,7 +15,7 @@ export {
 export { listRecords, loadRecord, scopePath, type RunRecord } from "./runs/records.js";
 export { hint, questionView, type Reply } from "./runs/inbox.js";
 export { answerCalls, mayStart } from "./runs/consent.js";
-export { Refusal } from "./runs/refusal.js";
+export { Refusal, word } from "./runs/refusal.js";
 export { recordAction, traceCall, type Through, type Who } from "./runs/actions.js";
 export { approveWorkflows } from "./runs/approval-check.js";
 export { seedApprovals } from "./runs/approvals.js";
@@ -52,6 +52,7 @@ export {
 } from "./runs/run.js";
 export { removeAccount, useAccount, waitingRuns } from "./runs/run-accounts.js";
 export { logAfter, stepView, type StepView } from "./runs/step-view.js";
+export { tellResult, tellStep } from "./runs/tell.js";
 export { homeStatus, sinceWindow, statusLine, type HomeStatus } from "./runs/status.js";
 export { isPlace } from "./places/places.js";
 

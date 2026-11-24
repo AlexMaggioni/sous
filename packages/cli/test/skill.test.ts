@@ -120,6 +120,11 @@ describe("the skill folder", () => {
     assert.ok(!text.includes("—"), "SKILL.md has an em dash");
     assert.ok(!/\p{Extended_Pictographic}/u.test(text), "SKILL.md has an emoji");
   });
+
+  it("keeps SKILL.md under 4,000 characters", () => {
+    const text = readFileSync(join(SKILL, "SKILL.md"), "utf8");
+    assert.ok(text.length < 4000, `SKILL.md has ${text.length} characters, over 4,000`);
+  });
 });
 
 describe("sous skill path", () => {

@@ -47,3 +47,6 @@ export class Refusal extends Error {
     return MISSING.has(this.code);
   }
 }
+
+/** A word as one shell word, in single quotes when it needs them, for the calls sous gives. */
+export const word = (text: string) => (/^[\w./-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`);
