@@ -237,11 +237,11 @@ export function takeTells(paths: HomePaths, runId: string): TellRequest[] {
 }
 
 /** A note `sous resume --note` gives the resumed run: its text, and the step it is for, by its
- *  name in the log, its run or nested run and its label there. Without a step it goes to the first
- *  agent call that runs. */
+ *  name in the log, the runs or nested runs that name covers and its label there. Without a step
+ *  it goes to the first agent call that runs. */
 export interface NoteRequest {
   text: string;
-  step?: { name: string; scope: string; label: string };
+  step?: { name: string; scopes: string[]; label: string };
 }
 
 /** Leave a note for the next worker of the run. The latest note wins. */

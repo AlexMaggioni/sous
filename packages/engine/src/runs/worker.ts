@@ -18,10 +18,10 @@ import { approvedLookup } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 import { authorAnsweredBy } from "./consent.js";
 import { Refusal } from "./refusal.js";
-import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeNote, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type RunRecord, type TellOutcome } from "./records.js";
+import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeNote, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type NoteRequest, type RunRecord, type TellOutcome } from "./records.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
-import { createSteps, type InnerRunner } from "../steps/steps.js";
+import { createSteps, type InnerRunner, type StepsNote } from "../steps/steps.js";
 import { SteeringBoard } from "../steps/steering.js";
 import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";
 import { programLookup } from "../programs.js";
@@ -141,11 +141,28 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
   const paths = ensureHome(options.paths ?? homePaths());
   const record = loadRecord(paths, runId);
   if (!record) throw new Error(`no run ${runId}`);
+  // A resume's note goes to this go only, so it is taken before any check that ends the go.
+  const note = mode === "resume" ? takeNote(paths, runId) : undefined;
   const script = checkedText(paths, record, mode);
   // The steps run on the run's recorded accounts, also when the service resumes it with its own
   // environment. A dry run talks to no agent.
   const accounts = options.dryRun ? {} : runAccounts(paths, record.accounts);
-  return runOnAccounts(paths, record, mode, options, accounts, script);
+  return runOnAccounts(paths, record, mode, options, accounts, script, note);
+}
+
+/** A resume's note for the steps of this go. The log says whom it is for, and at the end of the go
+ *  that it reached no step when no agent call took it, since the note is gone after this go. */
+function noteForGo(note: NoteRequest | undefined, log: (line: string) => void): { steps?: StepsNote; end(): void } {
+  if (!note) return { end: () => {} };
+  const noteFor = note.step ? note.step.name : "the first agent call";
+  log(`${stamp()} note       for ${noteFor}`);
+  let taken = false;
+  return {
+    steps: { text: note.text, ...(note.step ? { step: note.step.label, scopes: note.step.scopes } : {}), taken: () => (taken = true) },
+    end: () => {
+      if (!taken) log(`${stamp()} note       for ${noteFor} reached no step in this go`);
+    },
+  };
 }
 
 /**
@@ -171,6 +188,7 @@ function checkedText(paths: HomePaths, record: RunRecord, mode: "start" | "resum
   throw new Refusal("not_approved", refused, "Start or resume the run again. sous checks the text as it is now.", call);
 }
 
+/** Run one go of the run on its accounts, with `note`, the note `sous resume --note` left for it. */
 async function runOnAccounts(
   paths: HomePaths,
   record: RunRecord,
@@ -179,6 +197,7 @@ async function runOnAccounts(
   accounts: ReturnType<typeof runAccounts>,
   /** The checked text a start or a resume --latest runs. */
   script: string | undefined,
+  note: NoteRequest | undefined,
 ): Promise<WorkflowRunResult | undefined> {
   const runId = record.runId;
   const config = loadConfig(paths);
@@ -186,9 +205,7 @@ async function runOnAccounts(
   updateRecord(paths, runId, { pid: process.pid, limit: undefined, refused: undefined });
   // A step stop the last worker never took names a step of that worker, not this one.
   takeStepStops(paths, runId);
-  // A resume's note goes to the steps of this go only.
-  const note = mode === "resume" ? takeNote(paths, runId) : undefined;
-  if (note) log(`${stamp()} note       for ${note.step ? note.step.name : "the first agent call"}`);
+  const goNote = noteForGo(note, log);
 
   // The environment with the run's accounts on it, for code steps and the agent lookup.
   const base = envFor("codex", accounts.codex, envFor("claude", accounts.claude, process.env));
@@ -228,7 +245,7 @@ async function runOnAccounts(
     },
     onActivity,
     steering,
-    ...(note ? { note: { text: note.text, ...(note.step ? { step: note.step.label, scope: note.step.scope } : {}) } } : {}),
+    ...(goNote.steps ? { note: goNote.steps } : {}),
   });
   // A run keeps the workflows as they were when it started. A resume takes the edited ones only
   // after `sous resume --latest`.
@@ -391,6 +408,7 @@ async function runOnAccounts(
     await runner.dispose().catch(() => {});
   }
 
+  goNote.end();
   const state = manager.getPersistence().load(runId);
   const status = result?.status ?? state?.status ?? "unknown";
   // The worker ends, so it judges its run as gone. The run's result wins over the saved status.

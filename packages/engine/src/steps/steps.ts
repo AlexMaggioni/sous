@@ -64,15 +64,17 @@ export interface StepsOptions {
   /** The board each agent call opens on while its turn runs, so `sous tell` reaches it. */
   steering?: SteeringBoard;
   /** A note from `sous resume --note`. It goes to the first agent call that runs, or to the first
-   *  with the label `step`, in the run or nested run `scope` when given. */
+   *  with the label `step`, in one of the runs or nested runs `scopes` when given. */
   note?: StepsNote;
 }
 
-/** A note a resume gives one agent call. `step` is a label, and `scope` the run or nested run it runs in. */
-interface StepsNote {
+/** A note a resume gives one agent call. `step` is a label, and `scopes` the runs or nested runs
+ *  its calls may run in. `taken` is called when a call takes it. */
+export interface StepsNote {
   text: string;
   step?: string;
-  scope?: string;
+  scopes?: string[];
+  taken?: () => void;
 }
 
 
@@ -106,9 +108,10 @@ function noteTaker(note: StepsNote | undefined): (call: StepRequest) => string |
     const key = call.runId !== undefined && call.callIndex !== undefined ? `${call.runId}#${call.callIndex}` : undefined;
     if (taken) return key !== undefined && key === taker ? note.text : undefined;
     if (note.step !== undefined && call.label !== note.step) return undefined;
-    if (note.scope !== undefined && call.runId !== note.scope) return undefined;
+    if (note.scopes !== undefined && (call.runId === undefined || !note.scopes.includes(call.runId))) return undefined;
     taken = true;
     taker = key;
+    note.taken?.();
     return note.text;
   };
 }
@@ -153,12 +156,9 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     const { problem, plan: step } = call.route;
     if (problem) throw stop(problem);
     if (!step) throw stop("the step has no plan. The engine routes each step with route() before it runs it.");
-    // The note goes to a call as it asks, before any wait, so the first call that runs gets it.
-    const note = noteFor(call);
     const where = options.onActivity && activityStep(call.runId, call.callIndex, call.label);
     const report = where && ((entry: ActivityEntry) => options.onActivity!(where, entry));
     report?.({ kind: "prompt", text: prompt });
-    if (note !== undefined) report?.({ kind: "note", text: note });
 
     const program = await programFor(step.harness);
     if (program && "problem" in program) throw stop(program.problem);
@@ -176,6 +176,9 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
       release = await options.slots.acquire({ runId: call.runId, label: call.label }, call.signal);
       options.onSlot?.({ label: call.label, state: "running" });
     }
+    // The note goes to the first call that holds a slot, once the checks above let it run.
+    const note = noteFor(call);
+    if (note !== undefined) report?.({ kind: "note", text: note });
 
     // The step's time limit counts from here, once it holds a slot, not while it waits for one.
     const timeout = step.timeoutMs ? AbortSignal.timeout(step.timeoutMs) : undefined;

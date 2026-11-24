@@ -50,6 +50,9 @@ export async function cmdResume(args: Parsed, ctx: Ctx): Promise<Reply<object>> 
   const run = needRun(paths, args.positional[0]);
   const text = str(args.flags.note);
   const step = str(args.flags.step);
+  if (text !== undefined && text.trim() === "") {
+    throw new Usage("--note needs a message", "bad_argument", `Give the message after --note, as in sous resume ${run.runId} --note "...". To resume with no note, leave out --note.`, `sous resume ${run.runId} --json`);
+  }
   if (step !== undefined && text === undefined) {
     const change = `Add --note with the message for the step, as in sous resume ${run.runId} --note "..." --step ${word(step)}. To resume with no note, leave out --step.`;
     throw new Usage("--step names the step a note goes to, so it needs --note", "bad_argument", change, `sous resume ${run.runId} --json`);

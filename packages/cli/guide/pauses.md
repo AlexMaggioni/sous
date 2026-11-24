@@ -57,10 +57,12 @@ sous resume <run> --note "Use the v2 API." --step <step> --json
 
 `--note` adds the message to the prompt of the first agent call that runs. `--step` gives it to
 that step's first call instead, by its label or its name in `sous log`, such as `"sub: impl"`.
-A label the workflow's text writes works too for a step the run has not reached yet. A step in
-neither exits 65 with `no_such_step`, and the run stays paused. When the step
-already finished, a note says so: the message reaches it only if the workflow calls it again.
-The step's activity in `sous step` shows a `note` line when the call gets it.
+A label the workflow's text writes works too for a step the run has not reached yet. With
+`--latest`, that is the new text. A step in neither exits 65 with `no_such_step`, and a code step
+exits 66 with `step_takes_no_message`. Either way the run stays paused. When the step already
+finished, a note says so: the message reaches it only if the workflow calls it again. The step's
+activity in `sous step` shows a `note` line when the call gets it. When no agent call took the
+note, `sous log` says it reached no step. The note is for this resume only.
 
 A run that runs already does not resume. Its reply gives the `sous tell` call for the note.
 
