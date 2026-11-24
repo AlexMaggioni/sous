@@ -11,19 +11,13 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { lineDiff } from "../../src/workflows/diff.js";
 
 type LineDiff = (before: string, after: string) => string[];
 
 /** lineDiff from engine/src/workflows/diff.ts, which piece 10 adds. */
 async function loadLineDiff(): Promise<LineDiff> {
-  let mod: { lineDiff?: LineDiff };
-  try {
-    mod = (await import("../../src/workflows/diff.js" as string)) as { lineDiff?: LineDiff };
-  } catch (error) {
-    assert.fail(`engine/src/workflows/diff.ts does not load: ${(error as Error).message}`);
-  }
-  assert.equal(typeof mod.lineDiff, "function", "diff.ts exports no lineDiff");
-  return mod.lineDiff!;
+  return lineDiff;
 }
 
 describe("piece 10: lineDiff", () => {
