@@ -40,7 +40,9 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | `not_ours` | A skill place holds something sous did not put there, or Claude Code's `settings.json` does not parse, has a shape sous can't edit, or is a broken link. Tell the person. |
 | `home_not_writable` | sous can't write to its home. Under Codex the sandbox blocks it. Tell the person what `change` says. |
 | `started_by_people` | Only a person starts this workflow. Give them `forPerson` to type in their own terminal. |
-| `no_person_here` | A step of a run gave `--by person`. Leave it out: the step decides for itself. |
+| `no_person_here` | A step of a run gave `--by person`. Leave it out. A step answers only a question open to anyone. The person answers the rest, and the run waits for them. |
+| `question_for_people` | The question is the person's. Show it to them, then make `call` with their answer. A step of a run gets no `call`: the run waits for the person. |
+| `needs_person` | Only the person decides this. Ask them, then make `call`, which adds `--by person`. |
 | `broken_record` | A file sous keeps, such as a run's event log, does not parse. Tell the person. |
 
 ## Requests that change nothing

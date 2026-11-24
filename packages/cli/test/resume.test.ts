@@ -39,7 +39,7 @@ const start = (paths: HomePaths, projectDir: string, workflow: string, agent: Fa
 
 /** Resume the run as `sous resume` does, with --latest or --same when given, and wait for its worker. */
 function resume(paths: HomePaths, runId: string, agent: Fake, choice?: "latest" | "same") {
-  resumeRun(paths, agent.launch, runId, PERSON, choice);
+  resumeRun(paths, agent.launch, runId, PERSON, { choice });
   return agent.ended(runId);
 }
 

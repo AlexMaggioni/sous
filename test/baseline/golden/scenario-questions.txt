@@ -79,6 +79,7 @@ exit 4
   "questions": [
     {
       "id": "<run-1>--2",
+      "step": "asker",
       "prompt": "asker asks: Which file should I edit?",
       "kind": "input",
       "breakpoint": false,

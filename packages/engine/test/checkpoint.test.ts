@@ -499,3 +499,41 @@ test(
     );
   }),
 );
+
+// Piece 8, questions. Who may answer stays out of the call hash, as the breakpoint mark does: a
+// question asked before an author set answeredBy keeps its hash, and its answer still counts. The
+// mark reaches the host as the purpose { answeredBy: "anyone" }. A script's own checkpoint() takes
+// two arguments, so a script cannot mark a question by hand.
+test("piece 8: the call hash is the same with and without answeredBy, and ask anyone reaches confirm marked", async () => {
+  const seen: Array<{ hash?: string; purpose?: unknown }> = [];
+  const confirm = async (_prompt: string, _options: unknown, context?: { hash: string; purpose?: unknown }) => {
+    seen.push({ hash: context?.hash, purpose: context?.purpose === undefined ? undefined : JSON.parse(JSON.stringify(context.purpose)) });
+    return "blue";
+  };
+  for (const options of ["{ choices: ['red', 'blue'] }", "{ choices: ['red', 'blue'], answeredBy: 'anyone' }"]) {
+    await runWorkflow(`export const meta = { name: 'p8-hash', description: 'p8' }
+return await ask('Which color?', ${options})`, { agent: noopAgent, persistLogs: false, confirm });
+  }
+  const expected = createHash("sha256").update(JSON.stringify({ promptText: "Which color?", kind: "select", choices: ["red", "blue"] })).digest("hex");
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0]!.hash, expected, "the hash of a people question is the one it had before piece 8");
+  assert.equal(seen[1]!.hash, seen[0]!.hash, "answeredBy stays out of the hash");
+  assert.equal((seen[0]!.purpose as { answeredBy?: string } | undefined)?.answeredBy, undefined);
+  assert.deepEqual(seen[1]!.purpose, { answeredBy: "anyone" });
+});
+
+test("piece 8: a script's checkpoint() with a third argument asks unmarked", async () => {
+  const purposes: unknown[] = [];
+  await runWorkflow(`export const meta = { name: 'p8-mark', description: 'p8' }
+await checkpoint('Ship it?', { kind: 'confirm' }, { answeredBy: 'anyone' })
+await checkpoint('Ship it now?', { kind: 'confirm' }, { breakpoint: true })
+return await ask('Which color?', { choices: ['red', 'blue'], answeredBy: 'anyone' })`, {
+    agent: noopAgent,
+    persistLogs: false,
+    confirm: async (_prompt, options, context) => {
+      purposes.push(context?.purpose === undefined ? null : JSON.parse(JSON.stringify(context.purpose)));
+      return (options as { kind?: string }).kind === "confirm" ? true : "red";
+    },
+  });
+  assert.deepEqual(purposes, [null, null, { answeredBy: "anyone" }]);
+});

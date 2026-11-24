@@ -61,10 +61,10 @@ export async function waitFor(ctx: Ctx, runId: string, json: boolean, timeout?: 
   if (end.timedOut) {
     if (!json) return reply({}, { text: [`\nstill running after ${seconds}s. sous wait ${runId} waits again.`], exit: WAIT_TIMED_OUT });
     const summary = { ...end.summary, status: "running" as const };
-    const calls = nextCalls(summary, "wait", timeout);
+    const calls = nextCalls(summary, "wait", ctx.who, timeout);
     return reply(summary, { exit: WAIT_TIMED_OUT, next: calls.next, notes: [...(timeout === undefined ? [AGENT_WAIT_NOTE] : []), ...calls.notes] });
   }
-  if (json) return reply(end.summary, { exit: end.code, ...nextCalls(end.summary, "wait", timeout) });
+  if (json) return reply(end.summary, { exit: end.code, ...nextCalls(end.summary, "wait", ctx.who, timeout) });
   const text: string[] = [];
   if (end.questions) {
     for (const q of end.questions) text.push(`\nwaiting for an answer to ${q.id}:\n  ${q.prompt}\n  ${hint(q)}\n  then: sous wait ${runId}`);

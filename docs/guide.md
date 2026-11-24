@@ -103,17 +103,19 @@ The engine's own steps all work: `agent`, `parallel`, `pipeline`, `gate`, `retry
   `continue: "<label>"` (go on in that earlier step's session, which set `keepSession: true`) and
   `ask: true` (the agent may stop with a line starting `QUESTION:`; the user answers and the same
   session goes on). An asking agent returns text, so `ask` and `schema` don't go together, and a
-  sixth question fails the step.
+  sixth question fails the step. Its questions name the step in `step`. `answeredBy: "anyone"`
+  with `ask: true` lets an agent answer them too.
 - Code steps: `sh(command)`, `js(source, input)`, `py(source, input)`, `run(file)` and
   `waitUntil(command, { every })`. They run on this machine, count no tokens and take no agent
   slot. Each returns `{ code, stdout, stderr, result }`. A non-zero exit fails the step unless
   `allowFail: true`. They run in the run's place, and `SOUS_PROJECT` holds the project folder. A
   code step is tried once unless it sets `retries`.
-- `ask(question, { choices })` waits for the user's answer.
+- `ask(question, { choices, answeredBy })` waits for the answer. `answeredBy` is `"people"`, the
+  default, or `"anyone"`, which lets an agent answer too. Any other value fails the script.
 - `breakpoint(title, step, { show, max })` runs the step, then waits for the user to approve,
   stop the run, or send the step back with a note. The step reruns with the note, 5 times at most
   unless `max` says otherwise, then the breakpoint fails. A stop ends the run as `sous stop` does,
-  and `sous wait` exits with 3.
+  and `sous wait` exits with 3. A breakpoint is always for people, so it fails on `answeredBy`.
 - `choose(prompt, { steps, workflows, any, none, input })` lets an agent pick the next step or
   workflow and runs it. `any: true` allows every saved workflow except those for people only.
 - `workflow(name, args, { place, label })` runs a saved workflow inside this one, five levels
@@ -332,12 +334,13 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous list [--all]`, `sous show <run>`, `sous log <run> -f` | the last 20 runs, or every run with `--all`; one run's steps with the time and tokens of each, its questions and result; its log |
 | `sous step <run> <label> [--call N] [--tail N] [--full]` | one step of a run: its status, time and tokens, its prompt or its command, its failure, and the last 20 entries of what it did. A step that ran more than once shows its last call, and `--call N` shows another. A label only nested runs have shows the first nested run that has it, and a note names the others. `--tail N` shows N entries, and `--full` shows the whole prompt and every entry. A label the run never had exits 65. |
 | `sous workflows` | the saved workflows and their inputs |
-| `sous inbox`, `sous answer <q> <text>` | questions waiting for you, and answering one. `--value-json` reads the text as JSON, such as `'{"a": 1}'`. Without it the text is the answer, and text that starts with `{` or `[` gets a note. |
+| `sous inbox`, `sous answer <q> <text>` | questions waiting for you, and answering one. `--value-json` reads the text as JSON, such as `'{"a": 1}'`. Without it the text is the answer, and text that starts with `{` or `[` gets a note. The answer file keeps `by` and `through`. |
 | `sous approve <q>`, `sous send-back <q> <note>` | answer a breakpoint. `sous answer <q> stop` stops the run. |
 | `sous pause <run>`, `sous resume <run> [--latest \| --same]` | finish the running steps and start nothing new; go on from there |
 | `sous stop <run>` | end the run. Its worktree stays, unless the run changed no file. |
 | `sous stop <run> --step <name>` | stop one running step, by the name `sous log` gives it, such as `"ticket A: implementer"`. The run pauses on it, and `sous resume` runs it again. |
 | `sous rerun <run> [--reuse]` | the same workflow with the same inputs. `--reuse` keeps the results of the steps you did not edit and works in the same place. |
+| `sous run`, `rerun` or `resume` with `--let-agent-answer` | lets agents answer the run's questions for people, and its nested runs' questions. Never its breakpoints. A rerun does not carry it over. |
 | `sous wait <run> [--timeout N]` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer, 5 still running after `--timeout N` seconds. The run goes on after a timeout. An agent's wait, or a step's, has a timeout of 110 seconds when it gives none. A person's waits as long as it takes. In a terminal it asks the run's questions itself, so 4 comes only off a terminal or with `--json`. |
 | `sous status [--since 3d] [--line] [--all]` | what needs you, what runs, what waits to resume on its own, and what finished. Runs that ended show for the last 24 hours, or for the `--since` time. A failed or stopped run that ended before that counts only in a note, like a finished one. Each list shows 20 entries, or all with `--all`. `--line` prints one line for an agent's session start, or nothing when nothing needs you. |
 | `sous gc [--dry-run]` | remove worktrees whose branch is merged |
@@ -505,6 +508,21 @@ through an agent records `by: "agent"`. An agent that passes on the person's own
 `--by person`, and the line keeps both. A step of a run cannot give `--by person`: it exits 66 with
 `no_person_here`. On a read, `--by person` changes nothing and says so in a note. An answer,
 approval or send-back through an agent sends the person a notice.
+
+Each question says who may answer it in `answeredBy`. `"people"`, the default, takes only the
+person's answer, typed or passed on with `--by person`. `"anyone"` takes an agent's answer too. A
+breakpoint is always for people. An agent's own answer to a question for people exits 66 with
+`question_for_people`, and its `call` passes on the person's answer with `--by person`. A step of
+a run gets no answer call for a question for people, and its refusal has no `call`: only the
+person answers, and the run waits for them. A run
+started with `--let-agent-answer` lets agents answer its questions for people, never its
+breakpoints. Only the person gives that flag: from an agent without `--by person` it exits 66 with
+`needs_person`, and nothing starts. The record keeps it as `letAgentAnswer: { by, through, at }`,
+and `events.jsonl` gets a `let-agent-answer` line. `sous inbox --json`, `sous wait --json` and
+`sous status --json` show `answeredBy` as it stands for the run, so a question for people of such
+a run shows `"anyone"`. Their answer calls carry `--by person` only for an agent, and only where it
+may not answer alone. These rules hold for `sous answer`, `sous approve` and `sous send-back`.
+Writing an answer file in the home yourself bypasses them, so agents always use `sous answer`.
 
 sous refuses to start a workflow with `startedBy: "people"` through an agent or a run, also with
 `--by person`, and also as a rerun, a dry run or a schedule. A run that an agent or a run started

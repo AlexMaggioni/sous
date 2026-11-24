@@ -27,7 +27,7 @@ export function cmdStatus(args: Parsed, ctx: Ctx): Reply<object> {
     const line = statusLine(ctx.paths, ctx.now());
     return ctx.json ? reply({ line }) : reply({}, { text: line ? [line] : [] });
   }
-  const { earlier, ...status } = homeStatus(ctx.paths, ctx.now(), since === undefined ? {} : { since });
+  const { earlier, ...status } = homeStatus(ctx.paths, ctx.now(), { ...(since === undefined ? {} : { since }), who: ctx.who });
   const notes: string[] = [];
   const shown = <T>(items: T[], what: string): T[] => {
     if (args.flags.all) return items;
@@ -111,7 +111,7 @@ export function cmdShow(args: Parsed, ctx: Ctx): Reply<object> {
   const { record, saved } = run;
   if (ctx.json) {
     const short = shortRun(run, ctx.now());
-    const { next, notes } = nextCalls(short, "show");
+    const { next, notes } = nextCalls(short, "show", ctx.who);
     if (args.flags.full) return reply({ ...short, questions: run.questions, record, state: run.engineState }, { next, notes });
     const earlier = short.steps.length - SHOW_STEPS;
     if (earlier > 0) notes.unshift(`${earlier} earlier step${earlier === 1 ? "" : "s"} not shown. This shows the last ${SHOW_STEPS}. Add --full to see them all.`);
