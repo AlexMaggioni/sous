@@ -31,8 +31,8 @@ export function answersOf(ctx) {
     return {
       source: "records",
       answers: ctx.homeEvents
-        .filter((e) => ["answer", "approve", "send-back"].includes(e.action))
-        .map((e) => ({ runId: e.runId, question: e.question, action: e.action, value: e.value, by: e.by, through: e.through })),
+        .filter((e) => ["answer", "approve", "send-back"].includes(e.act))
+        .map((e) => ({ runId: e.runId, question: e.question, action: e.act, value: e.value, by: e.by, through: e.through })),
     };
   }
   const answers = [];
@@ -195,7 +195,8 @@ export const SCENARIOS = {
 
   "5b": {
     title: "A refused call: resume after an edit",
-    turns: ["I fixed the fails workflow. Resume my paused run of it so it finishes."],
+    turns: ["I fixed the fails workflow. Resume my paused run of it so it finishes.", "Yes, I approve that change. Go on."],
+    personTurns: [1],
     async setup(env) {
       const runId = await env.runUntil("fails", 2);
       env.edit("fails.js", (s) => s.replace("exit 3", "exit 0"));
@@ -221,13 +222,14 @@ export const SCENARIOS = {
       const changed = (snap) => Object.keys(snap.workflows).filter((k) => snap.workflows[k] !== before[k]);
       const afterFirst = changed(ctx.snapshots[0]);
       const afterLast = changed(ctx.snapshots.at(-1));
-      const firstRun = ctx.calls.findIndex((c) => c.sub === "run" && !c.flags.has("--dry-run"));
+      // A run sous refused never started, so the first run is the first one that did.
+      const firstRun = ctx.calls.findIndex((c) => c.sub === "run" && !c.flags.has("--dry-run") && c.exit === 0);
       const upTo = firstRun < 0 ? ctx.calls : ctx.calls.slice(0, firstRun);
       const dry = upTo.find((c) => c.sub === "check" && c.flags.has("--dry-run"));
       const otherDry = upTo.find((c) => c.sub === "run" && c.flags.has("--dry-run"));
       // An approve event: events.jsonl in the agent-native sous, a `workflows approve` call today.
       const approved = ctx.homeEvents
-        ? ctx.homeEvents.some((e) => e.action === "approve" && e.workflow)
+        ? ctx.homeEvents.some((e) => e.act === "approve-workflow" && e.by === "person" && !before[`project/${e.workflow}.js`])
         : upTo.some((c) => c.sub === "workflows approve" && c.exit === 0);
       return [
         check("nothing saved before the yes", afterFirst.length === 0, "no workflow file changed in turn 1", `turn 1 wrote ${afterFirst.join(", ")}`),

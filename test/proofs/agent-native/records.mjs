@@ -196,9 +196,15 @@ export function isRefusal(call) {
  */
 export function refusalCalls(call) {
   const error = call.json?.error;
-  if (error && typeof error.call === "string" && error.call.trim()) return { calls: [error.call.trim()], from: "error.call" };
+  // A refusal that offers a choice gives one call and names the other in its message.
+  if (error && typeof error.call === "string" && error.call.trim()) return { calls: [error.call.trim(), ...callsIn(error.message)], from: "error.call" };
   if (error && Array.isArray(error.calls)) return { calls: error.calls.filter((c) => typeof c === "string"), from: "error.call" };
-  const text = `${call.stderr ?? ""}\n${typeof error?.message === "string" ? error.message : ""}`;
+  return { calls: callsIn(`${call.stderr ?? ""}\n${typeof error?.message === "string" ? error.message : ""}`), from: "text" };
+}
+
+/** The sous calls a text names. */
+function callsIn(text) {
+  if (typeof text !== "string") return [];
   const found = [];
   const list = words(text.replace(/[`"]/g, " "));
   for (let i = 0; i < list.length; i++) {
@@ -214,7 +220,7 @@ export function refusalCalls(call) {
     }
     if (parts.length > 1 && !["lists", "runs", "is"].includes(parts[1])) found.push(parts.join(" "));
   }
-  return { calls: found, from: "text" };
+  return found;
 }
 
 /** Whether `actual` is the call `wanted` names. Placeholders such as <red|blue> match any word. */

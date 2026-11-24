@@ -17,7 +17,9 @@ it is skipped, and the person gets a notice. Once you saved it and the check pas
 starts it from you, a run or a schedule only after they approve it, by saying yes to you or with
 `sous workflows approve <name>` in their own terminal.
 
-When they say yes to you, run `sous workflows approve <name> --by person --json`. Without
+When they say yes to you, run `sous workflows approve <name> --by person --json`. A yes they gave
+to the whole text you showed them counts, if you saved that text unchanged. If the check made you
+change it, show them the diff and ask again. Without
 `--by person` an agent's approve is refused with `needs_person`. Never approve without their yes.
 A person's own `sous run <name>` approves the text it runs. Never edit, move or delete
 `approvals.json` or `approved/` in sous's home. Without them no workflow counts as approved.
