@@ -57,35 +57,40 @@ interface ErrorBody {
   forPerson?: string;
 }
 
-/** The change and call of a usage error that names none. */
+/** The change of a usage error that names none. */
 const FIX_COMMAND = "Fix the command line. sous help lists the commands and their flags.";
 
-/** The error's body and exit code, and its text lines. */
-function shapeOf(error: unknown): { body: ErrorBody; exit: number; text: string[] } {
+/** The lines under an error's first line in text, as its JSON has them. */
+const below = (body: ErrorBody): string[] => [`  change: ${body.change}`, ...(body.call ? [`  try: ${body.call}`] : [])];
+
+/** The error's body and exit code, and its first line in text. */
+function shapeOf(error: unknown): { body: ErrorBody; exit: number; first: string } {
   if (error instanceof Refusal) {
     const body: ErrorBody = { code: error.code, message: error.message, change: error.change, call: error.call };
     if (error.code === "started_by_people" && error.forPerson !== undefined) body.forPerson = error.forPerson;
-    const text = [error.message, `  change: ${error.change}`, ...(error.call ? [`  try: ${error.call}`] : [])];
-    return { body, exit: error.missing ? 65 : 66, text };
+    return { body, exit: error.missing ? 65 : 66, first: error.message };
   }
   if (error instanceof Usage) {
-    const body: ErrorBody = { code: error.code, message: error.message, change: error.change ?? FIX_COMMAND, call: error.call ?? "sous help" };
-    const extra = error.change ? [`  change: ${error.change}`, ...(error.call ? [`  try: ${error.call}`] : [])] : [];
-    return { body, exit: 64, text: [`usage: ${error.message}`, ...extra] };
+    const body: ErrorBody = { code: error.code, message: error.message, change: error.change ?? FIX_COMMAND, call: error.call };
+    return { body, exit: 64, first: `usage: ${error.message}` };
   }
   if (error instanceof InputProblems) {
     const body: ErrorBody = { code: "bad_argument", message: error.message, change: "Give the inputs the workflow needs.", call: `sous check ${error.workflow} --json` };
-    return { body, exit: 64, text: [error.message] };
+    return { body, exit: 64, first: error.message };
   }
   const message = error instanceof Error ? error.message : String(error);
-  return { body: { code: "internal", message, change: "Nothing to change in the command. Read the message, fix the cause and run it again.", call: null }, exit: 1, text: [`sous: ${message}`] };
+  const change = "The command is fine. sous itself failed. Read the message, fix the cause and run the same command again.";
+  // A fault keeps today's one line in text.
+  return { body: { code: "internal", message, change, call: null }, exit: 1, first: `sous: ${message}` };
 }
 
 /** Print an error, as JSON or as text, and return its exit code: 64 for a usage error, 65 for a
- *  missing thing, 66 for any other refusal, 1 when sous itself failed. */
-export function printError(error: unknown, json: boolean, write: (line: string) => void): number {
-  const { body, exit, text } = shapeOf(error);
+ *  missing thing, 66 for any other refusal, 1 when sous itself failed. `adjust` changes the call,
+ *  such as to keep the command's --project. */
+export function printError(error: unknown, json: boolean, write: (line: string) => void, adjust?: (call: string) => string): number {
+  const { body, exit, first } = shapeOf(error);
+  if (body.call && adjust) body.call = adjust(body.call);
   if (json) write(JSON.stringify({ error: body }, null, 2));
-  else for (const line of text) write(line);
+  else for (const line of body.code === "internal" ? [first] : [first, ...below(body)]) write(line);
   return exit;
 }

@@ -241,11 +241,14 @@ function meaningOf(question: Question, { via, text, json }: Reply): { value: unk
   }
   if (!text && question.kind !== "confirm") return { usage: `sous answer ${question.id} "your answer"` };
   let value: unknown;
-  try {
-    value = question.breakpoint ? breakpointValue(text) : json ? parseJson(text) : normalizeAnswer(question, text);
-  } catch (error) {
-    if (json || question.breakpoint) throw error;
-    return { usage: (error as Error).message, choices: choicesOf(question) };
+  if (question.breakpoint) value = breakpointValue(text);
+  else if (json) value = parseJson(text);
+  else {
+    try {
+      value = normalizeAnswer(question, text);
+    } catch (error) {
+      return { usage: (error as Error).message, choices: choicesOf(question) };
+    }
   }
   if (question.breakpoint && value === "stop") return { stop: true };
   if (question.kind === "select" && question.choices && !question.choices.includes(value as string)) {

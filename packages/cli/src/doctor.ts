@@ -4,7 +4,7 @@
 // sous uses for new runs.
 
 import { checkPrograms, DEFAULT, describeAccount, folderText, homePaths, loadConfig } from "@sous/engine";
-import { print, reply } from "./reply.js";
+import { reply, type Reply } from "./reply.js";
 
 export interface DoctorOptions {
   live?: boolean;
@@ -21,13 +21,14 @@ const SOURCE: Record<string, string> = {
   "usual folder": "found in a usual install folder",
 };
 
-export async function doctor(options: DoctorOptions = {}): Promise<number> {
+/** With json, the reports as a reply for main to print. */
+export async function doctor(options: DoctorOptions = {}): Promise<number | Reply<object>> {
   const out = options.out ?? ((line: string) => process.stdout.write(`${line}\n`));
   const paths = homePaths();
   const reports = await checkPrograms(paths, loadConfig(paths), { ...(options.live ? { live: true } : {}), ...(options.model ? { model: options.model } : {}) });
 
   const failed = reports.some((report) => report.problem || report.talks === false || report.live?.error);
-  if (options.json) return print(reply({ programs: reports }, { exit: failed ? 1 : 0 }), true, out);
+  if (options.json) return reply({ programs: reports }, { exit: failed ? 1 : 0 });
   for (const report of reports) {
     out(`${report.name}${report.version ? ` ${report.version}` : ""}`);
     if (!report.path) {

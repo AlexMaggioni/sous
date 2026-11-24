@@ -40,7 +40,7 @@ describe("sous daemon", () => {
   it("refuses an action it does not know", async () => {
     const { paths } = testHome();
     const run = await sous(paths, ["daemon", "restart"]);
-    assert.deepEqual(run, { code: 64, out: "usage: sous daemon start|stop|status|run\n" });
+    assert.deepEqual(run, { code: 64, out: "usage: sous daemon start|stop|status|run\n  change: Fix the command line. sous help lists the commands and their flags.\n" });
   });
 
   it("reports a running service, starts no second one, and stops it with SIGTERM", async () => {
