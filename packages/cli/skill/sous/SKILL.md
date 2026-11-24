@@ -38,9 +38,10 @@ The exit code says why it returned: 0 completed, 1 failed, 2 paused, 3 stopped, 
 
 ## When it asks
 
-A question is the user's. Show it to them in full, with its choices. When they answer, pass
-their words on with `sous answer`. If the user is not there, say that the run waits, and stop.
-A question waits as long as it takes. Never answer with a choice you made.
+A question with `answeredBy: "people"` is the user's. Show it to them in full, with its choices.
+When they answer, pass their words on with the call in `next`. If the user is not there, say that
+the run waits, and stop. A question waits as long as it takes. Never answer it with a choice you
+made. Only a question with `answeredBy: "anyone"` is yours to answer.
 
 ## When it ends
 

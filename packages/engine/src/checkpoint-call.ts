@@ -20,6 +20,15 @@ export interface CheckpointOptions {
   timeoutMs?: number;
 }
 
+/** What marks a question, beside its call: a breakpoint, a question anyone may answer, and the
+ *  label of the agent step that asks. It stays out of the hash, so a question asked before it
+ *  existed keeps its hash, and a script's checkpoint() cannot set it. */
+export interface CheckpointPurpose {
+  breakpoint?: true;
+  answeredBy?: "anyone";
+  step?: string;
+}
+
 /** The engine-computed identity of one checkpoint() call, handed to the confirm
  *  callback as its additive third argument. */
 export interface CheckpointCallContext {
@@ -29,9 +38,8 @@ export interface CheckpointCallContext {
   scope: string;
   /** The structural call-path key, when captured. */
   path?: string;
-  /** "breakpoint" when breakpoint() asks. It stays out of the hash, so a question asked before
-   *  it existed keeps its hash, and a script's checkpoint() cannot set it. */
-  purpose?: "breakpoint";
+  /** Set when breakpoint(), ask() for anyone or an asking agent asks. */
+  purpose?: CheckpointPurpose;
 }
 
 /** The host's answer to a checkpoint() question. */

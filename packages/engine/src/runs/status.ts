@@ -2,12 +2,13 @@
 // finished. It reads the runs once and writes nothing.
 
 import type { HomePaths } from "./home.js";
-import { answerCalls } from "./inbox.js";
-import { listRuns, runDetail } from "./run.js";
+import type { Who } from "./actions.js";
+import { answeredByFor } from "./consent.js";
+import { answerCallsFor, listRuns, runDetail } from "./run.js";
 import { daemonPid } from "./service.js";
 
 export interface HomeStatus {
-  needsYou: Array<{ runId: string; workflow: string; what: string; question?: { id: string; prompt: string; answeredBy: "people" }; since: string; call: string; sendBack?: string }>;
+  needsYou: Array<{ runId: string; workflow: string; what: string; question?: { id: string; prompt: string; answeredBy: "people" | "anyone" }; since: string; call: string; sendBack?: string }>;
   running: Array<{ runId: string; workflow: string; minutes: number; tokens: number; steps: string[] }>;
   waiting: Array<{ runId: string; workflow: string; what: string; resumesAt?: string }>;
   finished: Array<{ runId: string; workflow: string; status: string; at: string; branch?: string }>;
@@ -27,8 +28,9 @@ export function sinceWindow(text: string): number | undefined {
   return match && count > 0 ? count * UNIT_MS[match[2] as keyof typeof UNIT_MS] : undefined;
 }
 
-/** The home now. Runs that ended show while they ended within `since`, 24 hours by default. */
-export function homeStatus(paths: HomePaths, now: Date, options: { since?: string } = {}): HomeStatus {
+/** The home now. Runs that ended show while they ended within `since`, 24 hours by default. The
+ *  answer calls are for `who`, the person when not given. */
+export function homeStatus(paths: HomePaths, now: Date, options: { since?: string; who?: Who } = {}): HomeStatus {
   const window = options.since === undefined ? DAY_MS : sinceWindow(options.since);
   if (window === undefined) throw new Error(`--since takes a count and a unit, such as 30m, 12h or 3d, not "${options.since}"`);
   const status: HomeStatus = { needsYou: [], running: [], waiting: [], finished: [], service: { running: daemonPid(paths) !== undefined } };
@@ -39,8 +41,9 @@ export function homeStatus(paths: HomePaths, now: Date, options: { since?: strin
     const at = run.changedAt ?? record.createdAt;
     if (run.status === "asks") {
       for (const q of run.questions) {
-        const [call, sendBack] = answerCalls(q);
-        status.needsYou.push({ ...base, what: "asks", question: { id: q.id, prompt: q.prompt, answeredBy: "people" }, since: q.askedAt, call: call!, ...(sendBack ? { sendBack } : {}) });
+        // A caller that cannot reach the person, such as a step of a run, gets no answer call.
+        const [call = `sous show ${record.runId} --json`, sendBack] = answerCallsFor(paths, q, options.who);
+        status.needsYou.push({ ...base, what: "asks", question: { id: q.id, prompt: q.prompt, answeredBy: answeredByFor(q, record) }, since: q.askedAt, call, ...(sendBack ? { sendBack } : {}) });
       }
     } else if (run.status === "running" || run.status === "pending" || run.status === "starting") {
       const detail = runDetail(paths, record.runId);

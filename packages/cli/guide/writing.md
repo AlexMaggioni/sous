@@ -55,7 +55,9 @@ return { summary: built }
   `schema`, `timeout`, `skills`, `mcp`, `keepSession`, `continue` and `ask`.
 - `sh`, `js`, `py`, `run` and `waitUntil` run code on this machine and spend no tokens.
 - `ask(question, { choices })` and `checkpoint(prompt, { kind, choices })` ask the person.
-- `breakpoint(title, step)` runs the step, then waits for the person to approve it.
+  `answeredBy: "anyone"` in `ask` lets an agent answer too. `agent()` with `ask: true` takes it.
+- `breakpoint(title, step)` runs the step, then waits for the person to approve it. It is always
+  for people, so it takes no `answeredBy`.
 - `parallel`, `pipeline`, `retry`, `gate`, `choose` and `workflow` shape the flow.
 
 ## Check it

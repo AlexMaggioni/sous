@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { HomePaths } from "../../src/runs/home.js";
-import { ask, breakpointValue, decisionOf, hint, reply, standIn, type Question } from "../../src/runs/inbox.js";
+import { ask, breakpointValue, decisionOf, hint, readQuestion, reply, standIn, type Question } from "../../src/runs/inbox.js";
 import { createRun } from "../../src/runs/launch.js";
 import { updateRecord } from "../../src/runs/records.js";
 import { runQuestions } from "../../src/runs/run.js";
@@ -260,5 +260,77 @@ return { color, name, ship, plan }`,
       `question   Ship it?\n           answered   true (dry run)`,
       `question   Breakpoint: Check the plan the plan Reply approve, stop, or send back with a note.\n           answered   "approve" (dry run)`,
     ]);
+  });
+});
+
+// Piece 8, questions. Each question file says who may answer it: answeredBy "people" or "anyone",
+// and an agent's question names its step. A breakpoint is always for people. A file written
+// before piece 8 has no answeredBy and reads as a people question.
+describe("piece 8: who may answer, in the question's file", () => {
+  it("a question file without answeredBy reads as people", () => {
+    const { paths } = setup({});
+    const old = { id: "r1--0", runId: "r1", scope: "r1", callIndex: 0, hash: "h0", workflow: "w", prompt: "Which color?", kind: "select", choices: ["red", "blue"], breakpoint: false, askedAt: "2026-11-23T10:00:00.000Z" };
+    writeFileSync(join(paths.inbox, "r1--0.json"), `${JSON.stringify(old, null, 2)}\n`);
+    const oldBreakpoint = { ...old, id: "r1--1", callIndex: 1, kind: "input", choices: undefined, breakpoint: true, askedAt: "2026-11-23T10:01:00.000Z" };
+    writeFileSync(join(paths.inbox, "r1--1.json"), `${JSON.stringify(oldBreakpoint, null, 2)}\n`);
+    assert.equal((readQuestion(paths, "r1--0") as { answeredBy?: string } | undefined)?.answeredBy, "people");
+    assert.equal((readQuestion(paths, "r1--1") as { answeredBy?: string } | undefined)?.answeredBy, "people");
+    assert.deepEqual(
+      runQuestions(paths, "r1").map((q) => [q.id, (q as { answeredBy?: string }).answeredBy]),
+      [["r1--0", "people"], ["r1--1", "people"]],
+    );
+  });
+
+  it("a run writes answeredBy in each question's file, and the step of an agent's question", async () => {
+    const { paths, projectDir } = setup({
+      who: `export const meta = { name: 'who', description: 'asks four ways' }
+const color = await ask('Which color?', { choices: ['red', 'blue'], answeredBy: 'anyone' })
+const size = await ask('Which size?', { choices: ['S', 'L'] })
+await breakpoint('Check the plan', { show: color + size })
+return await agent('Build it', { label: 'builder', ask: true })`,
+    });
+    const record = createRun(paths, { who: PERSON, workflow: "who", projectDir, inputs: {} });
+    const held = heldRunner((call) => (call.label === "builder" ? "QUESTION: Which shade?" : "built it"));
+    const worker = runWorker(record.runId, "start", { paths, inner: held.runner, pollMs: 20, log: () => {} });
+    const file = (question: Question) => JSON.parse(readFileSync(join(paths.inbox, `${question.id}.json`), "utf8")) as Record<string, unknown>;
+    const next = async (pattern: RegExp): Promise<Record<string, unknown>> => {
+      await until(() => runQuestions(paths, record.runId).some((q) => pattern.test(q.prompt)));
+      const [question] = await asked(paths, record.runId, 1);
+      assert.match(question!.prompt, pattern);
+      return file(question!);
+    };
+
+    // A failed check leaves the run waiting, so the finally answers every open question until it ends.
+    let ended = false;
+    void worker.finally(() => (ended = true));
+    try {
+      const color = await next(/Which color/);
+      assert.equal(color.answeredBy, "anyone", JSON.stringify(color));
+      assert.equal(color.step, undefined, "ask() has no step");
+      writeAnswer(paths, color.id as string, color.hash as string, "blue");
+
+      const size = await next(/Which size/);
+      assert.equal(size.answeredBy, "people", JSON.stringify(size));
+      writeAnswer(paths, size.id as string, size.hash as string, "L");
+
+      const plan = await next(/Check the plan/);
+      assert.equal(plan.breakpoint, true);
+      assert.equal(plan.answeredBy, "people", JSON.stringify(plan));
+      writeAnswer(paths, plan.id as string, plan.hash as string, "approve");
+
+      const shade = await next(/Which shade/);
+      assert.equal(shade.answeredBy, "people", JSON.stringify(shade));
+      assert.equal(shade.step, "builder", JSON.stringify(shade));
+      writeAnswer(paths, shade.id as string, shade.hash as string, "dark");
+
+      const result = await worker;
+      assert.equal(result?.status, "completed");
+      assert.equal(result?.result, "built it");
+    } finally {
+      for (let i = 0; i < 250 && !ended; i++) {
+        for (const open of runQuestions(paths, record.runId)) writeAnswer(paths, open.id, open.hash, standIn(open));
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    }
   });
 });

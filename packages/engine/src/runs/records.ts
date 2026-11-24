@@ -11,7 +11,7 @@ import { appendJsonLine, readJsonFile, readJsonLines, writeJsonFile } from "../j
 import { redactText } from "../redact.js";
 import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";
 import type { PlaceNotes } from "../places/places.js";
-import type { Through } from "./actions.js";
+import type { By, Through } from "./actions.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
 import { activityFile, recordFile, recordFiles, snapshotFile, stopRequestFile } from "./store.js";
@@ -54,6 +54,9 @@ export interface RunRecord {
   /** How the start reached sous. A run an agent or a step started may not reach a people
    *  workflow inside itself, through workflow() or choose(). Older records have none. */
   through?: Through;
+  /** The person let agents answer this run's people questions, and its nested runs', never its
+   *  breakpoints: who said so, through what, and when. Set by --let-agent-answer. */
+  letAgentAnswer?: { by: By; through: Through; at: string };
   /** The sha256 of the workflow's text that sous checked when it wrote the record. The worker
    *  starts only that text. Older records have none. */
   workflowHash?: string;

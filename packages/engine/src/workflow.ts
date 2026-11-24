@@ -1870,11 +1870,11 @@ async function runLevel<T>(
   };
   const askCheckpoint = (promptText: string, checkpointOptions: CheckpointOptions, purpose: CheckpointCallContext["purpose"]): Promise<unknown> =>
     startCall((open) => checkpointCall(checkpointRun, promptText, checkpointOptions, open, purpose));
-  // The script's checkpoint() takes two arguments, so it never marks a question a breakpoint.
+  // The script's checkpoint() takes two arguments, so a script never marks a question by hand.
   const checkpoint = (promptText: string, checkpointOptions: CheckpointOptions = {}): Promise<unknown> =>
     askCheckpoint(promptText, checkpointOptions, undefined);
-  const breakpointCheckpoint = (promptText: string, checkpointOptions: CheckpointOptions = {}): Promise<unknown> =>
-    askCheckpoint(promptText, checkpointOptions, "breakpoint");
+  const markedCheckpoint = (promptText: string, checkpointOptions: CheckpointOptions, purpose: CheckpointCallContext["purpose"]): Promise<unknown> =>
+    askCheckpoint(promptText, checkpointOptions, purpose);
 
   // Adopt every engine-returned promise into the SCRIPT's realm at the context boundary.
   // This is what makes the rejection tripwire's realm-identity attribution complete: the
@@ -1895,7 +1895,7 @@ async function runLevel<T>(
     agent: agent as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
     code,
     checkpoint: checkpoint as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
-    breakpointCheckpoint: breakpointCheckpoint as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
+    markedCheckpoint: markedCheckpoint as (prompt: string, options: Record<string, unknown>, purpose: CheckpointCallContext["purpose"]) => Promise<unknown>,
     workflow: workflowFn,
     log,
     listSavedWorkflows: options.listSavedWorkflows,

@@ -14,7 +14,8 @@ import { logFile } from "./store.js";
 import type { Priority } from "./slots.js";
 import { Refusal } from "./refusal.js";
 import { recordAction, type Who } from "./actions.js";
-import { mayStart } from "./consent.js";
+import { recordAndTell, type Tell } from "./notify.js";
+import { letAgentAnswerBy, mayStart } from "./consent.js";
 import { needApproval } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 
@@ -40,6 +41,10 @@ export interface CreateRunRequest {
   who: Who;
   /** The command the person types to start the run, for a refusal. Default: sous run and the workflow. */
   command?: string;
+  /** --let-agent-answer: agents may answer the run's people questions. Only the person sets it. */
+  letAgentAnswer?: boolean;
+  /** How the notice of a --let-agent-answer passed on by an agent reaches the person. Default: a macOS notice. */
+  tell?: Tell;
 }
 
 export class InputProblems extends Error {
@@ -61,6 +66,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   }
   if (problems.length) throw new InputProblems(resolved.name, problems);
   mayStart(resolved, request.who, request.command ?? `sous run ${resolved.name}`);
+  const letAgentAnswer = request.letAgentAnswer ? letAgentAnswerBy(request.who, request.command ?? `sous run ${resolved.name} --let-agent-answer`, new Date()) : undefined;
   // A person's start makes its project known first, so a first use there seeds its workflows. A
   // dry run runs no step for real, so it needs no yes and gives none.
   if (request.who.through.kind === "person") rememberProject(paths, request.projectDir);
@@ -94,12 +100,14 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
     ...(reuse ? { reuseFrom: reuse.runId } : {}),
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
     through: request.who.through,
+    ...(letAgentAnswer ? { letAgentAnswer } : {}),
     workflowHash: workflowHash(resolved.script),
     accounts: accountsForRun(paths, process.env, { caller: request.caller, parentRunId: request.startedByRun }),
   };
   saveRecord(paths, record);
   rememberProject(paths, request.projectDir);
   if (record.origin !== "check") recordAction(paths, { act: request.rerunOf ? "rerun" : "run", ...request.who, runId, workflow: resolved.name });
+  if (letAgentAnswer && record.origin !== "check") recordAndTell(paths, { act: "let-agent-answer", ...request.who, runId, workflow: resolved.name }, request.tell);
   return record;
 }
 
