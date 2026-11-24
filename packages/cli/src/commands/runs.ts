@@ -2,14 +2,14 @@
 
 import { isPlace, rerunRun, resumeRun, startRun, type Place } from "@sous/engine";
 import { parseSets, str, Usage, type Parsed } from "../args.js";
-import type { Reply } from "../reply.js";
+import { reply, type Next, type Reply } from "../reply.js";
 import { needRun, projectDir, startedOrWait } from "./common.js";
 import type { Ctx } from "./index.js";
 
 /** The --set values of the command line. */
 const sets = (args: Parsed): string[] => (Array.isArray(args.flags.set) ? args.flags.set : []);
 
-export async function cmdRun(args: Parsed, ctx: Ctx): Promise<number | Reply<object>> {
+export async function cmdRun(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   const paths = ctx.paths;
   const dir = projectDir(args);
   const workflow = args.positional[0];
@@ -34,16 +34,29 @@ export async function cmdRun(args: Parsed, ctx: Ctx): Promise<number | Reply<obj
   return startedOrWait(ctx, record, "start", args);
 }
 
-export async function cmdResume(args: Parsed, ctx: Ctx): Promise<number | Reply<object>> {
+export async function cmdResume(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   const paths = ctx.paths;
   const run = needRun(paths, args.positional[0]);
   // A run that cannot resume says so before this usage error. resumeRun refuses it.
   if (args.flags.latest && args.flags.same && run.resume.ok) throw new Usage("--latest or --same, not both");
-  const record = resumeRun(paths, ctx.launch, run.runId, args.flags.latest ? "latest" : args.flags.same ? "same" : undefined);
-  return startedOrWait(ctx, record, "resume", args);
+  const resumed = resumeRun(paths, ctx.launch, run.runId, args.flags.latest ? "latest" : args.flags.same ? "same" : undefined);
+  if ("mustChoose" in resumed) {
+    const change = "Add --latest to take the new version, or --same to go on with the version the run started with.";
+    throw new Usage(resumed.message, "bad_argument", change, `sous resume ${run.runId} --same`);
+  }
+  if ("wrongState" in resumed) {
+    const { runId, status } = resumed.view;
+    const next: Next[] = !ctx.json
+      ? []
+      : resumed.wrongState === "running"
+        ? [{ call: `sous wait ${runId} --json`, does: "waits for the run" }]
+        : [{ call: `sous rerun ${runId} --json`, does: "starts the run again" }];
+    return reply({ runId, status }, { notes: [resumed.message], next });
+  }
+  return startedOrWait(ctx, resumed.resumed, "resume", args);
 }
 
-export async function cmdRerun(args: Parsed, ctx: Ctx): Promise<number | Reply<object>> {
+export async function cmdRerun(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   const paths = ctx.paths;
   const run = needRun(paths, args.positional[0]);
   const place = str(args.flags.place) ?? run.record.place;

@@ -324,7 +324,7 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous run <workflow> [--input value]` | start a run in the background. `--place`, `--model`, `--set reviewer.model=claude/opus` and `--concurrency` change this run only. `--wait` follows it, `--json` prints machine-readable output. |
 | `sous list [--all]`, `sous show <run>`, `sous log <run> -f` | the last 20 runs, or every run with `--all`; one run's steps with the time and tokens of each, its questions and result; its log |
 | `sous workflows` | the saved workflows and their inputs |
-| `sous inbox`, `sous answer <q> <text>` | questions waiting for you, and answering one |
+| `sous inbox`, `sous answer <q> <text>` | questions waiting for you, and answering one. `--value-json` reads the text as JSON, such as `'{"a": 1}'`. Without it the text is the answer, and text that starts with `{` or `[` gets a note. |
 | `sous approve <q>`, `sous send-back <q> <note>` | answer a breakpoint. `sous answer <q> stop` stops the run. |
 | `sous pause <run>`, `sous resume <run> [--latest \| --same]` | finish the running steps and start nothing new; go on from there |
 | `sous stop <run>` | end the run. Its worktree stays, unless the run changed no file. |
@@ -332,11 +332,18 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous rerun <run> [--reuse]` | the same workflow with the same inputs. `--reuse` keeps the results of the steps you did not edit and works in the same place. |
 | `sous wait <run>` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer. In a terminal it asks the run's questions itself, so 4 comes only off a terminal or with `--json`. |
 | `sous gc [--dry-run]` | remove worktrees whose branch is merged |
-| `sous discard <run> --yes` | delete the run's branches and worktrees, merged or not |
+| `sous discard <run> --yes` | delete the run's branches and worktrees, merged or not. Without `--yes` it lists them, deletes nothing and exits 0. A running run is refused: stop it first. |
 | `sous prune --days N` | remove finished runs older than N days |
 
-A command with a wrong or missing argument exits 64. A run, workflow, question or step that is not
-there exits 65. Any other refusal exits 66.
+A command with a wrong or missing argument exits 64. So does `sous resume` after an edit, with
+neither `--latest` nor `--same`. A run, workflow, question or step that is not there exits 65. Any
+other refusal exits 66, such as `sous discard` of a running run, or `sous resume` of a run an
+older sous saved.
+
+A request that changes nothing exits 0 with a note. That covers pausing a run that is not
+running, stopping a run that has ended, stopping a step when no worker runs, and resuming a run
+that is running, completed, was stopped or never started. The note says why. With `--json`, the next call is `sous wait` for a
+running run and `sous rerun` for the others.
 
 With `--json`, each command prints one object with two more keys: `notes`, a list of sentences, and
 `next`, a list of `{call, does}` commands to run next. Some outputs changed shape for this. `sous
@@ -345,6 +352,10 @@ object that holds it under `runs`, `questions`, `workflows`, `schedules` or `pro
 --json` shows 20 runs like `sous list`, and a note says how many more `--all` shows. An error
 prints `{"error": {code, message, change, call}}` on stdout. Without `--json`, the error goes to
 stderr: the message, then `change:`, then `try:` with the command to run instead.
+
+`sous answer --json` used to mean the text is JSON. Now `--json` asks for the JSON reply, as on every
+command, and `--value-json` reads the text as JSON. `sous log --json` gives the run's id, whether it
+runs, and the last 6,000 characters of its log.
 
 On macOS a run notifies when it asks something, and when it ends or pauses. A scheduled run stays
 quiet when it completes or is stopped. `notify: false` in `config.json` or `SOUS_NOTIFY=0` turns

@@ -8,7 +8,7 @@ import type { Ctx } from "./index.js";
 
 type Step = RunDetail["steps"][number];
 
-export function cmdWait(args: Parsed, ctx: Ctx): Promise<number | Reply<object>> {
+export function cmdWait(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   return waitFor(ctx, needRun(ctx.paths, args.positional[0]).runId, ctx.json);
 }
 
@@ -117,17 +117,27 @@ function printSteps(out: (line: string) => void, record: RunRecord, agents: read
   printScope(record.runId, "  ");
 }
 
-export async function cmdLog(args: Parsed, ctx: Ctx): Promise<number> {
+/** How much of the log's end sous log --json gives. */
+const LOG_TAIL = 6000;
+
+export async function cmdLog(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   const { paths, machine } = ctx;
   let read = readLog(paths, runIdArg(args.positional[0]));
+  if (ctx.json) {
+    const { runId, running, text } = read;
+    const notes = text.length > LOG_TAIL ? [`The log is longer. This is its last ${LOG_TAIL} characters. sous log ${runId} prints all of it.`] : [];
+    if (args.flags.follow) notes.push("--follow does not work with --json. This is the log so far.");
+    const next: Next[] = running ? [{ call: `sous wait ${runId} --json`, does: "waits for the run" }] : [];
+    return reply({ runId, running, log: text.slice(-LOG_TAIL) }, { notes, next });
+  }
   if (read.text) machine.write(read.text);
-  if (!args.flags.follow) return 0;
+  if (!args.flags.follow) return reply({});
   while (read.running) {
     await machine.sleep(400);
     read = followOn(paths, read);
     if (read.text) machine.write(read.text);
   }
-  return 0;
+  return reply({});
 }
 
 /** The log after `read`. A run that goes away while sous follows it is no wrong id, so its

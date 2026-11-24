@@ -7,10 +7,13 @@ import { reply, type Reply } from "../reply.js";
 import { projectDir } from "./common.js";
 import type { Ctx } from "./index.js";
 
-export function cmdSchedule(args: Parsed, ctx: Ctx): number | Reply<object> {
+export function cmdSchedule(args: Parsed, ctx: Ctx): Reply<object> {
   const paths = ctx.paths;
   const dir = projectDir(args);
-  const out = ctx.machine.out;
+  const text: string[] = [];
+  const out = (line: string) => text.push(line);
+  // With --json the text is left out, so each action gives what it did as data.
+  const done = (data: object = {}, notes: string[] = []) => reply(data, { text, notes: ctx.json ? notes : [] });
   const [action, name, workflow] = args.positional;
   const schedules = loadSchedules(paths);
   if (action === "list" || action === undefined || action === "test") rememberProject(paths, dir);
@@ -46,9 +49,16 @@ export function cmdSchedule(args: Parsed, ctx: Ctx): number | Reply<object> {
       saveSchedules(paths, [...schedules, schedule]);
       const next = nextRun(parseCron(cron));
       out(`schedule ${name}: ${resolved.name} at "${cron}"${next ? `, next ${next.toLocaleString()}` : ""}`);
-      if (resolved.extras.schedule) out(`note: ${resolved.name} also sets "${resolved.extras.schedule.cron}" in its meta, and both start it`);
-      if (!daemonPid(paths)) out("the service is not running, so nothing will start: sous daemon start");
-      return 0;
+      const notes: string[] = [];
+      if (resolved.extras.schedule) {
+        notes.push(`${resolved.name} also sets "${resolved.extras.schedule.cron}" in its meta, and both start it`);
+        out(`note: ${notes.at(-1)}`);
+      }
+      if (!daemonPid(paths)) {
+        notes.push("the service is not running, so nothing will start: sous daemon start");
+        out(notes.at(-1)!);
+      }
+      return done({ schedule, nextAt: next?.toISOString() }, notes);
     }
     case "list":
     case undefined: {
@@ -56,7 +66,7 @@ export function cmdSchedule(args: Parsed, ctx: Ctx): number | Reply<object> {
       if (ctx.json) return reply({ schedules: all });
       if (!all.length) {
         out("no schedules");
-        return 0;
+        return done();
       }
       for (const schedule of all) {
         const next = schedule.enabled ? nextRun(parseCron(schedule.cron)) : undefined;
@@ -65,58 +75,51 @@ export function cmdSchedule(args: Parsed, ctx: Ctx): number | Reply<object> {
         else out(`${schedule.name}  ${schedule.cron}  ${tilde(schedule.workflow)}  ${when}`);
       }
       if (!daemonPid(paths)) out("\nthe service is not running: sous daemon start");
-      return 0;
+      return done();
     }
     case "remove":
       find();
       saveSchedules(paths, schedules.filter((schedule) => schedule.name !== name));
       out(`removed ${name}`);
-      return 0;
+      return done({ removed: name });
     case "enable":
     case "disable":
       find().enabled = action === "enable";
       saveSchedules(paths, schedules);
       out(`${action}d ${name}`);
-      return 0;
+      return done({ name, enabled: action === "enable" });
     case "test": {
       const schedule = find(true);
       const cron = parseCron(schedule.cron);
-      out(`${tilde(schedule.name)} ${cronMatches(cron, ctx.now()) ? "matches" : "does not match"} now; next ${nextRun(cron)?.toLocaleString() ?? "never"}`);
-      return 0;
+      const matches = cronMatches(cron, ctx.now());
+      const next = nextRun(cron);
+      out(`${tilde(schedule.name)} ${matches ? "matches" : "does not match"} now; next ${next?.toLocaleString() ?? "never"}`);
+      return done({ name: schedule.name, matches, nextAt: next?.toISOString() });
     }
     default:
       throw new Usage("sous schedule add|list|remove|enable|disable|test");
   }
 }
 
-export async function cmdDaemon(args: Parsed, ctx: Ctx): Promise<number> {
+export async function cmdDaemon(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   const { paths, machine } = ctx;
   const action = args.positional[0] ?? "status";
   const pid = daemonPid(paths);
   const log = daemonLog(paths);
+  const said = (line: string, exit = 0) => reply({}, { text: [line], exit });
   switch (action) {
     case "run":
       await daemonMain(paths, ctx.launch);
-      return 0;
-    case "start": {
-      if (pid) {
-        machine.out(`the service runs already (pid ${pid})`);
-        return 0;
-      }
-      machine.out(`the service started (pid ${machine.spawnDaemon(paths)}). Log: ${log}`);
-      return 0;
-    }
+      return reply({});
+    case "start":
+      if (pid) return said(`the service runs already (pid ${pid})`);
+      return said(`the service started (pid ${machine.spawnDaemon(paths)}). Log: ${log}`);
     case "stop":
-      if (!pid) {
-        machine.out("the service is not running");
-        return 0;
-      }
+      if (!pid) return said("the service is not running");
       machine.kill(pid);
-      machine.out(`stopping the service (pid ${pid})`);
-      return 0;
+      return said(`stopping the service (pid ${pid})`);
     case "status":
-      machine.out(pid ? `the service runs (pid ${pid}). Log: ${log}` : "the service is not running: sous daemon start");
-      return pid ? 0 : 1;
+      return pid ? said(`the service runs (pid ${pid}). Log: ${log}`) : said("the service is not running: sous daemon start", 1);
     default:
       throw new Usage("sous daemon start|stop|status|run");
   }

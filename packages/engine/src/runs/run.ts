@@ -367,36 +367,51 @@ export function changedWorkflows(paths: HomePaths, record: RunRecord, state: Per
   ];
 }
 
-/** What resume says when the rule refuses it. */
-const RESUME_REFUSALS: Record<ResumeRefusal, (runId: string) => string> = {
-  running: (runId) => `${runId} is running already`,
-  "never-started": (runId) => `${runId} never started. sous rerun ${runId} starts it fresh.`,
-  completed: (runId) => `${runId} completed. sous rerun ${runId} runs it again.`,
-  stopped: (runId) => `${runId} was stopped. sous rerun ${runId} starts it again.`,
-  older: (runId) => `${runId} was saved by an older sous, and this sous cannot resume it. sous rerun ${runId} starts it again, and sous stop ${runId} ends it.`,
+/** Why a resume changes nothing: the run runs, never started, completed or was stopped. */
+export type ResumeWrongState = Exclude<ResumeRefusal, "older">;
+
+/** What resume says of a run in a state it does not resume from. */
+const WRONG_STATE: Record<ResumeWrongState, (runId: string) => string> = {
+  running: (runId) => `${runId} is running already, so there is nothing to resume.`,
+  "never-started": (runId) => `${runId} never started, so there is nothing to resume. sous rerun ${runId} starts it fresh.`,
+  completed: (runId) => `${runId} completed, so there is nothing to resume. sous rerun ${runId} runs it again.`,
+  stopped: (runId) => `${runId} was stopped, so it does not resume. sous rerun ${runId} starts it again.`,
 };
+
+/** How a resume went: it started a worker, or the run is in a state that has nothing to resume,
+ *  or the workflow changed and the caller must choose a version. Nothing changes in the last two. */
+export type ResumeOutcome =
+  | { resumed: RunRecord }
+  | { wrongState: ResumeWrongState; view: RunView; message: string }
+  | { mustChoose: string[]; record: RunRecord; message: string };
 
 /**
  * Resume a run in a new worker. A workflow edited since the run started reaches it only by
  * choice: "latest" takes the edits, and "same" goes on with the version it started with. With
- * no choice, an edit refuses the resume.
+ * no choice, an edit makes the caller choose. A run an older sous saved is refused.
  */
-export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, choice?: "latest" | "same"): RunRecord {
-  const { record, resume } = readRun(paths, runId);
-  if (!resume.ok) throw new Error(RESUME_REFUSALS[resume.why](record.runId));
+export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, choice?: "latest" | "same"): ResumeOutcome {
+  const view = readRun(paths, runId);
+  const { record, resume } = view;
+  const why = resume.ok ? undefined : resume.why;
+  if (why === "older") {
+    const message = `${record.runId} was saved by an older sous, and this sous cannot resume it. sous rerun ${record.runId} starts it again, and sous stop ${record.runId} ends it.`;
+    throw new Refusal("cannot_resume", message, "Start the run again with sous rerun, or end it with sous stop.", `sous rerun ${record.runId}`);
+  }
+  if (why) return { wrongState: why, view, message: WRONG_STATE[why](record.runId) };
   // The rule lets a run resume only once it has a state. The check runs with a choice too, so a
   // workflow folder that cannot be read stops the resume here.
   const changed = changedWorkflows(paths, record, readState(paths, record.runId)!);
   if (changed.length && !choice) {
-    throw new Error(
+    const message =
       `${changed.join(", ")} changed since ${record.runId} started. ` +
-        `sous resume ${record.runId} --latest takes the new version, and the finished steps that match stay done. ` +
-        `sous resume ${record.runId} --same goes on with the version it started with.`,
-    );
+      `sous resume ${record.runId} --latest takes the new version, and the finished steps that match stay done. ` +
+      `sous resume ${record.runId} --same goes on with the version it started with.`;
+    return { mustChoose: changed, record, message };
   }
   if (choice === "latest") updateRecord(paths, record.runId, { resumeLatest: true });
   launch(paths, record.runId, "resume");
-  return record;
+  return { resumed: record };
 }
 
 /** What rerun --reuse says when the rule refuses it. */
@@ -489,7 +504,7 @@ export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: R
  *  after each. */
 export function discardRun(paths: HomePaths, runId: string, options: { remove?: boolean; deleted?: (tree: { dir: string; branch: string }) => void } = {}): Array<{ dir: string; branch: string }> {
   const record = needRecord(paths, runId);
-  if (processAlive(record.pid)) throw new Error(`${record.runId} is running. sous stop ${record.runId} first.`);
+  if (processAlive(record.pid)) throw new Refusal("run_is_running", `${record.runId} is running. sous stop ${record.runId} first.`, "Stop the run, then discard it.", `sous stop ${record.runId}`);
   const trees = runWorktrees(record);
   if (options.remove) {
     for (const tree of trees) {

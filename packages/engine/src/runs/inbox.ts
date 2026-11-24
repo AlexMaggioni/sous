@@ -195,8 +195,8 @@ export function decisionOf(answer: unknown): Decision {
 export interface Reply {
   via: "answer" | "approve" | "send-back" | "prompt";
   text: string;
-  /** sous answer --json: the text is JSON. */
-  json?: boolean;
+  /** sous answer --value-json: the text is JSON. */
+  valueJson?: boolean;
 }
 
 /**
@@ -226,7 +226,7 @@ function choicesOf(question: Question): string[] {
 }
 
 /** The answer a reply gives, a stop, or what is wrong with the command. */
-function meaningOf(question: Question, { via, text, json }: Reply): { value: unknown } | { stop: true } | Misfit {
+function meaningOf(question: Question, { via, text, valueJson }: Reply): { value: unknown } | { stop: true } | Misfit {
   if (via === "prompt") {
     const typed = text.trim();
     if (!question.breakpoint) return { value: normalizeAnswer(question, typed) };
@@ -242,7 +242,7 @@ function meaningOf(question: Question, { via, text, json }: Reply): { value: unk
   if (!text && question.kind !== "confirm") return { usage: `sous answer ${question.id} "your answer"` };
   let value: unknown;
   if (question.breakpoint) value = breakpointValue(text);
-  else if (json) value = parseJson(text);
+  else if (valueJson) value = parseJson(text);
   else {
     try {
       value = normalizeAnswer(question, text);

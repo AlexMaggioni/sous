@@ -3,7 +3,7 @@
 import { answerQuestion, findQuestion, hint, runQuestions, type HomePaths, type Reply as Typed, type RunQuestion } from "@sous/engine";
 import { Usage, type Parsed } from "../args.js";
 import { reply, type Reply } from "../reply.js";
-import { age, needRun, stopText } from "./common.js";
+import { age, needRun, stopReply } from "./common.js";
 import type { Ctx } from "./index.js";
 
 function needQuestion(paths: HomePaths, id: string | undefined): RunQuestion {
@@ -11,32 +11,43 @@ function needQuestion(paths: HomePaths, id: string | undefined): RunQuestion {
   return findQuestion(paths, id);
 }
 
-export function cmdInbox(args: Parsed, ctx: Ctx): number | Reply<object> {
-  const { paths, machine } = ctx;
+export function cmdInbox(args: Parsed, ctx: Ctx): Reply<object> {
+  const { paths } = ctx;
   const questions = args.positional[0] ? needRun(paths, args.positional[0]).questions : runQuestions(paths);
   if (ctx.json) return reply({ questions });
-  if (!questions.length) {
-    machine.out("nothing waits for you");
-    return 0;
-  }
-  for (const question of questions) {
-    machine.out(`${question.id}  ${question.workflow}  ${age(question.askedAt, ctx.now())} ago`);
-    machine.out(`  ${question.prompt.replace(/\n/g, "\n  ")}`);
-    machine.out(`  ${hint(question)}`);
-  }
-  return 0;
+  if (!questions.length) return reply({}, { text: ["nothing waits for you"] });
+  const text = questions.flatMap((question) => [
+    `${question.id}  ${question.workflow}  ${age(question.askedAt, ctx.now())} ago`,
+    `  ${question.prompt.replace(/\n/g, "\n  ")}`,
+    `  ${hint(question)}`,
+  ]);
+  return reply({}, { text });
 }
 
-export function cmdAnswer(args: Parsed, ctx: Ctx, via: Exclude<Typed["via"], "prompt">): number {
-  const { paths, machine } = ctx;
+/** Words that look like a JSON object or list. */
+const looksLikeJson = (text: string): boolean => /^\s*[[{]/.test(text);
+
+export function cmdAnswer(args: Parsed, ctx: Ctx, via: Exclude<Typed["via"], "prompt">): Reply<object> {
+  const { paths } = ctx;
   const question = needQuestion(paths, args.positional[0]);
+  const { id, runId } = question;
   const text = args.positional.slice(1).join(" ");
-  const answer = answerQuestion(paths, question, { via, text, json: ctx.json });
+  const valueJson = args.flags["value-json"] === true;
+  const answer = answerQuestion(paths, question, { via, text, valueJson });
   if ("usage" in answer) {
     if (!answer.choices) throw new Usage(answer.usage);
-    throw new Usage(answer.usage, "not_a_choice", "Answer with one of the choices.", `sous answer ${question.id} <${answer.choices.join("|")}>`);
+    throw new Usage(answer.usage, "not_a_choice", "Answer with one of the choices.", `sous answer ${id} <${answer.choices.join("|")}>`);
   }
-  if ("answered" in answer) machine.out(`answered ${question.id}${answer.running ? "" : `. The run is not running: sous resume ${question.runId} uses the answer.`}`);
-  if ("stopped" in answer) machine.out(stopText(question.runId, answer.stopped));
-  return 0;
+  if ("stopped" in answer) return stopReply(runId, answer.stopped, { question: id, runId, outcome: answer.stopped.outcome });
+  if ("gone" in answer) return reply({ question: id, runId, answered: false }, { notes: [`${id} is no longer open, so the answer went nowhere.`] });
+  const notes = via === "answer" && !valueJson && looksLikeJson(text) ? [`The answer went as text. Add --value-json to pass it as JSON.`] : [];
+  const next = !ctx.json
+    ? []
+    : answer.running
+      ? [{ call: `sous wait ${runId} --json`, does: "waits for the run, which goes on with the answer" }]
+      : [{ call: `sous resume ${runId} --json`, does: "resumes the run, which uses the answer" }];
+  return reply(
+    { question: id, runId, answered: true, running: answer.running },
+    { text: [`answered ${id}${answer.running ? "" : `. The run is not running: sous resume ${runId} uses the answer.`}`], notes, next },
+  );
 }
