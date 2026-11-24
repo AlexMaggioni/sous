@@ -1,7 +1,8 @@
 // The background service: `sous daemon start`. Every 20 seconds it
 //  - starts scheduled runs, and skips one when the schedule's last run has not finished. A
 //    schedule comes from `sous schedule add`, or from `schedule` in a workflow file's meta, in the
-//    home folder or in a project where sous ran;
+//    home folder or in a project where sous ran. A workflow edited since the person approved it
+//    does not start: the service logs it and tells the person each time the schedule comes due;
 //  - resumes runs paused at the subscription limit once the limit resets, unless a workflow they
 //    use was edited since they started. Then it tells the user once and waits for `sous resume`;
 //  - tells the user, once, about a run cut off by a crash or a restart. It waits for `sous resume`;
@@ -15,6 +16,7 @@ import { openWorkflowDir } from "../workflows/dir.js";
 import { recordAction, SERVICE } from "./actions.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
+import { NotApproved } from "./consent.js";
 import { createRun, type Launcher } from "./launch.js";
 import { notify } from "./notify.js";
 import { processAlive } from "./records.js";
@@ -148,6 +150,11 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
       log(`schedule ${schedule.name}: started run ${record.runId}`);
     } catch (error) {
       log(`schedule ${schedule.name}: could not start: ${(error as Error).message}`);
+      // The person approves the edited text once, or runs it once by hand, and the next time goes.
+      if (error instanceof NotApproved) {
+        const approve = `sous workflows approve ${error.workflow}${schedule.projectDir === paths.home ? "" : ` --project ${schedule.projectDir}`}`;
+        tell(`${error.workflow} needs your approval`, `The schedule ${schedule.name} did not start ${error.workflow}, which is new or changed since you approved it. ${approve} lets it start.`);
+      }
     }
   }
 

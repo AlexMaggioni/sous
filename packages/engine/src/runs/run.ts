@@ -17,6 +17,8 @@ import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
 import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestStepStop, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { olderSave } from "../older-save.js";
 import { readWorkflowScript } from "../workflows/script.js";
+import { resolveWorkflow } from "../workflows/dir.js";
+import { needApproval } from "./consent.js";
 import { Refusal } from "./refusal.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
 import { logFile, readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
@@ -589,6 +591,8 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
       `sous resume ${record.runId} --same goes on with the version it started with.`;
     return { mustChoose: changed, message };
   }
+  // The edits reach a run that an agent resumes only once the person approved them.
+  if (choice === "latest" && existsSync(record.file)) needApproval(paths, record.projectDir, resolveWorkflow(paths, record.projectDir, record.file), who);
   if (choice === "latest") updateRecord(paths, record.runId, { resumeLatest: true });
   launch(paths, record.runId, "resume");
   recordAction(paths, { act: "resume", ...who, runId: record.runId });

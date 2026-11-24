@@ -40,6 +40,8 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | `not_ours` | A skill place holds something sous did not put there, or Claude Code's `settings.json` does not parse, has a shape sous can't edit, or is a broken link. Tell the person. |
 | `home_not_writable` | sous can't write to its home. Under Codex the sandbox blocks it. Tell the person what `change` says. |
 | `started_by_people` | Only a person starts this workflow. Give them `forPerson` to type in their own terminal. |
+| `not_approved` | The workflow is new or changed since the person approved it. `call` shows the change. Show it to the person and ask. Once they agree, run `sous workflows approve <name> --by person --json`. |
+| `needs_person` | Only the person approves a workflow. Ask them first, then give `--by person`. |
 | `no_person_here` | A step of a run gave `--by person`. Leave it out: the step decides for itself. |
 | `broken_record` | A file sous keeps, such as a run's event log, does not parse. Tell the person. |
 

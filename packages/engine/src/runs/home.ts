@@ -51,6 +51,10 @@ export function homePaths(home = sousHome()) {
     accounts: join(home, "accounts.json"),
     schedules: join(home, "schedules.json"),
     projects: join(home, "projects.json"),
+    /** The person's yes to each workflow file's text, by hash. */
+    approvals: join(home, "approvals.json"),
+    /** The approved texts, one <hash>.json each. */
+    approved: join(home, "approved"),
     daemonPid: join(home, "daemon.pid"),
     daemonState: join(home, "daemon-state.json"),
     /** Who did what: one line per write. */

@@ -54,6 +54,9 @@ export interface RunRecord {
   /** How the start reached sous. A run an agent or a step started may not reach a people
    *  workflow inside itself, through workflow() or choose(). Older records have none. */
   through?: Through;
+  /** The sha256 of the workflow's text that sous checked when it wrote the record. The worker
+   *  starts only that text. Older records have none. */
+  workflowHash?: string;
   /** Workflows this run started inside itself, by child run id. */
   nested?: Record<string, NestedRun>;
   /** Worktrees of steps with `isolation: "worktree"` that exist now. A step removes its own when it ends. */

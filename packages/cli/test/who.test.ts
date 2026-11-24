@@ -16,7 +16,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, mock } from "node:test";
-import { addAccount, listRecords, loadRecord, logFile, readRun, runQuestions, type HomePaths } from "@sous/engine";
+import { addAccount, listRecords, loadRecord, logFile, readRun, rememberProject, runQuestions, type HomePaths } from "@sous/engine";
 import { createRun, fakeRunner, inProcess, plantState, testHome, tick, updateRecord, PERSON as PERSON_WHO, type InnerRunner } from "@sous/engine/testing";
 import { sous, waitFor } from "./sous.js";
 import { deadPid } from "./helpers/process.js";
@@ -446,6 +446,8 @@ describe("piece 7: --by on the command line", () => {
 
   it("sous run takes --by person: an agent starts an anyone workflow for the person, and the line keeps both", async () => {
     const { paths, projectDir } = testHome({ hello: fixture("hello") });
+    // sous has run in this project before, so its workflows are approved as they are.
+    rememberProject(paths, projectDir);
     const workers = inProcess({ inner: runner });
     const run = await sous(paths, ["run", "hello", "--name", "Ada", "--by", "person", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch });
     assert.equal(run.code, 0, run.out);
@@ -562,6 +564,7 @@ describe("piece 7: people workflows inside a run", () => {
   it("an open workflow that calls workflow(\"deploy\") does not deploy for an agent or a step of a run", async () => {
     for (const env of [CLAUDE, CODEX, RUN_STEP]) {
       const { paths, projectDir } = testHome({ deploy: fixture("deploy"), wrapper });
+      rememberProject(paths, projectDir);
       const { runId, ended } = await wrapped(paths, projectDir, env);
       assert.notEqual(ended?.status, "completed", `${JSON.stringify(env)}: the wrapper ran deploy to the end`);
       assert.match(JSON.stringify(readRun(paths, runId)), /started_by_people|started by people/, `${JSON.stringify(env)}: the run says why`);
@@ -571,6 +574,7 @@ describe("piece 7: people workflows inside a run", () => {
 
   it("a resume or a rerun of that run stays refused, and a person's start and rerun deploy", async () => {
     const { paths, projectDir } = testHome({ deploy: fixture("deploy"), wrapper });
+    rememberProject(paths, projectDir);
     const workers = inProcess({ inner: runner });
     const { runId } = await wrapped(paths, projectDir, CLAUDE, workers);
     for (const [env, argv] of [[PERSON, ["resume", runId]], [CLAUDE, ["rerun", runId]]] as const) {
@@ -589,6 +593,7 @@ describe("piece 7: people workflows inside a run", () => {
   it("choose() in a run an agent started does not pick a people workflow", async () => {
     const picker = `export const meta = { name: "picker", description: "lets an agent pick", place: "none" }\nreturn await choose("Pick one", { workflows: ["deploy"] })`;
     const { paths, projectDir } = testHome({ deploy: fixture("deploy"), picker });
+    rememberProject(paths, projectDir);
     const { runner: picks } = fakeRunner(() => ({ choice: "deploy", reason: "it ships" }));
     const workers = inProcess({ inner: picks });
     const run = await sous(paths, ["run", "picker", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch });

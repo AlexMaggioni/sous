@@ -14,7 +14,8 @@ import { dropUnchangedWorktrees, runPlaces, runWorktrees } from "../places/place
 import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
 import { ask, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
-import { nestedLookup } from "./consent.js";
+import { nestedGuard } from "./consent.js";
+import { workflowHash } from "./approvals.js";
 import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
@@ -61,17 +62,19 @@ export function currentWorkflows(paths: HomePaths, projectDir: string): Record<s
  *  started finds no people workflow there. */
 function managerFor(paths: HomePaths, record: RunRecord, lookup?: (name: string) => string | undefined) {
   const dirs = projectWorkflows(paths, record.projectDir);
+  const guard = nestedGuard(paths, record, lookup ?? ((name) => dirs.resolve(name)));
   return new WorkflowManager({
     ...managerStore(paths),
     defaultAgentRetries: loadConfig(paths).retries,
-    loadSavedWorkflow: nestedLookup(record.through, lookup ?? ((name) => dirs.resolve(name))),
+    loadSavedWorkflow: guard.lookup,
     sous: {
       maxNestingDepth: 5,
-      // What an agent may pick with choose({ any: true }). Workflows for people only stay out.
+      // What an agent may pick with choose({ any: true }). Workflows for people only stay out, and
+      // so do those the guard refuses the run.
       listSavedWorkflows: () =>
         dirs
           .list()
-          .filter((entry) => entry.extras && entry.extras.startedBy !== "people")
+          .filter((entry) => entry.extras && entry.extras.startedBy !== "people" && guard.offers(entry))
           .map((entry) => ({ name: entry.name, ...(entry.meta?.description ? { description: entry.meta.description } : {}) })),
       // A run tree's nested runs and step worktrees go under this home's worktrees folder, and its
       // root run's record names them.
@@ -91,6 +94,10 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
   const paths = ensureHome(options.paths ?? homePaths());
   const record = loadRecord(paths, runId);
   if (!record) throw new Error(`no run ${runId}`);
+  // The text sous checked when it wrote the record is the text that runs.
+  if (mode === "start" && record.workflowHash && workflowHash(readFileSync(record.file, "utf8")) !== record.workflowHash) {
+    throw new Error(`${record.file} changed after sous checked and approved it, so run ${runId} did not start. Start it again.`);
+  }
   // The steps run on the run's recorded accounts, also when the service resumes it with its own
   // environment. A dry run talks to no agent.
   const accounts = options.dryRun ? {} : runAccounts(paths, record.accounts);
