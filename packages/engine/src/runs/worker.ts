@@ -6,7 +6,6 @@ import { readFileSync, existsSync } from "node:fs";
 import type { WorkflowRunResult } from "../workflow-result.js";
 import { limitNotice, runAccounts } from "../accounts.js";
 import { envFor, lookupAgents, lookupMcpServers, lookupSettings } from "../agents.js";
-import { parseDurationSeconds } from "../duration.js";
 import { projectWorkflows } from "../workflows/dir.js";
 import type { CheckpointCallContext } from "../checkpoint-call.js";
 import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";
@@ -19,6 +18,7 @@ import { workflowHash } from "./approvals.js";
 import { authorAnsweredBy } from "./consent.js";
 import { Refusal } from "./refusal.js";
 import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type RunRecord, type TellOutcome } from "./records.js";
+import { goLimits } from "./limits.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
@@ -197,6 +197,8 @@ async function runOnAccounts(
   // It reads the file at its first write, once the run manager holds the run's lease.
   const onActivity = activityWriter(paths, runId, Object.values(secrets));
   const steering = new SteeringBoard();
+  // The time limit and the budget of this go.
+  const limits = goLimits(record, log);
   const runner = createSteps({
     cwd: record.cwd,
     ...(inner ? { inner } : {}),
@@ -225,6 +227,8 @@ async function runOnAccounts(
     },
     onActivity,
     steering,
+    gate: limits.gate,
+    onUsage: limits.onUsage,
   });
   // A run keeps the workflows as they were when it started. A resume takes the edited ones only
   // after `sous resume --latest`.
@@ -338,15 +342,7 @@ async function runOnAccounts(
     ...(record.defaultModel ?? config.defaultModel ? { defaultModel: record.defaultModel ?? config.defaultModel } : {}),
   };
 
-  // The workflow's time limit: the running steps stop and the run pauses on them.
-  const limit = record.timeout ? parseDurationSeconds(record.timeout) : undefined;
-  const limitTimer = limit
-    ? setTimeout(() => {
-        log(`${stamp()} time limit ${record.timeout} reached: the running steps stop and the run pauses`);
-        const message = `the workflow's time limit of ${record.timeout} was reached`;
-        if (!manager.cancelAgentSteps(runId, { pauseReason: "time_limit", message })) manager.pause(runId);
-      }, limit * 1000)
-    : undefined;
+  limits.watch(manager);
 
   let result: WorkflowRunResult | undefined;
   // Why a resumed run stopped again, so the log can say it. A run paused for a lost login runs
@@ -375,7 +371,7 @@ async function runOnAccounts(
       });
     }
   } finally {
-    clearTimeout(limitTimer);
+    limits.end();
     waits.abort();
     if (options.handleSignals) {
       process.off("SIGUSR1", onPause);

@@ -112,7 +112,7 @@ describe("piece 14: budget", () => {
     assert.equal(resumed.code, 0, resumed.out);
     const done = await workers.ended(runId);
     assert.equal(done?.status, "completed", JSON.stringify(done));
-    assert.deepEqual(done?.result, ["s1 done", "s2 done", "s3 done"]);
+    assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["s1 done", "s2 done", "s3 done"]);
     assert.deepEqual(workers.prompts(), ["s1", "s2", "s3"], "the resume ran only the third step");
   });
 

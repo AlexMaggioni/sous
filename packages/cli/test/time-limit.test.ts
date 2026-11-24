@@ -56,7 +56,7 @@ return await agent('Build ' + name, { label: 'build' })`,
     assert.match(lines.join("\n"), /time limit 1s reached/);
     assert.equal(readState(paths, record.runId)?.pauseReason, "time_limit", "the time limit's own reason, not requested");
     assert.match((await sous(paths, ["list"])).out, /paused: time limit/);
-    assert.match((await sous(paths, ["show", record.runId])).out, /^status {4}paused$/m);
+    assert.match((await sous(paths, ["show", record.runId])).out, /^status {4}paused: time limit$/m);
     const [question] = runQuestions(paths, record.runId);
     assert.equal(question?.id, `${record.runId}--0`, "the question waits while the run is paused");
     assert.equal(calls.length, 0, "no agent step ran");

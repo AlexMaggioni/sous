@@ -337,6 +337,7 @@ function runSummary(record: RunRecord, state: PersistedRunState | undefined, vie
     workflow: record.workflow,
     status: view.status,
     ...(state?.pauseReason ? { pauseReason: state.pauseReason } : {}),
+    ...(record.budget ? { budget: record.budget } : {}),
     ...(state?.resetHint ? { resetHint: state.resetHint } : {}),
     ...(state?.reason && !done ? { reason: state.reason } : {}),
     ...(questions.length ? { questions: questions.map((question) => questionView(question, record)) } : {}),
@@ -355,6 +356,8 @@ export interface WaitSummary {
   workflow: string;
   status: Verdict["status"];
   pauseReason?: string;
+  /** The tokens one go of the run may spend, when it has a budget. */
+  budget?: number;
   resetHint?: string;
   reason?: string;
   questions?: QuestionView[];
@@ -567,7 +570,8 @@ export type ResumeOutcome =
   | { wrongState: ResumeWrongState; view: RunView; message: string }
   | { mustChoose: string[]; message: string };
 
-export interface ResumeOptions { choice?: "latest" | "same"; letAgentAnswer?: { command: string }; tell?: Tell }
+/** `budget`: the most tokens this go and the ones after it may spend, in place of the run's. */
+export interface ResumeOptions { choice?: "latest" | "same"; letAgentAnswer?: { command: string }; tell?: Tell; budget?: number }
 
 /**
  * Resume a run in a new worker. A workflow edited since the run started reaches it only by
@@ -606,7 +610,8 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
   const latest = choice === "latest" && existsSync(record.file) ? resolveWorkflow(paths, record.projectDir, record.file) : undefined;
   if (latest) needApproval(paths, record.projectDir, latest, who);
   const latestHash = latest ? workflowHash(latest.script) : undefined;
-  if (choice === "latest" || consent) updateRecord(paths, record.runId, { ...(choice === "latest" ? { resumeLatest: true, latestHash } : {}), ...(consent ? { letAgentAnswer: consent } : {}) });
+  const budget = options.budget ? { budget: options.budget } : {};
+  if (choice === "latest" || consent || options.budget) updateRecord(paths, record.runId, { ...(choice === "latest" ? { resumeLatest: true, latestHash } : {}), ...(consent ? { letAgentAnswer: consent } : {}), ...budget });
   launch(paths, record.runId, "resume");
   recordAction(paths, { act: "resume", ...who, runId: record.runId });
   if (consent) recordAndTell(paths, { act: "let-agent-answer", ...who, runId: record.runId, workflow: record.workflow }, options.tell);
@@ -629,6 +634,8 @@ export interface RerunRequest {
   /** Step changes added to the earlier run's. */
   overrides?: Record<string, Record<string, unknown>>;
   defaultModel?: string;
+  /** --budget. Default: the earlier run's budget. */
+  budget?: number;
   startedByRun?: string;
   caller?: boolean;
   /** Who starts it again, and the command the person types when a people workflow refuses it. */
@@ -649,6 +656,7 @@ export function rerunRun(paths: HomePaths, launch: Launcher, runId: string, requ
   }
   if (request.reuse && !reuse.ok) throw new Error(REUSE_REFUSALS[reuse.why](old.runId));
   const defaultModel = request.defaultModel ?? old.defaultModel;
+  const budget = request.budget ?? old.budget;
   return startRun(paths, launch, {
     ...(request.reuse ? { reuseFrom: old } : {}),
     workflow: old.file,
@@ -660,6 +668,7 @@ export function rerunRun(paths: HomePaths, launch: Launcher, runId: string, requ
     ...(old.overrides || request.overrides ? { overrides: { ...old.overrides, ...request.overrides } } : {}),
     ...(defaultModel ? { defaultModel } : {}),
     ...(old.concurrency ? { concurrency: old.concurrency } : {}),
+    ...(budget ? { budget } : {}),
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
     caller: request.caller === true,
     who: request.who,

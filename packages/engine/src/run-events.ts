@@ -1,3 +1,4 @@
+import { HOST_PAUSE_REASONS } from "./host-pause.js";
 import type { AgentHistoryEntry } from "./steps/agent-history.js";
 import type { AgentResultProvenance, AgentUsage } from "./steps/agent-run.js";
 import type {
@@ -85,9 +86,10 @@ export interface RunCallRecordPayload extends RunEventOrigin {
 /**
  * The reasons a pause in the "requested" shape gives. "requested": a host asked for the pause.
  * The others come from the run itself: a step failed, a host stopped a step, or the worker
- * stopped the run at its time limit. Event logs written before the last three say "requested".
+ * paused the run at its time limit or its budget. Event logs written before the last four say
+ * "requested".
  */
-const REQUESTED_PAUSE_REASONS = ["requested", "step_failed", "step_stopped", "time_limit"] as const;
+const REQUESTED_PAUSE_REASONS = ["requested", "step_failed", "step_stopped", ...HOST_PAUSE_REASONS] as const;
 export type RequestedPauseReason = (typeof REQUESTED_PAUSE_REASONS)[number];
 
 export function isRequestedPauseReason(value: unknown): value is RequestedPauseReason {

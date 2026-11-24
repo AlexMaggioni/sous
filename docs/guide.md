@@ -23,7 +23,7 @@ nearest folder up from where you run `sous` that has `.sous/` or `.git`, or the 
 | --- | --- |
 | `workflows/<name>.js` | saved workflows. `<name>.workflow.js` works too, and wins over `<name>.js` in one folder. |
 | `secrets.env` | `KEY=value` lines. Code steps get them in their environment, and an MCP server's settings can use them as `${KEY}`. Agents don't get them. The shell environment works too. |
-| `config.json` | `maxAgents` (4), `defaultPlace` ("worktree"), `defaultModel`, `defaultHarness`, `rulesyncGlobal`, `notify` (true), `keepDays` (all kept), `retries` (2) |
+| `config.json` | `maxAgents` (4), `defaultPlace` ("worktree"), `defaultModel`, `defaultHarness`, `rulesyncGlobal`, `notify` (true), `keepDays` (all kept), `retries` (2), `budgetTokens` (none) |
 | `runs/`, `records/`, `inbox/`, `logs/` | run state, one record per run, open questions, one log per run |
 | `approvals.json`, `approved/`, `seeded.json` | the person's yes to each workflow's exact text. See [Approving workflows](#approving-workflows) |
 | `events.jsonl` | one line per write: who did it (`by`: person, agent or sous), through what (`through`: the person's terminal, Claude Code, Codex, a step of a run, a schedule, or the service), and the run, question, schedule or value. Free text is redacted and cut to 1,000 bytes |
@@ -453,8 +453,14 @@ the notices off.
 - A workflow's `timeout` limits each start and each resume of a run. When it is reached, the
   running steps stop, code steps such as `sh` as well as agent steps, and the run pauses on them,
   shown as `paused: time limit`. `sous resume` runs them again with the whole limit, and `sous stop`
-  ends the run. With no step running, as when the run waits for an answer, the run pauses as
-  `sous pause` does.
+  ends the run. With no step running, as when the run waits for an answer, the run pauses the same
+  way, and no new step starts.
+- A run's budget limits the tokens each start and each resume of it may spend. It is
+  `--budget <tokens>` on `sous run`, `sous rerun` or `sous resume`, else `budgetTokens` in the
+  config, else none. A rerun keeps the old run's budget unless it gives one. When a go reaches it,
+  the running steps stop, no new step starts, and the run pauses, shown as `paused: budget`.
+  `sous resume` gives the next go the same budget, and `sous resume <run> --budget <tokens>` a new
+  one.
 
 ### Places
 

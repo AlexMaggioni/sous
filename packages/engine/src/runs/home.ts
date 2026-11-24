@@ -30,6 +30,8 @@ export interface OrcConfig {
   claudePath?: string;
   /** The Codex program, when sous should not look for it on PATH. */
   codexPath?: string;
+  /** The most tokens one go of a run may spend, when the command gives no --budget. None by default. */
+  budgetTokens?: number;
 }
 
 const DEFAULT_CONFIG: OrcConfig = { maxAgents: 4, defaultPlace: "worktree", notify: true, retries: 2 };

@@ -46,6 +46,7 @@ import {
   wrapError,
 } from "./errors.js";
 import { afterFailedAttempt } from "./failed-attempt.js";
+import { pauseRequestError } from "./host-pause.js";
 import { createWorkflowLogger } from "./runs/persistence/logger.js";
 import { parseModelRoutingFromMeta, resolveModelForPhase } from "./model-routing.js";
 import { projectRecordedError } from "./recorded-error.js";
@@ -717,12 +718,8 @@ async function runLevel<T>(
   // checkpoint, the refusal is remembered so a script that catches it cannot keep the run going.
   // A failed or stopped step sets pendingPause, which gates admissions the same way.
   const pauseRequested = () => (pauseSignal?.aborted === true || shared.pendingPause !== undefined) && !signal.aborted;
-  const pauseError = () =>
-    (shared.pendingPause ??= new WorkflowError(
-      "workflow paused by host request: executing agent calls finished, nothing new was admitted",
-      WorkflowErrorCode.PAUSE_REQUESTED,
-      { recoverable: false },
-    ));
+  // A pause the host asked for at the run's time limit or budget carries that reason.
+  const pauseError = () => (shared.pendingPause ??= pauseRequestError(pauseSignal?.reason));
   // Resolves once every allocated call in the root run and its nested engines has settled.
   const drainLiveCalls = (): Promise<void> =>
     liveCalls.count === 0 ? Promise.resolve() : new Promise((resolve) => liveCalls.waiters.add(resolve));

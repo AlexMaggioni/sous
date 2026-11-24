@@ -10,7 +10,7 @@ import type { RunStatus } from "./persistence/run-persistence.js";
  */
 export type PauseReason =
   | "usage_limit" | "auth_required" | "asks" | "requested"
-  | "step_failed" | "step_stopped" | "time_limit" | "interrupted" | "other";
+  | "step_failed" | "step_stopped" | "time_limit" | "budget" | "interrupted" | "other";
 
 /** What a reader sees. RunStatus is the one the state saves. */
 export type ViewStatus =
@@ -103,6 +103,7 @@ const ROWS = {
   "paused, step_failed":         { worker: "any",   status: "paused",      word: "paused: failed step",   exit: 2, unfinished: true,  pause: "step_failed",   resume: OK, reuse: no("paused") },
   "paused, step_stopped":        { worker: "any",   status: "paused",      word: "paused: stopped step",  exit: 2, unfinished: true,  pause: "step_stopped",  resume: OK, reuse: no("paused") },
   "paused, time_limit":          { worker: "any",   status: "paused",      word: "paused: time limit",    exit: 2, unfinished: true,  pause: "time_limit",    resume: OK, reuse: no("paused") },
+  "paused, budget":              { worker: "any",   status: "paused",      word: "paused: budget",        exit: 2, unfinished: true,  pause: "budget",        resume: OK, reuse: no("paused") },
   "paused, interrupted":         { worker: "any",   status: "interrupted", word: "interrupted",           exit: 2, unfinished: true,  pause: "interrupted",   resume: OK, reuse: no("paused") },
   "paused, other text":          { worker: "any",   status: "paused",      word: "paused: <text>",        exit: 2, unfinished: true,  pause: "other",         resume: OK, reuse: no("paused") },
   "completed":                   { worker: "any",   status: "completed",   word: "completed",             exit: 0, unfinished: false, resume: no("completed"),     reuse: OK },
