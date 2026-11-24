@@ -5,8 +5,13 @@ Claude Code 2.1.330
   account   default, Claude Code's own login in ~/.claude (sous account lists the others)
   talks     yes
   models    default, sonnet, opus, haiku
+  skill     <tmp>/home/.claude/skills/sous is empty
 Codex 0.169.0
   program   <repo>/test/fakes/codex, from its variable
   account   default, Codex's own login in ~/.codex (set CODEX_HOME where sous starts to use another)
   talks     yes
   models    gpt-fake
+  skill     <tmp>/home/.agents/skills/sous is empty
+sous home <tmp>/fresh/sous-home
+  writable  yes
+next: sous skill install --json  (links the skill for each program)

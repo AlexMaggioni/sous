@@ -56,6 +56,7 @@ type themselves. Never try to get around it.
 
 ## Codex
 
-Under Codex, the sandbox may block writes to the sous home. If a sous command fails to write
-there, the person adds the sous home to `sandbox_workspace_write.writable_roots` in the Codex
-config, or starts Codex with `--add-dir <home>`.
+Under Codex, the sandbox may block writes to the sous home. A command that can't write there
+fails with `home_not_writable`. `sous doctor --json` checks it and names the home. The person adds
+the sous home to `sandbox_workspace_write.writable_roots` in the Codex config, or starts Codex
+with `--add-dir <home>`.
