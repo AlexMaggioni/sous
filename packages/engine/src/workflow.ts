@@ -1305,7 +1305,7 @@ async function runLevel<T>(
               beginResumeActivity();
               try {
                 rawRunnerPromise = codeSpec ? runCodeStep(codeSpec, {
-                  ...options.codeEnv,
+                  ...options.codeEnv, step: { scope: runId, callIndex, label },
                   cwd: runCwd,
                   signal: attemptSignal,
                   timeoutMs: millis(agentOptions.timeout),

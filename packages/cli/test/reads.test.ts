@@ -202,20 +202,34 @@ describe("sous's reads", () => {
   }
 
   it("keep the reply of sous log --json under 8,000 characters, though quotes print longer than they are", async () => {
-    const { paths, ids } = plant();
-    const text = `12:00:00 agent      said ${'"'.repeat(40)}\n`.repeat(300);
-    writeFileSync(join(paths.logs, `${ids.done}.log`), text);
-    const result = await sous(paths, ["log", ids.done, "--json"]);
+    // Piece 5 changed log --json to a page of events (decision 6). The bound stays: labels full of
+    // quotes print twice as long as they are, and the page still fits.
+    const loud = `export const meta = { name: 'loud', description: 'steps with quotes in their labels', place: 'none' }
+for (let i = 0; i < 40; i++) await agent('part ' + i, { label: 'said ${'"'.repeat(40)} ' + i })
+return 1`;
+    const { paths, projectDir } = testHome({ loud });
+    const workers = inProcess({ inner: { run: async () => "ok" } as unknown as InnerRunner });
+    const { runId } = await started(paths, projectDir, workers, ["loud"]);
+    assert.equal((await workers.ended(runId))?.status, "completed");
+    const result = await sous(paths, ["log", runId, "--json"]);
     assert.equal(result.code, 0, result.out);
     const printed = result.out.trimEnd();
     assert.ok(printed.length <= 8000, `the reply is ${printed.length} characters`);
-    const reply = JSON.parse(printed) as { log: string; notes: string[] };
-    assert.ok(text.endsWith(reply.log), "the log is the end of the file");
-    assert.ok(reply.log.length > 3000, `it keeps as much as fits, here ${reply.log.length} characters`);
-    assert.deepEqual(reply.notes, [`The log is longer. This is its last ${reply.log.length} characters. sous log ${ids.done} prints all of it.`]);
+    const page = JSON.parse(printed) as LogPage & { next: Array<{ call: string }> };
+    assert.equal(page.more, true, "forty steps with quoted labels do not fit one page");
+    assert.ok(printed.length > 6000, `it keeps as many events as fit, here ${printed.length} characters`);
+    assert.equal(page.after, page.events.at(-1)?.seq);
+    assert.ok(calls(page).includes(`sous log ${runId} --json --after ${page.after}`), JSON.stringify(page.next));
 
-    const whole = JSON.parse((await sous(paths, ["log", ids.dead, "--json"])).out) as { log: string; notes: string[] };
-    assert.deepEqual(whole.notes, [], "a short log comes whole, with no note");
+    // The pages that follow fit too, and the last one says so and offers no call to read on.
+    let last = page;
+    for (let pages = 0; last.more; pages++) {
+      assert.ok(pages < 20, "the pages end");
+      const more = (await sous(paths, ["log", runId, "--json", "--after", String(last.after)])).out.trimEnd();
+      assert.ok(more.length <= 8000, `a later page is ${more.length} characters`);
+      last = JSON.parse(more) as typeof page;
+    }
+    assert.deepEqual(last.next, [], "an ended run whose log is all read has no next call");
   });
 
   it("let sous log -f print the log, then what the worker adds, until the worker ends", async () => {

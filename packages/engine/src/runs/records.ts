@@ -7,11 +7,12 @@
 
 import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import type { HarnessId } from "@sous/harnesses";
-import { readJsonFile, writeJsonFile } from "../json-file.js";
+import { appendJsonLine, readJsonFile, readJsonLines, writeJsonFile } from "../json-file.js";
+import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";
 import type { PlaceNotes } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
-import { recordFile, recordFiles, snapshotFile, stopRequestFile } from "./store.js";
+import { activityFile, recordFile, recordFiles, snapshotFile, stopRequestFile } from "./store.js";
 import { Refusal } from "./refusal.js";
 
 export interface RunRecord {
@@ -180,6 +181,38 @@ export function takeStepStops(paths: HomePaths, runId: string): StepStop[] {
   const lines = readFileSync(taken, "utf8").split("\n").filter(Boolean);
   unlinkSync(taken);
   return lines.map((line) => JSON.parse(line) as StepStop | string).filter((stop): stop is StepStop => typeof stop === "object");
+}
+
+/** One saved activity entry: its number in the run's file, when it happened, its step and what it says. */
+export type ActivityLine = { seq: number; at: string } & ActivityStep & ActivityEntry;
+
+/** The most a saved entry's text holds. */
+const ACTIVITY_TEXT = 2_000;
+
+/**
+ * The worker's writer of the run's activity file. It numbers the entries on from the last one the
+ * file holds, so a resume goes on from there. A text longer than 2,000 characters is cut: an
+ * output keeps its end, where a failure shows, and the rest keep their start. A write that fails
+ * loses the entry and never fails the step.
+ */
+export function activityWriter(paths: HomePaths, runId: string): OnActivity {
+  const file = activityFile(paths, runId);
+  let seq = readActivity(paths, runId).reduce((last, line) => Math.max(last, line.seq), 0);
+  return (step, entry) => {
+    const { kind, tool, text } = entry;
+    const cut = text.length <= ACTIVITY_TEXT ? text : kind === "output" ? text.slice(-ACTIVITY_TEXT) : text.slice(0, ACTIVITY_TEXT);
+    try {
+      appendJsonLine(file, { seq: seq + 1, at: new Date().toISOString(), ...step, kind, ...(tool === undefined ? {} : { tool }), text: cut });
+      seq += 1;
+    } catch {
+      // The activity is for people to read. The step goes on.
+    }
+  };
+}
+
+/** The run's saved activity, oldest first. */
+export function readActivity(paths: HomePaths, runId: string): ActivityLine[] {
+  return readJsonLines<ActivityLine>(activityFile(paths, runId));
 }
 
 export function updateRecord(paths: HomePaths, runId: string, change: Partial<RunRecord>): RunRecord | undefined {

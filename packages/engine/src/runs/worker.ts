@@ -14,7 +14,7 @@ import { dropUnchangedWorktrees, runPlaces, runWorktrees } from "../places/place
 import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
 import { ask, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
-import { loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
+import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
@@ -116,6 +116,7 @@ async function runOnAccounts(
   const secrets = loadSecrets(paths);
   const slots = agentSlots(paths, () => loadConfig(paths).maxAgents, record.priority);
   const inner = options.inner;
+  const onActivity = activityWriter(paths, runId);
   const runner = createSteps({
     cwd: record.cwd,
     ...(inner ? { inner } : {}),
@@ -142,6 +143,7 @@ async function runOnAccounts(
     onNotes: ({ label, notes }) => {
       for (const note of notes) log(`${stamp()} note       ${label ?? "agent"}: ${oneLine(note, 400)}`);
     },
+    onActivity,
   });
   // A run keeps the workflows as they were when it started. A resume takes the edited ones only
   // after `sous resume --latest`.
@@ -239,7 +241,7 @@ async function runOnAccounts(
     cwd: record.cwd,
     confirm: confirm as never,
     // Code steps also get the project folder, since a run may work elsewhere (a worktree, a scratch folder).
-    codeEnv: { env: { ...secrets, SOUS_PROJECT: record.projectDir }, base },
+    codeEnv: { env: { ...secrets, SOUS_PROJECT: record.projectDir }, base, onActivity },
     ...(record.concurrency ? { concurrency: record.concurrency } : {}),
     ...(record.overrides ? { stepOverrides: record.overrides } : {}),
     ...(record.defaultModel ?? config.defaultModel ? { defaultModel: record.defaultModel ?? config.defaultModel } : {}),

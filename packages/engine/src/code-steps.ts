@@ -12,6 +12,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, resolve } from "node:path";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
+import type { ActivityStep, OnActivity } from "./steps/activity.js";
 
 /** The model name a code step records. Old run files hold it, so it stays. */
 export const EXEC_MODEL = "exec";
@@ -57,6 +58,8 @@ export interface CodeStepEnv {
   env?: Record<string, string>;
   /** The environment the extra one goes on. Default process.env. */
   base?: Record<string, string | undefined>;
+  /** Called with each step's command, then with its output once it exits. */
+  onActivity?: OnActivity;
 }
 
 export interface ExecResult {
@@ -72,6 +75,8 @@ export interface ExecContext extends CodeStepEnv {
   cwd: string;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** The step, for its activity. */
+  step?: ActivityStep;
 }
 
 const MAX_OUTPUT = 200_000;
@@ -208,7 +213,17 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+/** What a code step runs, as its activity shows it. */
+function commandText(spec: ExecSpec): string {
+  if (spec.kind === "js" || spec.kind === "py") return spec.source ?? "";
+  if (spec.kind === "file") return [spec.file ?? "", ...(spec.args ?? [])].join(" ");
+  return spec.command ?? "";
+}
+
 export async function runCodeStep(spec: ExecSpec, context: ExecContext): Promise<ExecResult> {
+  const { onActivity, step } = context;
+  const report = onActivity && step ? (kind: "command" | "output", text: string) => onActivity(step, { kind, text }) : undefined;
+  report?.("command", commandText(spec));
   const cwd = spec.cwd ? (isAbsolute(spec.cwd) ? spec.cwd : resolve(context.cwd, spec.cwd)) : context.cwd;
   if (!existsSync(cwd)) throw stepError(`the step's folder does not exist: ${cwd}`);
   const work = mkdtempSync(join(tmpdir(), "sous-step-"));
@@ -268,6 +283,7 @@ export async function runCodeStep(spec: ExecSpec, context: ExecContext): Promise
         throw new WorkflowError(`unknown code step kind: ${String((spec as { kind?: unknown }).kind)}`, WorkflowErrorCode.INVALID_ARGUMENT, { recoverable: false });
     }
 
+    report?.("output", [spawned.stdout, spawned.stderr].filter(Boolean).join("\n"));
     const result = readResult(resultFile);
     const out: ExecResult = {
       code: spawned.code,

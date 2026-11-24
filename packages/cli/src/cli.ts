@@ -105,6 +105,9 @@ const HELP = `sous runs saved workflows in the background.
   sous list [--all]                     runs, newest first
   sous show <run> [--full]              one run: status, steps, questions, result
   sous log <run> [-f]                   the run's log
+        --json --after <seq>            the run's events after a seq, 100 at most
+  sous step <run> <label>               one step: status, prompt or command, failure, what it did
+        --call N | --tail N | --full    another call; the last N activity entries; all of it
   sous inbox [run]                      questions waiting for you
   sous answer <question> <text>         answer a question (a run id works when it asks one thing)
         --value-json                    the text is JSON, such as {"a": 1}, not words

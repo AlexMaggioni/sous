@@ -323,6 +323,7 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | --- | --- |
 | `sous run <workflow> [--input value]` | start a run in the background. `--place`, `--model`, `--set reviewer.model=claude/opus` and `--concurrency` change this run only. `--wait` follows it, `--json` prints machine-readable output. |
 | `sous list [--all]`, `sous show <run>`, `sous log <run> -f` | the last 20 runs, or every run with `--all`; one run's steps with the time and tokens of each, its questions and result; its log |
+| `sous step <run> <label> [--call N] [--tail N] [--full]` | one step of a run: its status, time and tokens, its prompt or its command, its failure, and the last 20 entries of what it did. A step that ran more than once shows its last call, and `--call N` shows another. `--tail N` shows N entries, and `--full` shows the whole prompt and every entry. A label the run never had exits 65. |
 | `sous workflows` | the saved workflows and their inputs |
 | `sous inbox`, `sous answer <q> <text>` | questions waiting for you, and answering one. `--value-json` reads the text as JSON, such as `'{"a": 1}'`. Without it the text is the answer, and text that starts with `{` or `[` gets a note. |
 | `sous approve <q>`, `sous send-back <q> <note>` | answer a breakpoint. `sous answer <q> stop` stops the run. |
@@ -368,9 +369,22 @@ stderr: the message, then `change:`, then `try:` with the command to run instead
 
 `sous answer --json` used to mean the text is JSON. Now `--json` asks for the JSON reply, as on every
 command, and `--value-json` reads the text as JSON. Text that does not parse goes as text, and a
-note says so. `sous log --json` gives `runId`, `running` and `log`, the end of the log that keeps
-the reply under 8,000 characters. A later version replaces this with `after`, which reads the log
-from a point. The other new replies have these keys: `pause` has `runId`, `status` and `pausing`.
+note says so. `sous log --json` gives `runId`, `events`, `after` and `more`. Each event has `seq`,
+`at` and `kind`, which is one of `step-start`, `step-end`, `asks`, `answered`, `paused`, `resumed`
+and `ended`. An event of a nested run also has `scope`. `after` is the seq of the last event given.
+`--after <seq>` reads the events after that seq, so `sous log <run> --json --after <after>` gives
+the next page. A page holds at most 100 events and stays under 8,000 characters. `more` is true
+when more events wait, and `next` then holds the call for the next page.
+
+`sous step <run> <label> --json` gives `runId`, `step`, `call`, `calls`, `status` and `kind`,
+which is `agent` or `exec`. An agent step adds `model` and `prompt`, and a code step adds `command`
+and `output`, the end of what it printed. Both add `failure` when the step failed, `result`, and
+`activity`, the step's entries oldest first. Each entry has `seq`, `at`, `kind` and `text`. The
+kinds are `prompt`, `text`, `tool`, `tool-result`, `command`, `output` and `error`. An entry's
+text keeps at most 2,000 characters. The reply stays under 8,000 characters, so the oldest entries
+go first, and a note says how many. `--full` keeps them all.
+
+The other new replies have these keys: `pause` has `runId`, `status` and `pausing`.
 `stop` has `runId`, `outcome` and `status`, and with `--step`, `runId`, `step`, `stopping` and
 `status`. `discard` has `runId`, `worktrees` and `deleted`. `gc` has `dryRun`, `removed` and
 `kept`. `prune` has `days`, `removed` and `runIds`, which lists at most 100 run ids. `schedule add`

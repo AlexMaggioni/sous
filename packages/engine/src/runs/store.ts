@@ -46,6 +46,11 @@ export function stopRequestFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.stop`);
 }
 
+/** What the run's steps did, one JSON line per entry. Only the worker appends to it. */
+export function activityFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.activity.jsonl`);
+}
+
 /** Every record file, in the order the folder lists them. */
 export function recordFiles(paths: HomePaths): string[] {
   if (!existsSync(paths.records)) return [];
@@ -139,10 +144,11 @@ export function readStates(paths: HomePaths, runIds: Iterable<string>, fs: Store
   return states;
 }
 
-/** An event the engine saved, with when it saved it. */
+/** An event the engine saved, with when it saved it and its number in the run's log. */
 export interface SavedEvent {
   event: PersistedRunEvent;
   timestamp: string;
+  seq: number;
 }
 
 /** Each event saved after `seq`, in order. Throws when the run has no event log. */
@@ -152,7 +158,7 @@ export function readEventsAfter(paths: HomePaths, runId: string, seq: number, vi
   let after = seq;
   for (;;) {
     const page = events.readEvents(runId, { after, limit: 1000 });
-    for (const { event, timestamp } of page.events) visit({ event, timestamp });
+    for (const { event, timestamp, seq: number } of page.events) visit({ event, timestamp, seq: number });
     if (!page.hasMore || page.events.length === 0) break;
     after = page.events[page.events.length - 1]!.seq;
   }
@@ -177,7 +183,7 @@ export function removeEngineRun(paths: HomePaths, runId: string): boolean {
 export function removeRunFiles(paths: HomePaths, record: RunRecord): void {
   // The engine keeps its own copy of the log, in a folder named after where the run worked.
   const engineLogs = workflowProjectPaths(record.cwd, { persistenceRoot: paths.runs });
-  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
+  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), activityFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
   for (const file of files) {
     try {
       unlinkSync(file);

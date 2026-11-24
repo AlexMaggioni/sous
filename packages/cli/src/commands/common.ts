@@ -23,6 +23,15 @@ export function projectDir(args: Parsed): string {
   return project ? resolve(project) : findProjectDir();
 }
 
+/** The whole number a flag gives, at least `min`. Undefined when the flag is not there. */
+export function wholeFlag(args: Parsed, name: string, min: number): number | undefined {
+  const text = str(args.flags[name]);
+  if (text === undefined) return undefined;
+  const value = Number(text);
+  if (!Number.isSafeInteger(value) || value < min) throw new Usage(`--${name} takes a whole number of ${min} or more, got "${text}"`);
+  return value;
+}
+
 /** The run id the command names. */
 export function runIdArg(id: string | undefined): string {
   if (!id) throw new Usage("give a run id (sous list shows them)");
