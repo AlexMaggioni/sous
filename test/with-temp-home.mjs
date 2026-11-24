@@ -4,8 +4,10 @@
 //   node ../../test/with-temp-home.mjs tsx --test "test/**/*.test.ts"
 //
 // HOME, CLAUDE_CONFIG_DIR, CODEX_HOME and XDG_CONFIG_HOME point into a new folder. The Claude
-// token and SOUS_HOME are removed. The agent lookup then reads empty login folders. A test gives
-// the same result on every machine and under every login.
+// token and SOUS_HOME are removed, and so are the markers of a Claude Code or Codex session and of
+// a sous run, so a test started from an agent's shell runs as a person would. The agent lookup
+// then reads empty login folders. A test gives the same result on every machine and under every
+// login.
 //
 // To run one test file, put the same command in front of it, from the package folder:
 //
@@ -30,8 +32,7 @@ const env = {
   CODEX_HOME: join(home, ".codex"),
   XDG_CONFIG_HOME: join(home, ".config"),
 };
-delete env.CLAUDE_CODE_OAUTH_TOKEN;
-delete env.SOUS_HOME;
+for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "SOUS_HOME", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "SOUS_RUN_ID"]) delete env[name];
 
 const child = spawn(command, args, { env, stdio: "inherit" });
 child.on("error", (error) => {

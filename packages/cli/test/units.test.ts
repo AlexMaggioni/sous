@@ -2,16 +2,17 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
-import { parseArgs, parseSets } from "../src/cli.js";
+import { parseArgs, parseSets } from "../src/args.js";
+import { COMMANDS } from "../src/commands/index.js";
 import { capture } from "./sous.js";
 
 describe("command line", () => {
   it("keeps sous's flags apart from the workflow's inputs", () => {
-    const parsed = parseArgs(["ticket", "--place", "none", "--ticket", "add a flag", "--wait", "--set", "reviewer.model=claude/opus", "--", "--place", "x"]);
-    assert.deepEqual(parsed.positionals, ["ticket"]);
-    assert.deepEqual(parsed.flags, { place: "none", wait: true });
+    const parsed = parseArgs(["ticket", "--place", "none", "--ticket", "add a flag", "--wait", "--set", "reviewer.model=claude/opus", "--", "--place", "x"], COMMANDS.run!.flags, true);
+    assert.deepEqual(parsed.positional, ["ticket"]);
+    assert.deepEqual(parsed.flags, { place: "none", wait: true, set: ["reviewer.model=claude/opus"] });
     assert.deepEqual(parsed.inputs, { ticket: "add a flag", place: "x" });
-    assert.deepEqual(parseSets(parsed.sets), { reviewer: { model: "claude/opus" } });
+    assert.deepEqual(parseSets(parsed.flags.set as string[]), { reviewer: { model: "claude/opus" } });
     assert.deepEqual(parseSets(["a.b.retries=2", "x.schema={\"type\":\"object\"}"]), { "a.b": { retries: 2 }, x: { schema: { type: "object" } } });
     assert.throws(() => parseSets(["nokey=1"]), /label\.key=value/);
   });
