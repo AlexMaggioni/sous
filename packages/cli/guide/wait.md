@@ -44,7 +44,8 @@ sous wait <run> --timeout 540 --json
 - `failure`, with the `step` and its `message`, when a step failed.
 - `resumesAt`, when the service resumes a run paused at the usage limit.
 
-`next` holds the calls that fit the status. Use them as written.
+`next` holds the calls that fit the status, such as `sous step <run> <label> --json` for a
+failed step. Use them as written.
 
 ## Later sessions
 

@@ -7,6 +7,9 @@ With `--json`, every command prints one JSON object. Besides its own keys it has
 
 An error prints `{"error": {...}}` instead. See `sous guide errors`.
 
+Without `--json`, a command prints its text, then a `note:` line for each note and a `next:`
+line for each call. `wait` and `log` print the run's log lines instead.
+
 ## The keys of each command
 
 | Command | Keys |
@@ -18,7 +21,8 @@ An error prints `{"error": {...}}` instead. See `sous guide errors`.
 | `show` | `runId`, `workflow`, `status`, `word`, `cwd`, `branch`, `worktree`, `startedAt`, `seconds`, `tokens`, `steps`, `questions`, `failure`, `resumesAt` |
 | `show --full` | the same, plus `record` and `state` |
 | `list` | `runs` |
-| `log` | `runId`, `running`, `log` |
+| `log` | `runId`, `events`, `after`, `more` |
+| `step` | `runId`, `step`, `scope`, `call`, `calls`, `status`, `kind`, `model`, `startedAt`, `seconds`, `tokens`, `prompt`, `result`, `failure`, `command`, `output`, `activity` |
 | `inbox` | `questions` |
 | `answer`, `approve`, `send-back` | `question`, `runId`, `answered`, `running` |
 | `pause` | `runId`, `status`, `pausing` |
@@ -37,7 +41,19 @@ A key with nothing to say is left out, so a run that has not failed has no `fail
 ## Short and full
 
 `show --json` keeps the last 30 steps, and a note says how many more `--full` gives. `list` shows
-20 runs, and `--all` shows every one. `log --json` gives the end of the log.
+20 runs, and `--all` shows every one.
+
+`log --json` gives at most 100 events. Each has `seq`, `at` and `kind`. `after` is the seq of the
+last one. When `more` is true, `next` holds the call for the next page:
+
+```sh
+sous log <run> --json --after <seq>
+```
+
+A question that waits while the run runs has no event in the log. Use `sous wait` to catch it.
+
+`step --json` gives the last 20 entries of `activity`. `--tail N` gives N, and `--full` gives all
+of them and the whole prompt. `--call N` shows another call of a step that ran more than once.
 
 ## One line
 

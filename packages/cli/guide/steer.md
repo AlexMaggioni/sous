@@ -12,6 +12,15 @@ sous show <run> --json
 Each step has its label and status. `sous log <run>` names each running step the way
 `stop --step` takes it, such as `"ticket A: implementer"` for a step of a nested run.
 
+## See what a step does
+
+```sh
+sous step <run> <label> --json
+```
+
+It gives the step's prompt or command, its status, its `failure` when it failed, and its
+`activity`, the last 20 things it did. Read it before you stop a step, and after one fails.
+
 ## Stop one step
 
 ```sh

@@ -8,7 +8,7 @@ See `sous guide asks`.
 
 | pauseReason | What happened | What to do |
 | --- | --- | --- |
-| `step_failed` | A step failed its last try. | Read `failure`, tell the person, offer a resume. |
+| `step_failed` | A step failed its last try. | Read the step, tell the person, offer a resume. |
 | `usage_limit` | The account reached its usage limit. | Nothing. The service resumes it at `resumesAt`. |
 | `auth_required` | The program lost its login. | The person logs in again, then resume. |
 | `time_limit` | The workflow's `timeout` ran out. | Resume gives it the whole limit again. |
@@ -18,10 +18,19 @@ See `sous guide asks`.
 | `checkpoint_required` | A question waits and no worker runs. | Answer it, then resume. |
 | any other text | The run paused for that reason. | Read `reason`, tell the person. |
 
+## Read a failed step
+
+`failure` names the step and its message. To see its command or prompt, its output and what it
+did:
+
+```sh
+sous step <run> <label> --json
+```
+
 ## A failed run
 
-A run with the status `failed` exits 1. Read `failure`, tell the person, and offer a resume.
-`sous resume` takes a failed run too.
+A run with the status `failed` exits 1. Read `failure` and the step, tell the person, and offer a
+resume. `sous resume` takes a failed run too.
 
 ## Resume, not rerun
 

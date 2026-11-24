@@ -20,7 +20,7 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | --- | --- |
 | 64 | A wrong or missing argument: `bad_argument`, or `not_a_choice` for an answer outside the choices. |
 | 65 | The thing asked for is not there: a run, workflow, question, step, schedule or guide topic. |
-| 66 | sous refuses, such as `run_is_running` or `not_ours`. |
+| 66 | sous refuses, such as `run_is_running` or `not_ours`, or a record is broken. |
 | 1 | sous itself failed. |
 
 `sous wait` also uses 0 to 5 for the run's status. See `sous guide wait`.
@@ -37,6 +37,7 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | `run_is_running` | Stop the run first, if the person wants that. |
 | `cannot_resume` | An older sous saved the run. Rerun it, after asking. |
 | `not_ours` | A skill place holds something sous did not put there. Tell the person. |
+| `broken_record` | A file sous keeps, such as a run's event log, does not parse. Tell the person. |
 
 ## Requests that change nothing
 

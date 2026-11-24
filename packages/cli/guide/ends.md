@@ -20,7 +20,7 @@ git -C <worktree> diff <start-branch>...HEAD
 ```
 
 `sous show <run> --json` lists each step with its status, time and tokens. `--full` adds the
-whole record. `sous log <run>` prints what each step said.
+whole record. `sous step <run> <label> --json` shows one step's prompt, result and what it did.
 
 ## The report
 

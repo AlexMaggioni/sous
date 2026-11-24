@@ -50,7 +50,8 @@ what you checked yourself and what you did not. Never merge, push or discard unl
 
 ## When it pauses or fails
 
-Read `pauseReason`, `failure` and `next`. `sous resume` runs the failed step again and keeps
+Read `pauseReason`, `failure` and `next`. `sous step <run> <label> --json` shows what the
+failed step did. `sous resume` runs the failed step again and keeps
 the finished ones. `sous rerun` pays for every step again, so ask first. A run paused at the
 usage limit needs nothing. The service resumes it.
 
