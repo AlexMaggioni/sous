@@ -5,7 +5,7 @@ import { flagsNamed, RESERVED, type FlagSpec, type Parsed } from "../args.js";
 import type { Reply } from "../reply.js";
 import { cmdDiscard, cmdGc, cmdPause, cmdPrune, cmdStop } from "./control.js";
 import { cmdAnswer, cmdInbox } from "./questions.js";
-import { cmdList, cmdLog, cmdShow, cmdWait } from "./reads.js";
+import { cmdList, cmdLog, cmdShow, cmdStatus, cmdWait } from "./reads.js";
 import { cmdRerun, cmdResume, cmdRun } from "./runs.js";
 import { cmdDaemon, cmdSchedule } from "./service.js";
 import { cmdAccount, cmdDoctor } from "./setup.js";
@@ -66,9 +66,10 @@ function takes(...names: string[]): FlagSpec[] {
 
 export const COMMANDS: Record<string, CommandSpec> = {
   run: { run: cmdRun, flags: takes("place", "model", "set", "concurrency", "project", "wait", "json"), inputs: true },
-  wait: { run: cmdWait, flags: takes("json") },
+  wait: { run: cmdWait, flags: takes("timeout", "json") },
+  status: { run: cmdStatus, flags: takes("since", "line", "all", "json") },
   list: { run: cmdList, flags: takes("all", "json") },
-  show: { run: cmdShow, flags: takes("json") },
+  show: { run: cmdShow, flags: takes("full", "json") },
   log: { run: cmdLog, flags: takes("follow") },
   inbox: { run: cmdInbox, flags: takes("json") },
   answer: { run: (args, ctx) => cmdAnswer(args, ctx, "answer"), flags: takes("json") },

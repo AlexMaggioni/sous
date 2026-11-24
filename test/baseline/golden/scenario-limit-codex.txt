@@ -5,8 +5,24 @@ exit 0
   "workflow": "limit",
   "cwd": "<tmp>/scenario-limit-codex/sous-home/scratch/<run-1>",
   "log": "<tmp>/scenario-limit-codex/sous-home/logs/<run-1>.log",
+  "status": "starting",
+  "asks": 0,
+  "lastRuns": {
+    "count": 0,
+    "seconds": "<seconds>",
+    "tokens": 0
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous wait <run-1> --json
@@ -20,7 +36,16 @@ exit 2
   "reason": "usage_limit",
   "cwd": "<tmp>/scenario-limit-codex/sous-home/scratch/<run-1>",
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous resume <run-1> --json",
+      "does": "resumes the run where it stopped"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous resume <run-1>
@@ -39,8 +64,19 @@ exit 0
     "before": "before",
     "answer": "Fake codex answer."
   },
+  "review": {
+    "result": {
+      "before": "before",
+      "answer": "Fake codex answer."
+    }
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous show <run-1>
@@ -63,9 +99,31 @@ result
   "answer": "Fake codex answer."
 }
 
-$ sous show <run-1> --json
+$ sous show <run-1> --full --json
 exit 0
 {
+  "runId": "<run-1>",
+  "workflow": "limit",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-limit-codex/sous-home/scratch/<run-1>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 156,
+  "steps": [
+    {
+      "label": "before",
+      "status": "done",
+      "seconds": "<seconds>"
+    },
+    {
+      "label": "worker",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-1>",
     "workflow": "limit",
@@ -230,7 +288,6 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": [],
   "notes": [],
   "next": []
 }

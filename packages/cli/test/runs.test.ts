@@ -450,7 +450,7 @@ return await agent('second', { label: 'second' })`,
     const write = process.stdout.write.bind(process.stdout);
     process.stdout.write = ((chunk: string) => (printed.push(String(chunk)), true)) as typeof process.stdout.write;
     try {
-      assert.equal(await main(["show", record.runId, "--json"]), 0);
+      assert.equal(await main(["show", record.runId, "--full", "--json"]), 0);
     } finally {
       process.stdout.write = write;
       if (before === undefined) delete process.env.SOUS_HOME;

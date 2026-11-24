@@ -5,8 +5,24 @@ exit 0
   "workflow": "stop-step",
   "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
   "log": "<tmp>/scenario-stop-step/sous-home/logs/<run-1>.log",
+  "status": "starting",
+  "asks": 0,
+  "lastRuns": {
+    "count": 0,
+    "seconds": "<seconds>",
+    "tokens": 0
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous stop <run-1> --step slow
@@ -23,7 +39,16 @@ exit 2
   "reason": "step \"slow\" was stopped",
   "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous resume <run-1> --json",
+      "does": "resumes the run where it stopped"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous resume <run-1>
@@ -43,8 +68,20 @@ exit 0
     "quick": "Fake claude answer.",
     "after": "Fake claude answer."
   },
+  "review": {
+    "result": {
+      "slow": "Fake claude answer.",
+      "quick": "Fake claude answer.",
+      "after": "Fake claude answer."
+    }
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous show <run-1>
@@ -68,9 +105,37 @@ result
   "after": "Fake claude answer."
 }
 
-$ sous show <run-1> --json
+$ sous show <run-1> --full --json
 exit 0
 {
+  "runId": "<run-1>",
+  "workflow": "stop-step",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 458,
+  "steps": [
+    {
+      "label": "slow",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "quick",
+      "status": "done",
+      "seconds": "<seconds>"
+    },
+    {
+      "label": "after",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-1>",
     "workflow": "stop-step",
@@ -279,7 +344,6 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": [],
   "notes": [],
   "next": []
 }

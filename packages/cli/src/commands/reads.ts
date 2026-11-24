@@ -1,15 +1,60 @@
 // sous list, show, log and wait: the commands that read runs.
 
-import { describeAccount, HARNESSES, harnessName, hint, isHarness, limitNotice, listRecords, listRuns, readLog, Refusal, runDetail, runQuestions, scopePath, type RunDetail, type RunRecord } from "@sous/engine";
-import type { Parsed } from "../args.js";
+import { describeAccount, HARNESSES, harnessName, hint, homeStatus, isHarness, limitNotice, listRecords, listRuns, readLog, Refusal, runDetail, runQuestions, scopePath, shortRun, sinceWindow, statusLine, type HomeStatus, type RunDetail, type RunRecord } from "@sous/engine";
+import { str, Usage, type Parsed } from "../args.js";
 import { cut, reply, type Next, type Reply } from "../reply.js";
 import { age, needRun, runIdArg, waitFor } from "./common.js";
 import type { Ctx } from "./index.js";
+import { nextCalls } from "./next.js";
 
 type Step = RunDetail["steps"][number];
 
 export function cmdWait(args: Parsed, ctx: Ctx): Promise<number | Reply<object>> {
-  return waitFor(ctx, needRun(ctx.paths, args.positional[0]).runId, ctx.json);
+  const timeout = str(args.flags.timeout);
+  const seconds = Number(timeout);
+  if (timeout !== undefined && !(seconds > 0)) throw new Usage(`--timeout takes a number of seconds above 0, got "${timeout}"`);
+  return waitFor(ctx, needRun(ctx.paths, args.positional[0]).runId, ctx.json, timeout === undefined ? undefined : seconds);
+}
+
+/** How many runs each list of sous status shows without --all. */
+const STATUS_MAX = 20;
+
+export function cmdStatus(args: Parsed, ctx: Ctx): Reply<object> {
+  const since = str(args.flags.since);
+  if (since !== undefined && sinceWindow(since) === undefined) throw new Usage(`--since takes a count and a unit, such as 30m, 12h or 3d, got "${since}"`);
+  if (args.flags.line) {
+    const line = statusLine(ctx.paths, ctx.now());
+    return ctx.json ? reply({ line }) : reply({}, { text: line ? [line] : [] });
+  }
+  const { earlier, ...status } = homeStatus(ctx.paths, ctx.now(), since === undefined ? {} : { since });
+  const notes: string[] = [];
+  const shown = <T>(items: T[], what: string): T[] => {
+    if (args.flags.all) return items;
+    const part = cut(items, STATUS_MAX, "--all", what);
+    if (part.note) notes.push(part.note);
+    return part.items;
+  };
+  const data: HomeStatus = { needsYou: shown(status.needsYou, "entries that need you"), running: shown(status.running, "running runs"), waiting: shown(status.waiting, "waiting runs"), finished: shown(status.finished, "finished runs"), service: status.service };
+  if (earlier) notes.push(`${earlier} run${earlier === 1 ? "" : "s"} ended before the last ${since ?? "24h"}. Add --since with a longer time, such as --since 7d, to see them.`);
+  if (ctx.json) return reply(data, { notes, next: data.needsYou.map((entry) => ({ call: entry.call, does: entry.question ? `answers "${entry.question.prompt}"` : `shows why ${entry.runId} needs you` })) });
+  return reply({}, { notes, text: statusText(data, ctx.now()) });
+}
+
+/** sous status in text, one section a list. */
+function statusText(status: HomeStatus, now: Date): string[] {
+  const text: string[] = [];
+  const section = <T>(title: string, items: T[], lines: (item: T) => string[]) => {
+    if (!items.length) return;
+    text.push(title);
+    for (const item of items) text.push(...lines(item).map((line) => `  ${line}`));
+  };
+  section("needs you", status.needsYou, (entry) => [`${entry.runId}  ${entry.workflow}  ${entry.question ? `asks: ${entry.question.prompt}` : entry.what}`, `  ${entry.call}`]);
+  section("running", status.running, (run) => [`${run.runId}  ${run.workflow}  ${run.minutes}m  ${run.tokens} tokens${run.steps.length ? `  ${run.steps.join(", ")}` : ""}`]);
+  section("waiting", status.waiting, (run) => [`${run.runId}  ${run.workflow}  ${run.what}${run.resumesAt ? `, resumes at ${run.resumesAt}` : ""}`]);
+  section("finished", status.finished, (run) => [`${run.runId}  ${run.workflow}  ${run.status}  ${age(run.at, now)} ago${run.branch ? `  branch ${run.branch}` : ""}`]);
+  if (!text.length) text.push("nothing needs you, and no run runs or waits.");
+  text.push(`service ${status.service.running ? "running" : "not running"}`);
+  return text;
 }
 
 /** How many runs sous list shows without --all. */
@@ -49,7 +94,13 @@ export function cmdShow(args: Parsed, ctx: Ctx): Reply<object> {
   const { paths } = ctx;
   const run = runDetail(paths, runIdArg(args.positional[0]));
   const { record, saved } = run;
-  if (ctx.json) return reply({ record, state: run.engineState, questions: run.questions });
+  if (ctx.json) {
+    const short = shortRun(run, ctx.now());
+    const next = nextCalls(short, "show");
+    if (args.flags.full) return reply({ ...short, record, state: run.engineState }, { next });
+    const steps = cut(short.steps, SHOW_STEPS, "--full", "steps");
+    return reply({ ...short, steps: steps.items }, { notes: steps.note ? [steps.note] : [], next });
+  }
   const text: string[] = [];
   const out = (line: string) => text.push(line);
   out(`${record.workflow}  ${record.runId}`);
@@ -79,6 +130,9 @@ export function cmdShow(args: Parsed, ctx: Ctx): Reply<object> {
   }
   return reply({}, { text });
 }
+
+/** How many steps the short sous show --json gives. */
+const SHOW_STEPS = 30;
 
 /** The steps in the order they started. A nested workflow's steps go together under it, indented. */
 function printSteps(out: (line: string) => void, record: RunRecord, agents: readonly Step[], ended: boolean): void {

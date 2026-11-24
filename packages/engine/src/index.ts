@@ -33,17 +33,21 @@ export {
   rerunRun,
   resumeRun,
   runDetail,
+  runPreview,
   runQuestions,
+  shortRun,
   startRun,
   stopRun,
   stopStep,
   useAccount,
   waitForRun,
   waitingRuns,
+  type Failure,
   type RunDetail,
   type RunQuestion,
   type RunView,
 } from "./runs/run.js";
+export { answerCall, homeStatus, sinceWindow, statusLine, type HomeStatus } from "./runs/status.js";
 export { isPlace } from "./places/places.js";
 
 // ── Saved workflows: the folders that hold them, the check and the dry run ──

@@ -5,8 +5,24 @@ exit 0
   "workflow": "places",
   "cwd": "<tmp>/scenario-places/sous-home/scratch/<run-1>",
   "log": "<tmp>/scenario-places/sous-home/logs/<run-1>.log",
+  "status": "starting",
+  "asks": 0,
+  "lastRuns": {
+    "count": 0,
+    "seconds": "<seconds>",
+    "tokens": 0
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous wait <run-1> --json
@@ -22,8 +38,21 @@ exit 0
     ],
     "said": "Fake claude answer."
   },
+  "review": {
+    "result": {
+      "where": [
+        "no git"
+      ],
+      "said": "Fake claude answer."
+    }
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous run places --json --place folder
@@ -33,8 +62,24 @@ exit 0
   "workflow": "places",
   "cwd": "<tmp>/scenario-places/project",
   "log": "<tmp>/scenario-places/sous-home/logs/<run-2>.log",
+  "status": "starting",
+  "asks": 0,
+  "lastRuns": {
+    "count": 1,
+    "seconds": "<seconds>",
+    "tokens": 150
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous wait <run-2> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-2> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous wait <run-2> --json
@@ -53,8 +98,24 @@ exit 0
     ],
     "said": "Fake claude answer."
   },
+  "review": {
+    "result": {
+      "where": [
+        "git main",
+        "mail",
+        "package.json",
+        "src"
+      ],
+      "said": "Fake claude answer."
+    }
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous show <run-2> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous run places --json --place worktree
@@ -64,8 +125,25 @@ exit 0
   "workflow": "places",
   "cwd": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
   "log": "<tmp>/scenario-places/sous-home/logs/<run-3>.log",
+  "status": "starting",
+  "branch": "sous/<run-3>",
+  "asks": 0,
+  "lastRuns": {
+    "count": 2,
+    "seconds": "<seconds>",
+    "tokens": 150
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous wait <run-3> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-3> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous wait <run-3> --json
@@ -85,8 +163,26 @@ exit 0
     ],
     "said": "Fake claude answer."
   },
+  "review": {
+    "branch": "sous/<run-3>",
+    "worktree": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
+    "result": {
+      "where": [
+        "git sous/<run-3>",
+        "mail",
+        "package.json",
+        "src"
+      ],
+      "said": "Fake claude answer."
+    }
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous show <run-3> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous show <run-1>
@@ -110,9 +206,31 @@ result
   "said": "Fake claude answer."
 }
 
-$ sous show <run-1> --json
+$ sous show <run-1> --full --json
 exit 0
 {
+  "runId": "<run-1>",
+  "workflow": "places",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-places/sous-home/scratch/<run-1>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 150,
+  "steps": [
+    {
+      "label": "where",
+      "status": "done",
+      "seconds": "<seconds>"
+    },
+    {
+      "label": "where agent",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-1>",
     "workflow": "places",
@@ -249,7 +367,6 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": [],
   "notes": [],
   "next": []
 }
@@ -278,9 +395,31 @@ result
   "said": "Fake claude answer."
 }
 
-$ sous show <run-2> --json
+$ sous show <run-2> --full --json
 exit 0
 {
+  "runId": "<run-2>",
+  "workflow": "places",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-places/project",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 150,
+  "steps": [
+    {
+      "label": "where",
+      "status": "done",
+      "seconds": "<seconds>"
+    },
+    {
+      "label": "where agent",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-2>",
     "workflow": "places",
@@ -432,7 +571,6 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": [],
   "notes": [],
   "next": []
 }
@@ -461,9 +599,33 @@ result
   "said": "Fake claude answer."
 }
 
-$ sous show <run-3> --json
+$ sous show <run-3> --full --json
 exit 0
 {
+  "runId": "<run-3>",
+  "workflow": "places",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
+  "branch": "sous/<run-3>",
+  "worktree": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 150,
+  "steps": [
+    {
+      "label": "where",
+      "status": "done",
+      "seconds": "<seconds>"
+    },
+    {
+      "label": "where agent",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-3>",
     "workflow": "places",
@@ -617,7 +779,6 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": [],
   "notes": [],
   "next": []
 }
