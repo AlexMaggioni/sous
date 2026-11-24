@@ -619,7 +619,7 @@ describe("places and reruns", () => {
     // sous gc prints the folders as git names them, so /var/... on macOS shows as /private/var/....
     const waitingLine = `kept ${realpathSync(waiting.worktree!)} (${waiting.branch}): its run has not finished\n`;
     const dry = await sous(paths, ["gc", "--dry-run"]);
-    assert.deepEqual(dry, { code: 0, out: `would remove ${realpathSync(writer.worktree!)} (${writer.branch}): merged\n${waitingLine}` });
+    assert.deepEqual(dry, { code: 0, out: `would remove ${realpathSync(writer.worktree!)} (${writer.branch}): merged\n${waitingLine}next: sous gc --json  (removes the merged worktrees)\n` });
     assert.equal(existsSync(writer.worktree!), true, "a dry run removes nothing");
     const result = gcRuns(paths);
     assert.deepEqual(result.removed.map((r) => r.reason), ["merged"]);
@@ -1351,7 +1351,8 @@ describe("control replies", () => {
     const pauseDone = replyOf((await sous(completed.paths, ["pause", completed.runId, "--json"])).out);
     assert.deepEqual(pauseDone.next.map((next) => next.call), [`sous rerun ${completed.runId} --json`]);
     const text = await sous(paused.paths, ["pause", paused.runId]);
-    assert.doesNotMatch(text.out, /^next: /m, "the text form leaves out the next calls, which take --json");
+    // The text form prints the notes, then the next calls, as the JSON form gives them.
+    assert.equal(text.out, `note: ${paused.runId} is not running (paused), so there is nothing to pause.\nnext: sous resume ${paused.runId} --json  (goes on with the run)\n`);
   });
 
   it("resume with --latest and --same, and prune with no days, give a call to paste", async () => {

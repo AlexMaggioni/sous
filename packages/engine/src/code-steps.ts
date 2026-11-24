@@ -12,6 +12,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, resolve } from "node:path";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
+import type { ActivityStep, OnActivity } from "./steps/activity.js";
 
 /** The model name a code step records. Old run files hold it, so it stays. */
 export const EXEC_MODEL = "exec";
@@ -57,6 +58,8 @@ export interface CodeStepEnv {
   env?: Record<string, string>;
   /** The environment the extra one goes on. Default process.env. */
   base?: Record<string, string | undefined>;
+  /** Called with each step's command, then with its output once it exits. */
+  onActivity?: OnActivity;
 }
 
 export interface ExecResult {
@@ -72,6 +75,8 @@ export interface ExecContext extends CodeStepEnv {
   cwd: string;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** The step, for its activity. */
+  step?: ActivityStep;
 }
 
 const MAX_OUTPUT = 200_000;
@@ -137,16 +142,19 @@ interface Spawned {
 function runProcess(
   command: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; stdin?: string; signal?: AbortSignal; timeoutMs?: number },
+  options: { cwd: string; env: NodeJS.ProcessEnv; stdin?: string; signal?: AbortSignal; timeoutMs?: number; seen?: (output: string) => void },
 ): Promise<Spawned> {
   return new Promise((resolvePromise, reject) => {
     if (options.signal?.aborted) {
+      options.seen?.("");
       reject(new WorkflowError("step cancelled", WorkflowErrorCode.AGENT_CANCELLED, { recoverable: false }));
       return;
     }
     const child = spawn(command, args, { cwd: options.cwd, env: options.env, stdio: ["pipe", "pipe", "pipe"], detached: true });
     let stdout = "";
     let stderr = "";
+    // What the process printed, given on every end: a timeout, a cancel and a failed start too.
+    const seen = () => options.seen?.([stdout, stderr].filter(Boolean).join("\n"));
     let timedOut = false;
     let cancelled = false;
     const killGroup = () => {
@@ -173,11 +181,13 @@ function runProcess(
     child.on("error", (error) => {
       if (timer) clearTimeout(timer);
       options.signal?.removeEventListener("abort", onAbort);
+      seen();
       reject(stepError(`could not start ${command}: ${error.message}`));
     });
     child.on("close", (code, signal) => {
       if (timer) clearTimeout(timer);
       options.signal?.removeEventListener("abort", onAbort);
+      seen();
       if (cancelled) return reject(new WorkflowError("step cancelled", WorkflowErrorCode.AGENT_CANCELLED, { recoverable: false }));
       if (timedOut) return reject(stepError(`timed out after ${Math.round(options.timeoutMs! / 1000)}s`));
       resolvePromise({ code: code ?? (signal ? 128 : 1), stdout, stderr });
@@ -208,7 +218,30 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+/** What a code step runs, as its activity shows it. */
+function commandText(spec: ExecSpec): string {
+  if (spec.kind === "js" || spec.kind === "py") return spec.source ?? "";
+  if (spec.kind === "file") return [spec.file ?? "", ...(spec.args ?? [])].join(" ");
+  return spec.command ?? "";
+}
+
 export async function runCodeStep(spec: ExecSpec, context: ExecContext): Promise<ExecResult> {
+  const { onActivity, step } = context;
+  const report = onActivity && step ? (kind: "command" | "output", text: string) => onActivity(step, { kind, text }) : undefined;
+  report?.("command", commandText(spec));
+  // The last output a process gave, saved once the step ends, however it ends.
+  let output: string | undefined;
+  try {
+    return await runSpec(spec, context, (text) => { output = text; });
+  } finally {
+    if (output !== undefined) report?.("output", output);
+  }
+}
+
+/** The most a code step's failure holds of its output. */
+const FAILURE_TEXT = 2_000;
+
+async function runSpec(spec: ExecSpec, context: ExecContext, seen: (output: string) => void): Promise<ExecResult> {
   const cwd = spec.cwd ? (isAbsolute(spec.cwd) ? spec.cwd : resolve(context.cwd, spec.cwd)) : context.cwd;
   if (!existsSync(cwd)) throw stepError(`the step's folder does not exist: ${cwd}`);
   const work = mkdtempSync(join(tmpdir(), "sous-step-"));
@@ -226,7 +259,7 @@ export async function runCodeStep(spec: ExecSpec, context: ExecContext): Promise
       SOUS_INPUT_FILE: inputFile,
       SOUS_SOURCE_FILE: sourceFile,
     };
-    const base = { cwd, env, signal: context.signal, timeoutMs: context.timeoutMs };
+    const base = { cwd, env, signal: context.signal, timeoutMs: context.timeoutMs, seen };
 
     let spawned: Spawned;
     let checks: number | undefined;
@@ -278,7 +311,9 @@ export async function runCodeStep(spec: ExecSpec, context: ExecContext): Promise
     };
     if (spawned.code !== 0 && !spec.allowFail) {
       const detail = (spawned.stderr.trim() || spawned.stdout.trim()).split("\n").slice(-5).join("\n");
-      throw stepError(`exited with code ${spawned.code}${detail ? `: ${detail}` : ""}`);
+      const head = `exited with code ${spawned.code}`;
+      // The failure keeps the end of the output, where the reason shows.
+      throw stepError(`${head}${detail ? `: ${detail.slice(-(FAILURE_TEXT - head.length - 2))}` : ""}`);
     }
     return out;
   } finally {

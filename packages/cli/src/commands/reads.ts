@@ -1,9 +1,9 @@
 // sous list, show, log and wait: the commands that read runs.
 
-import { describeAccount, HARNESSES, harnessName, hint, homeStatus, isHarness, limitNotice, listRecords, listRuns, readLog, Refusal, runDetail, runQuestions, scopePath, shortRun, sinceWindow, statusLine, type HomeStatus, type RunDetail, type RunRecord } from "@sous/engine";
+import { describeAccount, HARNESSES, harnessName, hint, homeStatus, isHarness, limitNotice, listRecords, listRuns, logAfter, readLog, Refusal, runDetail, runQuestions, scopePath, shortRun, sinceWindow, statusLine, type HomeStatus, type RunDetail, type RunRecord } from "@sous/engine";
 import { str, Usage, type Parsed } from "../args.js";
 import { cut, reply, type Next, type Reply } from "../reply.js";
-import { age, needRun, runIdArg, waitFor } from "./common.js";
+import { age, needRun, runIdArg, waitFor, wholeFlag } from "./common.js";
 import type { Ctx } from "./index.js";
 import { nextCalls, promptLine, waitNext } from "./next.js";
 
@@ -190,41 +190,46 @@ function printSteps(out: (line: string) => void, record: RunRecord, agents: read
 /** How long the printed reply of sous log --json may be, as every JSON reply. */
 const LOG_REPLY_MAX = 8000;
 
-/** The longest end of the log whose printed reply fits LOG_REPLY_MAX. Quotes, backslashes and
- *  control characters print longer than they are, so the cut is measured on the printed reply. */
-function logTail(text: string, printed: (log: string, cut: boolean) => string): { log: string; cut: boolean } {
-  if (printed(text, false).length <= LOG_REPLY_MAX) return { log: text, cut: false };
-  // A cut between the two halves of a surrogate pair drops the half that is left.
-  const end = (keep: number) => {
-    const start = text.length - keep;
-    return text.slice(start > 0 && /[\udc00-\udfff]/.test(text[start]!) ? start + 1 : start);
+/** The characters an event adds to the printed reply: its lines, indented in the array, and the comma. */
+const eventSize = (event: unknown) => `    ${JSON.stringify(event, null, 2).split("\n").join("\n    ")}`.length + 2;
+
+/** sous log --json: the run's events after --after, as many as fit in the reply. Quotes and
+ *  backslashes print longer than they are, so the fit is measured on the printed reply, and each
+ *  event once. */
+function logPage(ctx: Ctx, runId: string, running: boolean, args: Parsed): Reply<object> {
+  const asked = wholeFlag(args, "after", 0) ?? 0;
+  const page = logAfter(ctx.paths, runId, asked);
+  const notes = [
+    ...(page.last === undefined ? [] : [`--after ${asked} is past the end of the log, whose last event is ${page.last}. Read it from the start.`]),
+    ...(args.flags.follow ? ["--follow does not work with --json. This is one page of the log. Call again with the after it gives."] : []),
+  ];
+  const shaped = (count: number, forceMore = false) => {
+    const events = page.events.slice(0, count);
+    const cut = forceMore || count < page.events.length;
+    const after = cut ? (events.at(-1)?.seq ?? page.after) : page.after;
+    const more = cut || page.more;
+    const next: Next[] = [
+      ...(page.last === undefined ? [] : [{ call: `sous log ${runId} --json`, does: "gives the log from its first event" }]),
+      ...(more || running ? [{ call: `sous log ${runId} --json --after ${after}`, does: more ? "gives the next events" : "gives the events since this page" }] : []),
+      ...(running ? [waitNext(runId, "waits until the run ends, pauses or asks")] : []),
+    ];
+    return { data: { runId, events, after, more }, next };
   };
-  const fits = (keep: number) => printed(end(keep), true).length <= LOG_REPLY_MAX;
-  // The search keeps `low` fitting and `high` not.
-  let low = 0;
-  let high = Math.min(text.length, LOG_REPLY_MAX) + 1;
-  while (high - low > 1) {
-    const mid = Math.floor((low + high) / 2);
-    if (fits(mid)) low = mid;
-    else high = mid;
+  const printed = (shape: ReturnType<typeof shaped>) => JSON.stringify({ ...shape.data, notes, next: shape.next }, null, 2).length;
+  let count = page.events.length;
+  if (printed(shaped(count)) > LOG_REPLY_MAX) {
+    // A cut page says more, and names the last seq it keeps, which is no longer than the last of all.
+    let total = printed(shaped(count, true));
+    while (count > 1 && total > LOG_REPLY_MAX) total -= eventSize(page.events[--count]);
   }
-  return { log: end(low), cut: true };
+  const { data, next } = shaped(count);
+  return reply(data, { notes, next });
 }
 
 export async function cmdLog(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   const { paths, machine } = ctx;
   let read = readLog(paths, runIdArg(args.positional[0]));
-  if (ctx.json) {
-    const { runId, running, text } = read;
-    const next: Next[] = running ? [waitNext(runId, "waits for the run")] : [];
-    const notesOf = (log: string, cut: boolean): string[] => [
-      ...(cut ? [`The log is longer. This is its last ${log.length} characters. sous log ${runId} prints all of it.`] : []),
-      ...(args.flags.follow ? ["--follow does not work with --json. This is the log so far."] : []),
-    ];
-    const printed = (log: string, cut: boolean) => JSON.stringify({ runId, running, log, notes: notesOf(log, cut), next }, null, 2);
-    const { log, cut } = logTail(text, printed);
-    return reply({ runId, running, log }, { notes: notesOf(log, cut), next });
-  }
+  if (ctx.json) return logPage(ctx, read.runId, read.running, args);
   if (read.text) machine.write(read.text);
   if (!args.flags.follow) return reply({});
   while (read.running) {

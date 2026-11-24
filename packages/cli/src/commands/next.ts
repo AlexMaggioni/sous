@@ -25,6 +25,19 @@ export const rerunNext = (runId: string, does: string): Next => ({ call: `sous r
 /** A step label as one shell word, in single quotes when it needs them. */
 const word = (text: string) => (/^[\w./-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`);
 
+/** The calls after sous step, from the step's status. A failed step can run again with a resume,
+ *  a running one can be told more or stopped, and every step can wait for its run. */
+export function stepNext(runId: string, step: string, status: string): Next[] {
+  const wait = waitNext(runId, "waits until the run ends, pauses or asks");
+  if (status === "error") return [resumeNext(runId, "resumes the run, and the failed step runs again"), wait];
+  if (status !== "running") return [wait];
+  return [
+    { call: `sous tell ${runId} --step ${word(step)} "..." --json`, does: "gives the step a message it reads after its current tool call" },
+    { call: `sous stop ${runId} --step ${word(step)} --json`, does: "stops the step, and the run pauses on it" },
+    wait,
+  ];
+}
+
 /** A prompt's first line, cut to about 80 characters, to quote in a reply. */
 export function promptLine(prompt: string): string {
   const line = prompt.split("\n")[0]!.trim();

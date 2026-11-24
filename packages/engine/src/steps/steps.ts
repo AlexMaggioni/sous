@@ -21,6 +21,7 @@ import {
   type Account,
 } from "@sous/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
+import { activityStep, type ActivityEntry, type OnActivity } from "./activity.js";
 import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, PlannedRequest, StepRequest } from "./agent-run.js";
 import type { AgentRunner, StepAsk, StepRoute } from "./agent-runner.js";
 import type { AgentSessionRef } from "../workflow-result.js";
@@ -57,6 +58,8 @@ export interface StepsOptions {
   onLimit?: (event: { program: HarnessId; label?: string }) => void;
   /** Called once per step with what its program could not do as asked, such as a mode it lacks. */
   onNotes?: (event: { label?: string; notes: string[] }) => void;
+  /** Called with the step's prompt, then with each thing its program does, as it happens. */
+  onActivity?: OnActivity;
 }
 
 
@@ -70,6 +73,10 @@ const failureOf = (error: unknown): Failure | undefined => (isFailure(error) ? e
 function addUsage(a: Usage, b: Usage): Usage {
   return { input: a.input + b.input, output: a.output + b.output, cacheRead: a.cacheRead + b.cacheRead, cacheWrite: a.cacheWrite + b.cacheWrite, total: a.total + b.total };
 }
+
+/** The activity entry of a history item. The user's turns are left out: the steps module
+ *  reports the prompt itself, and a repair turn is its own text. */
+const ACTIVITY_KINDS: Record<HistoryEntry["kind"], ActivityEntry["kind"]> = { text: "text", toolCall: "tool", toolResult: "tool-result", error: "error" };
 
 const toHistory = (entry: HistoryEntry): AgentHistoryEntry => ({
   role: entry.role,
@@ -110,6 +117,9 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     const { problem, plan: step } = call.route;
     if (problem) throw stop(problem);
     if (!step) throw stop("the step has no plan. The engine routes each step with route() before it runs it.");
+    const where = options.onActivity && activityStep(call.runId, call.callIndex, call.label);
+    const report = where && ((entry: ActivityEntry) => options.onActivity!(where, entry));
+    report?.({ kind: "prompt", text: prompt });
 
     const program = await programFor(step.harness);
     if (program && "problem" in program) throw stop(program.problem);
@@ -135,9 +145,9 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     try {
       const account = options.accounts?.[step.harness];
       if (options.inner) return await runInner(options.inner, prompt, call, step, { signal, servers, account });
-      const report = options.onNotes;
-      const onNotes = report && ((notes: string[]) => report({ label: call.label, notes }));
-      return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account, onNotes });
+      const notesTo = options.onNotes;
+      const onNotes = notesTo && ((notes: string[]) => notesTo({ label: call.label, notes }));
+      return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account, onNotes, activity: report });
     } catch (error) {
       if ((error as { code?: unknown } | undefined)?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT) {
         options.onLimit?.({ program: step.harness, label: call.label });
@@ -204,9 +214,10 @@ async function runOnHarness(
     stop: (message: string) => WorkflowError;
     account?: Account;
     onNotes?: (notes: string[]) => void;
+    activity?: (entry: ActivityEntry) => void;
   },
 ): Promise<unknown> {
-  const { cwd, signal, servers, stop, account, onNotes } = given;
+  const { cwd, signal, servers, stop, account, onNotes, activity } = given;
   const harness = step.harness;
   const label = call.label;
   const schema = call.schema;
@@ -266,7 +277,9 @@ async function runOnHarness(
   const events: StepEvents = {
     session: open,
     history: (entry) => {
-      if (entry.role !== "user") history.push(toHistory(entry));
+      if (entry.role === "user") return;
+      history.push(toHistory(entry));
+      activity?.({ kind: ACTIVITY_KINDS[entry.kind], ...(entry.toolName === undefined ? {} : { tool: entry.toolName }), text: entry.text });
     },
   };
   const once = async (turn: Step): Promise<StepResult> => {
