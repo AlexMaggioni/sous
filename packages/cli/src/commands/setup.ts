@@ -1,28 +1,24 @@
-// sous account and doctor: the logins and programs the steps run on. sous guide and skill: what
-// an agent that drives sous reads.
+// sous account and doctor: the logins and programs the steps run on. sous guide, skill and hook:
+// what an agent that drives sous reads, and the line a new Claude Code session gets.
 
 import { join, resolve } from "node:path";
-import { installSkill, Refusal, skillPlaces } from "@sous/engine";
+import { installHook, installSkill, Refusal, removeHook } from "@sous/engine";
 import { cmdAccount as accountCommand } from "../account-cli.js";
 import { str, Usage, type Parsed } from "../args.js";
-import { doctor } from "../doctor.js";
+import { checkSkill, doctor } from "../doctor.js";
 import { reply, type Reply } from "../reply.js";
 import type { Ctx } from "./index.js";
 
-/** account-cli.ts and doctor.ts print as they go and give an exit code, or give a reply with --json.
- *  Tests call them on their own, so the command turns the code into a reply here. Piece 15 reworks doctor, and this with it. */
-const asReply = async (result: Promise<number | Reply<object>>): Promise<Reply<object>> => {
-  const done = await result;
+export async function cmdAccount(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
+  // account-cli.ts prints as it goes, since add asks in the terminal, and gives an exit code, or a
+  // reply with --json. The workers start through ctx.launch, read only when one starts, so a
+  // listing needs no build.
+  const done = await accountCommand(args.positional, { json: ctx.json, usage: (message) => new Usage(message), launch: (...start) => ctx.launch(...start) });
   return typeof done === "number" ? reply({}, { exit: done }) : done;
-};
-
-export function cmdAccount(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
-  // The workers start through ctx.launch, read only when one starts, so a listing needs no build.
-  return asReply(accountCommand(args.positional, { json: ctx.json, usage: (message) => new Usage(message), launch: (...start) => ctx.launch(...start) }));
 }
 
 export function cmdDoctor(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
-  return asReply(doctor({ live: args.flags.live === true, model: str(args.flags.model), json: ctx.json, out: ctx.machine.out }));
+  return doctor({ live: args.flags.live === true, model: str(args.flags.model), env: ctx.env, skillDir: resolve(ctx.machine.skillDir) });
 }
 
 /** The guide topics in reading order, each with its line in the list. Each is guide/<name>.md. */
@@ -76,22 +72,40 @@ export function cmdSkill(args: Parsed, ctx: Ctx): Reply<object> {
     );
   }
   if (action === "check") {
-    const { places: programs, blocked, change, stale } = skillPlaces(folder, ctx.env);
-    const notes = [
-      ...blocked.map((place) => `${place} holds something sous did not put there.`),
-      ...(change ? [change] : []),
-      ...stale.map(({ place, target }) => `${place} links to ${target}, which is gone. sous skill install replaces it.`),
-    ];
-    const installs = !blocked.length && programs.some((p) => !p.ours);
-    const word = (p: (typeof programs)[number]) => (p.ours ? "links to this skill" : stale.some((old) => old.place === p.place) ? "is an old sous link to a folder that is gone" : p.installed ? "holds something sous did not put there" : "is empty");
+    const { programs, notes, next, words } = checkSkill(folder, ctx.env);
+    return reply({ programs }, { text: programs.map((p) => `${p.program}: ${words.get(p.program)}`), notes, next });
+  }
+  throw new Usage("give install, path or check: sous skill install|path|check");
+}
+
+/** sous hook install and remove: the SessionStart hook in Claude Code's settings that runs
+ *  `sous status --line`, so a new session hears what needs the person. Codex gets none yet. */
+export function cmdHook(args: Parsed, ctx: Ctx): Reply<object> {
+  const action = args.positional[0];
+  if (action === "install") {
+    const { settings, command, changed, backup } = installHook(ctx.env);
     return reply(
-      { programs },
+      { settings, command, already: !changed, backup },
       {
-        text: programs.map((p) => `${p.program}: ${p.place} ${word(p)}`),
-        notes,
-        next: installs ? [{ call: "sous skill install --json", does: "links the skill for each program" }] : [],
+        text: [changed ? `${settings} now runs ${command} when a Claude Code session starts.` : `${settings} already runs ${command} when a Claude Code session starts.`],
+        notes: [
+          ...(backup ? [`The file as it was before sous first edited it is in ${backup}.`] : []),
+          "A new session runs the hook. A session that is open now does not.",
+          "Codex gets no hook. Its hook format is not checked yet.",
+        ],
+        next: [{ call: "sous status --line --json", does: "gives the line the hook prints in a new session, empty when nothing needs you" }],
       },
     );
   }
-  throw new Usage("give install, path or check: sous skill install|path|check");
+  if (action === "remove") {
+    const { settings, command, changed } = removeHook(ctx.env);
+    return reply(
+      { settings, command, removed: changed },
+      {
+        text: [changed ? `Removed ${command} from ${settings}.` : `Left ${settings} as it was.`],
+        notes: changed ? [] : ["No sous hook to remove."],
+      },
+    );
+  }
+  throw new Usage("give install or remove: sous hook install|remove");
 }

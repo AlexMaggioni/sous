@@ -34,8 +34,10 @@ export interface MainOptions {
   /** Starts the workers of the runs a command starts or resumes. By default each worker is a
    *  process of its own. Tests pass one that runs the worker in their process. */
   launch?: Launcher;
-  /** The environment the commands read: today SOUS_RUN_ID and CLAUDECODE in run and rerun, and
-   *  HOME in schedule. The home, account and doctor still read process.env. Default: process.env. */
+  /** The environment the commands read: today SOUS_RUN_ID and CLAUDECODE in run and rerun, HOME in
+   *  schedule, HOME and Claude Code's config folder variable in skill, hook and doctor, and
+   *  CODEX_THREAD_ID in doctor.
+   *  The home and the accounts still read process.env. Default: process.env. */
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
   /** What the commands do on the machine. Tests pass one to fake a terminal. */
@@ -104,6 +106,7 @@ sous runs saved workflows in the background.
   sous wait <run> [--timeout N] [--json]  wait for a run to end, pause or ask (exit 0 done, 1 failed,
                                         2 paused, 3 stopped, 4 waits for an answer, 5 timed out)
   sous status [--since 3d] [--json]     what needs you, what runs, what waits and what finished
+        --line                          one line for a new agent session, or nothing
   sous list [--all]                     runs, newest first
   sous show <run> [--full]              one run: status, steps, questions, result
   sous log <run> [-f]                   the run's log
@@ -140,12 +143,15 @@ sous runs saved workflows in the background.
   sous account use <name>               use it for new runs, and move the runs waiting at the usage
                                         limit to it; default is Claude Code's own login
   sous account remove <name>            forget a login
-  sous doctor [--live]                  the installed Claude Code and Codex the steps run on, and
-                                        whether sous talks to them; --live runs one tiny step on each
+  sous doctor [--live]                  the installed Claude Code and Codex the steps run on, whether
+                                        sous talks to them, where each finds the skill, and whether
+                                        sous can write its home; --live runs one tiny step on each
         --model <spec>                  with --live, check this model only, such as codex/gpt-6.1-sol
   sous guide [topic]                    how an agent drives sous for a person, one topic at a time
   sous skill install|path|check         link the sous skill for Claude Code and Codex, print its
                                         folder, or show where each program finds it
+  sous hook install|remove              add or remove the Claude Code session-start hook that runs
+                                        sous status --line; it keeps a backup of settings.json
 
 With --json, a command prints one JSON object, with its notes and the calls to make next. A
 request that changes nothing, such as pausing a paused run, exits 0 with a note.

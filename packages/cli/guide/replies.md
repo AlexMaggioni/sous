@@ -32,9 +32,11 @@ line for each call. `wait` and `log` print the run's log lines instead.
 | `discard` | `runId`, `worktrees`, `deleted` |
 | `gc` | `dryRun`, `removed`, `kept` |
 | `prune` | `days`, `removed`, `runIds` |
-| `doctor` | `programs` |
+| `doctor` | `programs`, `skills`, `home` |
 | `guide` | `topics`, or `topic` and `text` |
 | `skill` | `path`, or `programs` |
+| `hook install` | `settings`, `command`, `already`, `backup` |
+| `hook remove` | `settings`, `command`, `removed` |
 
 A key with nothing to say is left out, so a run that has not failed has no `failure`.
 
@@ -62,4 +64,5 @@ sous status --line 2>/dev/null || true
 ```
 
 `--line` prints one sentence for the start of a session, or nothing when nothing needs the
-person.
+person. `sous hook install` makes a new Claude Code session run it. Install it only when the
+person asks.
