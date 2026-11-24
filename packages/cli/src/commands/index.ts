@@ -84,7 +84,7 @@ export const COMMANDS: Record<string, CommandSpec> = {
   approve: { run: (args, ctx) => cmdAnswer(args, ctx, "approve"), flags: takes("by", "json") },
   "send-back": { run: (args, ctx) => cmdAnswer(args, ctx, "send-back"), flags: takes("by", "json") },
   pause: { run: cmdPause, flags: takes("by", "json") },
-  resume: { run: cmdResume, flags: takes("latest", "same", "budget", "wait", "let-agent-answer", "by", "json") },
+  resume: { run: cmdResume, flags: takes("latest", "same", "budget", "note", "step", "wait", "let-agent-answer", "by", "json") },
   stop: { run: cmdStop, flags: takes("step", "by", "json") },
   tell: { run: cmdTell, flags: takes("step", "call", "by", "json") },
   rerun: { run: cmdRerun, flags: takes("place", "reuse", "set", "model", "budget", "wait", "let-agent-answer", "by", "json"), inputs: true },

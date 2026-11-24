@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
-import { rerunRun, resumeRun, runQuestions, startRun, type HomePaths, type RunRecord } from "@sous/engine";
+import { fileURLToPath } from "node:url";
+import { loadRecord, rerunRun, resumeRun, runQuestions, startRun, type HomePaths, type RunRecord } from "@sous/engine";
 import { PERSON, fakeRunner, inProcess, plantState, readState, testHome, writeAnswer, WorkflowError, WorkflowErrorCode, type PersistedRunState } from "@sous/engine/testing";
 import { sous, waitFor } from "./sous.js";
+import { callProblem, words } from "./helpers/calls.js";
 
 // Which steps run again when a run resumes. Each test pauses a run with a fake agent, resumes it
 // as `sous resume` does, and checks the prompts the fake gets on the resume. A failed step,
@@ -431,5 +434,282 @@ describe("resume", () => {
     const { first, live } = await reuseAfterEdit({ loop: loop("L") }, "loop", { loop: loop("L2") });
     assert.deepEqual(first, ["check", "check", "check", "L"]);
     assert.deepEqual(live, ["L2"]);
+  });
+});
+
+// Piece 13, resume with a note. `sous resume <run> --note "..." [--step <step>]` gives the note to
+// the first agent call that runs in this go, or to the first call of the named step (design,
+// "Resume with a note"). These runs are worker processes of their own on the fake programs in
+// test/fakes, as a user's run is, so the note goes through the cli, the record and the worker.
+//
+// Choices the design leaves open, made here:
+// - `--step` takes the step's name as `sous log` shows it, or its plain label, as `sous step` and
+//   `tell --step` do. The step_not_running refusal of `sous tell` gives a nested step by its name
+//   in the log ("sub: impl"), so the call it hands out must run as given, and one rule for every
+//   --step flag is less to learn.
+// - `--step` names a step the run has had, as `sous show` lists it. A name it never had fails with
+//   no_such_step (65), as `tell --step` and `stop --step` do, and the run does not resume.
+// - `--step` without `--note` is a usage error (64): it has nothing to aim.
+// - The resume line in events.jsonl holds the note as `text`, and `step` when given. The note
+//   stays outside the call hash, so the line and the step's activity are its record.
+
+const NOTE_FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../test/fakes");
+for (const name of ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "SOUS_RUN_ID", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_EXECUTABLE", "CODEX_PATH", "FAKE_VERSION"]) delete process.env[name];
+
+const NOTE = "Use the v2 API.";
+const onFake = (name: string, body: string) => `export const meta = { name: '${name}', description: '${name}', place: 'none' }\n${body}`;
+const NOTE_WORKFLOWS = {
+  abc: onFake(
+    "abc",
+    ["a", "b", "c"].map((label) => `await agent('Do ${label.toUpperCase()}.', { label: '${label}', model: 'claude/haiku' })`).join("\n") + "\nreturn 'done'",
+  ),
+  child: onFake("child", "return await agent('Build the part.', { label: 'impl', model: 'claude/haiku' })"),
+  nest: onFake(
+    "nest",
+    "await agent('Build the top.', { label: 'impl', model: 'claude/haiku' })\nawait workflow('child', {}, { label: 'sub' })\nreturn await agent('Check the top.', { label: 'impl', model: 'claude/haiku' })",
+  ),
+};
+
+interface FakeLine {
+  program: string;
+  prompt?: string;
+}
+
+/** The fakes' log and rules, in a folder of their own. */
+function noteFakes(rules: object[]) {
+  const dir = mkdtempSync(join(tmpdir(), "sous-resume-note-"));
+  process.env.FAKE_LOG = join(dir, "fake.log");
+  process.env.FAKE_RULES = join(dir, "rules.json");
+  writeFileSync(process.env.FAKE_RULES, JSON.stringify(rules));
+  const log = process.env.FAKE_LOG;
+  return { prompts: (): string[] => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as FakeLine) : []).flatMap((line) => (line.prompt === undefined ? [] : [line.prompt])) };
+}
+
+/** The JSON sous printed. */
+function printedJson(printed: { code: number; out: string }): Record<string, any> {
+  let parsed: unknown;
+  assert.doesNotThrow(() => (parsed = JSON.parse(printed.out)), `sous printed no JSON object (exit ${printed.code}):\n${printed.out}`);
+  return parsed as Record<string, any>;
+}
+
+/** Poll a read until it holds, or 20 seconds pass. */
+async function untilHolds(ready: () => Promise<boolean> | boolean, what: string): Promise<void> {
+  for (let i = 0; i < 400; i++) {
+    if (await ready()) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.fail(`timed out waiting for ${what}`);
+}
+
+/** The worker ended: it clears its pid last. */
+const workerGone = (paths: HomePaths, runId: string) => loadRecord(paths, runId)?.pid === undefined;
+
+/** Start a workflow on a worker process of its own, with the fake whose prompts match `fails`
+ *  failing once, and wait for the run to pause on it. */
+async function pausedOnFake(workflow: keyof typeof NOTE_WORKFLOWS, fails: string) {
+  const fakes = noteFakes([{ match: fails, fail: "broken", times: 1 }]);
+  const { paths, projectDir } = testHome(NOTE_WORKFLOWS, { claudePath: join(NOTE_FAKES, "claude"), codexPath: join(NOTE_FAKES, "codex"), retries: 0 });
+  const run = await sous(paths, ["run", workflow, "--json", "--project", projectDir]);
+  assert.equal(run.code, 0, run.out);
+  const runId = printedJson(run).runId as string;
+  await untilHolds(() => readState(paths, runId)?.status === "paused" && workerGone(paths, runId), "the run to pause on the failed step");
+  return { paths, runId, fakes, ran: fakes.prompts().length };
+}
+
+/** Wait for the resumed run to end, and stop it when it does not. */
+async function resumedEnd(paths: HomePaths, runId: string): Promise<void> {
+  try {
+    await untilHolds(() => readState(paths, runId)?.status !== "paused" && workerGone(paths, runId), "the resumed run to end");
+  } catch (error) {
+    await sous(paths, ["stop", runId, "--json"]);
+    throw error;
+  }
+}
+
+interface NoteAction {
+  act: string;
+  by: string;
+  runId?: string;
+  step?: string;
+  text?: string;
+}
+const noteActions = (paths: HomePaths): NoteAction[] => {
+  const file = join(paths.home, "events.jsonl");
+  return existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as NoteAction) : [];
+};
+
+/** The activity `sous step --json` shows for a step. */
+async function stepActivity(paths: HomePaths, runId: string, step: string): Promise<Array<{ kind: string; text: string }>> {
+  const printed = await sous(paths, ["step", runId, step, "--json"]);
+  assert.equal(printed.code, 0, printed.out);
+  return (printedJson(printed).activity ?? []) as Array<{ kind: string; text: string }>;
+}
+
+describe("piece 13: sous resume --note", () => {
+  it("a failed fake agent step resumed with --note gets the note in its prompt and its activity, and the resume line holds it", async () => {
+    const { paths, runId, fakes, ran } = await pausedOnFake("abc", "Do B");
+    const before = noteActions(paths).length;
+    const printed = await sous(paths, ["resume", runId, "--note", NOTE, "--json"]);
+    assert.equal(printed.code, 0, printed.out);
+    await resumedEnd(paths, runId);
+    assert.equal(readState(paths, runId)?.status, "completed");
+
+    // This go ran B again, then C. B, the first agent call that ran, got the note, and C did not.
+    const live = fakes.prompts().slice(ran);
+    assert.equal(live.length, 2, `the resume ran B and C: ${JSON.stringify(live)}`);
+    const [b, c] = live;
+    assert.match(b ?? "", /Do B\./);
+    assert.ok((b ?? "").trimEnd().endsWith(NOTE), `B's prompt ends with the note:\n${b}`);
+    assert.ok(!(c ?? "").includes(NOTE), `C's prompt has no note:\n${c}`);
+
+    const activity = await stepActivity(paths, runId, "b");
+    assert.ok(
+      activity.some((line) => line.kind === "note" && line.text.includes(NOTE)),
+      `b's activity has a note line with the note: ${JSON.stringify(activity)}`,
+    );
+    const added = noteActions(paths).slice(before).filter((line) => line.act === "resume");
+    assert.equal(added.length, 1, `one resume line: ${JSON.stringify(added)}`);
+    assert.deepEqual({ by: added[0]!.by, runId: added[0]!.runId, text: added[0]!.text }, { by: "person", runId, text: NOTE });
+  });
+
+  it("the resume call that tell's step_not_running gives for a nested step runs as given and reaches that step only", async () => {
+    const { paths, runId, fakes, ran } = await pausedOnFake("nest", "Build the part");
+    const refusal = await sous(paths, ["tell", runId, "--step", "sub: impl", NOTE, "--json"]);
+    assert.equal(refusal.code, 65, refusal.out);
+    const { error } = printedJson(refusal);
+    assert.equal(error?.code, "step_not_running", refusal.out);
+    const call = error.call as string;
+    assert.match(call, new RegExp(`^sous resume ${runId} --note `), call);
+    assert.equal(callProblem(call), undefined, callProblem(call));
+
+    const before = noteActions(paths).length;
+    const printed = await sous(paths, words(call).slice(1));
+    assert.equal(printed.code, 0, `${call} runs as given:\n${printed.out}`);
+    await resumedEnd(paths, runId);
+    assert.equal(readState(paths, runId)?.status, "completed");
+
+    const live = fakes.prompts().slice(ran);
+    const part = live.filter((prompt) => prompt.includes("Build the part"));
+    const top = live.filter((prompt) => prompt.includes("Check the top"));
+    assert.equal(part.length, 1, `the nested impl ran again once: ${JSON.stringify(live)}`);
+    assert.ok(part[0]!.trimEnd().endsWith(NOTE), `the nested impl's prompt ends with the note:\n${part[0]}`);
+    assert.equal(top.length, 1, `the top-level impl after it ran: ${JSON.stringify(live)}`);
+    assert.ok(!top[0]!.includes(NOTE), `the top-level impl got no note:\n${top[0]}`);
+    const activity = await stepActivity(paths, runId, "sub: impl");
+    assert.ok(activity.some((line) => line.kind === "note" && line.text.includes(NOTE)), `the nested step's activity has the note: ${JSON.stringify(activity)}`);
+    const added = noteActions(paths).slice(before).filter((line) => line.act === "resume");
+    assert.equal(added.length, 1, `one resume line: ${JSON.stringify(added)}`);
+    assert.deepEqual({ text: added[0]!.text, step: added[0]!.step }, { text: NOTE, step: "sub: impl" });
+  });
+
+  it("--step nosuch exits 65 with no_such_step and leaves the run paused, and --step without --note is a usage error", async () => {
+    const { paths, runId, fakes, ran } = await pausedOnFake("abc", "Do B");
+    const before = noteActions(paths).length;
+    const printed = await sous(paths, ["resume", runId, "--note", NOTE, "--step", "nosuch", "--json"]);
+    try {
+      assert.equal(printed.code, 65, printed.out);
+      const { error } = printedJson(printed);
+      assert.equal(error?.code, "no_such_step", printed.out);
+      assert.ok(typeof error.change === "string" && error.change.length > 0, printed.out);
+      assert.ok(typeof error.call === "string" && error.call.startsWith("sous "), printed.out);
+      assert.equal(callProblem(error.call), undefined, callProblem(error.call));
+      assert.equal(noteActions(paths).length, before, "a refused resume adds no line");
+      assert.equal(readState(paths, runId)?.status, "paused", "the run did not resume");
+      assert.ok(workerGone(paths, runId), "no worker started");
+      assert.equal(fakes.prompts().length, ran, "no step ran");
+
+      const bare = await sous(paths, ["resume", runId, "--step", "b", "--json"]);
+      assert.equal(bare.code, 64, bare.out);
+      assert.equal(printedJson(bare).error?.code, "bad_argument", bare.out);
+      assert.match(printedJson(bare).error.message, /--note/, "the error says --step needs --note");
+      assert.equal(readState(paths, runId)?.status, "paused", "the run did not resume");
+    } finally {
+      if (!workerGone(paths, runId)) await resumedEnd(paths, runId).catch(() => undefined);
+    }
+  });
+
+  it("--step naming a finished step resumes the run with a note that the step already finished and gets the note only if called again, and no call gets the note", async () => {
+    const { paths, runId, fakes, ran } = await pausedOnFake("abc", "Do B");
+    const before = noteActions(paths).length;
+    const printed = await sous(paths, ["resume", runId, "--note", NOTE, "--step", "a", "--json"]);
+    assert.equal(printed.code, 0, printed.out);
+    const reply = printedJson(printed);
+    await resumedEnd(paths, runId);
+    assert.ok(Array.isArray(reply.notes), printed.out);
+    assert.ok(
+      (reply.notes as string[]).some((note) => /["'`]a["'`]|step a\b/.test(note) && /already finished/.test(note) && /only if the workflow calls .* again/.test(note)),
+      `a note names step a, says it already finished, and says the note reaches it only if the workflow calls it again: ${JSON.stringify(reply.notes)}`,
+    );
+    assert.equal(readState(paths, runId)?.status, "completed");
+    const live = fakes.prompts().slice(ran);
+    assert.equal(live.length, 2, `the resume ran B and C: ${JSON.stringify(live)}`);
+    assert.ok(live.every((prompt) => !prompt.includes(NOTE)), `no call got the note: ${JSON.stringify(live)}`);
+    const added = noteActions(paths).slice(before).filter((line) => line.act === "resume");
+    assert.equal(added.length, 1, `one resume line: ${JSON.stringify(added)}`);
+    assert.deepEqual({ text: added[0]!.text, step: added[0]!.step }, { text: NOTE, step: "a" });
+  });
+
+  it("--step naming a later step the run has not reached, by the label its text writes, gives the note to that step only", async () => {
+    const { paths, runId, fakes, ran } = await pausedOnFake("abc", "Do A");
+    const before = noteActions(paths).length;
+    const printed = await sous(paths, ["resume", runId, "--note", NOTE, "--step", "c", "--json"]);
+    assert.equal(printed.code, 0, printed.out);
+    const reply = printedJson(printed);
+    await resumedEnd(paths, runId);
+    assert.equal(readState(paths, runId)?.status, "completed");
+    assert.ok(!(reply.notes as string[]).some((note) => /already finished/.test(note)), `no note says c finished: ${JSON.stringify(reply.notes)}`);
+
+    // This go ran A again, then B and C. Only C got the note.
+    const live = fakes.prompts().slice(ran);
+    assert.equal(live.length, 3, `the resume ran A, B and C: ${JSON.stringify(live)}`);
+    const [a, b, c] = live;
+    assert.match(a ?? "", /Do A\./);
+    assert.match(b ?? "", /Do B\./);
+    assert.match(c ?? "", /Do C\./);
+    assert.ok(!(a ?? "").includes(NOTE) && !(b ?? "").includes(NOTE), `A and B got no note: ${JSON.stringify([a, b])}`);
+    assert.ok((c ?? "").trimEnd().endsWith(NOTE), `C's prompt ends with the note:\n${c}`);
+    const activity = await stepActivity(paths, runId, "c");
+    assert.ok(activity.some((line) => line.kind === "note" && line.text.includes(NOTE)), `c's activity has the note: ${JSON.stringify(activity)}`);
+    const added = noteActions(paths).slice(before).filter((line) => line.act === "resume");
+    assert.equal(added.length, 1, `one resume line: ${JSON.stringify(added)}`);
+    assert.deepEqual({ text: added[0]!.text, step: added[0]!.step }, { text: NOTE, step: "c" });
+  });
+
+  it("resume --note on a run that runs already loses no note: a note and next give the sous tell call, which runs as given", async () => {
+    noteFakes([{ match: "Do A", tool: "echo working", hold: "go", answer: "Done." }]);
+    const gate = join(dirname(process.env.FAKE_LOG!), "go");
+    const { paths, projectDir } = testHome(NOTE_WORKFLOWS, { claudePath: join(NOTE_FAKES, "claude"), codexPath: join(NOTE_FAKES, "codex"), retries: 0 });
+    const run = await sous(paths, ["run", "abc", "--json", "--project", projectDir]);
+    assert.equal(run.code, 0, run.out);
+    const runId = printedJson(run).runId as string;
+    try {
+      await untilHolds(async () => (await stepActivity(paths, runId, "a").catch(() => [])).some((line) => line.kind === "tool"), "step a to run its tool call");
+      const before = noteActions(paths).length;
+      const printed = await sous(paths, ["resume", runId, "--note", NOTE, "--json"]);
+      assert.equal(printed.code, 0, printed.out);
+      const reply = printedJson(printed);
+      assert.equal(reply.status, "running", printed.out);
+      const tell = `sous tell ${runId} --step a 'Use the v2 API.' --json`;
+      assert.ok((reply.notes as string[]).some((note) => note.includes(tell)), `a note gives ${tell}: ${JSON.stringify(reply.notes)}`);
+      assert.equal(reply.next?.[0]?.call, tell, printed.out);
+      assert.equal(callProblem(tell), undefined, callProblem(tell));
+      assert.equal(noteActions(paths).length, before, "a resume that did not resume adds no line");
+
+      const told = await sous(paths, words(tell).slice(1));
+      assert.equal(told.code, 0, `${tell} runs as given:\n${told.out}`);
+      // The tell reached the worker. Whether the fake reads it in this turn is the tell tests' matter.
+      assert.equal(printedJson(told).told, true, told.out);
+    } finally {
+      writeFileSync(gate, "");
+      await resumedEnd(paths, runId);
+    }
+    assert.equal(readState(paths, runId)?.status, "completed");
+  });
+
+  it("sous guide pauses names resume --note and --step", async () => {
+    const { paths } = testHome();
+    const printed = await sous(paths, ["guide", "pauses"]);
+    assert.equal(printed.code, 0, printed.out);
+    for (const flag of ["resume", "--note", "--step"]) assert.ok(printed.out.includes(flag), `the pauses topic names ${flag}`);
   });
 });

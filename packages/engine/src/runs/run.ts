@@ -13,7 +13,7 @@ import type { HomePaths, Place } from "./home.js";
 import { decisionOf, listQuestions, questionView, readQuestion, removeRunQuestions, reply, triedOf, type Misfit, type Question, type QuestionView, type Reply } from "./inbox.js";
 import { answerCalls, letAgentAnswerBy, mayAnswer } from "./consent.js";
 import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
-import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestStepStop, scopePrefix, updateRecord, type RunRecord } from "./records.js";
+import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestNote, requestStepStop, scopePrefix, updateRecord, type NoteRequest, type RunRecord } from "./records.js";
 import { olderSave } from "../older-save.js";
 import { readWorkflowScript } from "../workflows/script.js";
 import { resolveWorkflow } from "../workflows/dir.js";
@@ -570,19 +570,30 @@ export type ResumeOutcome =
   | { wrongState: ResumeWrongState; view: RunView; message: string }
   | { mustChoose: string[]; message: string };
 
-/** `budget`: the most tokens this go and the ones after it may spend, in place of the run's. */
-export interface ResumeOptions { choice?: "latest" | "same"; letAgentAnswer?: { command: string }; tell?: Tell; budget?: number }
+export interface ResumeOptions {
+  choice?: "latest" | "same";
+  letAgentAnswer?: { command: string };
+  tell?: Tell;
+  /** The most tokens this go and the ones after it may spend, in place of the run's. */
+  budget?: number;
+  /** The note for the worker, from the text the run goes on with. It may refuse, before any write. */
+  note?: (script: string) => NoteRequest;
+  /** The run as the caller read it just now, so the resume reads it once. */
+  view?: RunView;
+}
 
 /**
  * Resume a run in a new worker. A workflow edited since the run started reaches it only by
  * choice: "latest" takes the edits, and "same" goes on with the version it started with. With
  * no choice, an edit makes the caller choose. A run an older sous saved is refused. With
  * `letAgentAnswer`, the person lets agents answer the run's people questions; `command` is the
- * resume the person types, for needs_person. `tell` sends that consent's notice.
+ * resume the person types, for needs_person. `tell` sends that consent's notice. resumeWithNote
+ * gives `note` the text the run goes on with: the one --latest checked, else the run's own. The
+ * note it returns waits for the worker, and the resume line in events.jsonl holds it.
  */
 export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who: Who, options: ResumeOptions = {}): ResumeOutcome {
   const { choice, letAgentAnswer } = options;
-  const view = readRun(paths, runId);
+  const view = options.view ?? readRun(paths, runId);
   const { record, resume } = view;
   const consent = letAgentAnswer ? letAgentAnswerBy(who, letAgentAnswer.command, new Date()) : undefined;
   const why = resume.ok ? undefined : resume.why;
@@ -597,7 +608,8 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
   if (why) return { wrongState: why, view, message: WRONG_STATE[why](record.runId) };
   // The rule lets a run resume only once it has a state. The check runs with a choice too, so a
   // workflow folder that cannot be read stops the resume here.
-  const changed = changedWorkflows(paths, record, readState(paths, record.runId)!);
+  const state = readState(paths, record.runId)!;
+  const changed = changedWorkflows(paths, record, state);
   if (changed.length && !choice) {
     const message =
       `${changed.join(", ")} changed since ${record.runId} started. ` +
@@ -608,12 +620,14 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
   // The edits reach a run that an agent resumes only once the person approved them.
   // The worker resumes only the text checked here, by its hash.
   const latest = choice === "latest" && existsSync(record.file) ? resolveWorkflow(paths, record.projectDir, record.file) : undefined;
+  const note = options.note?.(latest ? latest.script : state.script);
   if (latest) needApproval(paths, record.projectDir, latest, who);
   const latestHash = latest ? workflowHash(latest.script) : undefined;
   const budget = options.budget ? { budget: options.budget } : {};
   if (choice === "latest" || consent || options.budget) updateRecord(paths, record.runId, { ...(choice === "latest" ? { resumeLatest: true, latestHash } : {}), ...(consent ? { letAgentAnswer: consent } : {}), ...budget });
+  if (note) requestNote(paths, record.runId, note);
   launch(paths, record.runId, "resume");
-  recordAction(paths, { act: "resume", ...who, runId: record.runId });
+  recordAction(paths, { act: "resume", ...who, runId: record.runId, ...(note ? { text: note.text, ...(note.step ? { step: note.step.name } : {}) } : {}) });
   if (consent) recordAndTell(paths, { act: "let-agent-answer", ...who, runId: record.runId, workflow: record.workflow }, options.tell);
   return { resumed: record };
 }

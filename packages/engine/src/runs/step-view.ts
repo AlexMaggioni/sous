@@ -76,6 +76,10 @@ function specCommand(prompt: string): string | undefined {
   }
 }
 
+/** True for a call an agent runs, false for a code step's. Only an agent call takes a message,
+ *  from sous tell or a resume's note. */
+export const isAgentCall = (call: RunDetail["steps"][number]): boolean => call.model !== EXEC_MODEL;
+
 /** One call of a step, and the run or nested run it ran in. */
 interface StepCall {
   agent: RunDetail["steps"][number];

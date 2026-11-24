@@ -1,6 +1,6 @@
 // sous run, rerun and resume: the commands that start a worker.
 
-import { isPlace, rerunRun, resumeRun, startRun, type Place } from "@sous/engine";
+import { isPlace, rerunRun, resumeRun, resumeWithNote, startRun, word, type Place } from "@sous/engine";
 import { parseSets, str, Usage, type Parsed } from "../args.js";
 import { reply, type Reply } from "../reply.js";
 import { needRun, projectDir, startedOrWait } from "./common.js";
@@ -64,21 +64,37 @@ export async function cmdRun(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
 export async function cmdResume(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   const paths = ctx.paths;
   const run = needRun(paths, args.positional[0]);
+  const text = str(args.flags.note);
+  const step = str(args.flags.step);
+  if (text !== undefined && text.trim() === "") {
+    throw new Usage("--note needs a message", "bad_argument", `Give the message after --note, as in sous resume ${run.runId} --note "...". To resume with no note, leave out --note.`, `sous resume ${run.runId} --json`);
+  }
+  if (step !== undefined && text === undefined) {
+    const change = `Add --note with the message for the step, as in sous resume ${run.runId} --note "..." --step ${word(step)}. To resume with no note, leave out --step.`;
+    throw new Usage("--step names the step a note goes to, so it needs --note", "bad_argument", change, `sous resume ${run.runId} --json`);
+  }
+  // The calls this command gives keep the note, so it never gets lost on the way.
+  const keep = text === undefined ? "" : ` --note ${word(text)}${step === undefined ? "" : ` --step ${word(step)}`}`;
   // A run that cannot resume says so before this usage error. resumeRun refuses it.
   if (args.flags.latest && args.flags.same && run.resume.ok) {
-    throw new Usage("--latest or --same, not both", "bad_argument", "Keep one: --latest takes the new version, --same goes on with the version the run started with.", `sous resume ${run.runId} --same --json`);
+    throw new Usage("--latest or --same, not both", "bad_argument", "Keep one: --latest takes the new version, --same goes on with the version the run started with.", `sous resume ${run.runId} --same${keep} --json`);
   }
-  const choice = args.flags.latest ? "latest" : args.flags.same ? "same" : undefined;
-  const resumed = resumeRun(paths, ctx.launch, run.runId, ctx.who, { choice, ...budgetOf(args, ctx), ...(args.flags["let-agent-answer"] ? { letAgentAnswer: { command: ctx.command } } : {}) });
+  const choice = args.flags.latest ? ("latest" as const) : args.flags.same ? ("same" as const) : undefined;
+  const options = { choice, ...budgetOf(args, ctx), ...(args.flags["let-agent-answer"] ? { letAgentAnswer: { command: ctx.command } } : {}) };
+  const note = text === undefined ? undefined : { text, ...(step === undefined ? {} : { step }) };
+  const resumed = note ? resumeWithNote(paths, ctx.launch, run.runId, ctx.who, { ...options, note }) : { ...resumeRun(paths, ctx.launch, run.runId, ctx.who, options), notes: [] };
   if ("mustChoose" in resumed) {
     const change = "Add --latest to take the new version, or --same to go on with the version the run started with.";
-    throw new Usage(resumed.message, "bad_argument", change, `sous resume ${run.runId} --same --json`);
+    throw new Usage(resumed.message, "bad_argument", change, `sous resume ${run.runId} --same${keep} --json`);
   }
   if ("wrongState" in resumed) {
     const { runId, status } = resumed.view;
-    return reply({ runId, status }, { notes: [resumed.message], next: stateNext(resumed.view) });
+    const tell = "tell" in resumed && resumed.tell ? [{ call: resumed.tell, does: "gives the note to the running step" }] : [];
+    return reply({ runId, status }, { notes: [resumed.message, ...resumed.notes], next: [...tell, ...stateNext(resumed.view)] });
   }
-  return startedOrWait(ctx, resumed.resumed, "resume", args);
+  const started = await startedOrWait(ctx, resumed.resumed, "resume", args);
+  started.notes.unshift(...resumed.notes);
+  return started;
 }
 
 export async function cmdRerun(args: Parsed, ctx: Ctx): Promise<Reply<object>> {

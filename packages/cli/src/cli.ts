@@ -139,6 +139,7 @@ sous runs saved workflows in the background.
   sous resume <run> [--wait]            go on from where the run paused, failed or was cut off
         --latest | --same               after an edit: take the new version, or keep the run's own
         --budget N                      the run's new budget, from this go on
+        --note <msg> [--step <name>]    give the first agent call that runs a note, or that step's
   sous stop <run>                       end the run; its worktree stays
         --step <name>                   stop one running step instead; the run pauses on it
   sous tell <run> --step <name> <msg>   give a running agent step a message it reads after its tool call
