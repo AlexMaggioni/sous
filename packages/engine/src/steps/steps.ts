@@ -328,13 +328,16 @@ async function runOnHarness(
   // gauge is the session's latest reading, and cost what this step spent.
   let gauge: number | undefined;
   let cost: number | undefined;
+  // Whether the turn that runs resumed a session.
+  let resuming = false;
+  // The step's cost with a turn's reading. A reading below the gauge means the program started the total over.
+  const costWith = (reading: number | undefined, resumed: boolean) =>
+    reading === undefined ? cost : (cost ?? 0) + (resumed && gauge !== undefined && reading >= gauge ? reading - gauge : reading);
   const count = (usage: Usage, resumed: boolean) => {
     spent = spent ? addUsage(spent, usage) : usage;
-    const reading = usage.costUsd;
-    if (reading === undefined) return;
-    // A reading below the gauge means the program started the total over.
-    cost = (cost ?? 0) + (resumed && gauge !== undefined && reading >= gauge ? reading - gauge : reading);
-    gauge = reading;
+    if (usage.costUsd === undefined) return;
+    cost = costWith(usage.costUsd, resumed);
+    gauge = usage.costUsd;
   };
   const history: AgentHistoryEntry[] = [];
   // Each turn repeats what the program could not do as asked, so the step reports each note once.
@@ -355,13 +358,19 @@ async function runOnHarness(
   };
   // The attempt's tokens as the program last reported them while a turn ran.
   let running: AgentUsage | undefined;
-  // A stop the host asks for (the budget, the time limit, `sous stop --step`) settles the step
-  // as soon as it asks, before the program's last count arrives. So the stop reports the larger
-  // of the running and the counted totals at once, and the record keeps at least what the budget saw.
+  // The step's signal aborts on a stop the host asks for (the budget, the run's time limit,
+  // `sous stop --step`), on the step's own time limit, and when the run is aborted. A host's stop
+  // settles the step as soon as it asks, before the program's last count arrives. So an abort
+  // reports the larger of the running and the counted totals at once, and the record keeps at
+  // least what the budget saw. The report at the attempt's end follows, as for any attempt.
   const stopped = () => {
     const counted = spent && agentUsage(spent, cost ?? 0);
     const now = running && (!counted || running.total > counted.total) ? running : counted;
-    if (now) call.onUsage?.(now);
+    try {
+      if (now) call.onUsage?.(now);
+    } catch {
+      // The abort's listener has no caller to throw to. The report at the attempt's end tries again.
+    }
   };
   signal?.addEventListener("abort", stopped, { once: true });
   // Each turn's first user entry is its prompt. A later one is a tell the program read.
@@ -380,12 +389,13 @@ async function runOnHarness(
     ...(board ? { steer: (send) => (send ? board.board.open(board.call, send) : board.board.close(board.call)) } : {}),
     // The turn's running total, on top of the turns of this attempt before it.
     usage: (turn) => {
-      running = agentUsage(spent ? addUsage(spent, turn) : turn, cost ?? 0);
+      running = agentUsage(spent ? addUsage(spent, turn) : turn, costWith(turn.costUsd, resuming) ?? 0);
       usage?.(running);
     },
   };
   const once = async (turn: Step): Promise<StepResult> => {
     prompted = false;
+    resuming = turn.resume !== undefined;
     try {
       const result = await adapter.run(turn, events);
       count(result.usage, turn.resume !== undefined);
