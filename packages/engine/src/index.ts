@@ -47,6 +47,7 @@ export {
   type RunQuestion,
   type RunView,
 } from "./runs/run.js";
+export { logAfter, stepView, type StepView } from "./runs/step-view.js";
 export { homeStatus, sinceWindow, statusLine, type HomeStatus } from "./runs/status.js";
 export { isPlace } from "./places/places.js";
 

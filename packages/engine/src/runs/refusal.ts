@@ -20,7 +20,9 @@ export type RefusalCode =
   | "run_is_running"
   | "cannot_resume"
   | "not_ours"
-  | "workflow_invalid";
+  | "workflow_invalid"
+  /** A record sous keeps is broken, such as an event log that does not parse. */
+  | "broken_record";
 
 /** The codes of a thing that is not there. */
 const MISSING: ReadonlySet<RefusalCode> = new Set(["no_such_run", "no_such_workflow", "no_such_question", "no_such_step", "no_such_schedule", "no_such_topic", "step_not_running"]);

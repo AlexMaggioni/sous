@@ -46,6 +46,7 @@ const home = [
 ];
 
 const runFiles = [
+  "home/records/<id>.activity.jsonl",
   "home/records/<id>.json",
   "home/records/<id>.workflows",
   "home/runs/projects/<cwd key>/",

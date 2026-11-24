@@ -7,6 +7,7 @@ import { cmdDiscard, cmdGc, cmdPause, cmdPrune, cmdStop } from "./control.js";
 import { cmdAnswer, cmdInbox } from "./questions.js";
 import { cmdList, cmdLog, cmdShow, cmdStatus, cmdWait } from "./reads.js";
 import { cmdRerun, cmdResume, cmdRun } from "./runs.js";
+import { cmdStep } from "./step.js";
 import { cmdDaemon, cmdSchedule } from "./service.js";
 import { cmdAccount, cmdDoctor, cmdGuide, cmdSkill } from "./setup.js";
 import { cmdCheck, cmdWorkflows } from "./workflows.js";
@@ -69,7 +70,8 @@ export const COMMANDS: Record<string, CommandSpec> = {
   status: { run: cmdStatus, flags: takes("since", "line", "all", "json") },
   list: { run: cmdList, flags: takes("all", "json") },
   show: { run: cmdShow, flags: takes("full", "json") },
-  log: { run: cmdLog, flags: takes("follow", "json") },
+  step: { run: cmdStep, flags: takes("call", "tail", "full", "json") },
+  log: { run: cmdLog, flags: takes("follow", "after", "json") },
   inbox: { run: cmdInbox, flags: takes("json") },
   answer: { run: (args, ctx) => cmdAnswer(args, ctx, "answer"), flags: takes("value-json", "json") },
   approve: { run: (args, ctx) => cmdAnswer(args, ctx, "approve"), flags: takes("json") },

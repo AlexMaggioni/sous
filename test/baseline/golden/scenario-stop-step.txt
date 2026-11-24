@@ -28,6 +28,7 @@ exit 0
 $ sous stop <run-1> --step slow
 exit 0
 stopping "slow" in <run-1>. The run pauses on it, and sous resume <run-1> runs it again.
+next: sous wait <run-1> --json  (waits until the run pauses on the step)
 
 $ sous wait <run-1> --json
 exit 2

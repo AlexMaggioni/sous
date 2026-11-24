@@ -202,20 +202,34 @@ describe("sous's reads", () => {
   }
 
   it("keep the reply of sous log --json under 8,000 characters, though quotes print longer than they are", async () => {
-    const { paths, ids } = plant();
-    const text = `12:00:00 agent      said ${'"'.repeat(40)}\n`.repeat(300);
-    writeFileSync(join(paths.logs, `${ids.done}.log`), text);
-    const result = await sous(paths, ["log", ids.done, "--json"]);
+    // Piece 5 changed log --json to a page of events (decision 6). The bound stays: labels full of
+    // quotes print twice as long as they are, and the page still fits.
+    const loud = `export const meta = { name: 'loud', description: 'steps with quotes in their labels', place: 'none' }
+for (let i = 0; i < 40; i++) await agent('part ' + i, { label: 'said ${'"'.repeat(40)} ' + i })
+return 1`;
+    const { paths, projectDir } = testHome({ loud });
+    const workers = inProcess({ inner: { run: async () => "ok" } as unknown as InnerRunner });
+    const { runId } = await started(paths, projectDir, workers, ["loud"]);
+    assert.equal((await workers.ended(runId))?.status, "completed");
+    const result = await sous(paths, ["log", runId, "--json"]);
     assert.equal(result.code, 0, result.out);
     const printed = result.out.trimEnd();
     assert.ok(printed.length <= 8000, `the reply is ${printed.length} characters`);
-    const reply = JSON.parse(printed) as { log: string; notes: string[] };
-    assert.ok(text.endsWith(reply.log), "the log is the end of the file");
-    assert.ok(reply.log.length > 3000, `it keeps as much as fits, here ${reply.log.length} characters`);
-    assert.deepEqual(reply.notes, [`The log is longer. This is its last ${reply.log.length} characters. sous log ${ids.done} prints all of it.`]);
+    const page = JSON.parse(printed) as LogPage & { next: Array<{ call: string }> };
+    assert.equal(page.more, true, "forty steps with quoted labels do not fit one page");
+    assert.ok(printed.length > 6000, `it keeps as many events as fit, here ${printed.length} characters`);
+    assert.equal(page.after, page.events.at(-1)?.seq);
+    assert.ok(calls(page).includes(`sous log ${runId} --json --after ${page.after}`), JSON.stringify(page.next));
 
-    const whole = JSON.parse((await sous(paths, ["log", ids.dead, "--json"])).out) as { log: string; notes: string[] };
-    assert.deepEqual(whole.notes, [], "a short log comes whole, with no note");
+    // The pages that follow fit too, and the last one says so and offers no call to read on.
+    let last = page;
+    for (let pages = 0; last.more; pages++) {
+      assert.ok(pages < 20, "the pages end");
+      const more = (await sous(paths, ["log", runId, "--json", "--after", String(last.after)])).out.trimEnd();
+      assert.ok(more.length <= 8000, `a later page is ${more.length} characters`);
+      last = JSON.parse(more) as typeof page;
+    }
+    assert.deepEqual(last.next, [], "an ended run whose log is all read has no next call");
   });
 
   it("let sous log -f print the log, then what the worker adds, until the worker ends", async () => {
@@ -728,5 +742,239 @@ describe("piece 4: review fixes", () => {
     plantState(paths, { ...base, runId: "run-old", status: "completed", result: "done", startedAt: at, updatedAt: at, completedAt: at });
     const status = replyIn(await sous(paths, ["status", "--since", "3d", "--json"]));
     assert.ok(status.notes.some((note) => note.includes("--since 6d")), JSON.stringify(status.notes));
+  });
+});
+
+// Piece 5: sous step and sous log --after. The worker saves each step's activity, sous step shows
+// one step with its activity, and log --json --after pages through the run's events in a small
+// vocabulary. The runs go through workers in this process, so no program runs.
+
+interface LogPage {
+  runId: string;
+  events: Array<{ seq: number; kind: string; [field: string]: unknown }>;
+  after: number;
+  more: boolean;
+}
+
+/** The JSON a log --json call printed, as one page. */
+function logPage(printed: { code: number; out: string }): LogPage {
+  assert.equal(printed.code, 0, printed.out);
+  const page = replyIn(printed) as unknown as LogPage;
+  assert.ok(Array.isArray(page.events), `events is an array: ${printed.out}`);
+  assert.equal(typeof page.after, "number", printed.out);
+  assert.equal(typeof page.more, "boolean", printed.out);
+  return page;
+}
+
+/** The error JSON a refusal printed. */
+function refusalIn(printed: { code: number; out: string }): { code: string; message: string; change: string; call: string | null } {
+  const parsed = JSON.parse(printed.out) as { error: { code: string; message: string; change: string; call: string | null } };
+  assert.ok(parsed.error, printed.out);
+  return parsed.error;
+}
+
+/** Poll an async read until it holds, or 20 seconds pass. */
+async function until(ready: () => Promise<boolean>, what: string): Promise<void> {
+  for (let i = 0; i < 400; i++) {
+    if (await ready()) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.fail(`timed out waiting for ${what}`);
+}
+
+/** The slow run's one step shows as running in sous show. */
+async function slowRuns(paths: HomePaths, runId: string): Promise<boolean> {
+  const shown = await sous(paths, ["show", runId, "--json"]);
+  if (shown.code !== 0) return false;
+  const steps = (JSON.parse(shown.out) as { steps?: Array<{ label?: string; status?: string }> }).steps ?? [];
+  return steps.some((step) => step.label === "slow" && step.status === "running");
+}
+
+describe("piece 5: sous step", () => {
+  it("step boom --json on the fails run holds exit 3 in its failure, and next offers resume and wait", async () => {
+    const { paths, projectDir } = testHome({ fails: fixture("fails") });
+    const workers = inProcess({ inner: heldRunner().runner });
+    const { runId } = await started(paths, projectDir, workers, ["fails"]);
+    assert.equal((await workers.ended(runId))?.status, "paused");
+    const printed = await sous(paths, ["step", runId, "boom", "--json"]);
+    assert.equal(printed.code, 0, printed.out);
+    const step = replyIn(printed);
+    assert.equal(step.runId, runId);
+    assert.equal(step.step, "boom");
+    assert.equal(step.kind, "exec");
+    assert.deepEqual([step.call, step.calls], [1, 1]);
+    assert.equal(step.command, "echo 'disk check failed' >&2; exit 3");
+    const failure = typeof step.failure === "string" ? step.failure : JSON.stringify(step.failure ?? "");
+    assert.match(failure, /code 3/, printed.out);
+    assert.match(failure, /disk check failed/, printed.out);
+    const activity = step.activity as Array<{ kind: string; text: string }>;
+    assert.deepEqual(
+      activity.map((line) => line.kind),
+      ["command", "output"],
+    );
+    assert.ok(calls(step).includes(`sous resume ${runId} --json`), JSON.stringify(step.next));
+    assert.ok(calls(step).some((call) => call.startsWith(`sous wait ${runId}`)), JSON.stringify(step.next));
+    assert.ok(!calls(step).some((call) => call.startsWith("sous tell ")), "a failed step offers no tell");
+  });
+
+  it("step on a running step offers tell, stop and wait in next", async () => {
+    const { paths, projectDir } = testHome({ slow: SLOW });
+    const held = heldRunner();
+    const workers = inProcess({ inner: held.runner });
+    const { runId } = await started(paths, projectDir, workers, ["slow"]);
+    const guard = setTimeout(held.release, 20_000);
+    try {
+      await until(() => slowRuns(paths, runId), "the slow step to run");
+      const printed = await sous(paths, ["step", runId, "slow", "--json"]);
+      assert.equal(printed.code, 0, printed.out);
+      const step = replyIn(printed);
+      assert.equal(step.kind, "agent");
+      assert.equal(step.status, "running");
+      assert.match(String(step.prompt ?? ""), /wait here/);
+      // The tell call needs piece 12. Here it only has to be in the shape the design gives.
+      assert.ok(calls(step).some((call) => new RegExp(`^sous tell ${runId} --step slow\\b`).test(call)), JSON.stringify(step.next));
+      assert.ok(calls(step).some((call) => new RegExp(`^sous stop ${runId} --step slow\\b`).test(call)), JSON.stringify(step.next));
+      assert.ok(calls(step).some((call) => call.startsWith(`sous wait ${runId}`)), JSON.stringify(step.next));
+      assert.ok(!calls(step).some((call) => call.startsWith("sous resume ")), "a running step offers no resume");
+    } finally {
+      clearTimeout(guard);
+      held.release();
+    }
+    assert.equal((await workers.ended(runId))?.status, "completed");
+  });
+
+  it("step with a label the run does not have exits 65 with no_such_step, a change and a call, and a missing run exits 65 too", async () => {
+    const { paths, projectDir } = testHome({ fails: fixture("fails") });
+    const workers = inProcess({ inner: heldRunner().runner });
+    const { runId } = await started(paths, projectDir, workers, ["fails"]);
+    await workers.ended(runId);
+    const missing = await sous(paths, ["step", runId, "nosuch", "--json"]);
+    assert.equal(missing.code, 65, missing.out);
+    const error = refusalIn(missing);
+    assert.equal(error.code, "no_such_step");
+    assert.match(error.message, /nosuch/);
+    assert.ok(error.change.length > 0, missing.out);
+    assert.ok(error.call?.startsWith(`sous show ${runId}`), missing.out);
+
+    const noRun = await sous(paths, ["step", "nosuch", "boom", "--json"]);
+    assert.equal(noRun.code, 65, noRun.out);
+    assert.equal(refusalIn(noRun).code, "no_such_run");
+  });
+
+  it("step without --json prints lines a person reads: the step, its failure and the next calls", async () => {
+    const { paths, projectDir } = testHome({ fails: fixture("fails") });
+    const workers = inProcess({ inner: heldRunner().runner });
+    const { runId } = await started(paths, projectDir, workers, ["fails"]);
+    await workers.ended(runId);
+    const printed = await sous(paths, ["step", runId, "boom"]);
+    assert.equal(printed.code, 0, printed.out);
+    assert.throws(() => JSON.parse(printed.out), "the text form is not JSON");
+    assert.match(printed.out, /boom/);
+    assert.match(printed.out, /disk check failed/);
+    assert.match(printed.out, /code 3/);
+    assert.ok(printed.out.includes(`next: sous resume ${runId} --json`), printed.out);
+  });
+
+  it("step --tail 1 gives one activity entry and a note naming --tail", async () => {
+    const { paths, projectDir } = testHome({ fails: fixture("fails") });
+    const workers = inProcess({ inner: heldRunner().runner });
+    const { runId } = await started(paths, projectDir, workers, ["fails"]);
+    await workers.ended(runId);
+    const step = replyIn(await sous(paths, ["step", runId, "boom", "--tail", "1", "--json"]));
+    const activity = step.activity as Array<{ kind: string }>;
+    assert.deepEqual(
+      activity.map((line) => line.kind),
+      ["output"],
+    );
+    assert.ok(step.notes.some((note) => note.includes("--tail")), JSON.stringify(step.notes));
+  });
+});
+
+describe("piece 5: sous log --json --after", () => {
+  it("log --json is one object with events and after, and after that seq it gives no event", async () => {
+    const { paths, projectDir } = testHome({ fails: fixture("fails") });
+    const workers = inProcess({ inner: heldRunner().runner });
+    const { runId } = await started(paths, projectDir, workers, ["fails"]);
+    await workers.ended(runId);
+    const page = logPage(await sous(paths, ["log", runId, "--json", "--after", "0"]));
+    assert.equal(page.runId, runId);
+    assert.equal(page.more, false);
+    const vocabulary = ["step-start", "step-end", "asks", "answered", "paused", "resumed", "ended", "tell", "note"];
+    for (const event of page.events) assert.ok(vocabulary.includes(event.kind), `${event.kind} is not in the vocabulary`);
+    const kinds = page.events.map((event) => event.kind);
+    assert.ok(kinds.includes("step-start") && kinds.includes("step-end") && kinds.includes("paused"), kinds.join(" "));
+    assert.equal(page.after, page.events.at(-1)?.seq);
+    // Decision 6: log --json without --after is the same one object, from the start.
+    assert.deepEqual(logPage(await sous(paths, ["log", runId, "--json"])).events, page.events);
+    const next = logPage(await sous(paths, ["log", runId, "--json", "--after", String(page.after)]));
+    assert.deepEqual(next.events, []);
+    assert.equal(next.after, page.after);
+  });
+
+  it("an after past the end of the log gives no events, a note with the last seq, and the call from the start", async () => {
+    const { paths, projectDir } = testHome({ fails: fixture("fails") });
+    const workers = inProcess({ inner: heldRunner().runner });
+    const { runId } = await started(paths, projectDir, workers, ["fails"]);
+    await workers.ended(runId);
+    const all = logPage(await sous(paths, ["log", runId, "--json"]));
+    const printed = await sous(paths, ["log", runId, "--json", "--after", "999"]);
+    const page = logPage(printed);
+    assert.deepEqual(page.events, []);
+    assert.equal(page.more, false);
+    const reply = JSON.parse(printed.out) as { notes: string[]; next: Array<{ call: string }> };
+    assert.ok(reply.notes.some((note) => note.includes("999") && note.includes(`last event is ${all.after}`)), JSON.stringify(reply.notes));
+    assert.ok(reply.next.some((next) => next.call === `sous log ${runId} --json`), JSON.stringify(reply.next));
+  });
+
+  it("a second call with the returned after gives only the newer events", async () => {
+    const { paths, projectDir } = testHome({ slow: SLOW });
+    const held = heldRunner();
+    const workers = inProcess({ inner: held.runner });
+    const { runId } = await started(paths, projectDir, workers, ["slow"]);
+    const guard = setTimeout(held.release, 20_000);
+    let first: LogPage;
+    try {
+      await until(() => slowRuns(paths, runId), "the slow step to run");
+      first = logPage(await sous(paths, ["log", runId, "--json", "--after", "0"]));
+      assert.ok(first.events.some((event) => event.kind === "step-start"), JSON.stringify(first.events));
+      assert.ok(!first.events.some((event) => event.kind === "ended"), "the run has not ended yet");
+    } finally {
+      clearTimeout(guard);
+      held.release();
+    }
+    assert.equal((await workers.ended(runId))?.status, "completed");
+    const second = logPage(await sous(paths, ["log", runId, "--json", "--after", String(first.after)]));
+    assert.ok(second.events.length > 0);
+    assert.ok(second.events.every((event) => event.seq > first.after), JSON.stringify(second.events));
+    const kinds = second.events.map((event) => event.kind);
+    assert.ok(kinds.includes("step-end") && kinds.includes("ended"), kinds.join(" "));
+    assert.ok(!kinds.includes("step-start"), "the step's start came in the first page");
+  });
+
+  it("pages a long run's log under 8,000 characters each, and the pages cover every step once", async () => {
+    const many = `export const meta = { name: 'many', description: 'forty steps', place: 'none' }
+for (let i = 0; i < 40; i++) await agent('Do part ' + i + '. ' + 'Take care. '.repeat(20), { label: 'part ' + i })
+return 1`;
+    const { paths, projectDir } = testHome({ many });
+    const workers = inProcess({ inner: { run: async () => "ok" } as unknown as InnerRunner });
+    const { runId } = await started(paths, projectDir, workers, ["many"]);
+    assert.equal((await workers.ended(runId))?.status, "completed");
+    const seen: LogPage["events"] = [];
+    let after = 0;
+    for (let page = 0; ; page++) {
+      assert.ok(page < 100, "the pages end");
+      const printed = await sous(paths, ["log", runId, "--json", "--after", String(after)]);
+      assert.ok(printed.out.length < 8000, `a page is ${printed.out.length} characters`);
+      const got = logPage(printed);
+      seen.push(...got.events);
+      if (!got.more) break;
+      assert.ok(got.after > after, "after moves on");
+      after = got.after;
+    }
+    const seqs = seen.map((event) => event.seq);
+    assert.equal(new Set(seqs).size, seqs.length, "no event comes twice");
+    const starts = seen.filter((event) => event.kind === "step-start");
+    assert.equal(starts.length, 40);
+    for (let i = 0; i < 40; i++) assert.ok(starts.some((event) => JSON.stringify(event).includes(`"part ${i}"`)), `part ${i} starts`);
   });
 });

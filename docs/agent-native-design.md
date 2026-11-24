@@ -654,7 +654,7 @@ Goldens are updated with `BASELINE_UPDATE=1`, and the diff is reviewed.
 - `cli/test/reads.test.ts`:
   - The fails fixture's `sous step <id> boom --json` holds exit 3 in its `failure` and the resume call in next.
   - `log --json --after 0` returns events with `after`, and a second call with that `after` returns only newer events.
-  - `discard --remove` deletes the activity file.
+  - `prune` deletes the activity file with the run's other files.
 
 **Depends on** 4, since both edit `reads.ts`. **Parallel** with 3 and 11.
 

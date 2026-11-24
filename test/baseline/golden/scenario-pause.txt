@@ -28,6 +28,7 @@ exit 0
 $ sous pause <run-1>
 exit 0
 pausing <run-1>: steps already running finish, nothing new starts. sous resume <run-1> goes on.
+next: sous wait <run-1> --json  (waits until the run pauses)
 
 $ sous wait <run-1> --json
 exit 2
