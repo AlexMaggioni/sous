@@ -12,7 +12,7 @@ See `sous guide asks`.
 | `usage_limit` | The account reached its usage limit. | Nothing. The service resumes it at `resumesAt`. |
 | `auth_required` | The program lost its login. | The person logs in again, then resume. |
 | `time_limit` | The workflow's `timeout` ran out. | Resume gives it the whole limit again. |
-| `budget` | This go spent the run's token budget. | Ask the person. Resume gives the same budget again, `--budget <n>` a new one. |
+| `budget` | This go spent the run's token budget. It counts the tokens `sous show` reports, cache reads and writes included. | Ask the person. Resume gives the same budget again, `--budget <n>` a new one for this go and the later ones. |
 | `requested` | Someone ran `sous pause`. | Resume when the person wants. |
 | `step_stopped` | Someone stopped one step. | Resume runs that step again. |
 | `interrupted` | The worker died, as in a restart. The status is `interrupted`. | Resume. |

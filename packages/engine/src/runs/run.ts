@@ -91,6 +91,9 @@ export interface ShortRun {
   startedAt: string;
   seconds?: number;
   tokens: number;
+  /** Why the run paused, and the tokens one go may spend when it has a budget, as wait gives them. */
+  pauseReason?: string;
+  budget?: number;
   steps: Array<{ label: string; status: string; seconds?: number; tokens?: number }>;
   questions: QuestionView[];
   failure?: Failure;
@@ -228,6 +231,8 @@ export function shortRun(run: RunDetail, now: Date): ShortRun {
     startedAt: record.createdAt,
     ...(Number.isNaN(seconds) ? {} : { seconds }),
     tokens: run.tokens ?? 0,
+    ...(run.saved?.pauseReason ? { pauseReason: run.saved.pauseReason } : {}),
+    ...(record.budget ? { budget: record.budget } : {}),
     steps,
     questions: run.questions.map((question) => questionView(question, record)),
     ...withFailure(run.failure),
@@ -627,7 +632,7 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
   if (choice === "latest" || consent || options.budget) updateRecord(paths, record.runId, { ...(choice === "latest" ? { resumeLatest: true, latestHash } : {}), ...(consent ? { letAgentAnswer: consent } : {}), ...budget });
   if (note) requestNote(paths, record.runId, note);
   launch(paths, record.runId, "resume");
-  recordAction(paths, { act: "resume", ...who, runId: record.runId, ...(note ? { text: note.text, ...(note.step ? { step: note.step.name } : {}) } : {}) });
+  recordAction(paths, { act: "resume", ...who, runId: record.runId, ...budget, ...(note ? { text: note.text, ...(note.step ? { step: note.step.name } : {}) } : {}) });
   if (consent) recordAndTell(paths, { act: "let-agent-answer", ...who, runId: record.runId, workflow: record.workflow }, options.tell);
   return { resumed: record };
 }

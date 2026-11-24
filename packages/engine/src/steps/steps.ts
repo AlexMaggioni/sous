@@ -67,9 +67,11 @@ export interface StepsOptions {
   /** Asked before each agent step starts. A stop, such as the run's budget reached, makes the
    *  step throw AGENT_CANCELLED with the stop's pauseReason, and the run pauses on it. */
   gate?: () => HostPause | undefined;
-  /** Called while a step on a program runs, with the tokens its attempt spent so far. The program
-   *  says when: Claude Code at each message, Codex when a turn ends. A test's runner reports none. */
-  onUsage?: (step: ActivityStep, usage: AgentUsage) => void;
+  /** Called while an attempt of a step on a program runs, with the tokens it spent so far, and
+   *  once more with `ended` when the attempt ends, failed or not. The program says when: Claude
+   *  Code at each message, Codex at each token count it sends. A runner in place of the programs
+   *  reports through the call's onUsage, and its tokens come only with `ended`. */
+  onUsage?: (step: ActivityStep, usage: AgentUsage, ended?: boolean) => void;
   /** A note from `sous resume --note`. It goes to the first agent call that runs, or to the first
    *  with the label `step`, in one of the runs or nested runs `scopes` when given. */
   note?: StepsNote;
@@ -96,6 +98,7 @@ function addUsage(a: Usage, b: Usage): Usage {
   return { input: a.input + b.input, output: a.output + b.output, cacheRead: a.cacheRead + b.cacheRead, cacheWrite: a.cacheWrite + b.cacheWrite, total: a.total + b.total };
 }
 
+const NO_USAGE: AgentUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0 };
 const agentUsage = (spent: Usage, cost: number): AgentUsage => ({ input: spent.input, output: spent.output, cacheRead: spent.cacheRead, cacheWrite: spent.cacheWrite, total: spent.total, cost });
 
 /** The activity entry of a history item. A turn's own prompt is left out: the steps module
@@ -195,16 +198,28 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     const timeout = step.timeoutMs ? AbortSignal.timeout(step.timeoutMs) : undefined;
     const signals = [call.signal, timeout].filter((signal): signal is AbortSignal => signal !== undefined);
     const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+    // The attempt's tokens so far. A program's go to onUsage as it runs. A runner's are kept for
+    // the end of the attempt.
+    const usageTo = options.onUsage;
+    const usageStep = usageTo && activityStep(call.runId, call.callIndex, call.label);
+    let spent: AgentUsage | undefined;
+    const usage = usageStep && ((now: AgentUsage) => usageTo(usageStep, (spent = now)));
+    const counted: StepRequest = usageStep
+      ? {
+          ...call,
+          onUsage: (now) => {
+            spent = now;
+            call.onUsage?.(now);
+          },
+        }
+      : call;
     try {
       const account = options.accounts?.[step.harness];
-      if (options.inner) return await runInner(options.inner, withNote(prompt, note), call, step, { signal, servers, account });
+      if (options.inner) return await runInner(options.inner, withNote(prompt, note), counted, step, { signal, servers, account });
       const notesTo = options.onNotes;
       const onNotes = notesTo && ((notes: string[]) => notesTo({ label: call.label, notes }));
       const steering = options.steering && activityStep(call.runId, call.callIndex, call.label);
       const board = steering ? { board: options.steering!, call: steering } : undefined;
-      const usageTo = options.onUsage;
-      const usageStep = usageTo && activityStep(call.runId, call.callIndex, call.label);
-      const usage = usageStep && ((spent: AgentUsage) => usageTo(usageStep, spent));
       return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account, onNotes, activity: report, board, usage, note });
     } catch (error) {
       if ((error as { code?: unknown } | undefined)?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT) {
@@ -218,6 +233,7 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
       }
       throw error;
     } finally {
+      if (usageStep) usageTo!(usageStep, spent ?? NO_USAGE, true);
       release?.();
     }
   };

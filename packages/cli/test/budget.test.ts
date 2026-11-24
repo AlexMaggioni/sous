@@ -217,7 +217,14 @@ describe("piece 14: budget", () => {
       const runId = json(started).runId as string;
       const waited = await sous(paths, ["wait", runId, "--timeout", "20", "--json"], { env: {} });
       assert.equal(waited.code, 2, waited.out);
-      assert.equal(json(waited).pauseReason, "budget", waited.out);
+      const wait = json(waited);
+      assert.equal(wait.pauseReason, "budget", waited.out);
+      const calls = (wait.next as Array<{ call: string }>).map((next) => next.call);
+      for (const call of calls) assert.equal(callProblem(call), undefined, call);
+      assert.ok(calls.includes(`sous resume ${runId} --json`), JSON.stringify(calls));
+      const more = calls.map((call) => new RegExp(`^sous resume ${runId} --budget (\\d+)( --json)?$`).exec(call)?.[1]).find(Boolean);
+      assert.ok(more, `next holds a resume with --budget: ${JSON.stringify(calls)}`);
+      assert.ok(Number(more) > 100, `the --budget in next is more than the run had: ${more}`);
       const log = existsSync(process.env.FAKE_LOG) ? readFileSync(process.env.FAKE_LOG, "utf8").split("\n").filter(Boolean) : [];
       assert.equal(log.length, 1, "the step ran once and was not retried");
     } finally {

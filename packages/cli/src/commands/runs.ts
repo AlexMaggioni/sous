@@ -3,7 +3,7 @@
 import { isPlace, rerunRun, resumeRun, resumeWithNote, startRun, word, type Place } from "@sous/engine";
 import { parseSets, str, Usage, type Parsed } from "../args.js";
 import { reply, type Reply } from "../reply.js";
-import { needRun, projectDir, startedOrWait } from "./common.js";
+import { needRun, projectDir, startedOrWait, wholeFlag } from "./common.js";
 import { stateNext } from "./control.js";
 import type { Ctx } from "./index.js";
 
@@ -20,15 +20,18 @@ const sets = (args: Parsed): string[] => (Array.isArray(args.flags.set) ? args.f
 /** The --budget of the command line: a whole number of tokens above 0, or none. A bad one is
  *  refused before any worker starts, with the same command and a budget that works. */
 function budgetOf(args: Parsed, ctx: Ctx): { budget?: number } {
-  const given = str(args.flags.budget);
-  if (given === undefined) return {};
-  const tokens = /^\d+$/.test(given) ? Number(given) : Number.NaN;
-  if (Number.isSafeInteger(tokens) && tokens > 0) return { budget: tokens };
-  const fixed = ctx.command.replace(/--budget(=| )('(?:[^']|'\\'')*'|\S+)/, "--budget 100000");
-  const split = fixed.indexOf(" -- ");
-  const call = split === -1 ? `${fixed} --json` : `${fixed.slice(0, split)} --json${fixed.slice(split)}`;
-  const change = "Give --budget a whole number of tokens above 0, such as 100000, or leave it out for no budget.";
-  throw new Usage(`--budget is a number of tokens above 0, got "${given}"`, "bad_argument", change, call);
+  try {
+    const tokens = wholeFlag(args, "budget", 1);
+    return tokens === undefined ? {} : { budget: tokens };
+  } catch (failure) {
+    if (!(failure instanceof Usage)) throw failure;
+    const fixed = ctx.command.replace(/--budget(=| )('(?:[^']|'\\'')*'|\S+)/, "--budget 100000");
+    const split = fixed.indexOf(" -- ");
+    const json = /(^| )--json( |$)/.test(split === -1 ? fixed : fixed.slice(0, split)) ? "" : " --json";
+    const call = split === -1 ? `${fixed}${json}` : `${fixed.slice(0, split)}${json}${fixed.slice(split)}`;
+    const change = "Give --budget a whole number of tokens above 0, such as 100000, or leave it out for no budget.";
+    throw new Usage(failure.message, "bad_argument", change, call);
+  }
 }
 
 export async function cmdRun(args: Parsed, ctx: Ctx): Promise<Reply<object>> {

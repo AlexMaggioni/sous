@@ -102,7 +102,7 @@ test("failure reasons persist the actual WorkflowError message and code", async 
 });
 
 // Piece 14. A budget pause has its own reason, in the state, the saved event, the live event and
-// the word. cancelAgentSteps and StepsOptions take no budget yet, so the casts keep the types right.
+// the word.
 const budgetScript = (body: string) => `export const meta = { name: "budget", description: "budget" };\n${body}`;
 const BUDGET = "the run reached its budget of 1500 tokens";
 
@@ -122,7 +122,7 @@ test("a budget pause projects as paused: budget", async () => {
     manager.on("paused", (payload) => live.push(payload.reason));
     const background = manager.startInBackground(budgetScript(`return await agent('held', { label: 'held', retries: 0 })`));
     await entered.promise;
-    const stop = { pauseReason: "budget", message: BUDGET } as unknown as Parameters<WorkflowManager["cancelAgentSteps"]>[1];
+    const stop = { pauseReason: "budget" as const, message: BUDGET };
     assert.equal(manager.cancelAgentSteps(background.runId, stop), 1);
     await assert.rejects(background.promise);
 

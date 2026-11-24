@@ -91,7 +91,7 @@ export function nextCalls(run: RunAt, from: "wait" | "show", who: Who, timeout?:
     calls.push({ ...wait, does: "waits for the run once the service resumed it" }, show);
   } else if (run.status === "paused" && run.pauseReason === "budget" && run.budget) {
     const more = run.budget * 2;
-    calls.push(resume, { call: `sous resume ${id} --budget ${more} --json`, does: `resumes the run with a budget of ${more} tokens for this go` }, show);
+    calls.push(resume, { call: `sous resume ${id} --budget ${more} --json`, does: `resumes the run, and gives it a budget of ${more} tokens for this go and each one after it` }, show);
   } else if (run.status === "paused" || run.status === "interrupted" || run.status === "failed") {
     calls.push(resume, show);
   } else {

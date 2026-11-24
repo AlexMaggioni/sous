@@ -458,10 +458,11 @@ the notices off.
   way, and no new step starts.
 - A run's budget limits the tokens each start and each resume of it may spend. It is
   `--budget <tokens>` on `sous run`, `sous rerun` or `sous resume`, else `budgetTokens` in the
-  config, else none. A rerun keeps the old run's budget unless it gives one. When a go reaches it,
-  the running steps stop, no new step starts, and the run pauses, shown as `paused: budget`.
-  `sous resume` gives the next go the same budget, and `sous resume <run> --budget <tokens>` a new
-  one.
+  config, else none. A rerun keeps the old run's budget unless it gives one. The budget counts the
+  same tokens `sous show` reports, cache reads and writes included, and each failed try of a step
+  counts as soon as it ends. When a go reaches it, the running steps stop, no new step starts, and
+  the run pauses, shown as `paused: budget`. `sous resume` gives the next go the same budget, and
+  `sous resume <run> --budget <tokens>` a new one, kept for the goes after it too.
 
 ### Places
 

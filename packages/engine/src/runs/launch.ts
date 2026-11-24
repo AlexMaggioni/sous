@@ -76,7 +76,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   if (person) rememberProject(paths, request.projectDir);
   if (request.origin !== "check") needApproval(paths, request.projectDir, resolved, request.who);
   const config = loadConfig(paths);
-  const budget = request.budget ?? configBudget(paths, config);
+  const budget = request.budget ?? configBudget(paths, config, request.command ?? `sous run ${resolved.name}`);
   const runId = generateRunId();
   const reuse = request.reuseFrom;
   // A run that reuses another's results needs that run's files too, so it works where it did.
@@ -112,20 +112,24 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   };
   saveRecord(paths, record);
   if (!person) rememberProject(paths, request.projectDir);
-  if (record.origin !== "check") recordAction(paths, { act: request.rerunOf ? "rerun" : "run", ...request.who, runId, workflow: resolved.name });
+  if (record.origin !== "check") recordAction(paths, { act: request.rerunOf ? "rerun" : "run", ...request.who, runId, workflow: resolved.name, ...(budget ? { budget } : {}) });
   if (letAgentAnswer && record.origin !== "check") recordAndTell(paths, { act: "let-agent-answer", ...request.who, runId, workflow: resolved.name }, request.tell);
   return record;
 }
 
-/** The config's budgetTokens, refused when it is not a whole number of tokens above 0. */
-function configBudget(paths: HomePaths, config: OrcConfig): number | undefined {
+/** The config's budgetTokens, refused when it is not a whole number of tokens above 0. The
+ *  refusal's call is the command with a --budget, which wins over the config. */
+function configBudget(paths: HomePaths, config: OrcConfig, command: string): number | undefined {
   const budget: unknown = config.budgetTokens;
   if (budget === undefined || (Number.isSafeInteger(budget) && (budget as number) > 0)) return budget as number | undefined;
+  const split = command.indexOf(" -- ");
+  const flags = /(^| )--json( |$)/.test(command) ? " --budget 100000" : " --budget 100000 --json";
+  const call = split === -1 ? `${command}${flags}` : `${command.slice(0, split)}${flags}${command.slice(split)}`;
   throw new Refusal(
     "broken_record",
     `budgetTokens in ${paths.config} is ${JSON.stringify(budget)}, not a number of tokens above 0`,
     `Set budgetTokens in ${paths.config} to a whole number above 0, or remove it. A --budget on the command wins over it.`,
-    null,
+    call,
   );
 }
 

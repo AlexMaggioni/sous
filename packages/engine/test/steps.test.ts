@@ -613,19 +613,10 @@ describe("piece 5: step activity", () => {
 
 // Piece 14. The budget and the time limit stop a step through a gate the steps module asks
 // before each agent step, and the worker counts a step's tokens while it runs through onUsage.
-// StepsOptions has neither yet, so the types below add them. The fake codex sends its token
-// count only when the turn ends, so the mid-step test runs on the fake claude alone.
-interface GateStop {
-  pauseReason: "time_limit" | "budget";
-  message: string;
-}
-interface UsageStep {
-  scope: string;
-  callIndex: number;
-  label?: string;
-}
-type WithGate = StepsOptions & { gate: () => GateStop | undefined };
-type WithUsage = Partial<StepsOptions> & { onUsage: (step: UsageStep, usage: AgentUsage) => void };
+// The fake codex sends its token count only when the turn ends, so the mid-step test runs on the
+// fake claude alone.
+type GateStop = ReturnType<NonNullable<StepsOptions["gate"]>>;
+type UsageStep = Parameters<NonNullable<StepsOptions["onUsage"]>>[0];
 
 describe("piece 14: budget", () => {
   for (const stop of [
@@ -635,7 +626,7 @@ describe("piece 14: budget", () => {
     it(`a gate that returns ${stop.pauseReason} stops the next agent step before it starts`, async () => {
       const ran: string[] = [];
       let closed: GateStop | undefined;
-      const options: WithGate = {
+      const options: StepsOptions = {
         cwd: temp("gate"),
         inner: { run: async (prompt: string) => { ran.push(prompt); return `${prompt} done`; } },
         gate: () => closed,
@@ -658,8 +649,7 @@ describe("piece 14: budget", () => {
     // The fake writes its tool call, with the tokens of that message, then holds until "release".
     const place = fakePlace([{ match: "Work long", tool: "echo hi", hold: "release", answer: "Done." }]);
     const seen: Array<{ step: UsageStep; usage: AgentUsage }> = [];
-    const extra: WithUsage = { onUsage: (step, usage) => seen.push({ step, usage }) };
-    const steps = createSteps(onFakes(place, extra as Partial<StepsOptions>));
+    const steps = createSteps(onFakes(place, { onUsage: (step, usage) => seen.push({ step, usage }) }));
     const answer = steps.run("Work long.", routed(steps, { label: "long", model: "claude/haiku" }, { runId: "run-usage", callIndex: 2 }));
     try {
       await waitUntil(() => seen.length > 0, "no usage came while the step ran");
