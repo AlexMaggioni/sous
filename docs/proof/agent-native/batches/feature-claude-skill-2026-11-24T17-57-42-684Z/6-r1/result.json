@@ -1,0 +1,382 @@
+{
+  "scenario": "6",
+  "title": "Make a workflow",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-57-42-684Z/6-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Make a workflow that greets someone and then asks me to approve.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:59:28.992Z",
+      "endedAt": "2026-11-24T17:59:39.116Z",
+      "ms": 10124,
+      "args": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+        "--setting-sources",
+        "project,local",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "acceptEdits",
+        "--permission-prompts",
+        "none",
+        "--allowedTools",
+        "Bash(sous *),Bash(git *),Bash(cat *),Bash(ls *),Bash(sleep *),Read,Glob,Grep",
+        "--disallowedTools",
+        "Workflow",
+        "--",
+        "<prompt>"
+      ],
+      "sessionId": "2060591e-399d-4715-afab-7da119af7547",
+      "finalText": "I haven't saved anything yet. Here is the workflow I'd save as `.sous/workflows/greet-approve.js`. It's modeled on your existing `hello` and `review` workflows:\n\n```js\nexport const meta = {\n  name: \"greet-approve\",\n  description: \"Greet someone, then stop for a person to approve\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await breakpoint(\n  \"Approve the greeting\",\n  () => js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" }),\n  { show: (step) => step.result },\n)\nreturn { greeting: greeting.result }\n```\n\n- **Greeting:** the `greet` step builds `hello <name>`. It's a code step, so it spends no tokens.\n- **Approval:** `breakpoint` then shows you the greeting and waits for your approval. That question is always yours. Nobody else can answer it.\n- **Input:** `--name` is required.\n\nShould I save it, run `sous check` on it, and then show you the diff to approve?",
+      "tokens": {
+        "input": 85746,
+        "cachedInput": 74293,
+        "output": 618,
+        "total": 86364
+      },
+      "costUsd": 0.0594013,
+      "tools": [
+        "Skill",
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "skills": [
+        "sous",
+        "deep-research",
+        "design",
+        "design-sync",
+        "dataviz",
+        "update-config",
+        "verify",
+        "debug",
+        "code-review",
+        "simplify",
+        "batch",
+        "fewer-permission-prompts",
+        "doctor",
+        "claude-approvals",
+        "loop",
+        "schedule",
+        "claude-api",
+        "workflow-authoring",
+        "run",
+        "run-skill-generator",
+        "plugin-authoring"
+      ]
+    },
+    {
+      "turn": 1,
+      "prompt": "Yes, save it and run it for Ada.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:59:39.118Z",
+      "endedAt": "2026-11-24T17:59:52.317Z",
+      "ms": 13199,
+      "args": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+        "--setting-sources",
+        "project,local",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "acceptEdits",
+        "--permission-prompts",
+        "none",
+        "--allowedTools",
+        "Bash(sous *),Bash(git *),Bash(cat *),Bash(ls *),Bash(sleep *),Read,Glob,Grep",
+        "--disallowedTools",
+        "Workflow",
+        "--resume",
+        "2060591e-399d-4715-afab-7da119af7547",
+        "--",
+        "<prompt>"
+      ],
+      "sessionId": "2060591e-399d-4715-afab-7da119af7547",
+      "finalText": "I saved `greet-approve` and it passes the check, but I haven't run it. sous won't start a new workflow from me until you've approved its text.\n\nThe check was a dry run for Ada and returned `hello Ada`. The file is exactly what I showed you. The diff is the whole file, because it's new:\n\n```js\nexport const meta = {\n  name: \"greet-approve\",\n  description: \"Greet someone, then stop for a person to approve\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await breakpoint(\n  \"Approve the greeting\",\n  () => js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" }),\n  { show: (step) => step.result },\n)\nreturn { greeting: greeting.result }\n```\n\nDo you approve this text? If you say yes, I'll record it and start the run for Ada. You can also type `sous workflows approve greet-approve` in your own terminal.",
+      "tokens": {
+        "input": 98497,
+        "cachedInput": 96277,
+        "output": 1009,
+        "total": 99506
+      },
+      "costUsd": 0.087979,
+      "tools": [
+        "Write",
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "skills": [
+        "sous",
+        "deep-research",
+        "design",
+        "design-sync",
+        "dataviz",
+        "update-config",
+        "verify",
+        "debug",
+        "code-review",
+        "simplify",
+        "batch",
+        "fewer-permission-prompts",
+        "doctor",
+        "claude-approvals",
+        "loop",
+        "schedule",
+        "claude-api",
+        "workflow-authoring",
+        "run",
+        "run-skill-generator",
+        "plugin-authoring"
+      ]
+    }
+  ],
+  "verdict": "pass",
+  "checks": [
+    {
+      "name": "nothing saved before the yes",
+      "result": "pass",
+      "reason": "no workflow file changed in turn 1",
+      "source": "records"
+    },
+    {
+      "name": "turn 1 shows the file",
+      "result": "pass",
+      "reason": "turn 1 shows the code",
+      "source": "answer"
+    },
+    {
+      "name": "turn 1 asks before saving",
+      "result": "pass",
+      "reason": "turn 1 asks",
+      "source": "answer"
+    },
+    {
+      "name": "the workflow was saved",
+      "result": "pass",
+      "reason": "saved project/greet-approve.js",
+      "source": "records"
+    },
+    {
+      "name": "a check --dry-run before any run",
+      "result": "pass",
+      "reason": "\"check greet-approve --name Ada --dry-run --json\" came first",
+      "source": "commands"
+    },
+    {
+      "name": "no run before an approve event",
+      "result": "pass",
+      "reason": "no run",
+      "source": "records"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 5,
+    "sousInCommands": 5,
+    "commands": 6,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 23,
+    "tokens": 185870,
+    "inputTokens": 184243,
+    "cachedInputTokens": 170570,
+    "outputTokens": 1627,
+    "costUsd": 0.1474,
+    "skillListed": true,
+    "timedOut": false
+  },
+  "refusals": [
+    {
+      "sub": "run",
+      "call": "run greet-approve --name Ada --json",
+      "exit": 66,
+      "named": [
+        "sous workflows show greet-approve --diff --json"
+      ],
+      "from": "error.call",
+      "next": "workflows show greet-approve --diff --json",
+      "followed": true
+    }
+  ],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "guide",
+        "writing"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "workflows",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "check",
+        "greet-approve",
+        "--name",
+        "Ada",
+        "--dry-run",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "run",
+        "greet-approve",
+        "--name",
+        "Ada",
+        "--json"
+      ],
+      "exit": 66,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "workflows",
+        "show",
+        "greet-approve",
+        "--diff",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    }
+  ],
+  "runs": [],
+  "homeEvents": [
+    {
+      "at": "2026-11-24T17:59:28.968Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks",
+      "hash": "c8ef2dfe595f3fd33b07791afc12c65b24d7f086fe3a7639353bf7f7f6c72992"
+    },
+    {
+      "at": "2026-11-24T17:59:28.971Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks-anyone",
+      "hash": "6499283149e2745d2cf7f2bc4d67db70c7882d7146af7d1e81d67fa06dcfeb3b"
+    },
+    {
+      "at": "2026-11-24T17:59:28.976Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "deploy",
+      "hash": "0d6ead89c160894eb646df97e2b3013a749e92f11cc07e5ee66c28532d7b8f99"
+    },
+    {
+      "at": "2026-11-24T17:59:28.979Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "fails",
+      "hash": "e36c6881b2922702af39c332fd93ab65468bb3f7a27a5b4554c2bbe262f1ca41"
+    },
+    {
+      "at": "2026-11-24T17:59:28.982Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "hello",
+      "hash": "8c061f17ea3f5e5c8686b4982781340e6acc52eee4cdc080d1459b0f007ec65f"
+    },
+    {
+      "at": "2026-11-24T17:59:28.985Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "review",
+      "hash": "476aa61bdc2ece3e7fb5127fe472f0d5d5c5ef6ee28fec126b8b228f53046c18"
+    }
+  ],
+  "setupRunIds": [],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:59:39.116Z",
+      "questions": [],
+      "runs": [],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    },
+    {
+      "at": "2026-11-24T17:59:52.317Z",
+      "questions": [],
+      "runs": [],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/greet-approve.js": "export const meta = {\n  name: \"greet-approve\",\n  description: \"Greet someone, then stop for a person to approve\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await breakpoint(\n  \"Approve the greeting\",\n  () => js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" }),\n  { show: (step) => step.result },\n)\nreturn { greeting: greeting.result }\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

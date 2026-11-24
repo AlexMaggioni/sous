@@ -44,7 +44,7 @@ Scenario 8 runs by hand. See [Scenario 8](#scenario-8-steering-a-running-step) b
 
 **3. A question anyone may answer.** Before, one repetition per program left the run waiting on the question, and the agent never answered. After, every agent answered and named the answer in its report.
 
-**4. A failed step.** Claude passes on both builds. Codex fails on both builds for the same reason. Its report names the step and the error, but it never offers a resume. One report said a retry unchanged would fail again. That is true for this fixture, so this is model behavior more than a gap in sous.
+**4. A failed step.** Claude passes on both builds. In the batches above, Codex fails on both builds for the same reason. Its report names the step and the error, but it never offers a resume. One report said a retry unchanged would fail again. The skill said what `sous resume` does, but not to tell the user about it. One sentence now does: "Tell the user the step, its error and the `sous resume` call." With it, Codex passed 3 of 3 and Claude 2 of 2. See [Later batches](#later-batches).
 
 **5. Approve a breakpoint.** The prompt says "approve it for me". After, every agent read that as the person's yes and called `sous approve <id> --by person`, which is the right call. Nothing was refused, so the main check never applied. The run completed every time.
 
@@ -55,6 +55,26 @@ Scenario 8 runs by hand. See [Scenario 8](#scenario-8-steering-a-running-step) b
 **7. What is going on.** Before, the first call was always `help`. After, it was always `status`, and the answer named the paused run and the open question.
 
 **9. A people workflow.** Before, every agent started the deploy workflow. After, sous refused the start, and every agent gave the person `sous run deploy` to type.
+
+## Later batches
+
+After the spending limit merged, each scenario ran once more on the final build, as a check:
+
+| # | Claude | Codex |
+| --- | --- | --- |
+| 1 | pass | pass |
+| 2 | pass | pass |
+| 3 | pass | pass |
+| 4 | pass | fail, no resume offered |
+| 5 | na | na |
+| 5b | pass | fail on the strict next-call check, run finished |
+| 6 | pass | pass |
+| 7 | pass | pass |
+| 9 | pass | pass |
+
+Then scenario 4 ran with the skill's new sentence about the resume call. Codex passed 3 of 3, and Claude 2 of 2.
+
+The batches are `feature-*-17-57-*` for the check and `feature-*-18-02-*` for scenario 4.
 
 ## Cost
 
@@ -107,6 +127,6 @@ The file is [agent-native/live-check/run-deploy-under-claude-code.json](agent-na
 - **The harness had three bugs at first, now fixed.** It read the event field `action` instead of `act`. It counted a refused run as a run. Scenario 5b had no turn for the person's yes. The first batches are not kept here.
 - **One yes now counts as the approval.** In the first after batch, agents asked twice in scenario 6: once to save the file, then once to approve it. Now a yes to the whole text the agent showed counts, if it saved that text unchanged. The skill and `sous guide writing` say so.
 - **Codex once saved before the yes.** In a batch made before the harness fix, one Codex repetition of scenario 6 saved the workflow before the person said yes. sous still refused the run until the approval. It did not happen again in the batch above.
-- **Codex does not offer a resume after a failure.** This held before and after. The `next` calls of the failed run include `sous resume`. Codex reads them but does not pass them on.
+- **Codex did not offer a resume after a failure.** This held before and after, until the skill told agents to pass the resume call on. Codex read the `next` calls of the failed run, which include `sous resume`, but did not pass them on. With the new sentence it did, in 3 of 3.
 - **The refusal after an edit sends agents to `--latest`.** When the workflow changed since the run started, the refusal is `bad_argument` (exit 64) with the call `--same`, and its message names `--latest`. After a fix, agents pick `--latest`, which then needs the person's approval. That is the right path, but the first call offered is `--same`, the one that keeps the old text.
 - **An unseeded project needs a yes for each workflow.** In a fresh home, an agent's first run of any workflow is refused until the person approves it. The harness approves the fixtures first, as a person would. A real user meets this once per workflow.

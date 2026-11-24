@@ -1,0 +1,281 @@
+{
+  "scenario": "7",
+  "title": "What is going on",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-57-44-884Z/7-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "What is going on with my runs?",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T18:01:30.558Z",
+      "endedAt": "2026-11-24T18:01:46.506Z",
+      "ms": 15948,
+      "args": [
+        "exec",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-s",
+        "workspace-write",
+        "--add-dir",
+        "/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-57-44-884Z/7-r1/state",
+        "-C",
+        "/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-57-44-884Z/7-r1/project",
+        "<prompt>"
+      ],
+      "sessionId": "01a20eb8-5306-7130-a98a-df5f90b57753",
+      "finalText": "Two runs need attention; none are running:\n\n- **`asks` — `mwv045cc-amyutg`** is waiting for your answer: **“Which color?”** Choices: **red** or **blue**. It will wait until you choose.\n- **`fails` — `mwv043zi-5mqaue`** paused at step `boom`, after `prepare` succeeded. The command explicitly prints “disk check failed” and exits with code 3; this does **not establish an actual disk problem**. Retrying the unchanged command would fail again.\n\nThe sous service is stopped. I haven’t changed or resumed either run.",
+      "tokens": {
+        "input": 109884,
+        "cachedInput": 88192,
+        "output": 313,
+        "total": 110197
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    }
+  ],
+  "verdict": "pass",
+  "checks": [
+    {
+      "name": "the first sous call is status",
+      "result": "pass",
+      "reason": "\"status --json\"",
+      "source": "commands"
+    },
+    {
+      "name": "the answer names the paused run",
+      "result": "pass",
+      "reason": "it names fails",
+      "source": "answer"
+    },
+    {
+      "name": "the answer names the open question",
+      "result": "pass",
+      "reason": "it names asks",
+      "source": "answer"
+    },
+    {
+      "name": "nothing changed",
+      "result": "pass",
+      "reason": "no run changed",
+      "source": "records"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 3,
+    "sousInCommands": 3,
+    "commands": 4,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 16,
+    "tokens": 110197,
+    "inputTokens": 109884,
+    "cachedInputTokens": 88192,
+    "outputTokens": 313,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "status",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "show",
+        "mwv043zi-5mqaue",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "step",
+        "mwv043zi-5mqaue",
+        "boom",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwv043zi-5mqaue",
+      "workflow": "fails",
+      "origin": "cli",
+      "createdAt": "2026-11-24T18:01:28.110Z",
+      "status": "paused",
+      "pauseReason": "step_failed",
+      "reason": "step \"boom\" failed after 1 try: exited with code 3: disk check failed",
+      "answers": []
+    },
+    {
+      "runId": "mwv045cc-amyutg",
+      "workflow": "asks",
+      "origin": "cli",
+      "createdAt": "2026-11-24T18:01:29.869Z",
+      "status": "running",
+      "answers": []
+    }
+  ],
+  "homeEvents": [
+    {
+      "at": "2026-11-24T18:01:27.859Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks",
+      "hash": "c8ef2dfe595f3fd33b07791afc12c65b24d7f086fe3a7639353bf7f7f6c72992"
+    },
+    {
+      "at": "2026-11-24T18:01:27.862Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks-anyone",
+      "hash": "6499283149e2745d2cf7f2bc4d67db70c7882d7146af7d1e81d67fa06dcfeb3b"
+    },
+    {
+      "at": "2026-11-24T18:01:27.865Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "deploy",
+      "hash": "0d6ead89c160894eb646df97e2b3013a749e92f11cc07e5ee66c28532d7b8f99"
+    },
+    {
+      "at": "2026-11-24T18:01:27.868Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "fails",
+      "hash": "e36c6881b2922702af39c332fd93ab65468bb3f7a27a5b4554c2bbe262f1ca41"
+    },
+    {
+      "at": "2026-11-24T18:01:27.871Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "hello",
+      "hash": "8c061f17ea3f5e5c8686b4982781340e6acc52eee4cdc080d1459b0f007ec65f"
+    },
+    {
+      "at": "2026-11-24T18:01:27.875Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "review",
+      "hash": "476aa61bdc2ece3e7fb5127fe472f0d5d5c5ef6ee28fec126b8b228f53046c18"
+    },
+    {
+      "at": "2026-11-24T18:01:28.111Z",
+      "act": "run",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "runId": "mwv043zi-5mqaue",
+      "workflow": "fails"
+    },
+    {
+      "at": "2026-11-24T18:01:29.870Z",
+      "act": "run",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "runId": "mwv045cc-amyutg",
+      "workflow": "asks"
+    }
+  ],
+  "setupRunIds": [
+    "mwv043zi-5mqaue",
+    "mwv045cc-amyutg"
+  ],
+  "snapshots": [
+    {
+      "at": "2026-11-24T18:01:46.506Z",
+      "questions": [
+        {
+          "id": "mwv045cc-amyutg--0",
+          "runId": "mwv045cc-amyutg",
+          "prompt": "Which color?"
+        }
+      ],
+      "runs": [
+        {
+          "runId": "mwv043zi-5mqaue",
+          "workflow": "fails",
+          "status": "paused",
+          "pauseReason": "step_failed"
+        },
+        {
+          "runId": "mwv045cc-amyutg",
+          "workflow": "asks",
+          "status": "running"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}
