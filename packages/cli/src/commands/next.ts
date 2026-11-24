@@ -10,6 +10,9 @@ interface RunAt {
   /** The questions as a reply shows them, with who may answer each as it stands for the run. */
   questions?: ReadonlyArray<Pick<RunQuestion, "id" | "kind" | "choices" | "breakpoint" | "prompt" | "answeredBy">>;
   failure?: Failure;
+  pauseReason?: string;
+  /** The tokens one go of the run may spend, when it has a budget. */
+  budget?: number;
   /** When the service resumes a run paused at a usage limit. */
   resumesAt?: string;
   workflow?: string;
@@ -86,6 +89,9 @@ export function nextCalls(run: RunAt, from: "wait" | "show", who: Who, timeout?:
   } else if (run.status === "paused" && run.resumesAt) {
     notes.push(`The service resumes this run by itself at ${run.resumesAt}. Until then sous wait returns at once, so call it after that time.`);
     calls.push({ ...wait, does: "waits for the run once the service resumed it" }, show);
+  } else if (run.status === "paused" && run.pauseReason === "budget" && run.budget) {
+    const more = run.budget * 2;
+    calls.push(resume, { call: `sous resume ${id} --budget ${more} --json`, does: `resumes the run, and gives it a budget of ${more} tokens for this go and each one after it` }, show);
   } else if (run.status === "paused" || run.status === "interrupted" || run.status === "failed") {
     calls.push(resume, show);
   } else {

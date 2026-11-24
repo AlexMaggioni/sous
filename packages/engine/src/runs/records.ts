@@ -45,6 +45,9 @@ export interface RunRecord {
   concurrency?: number;
   /** The workflow's time limit, such as "2h". Each start and resume gets the whole of it. */
   timeout?: string;
+  /** The most tokens one go of the run may spend, from --budget or the config's budgetTokens.
+   *  Each start and resume gets the whole of it. None means no limit. */
+  budget?: number;
   /** Set when the run was started again from another run. */
   rerunOf?: string;
   /** The run whose unchanged steps this run reuses. */

@@ -23,14 +23,15 @@ import type {
   WorkflowRunFallback,
   WorkflowRunResult,
 } from "./workflow-result.js";
-import type {
-  EngineRunEvent,
-  EngineRunEventName,
-  EngineRunEventPayloadMap,
-  PersistableEngineRunEvent,
-  RequestedPauseReason,
-  RunPausedPayload,
-  RunPauseReason,
+import {
+  isRequestedPauseReason,
+  type EngineRunEvent,
+  type EngineRunEventName,
+  type EngineRunEventPayloadMap,
+  type PersistableEngineRunEvent,
+  type RequestedPauseReason,
+  type RunPausedPayload,
+  type RunPauseReason,
 } from "./run-events.js";
 import { foldStep, preview, type WorkflowSnapshot } from "./display.js";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
@@ -59,6 +60,7 @@ import { projectRecordedError } from "./recorded-error.js";
 import { workflowHomeDir } from "./workflow-paths.js";
 import { cloneStrictJsonValue, deepFreeze } from "./strict-json.js";
 import { CALL_PATH_FORMAT } from "./call-path.js";
+import { hostPauseReason, type HostPause, type HostPauseReason } from "./host-pause.js";
 import { CHECKPOINT_INPUTS_FORMAT, type CheckpointCallContext, type CheckpointOptions } from "./checkpoint-call.js";
 import {
   CALL_INPUTS_FORMAT,
@@ -359,7 +361,7 @@ function abortSignaledOf(managed: ManagedRun): boolean {
 
 function runReason(status: RunStatus, error: WorkflowError | undefined): string | undefined {
   if (status === "completed" || status === "pending" || status === "running") return undefined;
-  if (status !== "paused" || isStepFailedPause(error)) return error?.message;
+  if (status !== "paused" || isStepFailedPause(error) || hostPauseReason(error?.details)) return error?.message;
   return pauseReasonOf(error) ?? error?.message;
 }
 
@@ -376,7 +378,7 @@ function pauseReasonOf(error: WorkflowError | undefined): RunPauseReason | undef
     case WorkflowErrorCode.CHECKPOINT_REQUIRED:
       return "checkpoint_required";
     case WorkflowErrorCode.PAUSE_REQUESTED:
-      return isStepFailedPause(error) ? stepPauseReason(error.details) : "requested";
+      return requestedPauseReason(error);
     default:
       return undefined;
   }
@@ -397,16 +399,12 @@ const STOPPED_STATE = {
   abortSignaled: true,
 } as const satisfies Partial<PersistedRunState>;
 
-/** The paused event for a pause, with the context its reason carries. One case per reason, so a
- *  new reason fails to compile here until it has its own. */
+/** The paused event for a pause, with the context its reason carries. A reason in the requested
+ *  shape carries none. Any other has its own case, so a new one fails to compile until it has. */
 function pausedPayload(runId: string, reason: RunPauseReason, error: WorkflowError): RunPausedPayload {
   const base = { runId, scope: runId, error, errorRecord: projectRecordedError(error) };
+  if (isRequestedPauseReason(reason)) return { ...base, reason };
   switch (reason) {
-    case "requested":
-    case "step_failed":
-    case "step_stopped":
-    case "time_limit":
-      return { ...base, reason };
     case "usage_limit":
       return { ...base, reason, resetHint: error.resetHint };
     case "auth_required":
@@ -1634,15 +1632,15 @@ export class WorkflowManager extends EventEmitter {
   /**
    * Ask a running workflow to pause. Agent calls already executing finish and journal, nothing
    * new is admitted (queued calls settle as interrupted rows that run again on resume), and the
-   * run then settles as `paused` with reason "requested" and a `paused` event. Returns true when
-   * the request is registered with a run this manager is executing, including a repeat request
-   * while one is pending; false when the run is not running here. `stop()` remains the immediate
-   * interruption.
+   * run then settles as `paused` with reason "requested", or with the reason of `stop`, the limit
+   * the run reached, and a `paused` event. Returns true when the request is registered with a run
+   * this manager is executing, including a repeat request while one is pending; false when the
+   * run is not running here. `stop()` remains the immediate interruption.
    */
-  pause(runId: string): boolean {
+  pause(runId: string, stop?: HostPause): boolean {
     const managed = this.runs.get(runId);
     if (managed?.status !== "running") return false;
-    (managed.pauseController ??= new AbortController()).abort();
+    (managed.pauseController ??= new AbortController()).abort(stop);
     return true;
   }
 
@@ -1863,7 +1861,7 @@ export class WorkflowManager extends EventEmitter {
    */
   cancelAgentSteps(
     runId: string,
-    select: { label?: string; scope?: string; callIndex?: number; pauseReason?: "time_limit"; message?: string } = {},
+    select: { label?: string; scope?: string; callIndex?: number; pauseReason?: HostPauseReason; message?: string } = {},
   ): number {
     const managed = this.runs.get(runId);
     if (!managed || managed.status !== "running") return 0;
@@ -1882,7 +1880,7 @@ export class WorkflowManager extends EventEmitter {
   private requestAgentCancellation(
     attempt: RegisteredAgentAttempt,
     message?: string,
-    pauseReason?: "time_limit",
+    pauseReason?: HostPauseReason,
   ): Promise<WorkflowAgentCallCancellation> {
     if (!attempt.cancellation) {
       let resolve!: (result: WorkflowAgentCallCancellation) => void;
@@ -2076,9 +2074,9 @@ function contiguousJournalPrefix(entries: readonly JournalEntry[], runId: string
   return index;
 }
 
-/** The pause reason of a step that failed or was stopped. */
-function stepPauseReason(details: unknown): Exclude<RequestedPauseReason, "requested"> {
-  const { code, pauseReason } = (details ?? {}) as { code?: unknown; pauseReason?: unknown };
-  if (pauseReason === "time_limit") return pauseReason;
-  return code === WorkflowErrorCode.AGENT_CANCELLED ? "step_stopped" : "step_failed";
+/** Why a pause request paused the run: a limit of the run, a failed or stopped step, or a request. */
+function requestedPauseReason(error: WorkflowError): RequestedPauseReason {
+  const limit = hostPauseReason(error.details);
+  if (limit || !isStepFailedPause(error)) return limit ?? "requested";
+  return (error.details as { code?: unknown }).code === WorkflowErrorCode.AGENT_CANCELLED ? "step_stopped" : "step_failed";
 }

@@ -91,6 +91,9 @@ export interface ShortRun {
   startedAt: string;
   seconds?: number;
   tokens: number;
+  /** Why the run paused, and the tokens one go may spend when it has a budget, as wait gives them. */
+  pauseReason?: string;
+  budget?: number;
   steps: Array<{ label: string; status: string; seconds?: number; tokens?: number }>;
   questions: QuestionView[];
   failure?: Failure;
@@ -228,6 +231,8 @@ export function shortRun(run: RunDetail, now: Date): ShortRun {
     startedAt: record.createdAt,
     ...(Number.isNaN(seconds) ? {} : { seconds }),
     tokens: run.tokens ?? 0,
+    ...(run.saved?.pauseReason ? { pauseReason: run.saved.pauseReason } : {}),
+    ...(record.budget ? { budget: record.budget } : {}),
     steps,
     questions: run.questions.map((question) => questionView(question, record)),
     ...withFailure(run.failure),
@@ -337,6 +342,7 @@ function runSummary(record: RunRecord, state: PersistedRunState | undefined, vie
     workflow: record.workflow,
     status: view.status,
     ...(state?.pauseReason ? { pauseReason: state.pauseReason } : {}),
+    ...(record.budget ? { budget: record.budget } : {}),
     ...(state?.resetHint ? { resetHint: state.resetHint } : {}),
     ...(state?.reason && !done ? { reason: state.reason } : {}),
     ...(questions.length ? { questions: questions.map((question) => questionView(question, record)) } : {}),
@@ -355,6 +361,8 @@ export interface WaitSummary {
   workflow: string;
   status: Verdict["status"];
   pauseReason?: string;
+  /** The tokens one go of the run may spend, when it has a budget. */
+  budget?: number;
   resetHint?: string;
   reason?: string;
   questions?: QuestionView[];
@@ -571,6 +579,8 @@ export interface ResumeOptions {
   choice?: "latest" | "same";
   letAgentAnswer?: { command: string };
   tell?: Tell;
+  /** The most tokens this go and the ones after it may spend, in place of the run's. */
+  budget?: number;
   /** The note for the worker, from the text the run goes on with. It may refuse, before any write. */
   note?: (script: string) => NoteRequest;
   /** The run as the caller read it just now, so the resume reads it once. */
@@ -618,10 +628,11 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
   const note = options.note?.(latest ? latest.script : state.script);
   if (latest) needApproval(paths, record.projectDir, latest, who);
   const latestHash = latest ? workflowHash(latest.script) : undefined;
-  if (choice === "latest" || consent) updateRecord(paths, record.runId, { ...(choice === "latest" ? { resumeLatest: true, latestHash } : {}), ...(consent ? { letAgentAnswer: consent } : {}) });
+  const budget = options.budget ? { budget: options.budget } : {};
+  if (choice === "latest" || consent || options.budget) updateRecord(paths, record.runId, { ...(choice === "latest" ? { resumeLatest: true, latestHash } : {}), ...(consent ? { letAgentAnswer: consent } : {}), ...budget });
   if (note) requestNote(paths, record.runId, note);
   launch(paths, record.runId, "resume");
-  recordAction(paths, { act: "resume", ...who, runId: record.runId, ...(note ? { text: note.text, ...(note.step ? { step: note.step.name } : {}) } : {}) });
+  recordAction(paths, { act: "resume", ...who, runId: record.runId, ...budget, ...(note ? { text: note.text, ...(note.step ? { step: note.step.name } : {}) } : {}) });
   if (consent) recordAndTell(paths, { act: "let-agent-answer", ...who, runId: record.runId, workflow: record.workflow }, options.tell);
   return { resumed: record };
 }
@@ -642,6 +653,8 @@ export interface RerunRequest {
   /** Step changes added to the earlier run's. */
   overrides?: Record<string, Record<string, unknown>>;
   defaultModel?: string;
+  /** --budget. Default: the earlier run's budget. */
+  budget?: number;
   startedByRun?: string;
   caller?: boolean;
   /** Who starts it again, and the command the person types when a people workflow refuses it. */
@@ -662,6 +675,7 @@ export function rerunRun(paths: HomePaths, launch: Launcher, runId: string, requ
   }
   if (request.reuse && !reuse.ok) throw new Error(REUSE_REFUSALS[reuse.why](old.runId));
   const defaultModel = request.defaultModel ?? old.defaultModel;
+  const budget = request.budget ?? old.budget;
   return startRun(paths, launch, {
     ...(request.reuse ? { reuseFrom: old } : {}),
     workflow: old.file,
@@ -673,6 +687,7 @@ export function rerunRun(paths: HomePaths, launch: Launcher, runId: string, requ
     ...(old.overrides || request.overrides ? { overrides: { ...old.overrides, ...request.overrides } } : {}),
     ...(defaultModel ? { defaultModel } : {}),
     ...(old.concurrency ? { concurrency: old.concurrency } : {}),
+    ...(budget ? { budget } : {}),
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
     caller: request.caller === true,
     who: request.who,

@@ -49,6 +49,8 @@ export interface Action {
   value?: unknown;
   text?: string;
   hash?: string;
+  /** The tokens one go may spend, for a run, a rerun or a resume that set a budget. */
+  budget?: number;
 }
 
 /** The most bytes of free text a line keeps. */

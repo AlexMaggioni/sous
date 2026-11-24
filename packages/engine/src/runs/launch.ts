@@ -7,7 +7,7 @@ import { generateRunId } from "./persistence/run-persistence.js";
 import { resolveWorkflow } from "../workflows/dir.js";
 import { checkInputs } from "../workflows/meta.js";
 import { preparePlace } from "../places/places.js";
-import { loadConfig, rememberProject, type HomePaths, type Place } from "./home.js";
+import { loadConfig, rememberProject, type HomePaths, type OrcConfig, type Place } from "./home.js";
 import { accountsForRun } from "../accounts.js";
 import { saveRecord, updateRecord, type RunRecord } from "./records.js";
 import { logFile } from "./store.js";
@@ -30,6 +30,8 @@ export interface CreateRunRequest {
   overrides?: Record<string, Record<string, unknown>>;
   defaultModel?: string;
   concurrency?: number;
+  /** --budget: the most tokens one go of the run may spend. Default: the config's budgetTokens, else none. */
+  budget?: number;
   rerunOf?: string;
   /** Reuse the results of this run's steps that did not change. The new run works in its place. */
   reuseFrom?: RunRecord;
@@ -74,6 +76,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   if (person) rememberProject(paths, request.projectDir);
   if (request.origin !== "check") needApproval(paths, request.projectDir, resolved, request.who);
   const config = loadConfig(paths);
+  const budget = request.budget ?? configBudget(paths, config, request.command ?? `sous run ${resolved.name}`);
   const runId = generateRunId();
   const reuse = request.reuseFrom;
   // A run that reuses another's results needs that run's files too, so it works where it did.
@@ -98,6 +101,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
     ...(request.defaultModel ? { defaultModel: request.defaultModel } : {}),
     ...((request.concurrency ?? resolved.extras.concurrency) ? { concurrency: request.concurrency ?? resolved.extras.concurrency } : {}),
     ...(resolved.extras.timeout ? { timeout: resolved.extras.timeout } : {}),
+    ...(budget ? { budget } : {}),
     ...(request.rerunOf ? { rerunOf: request.rerunOf } : {}),
     ...(reuse ? { reuseFrom: reuse.runId } : {}),
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
@@ -108,9 +112,25 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   };
   saveRecord(paths, record);
   if (!person) rememberProject(paths, request.projectDir);
-  if (record.origin !== "check") recordAction(paths, { act: request.rerunOf ? "rerun" : "run", ...request.who, runId, workflow: resolved.name });
+  if (record.origin !== "check") recordAction(paths, { act: request.rerunOf ? "rerun" : "run", ...request.who, runId, workflow: resolved.name, ...(budget ? { budget } : {}) });
   if (letAgentAnswer && record.origin !== "check") recordAndTell(paths, { act: "let-agent-answer", ...request.who, runId, workflow: resolved.name }, request.tell);
   return record;
+}
+
+/** The config's budgetTokens, refused when it is not a whole number of tokens above 0. The
+ *  refusal's call is the command with a --budget, which wins over the config. */
+function configBudget(paths: HomePaths, config: OrcConfig, command: string): number | undefined {
+  const budget: unknown = config.budgetTokens;
+  if (budget === undefined || (Number.isSafeInteger(budget) && (budget as number) > 0)) return budget as number | undefined;
+  const split = command.indexOf(" -- ");
+  const flags = /(^| )--json( |$)/.test(command) ? " --budget 100000" : " --budget 100000 --json";
+  const call = split === -1 ? `${command}${flags}` : `${command.slice(0, split)}${flags}${command.slice(split)}`;
+  throw new Refusal(
+    "broken_record",
+    `budgetTokens in ${paths.config} is ${JSON.stringify(budget)}, not a number of tokens above 0`,
+    `Set budgetTokens in ${paths.config} to a whole number above 0, or remove it. A --budget on the command wins over it.`,
+    call,
+  );
 }
 
 /**

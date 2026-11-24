@@ -21,7 +21,7 @@ import {
   type Account,
 } from "@sous/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
-import { activityStep, type ActivityEntry, type OnActivity } from "./activity.js";
+import { activityStep, type ActivityEntry, type ActivityStep, type OnActivity } from "./activity.js";
 import type { LiveCall, SteeringBoard } from "./steering.js";
 import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, PlannedRequest, StepRequest } from "./agent-run.js";
 import type { AgentRunner, StepAsk, StepRoute } from "./agent-runner.js";
@@ -29,6 +29,7 @@ import type { AgentSessionRef } from "../workflow-result.js";
 import type { McpServerConfig } from "./mcp-config.js";
 import { harnessName, missingServer, routeStep, stepModel, withHarness, type AgentLookup, type McpLookup, type RoutePlan } from "../agents.js";
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
+import { hostStopError, type HostPause } from "../host-pause.js";
 import type { SlotPool } from "../runs/slots.js";
 import { buildPrompt, checkImages, CONTINUATION_INSTRUCTION, extractValidated, REPROMPT_TEXT, toMcpServer, validateValue } from "./answer.js";
 
@@ -63,6 +64,14 @@ export interface StepsOptions {
   onActivity?: OnActivity;
   /** The board each agent call opens on while its turn runs, so `sous tell` reaches it. */
   steering?: SteeringBoard;
+  /** Asked before each agent step starts. A stop, such as the run's budget reached, makes the
+   *  step throw AGENT_CANCELLED with the stop's pauseReason, and the run pauses on it. */
+  gate?: () => HostPause | undefined;
+  /** Called while an attempt of a step on a program runs, with the tokens it spent so far, and
+   *  once more with `ended` when the attempt ends, failed or not. The program says when: Claude
+   *  Code at each message, Codex at each token count it sends. A runner in place of the programs
+   *  reports through the call's onUsage, and its tokens come only with `ended`. */
+  onUsage?: (step: ActivityStep, usage: AgentUsage, ended?: boolean) => void;
   /** A note from `sous resume --note`. It goes to the first agent call that runs, or to the first
    *  with the label `step`, in one of the runs or nested runs `scopes` when given. */
   note?: StepsNote;
@@ -88,6 +97,9 @@ const failureOf = (error: unknown): Failure | undefined => (isFailure(error) ? e
 function addUsage(a: Usage, b: Usage): Usage {
   return { input: a.input + b.input, output: a.output + b.output, cacheRead: a.cacheRead + b.cacheRead, cacheWrite: a.cacheWrite + b.cacheWrite, total: a.total + b.total };
 }
+
+const NO_USAGE: AgentUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0 };
+const agentUsage = (spent: Usage, cost: number): AgentUsage => ({ input: spent.input, output: spent.output, cacheRead: spent.cacheRead, cacheWrite: spent.cacheWrite, total: spent.total, cost });
 
 /** The activity entry of a history item. A turn's own prompt is left out: the steps module
  *  reports the prompt itself, and a repair turn is its own text. A user message after it is a tell. */
@@ -156,6 +168,8 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     const { problem, plan: step } = call.route;
     if (problem) throw stop(problem);
     if (!step) throw stop("the step has no plan. The engine routes each step with route() before it runs it.");
+    const limit = options.gate?.();
+    if (limit) throw hostStopError(limit, call.label);
     const where = options.onActivity && activityStep(call.runId, call.callIndex, call.label);
     const report = where && ((entry: ActivityEntry) => options.onActivity!(where, entry));
     report?.({ kind: "prompt", text: prompt });
@@ -184,14 +198,29 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     const timeout = step.timeoutMs ? AbortSignal.timeout(step.timeoutMs) : undefined;
     const signals = [call.signal, timeout].filter((signal): signal is AbortSignal => signal !== undefined);
     const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+    // The attempt's tokens so far. A program's go to onUsage as it runs. A runner's are kept for
+    // the end of the attempt.
+    const usageTo = options.onUsage;
+    const usageStep = usageTo && activityStep(call.runId, call.callIndex, call.label);
+    let spent: AgentUsage | undefined;
+    const usage = usageStep && ((now: AgentUsage) => usageTo(usageStep, (spent = now)));
+    const counted: StepRequest = usageStep
+      ? {
+          ...call,
+          onUsage: (now) => {
+            spent = now;
+            call.onUsage?.(now);
+          },
+        }
+      : call;
     try {
       const account = options.accounts?.[step.harness];
-      if (options.inner) return await runInner(options.inner, withNote(prompt, note), call, step, { signal, servers, account });
+      if (options.inner) return await runInner(options.inner, withNote(prompt, note), counted, step, { signal, servers, account });
       const notesTo = options.onNotes;
       const onNotes = notesTo && ((notes: string[]) => notesTo({ label: call.label, notes }));
       const steering = options.steering && activityStep(call.runId, call.callIndex, call.label);
       const board = steering ? { board: options.steering!, call: steering } : undefined;
-      return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account, onNotes, activity: report, board, note });
+      return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account, onNotes, activity: report, board, usage, note });
     } catch (error) {
       if ((error as { code?: unknown } | undefined)?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT) {
         options.onLimit?.({ program: step.harness, label: call.label });
@@ -204,6 +233,7 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
       }
       throw error;
     } finally {
+      if (usageStep) usageTo!(usageStep, spent ?? NO_USAGE, true);
       release?.();
     }
   };
@@ -260,11 +290,13 @@ async function runOnHarness(
     onNotes?: (notes: string[]) => void;
     activity?: (entry: ActivityEntry) => void;
     board?: { board: SteeringBoard; call: LiveCall };
+    /** Gets the attempt's tokens so far while a turn runs. */
+    usage?: (spent: AgentUsage) => void;
     /** The resume's note, after the prompt or the continuation instruction. Repair turns go without it. */
     note?: string;
   },
 ): Promise<unknown> {
-  const { cwd, signal, servers, stop, account, onNotes, activity, board, note } = given;
+  const { cwd, signal, servers, stop, account, onNotes, activity, board, usage, note } = given;
   const harness = step.harness;
   const label = call.label;
   const schema = call.schema;
@@ -335,6 +367,8 @@ async function runOnHarness(
       activity?.({ kind: ACTIVITY_KINDS[entry.kind], ...(entry.toolName === undefined ? {} : { tool: entry.toolName }), text: entry.text });
     },
     ...(board ? { steer: (send) => (send ? board.board.open(board.call, send) : board.board.close(board.call)) } : {}),
+    // The turn's running total, on top of the turns of this attempt before it.
+    ...(usage ? { usage: (turn) => usage(agentUsage(spent ? addUsage(spent, turn) : turn, cost ?? 0)) } : {}),
   };
   const once = async (turn: Step): Promise<StepResult> => {
     prompted = false;
@@ -421,8 +455,7 @@ async function runOnHarness(
     // The adapter closes the seam at the end of each turn. A turn that threw may not have.
     if (board) board.board.close(board.call);
     if (spent) {
-      const usage: AgentUsage = { input: spent.input, output: spent.output, cacheRead: spent.cacheRead, cacheWrite: spent.cacheWrite, total: spent.total, cost: cost ?? 0 };
-      call.onUsage?.(usage);
+      call.onUsage?.(agentUsage(spent, cost ?? 0));
       if (gauge !== undefined) call.onSessionCostGauge?.(gauge);
     }
     if (history.length) call.onHistory?.(history);

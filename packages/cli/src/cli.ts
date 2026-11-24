@@ -114,6 +114,7 @@ sous runs saved workflows in the background.
         --model <spec>                  model for steps that name none, such as claude/haiku
         --set <step>.<key>=<value>      change one step for this run, such as --set reviewer.model=claude/opus
         --concurrency N                 steps at once in this run
+        --budget N                      tokens one go may spend; at N the run pauses (default: config, else none)
         --wait                          follow the run until it ends; in a terminal, answer here
         --json                          machine-readable output
   sous wait <run> [--timeout N] [--json]  wait for a run to end, pause or ask (exit 0 done, 1 failed,
@@ -137,6 +138,7 @@ sous runs saved workflows in the background.
   sous pause <run>                      finish running steps, start nothing new
   sous resume <run> [--wait]            go on from where the run paused, failed or was cut off
         --latest | --same               after an edit: take the new version, or keep the run's own
+        --budget N                      the run's new budget, from this go on
         --note <msg> [--step <name>]    give the first agent call that runs a note, or that step's
   sous stop <run>                       end the run; its worktree stays
         --step <name>                   stop one running step instead; the run pauses on it
@@ -144,6 +146,7 @@ sous runs saved workflows in the background.
         --call n                        tell only the nth call of the step
   sous rerun <run> [--name value ...]   start the same workflow again with the same inputs
         --reuse                         keep the results of the steps you did not edit, in the same place
+        --budget N                      tokens one go of the new run may spend (default: the run's)
   sous workflows                        saved workflows and their inputs
   sous workflows show <name> [--full]   one workflow: its steps, its approval, its last runs
         --diff                          what changed since the person's yes
