@@ -24,6 +24,7 @@ import type { TurnError } from "./generated/v2/TurnError.js";
 import type { UserInput } from "./generated/v2/UserInput.js";
 import { codexEnv } from "./program.js";
 import { AppServer, RpcError, type ThreadOpened } from "./rpc.js";
+import { steerTurn } from "./steer.js";
 
 const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string };
 
@@ -75,6 +76,9 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
   // The tool each MCP server runs now, since an MCP approval names only the server.
   const running = new Map<string, string>();
 
+  // The seam onto the turn, from turn/start to turn/completed.
+  let seam: ReturnType<typeof steerTurn> | undefined;
+  const closeSeam = () => seam?.close() && events.steer?.(undefined);
   let finish!: (turn: Pick<Turn, "status" | "error">) => void;
   const turnDone = new Promise<Pick<Turn, "status" | "error">>((resolve) => (finish = resolve));
 
@@ -142,7 +146,9 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
       }
       case "turn/completed": {
         const p = params as TurnCompletedNotification;
-        if (p.threadId === threadId && (!turnId || p.turn.id === turnId)) finish(p.turn);
+        if (p.threadId !== threadId || (turnId && p.turn.id !== turnId)) break;
+        closeSeam();
+        finish(p.turn);
         break;
       }
     }
@@ -249,6 +255,8 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
       ...(step.schema ? { outputSchema: toStrictJsonSchema(step.schema) as Record<string, never> } : {}),
     });
     turnId ??= started.turn.id;
+    seam = steerTurn({ server, threadId, turnId, delivered: (told) => history({ role: "user", kind: "text", text: told }), note: (note) => notes.push(note) });
+    events.steer?.(seam.send);
     if (step.signal?.aborted) stop();
     const exited = server.exited.then((why): never => {
       throw new RpcError(server?.stderr.trim() || why, -32000);
@@ -262,6 +270,7 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
     // A program that exited already has its error output as the message.
     return fail(stderr && !message.includes(stderr) ? `${message}\n${stderr}` : message, { kind: "failed", retry: true });
   } finally {
+    closeSeam();
     clearTimeout(stopTimer);
     step.signal?.removeEventListener("abort", stop);
     if (server && threadId) await withTimeout(server.request("thread/unsubscribe", { threadId }), 2000);

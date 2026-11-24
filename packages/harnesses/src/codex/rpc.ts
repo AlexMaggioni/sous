@@ -15,6 +15,8 @@ import type { ThreadUnsubscribeParams } from "./generated/v2/ThreadUnsubscribePa
 import type { TurnInterruptParams } from "./generated/v2/TurnInterruptParams.js";
 import type { TurnStartParams } from "./generated/v2/TurnStartParams.js";
 import type { TurnStartResponse } from "./generated/v2/TurnStartResponse.js";
+import type { TurnSteerParams } from "./generated/v2/TurnSteerParams.js";
+import type { TurnSteerResponse } from "./generated/v2/TurnSteerResponse.js";
 
 /** The thread fields the adapter reads from thread/start and thread/resume. */
 export interface ThreadOpened {
@@ -30,19 +32,24 @@ export interface Methods {
   "thread/start": [ThreadStartParams, ThreadOpened];
   "thread/resume": [ThreadResumeParams, ThreadOpened];
   "turn/start": [TurnStartParams, TurnStartResponse];
+  "turn/steer": [TurnSteerParams, TurnSteerResponse];
   "turn/interrupt": [TurnInterruptParams, unknown];
   "thread/unsubscribe": [ThreadUnsubscribeParams, unknown];
   "account/rateLimits/read": [undefined, GetAccountRateLimitsResponse];
 }
 
+/** An error answer. data is the server's own detail, such as Codex's codexErrorInfo. */
 export class RpcError extends Error {
   constructor(
     message: string,
     readonly code: number,
+    readonly data?: unknown,
   ) {
     super(message);
   }
 }
+
+type ErrorAnswer = { code: number; message: string; data?: unknown };
 
 /** What the adapter does with messages the server starts. A request handler's throw becomes an error answer. */
 export interface Handlers {
@@ -118,7 +125,7 @@ export class AppServer {
       const line = this.buffer.slice(0, at).trim();
       this.buffer = this.buffer.slice(at + 1);
       if (!line) continue;
-      let message: { id?: number | string; method?: string; params?: unknown; result?: unknown; error?: { code: number; message: string } };
+      let message: { id?: number | string; method?: string; params?: unknown; result?: unknown; error?: ErrorAnswer };
       try {
         message = JSON.parse(line);
       } catch {
@@ -130,11 +137,11 @@ export class AppServer {
     }
   }
 
-  private settle(id: number, result: unknown, error?: { code: number; message: string }) {
+  private settle(id: number, result: unknown, error?: ErrorAnswer) {
     const call = this.pending.get(id);
     if (!call) return;
     this.pending.delete(id);
-    if (error) call.reject(new RpcError(error.message, error.code));
+    if (error) call.reject(new RpcError(error.message, error.code, error.data));
     else call.resolve(result);
   }
 

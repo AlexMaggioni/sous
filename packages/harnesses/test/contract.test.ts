@@ -11,7 +11,8 @@ import { dirname, join, resolve } from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createHarness } from "../src/index.js";
-import type { Account, Harness, HarnessFailure, HarnessId, HistoryEntry, Step, Steer, SteerOutcome, Usage } from "../src/index.js";
+import type { Account, Harness, HarnessFailure, HarnessId, HistoryEntry, Step, Usage } from "../src/index.js";
+import type { Steer, SteerOutcome } from "../src/seam.js";
 
 const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../test/fakes");
 
