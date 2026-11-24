@@ -443,8 +443,8 @@ the notices off.
   finished steps that match, and `--same` goes on with the run's own version. The error's `next`
   lists `--latest` first, then `--same`. An agent's `--latest` needs the person's yes to the new
   text, so until then the error offers `sous workflows show <name> --diff --json` in its place.
-  The service doesn't
-  resume such a run at the limit either. It tells you once.
+  A new text that does not load offers `--same` alone, and the message says what is wrong with
+  it. The service doesn't resume such a run at the limit either. It tells you once.
 - A run saved by an older sous in a format this one no longer reads still shows in `sous list` and
   `sous show`, and does not resume. `sous resume` says so and names `sous rerun <run>`, which starts
   it again, and `sous stop <run>`, which ends it. `sous rerun --reuse` refuses it too, and the service

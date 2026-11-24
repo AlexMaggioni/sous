@@ -104,17 +104,22 @@ export async function cmdResume(args: Parsed, ctx: Ctx): Promise<Reply<object>> 
  * an agent's before the person approved the new text, the refusal's own call takes its place, so
  * the caller shows the person the diff. --same comes last.
  */
-function mustChoose(runId: string, project: string, keep: string, resumed: { message: string; refused?: Refusal }): Usage {
+function mustChoose(runId: string, project: string, keep: string, resumed: { message: string; refused?: Refusal; broken?: string }): Usage {
   const latest: Next = { call: `sous resume ${runId} --latest${keep} --json`, does: "take the new version, and the finished steps that match stay done" };
   const same: Next = { call: `sous resume ${runId} --same${keep} --json`, does: "go on with the version the run started with" };
-  const { refused } = resumed;
+  const { refused, broken } = resumed;
+  // A new text that does not load stops --latest, and sous check on it, until the file is fixed.
+  if (broken) {
+    const change = `Fix the workflow file, then ${latest.call} takes the new version. Or ${same.call} goes on with the version the run started with.`;
+    return new Usage(`${resumed.message} ${broken}`, "bad_argument", change, same.call, [same]);
+  }
   if (!refused) {
     const change = "Add --latest to take the new version, or --same to go on with the version the run started with.";
     return new Usage(resumed.message, "bad_argument", change, latest.call, [latest, same]);
   }
-  const first: Next[] = refused.call === null ? [] : [{ call: atProject(refused.call, project), does: refused.code === "not_approved" ? "what changed since the person's yes, to show them before they approve it" : "what --latest needs fixed first" }];
+  const diff: Next = { call: atProject(refused.call!, project), does: "what changed since the person's yes, to show them before they approve it" };
   const change = `${refused.change} Then ${latest.call} takes the new version. Or ${same.call} goes on with the version the run started with.`;
-  return new Usage(`${resumed.message} ${refused.message}`, "bad_argument", change, (first[0] ?? same).call, [...first, same]);
+  return new Usage(`${resumed.message} ${refused.message}`, "bad_argument", change, diff.call, [diff, same]);
 }
 
 export async function cmdRerun(args: Parsed, ctx: Ctx): Promise<Reply<object>> {

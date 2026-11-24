@@ -17,7 +17,7 @@ import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, reques
 import { olderSave } from "../older-save.js";
 import { readWorkflowScript } from "../workflows/script.js";
 import { resolveWorkflow } from "../workflows/dir.js";
-import { needApproval } from "./approval-check.js";
+import { needApproval, NotApproved } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 import { Refusal } from "./refusal.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
@@ -574,7 +574,7 @@ const WRONG_STATE: Record<ResumeWrongState, (runId: string) => string> = {
 export type ResumeOutcome =
   | { resumed: RunRecord }
   | { wrongState: ResumeWrongState; view: RunView; message: string }
-  | { mustChoose: string[]; message: string; refused?: Refusal };
+  | { mustChoose: string[]; message: string; refused?: NotApproved; broken?: string };
 
 export interface ResumeOptions {
   choice?: "latest" | "same";
@@ -638,16 +638,19 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
   return { resumed: record };
 }
 
-/** The refusal a resume with --latest would get from this caller, checked as --latest checks it
- *  but with no write: a person's yes is recorded only when they resume. */
-function latestRefusal(paths: HomePaths, record: RunRecord, who: Who): { refused?: Refusal } {
+/** Why this caller's resume --latest would not go through now, checked as --latest checks it. A
+ *  person's yes is not recorded here, only at their resume, but the check may seed the approvals
+ *  file on its first use. `refused` is a missing yes, whose call shows the diff. `broken` is a new
+ *  text that does not load, or another stop: no call works on it until the file is fixed. */
+function latestRefusal(paths: HomePaths, record: RunRecord, who: Who): { refused?: NotApproved; broken?: string } {
   try {
     const latest = existsSync(record.file) ? resolveWorkflow(paths, record.projectDir, record.file) : undefined;
     if (latest && who.through.kind !== "person") needApproval(paths, record.projectDir, latest, who);
     return {};
   } catch (error) {
-    if (error instanceof Refusal) return { refused: error };
-    throw error;
+    if (error instanceof NotApproved) return { refused: error };
+    const message = error instanceof Error ? error.message : String(error);
+    return { broken: error instanceof Refusal ? message : `${record.file} does not parse: ${message}` };
   }
 }
 
