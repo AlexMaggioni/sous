@@ -159,7 +159,7 @@ export function cut<T>(items: T[], max: number, flag: string, what: string): { i
 ```ts
 // engine runs/refusal.ts
 export type RefusalCode =
-  | "no_such_run" | "no_such_workflow" | "no_such_question" | "no_such_step" | "step_not_running"
+  | "no_such_run" | "no_such_workflow" | "no_such_question" | "no_such_step" | "no_such_topic" | "step_not_running"
   | "started_by_people" | "not_approved" | "question_for_people" | "needs_person" | "no_person_here"
   | "step_takes_no_message" | "turn_not_steerable" | "run_is_running" | "cannot_resume" | "not_ours" | "workflow_invalid";
 export class Refusal extends Error {
@@ -200,6 +200,7 @@ export class Refusal extends Error {
 | `no_such_workflow` | no workflow has that name | `sous workflows --json` |
 | `no_such_question` | the question is answered or gone | `sous wait <run> --json` |
 | `no_such_step` | the run has no step with that label | `sous show <run> --json` |
+| `no_such_topic` | `sous guide` has no topic by that name | `sous guide --json` |
 | `step_not_running` | the step exists but doesn't run now | `sous resume <run> --note "..." --step <step>` when it can resume, else `sous show` |
 | `started_by_people` | an agent or a run starts a people workflow | null, with `forPerson` set to the command |
 | `not_approved` | a new or changed workflow has no yes | `sous workflows show <name> --diff --json` |
@@ -211,7 +212,7 @@ export class Refusal extends Error {
 | `run_is_running` | `discard` of a running run | `sous stop <run>` |
 | `workflow_invalid` | the workflow file does not parse, or its settings are wrong | `sous check <name> --json` |
 | `cannot_resume` | an older sous saved the run | `sous rerun <run>` |
-| `not_ours` | a skill or hook place holds something sous didn't put there | null |
+| `not_ours` | a skill or hook place holds something sous didn't put there, a broken link or a link to another folder included | the same install, such as `sous skill install --json`, with `change` naming each place to move aside |
 
 Requests in the wrong state change nothing and exit 0 with a note. That covers pause and stop of an ended run, and the `RESUME_REFUSALS` cases `running`, `never-started`, `completed` and `stopped`. Their next is `wait` for a running run and `rerun` for the others. A resume of a run whose workflow changed, with neither `--latest` nor `--same`, fails with `bad_argument`. Its call is `--same`, and its change names both.
 

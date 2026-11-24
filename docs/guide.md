@@ -469,6 +469,12 @@ Agents inside a run get `SOUS_RUN_ID` in their environment. A run they start rec
 started it, and `sous` refuses a workflow with `startedBy: "people"`. A run uses the account of the
 session or the run that started it, as in [Accounts](#accounts).
 
+`sous guide` lists the topics an agent reads to drive sous for a person, and `sous guide <topic>`
+prints one. The topics are in `packages/cli/guide/`. `sous skill install` links the sous skill
+into `<CLAUDE_CONFIG_DIR or ~/.claude>/skills/sous` and `~/.agents/skills/sous`, where Claude Code
+and Codex find it. It refuses with `not_ours` when either place holds something else, and then
+writes nothing. `sous skill check` shows each place, and `sous skill path` prints the skill folder.
+
 ## Status
 
 Proven end to end with real agents, on `claude/haiku` unless a proof says otherwise, in a copy of

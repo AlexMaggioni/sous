@@ -68,4 +68,4 @@ export {
   listAccounts,
 } from "./accounts.js";
 export { HARNESSES, harnessName, isHarness, loginOf } from "./agents.js";
-export { checkPrograms, setupTokenProgram } from "./programs.js";
+export { checkPrograms, installSkill, setupTokenProgram, skillPlaces } from "./programs.js";

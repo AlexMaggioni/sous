@@ -1,5 +1,8 @@
-// sous account and doctor: the logins and programs the steps run on.
+// sous account and doctor: the logins and programs the steps run on. sous guide and skill: what
+// an agent that drives sous reads.
 
+import { join, resolve } from "node:path";
+import { installSkill, Refusal, skillPlaces } from "@sous/engine";
 import { cmdAccount as accountCommand } from "../account-cli.js";
 import { str, Usage, type Parsed } from "../args.js";
 import { doctor } from "../doctor.js";
@@ -20,4 +23,70 @@ export function cmdAccount(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
 
 export function cmdDoctor(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   return asReply(doctor({ live: args.flags.live === true, model: str(args.flags.model), json: ctx.json, out: ctx.machine.out }));
+}
+
+/** The guide topics in reading order, each with its line in the list. Each is guide/<name>.md. */
+const TOPICS: ReadonlyArray<{ name: string; about: string }> = [
+  { name: "start", about: "start a run for a person and read the reply" },
+  { name: "wait", about: "wait for a run in the background, and what each exit code means" },
+  { name: "asks", about: "a run asks a question: the person answers, you pass it on" },
+  { name: "ends", about: "a run ended: read the result and the diff before you report" },
+  { name: "pauses", about: "failures, the usage limit and pauses: resume, rerun or stop" },
+  { name: "steer", about: "stop one step or the whole run" },
+  { name: "writing", about: "write a workflow and check it before it runs" },
+  { name: "errors", about: "the error shape, the exit codes and what to do with each" },
+  { name: "inside", about: "you are a step of a run: what you call and what you leave" },
+  { name: "replies", about: "the JSON replies: notes, next and each command's keys" },
+];
+
+export function cmdGuide(args: Parsed, ctx: Ctx): Reply<object> {
+  const name = args.positional[0];
+  if (name === undefined) {
+    const width = Math.max(...TOPICS.map((topic) => topic.name.length));
+    return reply(
+      { topics: TOPICS },
+      {
+        text: ["Topics. sous guide <topic> prints one.", ...TOPICS.map((topic) => `  ${topic.name.padEnd(width)}  ${topic.about}`)],
+        next: [{ call: "sous guide start --json", does: "how to start a run for a person" }],
+      },
+    );
+  }
+  if (!TOPICS.some((topic) => topic.name === name)) {
+    throw new Refusal("no_such_topic", `sous guide has no topic "${name}".`, `Use one of: ${TOPICS.map((topic) => topic.name).join(", ")}.`, "sous guide --json");
+  }
+  const text = ctx.machine.readText(join(ctx.machine.guideDir, `${name}.md`));
+  return reply({ topic: name, text }, { text: [text.trimEnd()] });
+}
+
+/** sous skill install, path and check: the sous skill in Claude Code's and Codex's skill folders. */
+export function cmdSkill(args: Parsed, ctx: Ctx): Reply<object> {
+  const action = args.positional[0];
+  const folder = resolve(ctx.machine.skillDir);
+  const check = { call: "sous skill check --json", does: "shows where each program finds the skill" };
+  if (action === "path") return reply({ path: folder }, { text: [folder] });
+  if (action === "install") {
+    const programs = installSkill(folder, ctx.env);
+    return reply(
+      { programs },
+      {
+        text: programs.map(({ program, place, already }) => `${program}: ${place} ${already ? "already links to the skill" : "now links to the skill"}`),
+        notes: ["A new session loads the skill. A session that is open now does not."],
+        next: [check],
+      },
+    );
+  }
+  if (action === "check") {
+    const programs = skillPlaces(folder, ctx.env);
+    const notes = programs.filter((p) => p.installed && !p.ours).map((p) => `${p.place} holds a sous skill that sous did not put there.`);
+    const missing = programs.some((p) => !p.installed);
+    return reply(
+      { programs },
+      {
+        text: programs.map(({ program, place, installed, ours }) => `${program}: ${place} ${ours ? "links to this skill" : installed ? "holds another skill" : "is empty"}`),
+        notes,
+        next: missing ? [{ call: "sous skill install --json", does: "links the skill for each program" }] : [],
+      },
+    );
+  }
+  throw new Usage("give install, path or check: sous skill install|path|check");
 }

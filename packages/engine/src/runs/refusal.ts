@@ -8,6 +8,7 @@ export type RefusalCode =
   | "no_such_question"
   | "no_such_step"
   | "no_such_schedule"
+  | "no_such_topic"
   | "step_not_running"
   | "started_by_people"
   | "not_approved"
@@ -22,7 +23,7 @@ export type RefusalCode =
   | "workflow_invalid";
 
 /** The codes of a thing that is not there. */
-const MISSING: ReadonlySet<RefusalCode> = new Set(["no_such_run", "no_such_workflow", "no_such_question", "no_such_step", "no_such_schedule", "step_not_running"]);
+const MISSING: ReadonlySet<RefusalCode> = new Set(["no_such_run", "no_such_workflow", "no_such_question", "no_such_step", "no_such_schedule", "no_such_topic", "step_not_running"]);
 
 export class Refusal extends Error {
   constructor(
@@ -39,7 +40,7 @@ export class Refusal extends Error {
     super(message);
   }
 
-  /** The thing asked for is not there: a run, a workflow, a question or a step. */
+  /** The thing asked for is not there: a run, a workflow, a question, a step or a guide topic. */
   get missing(): boolean {
     return MISSING.has(this.code);
   }
