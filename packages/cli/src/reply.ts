@@ -1,6 +1,7 @@
 // One reply shape for every command, and one error shape. With --json a reply prints as
-// {...data, notes, next} and an error as {"error": {code, message, change, call}}. In text a reply
-// prints its lines, then its notes and next calls, and an error goes to stderr.
+// {...data, notes, next} and an error as {"error": {code, message, change, call}}, with `next` too
+// when the error offers more than one call. In text a reply prints its lines, then its notes and
+// next calls, and an error goes to stderr.
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { homePaths, homeWriteProblem, InputProblems, Refusal } from "@sous/engine";
@@ -56,6 +57,8 @@ interface ErrorBody {
   change: string;
   call: string | null;
   forPerson?: string;
+  /** The calls an error offers, in the order to try them, when it offers more than one. */
+  next?: Next[];
 }
 
 /** The change of a usage error that names none. */
@@ -92,7 +95,7 @@ function unwritableHome(error: unknown): string | undefined {
 /** The lines under an error's first line in text, as its JSON has them. */
 const below = (body: ErrorBody): string[] => [
   `  change: ${body.change}`,
-  ...(body.call ? [`  try: ${body.call}`] : []),
+  ...(body.next ? body.next.map((next) => `  try: ${next.call}  (${next.does})`) : body.call ? [`  try: ${body.call}`] : []),
   ...(body.forPerson ? [`  for the person: ${body.forPerson}`] : []),
 ];
 
@@ -105,6 +108,7 @@ function shapeOf(error: unknown): { body: ErrorBody; exit: number; first: string
   }
   if (error instanceof Usage) {
     const body: ErrorBody = { code: error.code, message: error.message, change: error.change ?? FIX_COMMAND, call: error.call };
+    if (error.next.length > 1) body.next = error.next;
     return { body, exit: 64, first: `usage: ${error.message}` };
   }
   if (error instanceof InputProblems) {
@@ -133,6 +137,7 @@ export function errorCode(error: unknown): string {
 export function printError(error: unknown, json: boolean, write: (line: string) => void, adjust?: (call: string) => string): number {
   const { body, exit, first } = shapeOf(error);
   if (body.call && adjust) body.call = adjust(body.call);
+  if (body.next && adjust) body.next = body.next.map((next) => ({ ...next, call: adjust(next.call) }));
   // The calls an agent runs in the change, those that end in --json, keep the --project too.
   if (adjust) body.change = body.change.replace(/\bsous (?:[^,;.]|\.(?=\w))*?--json\b/g, (call) => adjust(call));
   if (json) write(JSON.stringify({ error: body }, null, 2));

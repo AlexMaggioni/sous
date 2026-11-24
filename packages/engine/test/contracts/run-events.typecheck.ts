@@ -42,7 +42,8 @@ type ExpectedEngineEventName =
   | "paused"
   | "error"
   | "stopped"
-  | "resumed";
+  | "resumed"
+  | "asked";
 type _EngineNamesExact = Assert<Equal<EngineRunEventName, ExpectedEngineEventName>>;
 
 type ExpectedPayloadMap = {
@@ -59,6 +60,7 @@ type ExpectedPayloadMap = {
   error: RunErrorPayload;
   stopped: RunStoppedPayload;
   resumed: RunResumedPayload;
+  asked: { runId: string; scope: string; callIndex: number; prompt: string; step?: string };
 };
 type _PayloadMapForward = Assert<EngineRunEventPayloadMap extends ExpectedPayloadMap ? true : false>;
 type _PayloadMapBackward = Assert<ExpectedPayloadMap extends EngineRunEventPayloadMap ? true : false>;
@@ -82,6 +84,7 @@ function exhaustiveEngineName(event: EngineRunEvent): EngineRunEventName {
     case "error":
     case "stopped":
     case "resumed":
+    case "asked":
       return event.type;
     default:
       return assertNever(event);

@@ -149,6 +149,16 @@ export interface RunErrorPayload extends RunEventOrigin {
   errorRecord: WorkflowRecordedError;
 }
 
+/** A question the run waits on while its worker lives: ask(), breakpoint() or an agent step's
+ *  question. The host tells the run once it has asked. A question the run pauses on is a paused
+ *  event with reason "checkpoint_required" instead. */
+interface RunAskedPayload extends RunEventOrigin {
+  callIndex: number;
+  prompt: string;
+  /** The label of the agent step that asks, for an agent's question. */
+  step?: string;
+}
+
 export interface RunStoppedPayload extends RunEventOrigin {}
 export interface RunResumedPayload extends RunEventOrigin {}
 
@@ -165,6 +175,7 @@ export type RunPausedEvent = { type: "paused" } & RunPausedPayload;
 export type RunErrorEvent = { type: "error" } & RunErrorPayload;
 export type RunStoppedEvent = { type: "stopped" } & RunStoppedPayload;
 export type RunResumedEvent = { type: "resumed" } & RunResumedPayload;
+type RunAskedEvent = { type: "asked" } & RunAskedPayload;
 
 /** Engine-manager events only; the SDK adds the specialized agentEvent branch. */
 export type EngineRunEvent =
@@ -180,7 +191,8 @@ export type EngineRunEvent =
   | RunPausedEvent
   | RunErrorEvent
   | RunStoppedEvent
-  | RunResumedEvent;
+  | RunResumedEvent
+  | RunAskedEvent;
 
 /** Engine events admitted by the frozen persistence policy. */
 export type PersistableEngineRunEvent = Exclude<EngineRunEvent, RunAgentHistoryEvent>;
@@ -315,7 +327,8 @@ export type PersistedRunEvent =
   | ({ type: "paused" } & PersistedRunPausedPayload)
   | ({ type: "error" } & PersistedRunErrorPayload)
   | RunStoppedEvent
-  | RunResumedEvent;
+  | RunResumedEvent
+  | RunAskedEvent;
 
 export const RUN_EVENT_LOG_VERSION = 1 as const;
 

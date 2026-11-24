@@ -9,7 +9,7 @@ import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonLog, ensureHome, homePaths, seedApprovals, traceCall, workerMain, workerProcess, type HomePaths, type Launcher, type Who } from "@sous/engine";
-import { parseArgs, str, Usage, type Parsed } from "./args.js";
+import { flagList, parseArgs, str, Usage, type Parsed } from "./args.js";
 import { atProject } from "./commands/common.js";
 import { ALIASES, COMMANDS, type CommandSpec, type Ctx, type Machine } from "./commands/index.js";
 import { errorCode, print, printError } from "./reply.js";
@@ -229,6 +229,8 @@ async function call(argv: string[], options: MainOptions, failed: (error: unknow
     const result = await spec.run(parsed, contextOf(json, options, host, who, personCommand(argv)));
     // A read decides nothing, so --by person on it is only a note.
     if (by !== undefined && !spec.flags.some((flag) => flag.name === "by")) result.notes.push(READ_BY);
+    // A flag the command does not take changes nothing, and a note names it.
+    for (const name of parsed.dropped) result.notes.push(`sous ${command} does not take --${name}, so it left it out. It takes ${flagList(spec.flags)}.`);
     // The text form prints the text, then a note: line for each note, then a next: line for each call.
     return print(result, json, (line) => host.out(line));
   } catch (error) {

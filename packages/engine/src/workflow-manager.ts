@@ -1106,13 +1106,7 @@ export class WorkflowManager extends EventEmitter {
     exec: ExecOptions = {},
     resume?: WorkflowResume,
   ): Promise<WorkflowRunResult> {
-    const {
-      maxAgents,
-      concurrency,
-      agentRetries,
-      confirm,
-      onNestedWorkflow,
-    } = exec;
+    const { maxAgents, concurrency, agentRetries, confirm, onNestedWorkflow } = exec;
     const resolvedConcurrency = concurrency ?? this.concurrency;
     const resolvedAgentRetries = agentRetries ?? this.defaultAgentRetries;
     const publish = (event: EngineRunEvent, actions?: RunEventPublicationActions) =>
@@ -1134,7 +1128,10 @@ export class WorkflowManager extends EventEmitter {
         concurrency: resolvedConcurrency,
         agentRetries: resolvedAgentRetries,
         maxAgents,
-        confirm,
+        // The host says when it has asked, and the run's log gets the question as an asked event.
+        ...(confirm ? { confirm: (text, options, context) => confirm(text, options, { ...context!, asked: () => publish(this.createRunEvent("asked", {
+          runId: managed.runId, scope: context?.scope ?? managed.runId, callIndex: context?.callIndex ?? 0, prompt: text, ...(context?.purpose?.step ? { step: context.purpose.step } : {}),
+        })) }) } : {}),
         onNestedWorkflow: (ordinal, childRunId) => {
           managed.nestedWorkflows = true;
           onNestedWorkflow?.(ordinal, childRunId);

@@ -35,6 +35,7 @@ const EVENT_TYPES = new Set([
   "error",
   "stopped",
   "resumed",
+  "asked",
 ]);
 // Retired errors stay readable in old event logs: the execution budget's, the isolation runs',
 // and the old replay check's. No run makes them now, and the error enum leaves them out.
@@ -485,6 +486,8 @@ function isPersistedEvent(value: unknown): boolean {
     case "stopped":
     case "resumed":
       return true;
+    case "asked":
+      return hasRequired(value, "callIndex", isNonNegativeSafeInteger) && hasRequired(value, "prompt", isProjectedText) && hasOptional(value, "step", isProjectedText);
     default:
       return false;
   }

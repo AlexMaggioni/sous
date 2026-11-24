@@ -1,14 +1,18 @@
 // The command line of one sous command: its words, its flags and the workflow's inputs.
 
+import type { Next } from "./reply.js";
+
 /** A wrong command line. sous prints it after "usage:" and exits with 64. `not_a_choice` is an
  *  answer that is not one of the question's choices. A usage error with a change prints it, and
- *  its call, under the message. */
+ *  its call, under the message. `next`, when the error offers more than one call, lists them in
+ *  the order to try them, and its first is `call`. */
 export class Usage extends Error {
   constructor(
     message: string,
     readonly code: "bad_argument" | "not_a_choice" = "bad_argument",
     readonly change?: string,
     readonly call: string | null = null,
+    readonly next: Next[] = [],
   ) {
     super(message);
   }
@@ -27,6 +31,9 @@ export interface Parsed {
   flags: Record<string, string | string[] | true>;
   /** A --name with no value is true. */
   inputs: Record<string, string | true>;
+  /** The flags a command that takes no inputs does not take either, by name, each once. --by is
+   *  not among them: a read given it says so in a note of its own. */
+  dropped: string[];
 }
 
 /** Every flag a sous command owns, today's and the ones planned. None of them is a workflow input. */
@@ -47,10 +54,14 @@ export function flagsNamed(names: string[]): FlagSpec[] {
  * Read one command's argv, the command name left out. The command's own flags go to `flags`. With
  * `takesInputs`, any other --name value is a workflow input, and so is everything after `--`. A
  * flag sous owns that this command does not take is refused there, so it never becomes an input,
- * unless --help asks for the help. Without `takesInputs`, other flags are read and dropped.
+ * unless --help asks for the help. Without `takesInputs`, other flags are read, their values
+ * too, and named in `dropped`, so the reply says it left them out.
  */
 export function parseArgs(argv: string[], flags: FlagSpec[], takesInputs: boolean, command?: string): Parsed {
-  const parsed: Parsed = { positional: [], flags: {}, inputs: {} };
+  const parsed: Parsed = { positional: [], flags: {}, inputs: {}, dropped: [] };
+  const drop = (name: string) => {
+    if (name !== "by" && !parsed.dropped.includes(name)) parsed.dropped.push(name);
+  };
   let refused: { name: string; value: string | true } | undefined;
   const split = argv.indexOf("--");
   const head = split === -1 ? argv : argv.slice(0, split);
@@ -85,9 +96,12 @@ export function parseArgs(argv: string[], flags: FlagSpec[], takesInputs: boolea
       } else if (!spec) {
         const value = takeValue();
         if (takesInputs) parsed.inputs[name] = value;
+        else if (own) drop(name);
       } else if (spec.takes === "none") {
+        if (sous) drop(name);
         parsed.flags[name] = true;
       } else {
+        if (sous) drop(name);
         const value = takeValue();
         if (value === true) throw new Usage(`--${name} needs ${spec.value ?? "a value"}`);
         const before = parsed.flags[name];
@@ -101,11 +115,16 @@ export function parseArgs(argv: string[], flags: FlagSpec[], takesInputs: boolea
   return parsed;
 }
 
+/** The flags a command takes, --help left out, as "--a, --b and --c", or "no flag". */
+export function flagList(flags: FlagSpec[]): string {
+  const names = flags.map((flag) => `--${flag.name}`).filter((name) => name !== "--help" && name !== "--h");
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "no flag");
+}
+
 /** The refusal of a sous flag the command does not take, with the call that gives it as an input. */
 function notTaken(command: string | undefined, flags: FlagSpec[], positional: string[], refused: { name: string; value: string | true }): Usage {
   const who = command ? `sous ${command}` : "this command";
-  const names = flags.map((flag) => `--${flag.name}`).filter((name) => name !== "--help" && name !== "--h");
-  const takes = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "no flag");
+  const takes = flagList(flags);
   const call = [who === "this command" ? "" : who, ...positional, "--", `--${refused.name}`, refused.value === true ? "" : refused.value].filter(Boolean).join(" ");
   return new Usage(`${who} does not take --${refused.name}. It takes ${takes}. For a workflow input named ${refused.name}: ${call}`);
 }

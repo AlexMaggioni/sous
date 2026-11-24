@@ -17,7 +17,7 @@ import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, reques
 import { olderSave } from "../older-save.js";
 import { readWorkflowScript } from "../workflows/script.js";
 import { resolveWorkflow } from "../workflows/dir.js";
-import { needApproval } from "./approval-check.js";
+import { needApproval, NotApproved } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 import { Refusal } from "./refusal.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
@@ -569,11 +569,12 @@ const WRONG_STATE: Record<ResumeWrongState, (runId: string) => string> = {
 };
 
 /** How a resume went: it started a worker, or the run is in a state that has nothing to resume,
- *  or the workflow changed and the caller must choose a version. Nothing changes in the last two. */
+ *  or the workflow changed and the caller must choose a version. Nothing changes in the last two.
+ *  `refused` is the refusal this caller's --latest would get, such as not_approved. */
 export type ResumeOutcome =
   | { resumed: RunRecord }
   | { wrongState: ResumeWrongState; view: RunView; message: string }
-  | { mustChoose: string[]; message: string };
+  | { mustChoose: string[]; message: string; refused?: NotApproved; broken?: string };
 
 export interface ResumeOptions {
   choice?: "latest" | "same";
@@ -620,7 +621,7 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
       `${changed.join(", ")} changed since ${record.runId} started. ` +
       `sous resume ${record.runId} --latest takes the new version, and the finished steps that match stay done. ` +
       `sous resume ${record.runId} --same goes on with the version it started with.`;
-    return { mustChoose: changed, message };
+    return { mustChoose: changed, message, ...latestRefusal(paths, record, who) };
   }
   // The edits reach a run that an agent resumes only once the person approved them.
   // The worker resumes only the text checked here, by its hash.
@@ -635,6 +636,22 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
   recordAction(paths, { act: "resume", ...who, runId: record.runId, ...budget, ...(note ? { text: note.text, ...(note.step ? { step: note.step.name } : {}) } : {}) });
   if (consent) recordAndTell(paths, { act: "let-agent-answer", ...who, runId: record.runId, workflow: record.workflow }, options.tell);
   return { resumed: record };
+}
+
+/** Why this caller's resume --latest would not go through now, checked as --latest checks it. A
+ *  person's yes is not recorded here, only at their resume, but the check may seed the approvals
+ *  file on its first use. `refused` is a missing yes, whose call shows the diff. `broken` is a new
+ *  text that does not load, or another stop: no call works on it until the file is fixed. */
+function latestRefusal(paths: HomePaths, record: RunRecord, who: Who): { refused?: NotApproved; broken?: string } {
+  try {
+    const latest = existsSync(record.file) ? resolveWorkflow(paths, record.projectDir, record.file) : undefined;
+    if (latest && who.through.kind !== "person") needApproval(paths, record.projectDir, latest, who);
+    return {};
+  } catch (error) {
+    if (error instanceof NotApproved) return { refused: error };
+    const message = error instanceof Error ? error.message : String(error);
+    return { broken: error instanceof Refusal ? message : `${record.file} does not parse: ${message}` };
+  }
 }
 
 /** What rerun --reuse says when the rule refuses it. */
@@ -697,9 +714,9 @@ export function rerunRun(paths: HomePaths, launch: Launcher, runId: string, requ
 }
 
 /** The answer calls of a question for `who`, the person when not given, as consent.ts builds
- *  them for its root run's record. */
-export function answerCallsFor(paths: HomePaths, question: Question, who?: Who): string[] {
-  return answerCalls(question, who, loadRecord(paths, question.runId));
+ *  them for its root run's record, with one per value when `values` are given. */
+export function answerCallsFor(paths: HomePaths, question: Question, who?: Who, values?: string[]): string[] {
+  return answerCalls(question, who, loadRecord(paths, question.runId), values);
 }
 
 /** An open question by its id, a unique start of it, or the run that asks only it. */

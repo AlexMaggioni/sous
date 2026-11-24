@@ -354,6 +354,10 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous discard <run> --yes` | delete the run's branches and worktrees, merged or not. Without `--yes` it lists them, deletes nothing and exits 0. A running run is refused: stop it first. |
 | `sous prune --days N` | remove finished runs older than N days |
 
+A command that takes no workflow inputs, such as `sous list`, leaves out a flag it does not take
+and says so in a note that names the flag. `sous run`, `sous rerun` and `sous check` read an
+unknown `--name value` as an input instead, and so does `sous schedule add`.
+
 A command with a wrong or missing argument exits 64. So does `sous resume` after an edit, with
 neither `--latest` nor `--same`. A run, workflow, question, step or schedule that is not there
 exits 65. So do `sous stop --step` and `sous tell` with a name the run never had, `sous resume --step` with a name in neither the run nor its text, and `sous tell` to
@@ -385,8 +389,10 @@ paused at a usage limit has `resumesAt`, the time the service resumes it.
 `sous wait --json` gives a run's status with three new words. `stopped` was `aborted`.
 `interrupted` is a run whose worker died. `not started` is a run with no state and no worker. A
 wait that times out gives `running`. An error
-prints `{"error": {code, message, change, call}}` on stdout. Without `--json`, the error goes to
-stderr: the message, then `change:`, then `try:` with the command to run instead. A reply without
+prints `{"error": {code, message, change, call}}` on stdout. An error that offers more than one
+call adds `next`, the calls as `{call, does}` in the order to try them, and `call` is the first.
+Without `--json`, the error goes to stderr: the message, then `change:`, then a `try:` line for
+each command to run instead. A reply without
 `--json` prints its text, then a `note:` line for each note, then a `next:` line for each call.
 
 `sous answer --json` used to mean the text is JSON. Now `--json` asks for the JSON reply, as on every
@@ -398,8 +404,9 @@ and `ended`. An event of a nested run also has `scope`. `after` is the seq of th
 the next page. A page holds at most 100 events and stays under 8,000 characters. `more` is true
 when more events wait, and `next` then holds the call for the next page. An `--after` past the last event gives
 no events, a note with the last seq, and the call to read the log from the start. A broken event
-log exits 66 with the code `broken_record`. A question a step asks while it runs has no `asks`
-event, only its `answered` event, so use `sous wait` to catch questions.
+log exits 66 with the code `broken_record`. A question gives an `asks` event when it is asked,
+and an `answered` event with the same `call` when the answer reaches the run. An `asks` event has
+the question in `prompt`, and an agent step's question adds `step`.
 
 `sous step <run> <label> --json` gives `runId`, `step`, the step's name in `sous log`, `scope`, `call`, `calls`, `status` and
 `kind`, which is `agent` or `exec`. `scope` is the run the step ran in: the run's id, or a nested
@@ -433,8 +440,11 @@ the notices off.
   finished ones.
 - A run keeps the workflows as they were when it started, nested ones included. After an edit,
   `sous resume` refuses and names the two ways on: `--latest` takes the new version and keeps the
-  finished steps that match, and `--same` goes on with the run's own version. The service doesn't
-  resume such a run at the limit either. It tells you once.
+  finished steps that match, and `--same` goes on with the run's own version. The error's `next`
+  lists `--latest` first, then `--same`. An agent's `--latest` needs the person's yes to the new
+  text, so until then the error offers `sous workflows show <name> --diff --json` in its place.
+  A new text that does not load offers `--same` alone, and the message says what is wrong with
+  it. The service doesn't resume such a run at the limit either. It tells you once.
 - A run saved by an older sous in a format this one no longer reads still shows in `sous list` and
   `sous show`, and does not resume. `sous resume` says so and names `sous rerun <run>`, which starts
   it again, and `sous stop <run>`, which ends it. `sous rerun --reuse` refuses it too, and the service

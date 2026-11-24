@@ -1,9 +1,9 @@
 // sous run, rerun and resume: the commands that start a worker.
 
-import { isPlace, rerunRun, resumeRun, resumeWithNote, startRun, word, type Place } from "@sous/engine";
+import { isPlace, rerunRun, resumeRun, resumeWithNote, startRun, word, type Place, type Refusal } from "@sous/engine";
 import { parseSets, str, Usage, type Parsed } from "../args.js";
-import { reply, type Reply } from "../reply.js";
-import { needRun, projectDir, startedOrWait, wholeFlag } from "./common.js";
+import { reply, type Next, type Reply } from "../reply.js";
+import { atProject, needRun, projectDir, startedOrWait, wholeFlag } from "./common.js";
 import { stateNext } from "./control.js";
 import type { Ctx } from "./index.js";
 
@@ -86,10 +86,7 @@ export async function cmdResume(args: Parsed, ctx: Ctx): Promise<Reply<object>> 
   const options = { choice, ...budgetOf(args, ctx), ...(args.flags["let-agent-answer"] ? { letAgentAnswer: { command: ctx.command } } : {}) };
   const note = text === undefined ? undefined : { text, ...(step === undefined ? {} : { step }) };
   const resumed = note ? resumeWithNote(paths, ctx.launch, run.runId, ctx.who, { ...options, note }) : { ...resumeRun(paths, ctx.launch, run.runId, ctx.who, options), notes: [] };
-  if ("mustChoose" in resumed) {
-    const change = "Add --latest to take the new version, or --same to go on with the version the run started with.";
-    throw new Usage(resumed.message, "bad_argument", change, `sous resume ${run.runId} --same${keep} --json`);
-  }
+  if ("mustChoose" in resumed) throw mustChoose(run.runId, run.record.projectDir, keep, resumed);
   if ("wrongState" in resumed) {
     const { runId, status } = resumed.view;
     const tell = "tell" in resumed && resumed.tell ? [{ call: resumed.tell, does: "gives the note to the running step" }] : [];
@@ -98,6 +95,31 @@ export async function cmdResume(args: Parsed, ctx: Ctx): Promise<Reply<object>> 
   const started = await startedOrWait(ctx, resumed.resumed, "resume", args);
   started.notes.unshift(...resumed.notes);
   return started;
+}
+
+/**
+ * The usage error of a resume whose workflow changed and that chose no version. Its calls come in
+ * the order to try them, and none is refused in turn. --latest comes first, since after an edit
+ * the new version is what the caller wants. When this caller's --latest would be refused, such as
+ * an agent's before the person approved the new text, the refusal's own call takes its place, so
+ * the caller shows the person the diff. --same comes last.
+ */
+function mustChoose(runId: string, project: string, keep: string, resumed: { message: string; refused?: Refusal; broken?: string }): Usage {
+  const latest: Next = { call: `sous resume ${runId} --latest${keep} --json`, does: "take the new version, and the finished steps that match stay done" };
+  const same: Next = { call: `sous resume ${runId} --same${keep} --json`, does: "go on with the version the run started with" };
+  const { refused, broken } = resumed;
+  // A new text that does not load stops --latest, and sous check on it, until the file is fixed.
+  if (broken) {
+    const change = `Fix the workflow file, then ${latest.call} takes the new version. Or ${same.call} goes on with the version the run started with.`;
+    return new Usage(`${resumed.message} ${broken}`, "bad_argument", change, same.call, [same]);
+  }
+  if (!refused) {
+    const change = "Add --latest to take the new version, or --same to go on with the version the run started with.";
+    return new Usage(resumed.message, "bad_argument", change, latest.call, [latest, same]);
+  }
+  const diff: Next = { call: atProject(refused.call!, project), does: "what changed since the person's yes, to show them before they approve it" };
+  const change = `${refused.change} Then ${latest.call} takes the new version. Or ${same.call} goes on with the version the run started with.`;
+  return new Usage(`${resumed.message} ${refused.message}`, "bad_argument", change, diff.call, [diff, same]);
 }
 
 export async function cmdRerun(args: Parsed, ctx: Ctx): Promise<Reply<object>> {

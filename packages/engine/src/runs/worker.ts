@@ -287,6 +287,7 @@ async function runOnAccounts(
       return Promise.resolve(value);
     }
     const asked = () => {
+      context?.asked?.();
       log(`${stamp()} question   ${id}: ${oneLine(prompt, 400)}\n           answer with: ${hint(question, "log")}`);
       notify(`${record.workflow} asks`, oneLine(prompt, 200), config.notify);
     };

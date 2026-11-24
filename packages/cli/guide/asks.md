@@ -35,7 +35,8 @@ sous inbox --json
 ## Kinds
 
 - `confirm` takes yes or no.
-- `select` takes one of `choices`. Another word exits 64 with `not_a_choice`.
+- `select` takes one of `choices`. Another word exits 64 with `not_a_choice`, and the error's
+  `next` holds one call per choice, each ready to run.
 - `input` takes any text. When the person gives JSON, such as `{"a": 1}`, add `--value-json` so
   the run gets an object.
 

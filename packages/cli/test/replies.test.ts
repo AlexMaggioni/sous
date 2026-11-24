@@ -274,14 +274,14 @@ describe("errors through sous", () => {
     assert.ok(lines.includes("  try: sous status --json"), shown.stderr);
   });
 
-  it("sous answer <id> green --json on a red or blue question exits 64 with not_a_choice and the call listing red|blue", async () => {
+  it("sous answer <id> green --json on a red or blue question exits 64 with not_a_choice and a call per choice", async () => {
     const { paths } = testHome();
     const question = colorQuestion(paths);
     const answered = await call(paths, ["answer", question.id, "green", "--json"]);
     assert.equal(answered.code, 64, answered.stdout + answered.stderr);
     const error = errorOf(answered);
     assert.equal(error.code, "not_a_choice");
-    assert.match(error.call ?? "", new RegExp(`^sous answer ${question.id} <red\\|blue> --json$`));
+    assert.match(error.call ?? "", new RegExp(`^sous answer ${question.id} red --json$`));
     assert.equal(existsSync(join(paths.inbox, `${question.id}.answer.json`)), false, "no answer is written");
   });
 
@@ -293,7 +293,8 @@ describe("errors through sous", () => {
     assert.equal(answered.stdout, "");
     const lines = answered.stderr.trimEnd().split("\n");
     assert.ok(lines.some((line) => line.startsWith("  change: ")), answered.stderr);
-    assert.ok(lines.some((line) => line === `  try: sous answer ${question.id} <red|blue> --json`), answered.stderr);
+    assert.ok(lines.some((line) => line === `  try: sous answer ${question.id} red --json  (answer red)`), answered.stderr);
+    assert.ok(lines.some((line) => line === `  try: sous answer ${question.id} blue --json  (answer blue)`), answered.stderr);
   });
 
   it("sous answer on a question that is gone exits 65 with no_such_question", async () => {

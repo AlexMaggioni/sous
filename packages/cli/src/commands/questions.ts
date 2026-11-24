@@ -41,7 +41,11 @@ export function cmdAnswer(args: Parsed, ctx: Ctx, via: Exclude<Typed["via"], "pr
   const answer = answerQuestion(paths, question, { via, text, valueJson }, ctx.who);
   if ("usage" in answer) {
     if (!answer.choices) throw new Usage(answer.usage);
-    throw new Usage(answer.usage, "not_a_choice", "Answer with one of the choices.", answerCallsFor(paths, question, ctx.who)[0] ?? null);
+    // One call per choice, in the question's order, so each runs as it is.
+    const { choices } = answer;
+    const calls = answerCallsFor(paths, question, ctx.who, choices);
+    const next = calls.map((call, n) => ({ call, does: `answer ${choices[n]}` }));
+    throw new Usage(answer.usage, "not_a_choice", "Answer with one of the choices.", calls[0] ?? null, next);
   }
   if ("stopped" in answer) return stopReply(runId, answer.stopped, { question: id, runId, answered: true, outcome: answer.stopped.outcome });
   const notes: string[] = [];

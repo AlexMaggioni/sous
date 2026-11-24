@@ -118,12 +118,13 @@ export const COMMANDS: Record<string, { run: Command; flags: FlagSpec[]; inputs?
 
 // args.ts
 export interface FlagSpec { name: string; takes: "none" | "one" | "many" }
-export interface Parsed { positional: string[]; flags: Record<string, string | string[] | true>; inputs: Record<string, string> }
+export interface Parsed { positional: string[]; flags: Record<string, string | string[] | true>; inputs: Record<string, string>; dropped: string[] }
 export function parseArgs(argv: string[], flags: FlagSpec[], takesInputs: boolean): Parsed;
 export const RESERVED: readonly string[];
 ```
 
 - A command that takes workflow inputs (run, rerun, check) puts an unknown `--name value` into `inputs`. Its own flags never become inputs. `RESERVED` lists every flag those commands own, today's and the new `--by`, `--budget`, `--timeout`, `--note` and `--let-agent-answer`.
+- A command that takes no inputs leaves out a flag it does not take, with its value, and names it in `dropped`. The reply adds a note for each: `sous list does not take --bogus, so it left it out. It takes --all and --json.` `--by` on a read keeps its own note instead.
 - `sous check` adds a note when a workflow declares an input with a reserved name, since the command line can't give it.
 - A command never prompts when `machine.isTerminal` is false. That replaces the check at `cli.ts:201`.
 - `cli.ts` keeps `spawn`, the `fs` calls, `cliFile` and the daemon start, behind `Machine`. The command files import no machine module.
@@ -180,7 +181,7 @@ export class Refusal extends Error {
 { "error": { "code": "question_for_people", "message": "...", "change": "...", "call": "sous answer mwu68y8s-kaox8f--0 <red|blue> --by person" } }
 ```
 
-`forPerson` appears only on `started_by_people`. In text, stderr gets the message, then `  change: ...`, then `  try: <call>` when there is a call.
+`forPerson` appears only on `started_by_people`. An error that offers more than one call adds `next`, a list of `{call, does}` in the order to try them, and `call` is its first. In text, stderr gets the message, then `  change: ...`, then `  try: <call>` when there is a call, or a `  try: <call>  (<does>)` line for each call of `next`.
 
 | Exit | Meaning |
 | --- | --- |
@@ -190,7 +191,7 @@ export class Refusal extends Error {
 | 3 | The run was stopped, as today. |
 | 4 | The run asks a question, as today. |
 | 5 | New: `wait --timeout` ran out. |
-| 64 | Usage: `bad_argument`, `not_a_choice`. |
+| 64 | Usage: `bad_argument`, `not_a_choice`. A `not_a_choice` error's `next` has one call per choice, or yes and no for a confirm. |
 | 65 | Not found: a `Refusal` whose `missing` is true. |
 | 66 | Refused: any other `Refusal`. |
 
@@ -214,7 +215,7 @@ export class Refusal extends Error {
 | `cannot_resume` | an older sous saved the run | `sous rerun <run> --json` |
 | `not_ours` | a skill or hook place holds something sous didn't put there, a broken link or a link to another folder included | the same install, such as `sous skill install --json`, with `change` naming each place to move aside |
 
-Requests in the wrong state change nothing and exit 0 with a note. That covers pause and stop of an ended run, and the `RESUME_REFUSALS` cases `running`, `never-started`, `completed` and `stopped`. Their next is `wait` for a running run and `rerun` for the others. A resume of a run whose workflow changed, with neither `--latest` nor `--same`, fails with `bad_argument`. Its call is `--same`, and its change names both.
+Requests in the wrong state change nothing and exit 0 with a note. That covers pause and stop of an ended run, and the `RESUME_REFUSALS` cases `running`, `never-started`, `completed` and `stopped`. Their next is `wait` for a running run and `rerun` for the others. A resume of a run whose workflow changed, with neither `--latest` nor `--same`, fails with `bad_argument`. Its `next` lists `--latest`, then `--same`, and its call is `--latest`. When the caller's `--latest` would be refused, such as an agent's before the person approved the new text, that refusal's call takes `--latest`'s place, `sous workflows show <name> --diff --json` for `not_approved`, and the change names the approve call and `--latest` for after the yes. A new text that does not load, which `--latest` and `sous check` both refuse, gets `--same` alone, and the message says why. No call it offers is refused in turn.
 
 Today `answer --json` means the value is JSON. With `--json` on every command, that flag becomes `--value-json`. A value that starts with `{` or `[` given without it gets a note.
 
@@ -591,7 +592,7 @@ Each piece is one implementer session: a few hundred lines plus tests, `pnpm tes
 
 **Tests first.** `cli/test/replies.test.ts`:
 - `sous show nosuch --json` exits 65 with `error.code` `no_such_run` and `call` `sous status --json`.
-- `sous answer <id> green --json` on a red or blue question exits 64 with `not_a_choice` and the call listing `red|blue`.
+- `sous answer <id> green --json` on a red or blue question exits 64 with `not_a_choice`. Its `next` holds `sous answer <id> red --json`, then `sous answer <id> blue --json`, and its call is the first. Each runs as it is, and an agent's call keeps `--by person` when the refused answer needed it.
 - `sous list --json` has `notes` and `next` arrays.
 - The same error without `--json` prints `change:` and `try:` lines on stderr.
 - A reply of 500 runs stays under 8,000 characters and has a note naming `--all`.

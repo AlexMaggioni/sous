@@ -8,7 +8,7 @@ import { parseWorkflowScript } from "../workflows/script.js";
 import type { Through, Who } from "./actions.js";
 import type { Question } from "./inbox.js";
 import type { RunRecord } from "./records.js";
-import { Refusal } from "./refusal.js";
+import { Refusal, word } from "./refusal.js";
 
 /**
  * Refuse a start of a people workflow through an agent or a step of a run, with started_by_people,
@@ -74,14 +74,16 @@ export function answerCommand(question: Pick<Question, "id">, verb: "answer" | "
 
 /**
  * The --json calls that answer a question, for the caller `who`. A breakpoint has two: approve
- * and send back. An agent gets --by person on a question it may not answer alone, and a step of a
- * run gets none, since only the person answers it.
+ * and send back. With `values`, a question that is not a breakpoint has one call per value, each
+ * one that runs as it is. An agent gets --by person on a question it may not answer alone, and a
+ * step of a run gets none, since only the person answers it.
  */
-export function answerCalls(question: Pick<Question, "id" | "kind" | "choices" | "breakpoint" | "answeredBy">, who?: Who, record?: Pick<RunRecord, "letAgentAnswer">): string[] {
+export function answerCalls(question: Pick<Question, "id" | "kind" | "choices" | "breakpoint" | "answeredBy">, who?: Who, record?: Pick<RunRecord, "letAgentAnswer">, values?: string[]): string[] {
   const mode = callMode(question, who, record);
   if (mode === "none") return [];
   const by = mode === "by person";
   if (question.breakpoint) return [answerCommand(question, "approve", undefined, true, by), answerCommand(question, "send-back", '"<note>"', true, by)];
+  if (values) return values.map((value) => answerCommand(question, "answer", word(value), true, by));
   if (question.kind === "confirm") return [answerCommand(question, "answer", "<yes|no>", true, by)];
   if (question.kind === "select") return [answerCommand(question, "answer", `<${(question.choices ?? []).join("|")}>`, true, by)];
   return [answerCommand(question, "answer", '"<answer>"', true, by)];
