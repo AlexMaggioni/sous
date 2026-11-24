@@ -194,14 +194,16 @@ describe("what a reply writes", () => {
       64,
       (id) => `${JSON.stringify({ error: { code: "not_a_choice", message: "answer one of: Red, Blue", change: "Answer with one of the choices.", call: `sous answer ${id} <Red|Blue>` } }, null, 2)}\n`,
     ],
-    ["select", ["answer", "--json", '"Blue"'], 0, not, "Blue"],
+    // --value-json reads the words as JSON. --json alone asks for a JSON reply, as on every command.
+    ["select", ["answer", "--value-json", '"Blue"'], 0, not, "Blue"],
+    ["select", ["answer", "--value-json", '"green"'], 64, (id) => `usage: answer one of: Red, Blue\n  change: Answer with one of the choices.\n  try: sous answer ${id} <Red|Blue>\n`],
     ["select", ["answer"], 64, (id) => `usage: sous answer ${id} "your answer"\n`],
     ["select", ["approve"], 0, not, "approve"],
     ["input", ["answer"], 64, (id) => `usage: sous answer ${id} "your answer"\n`],
     ["input", ["answer", "some", "text"], 0, not, "some text"],
     ["input", ["answer", "  padded "], 0, not, "  padded "],
-    ["input", ["answer", "--json", '{"a":1}'], 0, not, { a: 1 }],
-    ["input", ["answer", "--json", "not json"], 0, not, "not json"],
+    ["input", ["answer", "--value-json", '{"a":1}'], 0, not, { a: 1 }],
+    ["input", ["answer", "--value-json", "not json"], 0, not, "not json"],
     ["input", ["approve"], 0, not, "approve"],
     ["breakpoint", ["answer"], 64, (id) => `usage: sous answer ${id} "your answer"\n`],
     ["breakpoint", ["answer", " "], 0, not, "approve"],
@@ -210,7 +212,7 @@ describe("what a reply writes", () => {
     ["breakpoint", ["answer", "send", "back:", "shorter"], 0, not, { decision: "send back", note: "shorter" }],
     ["breakpoint", ["answer", "make", "it", "shorter"], 0, not, { decision: "send back", note: "make it shorter" }],
     ["breakpoint", ["answer", "send-back"], 0, not, { decision: "send back", note: "" }],
-    ["breakpoint", ["answer", "--json", '"stop"'], 0, not, { decision: "send back", note: '"stop"' }],
+    ["breakpoint", ["answer", "--value-json", '"stop"'], 0, not, { decision: "send back", note: '"stop"' }],
     ["breakpoint", ["approve"], 0, not, "approve"],
     ["breakpoint", ["send-back"], 64, (id) => `usage: sous send-back ${id} "what to change"\n`],
     ["breakpoint", ["send-back", "shorter", "please"], 0, not, { decision: "send back", note: "shorter please" }],
@@ -332,5 +334,85 @@ return await breakpoint('Check the plan', { show: 'the plan' })`;
     const [question] = runQuestions(paths, record.runId);
     assert.deepEqual(await sous(paths, ["answer", question!.id, "stop"]), { code: 0, out: `stopped ${record.runId}\n` });
     await stopped(paths, record.runId);
+  });
+});
+
+describe("answer, approve and send-back replies", () => {
+  /** A question of this kind for the run r1, which has no worker, waiting in the inbox. */
+  function plant(paths: HomePaths, n: number, extra: Partial<RunQuestion> = {}): RunQuestion {
+    const question: RunQuestion = { id: `r1--${n}`, runId: "r1", scope: "r1", callIndex: n, hash: `h${n}`, workflow: "w", prompt: "?", kind: "input", breakpoint: false, askedAt: "2026-11-24T10:00:00.000Z", ...extra };
+    writeFileSync(join(paths.inbox, `${question.id}.json`), JSON.stringify(question, null, 2));
+    return question;
+  }
+  const BREAKPOINT: Partial<RunQuestion> = { breakpoint: true, prompt: "Breakpoint: Check\n\nReply approve, stop, or send back with a note." };
+
+  /** The value the answer file holds, or undefined when there is none. */
+  const answered = (paths: HomePaths, id: string): unknown => {
+    const file = join(paths.inbox, `${id}.answer.json`);
+    return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as { value: unknown }).value : undefined;
+  };
+
+  /** The JSON reply sous printed, with its notes and next checked. */
+  function replyOf(out: string): { notes: string[]; next: Array<{ call: string; does: string }> } & Record<string, unknown> {
+    let parsed: unknown;
+    assert.doesNotThrow(() => (parsed = JSON.parse(out)), `stdout is not one JSON object:\n${out}`);
+    const reply = parsed as Record<string, unknown>;
+    assert.ok(reply && typeof reply === "object" && !Array.isArray(reply), out);
+    assert.ok(Array.isArray(reply.notes), `notes is an array: ${out}`);
+    assert.ok(Array.isArray(reply.next), `next is an array: ${out}`);
+    for (const next of reply.next as Array<Record<string, unknown>>) assert.ok(typeof next.call === "string" && typeof next.does === "string", JSON.stringify(next));
+    assert.equal("error" in reply, false, out);
+    return reply as ReturnType<typeof replyOf>;
+  }
+
+  it("sous answer <id> '{\"a\":1}' --value-json passes an object", async () => {
+    const { paths } = testHome();
+    const question = plant(paths, 0);
+    const done = await sous(paths, ["answer", question.id, '{"a":1}', "--value-json"]);
+    assert.equal(done.code, 0, done.out);
+    assert.deepEqual(answered(paths, question.id), { a: 1 });
+  });
+
+  it("sous answer <id> '{\"a\":1}' on an input question passes the text, with a note naming --value-json", async () => {
+    const { paths } = testHome();
+    const object = plant(paths, 0);
+    const asJson = await sous(paths, ["answer", object.id, '{"a":1}', "--json"]);
+    assert.equal(asJson.code, 0, asJson.out);
+    assert.equal(answered(paths, object.id), '{"a":1}', "the text is the answer, not an object");
+    assert.ok(replyOf(asJson.out).notes.some((note) => note.includes("--value-json")), `no note names --value-json: ${asJson.out}`);
+
+    // A list counts too, and the text form prints the note as well.
+    const list = plant(paths, 1);
+    const asText = await sous(paths, ["answer", list.id, "[1,2]"]);
+    assert.equal(asText.code, 0, asText.out);
+    assert.equal(answered(paths, list.id), "[1,2]");
+    assert.match(asText.out, /^note: .*--value-json/m);
+
+    // Words that do not look like JSON get no such note.
+    const words = plant(paths, 2);
+    const plain = await sous(paths, ["answer", words.id, "some text", "--json"]);
+    assert.equal(plain.code, 0, plain.out);
+    assert.equal(answered(paths, words.id), "some text");
+    assert.equal(replyOf(plain.out).notes.some((note) => note.includes("--value-json")), false, plain.out);
+  });
+
+  it("answer, approve and send-back with --json reply with notes and next, and next resumes a run that does not run", async () => {
+    const { paths } = testHome();
+    const cases: Array<[string[], Partial<RunQuestion>, unknown]> = [
+      [["answer", "blue"], {}, "blue"],
+      [["approve"], BREAKPOINT, "approve"],
+      [["send-back", "shorter"], BREAKPOINT, { decision: "send back", note: "shorter" }],
+    ];
+    for (const [n, [[command, ...words], kind, value]] of cases.entries()) {
+      const question = plant(paths, n, kind);
+      const done = await sous(paths, [command!, question.id, ...words, "--json"]);
+      assert.equal(done.code, 0, `${command}: ${done.out}`);
+      const reply = replyOf(done.out);
+      assert.ok(
+        reply.next.some((next) => next.call === "sous resume r1 --json"),
+        `${command}: the run does not run, so next resumes it: ${done.out}`,
+      );
+      assert.deepEqual(answered(paths, question.id), value, command);
+    }
   });
 });
