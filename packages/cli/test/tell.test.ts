@@ -430,7 +430,7 @@ describe("piece 12: sous tell", () => {
       assert.equal(second.calls.length, 1, JSON.stringify(second.calls));
       // The second call, as sous step --call 2 shows it.
       const prompt = (await stepOf(paths, runId, "impl", 2))?.prompt ?? "";
-      const session = place.lines().find((line) => line.prompt !== undefined && !line.steer && prompt.includes(line.prompt))?.sessionId;
+      const session = place.lines().find((line) => line.prompt !== undefined && !line.steer && line.prompt.includes(prompt))?.sessionId;
       assert.ok(session, `the fakes logged the second call's prompt: ${prompt}`);
       assert.deepEqual(
         steered(place, only).map((entry) => [entry.sessionId, entry.state]),
