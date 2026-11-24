@@ -69,7 +69,7 @@ when the user asked.
 sous starts a new or changed workflow only after the user approves its text. Show them the
 diff since their last yes, `sous workflows show <name> --diff --json`. When they agree, run
 `sous workflows approve <name> --by person --json`, or they type `sous workflows approve <name>`.
-Never approve without their yes.
+A yes to the whole text you saved unchanged counts. Never approve without their yes.
 
 ## Errors
 
