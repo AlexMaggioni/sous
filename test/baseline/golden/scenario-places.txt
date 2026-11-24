@@ -245,6 +245,7 @@ exit 0
     "through": {
       "kind": "person"
     },
+    "workflowHash": "c0b83caff57113a83fb01000f2ce22f646d6936570285fbfb1eafa6dae9670c0",
     "accounts": {
       "claude": {
         "name": "default",
@@ -437,6 +438,7 @@ exit 0
     "through": {
       "kind": "person"
     },
+    "workflowHash": "c0b83caff57113a83fb01000f2ce22f646d6936570285fbfb1eafa6dae9670c0",
     "accounts": {
       "claude": {
         "name": "default",
@@ -648,6 +650,7 @@ exit 0
     "through": {
       "kind": "person"
     },
+    "workflowHash": "c0b83caff57113a83fb01000f2ce22f646d6936570285fbfb1eafa6dae9670c0",
     "accounts": {
       "claude": {
         "name": "default",

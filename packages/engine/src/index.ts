@@ -17,6 +17,8 @@ export { hint, questionView, type Reply } from "./runs/inbox.js";
 export { answerCalls, mayStart } from "./runs/consent.js";
 export { Refusal } from "./runs/refusal.js";
 export { recordAction, traceCall, type Through, type Who } from "./runs/actions.js";
+export { approveWorkflows } from "./runs/approval-check.js";
+export { seedApprovals } from "./runs/approvals.js";
 export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
 export { InputProblems, workerProcess, type Launcher } from "./runs/launch.js";
 export { daemonLog, logFile } from "./runs/store.js";
@@ -33,7 +35,6 @@ export {
   pruneRuns,
   readLog,
   readRun,
-  removeAccount,
   rerunRun,
   resumeRun,
   runDetail,
@@ -43,14 +44,13 @@ export {
   startRun,
   stopRun,
   stopStep,
-  useAccount,
   waitForRun,
-  waitingRuns,
   type Failure,
   type RunDetail,
   type RunQuestion,
   type RunView,
 } from "./runs/run.js";
+export { removeAccount, useAccount, waitingRuns } from "./runs/run-accounts.js";
 export { logAfter, stepView, type StepView } from "./runs/step-view.js";
 export { homeStatus, sinceWindow, statusLine, type HomeStatus } from "./runs/status.js";
 export { isPlace } from "./places/places.js";

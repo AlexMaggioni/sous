@@ -57,12 +57,20 @@ export interface RunRecord {
   /** The person let agents answer this run's people questions, and its nested runs', never its
    *  breakpoints: who said so, through what, and when. Set by --let-agent-answer. */
   letAgentAnswer?: { by: By; through: Through; at: string };
+  /** The sha256 of the workflow's text that sous checked when it wrote the record. The worker
+   *  starts only that text. Older records have none. */
+  workflowHash?: string;
+  /** Why the worker did not run the workflow: its file changed after sous checked it. A worker that
+   *  runs the run clears it. */
+  refused?: string;
   /** Workflows this run started inside itself, by child run id. */
   nested?: Record<string, NestedRun>;
   /** Worktrees of steps with `isolation: "worktree"` that exist now. A step removes its own when it ends. */
   stepWorktrees?: Array<{ dir: string; branch: string }>;
   /** Set by `sous resume --latest`: the next resume takes the edited workflows. */
   resumeLatest?: boolean;
+  /** The sha256 of the text sous checked at `sous resume --latest`. The worker resumes only that text. */
+  latestHash?: string;
   /** The installed Claude Code and Codex the run's steps used, by harness, from its last start. */
   programs?: Record<string, { path: string; version?: string }>;
   /** The account each program's steps use, kept across pauses and resumes (sous's accounts.ts). */

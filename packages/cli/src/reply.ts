@@ -129,10 +129,12 @@ export function errorCode(error: unknown): string {
 
 /** Print an error, as JSON or as text, and return its exit code: 64 for a usage error, 65 for a
  *  missing thing, 66 for any other refusal, 1 when sous itself failed or can't write to its home. `adjust` changes the call,
- *  such as to keep the command's --project. */
+ *  and the calls in the change, such as to keep the command's --project. */
 export function printError(error: unknown, json: boolean, write: (line: string) => void, adjust?: (call: string) => string): number {
   const { body, exit, first } = shapeOf(error);
   if (body.call && adjust) body.call = adjust(body.call);
+  // The calls an agent runs in the change, those that end in --json, keep the --project too.
+  if (adjust) body.change = body.change.replace(/\bsous (?:[^,;.]|\.(?=\w))*?--json\b/g, (call) => adjust(call));
   if (json) write(JSON.stringify({ error: body }, null, 2));
   else for (const line of body.code === "internal" ? [first] : [first, ...below(body)]) write(line);
   return exit;

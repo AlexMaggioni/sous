@@ -137,6 +137,16 @@ export function projectWorkflows(paths: HomePaths, projectDir: string): Workflow
   return openWorkflowDir(workflowDirs(projectDir, paths));
 }
 
+/** A listed workflow's text, read from its file, or undefined when the file is gone. It reads a
+ *  file whose name is no plain workflow name too, which resolve() does not find. */
+export function workflowText(file: string): string | undefined {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
 /** A saved workflow, read once: its meta as written, the meta checked, and the names it uses. */
 export interface ResolvedWorkflow {
   name: string;

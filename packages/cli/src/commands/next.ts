@@ -12,6 +12,9 @@ interface RunAt {
   failure?: Failure;
   /** When the service resumes a run paused at a usage limit. */
   resumesAt?: string;
+  workflow?: string;
+  /** A dry run never resumes: the check runs it again. */
+  dryRun?: true;
 }
 
 /** The call that waits for a run, in JSON, with the --timeout of the wait before it. */
@@ -62,7 +65,12 @@ export function nextCalls(run: RunAt, from: "wait" | "show", who: Who, timeout?:
   const id = run.runId;
   const wait = waitNext(id, "waits until the run ends, pauses or asks", timeout);
   const show = { call: `sous show ${id} --json`, does: "shows the run and its steps" };
-  const resume = resumeNext(id, "resumes the run where it stopped");
+  // A dry run runs again from sous check, and a run whose worker refused its text starts again.
+  const resume = run.dryRun
+    ? { call: `sous check ${word(run.workflow ?? "")} --dry-run --json`, does: "runs the dry run again" }
+    : run.status === "not started"
+      ? rerunNext(id, "starts the run again, which checks the workflow's text again")
+      : resumeNext(id, "resumes the run where it stopped");
   const calls: Next[] = [];
   const notes: string[] = [];
   if (run.status === "asks") {

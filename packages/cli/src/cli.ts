@@ -8,7 +8,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { daemonLog, ensureHome, homePaths, traceCall, workerMain, workerProcess, type HomePaths, type Launcher, type Who } from "@sous/engine";
+import { daemonLog, ensureHome, homePaths, seedApprovals, traceCall, workerMain, workerProcess, type HomePaths, type Launcher, type Who } from "@sous/engine";
 import { parseArgs, str, Usage, type Parsed } from "./args.js";
 import { ALIASES, COMMANDS, type CommandSpec, type Ctx, type Machine } from "./commands/index.js";
 import { errorCode, print, printError } from "./reply.js";
@@ -75,14 +75,21 @@ function machine(): Machine {
   };
 }
 
-/** The context of one command. The home and the launcher are made when the command first uses them. */
+/** The context of one command. The home and the launcher are made when the command first uses them.
+ *  The first use of the home also takes the workflows sous finds as approved, once per home. */
 function contextOf(json: boolean, options: MainOptions, machine: Machine, who: Who, command: string): Ctx {
   let paths: HomePaths | undefined;
   return {
     who,
     command,
     get paths() {
-      return (paths ??= ensureHome(homePaths()));
+      if (paths) return paths;
+      paths = ensureHome(homePaths());
+      // A broken approvals.json does not stop a read. The commands that need it refuse.
+      try {
+        seedApprovals(paths);
+      } catch {}
+      return paths;
     },
     env: options.env ?? process.env,
     json,
@@ -131,6 +138,8 @@ sous runs saved workflows in the background.
   sous rerun <run> [--name value ...]   start the same workflow again with the same inputs
         --reuse                         keep the results of the steps you did not edit, in the same place
   sous workflows                        saved workflows and their inputs
+  sous workflows approve <name> | --all the person's yes to a workflow's text as it is now
+        --by person                     the person decided; an agent passes on their word
   sous check <workflow> [--name value]  check a workflow without running it
         --dry-run                       then run it once with stand-in agents; code steps run, in a copy
         --answers <file.json>           what the stand-ins answer, by step label: {"reviewer *": {...}}

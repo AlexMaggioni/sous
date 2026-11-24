@@ -118,7 +118,7 @@ export function addAccount(paths: HomePaths, spec: string, token: string): Accou
   return { program, name };
 }
 
-/** Forget a login. Refused while one of the unfinished runs given uses it. run.ts's removeAccount
+/** Forget a login. Refused while one of the unfinished runs given uses it. run-accounts.ts's removeAccount
  *  finds those runs. */
 export function deleteAccount(paths: HomePaths, spec: string, unfinished: readonly RunRecord[]): AccountName {
   const { program, name } = parseAccountName(spec);
@@ -138,7 +138,7 @@ export function deleteAccount(paths: HomePaths, spec: string, unfinished: readon
   return { program, name };
 }
 
-/** Make the account sous's current one for its program. run.ts's useAccount then moves the runs
+/** Make the account sous's current one for its program. run-accounts.ts's useAccount then moves the runs
  *  waiting at the limit. */
 export function setCurrentAccount(paths: HomePaths, spec: string): AccountName {
   const { program, name } = parseAccountName(spec);

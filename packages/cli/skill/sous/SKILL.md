@@ -63,6 +63,11 @@ yes. Save in the project's `.sous/workflows/`. Run `sous check <name> --dry-run 
 it passes. A dry run spends no tokens. Add a schedule, save into `~/.sous/workflows/`, or change
 who may start a workflow only when the user asked for that.
 
+sous starts a new or changed workflow from you, a run or a schedule only after the user
+approves its text. Tell them its name, what changed, and that it waits for their yes. When they
+agree, run `sous workflows approve <name> --by person --json`, or they type
+`sous workflows approve <name>` themselves. Never approve without their yes.
+
 ## Errors
 
 A refusal has `error.change`, what to change, and `error.call`, the call to make instead.

@@ -36,14 +36,15 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | `no_such_step` | Find the step's name in `sous show <run> --json`. |
 | `step_not_running` | The step is not running now. Read `sous show <run> --json`. |
 | `run_is_running` | Stop the run first, if the person wants that. |
-| `cannot_resume` | An older sous saved the run. Rerun it, after asking. |
+| `cannot_resume` | An older sous saved the run, or it is a dry run. Make `call`, after asking. |
 | `not_ours` | A skill place holds something sous did not put there, or Claude Code's `settings.json` does not parse, has a shape sous can't edit, or is a broken link. Tell the person. |
 | `home_not_writable` | sous can't write to its home. Under Codex the sandbox blocks it. Tell the person what `change` says. |
 | `started_by_people` | Only a person starts this workflow. Give them `forPerson` to type in their own terminal. |
+| `not_approved` | The workflow is new or changed since the person approved it. `call` shows the change. Show it to the person and ask. Once they agree, run `sous workflows approve <name> --by person --json`. |
 | `no_person_here` | A step of a run gave `--by person`. Leave it out. A step answers only a question open to anyone. The person answers the rest, and the run waits for them. |
 | `question_for_people` | The question is the person's. Show it to them, then make `call` with their answer. A step of a run gets no `call`: the run waits for the person. |
-| `needs_person` | Only the person decides this. Ask them, then make `call`, which adds `--by person`. |
-| `broken_record` | A file sous keeps, such as a run's event log, does not parse. Tell the person. |
+| `needs_person` | Only the person decides this, such as approving a workflow. Ask them, then make `call`, which adds `--by person`. |
+| `broken_record` | A file sous keeps, such as a run's event log or `approvals.json`, does not parse. Tell the person. Do not fix, move or delete it yourself. |
 
 ## Requests that change nothing
 

@@ -143,6 +143,7 @@ exit 0
     "through": {
       "kind": "person"
     },
+    "workflowHash": "42d77b98135254b8e7f12de528b61bbd592fe92099e8fcc832e7e1a01fe982a3",
     "accounts": {
       "claude": {
         "name": "default",

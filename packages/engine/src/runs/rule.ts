@@ -35,10 +35,13 @@ export interface RunFacts {
   /** Older code saved the state in a shape today's code no longer reads. Such a run shows, and
    *  never resumes or seeds a new run. */
   older?: boolean;
+  /** The run is a dry run (sous check --dry-run). It ran no step for real, so it never resumes
+   *  as a real run: the check runs it again. */
+  dryRun?: boolean;
 }
 
 /** Why resume or reuse says no. */
-export type ResumeRefusal = "running" | "never-started" | "completed" | "stopped" | "older";
+export type ResumeRefusal = "running" | "never-started" | "completed" | "stopped" | "older" | "dry-run";
 export type ReuseRefusal = "running" | "paused" | "older";
 
 export interface Verdict {
@@ -132,6 +135,14 @@ export function judge(facts: RunFacts): Verdict {
     reuse = no("older");
     if (saved?.resumeAt) {
       const { resumeAt: _resumeAt, ...rest } = saved;
+      pause = rest;
+    }
+  }
+  // A dry run that may go on says it cannot, and the service never resumes it.
+  if (facts.dryRun && resume.ok) {
+    resume = no("dry-run");
+    if (pause?.resumeAt) {
+      const { resumeAt: _resumeAt, ...rest } = pause;
       pause = rest;
     }
   }
