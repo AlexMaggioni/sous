@@ -219,7 +219,7 @@ export function createSousGlobals(deps: SousGlobalDeps) {
   };
 
   /**
-   * agent() with two orchestrator additions: per-run step changes by label, and `ask: true`,
+   * agent() with two sous additions: per-run step changes by label, and `ask: true`,
    * where the agent can stop with a question, the user answers, and the same session goes on.
    */
   const agent = async (prompt: string, options: Record<string, unknown> = {}): Promise<unknown> => {

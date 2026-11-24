@@ -358,7 +358,7 @@ const AGENT_OPTION_KEYS = [
   "mcpServers",
   "images",
   "keepSession",
-  // orchestrator additions
+  // sous additions
   "timeout",
   "effort",
   "skills",
@@ -1891,7 +1891,7 @@ async function runLevel<T>(
     }) as F;
 
   // Code steps, questions, breakpoints and choose(), built on agent() and checkpoint().
-  const orchestrator = createSousGlobals({
+  const sous = createSousGlobals({
     agent: agent as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
     code,
     checkpoint: checkpoint as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
@@ -1903,15 +1903,15 @@ async function runLevel<T>(
   });
 
   const context = vm.createContext({
-    agent: tracked(orchestrator.agent),
-    sh: tracked(orchestrator.sh),
-    js: tracked(orchestrator.js),
-    py: tracked(orchestrator.py),
-    run: tracked(orchestrator.run),
-    waitUntil: tracked(orchestrator.waitUntil),
-    ask: tracked(orchestrator.ask),
-    breakpoint: tracked(orchestrator.breakpoint),
-    choose: tracked(orchestrator.choose),
+    agent: tracked(sous.agent),
+    sh: tracked(sous.sh),
+    js: tracked(sous.js),
+    py: tracked(sous.py),
+    run: tracked(sous.run),
+    waitUntil: tracked(sous.waitUntil),
+    ask: tracked(sous.ask),
+    breakpoint: tracked(sous.breakpoint),
+    choose: tracked(sous.choose),
     parallel: tracked(parallel),
     pipeline: tracked(pipeline),
     workflow: tracked(workflowFn),

@@ -35,8 +35,8 @@ interface ChildOutcome {
 }
 
 async function runScenario(scenario: string): Promise<ChildOutcome> {
-  const workCwd = mkdtempSync(join(tmpdir(), "ap-dw-trip-"));
-  const persistenceRoot = mkdtempSync(join(tmpdir(), "ap-dw-trip-root-"));
+  const workCwd = mkdtempSync(join(tmpdir(), "sous-dw-trip-"));
+  const persistenceRoot = mkdtempSync(join(tmpdir(), "sous-dw-trip-root-"));
   try {
     return await new Promise<ChildOutcome>((resolve, reject) => {
       // cwd stays at the package dir so `--import tsx` resolves; the workflow's own cwd
@@ -45,8 +45,8 @@ async function runScenario(scenario: string): Promise<ChildOutcome> {
         cwd: packageDir,
         env: {
           ...process.env,
-          AP_TEST_CWD: workCwd,
-          AP_TEST_PERSISTENCE_ROOT: persistenceRoot,
+          SOUS_TEST_CWD: workCwd,
+          SOUS_TEST_PERSISTENCE_ROOT: persistenceRoot,
         },
         stdio: ["ignore", "pipe", "pipe"],
       });

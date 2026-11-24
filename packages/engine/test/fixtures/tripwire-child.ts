@@ -12,10 +12,10 @@ import { WorkflowError, WorkflowErrorCode } from "../../src/errors.js";
 import { workflowProjectPaths } from "../../src/runs/persistence/project-paths.js";
 
 const scenario = process.argv[2];
-const cwd = process.env.AP_TEST_CWD;
-const persistenceRoot = process.env.AP_TEST_PERSISTENCE_ROOT;
+const cwd = process.env.SOUS_TEST_CWD;
+const persistenceRoot = process.env.SOUS_TEST_PERSISTENCE_ROOT;
 if (!scenario || !cwd || !persistenceRoot) {
-  console.error("usage: tripwire-child.ts <scenario> (with AP_TEST_CWD and AP_TEST_PERSISTENCE_ROOT set)");
+  console.error("usage: tripwire-child.ts <scenario> (with SOUS_TEST_CWD and SOUS_TEST_PERSISTENCE_ROOT set)");
   process.exit(2);
 }
 

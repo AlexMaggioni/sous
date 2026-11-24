@@ -74,7 +74,7 @@ test(
 test(
   "createRunPersistence writes under an explicit persistence root and remains fsOverride-compatible",
   withTempCwd(async (cwd) => {
-    const persistenceRoot = mkdtempSync(join(tmpdir(), "ap-dw-root-"));
+    const persistenceRoot = mkdtempSync(join(tmpdir(), "sous-dw-root-"));
     const writePaths: string[] = [];
     try {
       const rp = createRunPersistence(
@@ -118,7 +118,7 @@ test(
 test(
   "WorkflowManager keeps run state and logs under its persistence root",
   withTempCwd(async (cwd) => {
-    const persistenceRoot = mkdtempSync(join(tmpdir(), "ap-dw-root-"));
+    const persistenceRoot = mkdtempSync(join(tmpdir(), "sous-dw-root-"));
     try {
       const manager = new WorkflowManager({
         cwd,
@@ -852,7 +852,7 @@ return { a }`;
 test(
   "ExecOptions.cwd threads to agent sessions and persists; run state stays keyed to the manager cwd",
   withTempCwd(async (cwd) => {
-    const runCwd = mkdtempSync(join(tmpdir(), "ap-dw-run-cwd-"));
+    const runCwd = mkdtempSync(join(tmpdir(), "sous-dw-run-cwd-"));
     try {
       const seen: Array<string | undefined> = [];
       const manager = new WorkflowManager({
@@ -880,7 +880,7 @@ test(
 test(
   "resume() re-runs in the run's ORIGINAL per-run cwd, not the manager cwd",
   withTempCwd(async (cwd) => {
-    const runCwd = mkdtempSync(join(tmpdir(), "ap-dw-run-cwd-"));
+    const runCwd = mkdtempSync(join(tmpdir(), "sous-dw-run-cwd-"));
     try {
       let failFirstPass = true;
       const seen: Array<string | undefined> = [];

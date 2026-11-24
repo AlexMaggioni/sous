@@ -21,7 +21,7 @@ function perCallRunner() {
   };
 }
 
-const withDirs = (fn: (dirs: TempDirs) => Promise<void>) => () => withTempDirs(fn, "ap-revision");
+const withDirs = (fn: (dirs: TempDirs) => Promise<void>) => () => withTempDirs(fn, "sous-revision");
 
 const threeCalls = (second: string) => `export const meta = { name: 'revise', description: 'three calls', model: 'claude' }
 const a = await agent('first', { label: 'a' })

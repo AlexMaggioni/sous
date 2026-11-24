@@ -248,7 +248,7 @@ export interface WorkflowManagerOptions {
   /** Resolve a saved-workflow name to its script, enabling nested `workflow('name')`. */
   loadSavedWorkflow?: (name: string) => string | undefined;
   /** Options every run gets, such as the nesting limit and nested places. */
-  orchestrator?: SousOptions;
+  sous?: SousOptions;
   /**
    * The injected agent backend (the frozen AgentRunner seam). May be overridden
    * per-run via ExecOptions.agent. The engine depends on this injection and never
@@ -492,7 +492,7 @@ export class WorkflowManager extends EventEmitter {
     this.cwd = options.cwd ?? process.cwd();
     this.concurrency = options.concurrency ?? 8;
     this.loadSavedWorkflow = options.loadSavedWorkflow;
-    this.sousOptions = options.orchestrator ?? {};
+    this.sousOptions = options.sous ?? {};
     this.agent = options.agent;
     this.defaultAgentRetries = options.defaultAgentRetries ?? 0;
     this.persistenceRoot = workflowHomeDir({ persistenceRoot: options.persistenceRoot });

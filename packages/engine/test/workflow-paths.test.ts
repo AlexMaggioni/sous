@@ -8,8 +8,8 @@ import { WORKFLOW_HOME_RELATIVE_DIR, workflowHomeDir } from "../src/workflow-pat
 import { withFakeHome } from "./helpers/fake-home.js";
 
 function withIsolatedHome(fn: (home: string, cwd: string) => void): void {
-  const home = mkdtempSync(join(tmpdir(), "ap-dw-home-"));
-  const cwd = mkdtempSync(join(tmpdir(), "ap-dw-project-"));
+  const home = mkdtempSync(join(tmpdir(), "sous-dw-home-"));
+  const cwd = mkdtempSync(join(tmpdir(), "sous-dw-project-"));
   try {
     withFakeHome(home, () => fn(home, cwd));
   } finally {
@@ -46,7 +46,7 @@ describe("workflow paths", () => {
 
   it("uses an explicit absolute persistence root before the homedir default", () => {
     withIsolatedHome((_home, cwd) => {
-      const explicitRoot = mkdtempSync(join(tmpdir(), "ap-dw-root-explicit-"));
+      const explicitRoot = mkdtempSync(join(tmpdir(), "sous-dw-root-explicit-"));
       try {
         const paths = workflowProjectPaths(cwd, { persistenceRoot: explicitRoot });
         assert.ok(paths.rootDir.startsWith(join(explicitRoot, WORKFLOW_PROJECTS_SUBDIR)));

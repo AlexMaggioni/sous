@@ -32,7 +32,7 @@ export async function openServer(path: string, env: Record<string, string | unde
   const server = new AppServer(path, env, cwd);
   try {
     await server.request("initialize", {
-      clientInfo: { name: "sous", title: "Sous", version: pkg.version },
+      clientInfo: { name: "sous", title: "sous", version: pkg.version },
       capabilities: { experimentalApi: true, requestAttestation: false },
     });
   } catch (error) {

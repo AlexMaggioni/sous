@@ -24,11 +24,15 @@ The first version named sous. The same code shipped before as `orc`, from this r
 - The command is `sous`. The packages are `@sous/cli`, `@sous/engine` and `@sous/harnesses`, and
   the command line package lives in `packages/cli`.
 - The home folder is `~/.sous`, and a project keeps its workflows in `.sous/workflows/`.
-- The environment variables start with `SOUS_`: `SOUS_HOME`, `SOUS_PROJECT`, `SOUS_RUN_ID`,
-  `SOUS_NOTIFY` and `SOUS_PERSISTENCE_ROOT`, among others.
+- The environment variables start with `SOUS_`: `SOUS_HOME`, `SOUS_PROJECT`, `SOUS_RUN_ID` and
+  `SOUS_NOTIFY`, among others.
 - Run branches are named `sous/<run>`, and a step's own worktree `sous/<run>-<n>-<label>`.
+- A rulesync agent names its default program in a `sous:` block of its frontmatter, as
+  `sous: { harness: codex }`. The block was `orc:`.
 - `AGENTPRISM_DEFAULT_BACKEND` is gone. A model that names no harness, such as `opus`, always runs
   on Claude Code.
+- `ORCHESTRATOR_PERSISTENCE_ROOT` is gone. The command never read it, since it always names the
+  folder for its run state.
 - sous names itself `sous` to Codex's app server.
 - The engine and the harnesses restart their version numbers at 0.1.0.
 
@@ -42,9 +46,10 @@ sous reads nothing under the old names. To keep your runs, workflows and schedul
 3. Move the home folder: `mv ~/.orchestrator ~/.sous`.
 4. In each project, rename `.orchestrator/` to `.sous/`. When the project has worktrees from runs,
    run `git worktree repair ~/.sous/worktrees/*` in it, so git finds them at their new path.
-5. Rename your environment variables: each `ORC_` becomes `SOUS_`, and
-   `ORCHESTRATOR_PERSISTENCE_ROOT` becomes `SOUS_PERSISTENCE_ROOT`.
-6. Install sous as the README says, then start the new service: `sous daemon start`.
+5. Rename your environment variables: each `ORC_` becomes `SOUS_`.
+6. In your rulesync agents, `.rulesync/subagents/*.md` in each project and in the global rulesync
+   folder, rename the `orc:` block of the frontmatter to `sous:`. sous ignores an `orc:` block.
+7. Install sous as the README says, then start the new service: `sous daemon start`.
 
 Branches made before the rename keep their `orc/` names. `sous gc` still removes their worktrees
 once they are merged.

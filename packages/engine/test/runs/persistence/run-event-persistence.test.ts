@@ -81,8 +81,8 @@ function withPersistence(
   fsOverride?: Partial<FsLayer>,
 ) {
   return async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "ap-run-events-cwd-"));
-    const root = mkdtempSync(join(tmpdir(), "ap-run-events-root-"));
+    const cwd = mkdtempSync(join(tmpdir(), "sous-run-events-cwd-"));
+    const root = mkdtempSync(join(tmpdir(), "sous-run-events-root-"));
     const persistence = createRunPersistence(cwd, fsOverride, { persistenceRoot: root });
     const runsDir = workflowProjectPaths(cwd, { persistenceRoot: root }).runsDir;
     try {
@@ -481,8 +481,8 @@ test(
   async () => {
     let writes = 0;
     let closes = 0;
-    const cwd = mkdtempSync(join(tmpdir(), "ap-run-events-short-cwd-"));
-    const root = mkdtempSync(join(tmpdir(), "ap-run-events-short-root-"));
+    const cwd = mkdtempSync(join(tmpdir(), "sous-run-events-short-cwd-"));
+    const root = mkdtempSync(join(tmpdir(), "sous-run-events-short-root-"));
     const persistence = createRunPersistence(
       cwd,
       {
@@ -516,8 +516,8 @@ test(
 test(
   "non-ENOENT sidecar failures are IO_ERROR with their original cause",
   async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "ap-run-events-io-cwd-"));
-    const root = mkdtempSync(join(tmpdir(), "ap-run-events-io-root-"));
+    const cwd = mkdtempSync(join(tmpdir(), "sous-run-events-io-cwd-"));
+    const root = mkdtempSync(join(tmpdir(), "sous-run-events-io-root-"));
     const cause = Object.assign(new Error("denied"), { code: "EACCES" });
     const persistence = createRunPersistence(
       cwd,

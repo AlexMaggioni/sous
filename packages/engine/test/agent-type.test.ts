@@ -90,7 +90,7 @@ const AUDITOR = "---\nname: security-auditor\ndescription: sec\nclaudecode:\n  m
 
 /** A project whose agent files are given, in a folder of its own, so no real home is read. */
 function agentFiles(files: Record<string, string>) {
-  const root = mkdtempSync(join(tmpdir(), "ap-agent-files-"));
+  const root = mkdtempSync(join(tmpdir(), "sous-agent-files-"));
   const projectDir = join(root, "project");
   mkdirSync(join(projectDir, ".rulesync", "subagents"), { recursive: true });
   const write = (name: string, content: string) => writeFileSync(join(projectDir, ".rulesync", "subagents", `${name}.md`), content);
@@ -145,8 +145,8 @@ return {}`;
   });
 
   it("agentType isolation: worktree runs the agent in an isolated cwd", async () => {
-    const repo = mkdtempSync(join(tmpdir(), "ap-agent-isolation-"));
-    const home = homePaths(mkdtempSync(join(tmpdir(), "ap-agent-isolation-home-")));
+    const repo = mkdtempSync(join(tmpdir(), "sous-agent-isolation-"));
+    const home = homePaths(mkdtempSync(join(tmpdir(), "sous-agent-isolation-home-")));
     const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
     const files = agentFiles({ "isolated-auditor": "---\nname: isolated-auditor\ndescription: iso\nisolation: worktree\n---\nRun isolated.\n" });
     try {

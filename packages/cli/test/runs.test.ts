@@ -816,7 +816,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
     const trees = ["nested1", "nested2"].map((n) => ({ dir: join(paths.worktrees, `${runId}-${n}`), branch: `sous/${runId}-${n}` }));
     assert.deepEqual(
       Object.entries(loadRecord(paths, runId)!.nested!).map(([id, child]) => [id, child.cwd, child.branch]).sort(),
-      trees.map((tree) => [tree.branch.slice(4), tree.dir, tree.branch]),
+      trees.map((tree) => [tree.branch.slice("sous/".length), tree.dir, tree.branch]),
       "the nested worktrees keep the names <run>-nested<n>",
     );
     const newShape = await sous(paths, "show", runId);

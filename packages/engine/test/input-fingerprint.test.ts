@@ -64,7 +64,7 @@ describe("agent input fingerprints", () => {
   });
 
   it("changes for every script-level unhashed execution input", async () => {
-    const nonGitCwd = mkdtempSync(join(tmpdir(), "ap-inputs-nogit-"));
+    const nonGitCwd = mkdtempSync(join(tmpdir(), "sous-inputs-nogit-"));
     try {
       const baseline = await fingerprintFor("{ label: 'fixed' }", { cwd: nonGitCwd });
       const variants = await Promise.all([
@@ -128,7 +128,7 @@ return await agent('same-prompt')`,
   });
 
   it("uses pre-resolution isolation inputs while exposing the actual worktree cwd", async () => {
-    const repo = mkdtempSync(join(tmpdir(), "ap-inputs-git-"));
+    const repo = mkdtempSync(join(tmpdir(), "sous-inputs-git-"));
     const home = tempPlaces();
     const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
     const fingerprints: Array<string | undefined> = [];

@@ -62,7 +62,7 @@ function managerFor(paths: HomePaths, projectDir: string, extra: Partial<Constru
     ...managerStore(paths),
     defaultAgentRetries: loadConfig(paths).retries,
     loadSavedWorkflow: (name) => dirs.resolve(name),
-    orchestrator: {
+    sous: {
       maxNestingDepth: 5,
       // What an agent may pick with choose({ any: true }). Workflows for people only stay out.
       listSavedWorkflows: () =>
