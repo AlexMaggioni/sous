@@ -17,6 +17,8 @@ import type { AgentSessionRef } from "../src/workflow-result.js";
 import { lookupAgents, lookupMcpServers } from "../src/agents.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { createSteps, type StepsOptions } from "../src/steps/steps.js";
+import { CONTINUATION_INSTRUCTION } from "../src/steps/answer.js";
+import { runWorkflow } from "../src/workflow.js";
 import { waitUntil } from "./helpers/async.js";
 import { write } from "./helpers/files.js";
 
@@ -607,4 +609,106 @@ describe("piece 5: step activity", () => {
       for (const { step } of seen) assert.deepEqual(step, { scope: "run-activity", callIndex: 4, label: "look" });
     });
   }
+});
+
+// Piece 13, resume with a note. `sous resume <run> --note "..." [--step <step>]` hands the worker
+// a note, and the worker passes it to createSteps as StepsOptions.note (design, "Resume with a
+// note"). The steps module adds it to the first agent call that runs in this go, or to the first
+// with that label when `step` is given: at the end of the fresh prompt, or after the continuation
+// instruction. An activity line of kind note records its use. The note stays outside the call
+// hash. StepsOptions has no note yet, so the cast keeps the types right.
+type WithNote = Partial<StepsOptions> & { note: { text: string; step?: string }; onActivity?: (step: ActivityStep, entry: ActivityEntry) => void };
+const withNote = (extra: WithNote) => extra as Partial<StepsOptions>;
+
+const NOTE = "Use the v2 API this time.";
+/** The prompt each request the fakes logged got, in order. */
+const prompts = (place: ReturnType<typeof fakePlace>) => place.lines().map((line) => line.prompt);
+
+describe("piece 13: resume with a note", () => {
+  it("with a note, the first agent call's prompt ends with it and says so in its activity, and the second's has none", async () => {
+    const place = fakePlace();
+    const seen: Array<{ step: ActivityStep; entry: ActivityEntry }> = [];
+    const steps = createSteps(onFakes(place, withNote({ note: { text: NOTE }, onActivity: (step, entry) => seen.push({ step, entry }) })));
+    try {
+      await steps.run("Build part A.", routed(steps, { label: "a", model: "claude/haiku" }, { runId: "run-note", callIndex: 0 }));
+      await steps.run("Build part B.", routed(steps, { label: "b", model: "claude/haiku" }, { runId: "run-note", callIndex: 1 }));
+    } finally {
+      await steps.dispose();
+    }
+    const [first, second] = prompts(place);
+    assert.match(first ?? "", /Build part A\./);
+    assert.ok((first ?? "").trimEnd().endsWith(NOTE), `the first call's prompt ends with the note:\n${first}`);
+    assert.match(second ?? "", /Build part B\./);
+    assert.ok(!(second ?? "").includes(NOTE), `the second call's prompt has no note:\n${second}`);
+    const notes = seen.filter(({ entry }) => entry.kind === "note");
+    assert.equal(notes.length, 1, `one note line in the activity: ${JSON.stringify(notes)}`);
+    assert.deepEqual(notes[0]!.step, { scope: "run-note", callIndex: 0, label: "a" }, "the note line belongs to the first call");
+    assert.ok(notes[0]!.entry.text.includes(NOTE), `the note line holds the note: ${notes[0]!.entry.text}`);
+  });
+
+  it("with step b, only the first call labeled b gets the note", async () => {
+    const place = fakePlace();
+    const steps = createSteps(onFakes(place, withNote({ note: { text: NOTE, step: "b" } })));
+    try {
+      await steps.run("Build part A.", routed(steps, { label: "a", model: "claude/haiku" }, { runId: "run-note", callIndex: 0 }));
+      await steps.run("Build part B.", routed(steps, { label: "b", model: "claude/haiku" }, { runId: "run-note", callIndex: 1 }));
+      await steps.run("Build part B again.", routed(steps, { label: "b", model: "claude/haiku" }, { runId: "run-note", callIndex: 2 }));
+      await steps.run("Build part C.", routed(steps, { label: "c", model: "claude/haiku" }, { runId: "run-note", callIndex: 3 }));
+    } finally {
+      await steps.dispose();
+    }
+    const [a, b, again, c] = prompts(place);
+    assert.ok(!(a ?? "").includes(NOTE), `a has no note:\n${a}`);
+    assert.ok((b ?? "").trimEnd().endsWith(NOTE), `the first call of b ends with the note:\n${b}`);
+    assert.ok(!(again ?? "").includes(NOTE), `the second call of b has no note:\n${again}`);
+    assert.ok(!(c ?? "").includes(NOTE), `c has no note:\n${c}`);
+  });
+
+  it("in a continued session, the note follows the continuation instruction", async () => {
+    const place = fakePlace();
+    let first: AgentSessionRef | undefined;
+    const before = createSteps(onFakes(place));
+    try {
+      await before.run("Build part A.", routed(before, { label: "a", model: "claude/haiku" }, { onSessionOpen: (ref: AgentSessionRef) => (first ??= ref) }));
+    } finally {
+      await before.dispose();
+    }
+    assert.ok(first);
+    // The resumed go: the same call continues its recorded session, with the note.
+    const steps = createSteps(onFakes(place, withNote({ note: { text: NOTE } })));
+    try {
+      await steps.run("Build part A.", routed(steps, { label: "a", model: "claude/haiku" }, { continueFromSession: first }));
+    } finally {
+      await steps.dispose();
+    }
+    const lines = place.lines();
+    assert.deepEqual([lines[1]?.resume, lines[1]?.sessionId], [true, first!.sessionId], "the second request continues the session");
+    const prompt = lines[1]?.prompt ?? "";
+    const instruction = prompt.indexOf(CONTINUATION_INSTRUCTION);
+    assert.ok(instruction >= 0, `the continued prompt holds the continuation instruction:\n${prompt}`);
+    const note = prompt.indexOf(NOTE);
+    assert.ok(note > instruction, `the note comes after the continuation instruction:\n${prompt}`);
+    assert.ok(prompt.trimEnd().endsWith(NOTE), `the continued prompt ends with the note:\n${prompt}`);
+  });
+
+  it("the call hash is the same with and without the note, while the note reaches the prompt", async () => {
+    const script = `export const meta = { name: 'hash', description: 'one step' }
+return await agent('Build it.', { label: 'impl', model: 'claude/haiku' })`;
+    const hashes: string[][] = [];
+    for (const note of [undefined, { text: NOTE }]) {
+      const place = fakePlace();
+      const agent = createSteps(onFakes(place, note ? withNote({ note }) : {}));
+      try {
+        const result = await runWorkflow(script, { agent, persistLogs: false });
+        hashes.push((result.calls ?? []).map((call) => call.hash));
+      } finally {
+        await agent.dispose();
+      }
+      const prompt = prompts(place)[0] ?? "";
+      if (note) assert.ok(prompt.trimEnd().endsWith(NOTE), `the run with a note sent it in the prompt:\n${prompt}`);
+      else assert.ok(!prompt.includes(NOTE), `the run without a note sent none:\n${prompt}`);
+    }
+    assert.equal(hashes[0]?.length, 1, `one call: ${JSON.stringify(hashes)}`);
+    assert.deepEqual(hashes[1], hashes[0], "the note stays outside the call hash");
+  });
 });

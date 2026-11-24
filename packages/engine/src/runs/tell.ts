@@ -3,13 +3,12 @@
 // through the steering board and writes a receipt in each call's activity, which tellResult waits for.
 
 import { randomUUID } from "node:crypto";
-import { EXEC_MODEL } from "../code-steps.js";
 import { recordAction, type Who } from "./actions.js";
 import type { HomePaths } from "./home.js";
 import { readActivity, requestTell, TELL_RECEIPTS, type TellOutcome } from "./records.js";
 import { Refusal, word } from "./refusal.js";
 import { runDetail, runningCalls, type RunningStep } from "./run.js";
-import { stepCalls } from "./step-view.js";
+import { isAgentCall, stepCalls } from "./step-view.js";
 
 /** One call a tell went to: the step's name in the log, the call's number as sous step --call
  *  counts it, its run or nested run, and its call index when the state has one. */
@@ -82,7 +81,7 @@ export function tellStep(paths: HomePaths, runId: string, tell: { step: string; 
     const change = resume ? "Resume the run with the message as a note for this step." : "Tell a step that runs now. sous show lists the run's steps.";
     throw new Refusal("step_not_running", `"${step}" does not run now in ${id}.`, change, resume ? `sous resume ${id} --note ${word(text)} --step ${word(name)} --json` : show);
   }
-  if (running.some(({ agent }) => agent.model === EXEC_MODEL)) {
+  if (running.some(({ agent }) => !isAgentCall(agent))) {
     throw new Refusal("step_takes_no_message", `"${step}" is a code step, and a code step takes no message.`, "Stop the step, or tell an agent step.", `sous stop ${id} --step ${word(name)} --json`);
   }
   const calls: ToldCall[] = running.map(({ agent, scope, call }) => ({ step: name, call, scope, label, ...(agent.callIndex === undefined ? {} : { callIndex: agent.callIndex }) }));

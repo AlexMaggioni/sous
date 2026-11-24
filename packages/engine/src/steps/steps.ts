@@ -63,6 +63,18 @@ export interface StepsOptions {
   onActivity?: OnActivity;
   /** The board each agent call opens on while its turn runs, so `sous tell` reaches it. */
   steering?: SteeringBoard;
+  /** A note from `sous resume --note`. It goes to the first agent call that runs, or to the first
+   *  with the label `step`, in one of the runs or nested runs `scopes` when given. */
+  note?: StepsNote;
+}
+
+/** A note a resume gives one agent call. `step` is a label, and `scopes` the runs or nested runs
+ *  its calls may run in. `taken` is called when a call takes it. */
+export interface StepsNote {
+  text: string;
+  step?: string;
+  scopes?: string[];
+  taken?: () => void;
 }
 
 
@@ -81,6 +93,29 @@ function addUsage(a: Usage, b: Usage): Usage {
  *  reports the prompt itself, and a repair turn is its own text. A user message after it is a tell. */
 const ACTIVITY_KINDS: Record<HistoryEntry["kind"], ActivityEntry["kind"]> = { text: "text", toolCall: "tool", toolResult: "tool-result", error: "error" };
 
+/** The text with the note after it, when there is one. */
+const withNote = (text: string, note: string | undefined) => (note === undefined ? text : `${text}\n\n${note}`);
+
+/**
+ * Which call gets the note: the first that asks and fits its step and scope. The call keeps it,
+ * so its retries get it too. A call with no run or call index gets it only when it asks first.
+ */
+function noteTaker(note: StepsNote | undefined): (call: StepRequest) => string | undefined {
+  let taker: string | undefined;
+  let taken = false;
+  return (call) => {
+    if (!note) return undefined;
+    const key = call.runId !== undefined && call.callIndex !== undefined ? `${call.runId}#${call.callIndex}` : undefined;
+    if (taken) return key !== undefined && key === taker ? note.text : undefined;
+    if (note.step !== undefined && call.label !== note.step) return undefined;
+    if (note.scopes !== undefined && (call.runId === undefined || !note.scopes.includes(call.runId))) return undefined;
+    taken = true;
+    taker = key;
+    note.taken?.();
+    return note.text;
+  };
+}
+
 const toHistory = (entry: HistoryEntry): AgentHistoryEntry => ({
   role: entry.role,
   kind: entry.kind,
@@ -93,6 +128,7 @@ const toHistory = (entry: HistoryEntry): AgentHistoryEntry => ({
 export function createSteps(options: StepsOptions): AgentRunner & { route(ask: StepAsk): StepRoute; dispose(): Promise<void> } {
   const lookup = options.programs ?? (options.inner ? undefined : () => ({}));
   const programs = new Map<HarnessId, Promise<Adapter | { problem: string }>>();
+  const noteFor = noteTaker(options.note);
 
   /** Find the harness's program and check its version, once per run. */
   async function prepare(harness: HarnessId, where: FindOptions): Promise<Adapter | { problem: string }> {
@@ -140,6 +176,9 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
       release = await options.slots.acquire({ runId: call.runId, label: call.label }, call.signal);
       options.onSlot?.({ label: call.label, state: "running" });
     }
+    // The note goes to the first call that holds a slot, once the checks above let it run.
+    const note = noteFor(call);
+    if (note !== undefined) report?.({ kind: "note", text: note });
 
     // The step's time limit counts from here, once it holds a slot, not while it waits for one.
     const timeout = step.timeoutMs ? AbortSignal.timeout(step.timeoutMs) : undefined;
@@ -147,12 +186,12 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
     try {
       const account = options.accounts?.[step.harness];
-      if (options.inner) return await runInner(options.inner, prompt, call, step, { signal, servers, account });
+      if (options.inner) return await runInner(options.inner, withNote(prompt, note), call, step, { signal, servers, account });
       const notesTo = options.onNotes;
       const onNotes = notesTo && ((notes: string[]) => notesTo({ label: call.label, notes }));
       const steering = options.steering && activityStep(call.runId, call.callIndex, call.label);
       const board = steering ? { board: options.steering!, call: steering } : undefined;
-      return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account, onNotes, activity: report, board });
+      return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account, onNotes, activity: report, board, note });
     } catch (error) {
       if ((error as { code?: unknown } | undefined)?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT) {
         options.onLimit?.({ program: step.harness, label: call.label });
@@ -221,9 +260,11 @@ async function runOnHarness(
     onNotes?: (notes: string[]) => void;
     activity?: (entry: ActivityEntry) => void;
     board?: { board: SteeringBoard; call: LiveCall };
+    /** The resume's note, after the prompt or the continuation instruction. Repair turns go without it. */
+    note?: string;
   },
 ): Promise<unknown> {
-  const { cwd, signal, servers, stop, account, onNotes, activity, board } = given;
+  const { cwd, signal, servers, stop, account, onNotes, activity, board, note } = given;
   const harness = step.harness;
   const label = call.label;
   const schema = call.schema;
@@ -324,7 +365,7 @@ async function runOnHarness(
     // The record names the model, or the harness alone when the step picks none.
     if (model) call.onModelResolved?.(withHarness(harness, model));
     else if (step.model && step.model !== call.route.requested) call.onModelResolved?.(withHarness(harness, step.model));
-    const fresh = { prompt: buildPrompt(prompt, label, schema), ...(images.length ? { images } : {}) };
+    const fresh = { prompt: withNote(buildPrompt(prompt, label, schema), note), ...(images.length ? { images } : {}) };
     let answer: { text: string; value?: unknown; sessionId?: string } | undefined;
     // A schema answer the program refused still has text to read.
     const turn = async (input: Step) => {
@@ -344,7 +385,7 @@ async function runOnHarness(
         continuation = { reattached: false, reason: "backend-mismatch" };
       } else {
         try {
-          const text = call.continueWithPrompt ? fresh : { prompt: buildPrompt(CONTINUATION_INSTRUCTION, label, schema) };
+          const text = call.continueWithPrompt ? fresh : { prompt: withNote(buildPrompt(CONTINUATION_INSTRUCTION, label, schema), note) };
           if (typeof recorded.costGauge === "number" && Number.isFinite(recorded.costGauge)) gauge = recorded.costGauge;
           answer = await turn({ ...base, ...text, resume: recorded.sessionId });
           continuation = { reattached: true, method: "resume" };
