@@ -3,17 +3,20 @@
 // them. Each approval also keeps the text as <home>/approved/<hash>.json, {text}, so a diff has
 // the approved text to compare.
 //
-// At first use, when approvals.json is absent, every workflow of every known project and of the
-// home is approved as it is, by sous, seeded. Each function here seeds first.
+// At first use, every workflow of every known project and of the home is approved as it is, by
+// sous, seeded. The first command of a sous with approvals seeds, and so does the service at its
+// start. Each function here seeds first too. <home>/seeded.json marks the seed done, so a missing
+// approvals.json after it means no approvals, and a moved or deleted file approves nothing.
 //
 // approval-check.ts holds the check of a start, which reads these.
 
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { readJsonFile, readStrictJsonFile, writeJsonFileInDir } from "../json-file.js";
-import { openWorkflowDir } from "../workflows/dir.js";
+import { openWorkflowDir, workflowText } from "../workflows/dir.js";
 import type { Through, Who } from "./actions.js";
 import { knownProjects, type HomePaths } from "./home.js";
+import { Refusal } from "./refusal.js";
 
 export interface Approval {
   hash: string;
@@ -34,9 +37,17 @@ export function workflowHash(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-/** The approvals file, or undefined when it is absent. One that does not parse throws, so a
- *  broken file is never seeded over. */
-const readApprovals = (paths: HomePaths) => readStrictJsonFile<Approvals | undefined>(paths.approvals, undefined);
+/** The approvals file, or undefined when it is absent. One that does not parse is refused as
+ *  broken_record, and sous starts nothing that needs a yes until the person fixes it. */
+function readApprovals(paths: HomePaths): Approvals | undefined {
+  try {
+    return readStrictJsonFile<Approvals | undefined>(paths.approvals, undefined);
+  } catch (error) {
+    const message = `${paths.approvals}, where sous keeps the person's yes to each workflow, does not parse: ${(error as Error).message}. Until it does, sous starts no workflow that needs the person's yes.`;
+    const change = "Tell the person. They fix the file or put back a copy of it. Do not delete or move it: without it, no workflow counts as approved.";
+    throw new Refusal("broken_record", message, change, null);
+  }
+}
 
 function saveText(paths: HomePaths, hash: string, text: string): void {
   writeJsonFileInDir(join(paths.approved, `${hash}.json`), { text });
@@ -51,22 +62,26 @@ function seedFolders(paths: HomePaths): string[] {
   return [...projects.map((dir) => join(dir, ".sous", "workflows")), paths.workflows];
 }
 
-/** At first use, approve every workflow sous knows as it is now. With approvals.json there, it does nothing. */
+/** At first use, approve every workflow sous knows as it is now, and mark the seed done. Once
+ *  marked, it does nothing. A home with approvals.json and no mark, from before the mark, gets
+ *  the mark only. */
 export function seedApprovals(paths: HomePaths): void {
-  if (readApprovals(paths) !== undefined) return;
+  if (readJsonFile(paths.seeded) !== undefined) return;
   const at = new Date().toISOString();
-  const approvals: Approvals = {};
-  for (const folder of seedFolders(paths)) {
-    const dir = openWorkflowDir(folder);
-    for (const entry of dir.list()) {
-      const text = dir.resolve(entry.name);
-      if (text === undefined || approvals[entry.file]) continue;
-      const hash = workflowHash(text);
-      approvals[entry.file] = [{ hash, by: "sous", at, seeded: true }];
-      saveText(paths, hash, text);
+  if (readApprovals(paths) === undefined) {
+    const approvals: Approvals = {};
+    for (const folder of seedFolders(paths)) {
+      for (const entry of openWorkflowDir(folder).list()) {
+        const text = workflowText(entry.file);
+        if (text === undefined || approvals[entry.file]) continue;
+        const hash = workflowHash(text);
+        approvals[entry.file] = [{ hash, by: "sous", at, seeded: true }];
+        saveText(paths, hash, text);
+      }
     }
+    writeJsonFileInDir(paths.approvals, approvals);
   }
-  writeJsonFileInDir(paths.approvals, approvals);
+  writeJsonFileInDir(paths.seeded, { approvalsAt: at });
 }
 
 /** Whether the person approved this text of this file, among its kept approvals. */

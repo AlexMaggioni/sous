@@ -8,7 +8,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { daemonLog, ensureHome, homePaths, traceCall, workerMain, workerProcess, type HomePaths, type Launcher, type Who } from "@sous/engine";
+import { daemonLog, ensureHome, homePaths, seedApprovals, traceCall, workerMain, workerProcess, type HomePaths, type Launcher, type Who } from "@sous/engine";
 import { parseArgs, str, Usage, type Parsed } from "./args.js";
 import { ALIASES, COMMANDS, type CommandSpec, type Ctx, type Machine } from "./commands/index.js";
 import { errorCode, print, printError } from "./reply.js";
@@ -75,14 +75,21 @@ function machine(): Machine {
   };
 }
 
-/** The context of one command. The home and the launcher are made when the command first uses them. */
+/** The context of one command. The home and the launcher are made when the command first uses them.
+ *  The first use of the home also takes the workflows sous finds as approved, once per home. */
 function contextOf(json: boolean, options: MainOptions, machine: Machine, who: Who, command: string): Ctx {
   let paths: HomePaths | undefined;
   return {
     who,
     command,
     get paths() {
-      return (paths ??= ensureHome(homePaths()));
+      if (paths) return paths;
+      paths = ensureHome(homePaths());
+      // A broken approvals.json does not stop a read. The commands that need it refuse.
+      try {
+        seedApprovals(paths);
+      } catch {}
+      return paths;
     },
     env: options.env ?? process.env,
     json,

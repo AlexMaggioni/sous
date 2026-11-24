@@ -2,7 +2,9 @@
 //  - starts scheduled runs, and skips one when the schedule's last run has not finished. A
 //    schedule comes from `sous schedule add`, or from `schedule` in a workflow file's meta, in the
 //    home folder or in a project where sous ran. A workflow edited since the person approved it
-//    does not start: the service logs it and tells the person each time the schedule comes due;
+//    does not start: the service logs it each time the schedule comes due, and tells the person
+//    once for each edit. At its start, as at the first command, sous takes the workflows it finds
+//    as approved, once per home;
 //  - resumes runs paused at the subscription limit once the limit resets, unless a workflow they
 //    use was edited since they started. Then it tells the user once and waits for `sous resume`;
 //  - tells the user, once, about a run cut off by a crash or a restart. It waits for `sous resume`;
@@ -17,6 +19,7 @@ import { recordAction, SERVICE } from "./actions.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
 import { NotApproved } from "./approval-check.js";
+import { seedApprovals } from "./approvals.js";
 import { createRun, type Launcher } from "./launch.js";
 import { notify } from "./notify.js";
 import { processAlive } from "./records.js";
@@ -43,6 +46,8 @@ interface DaemonState {
   resumes: Record<string, { count: number; lastAt: string }>;
   /** Runs cut off by a crash or a restart that the user was told about. */
   told?: Record<string, string>;
+  /** The schedules the person was told need their yes, with the hashes of the texts it was for. */
+  approvalsTold?: Record<string, string>;
   lastPrune?: string;
   lastGc?: string;
 }
@@ -148,12 +153,18 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
       });
       launch(paths, record.runId, "start");
       log(`schedule ${schedule.name}: started run ${record.runId}`);
+      if (state.approvalsTold) delete state.approvalsTold[schedule.name];
     } catch (error) {
       log(`schedule ${schedule.name}: could not start: ${(error as Error).message}`);
       // The person approves the edited text once, or runs it once by hand, and the next time goes.
-      if (error instanceof NotApproved) {
-        const approve = `sous workflows approve ${error.workflow}${schedule.projectDir === paths.home ? "" : ` --project ${schedule.projectDir}`}`;
-        tell(`${error.workflow} needs your approval`, `The schedule ${schedule.name} did not start ${error.workflow}, which is new or changed since you approved it. ${approve} lets it start.`);
+      // They hear of each edit once, however often the schedule comes due.
+      const hashes = error instanceof NotApproved ? error.texts.map((text) => text.hash).join(",") : undefined;
+      if (error instanceof NotApproved && state.approvalsTold?.[schedule.name] !== hashes) {
+        (state.approvalsTold ??= {})[schedule.name] = hashes!;
+        const project = schedule.projectDir === paths.home ? "" : ` --project ${shellWord(schedule.projectDir)}`;
+        const approve = error.texts.map((text) => `sous workflows approve ${shellWord(text.workflow)}${project}`).join(", then ");
+        const names = error.texts.map((text) => text.workflow).join(", ");
+        tell(`${error.workflow} needs your approval`, `The schedule ${schedule.name} did not start ${schedule.workflow}, because ${names} is new or changed since you approved it. ${approve} lets it start.`);
       }
     }
   }
@@ -169,7 +180,8 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
       continue;
     }
     // A run older code saved never goes on, so the service neither tells of it nor resumes it.
-    if (!run.resume.ok && run.resume.why === "older") continue;
+    // Nor does a dry run, which `sous check --dry-run` runs again.
+    if (!run.resume.ok && (run.resume.why === "older" || run.resume.why === "dry-run")) continue;
     if (pause.reason === "interrupted") {
       // A run cut off by a crash or a restart never starts again on its own.
       if (!state.told[record.runId]) {
@@ -232,6 +244,12 @@ export function daemonPid(paths: HomePaths): number | undefined {
 /** The service loop, run by `sous daemon run`. */
 export async function daemonMain(paths: HomePaths, launch: Launcher, everyMs = 20_000): Promise<void> {
   ensureHome(paths);
+  // The service may run before any command, so it takes the workflows it finds as approved first.
+  try {
+    seedApprovals(paths);
+  } catch (error) {
+    process.stdout.write(`${new Date().toISOString()} ${(error as Error).message}\n`);
+  }
   const existing = daemonPid(paths);
   if (existing && existing !== process.pid) throw new Error(`the service already runs (pid ${existing})`);
   writeJsonFile(paths.daemonPid, { pid: process.pid, since: new Date().toISOString() });
@@ -256,4 +274,9 @@ export async function daemonMain(paths: HomePaths, launch: Launcher, everyMs = 2
     // already gone
   }
   process.stdout.write(`${new Date().toISOString()} service stopped\n`);
+}
+
+/** A path as one shell word, in single quotes when it needs them. */
+function shellWord(text: string): string {
+  return /^[\w./-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`;
 }

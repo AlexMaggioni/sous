@@ -3,7 +3,7 @@ import { appendFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFil
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import { ensureHome, homePaths, runQuestions, type HomePaths } from "@sous/engine";
+import { ensureHome, homePaths, runQuestions, seedApprovals, type HomePaths } from "@sous/engine";
 import { inProcess, plantState, readState, testHome, tick, workflowProjectPaths, type InnerRunner } from "@sous/engine/testing";
 import { main } from "../src/cli.js";
 import { capture, sous, waitFor } from "./sous.js";
@@ -29,6 +29,8 @@ function plant(): Planted {
   const root = mkdtempSync(join(tmpdir(), "sous-reads-"));
   const paths = ensureHome(homePaths(join(root, "home")));
   writeJson(paths.config, { notify: false, defaultPlace: "folder" });
+  // A home sous used before: its first command seeded the approvals.
+  seedApprovals(paths);
   const projectDir = join(root, "project");
   mkdirSync(join(projectDir, ".sous", "workflows"), { recursive: true });
   // The engine's folder for sous's runs.
@@ -363,6 +365,8 @@ function plantRecord(paths: HomePaths, projectDir: string, runId: string, create
  *  finished two hours ago. */
 function plantStatus(): { paths: HomePaths; projectDir: string; root: string; questionId: string } {
   const { paths, projectDir } = testHome();
+  // A home sous used before: its first command seeded the approvals.
+  seedApprovals(paths);
   const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
   const base = { workflowName: "build", script: "return 1", phases: [], agents: [], logs: [] };
 

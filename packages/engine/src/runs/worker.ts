@@ -17,6 +17,7 @@ import { notify } from "./notify.js";
 import { approvedLookup } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 import { authorAnsweredBy } from "./consent.js";
+import { Refusal } from "./refusal.js";
 import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
@@ -95,14 +96,34 @@ export async function runWorker(runId: string, mode: "start" | "resume", options
   const paths = ensureHome(options.paths ?? homePaths());
   const record = loadRecord(paths, runId);
   if (!record) throw new Error(`no run ${runId}`);
-  // The text sous checked when it wrote the record is the text that runs.
-  if (mode === "start" && record.workflowHash && workflowHash(readFileSync(record.file, "utf8")) !== record.workflowHash) {
-    throw new Error(`${record.file} changed after sous checked and approved it, so run ${runId} did not start. Start it again.`);
-  }
+  const script = checkedText(paths, record, mode);
   // The steps run on the run's recorded accounts, also when the service resumes it with its own
   // environment. A dry run talks to no agent.
   const accounts = options.dryRun ? {} : runAccounts(paths, record.accounts);
-  return runOnAccounts(paths, record, mode, options, accounts);
+  return runOnAccounts(paths, record, mode, options, accounts, script);
+}
+
+/**
+ * The workflow's text a start runs, or a resume after `sous resume --latest`, read once. It is
+ * the text sous checked: the one whose hash it wrote in the record, or at resume --latest. A
+ * changed or missing file is refused, and the record keeps why, so `sous show` gives it. Another
+ * resume runs the text the run started with, and gets undefined.
+ */
+function checkedText(paths: HomePaths, record: RunRecord, mode: "start" | "resume"): string | undefined {
+  if (mode === "resume" && record.resumeLatest !== true) return undefined;
+  const text = existsSync(record.file) ? readFileSync(record.file, "utf8") : undefined;
+  const checked = mode === "start" ? record.workflowHash : record.latestHash;
+  // A record from before the hash resumes with the text it started with.
+  if (mode === "resume" && checked === undefined) return undefined;
+  if (text !== undefined && (checked === undefined || workflowHash(text) === checked)) return text;
+  const what = text === undefined ? "is gone" : "changed after sous checked it";
+  const refused =
+    mode === "start"
+      ? `${record.file} ${what}, so run ${record.runId} did not start. Start it again, which checks the text again.`
+      : `${record.file} ${what} at sous resume --latest, so run ${record.runId} did not resume. Resume it again, which checks the text again.`;
+  updateRecord(paths, record.runId, { refused, ...(mode === "resume" ? { resumeLatest: undefined, latestHash: undefined } : {}) });
+  const call = mode === "start" ? `sous rerun ${record.runId} --json` : `sous resume ${record.runId} --latest --json`;
+  throw new Refusal("not_approved", refused, "Start or resume the run again. sous checks the text as it is now.", call);
 }
 
 async function runOnAccounts(
@@ -111,11 +132,13 @@ async function runOnAccounts(
   mode: "start" | "resume",
   options: WorkerOptions,
   accounts: ReturnType<typeof runAccounts>,
+  /** The checked text a start or a resume --latest runs. */
+  script: string | undefined,
 ): Promise<WorkflowRunResult | undefined> {
   const runId = record.runId;
   const config = loadConfig(paths);
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
-  updateRecord(paths, runId, { pid: process.pid, limit: undefined });
+  updateRecord(paths, runId, { pid: process.pid, limit: undefined, refused: undefined });
   // A step stop the last worker never took names a step of that worker, not this one.
   takeStepStops(paths, runId);
 
@@ -160,7 +183,7 @@ async function runOnAccounts(
   // after `sous resume --latest`.
   const takeLatest = mode === "resume" && record.resumeLatest === true;
   if (mode === "start" || takeLatest) saveSnapshot(paths, runId, currentWorkflows(paths, record.projectDir));
-  if (takeLatest) updateRecord(paths, runId, { resumeLatest: undefined });
+  if (takeLatest) updateRecord(paths, runId, { resumeLatest: undefined, latestHash: undefined });
   const snapshot = loadSnapshot(paths, runId);
   const live = projectWorkflows(paths, record.projectDir);
   const manager = managerFor(paths, record, (name) => snapshot[name] ?? live.resolve(name));
@@ -275,14 +298,13 @@ async function runOnAccounts(
   try {
     if (mode === "start") {
       log(`${stamp()} run        ${record.workflow} in ${record.cwd}`);
-      result = await manager.runSync(readFileSync(record.file, "utf8"), record.args, {
+      result = await manager.runSync(script!, record.args, {
         ...exec,
         runId,
         ...(record.reuseFrom ? { resumeFromRunId: record.reuseFrom } : {}),
       });
     } else {
       log(`${stamp()} resume     ${record.workflow}`);
-      const script = takeLatest && existsSync(record.file) ? readFileSync(record.file, "utf8") : undefined;
       // The engine keeps the place and the model from the start, so a resume passes neither.
       const { cwd: _cwd, defaultModel: _model, ...controls } = exec as typeof exec & { defaultModel?: string };
       const resumed = await manager.resumeInBackground(runId, { ...controls, ...(script ? { script } : {}) });
@@ -346,7 +368,9 @@ export async function workerMain(runId: string, mode: "start" | "resume"): Promi
     const result = await runWorker(runId, mode, { handleSignals: true });
     return result?.status === "failed" ? 1 : 0;
   } catch (error) {
-    process.stderr.write(`${stamp()} error      ${(error as Error).stack ?? String(error)}\n`);
+    // A refusal says why in one line, and the record keeps it for sous show.
+    const why = error instanceof Refusal ? error.message : ((error as Error).stack ?? String(error));
+    process.stderr.write(`${stamp()} ${error instanceof Refusal ? "refused   " : "error     "} ${why}\n`);
     const paths = homePaths();
     if (loadRecord(paths, runId)) updateRecord(paths, runId, { pid: undefined });
     return 1;

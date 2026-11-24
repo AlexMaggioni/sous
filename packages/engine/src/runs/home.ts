@@ -55,6 +55,8 @@ export function homePaths(home = sousHome()) {
     approvals: join(home, "approvals.json"),
     /** The approved texts, one <hash>.json each. */
     approved: join(home, "approved"),
+    /** When sous seeded the approvals at first use. With it there, sous never seeds again. */
+    seeded: join(home, "seeded.json"),
     daemonPid: join(home, "daemon.pid"),
     daemonState: join(home, "daemon-state.json"),
     /** Who did what: one line per write. */

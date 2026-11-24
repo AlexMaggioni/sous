@@ -5,8 +5,6 @@
 
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { interruptedReason, type PersistedRunState, type RunStatus } from "./persistence/run-persistence.js";
-import { deleteAccount, DEFAULT, moveRunAccount, setCurrentAccount, type AccountName } from "../accounts.js";
-import type { HarnessId } from "@sous/harnesses";
 import { foldStep } from "../display.js";
 import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
 import { recordAction, type Who } from "./actions.js";
@@ -20,6 +18,7 @@ import { olderSave } from "../older-save.js";
 import { readWorkflowScript } from "../workflows/script.js";
 import { resolveWorkflow } from "../workflows/dir.js";
 import { needApproval } from "./approval-check.js";
+import { workflowHash } from "./approvals.js";
 import { Refusal } from "./refusal.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
 import { logFile, readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
@@ -97,6 +96,8 @@ export interface ShortRun {
   failure?: Failure;
   /** When the service resumes a run paused at a usage limit. */
   resumesAt?: string;
+  /** A dry run, from sous check --dry-run. It never resumes: the check runs it again. */
+  dryRun?: true;
 }
 
 /** What a run that starts may cost, from the workflow's text and its last runs. */
@@ -112,8 +113,10 @@ const PREVIEW_READS = 20;
 const PREVIEW_RUNS = 5;
 
 /** The failure of a failed run or a run paused at a failed step: the last step in error, when
- *  the run's reason is that step's error. Otherwise only the run's reason. */
-function failureOf(state: PersistedRunState | undefined, steps: readonly Step[]): Failure | undefined {
+ *  the run's reason is that step's error. Otherwise only the run's reason. A worker that refused
+ *  to run the workflow's text gives why first. */
+function failureOf(record: RunRecord, state: PersistedRunState | undefined, steps: readonly Step[]): Failure | undefined {
+  if (record.refused) return { message: record.refused };
   if (state?.status !== "failed" && !(state?.status === "paused" && state.pauseReason === "step_failed")) return undefined;
   const step = [...steps].reverse().find((agent) => agent.status === "error");
   const { reason } = state;
@@ -137,7 +140,7 @@ function savedFacts(shown: PersistedRunState): SavedFacts {
 
 /** The view of one run. The rule counts the questions only while the worker runs. */
 function viewOf(record: RunRecord, state: PersistedRunState | undefined, questions: RunQuestion[], alive = processAlive(record.pid)): { view: RunView; shown: PersistedRunState | undefined } {
-  const verdict = judge({ state, alive, openQuestions: alive ? questions.length : 0, older: state !== undefined && olderSave(state) !== undefined });
+  const verdict = judge({ state, alive, openQuestions: alive ? questions.length : 0, older: state !== undefined && olderSave(state) !== undefined, dryRun: record.origin === "check" });
   const shown = shownState(record, state, verdict);
   return { view: { runId: record.runId, record, ...verdict, questions, ...(shown ? { saved: savedFacts(shown), changedAt: shown.completedAt ?? shown.pausedAt ?? shown.updatedAt } : {}) }, shown };
 }
@@ -195,7 +198,7 @@ export function runDetail(paths: HomePaths, id: string): RunDetail {
     ...(shown?.tokenUsage ? { tokens: shown.tokenUsage.total } : {}),
     ...(shown?.durationMs === undefined ? {} : { durationMs: shown.durationMs }),
     ...(engineState ? { engineState } : {}),
-    ...withFailure(failureOf(shown, steps)),
+    ...withFailure(failureOf(record, shown, steps)),
   };
 }
 
@@ -229,6 +232,7 @@ export function shortRun(run: RunDetail, now: Date): ShortRun {
     questions: run.questions.map((question) => questionView(question, record)),
     ...withFailure(run.failure),
     ...(run.pause?.resumeAt ? { resumesAt: run.pause.resumeAt.toISOString() } : {}),
+    ...(record.origin === "check" ? { dryRun: true as const } : {}),
   };
 }
 
@@ -339,8 +343,9 @@ function runSummary(record: RunRecord, state: PersistedRunState | undefined, vie
     cwd: record.cwd,
     ...(record.branch ? { branch: record.branch } : {}),
     ...(done ? { result: state.result, review: { ...placeOf(record), result: state.result } } : {}),
-    ...withFailure(failureOf(state, state?.agents ?? [])),
+    ...withFailure(failureOf(record, state, state?.agents ?? [])),
     ...(view.pause?.resumeAt ? { resumesAt: view.pause.resumeAt.toISOString() } : {}),
+    ...(record.origin === "check" ? { dryRun: true as const } : {}),
   };
 }
 
@@ -361,6 +366,8 @@ export interface WaitSummary {
   failure?: Failure;
   /** When the service resumes a run paused at a usage limit. */
   resumesAt?: string;
+  /** A dry run, from sous check --dry-run. */
+  dryRun?: true;
 }
 
 /** A piece of a run's log. */
@@ -536,7 +543,7 @@ export function changedWorkflows(paths: HomePaths, record: RunRecord, state: Per
 }
 
 /** Why a resume changes nothing: the run runs, never started, completed or was stopped. */
-export type ResumeWrongState = Exclude<ResumeRefusal, "older">;
+export type ResumeWrongState = Exclude<ResumeRefusal, "older" | "dry-run">;
 
 /** What resume says of a run in a state it does not resume from. */
 const WRONG_STATE: Record<ResumeWrongState, (runId: string) => string> = {
@@ -572,6 +579,10 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
     const message = `${record.runId} was saved by an older sous, and this sous cannot resume it. sous rerun ${record.runId} starts it again, and sous stop ${record.runId} ends it.`;
     throw new Refusal("cannot_resume", message, "Start the run again with sous rerun, or end it with sous stop.", `sous rerun ${record.runId} --json`);
   }
+  if (why === "dry-run") {
+    const message = `${record.runId} is a dry run, and a dry run runs no step for real, so it does not resume. sous check ${record.workflow} --dry-run runs it again.`;
+    throw new Refusal("cannot_resume", message, "Run the dry run again. To run the workflow for real, start it with sous run.", `sous check ${record.workflow} --dry-run --json`);
+  }
   if (why) return { wrongState: why, view, message: WRONG_STATE[why](record.runId) };
   // The rule lets a run resume only once it has a state. The check runs with a choice too, so a
   // workflow folder that cannot be read stops the resume here.
@@ -584,8 +595,11 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
     return { mustChoose: changed, message };
   }
   // The edits reach a run that an agent resumes only once the person approved them.
-  if (choice === "latest" && existsSync(record.file)) needApproval(paths, record.projectDir, resolveWorkflow(paths, record.projectDir, record.file), who);
-  if (choice === "latest" || consent) updateRecord(paths, record.runId, { ...(choice === "latest" ? { resumeLatest: true } : {}), ...(consent ? { letAgentAnswer: consent } : {}) });
+  // The worker resumes only the text checked here, by its hash.
+  const latest = choice === "latest" && existsSync(record.file) ? resolveWorkflow(paths, record.projectDir, record.file) : undefined;
+  if (latest) needApproval(paths, record.projectDir, latest, who);
+  const latestHash = latest ? workflowHash(latest.script) : undefined;
+  if (choice === "latest" || consent) updateRecord(paths, record.runId, { ...(choice === "latest" ? { resumeLatest: true, latestHash } : {}), ...(consent ? { letAgentAnswer: consent } : {}) });
   launch(paths, record.runId, "resume");
   recordAction(paths, { act: "resume", ...who, runId: record.runId });
   if (consent) recordAndTell(paths, { act: "let-agent-answer", ...who, runId: record.runId, workflow: record.workflow }, options.tell);
@@ -774,74 +788,4 @@ export function gcRuns(paths: HomePaths, who: Who, options: { dryRun?: boolean; 
   const result = gcWorktrees(paths, projects, { dryRun: options.dryRun, busy: busyWorktrees(paths, runs) });
   if (result.removed.length && !options.dryRun) recordAction(paths, { act: "gc", ...who, value: result.removed.map((tree) => tree.branch) });
   return result;
-}
-
-// ── Accounts ──
-
-/** A run that `sous account use` moved, or left waiting. */
-export interface Moved {
-  runId: string;
-  workflow: string;
-  from: string;
-}
-
-export interface UseResult extends AccountName {
-  /** The runs moved to the account and resumed. */
-  moved: Moved[];
-  /** Runs waiting at the limit of this same account. They go on after the reset. */
-  same: Moved[];
-}
-
-/**
- * Make the account sous's current one for its program. Then each run waiting at that program's
- * usage limit moves to it and resumes now, also the runs that agents started.
- */
-export function useAccount(paths: HomePaths, spec: string, launch: Launcher, who: Who): UseResult {
-  const { program, name } = setCurrentAccount(paths, spec);
-  recordAction(paths, { act: "account-use", ...who, value: `${program}/${name}` });
-  const moved: Moved[] = [];
-  const same: Moved[] = [];
-  for (const run of waitingRuns(paths)) {
-    if (run.program !== program) continue;
-    const entry = { runId: run.runId, workflow: run.workflow, from: run.account };
-    if (run.account === name) {
-      same.push(entry);
-      continue;
-    }
-    moveRunAccount(paths, run.runId, program, name);
-    launch(paths, run.runId, "resume");
-    moved.push(entry);
-  }
-  return { program, name, moved, same };
-}
-
-/** A run waiting at a usage limit. */
-export interface WaitingRun {
-  runId: string;
-  workflow: string;
-  program: HarnessId;
-  /** The account whose limit the run hit. A run from before the record kept the limit names its
-   *  own account, or default. */
-  account: string;
-  limit?: RunRecord["limit"];
-}
-
-/** The runs waiting at a usage limit, newest first: their worker is gone and they paused there.
- *  `sous account` lists them, and `sous account use` moves them. */
-export function waitingRuns(paths: HomePaths): WaitingRun[] {
-  const waiting: WaitingRun[] = [];
-  for (const { record, pause } of listRuns(paths)) {
-    if (processAlive(record.pid) || pause?.reason !== "usage_limit") continue;
-    // A run from before accounts, or one whose program is unknown, counts as waiting on Claude Code.
-    const program = record.limit?.program ?? "claude";
-    const account = record.limit?.account ?? record.accounts?.[program]?.name ?? DEFAULT;
-    waiting.push({ runId: record.runId, workflow: record.workflow, program, account, limit: record.limit });
-  }
-  return waiting;
-}
-
-/** Forget a login. Refused while an unfinished run uses it, also one that has not started yet. */
-export function removeAccount(paths: HomePaths, spec: string): AccountName {
-  const unfinished = listRuns(paths).filter((run) => run.unfinished).map((run) => run.record);
-  return deleteAccount(paths, spec, unfinished);
 }

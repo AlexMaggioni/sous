@@ -67,9 +67,11 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   if (problems.length) throw new InputProblems(resolved.name, problems);
   mayStart(resolved, request.who, request.command ?? `sous run ${resolved.name}`);
   const letAgentAnswer = request.letAgentAnswer ? letAgentAnswerBy(request.who, request.command ?? `sous run ${resolved.name} --let-agent-answer`, new Date()) : undefined;
-  // A person's start makes its project known first, so a first use there seeds its workflows. A
-  // dry run runs no step for real, so it needs no yes and gives none.
-  if (request.who.through.kind === "person") rememberProject(paths, request.projectDir);
+  // A person's start makes its project known before the check, so a first use there seeds its
+  // workflows. Another start makes it known only once the record is written, so each start calls
+  // rememberProject once. A dry run runs no step for real, so it needs no yes and gives none.
+  const person = request.who.through.kind === "person";
+  if (person) rememberProject(paths, request.projectDir);
   if (request.origin !== "check") needApproval(paths, request.projectDir, resolved, request.who);
   const config = loadConfig(paths);
   const runId = generateRunId();
@@ -105,7 +107,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
     accounts: accountsForRun(paths, process.env, { caller: request.caller, parentRunId: request.startedByRun }),
   };
   saveRecord(paths, record);
-  rememberProject(paths, request.projectDir);
+  if (!person) rememberProject(paths, request.projectDir);
   if (record.origin !== "check") recordAction(paths, { act: request.rerunOf ? "rerun" : "run", ...request.who, runId, workflow: resolved.name });
   if (letAgentAnswer && record.origin !== "check") recordAndTell(paths, { act: "let-agent-answer", ...request.who, runId, workflow: resolved.name }, request.tell);
   return record;

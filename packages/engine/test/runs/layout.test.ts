@@ -49,6 +49,8 @@ const home = [
   "home/runs/projects/<home key>/",
   "home/runs/projects/<home key>/runs/",
   "home/scratch/",
+  // When sous seeded the approvals, so it never seeds again.
+  "home/seeded.json",
   "home/slots/",
   "home/worktrees/",
   "project/",
