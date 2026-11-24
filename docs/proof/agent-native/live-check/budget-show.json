@@ -1,0 +1,32 @@
+{
+  "runId": "mwv12cj0-5fpqqb",
+  "workflow": "counts",
+  "status": "paused",
+  "word": "paused: budget",
+  "cwd": "<results>/s8/home/scratch/mwv12cj0-5fpqqb",
+  "startedAt": "2026-11-24T18:28:05.484Z",
+  "seconds": 8,
+  "tokens": 71341,
+  "pauseReason": "budget",
+  "budget": 40000,
+  "steps": [
+    {
+      "label": "count",
+      "status": "error",
+      "seconds": 8,
+      "tokens": 71341
+    }
+  ],
+  "questions": [],
+  "notes": [],
+  "next": [
+    {
+      "call": "sous resume mwv12cj0-5fpqqb --json",
+      "does": "resumes the run where it stopped"
+    },
+    {
+      "call": "sous resume mwv12cj0-5fpqqb --budget 80000 --json",
+      "does": "resumes the run, and gives it a budget of 80000 tokens for this go and each one after it"
+    }
+  ]
+}

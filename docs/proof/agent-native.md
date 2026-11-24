@@ -122,6 +122,12 @@ With `CLAUDECODE=1` set, as in any Claude Code shell, `sous run deploy` on a wor
 
 The file is [agent-native/live-check/run-deploy-under-claude-code.json](agent-native/live-check/run-deploy-under-claude-code.json).
 
+## Live check, a spending limit on Claude Haiku
+
+The person ran the counting workflow of scenario 8 with `sous run counts --budget 40000`. Claude's first usage report already holds about 70k tokens, most of them cache, so the run stops at that report. `sous wait` exits 2 with `pauseReason` `budget`, and its `next` offers `sous resume <id> --budget 80000`.
+
+The first time, on the build before piece 16, `sous show` gave the stopped step 61 tokens, a guess from the prompt's length, while the budget had counted 70,995. On the final build, the log says "40000 tokens reached (71341 spent)" and `sous show` gives the step 71,341 tokens. The files are [budget-wait.json](agent-native/live-check/budget-wait.json) and [budget-show.json](agent-native/live-check/budget-show.json).
+
 ## Findings
 
 - **The harness had three bugs at first, now fixed.** It read the event field `action` instead of `act`. It counted a refused run as a run. Scenario 5b had no turn for the person's yes. The first batches are not kept here.
@@ -129,4 +135,5 @@ The file is [agent-native/live-check/run-deploy-under-claude-code.json](agent-na
 - **Codex once saved before the yes.** In a batch made before the harness fix, one Codex repetition of scenario 6 saved the workflow before the person said yes. sous still refused the run until the approval. It did not happen again in the batch above.
 - **Codex did not offer a resume after a failure.** This held before and after, until the skill told agents to pass the resume call on. Codex read the `next` calls of the failed run, which include `sous resume`, but did not pass them on. With the new sentence it did, in 3 of 3.
 - **The refusal after an edit sends agents to `--latest`.** When the workflow changed since the run started, the refusal is `bad_argument` (exit 64) with the call `--same`, and its message names `--latest`. After a fix, agents pick `--latest`, which then needs the person's approval. That is the right path, but the first call offered is `--same`, the one that keeps the old text.
+- **A stopped step recorded a guess of its tokens.** Found by the live budget check, fixed in piece 16. A step stopped by the host now keeps the tokens its turn spent, and the budget counts it once even while other steps run.
 - **An unseeded project needs a yes for each workflow.** In a fresh home, an agent's first run of any workflow is refused until the person approves it. The harness approves the fixtures first, as a person would. A real user meets this once per workflow.
