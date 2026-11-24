@@ -24,9 +24,19 @@
 //                          approve, "form" ({ server, message }) for a question from an MCP
 //                          server, or "question" ({ message }) for the model's own question.
 //               listTools  answer with the names of the tools the session has
+//               tool       run this shell command as one tool call before the answer. The
+//                          delayMs and hold then last through the tool call, so a message sent
+//                          meanwhile lands mid-turn. The program reads it after the tool call.
+//               notSteerable  Codex refuses turn/steer during the turn with
+//                          activeTurnNotSteerable and this turn kind, such as "compact"
 //               times      apply the rule to the first N matching requests only. The count
 //                          comes from earlier lines in FAKE_LOG, so it holds across processes.
 // FAKE_DEBUG  a file. Each program appends what it reads and writes, for debugging.
+//
+// Steering. A message sent into a running turn (Claude: a user message with priority next,
+// Codex: turn/steer) adds a line to FAKE_LOG with `steer: { id, text }` and a `state`. Claude
+// logs "queued" when it gets the message and "read" when the turn reads it, after its tool call.
+// Codex logs "read", or why it refused: "no_active_turn", "wrong_turn" or "not_steerable".
 
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -75,7 +85,7 @@ function loadRules() {
 
 /**
  * The answer for one request. Returns { rule, kind, text, value, delayMs, hold, message,
- * resetsAt, first, silent, usage, approval, listTools, stop, errorInfo, code }. kind is "answer", "fail",
+ * resetsAt, first, silent, usage, approval, listTools, tool, notSteerable, stop, errorInfo, code }. kind is "answer", "fail",
  * "limit", "auth" or "exit".
  */
 export function decide(program, prompt, schema) {
@@ -93,7 +103,7 @@ export function decide(program, prompt, schema) {
     break;
   }
   const rule = picked?.rule ?? {};
-  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, stop: rule.stop, errorInfo: rule.errorInfo };
+  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, tool: rule.tool, notSteerable: rule.notSteerable, stop: rule.stop, errorInfo: rule.errorInfo };
   if (rule.exit !== undefined) return { ...out, kind: "exit", code: rule.exit };
   if (rule.limit) return { ...out, kind: "limit", resetsAt: rule.limit.resetsAt, first: rule.limit.first === true, silent: rule.limit.silent === true };
   if (rule.auth) return { ...out, kind: "auth" };

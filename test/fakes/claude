@@ -5,9 +5,15 @@
 // user turn to FAKE_LOG. `claude --version` prints a version like the real one, or FAKE_VERSION.
 // MCP servers come from the settings in CLAUDE_CONFIG_DIR, then --mcp-config, then the
 // initialize request. A later one replaces a server of the same name whole.
+// Steering works as in Claude Code 2.1.331: a user message with priority next that comes during a
+// turn is queued, and the turn reads it after its current tool call. Each message with a uuid
+// gets command_lifecycle frames (queued, started, completed), and the result lists the uuids the
+// turn read in user_message_uuids. A message the turn never read starts a turn of its own after
+// the result. A message with priority now or later stops the fake with an error, since sous never
+// sends one. Each session keeps the user messages it read in claude-sessions/<id>, one per line.
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { appendLog, debug, decide, loginPresent, mcpSummary, readJsonLines, waitFor } from "./lib.mjs";
 
@@ -79,9 +85,9 @@ if (resumeId && !existsSync(join(sessionsDir, resumeId))) {
 }
 
 const MODELS = [
-  { value: "default", displayName: "Default (recommended)", description: "Fake default model", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high"] },
-  { value: "sonnet", displayName: "Sonnet", description: "Fake Sonnet", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high"] },
-  { value: "opus", displayName: "Opus", description: "Fake Opus", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high"] },
+  { value: "default", displayName: "Default (recommended)", description: "Fake default model", supportsAutoMode: true, supportsEffort: true, supportedEffortLevels: ["low", "medium", "high"] },
+  { value: "sonnet", displayName: "Sonnet", description: "Fake Sonnet", supportsAutoMode: true, supportsEffort: true, supportedEffortLevels: ["low", "medium", "high"] },
+  { value: "opus", displayName: "Opus", description: "Fake Opus", supportsAutoMode: true, supportsEffort: true, supportedEffortLevels: ["low", "medium", "high"] },
   { value: "haiku", displayName: "Haiku", description: "Fake Haiku" },
 ];
 const modelName = (alias) => (!alias || alias === "default" ? "claude-sonnet-fake" : alias.startsWith("claude-") ? alias : `claude-${alias}-fake`);
@@ -89,6 +95,8 @@ const modelName = (alias) => (!alias || alias === "default" ? "claude-sonnet-fak
 const state = {
   model: typeof flags.model === "string" ? flags.model : undefined,
   effort: typeof flags.effort === "string" ? flags.effort : undefined,
+  /** The mode a set_permission_mode request gave. The flag stays in argv. */
+  permissionMode: undefined,
   init: {},
   turn: undefined,
   queue: [],
@@ -133,6 +141,10 @@ function onControl(message) {
       if (request.settings && "model" in request.settings) state.model = request.settings.model ?? undefined;
       respond(message.request_id);
       return;
+    case "set_permission_mode":
+      state.permissionMode = request.mode ?? undefined;
+      respond(message.request_id);
+      return;
     case "interrupt":
       if (state.turn) state.turn.interrupted = true;
       respond(message.request_id);
@@ -164,6 +176,33 @@ function promptImages(message) {
 
 const base = () => ({ session_id: sessionId, uuid: randomUUID() });
 const sessionState = (value) => write({ type: "system", subtype: "session_state_changed", state: value, ...base() });
+/** A frame on the way of a user message that carries a uuid: queued, started, completed or cancelled. */
+const lifecycle = (commandUuid, value) => write({ type: "command_lifecycle", command_uuid: commandUuid, state: value, ...base() });
+/** Adds a user message the session read to its transcript. */
+function transcript(text) {
+  mkdirSync(sessionsDir, { recursive: true });
+  appendFileSync(join(sessionsDir, sessionId), `${JSON.stringify({ role: "user", text })}\n`);
+}
+const steerLine = (message, value) => appendLog({ program: "claude", sessionId, steer: { id: message.uuid ?? null, text: promptText(message), priority: message.priority ?? null }, state: value });
+
+/** The turn reads its queued messages, as Claude Code does after a tool call. */
+function readQueued(turn) {
+  for (const queued of turn.queue.splice(0)) {
+    if (queued.uuid) {
+      lifecycle(queued.uuid, "started");
+      turn.read.push(queued.uuid);
+    }
+    transcript(promptText(queued));
+    steerLine(queued, "read");
+  }
+}
+
+function toolUse(model, id, command) {
+  const message = assistant(model, "", {});
+  message.message.content = [{ type: "tool_use", id, name: "Bash", input: { command } }];
+  message.message.stop_reason = "tool_use";
+  return message;
+}
 
 function assistant(model, text, extra = {}, usage = USAGE) {
   return {
@@ -193,6 +232,8 @@ function streamText(model, text) {
 }
 
 function result(fields) {
+  const turn = state.turn;
+  for (const uuid of turn?.read ?? []) lifecycle(uuid, "completed");
   write({
     type: "result",
     duration_ms: 1000,
@@ -205,9 +246,11 @@ function result(fields) {
       [modelName(state.model)]: { inputTokens: 120, outputTokens: 30, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, webSearchRequests: 0, costUSD: COST, contextWindow: 200000, maxOutputTokens: 64000 },
     },
     permission_denials: [],
+    user_message_uuids: [...(turn?.uuid ? [turn.uuid] : []), ...(turn?.read ?? [])],
     ...fields,
     ...base(),
   });
+  if (turn?.uuid) lifecycle(turn.uuid, "completed");
 }
 
 let initSent = false;
@@ -216,14 +259,18 @@ async function runTurn(message) {
   const prompt = promptText(message);
   const images = promptImages(message);
   const decision = decide("claude", prompt, schema);
-  const turn = { interrupted: false };
+  // queue holds the messages sent into the turn, read the uuids of those it has read.
+  const turn = { interrupted: false, uuid: message.uuid, queue: [], read: [] };
   state.turn = turn;
+  if (message.uuid) lifecycle(message.uuid, "started");
   appendLog({
     program: "claude",
     argv,
     cwd: process.cwd(),
     model: state.model ?? null,
     effort: state.effort ?? null,
+    // Only when set, so the baseline's golden lines stay as they were.
+    ...(state.permissionMode ? { permissionMode: state.permissionMode } : {}),
     sessionId,
     resume: Boolean(resumeId),
     schema: schema ?? null,
@@ -240,8 +287,7 @@ async function runTurn(message) {
     rule: decision.rule,
     outcome: decision.kind,
   });
-  mkdirSync(sessionsDir, { recursive: true });
-  writeFileSync(join(sessionsDir, sessionId), "");
+  transcript(prompt);
 
   // The replay of the user message tells the SDK client which turn is now running.
   write({ ...message, session_id: sessionId, isReplay: true });
@@ -267,12 +313,18 @@ async function runTurn(message) {
     });
   }
 
+  const model = modelName(state.model);
+  const toolId = `toolu_fake_${randomUUID().slice(0, 8)}`;
+  if (decision.tool) write(toolUse(model, toolId, decision.tool));
   await waitFor(decision, () => turn.interrupted);
   if (decision.kind === "exit") {
     process.stderr.write("fake crash\n");
     process.exit(decision.code);
   }
-  const model = modelName(state.model);
+  if (decision.tool && !turn.interrupted) {
+    write({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: toolId, content: "ok", is_error: false }] }, parent_tool_use_id: null, ...base() });
+    readQueued(turn);
+  }
   // A rule's usage is what the turn spent before it failed or stopped, in one model message.
   const spent = decision.usage ? { usage: { ...apiUsage(decision.usage), server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 }, service_tier: "standard" } } : {};
   if (decision.usage && decision.kind !== "answer") write(assistant(model, "Working on it.", {}, apiUsage(decision.usage)));
@@ -310,6 +362,22 @@ async function runTurn(message) {
   }
   sessionState("idle");
   state.turn = undefined;
+  // A message the turn never read runs as a turn of its own.
+  for (const queued of turn.queue.splice(0)) chain = chain.then(() => runTurn(queued));
+}
+
+function onUser(message) {
+  if (message.priority === "now" || message.priority === "later") {
+    process.stderr.write(`fake claude: a user message came with priority ${message.priority}. "now" aborts the turn and "later" starts a second one, so sous must send "next".\n`);
+    process.exit(70);
+  }
+  if (message.uuid) lifecycle(message.uuid, "queued");
+  if (state.turn && message.priority === "next") {
+    steerLine(message, "queued");
+    state.turn.queue.push(message);
+    return;
+  }
+  chain = chain.then(() => runTurn(message));
 }
 
 let chain = Promise.resolve();
@@ -317,7 +385,7 @@ readJsonLines(process.stdin, (message) => {
   debug("claude", "in", message);
   if (message.type === "control_request") onControl(message);
   else if (message.type === "control_response") return;
-  else if (message.type === "user") chain = chain.then(() => runTurn(message));
+  else if (message.type === "user") onUser(message);
 });
 // The SDK closes stdin when its caller is done, also when it stops a step in the middle of a
 // turn. The program exits then. Without this, a held turn keeps it up until the SDK's SIGTERM,

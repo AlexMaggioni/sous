@@ -5,10 +5,14 @@
 // $CODEX_HOME/config.toml, `-c` and the thread config. A thread's servers deep-merge into
 // configured ones of the same name, as the real 0.169.0 does. It answers as lib.mjs decides and
 // logs each turn to FAKE_LOG.
+// turn/steer works as in 0.169.0: during a turn it answers with the turn id and adds a userMessage
+// item to the turn. After the turn it fails with -32600 "no active turn to steer". A rule's
+// notSteerable makes it fail with activeTurnNotSteerable instead, as a compact turn does. Each
+// thread keeps the user messages it read in codex-threads/<id>, one per line.
 // `codex --version` prints a version like the real one, or FAKE_VERSION.
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { appendLog, debug, decide, limitRule, loginPresent, mcpSummary, readJsonLines, waitFor } from "./lib.mjs";
 
@@ -225,6 +229,43 @@ function openThread(params, resumed) {
   return thread;
 }
 
+/** Adds a user message the thread read to its transcript. */
+function transcript(thread, text) {
+  mkdirSync(threadsDir, { recursive: true });
+  appendFileSync(join(threadsDir, thread.id), `${JSON.stringify({ role: "user", text })}\n`);
+}
+
+/** turn/steer: the error it fails with. Without one, it answers and adds the message to the turn. */
+function steer(params, reply) {
+  const thread = threads.get(params.threadId);
+  const turn = thread?.turn;
+  const text = promptText(params.input);
+  const log = (state) => appendLog({ program: "codex", sessionId: params.threadId ?? null, steer: { id: params.clientUserMessageId ?? null, text, expectedTurnId: params.expectedTurnId ?? null }, state });
+  if (!thread) return { code: -32600, message: `thread not found: ${params.threadId}` };
+  if (!turn) {
+    log("no_active_turn");
+    return { code: -32600, message: "no active turn to steer" };
+  }
+  if (params.expectedTurnId !== turn.id) {
+    log("wrong_turn");
+    return { code: -32600, message: `expected active turn id \`${params.expectedTurnId}\` but found \`${turn.id}\`` };
+  }
+  if (turn.notSteerable) {
+    log("not_steerable");
+    const message = `cannot steer a ${turn.notSteerable} turn`;
+    return { code: -32600, message, data: { message, codexErrorInfo: { activeTurnNotSteerable: { turnKind: turn.notSteerable } }, additionalDetails: null, misalignment: null } };
+  }
+  log("read");
+  transcript(thread, text);
+  const base = { threadId: thread.id, turnId: turn.id };
+  const item = { type: "userMessage", id: `user_${randomUUID().slice(0, 8)}`, clientId: params.clientUserMessageId ?? null, content: params.input ?? [] };
+  // The answer goes first, then the item, as the real one sends them.
+  reply({ turnId: turn.id });
+  notify("item/started", { ...base, item, startedAtMs: 1700000000000 });
+  notify("item/completed", { ...base, item, completedAtMs: 1700000000000 });
+  return undefined;
+}
+
 function promptText(input) {
   return (input ?? [])
     .filter((item) => item?.type === "text")
@@ -296,7 +337,7 @@ async function runTurn(thread, turnId, params) {
   const images = promptImages(params.input);
   const schema = params.outputSchema ?? null;
   const decision = decide("codex", prompt, schema);
-  const turn = { id: turnId, interrupted: false };
+  const turn = { id: turnId, interrupted: false, notSteerable: decision.notSteerable };
   thread.turn = turn;
   const model = params.model ?? thread.model;
   const base = { threadId: thread.id, turnId };
@@ -335,18 +376,20 @@ async function runTurn(thread, turnId, params) {
     outcome: decision.kind,
     ...(answer ? { approval: answer.error ? { error: answer.error } : answer.result } : {}),
   });
-  mkdirSync(threadsDir, { recursive: true });
-  writeFileSync(join(threadsDir, thread.id), "");
+  transcript(thread, prompt);
   thread.preview ||= prompt.slice(0, 80);
 
   const turnView = (status, items = [], error = null) => ({ id: turnId, items, itemsView: "full", status, error, startedAt: 1700000000, completedAt: status === "inProgress" ? null : 1700000001, durationMs: status === "inProgress" ? null : 1000 });
   notify("turn/started", { threadId: thread.id, turn: turnView("inProgress") });
 
+  const tool = decision.tool && { type: "commandExecution", id: `call_${randomUUID().slice(0, 8)}`, pluginId: null, scriptPath: null, command: decision.tool, cwd: thread.cwd, processId: null, source: "agent", commandActions: [], durationMs: null };
+  if (tool) notify("item/started", { ...base, item: { ...tool, status: "inProgress", aggregatedOutput: null, exitCode: null }, startedAtMs: 1700000000000 });
   await waitFor(decision, () => turn.interrupted);
   if (decision.kind === "exit") {
     process.stderr.write("fake crash\n");
     process.exit(decision.code);
   }
+  if (tool && !turn.interrupted) notify("item/completed", { ...base, item: { ...tool, status: "completed", aggregatedOutput: "ok", exitCode: 0 }, completedAtMs: 1700000000500 });
   thread.turn = undefined;
 
   if (request?.item) notify("item/completed", { ...base, item: request.item(request.accepts(answer.result ?? {})), completedAtMs: 1700000000500 });
@@ -389,7 +432,7 @@ function onRequest(message) {
   const { id, method } = message;
   const params = message.params ?? {};
   const reply = (result) => send({ id, result });
-  const fail = (code, text) => send({ id, error: { code, message: text } });
+  const fail = (code, text, data) => send({ id, error: { code, message: text, ...(data ? { data } : {}) } });
   switch (method) {
     case "initialize":
       return reply({ userAgent: `codex_cli_rs/${VERSION} (fake)`, codexHome: join(dirname(threadsDir), "codex-home"), platformFamily: "unix", platformOs: "macos" });
@@ -426,6 +469,11 @@ function onRequest(message) {
       const turnId = randomUUID();
       reply({ turn: { id: turnId, items: [], itemsView: "full", status: "inProgress", error: null, startedAt: 1700000000, completedAt: null, durationMs: null } });
       thread.chain = (thread.chain ?? Promise.resolve()).then(() => runTurn(thread, turnId, params));
+      return;
+    }
+    case "turn/steer": {
+      const error = steer(params, reply);
+      if (error) fail(error.code, error.message, error.data);
       return;
     }
     case "turn/interrupt": {

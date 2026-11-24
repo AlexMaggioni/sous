@@ -3,13 +3,15 @@
 // stands in for ~/.claude or ~/.codex.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createHarness } from "../src/index.js";
-import type { Account, Harness, HarnessFailure, HarnessId, HistoryEntry, Step, Usage } from "../src/index.js";
+import type { Account, Harness, HarnessFailure, HarnessId, HistoryEntry, Step, Steer, SteerOutcome, Usage } from "../src/index.js";
 
 const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../test/fakes");
 
@@ -56,6 +58,11 @@ interface LogLine {
   sandboxPolicy?: string;
   /** The client's answer to the request the fake sent, as the client gave it. */
   approval?: unknown;
+  /** Claude: the mode a set_permission_mode request gave before the turn. Missing when none did. */
+  permissionMode?: string;
+  /** A line for a message sent into a turn, rather than a turn. See test/fakes/lib.mjs. */
+  steer?: { id: string | null; text: string; priority?: string | null; expectedTurnId?: string | null };
+  state?: string;
 }
 
 interface Case {
@@ -104,10 +111,10 @@ async function failure(run: Promise<unknown>): Promise<HarnessFailure> {
 
 const sum = (u: Usage) => u.input + u.output + u.cacheRead + u.cacheWrite;
 
-async function until(check: () => boolean, ms = 10_000) {
+async function until(check: () => boolean, ms = 10_000, what = "timed out") {
   const end = Date.now() + ms;
   while (!check()) {
-    if (Date.now() > end) assert.fail("timed out");
+    if (Date.now() > end) assert.fail(what);
     await new Promise((done) => setTimeout(done, 20));
   }
 }
@@ -356,6 +363,182 @@ describe("the codex adapter's answers to requests in the middle of a turn", () =
       assert.deepEqual(declined, expected);
     });
   }
+});
+
+/** The turns the fake logged, without the lines for messages sent into a turn. */
+const turnLines = (c: Case) => c.lines().filter((line) => line.steer === undefined);
+const steerLines = (c: Case) => c.lines().filter((line) => line.steer !== undefined);
+
+/** A step held on a gate file, with what its events gave. */
+function heldStep(c: Case, prompt: string) {
+  const seams: Array<Steer | undefined> = [];
+  const history: HistoryEntry[] = [];
+  const run = c.harness.run(c.step({ prompt }), { history: (entry) => history.push(entry), steer: (send) => seams.push(send) });
+  return {
+    run,
+    seams,
+    history,
+    open: () => writeFileSync(join(c.dir, "go"), ""),
+    /** The seam the adapter gives once the turn has started. */
+    async seam(): Promise<Steer> {
+      await until(() => seams.at(-1) !== undefined, 10_000, "the adapter never opened the steer seam");
+      return seams.at(-1)!;
+    },
+    /** Opens the gate whatever happened, so no fake stays up after a failed test. */
+    async finish() {
+      writeFileSync(join(c.dir, "go"), "");
+      await run.catch(() => undefined);
+    },
+  };
+}
+
+const TELL = "Stop counting at five.";
+const tellIn = (history: HistoryEntry[], text = TELL) => history.findIndex((entry) => entry.role === "user" && entry.kind === "text" && entry.text === text);
+
+for (const kit of KITS) {
+  describe(`the ${kit.id} adapter's steer seam`, () => {
+    test("delivers a tell sent during a tool call, in the same turn", async () => {
+      const c = newCase(kit);
+      c.rules([{ tool: "seq 1 10", hold: "go", answer: "Stopped at five." }]);
+      const held = heldStep(c, "Count to ten.");
+      try {
+        await until(() => held.history.some((entry) => entry.kind === "toolCall"), 10_000, "the fake's tool call never reached the history");
+        const send = await held.seam();
+        const id = randomUUID();
+        const told = send(TELL, id);
+        await until(() => steerLines(c).some((line) => line.steer?.id === id), 10_000, "the tell never reached the program");
+        held.open();
+        assert.equal(await told, "delivered");
+        const result = await held.run;
+        assert.equal(result.text, "Stopped at five.");
+        assert.equal(turnLines(c).length, 1, "the tell started a turn of its own");
+        assert.ok(steerLines(c).some((line) => line.steer?.id === id && line.state === "read"), "the turn never read the tell");
+        const toolCall = held.history.findIndex((entry) => entry.kind === "toolCall");
+        assert.ok(tellIn(held.history) > toolCall, "the tell is not in the history after the tool call");
+        assert.equal(held.seams.at(-1), undefined, "the seam stayed open after the turn");
+      } finally {
+        await held.finish();
+      }
+    });
+
+    test("answers ended to a tell after the result, and sends nothing", async () => {
+      const c = newCase(kit);
+      const seams: Array<Steer | undefined> = [];
+      const result = await c.harness.run(c.step({ prompt: "hello" }), { steer: (send) => seams.push(send) });
+      assert.equal(result.text, `Fake ${kit.id} answer.`);
+      const send = seams.find((seam) => seam !== undefined);
+      assert.ok(send, "the adapter never opened the steer seam");
+      assert.equal(seams.at(-1), undefined, "the seam stayed open after the turn");
+      assert.equal(await send("Too late.", randomUUID()), "ended");
+      assert.equal(turnLines(c).length, 1);
+      assert.equal(steerLines(c).length, 0);
+    });
+  });
+}
+
+describe("the codex adapter's steer seam, when Codex refuses", () => {
+  test("answers not_steerable during a turn Codex cannot steer", async () => {
+    const c = newCase(CODEX);
+    c.rules([{ tool: "seq 1 10", hold: "go", notSteerable: "compact", answer: "Counted to ten." }]);
+    const held = heldStep(c, "Count to ten.");
+    try {
+      await until(() => held.history.some((entry) => entry.kind === "toolCall"), 10_000, "the fake's tool call never reached the history");
+      const send = await held.seam();
+      const outcome: SteerOutcome = await send(TELL, randomUUID());
+      assert.equal(outcome, "not_steerable");
+      assert.deepEqual(steerLines(c).map((line) => line.state), ["not_steerable"]);
+      held.open();
+      const result = await held.run;
+      assert.equal(result.text, "Counted to ten.");
+      assert.equal(tellIn(held.history), -1, "a tell Codex refused is in the history");
+    } finally {
+      await held.finish();
+    }
+  });
+
+  test("answers ended when the turn ends before Codex takes the tell", async () => {
+    const c = newCase(CODEX);
+    c.rules([{ answer: "All done." }]);
+    const seams: Array<Steer | undefined> = [];
+    let told: Promise<SteerOutcome> | undefined;
+    // The fake ends its turn before it sends the answer, so a tell sent on the answer finds no turn.
+    const result = await c.harness.run(c.step({ prompt: "hello" }), {
+      steer: (send) => seams.push(send),
+      history: (entry) => {
+        const send = seams.at(-1);
+        if (entry.role === "assistant" && entry.kind === "text" && send && !told) told = send(TELL, randomUUID());
+      },
+    });
+    assert.equal(result.text, "All done.");
+    assert.ok(told, "the seam was not open when the answer came");
+    assert.equal(await told, "ended");
+  });
+});
+
+describe("the claude adapter's steer seam, on what Claude Code does", () => {
+  test("answers ended to a tell still waiting when the result comes", async () => {
+    const c = newCase(CLAUDE);
+    // No tool call, so the turn never reads the tell. The fake then runs it as a second turn,
+    // as Claude Code does, and that turn must not become the step's answer.
+    c.rules([{ hold: "go", answer: "Done.", times: 1 }, { answer: "A second turn." }]);
+    const held = heldStep(c, "Say done.");
+    try {
+      const send = await held.seam();
+      const id = randomUUID();
+      const told = send(TELL, id);
+      await until(() => steerLines(c).some((line) => line.steer?.id === id && line.state === "queued"), 10_000, "the tell never reached the program");
+      held.open();
+      assert.equal(await told, "ended");
+      const result = await held.run;
+      assert.equal(result.text, "Done.");
+      assert.equal(tellIn(held.history), -1, "a tell the turn never read is in the history");
+    } finally {
+      await held.finish();
+    }
+  });
+
+  test("sends every tell with priority next", async () => {
+    const c = newCase(CLAUDE);
+    c.rules([{ tool: "seq 1 10", hold: "go", answer: "Stopped at five." }]);
+    const held = heldStep(c, "Count to ten.");
+    try {
+      await until(() => held.history.some((entry) => entry.kind === "toolCall"), 10_000, "the fake's tool call never reached the history");
+      const send = await held.seam();
+      const ids = [randomUUID(), randomUUID()];
+      const told = [send(TELL, ids[0]!), send("And say why.", ids[1]!)];
+      await until(() => steerLines(c).filter((line) => line.state === "queued").length === 2, 10_000, "the tells never reached the program");
+      held.open();
+      assert.deepEqual(await Promise.all(told), ["delivered", "delivered"]);
+      await held.run;
+      // The fake exits with an error on now or later, so a step that ends well sent neither.
+      assert.deepEqual(steerLines(c).map((line) => line.steer?.priority), ["next", "next", "next", "next"]);
+      assert.equal(turnLines(c).length, 1);
+    } finally {
+      await held.finish();
+    }
+  });
+
+  test("the fake fails loudly on a message with priority now or later", () => {
+    for (const priority of ["now", "later"]) {
+      const message = { type: "user", message: { role: "user", content: [{ type: "text", text: "x" }] }, parent_tool_use_id: null, priority };
+      const ran = spawnSync(join(FAKES, "claude"), ["--input-format", "stream-json", "--output-format", "stream-json"], { input: `${JSON.stringify(message)}\n`, encoding: "utf8", env: { ...process.env, FAKE_LOG: join(ROOT, "priority.log") } });
+      assert.notEqual(ran.status, 0, priority);
+      assert.match(ran.stderr, new RegExp(`priority ${priority}`));
+    }
+  });
+
+  test("turns on auto mode when the step names no mode and the model offers it", async () => {
+    const ROWS: Array<{ fields: Partial<Step>; permissionMode: string | null }> = [
+      { fields: {}, permissionMode: "auto" },
+      { fields: { model: "haiku" }, permissionMode: null },
+      { fields: { mode: "plan" }, permissionMode: null },
+    ];
+    for (const row of ROWS) {
+      const c = newCase(CLAUDE);
+      await c.harness.run(c.step({ prompt: "hello", ...row.fields }));
+      assert.equal(c.lines()[0]?.permissionMode ?? null, row.permissionMode, JSON.stringify(row.fields));
+    }
+  });
 });
 
 describe("the login variables", () => {
