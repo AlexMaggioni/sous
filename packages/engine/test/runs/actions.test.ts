@@ -23,6 +23,8 @@ interface Action {
   runId?: string;
   workflow?: string;
   question?: string;
+  prompt?: string;
+  schedule?: string;
   step?: string;
   value?: unknown;
   text?: string;
@@ -80,6 +82,30 @@ describe("piece 7: events.jsonl", () => {
     assert.ok((line!.text as string).startsWith("x".repeat(900)), "the cut keeps the start of the text");
   });
 
+  it("recordAction cuts the question's text at 1,000 characters, and a value's JSON too", async () => {
+    const { recordAction } = await actions();
+    const { paths } = setup();
+    recordAction(paths, { act: "answer", by: "agent", through: CLAUDE, runId: "r1", question: "r1--0", prompt: "Which color? ".repeat(500), value: { notes: "y".repeat(5_000) } }, NOW);
+    const [line] = rawLines(eventsFile(paths));
+    assert.ok((line!.prompt as string).length <= 1_000, `prompt of ${(line!.prompt as string).length} characters`);
+    assert.ok((line!.prompt as string).startsWith("Which color? Which color?"));
+    const value = JSON.stringify(line!.value);
+    assert.ok(value.length <= 1_100, `a value of ${value.length} characters as JSON`);
+    assert.ok(String(line!.value).startsWith('{"notes":"yyy'), `the cut keeps the start of the value's JSON: ${value.slice(0, 40)}`);
+  });
+
+  it("recordAction hides a login token in free text, in the question's text and in a value", async () => {
+    const { recordAction } = await actions();
+    const { paths } = setup();
+    const token = "sk-ant-oat01-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
+    recordAction(paths, { act: "send-back", by: "agent", through: CLAUDE, runId: "r1", question: "r1--0", prompt: `Use ${token}?`, text: `the key is ${token}` }, NOW);
+    recordAction(paths, { act: "answer", by: "agent", through: CLAUDE, runId: "r1", question: "r1--1", value: `use ${token}` }, NOW);
+    recordAction(paths, { act: "answer", by: "agent", through: CLAUDE, runId: "r1", question: "r1--2", value: { key: token } }, NOW);
+    const text = readFileSync(eventsFile(paths), "utf8");
+    assert.equal(text.includes(token), false, text);
+    assert.equal(rawLines(eventsFile(paths)).length, 3);
+  });
+
   it("readActions reads the lines back, and filters by run and by action", async () => {
     const { recordAction, readActions } = await actions();
     const { paths } = setup();
@@ -123,6 +149,18 @@ describe("piece 7: noticeOf", () => {
     assert.ok(chose && passedOn, "both answers came through an agent");
     assert.match(passedOn.message, /blue/);
     assert.notEqual(passedOn.message, chose.message, "the text differs by who decided");
+  });
+
+  it("the notice names the question's text, not its id", async () => {
+    const { noticeOf } = await actions();
+    const withText = { ...answer("agent", CLAUDE), prompt: "Which color?" };
+    assert.equal(noticeOf(withText)?.message, "Claude Code answered blue to Which color? in run mwu6.");
+    const passedOn = noticeOf({ ...withText, by: "person" })?.message ?? "";
+    assert.match(passedOn, /Which color\?/);
+    assert.doesNotMatch(passedOn, /mwu6--0/);
+    const approve = noticeOf(at({ act: "approve", by: "agent", through: CLAUDE, runId: "mwu6", question: "mwu6--1", prompt: "Approve the release notes" }))?.message ?? "";
+    assert.match(approve, /Approve the release notes/);
+    assert.doesNotMatch(approve, /mwu6--1/);
   });
 
   it("an answer from a step of a run gives a notice", async () => {

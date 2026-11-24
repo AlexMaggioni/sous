@@ -1,7 +1,7 @@
 // The sous home folder (~/.sous, or $SOUS_HOME) and a project's .sous folder.
 // A project's workflows win over the home folder's.
 
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { readStrictJsonFile, writeJsonFile } from "../json-file.js";
@@ -67,6 +67,20 @@ export function ensureHome(paths: HomePaths = homePaths()): HomePaths {
     mkdirSync(dir, { recursive: true });
   }
   return paths;
+}
+
+/** Why sous can't write to its home, or undefined when a probe file goes in and out. Under the
+ *  Codex sandbox the home is often outside the folders it lets a command write. */
+export function homeWriteProblem(paths: HomePaths = homePaths()): string | undefined {
+  const probe = join(paths.home, `.write-check-${process.pid}`);
+  try {
+    mkdirSync(paths.home, { recursive: true });
+    writeFileSync(probe, "");
+    unlinkSync(probe);
+    return undefined;
+  } catch (error) {
+    return (error as Error).message;
+  }
 }
 
 export function loadConfig(paths: HomePaths = homePaths()): OrcConfig {

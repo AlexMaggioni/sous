@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { describe, it } from "node:test";
 import { listAccounts } from "@sous/engine";
-import { testHome } from "@sous/engine/testing";
+import { PERSON, testHome } from "@sous/engine/testing";
 import { cmdAccount } from "../src/account-cli.js";
 import { capture } from "./sous.js";
 
@@ -29,7 +29,7 @@ async function addInTerminal(keys: string) {
   const lines: string[] = [];
   let setups = 0;
   try {
-    const adding = cmdAccount(["add", "work"], { out: (line) => lines.push(line), setupToken: () => setups++ });
+    const adding = cmdAccount(["add", "work"], { who: PERSON, out: (line) => lines.push(line), setupToken: () => setups++ });
     // The command has set the terminal and listens by now, since it does that before it first waits.
     input.write(keys);
     const outcome = await adding.then(
