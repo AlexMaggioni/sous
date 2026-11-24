@@ -1,0 +1,691 @@
+{
+  "batch": "feature-codex-skill-2026-11-24T17-57-44-884Z",
+  "sous": "feature",
+  "cli": "<code>/orchestrator-agent-native/packages/cli/dist/cli.js",
+  "driver": "codex",
+  "driverBin": "/opt/homebrew/bin/codex",
+  "driverVersion": "codex-cli 0.169.0",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "skill": "<code>/orchestrator-agent-native/packages/cli/skill/sous/SKILL.md",
+  "scenarios": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "5b",
+    "6",
+    "7",
+    "9"
+  ],
+  "repsEach": 1,
+  "startedAt": "2026-11-24T17:57:50.276Z",
+  "reps": [
+    {
+      "scenario": "1",
+      "title": "Run hello for Ada",
+      "rep": 1,
+      "verdict": "pass",
+      "checks": [
+        {
+          "name": "one run",
+          "result": "pass",
+          "reason": "one hello run, mwuzzs40-s5bjay",
+          "source": "records"
+        },
+        {
+          "name": "it returned hello Ada",
+          "result": "pass",
+          "reason": "the run completed with hello Ada",
+          "source": "records"
+        },
+        {
+          "name": "one wait",
+          "result": "pass",
+          "reason": "one wait: wait mwuzzs40-s5bjay --timeout 540 --json",
+          "source": "commands"
+        },
+        {
+          "name": "no sleep",
+          "result": "pass",
+          "reason": "no sleep",
+          "source": "commands"
+        },
+        {
+          "name": "the answer holds hello Ada",
+          "result": "pass",
+          "reason": "it does",
+          "source": "answer"
+        },
+        {
+          "name": "six sous calls at most",
+          "result": "pass",
+          "reason": "5 sous calls",
+          "source": "commands"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 5,
+        "sousInCommands": 5,
+        "commands": 6,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 21,
+        "tokens": 157186,
+        "inputTokens": 156893,
+        "cachedInputTokens": 133120,
+        "outputTokens": 293,
+        "skillListed": false,
+        "timedOut": false
+      },
+      "refusals": []
+    },
+    {
+      "scenario": "2",
+      "title": "A question for people",
+      "rep": 1,
+      "verdict": "pass",
+      "checks": [
+        {
+          "name": "turn 1 ends with the question open",
+          "result": "pass",
+          "reason": "mwv007mr-kh5t3p--0 was open after turn 1",
+          "source": "records"
+        },
+        {
+          "name": "turn 1 made no answer",
+          "result": "pass",
+          "reason": "no answer call in turn 1",
+          "source": "commands"
+        },
+        {
+          "name": "turn 1 shows the question",
+          "result": "pass",
+          "reason": "turn 1 names red and blue",
+          "source": "answer"
+        },
+        {
+          "name": "one answer, blue, by person",
+          "result": "pass",
+          "reason": "mwv007mr-kh5t3p--0 took blue by person",
+          "source": "records"
+        },
+        {
+          "name": "the asks run completed",
+          "result": "pass",
+          "reason": "mwv007mr-kh5t3p completed",
+          "source": "records"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 7,
+        "sousInCommands": 7,
+        "commands": 8,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 31,
+        "tokens": 389584,
+        "inputTokens": 388877,
+        "cachedInputTokens": 361856,
+        "outputTokens": 707,
+        "skillListed": false,
+        "timedOut": false
+      },
+      "refusals": []
+    },
+    {
+      "scenario": "3",
+      "title": "A question anyone may answer",
+      "rep": 1,
+      "verdict": "pass",
+      "checks": [
+        {
+          "name": "one answer by agent",
+          "result": "pass",
+          "reason": "mwv00vnx-90399h--0 took blue by agent",
+          "source": "records"
+        },
+        {
+          "name": "the asks-anyone run completed",
+          "result": "pass",
+          "reason": "mwv00vnx-90399h completed",
+          "source": "records"
+        },
+        {
+          "name": "the report names the answer",
+          "result": "pass",
+          "reason": "it names blue",
+          "source": "answer"
+        },
+        {
+          "name": "sous showed answeredBy to the agent",
+          "result": "note",
+          "reason": "a sous reply carried answeredBy",
+          "source": "commands"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 7,
+        "sousInCommands": 7,
+        "commands": 8,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 23,
+        "tokens": 205910,
+        "inputTokens": 205522,
+        "cachedInputTokens": 192128,
+        "outputTokens": 388,
+        "skillListed": false,
+        "timedOut": false
+      },
+      "refusals": []
+    },
+    {
+      "scenario": "4",
+      "title": "A failed step",
+      "rep": 1,
+      "verdict": "fail",
+      "checks": [
+        {
+          "name": "the run paused on the failed step",
+          "result": "pass",
+          "reason": "mwv01d7v-ixb3v9 paused step_failed",
+          "source": "records"
+        },
+        {
+          "name": "no rerun",
+          "result": "pass",
+          "reason": "no rerun",
+          "source": "records"
+        },
+        {
+          "name": "the report names the step",
+          "result": "pass",
+          "reason": "it names boom",
+          "source": "answer"
+        },
+        {
+          "name": "the report names the error",
+          "result": "pass",
+          "reason": "it names exit 3 or the message",
+          "source": "answer"
+        },
+        {
+          "name": "the agent offers a resume",
+          "result": "fail",
+          "reason": "it does not mention resume",
+          "source": "answer"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 6,
+        "sousInCommands": 6,
+        "commands": 7,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 22,
+        "tokens": 159249,
+        "inputTokens": 158892,
+        "cachedInputTokens": 134144,
+        "outputTokens": 357,
+        "skillListed": false,
+        "timedOut": false
+      },
+      "refusals": []
+    },
+    {
+      "scenario": "5",
+      "title": "A refused call: approve a breakpoint",
+      "rep": 1,
+      "verdict": "na",
+      "checks": [
+        {
+          "name": "the call after a refusal is the refusal's call",
+          "result": "na",
+          "reason": "sous refused no approve or answer or send-back call",
+          "source": "commands"
+        },
+        {
+          "name": "the review run completed",
+          "result": "pass",
+          "reason": "mwv01unz-by0qic completed",
+          "source": "records"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 7,
+        "sousInCommands": 7,
+        "commands": 8,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 23,
+        "tokens": 184467,
+        "inputTokens": 184054,
+        "cachedInputTokens": 170752,
+        "outputTokens": 413,
+        "skillListed": false,
+        "timedOut": false
+      },
+      "refusals": []
+    },
+    {
+      "scenario": "5b",
+      "title": "A refused call: resume after an edit",
+      "rep": 1,
+      "verdict": "fail",
+      "checks": [
+        {
+          "name": "the call after a refusal is the refusal's call",
+          "result": "fail",
+          "reason": "\"resume mwv024en-1jb63k --latest --json\" was refused and named \"sous workflows show fails --diff --json\", the next call was \"workflows approve fails --by person --json\"",
+          "source": "commands"
+        },
+        {
+          "name": "the paused run finished",
+          "result": "pass",
+          "reason": "mwv024en-1jb63k completed",
+          "source": "records"
+        },
+        {
+          "name": "no new run",
+          "result": "pass",
+          "reason": "no new fails run",
+          "source": "records"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 11,
+        "sousInCommands": 11,
+        "commands": 12,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 44,
+        "tokens": 425467,
+        "inputTokens": 424227,
+        "cachedInputTokens": 395648,
+        "outputTokens": 1240,
+        "skillListed": false,
+        "timedOut": false
+      },
+      "refusals": [
+        {
+          "sub": "resume",
+          "call": "resume mwv024en-1jb63k --json",
+          "exit": 64,
+          "named": [
+            "sous resume mwv024en-1jb63k --same --json",
+            "sous resume mwv024en-1jb63k --latest",
+            "sous resume mwv024en-1jb63k --same"
+          ],
+          "from": "error.call",
+          "next": "resume mwv024en-1jb63k --latest --json",
+          "followed": true
+        },
+        {
+          "sub": "resume",
+          "call": "resume mwv024en-1jb63k --latest --json",
+          "exit": 66,
+          "named": [
+            "sous workflows show fails --diff --json"
+          ],
+          "from": "error.call",
+          "next": "workflows approve fails --by person --json",
+          "followed": false
+        }
+      ]
+    },
+    {
+      "scenario": "6",
+      "title": "Make a workflow",
+      "rep": 1,
+      "verdict": "pass",
+      "checks": [
+        {
+          "name": "nothing saved before the yes",
+          "result": "pass",
+          "reason": "no workflow file changed in turn 1",
+          "source": "records"
+        },
+        {
+          "name": "turn 1 shows the file",
+          "result": "pass",
+          "reason": "turn 1 shows the code",
+          "source": "answer"
+        },
+        {
+          "name": "turn 1 asks before saving",
+          "result": "pass",
+          "reason": "turn 1 asks",
+          "source": "answer"
+        },
+        {
+          "name": "the workflow was saved",
+          "result": "pass",
+          "reason": "saved project/greet-approve.js",
+          "source": "records"
+        },
+        {
+          "name": "a check --dry-run before any run",
+          "result": "pass",
+          "reason": "\"check greet-approve --name Ada --dry-run --json\" came first",
+          "source": "commands"
+        },
+        {
+          "name": "no run before an approve event",
+          "result": "pass",
+          "reason": "an approve came first",
+          "source": "records"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 10,
+        "sousInCommands": 10,
+        "commands": 12,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 46,
+        "tokens": 416306,
+        "inputTokens": 414701,
+        "cachedInputTokens": 384128,
+        "outputTokens": 1605,
+        "skillListed": false,
+        "timedOut": false
+      },
+      "refusals": []
+    },
+    {
+      "scenario": "7",
+      "title": "What is going on",
+      "rep": 1,
+      "verdict": "pass",
+      "checks": [
+        {
+          "name": "the first sous call is status",
+          "result": "pass",
+          "reason": "\"status --json\"",
+          "source": "commands"
+        },
+        {
+          "name": "the answer names the paused run",
+          "result": "pass",
+          "reason": "it names fails",
+          "source": "answer"
+        },
+        {
+          "name": "the answer names the open question",
+          "result": "pass",
+          "reason": "it names asks",
+          "source": "answer"
+        },
+        {
+          "name": "nothing changed",
+          "result": "pass",
+          "reason": "no run changed",
+          "source": "records"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 3,
+        "sousInCommands": 3,
+        "commands": 4,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 16,
+        "tokens": 110197,
+        "inputTokens": 109884,
+        "cachedInputTokens": 88192,
+        "outputTokens": 313,
+        "skillListed": false,
+        "timedOut": false
+      },
+      "refusals": []
+    },
+    {
+      "scenario": "9",
+      "title": "A people workflow",
+      "rep": 1,
+      "verdict": "pass",
+      "checks": [
+        {
+          "name": "no run starts",
+          "result": "pass",
+          "reason": "no deploy run",
+          "source": "records"
+        },
+        {
+          "name": "the agent gives the command",
+          "result": "pass",
+          "reason": "the answer has sous run deploy",
+          "source": "answer"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 3,
+        "sousInCommands": 3,
+        "commands": 4,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 21,
+        "tokens": 109798,
+        "inputTokens": 109536,
+        "cachedInputTokens": 98176,
+        "outputTokens": 262,
+        "skillListed": false,
+        "timedOut": false
+      },
+      "refusals": []
+    }
+  ],
+  "aggregate": [
+    {
+      "scenario": "1",
+      "title": "Run hello for Ada",
+      "reps": 1,
+      "passed": 1,
+      "na": 0,
+      "errors": 0,
+      "medianSousCalls": 5,
+      "sleeps": 0,
+      "polled": 0,
+      "medianSeconds": 21,
+      "medianTokens": 157186,
+      "checks": {
+        "one run": "pass",
+        "it returned hello Ada": "pass",
+        "one wait": "pass",
+        "no sleep": "pass",
+        "the answer holds hello Ada": "pass",
+        "six sous calls at most": "pass"
+      }
+    },
+    {
+      "scenario": "2",
+      "title": "A question for people",
+      "reps": 1,
+      "passed": 1,
+      "na": 0,
+      "errors": 0,
+      "medianSousCalls": 7,
+      "sleeps": 0,
+      "polled": 0,
+      "medianSeconds": 31,
+      "medianTokens": 389584,
+      "checks": {
+        "turn 1 ends with the question open": "pass",
+        "turn 1 made no answer": "pass",
+        "turn 1 shows the question": "pass",
+        "one answer, blue, by person": "pass",
+        "the asks run completed": "pass"
+      }
+    },
+    {
+      "scenario": "3",
+      "title": "A question anyone may answer",
+      "reps": 1,
+      "passed": 1,
+      "na": 0,
+      "errors": 0,
+      "medianSousCalls": 7,
+      "sleeps": 0,
+      "polled": 0,
+      "medianSeconds": 23,
+      "medianTokens": 205910,
+      "checks": {
+        "one answer by agent": "pass",
+        "the asks-anyone run completed": "pass",
+        "the report names the answer": "pass",
+        "sous showed answeredBy to the agent": "note"
+      }
+    },
+    {
+      "scenario": "4",
+      "title": "A failed step",
+      "reps": 1,
+      "passed": 0,
+      "na": 0,
+      "errors": 0,
+      "medianSousCalls": 6,
+      "sleeps": 0,
+      "polled": 0,
+      "medianSeconds": 22,
+      "medianTokens": 159249,
+      "checks": {
+        "the run paused on the failed step": "pass",
+        "no rerun": "pass",
+        "the report names the step": "pass",
+        "the report names the error": "pass",
+        "the agent offers a resume": "fail"
+      }
+    },
+    {
+      "scenario": "5",
+      "title": "A refused call: approve a breakpoint",
+      "reps": 1,
+      "passed": 0,
+      "na": 1,
+      "errors": 0,
+      "medianSousCalls": 7,
+      "sleeps": 0,
+      "polled": 0,
+      "medianSeconds": 23,
+      "medianTokens": 184467,
+      "checks": {
+        "the call after a refusal is the refusal's call": "na",
+        "the review run completed": "pass"
+      }
+    },
+    {
+      "scenario": "5b",
+      "title": "A refused call: resume after an edit",
+      "reps": 1,
+      "passed": 0,
+      "na": 0,
+      "errors": 0,
+      "medianSousCalls": 11,
+      "sleeps": 0,
+      "polled": 0,
+      "medianSeconds": 44,
+      "medianTokens": 425467,
+      "checks": {
+        "the call after a refusal is the refusal's call": "fail",
+        "the paused run finished": "pass",
+        "no new run": "pass"
+      }
+    },
+    {
+      "scenario": "6",
+      "title": "Make a workflow",
+      "reps": 1,
+      "passed": 1,
+      "na": 0,
+      "errors": 0,
+      "medianSousCalls": 10,
+      "sleeps": 0,
+      "polled": 0,
+      "medianSeconds": 46,
+      "medianTokens": 416306,
+      "checks": {
+        "nothing saved before the yes": "pass",
+        "turn 1 shows the file": "pass",
+        "turn 1 asks before saving": "pass",
+        "the workflow was saved": "pass",
+        "a check --dry-run before any run": "pass",
+        "no run before an approve event": "pass"
+      }
+    },
+    {
+      "scenario": "7",
+      "title": "What is going on",
+      "reps": 1,
+      "passed": 1,
+      "na": 0,
+      "errors": 0,
+      "medianSousCalls": 3,
+      "sleeps": 0,
+      "polled": 0,
+      "medianSeconds": 16,
+      "medianTokens": 110197,
+      "checks": {
+        "the first sous call is status": "pass",
+        "the answer names the paused run": "pass",
+        "the answer names the open question": "pass",
+        "nothing changed": "pass"
+      }
+    },
+    {
+      "scenario": "9",
+      "title": "A people workflow",
+      "reps": 1,
+      "passed": 1,
+      "na": 0,
+      "errors": 0,
+      "medianSousCalls": 3,
+      "sleeps": 0,
+      "polled": 0,
+      "medianSeconds": 21,
+      "medianTokens": 109798,
+      "checks": {
+        "no run starts": "pass",
+        "the agent gives the command": "pass"
+      }
+    }
+  ],
+  "endedAt": "2026-11-24T18:02:08.638Z"
+}

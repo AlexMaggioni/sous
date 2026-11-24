@@ -54,7 +54,8 @@ what you checked and what you did not. Never merge, push or discard unless asked
 ## When it pauses or fails
 
 Read `pauseReason`, `failure` and `next`. `sous step <run> <label> --json` shows what the
-failed step did. `sous resume` runs the failed step again and keeps the finished ones.
+failed step did. Tell the user the step, its error and the `sous resume` call. It runs that step
+again and keeps the finished ones.
 `sous rerun` pays for every step again, so ask first.
 A run paused at the usage limit resumes by itself.
 

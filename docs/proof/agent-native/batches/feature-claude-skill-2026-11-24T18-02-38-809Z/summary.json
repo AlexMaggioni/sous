@@ -1,0 +1,156 @@
+{
+  "batch": "feature-claude-skill-2026-11-24T18-02-38-809Z",
+  "sous": "feature",
+  "cli": "<code>/orchestrator-agent-native/packages/cli/dist/cli.js",
+  "driver": "claude",
+  "driverBin": "~/.local/bin/claude",
+  "driverVersion": "2.1.331 (Claude Code)",
+  "model": "sonnet",
+  "skill": "<code>/orchestrator-agent-native/packages/cli/skill/sous/SKILL.md",
+  "scenarios": [
+    "4"
+  ],
+  "repsEach": 2,
+  "startedAt": "2026-11-24T18:02:42.536Z",
+  "reps": [
+    {
+      "scenario": "4",
+      "title": "A failed step",
+      "rep": 1,
+      "verdict": "pass",
+      "checks": [
+        {
+          "name": "the run paused on the failed step",
+          "result": "pass",
+          "reason": "mwv05tls-bgf5ka paused step_failed",
+          "source": "records"
+        },
+        {
+          "name": "no rerun",
+          "result": "pass",
+          "reason": "no rerun",
+          "source": "records"
+        },
+        {
+          "name": "the report names the step",
+          "result": "pass",
+          "reason": "it names boom",
+          "source": "answer"
+        },
+        {
+          "name": "the report names the error",
+          "result": "pass",
+          "reason": "it names exit 3 or the message",
+          "source": "answer"
+        },
+        {
+          "name": "the agent offers a resume",
+          "result": "pass",
+          "reason": "it offers a resume",
+          "source": "answer"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 6,
+        "sousInCommands": 6,
+        "commands": 5,
+        "denied": 0,
+        "background": 0,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 10,
+        "tokens": 131082,
+        "inputTokens": 130390,
+        "cachedInputTokens": 118539,
+        "outputTokens": 692,
+        "costUsd": 0.0661,
+        "skillListed": true,
+        "timedOut": false
+      },
+      "refusals": []
+    },
+    {
+      "scenario": "4",
+      "title": "A failed step",
+      "rep": 2,
+      "verdict": "pass",
+      "checks": [
+        {
+          "name": "the run paused on the failed step",
+          "result": "pass",
+          "reason": "mwv0640c-jde3lh paused step_failed",
+          "source": "records"
+        },
+        {
+          "name": "no rerun",
+          "result": "pass",
+          "reason": "no rerun",
+          "source": "records"
+        },
+        {
+          "name": "the report names the step",
+          "result": "pass",
+          "reason": "it names boom",
+          "source": "answer"
+        },
+        {
+          "name": "the report names the error",
+          "result": "pass",
+          "reason": "it names exit 3 or the message",
+          "source": "answer"
+        },
+        {
+          "name": "the agent offers a resume",
+          "result": "pass",
+          "reason": "it offers a resume",
+          "source": "answer"
+        }
+      ],
+      "metrics": {
+        "sousCalls": 6,
+        "sousInCommands": 6,
+        "commands": 5,
+        "denied": 0,
+        "background": 1,
+        "sleeps": 0,
+        "loops": 0,
+        "repeatedReads": 0,
+        "polled": false,
+        "seconds": 16,
+        "tokens": 48029,
+        "inputTokens": 47622,
+        "cachedInputTokens": 46109,
+        "outputTokens": 407,
+        "costUsd": 0.0727,
+        "skillListed": true,
+        "timedOut": false
+      },
+      "refusals": []
+    }
+  ],
+  "aggregate": [
+    {
+      "scenario": "4",
+      "title": "A failed step",
+      "reps": 2,
+      "passed": 2,
+      "na": 0,
+      "errors": 0,
+      "medianSousCalls": 6,
+      "sleeps": 0,
+      "polled": 0,
+      "medianSeconds": 13,
+      "medianTokens": 89555.5,
+      "checks": {
+        "the run paused on the failed step": "pass pass",
+        "no rerun": "pass pass",
+        "the report names the step": "pass pass",
+        "the report names the error": "pass pass",
+        "the agent offers a resume": "pass pass"
+      }
+    }
+  ],
+  "endedAt": "2026-11-24T18:03:10.775Z"
+}
