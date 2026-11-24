@@ -3,18 +3,16 @@
 import { resolve } from "node:path";
 import { checkWorkflow, dryRun, projectWorkflows, rememberProject, type Answers } from "@sous/engine";
 import { RESERVED, str, Usage, type Parsed } from "../args.js";
+import { reply, type Reply } from "../reply.js";
 import { projectDir } from "./common.js";
 import type { Ctx } from "./index.js";
 
-export function cmdWorkflows(args: Parsed, ctx: Ctx): number {
+export function cmdWorkflows(args: Parsed, ctx: Ctx): number | Reply<object> {
   const paths = ctx.paths;
   const out = ctx.machine.out;
   const view = projectWorkflows(paths, projectDir(args));
   const entries = view.list();
-  if (ctx.json) {
-    out(JSON.stringify(entries.map((entry) => ({ name: entry.name, file: entry.file, ...(entry.error ? { error: entry.error } : { ...entry.extras }) })), null, 2));
-    return 0;
-  }
+  if (ctx.json) return reply({ workflows: entries.map((entry) => ({ name: entry.name, file: entry.file, ...(entry.error ? { error: entry.error } : { ...entry.extras }) })) });
   if (!entries.length) {
     out(`no saved workflows. Put them in ${view.dirs.join(" or ")}.`);
     return 0;
@@ -44,7 +42,7 @@ function readAnswers(ctx: Ctx, file: string): Answers {
   return parsed as Answers;
 }
 
-export async function cmdCheck(args: Parsed, ctx: Ctx): Promise<number> {
+export async function cmdCheck(args: Parsed, ctx: Ctx): Promise<number | Reply<object>> {
   const paths = ctx.paths;
   const dir = projectDir(args);
   const out = ctx.machine.out;
@@ -65,17 +63,17 @@ export async function cmdCheck(args: Parsed, ctx: Ctx): Promise<number> {
     for (const note of result.notes) out(`  note: ${note}`);
     out(result.problems.length ? `${result.problems.length} problem${result.problems.length === 1 ? "" : "s"}` : "ok");
   }
+  const { notes, ...checked } = result;
   if (result.problems.length || !wantsDryRun) {
-    if (json) out(JSON.stringify(result, null, 2));
-    return result.problems.length ? 1 : 0;
+    const exit = result.problems.length ? 1 : 0;
+    return json ? reply(checked, { notes, exit }) : exit;
   }
   const answersFile = str(args.flags.answers);
   const answers = answersFile ? readAnswers(ctx, resolve(answersFile)) : undefined;
   if (!json) out("dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.");
   const dry = await dryRun(paths, { workflow: name, projectDir: dir, inputs: args.inputs, ...(answers ? { answers } : {}), ...(json ? {} : { log: (line: string) => out(`  ${line}`) }) });
-  if (json) {
-    out(JSON.stringify({ ...result, dryRun: dry }, null, 2));
-  } else if (dry.status === "completed") {
+  if (json) return reply({ ...checked, dryRun: dry }, { notes, exit: dry.status === "completed" ? 0 : 1 });
+  if (dry.status === "completed") {
     out(`dry run completed, with ${dry.agents.length} agent step${dry.agents.length === 1 ? "" : "s"} answered by stand-ins`);
     if (dry.result !== undefined) out(JSON.stringify(dry.result, null, 2));
   } else {

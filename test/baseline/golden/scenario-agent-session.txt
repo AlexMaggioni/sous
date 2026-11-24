@@ -4,7 +4,9 @@ exit 0
   "runId": "<run-1>",
   "workflow": "agent-session",
   "cwd": "<tmp>/scenario-agent-session/sous-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-agent-session/sous-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-agent-session/sous-home/logs/<run-1>.log",
+  "notes": [],
+  "next": []
 }
 
 $ sous wait <run-1> --json
@@ -23,7 +25,9 @@ exit 0
       "done": true
     },
     "more": "Fake claude answer."
-  }
+  },
+  "notes": [],
+  "next": []
 }
 
 $ sous show <run-1>
@@ -250,7 +254,9 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "questions": [],
+  "notes": [],
+  "next": []
 }
 
 fake requests (sorted):

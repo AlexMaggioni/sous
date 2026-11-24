@@ -14,6 +14,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, resolve as resolvePath } from "node:path";
 import { workflowDirs, type HomePaths } from "../runs/home.js";
+import { Refusal } from "../runs/refusal.js";
 import type { WorkflowMeta } from "../workflow-result.js";
 import { workflowExtras, type WorkflowExtras } from "./meta.js";
 import { parseWorkflowScript, readWorkflowScript, type ScriptRefs } from "./script.js";
@@ -158,8 +159,11 @@ export function resolveWorkflow(paths: HomePaths, projectDir: string, nameOrPath
     const entry = entries.find((candidate) => candidate.name === nameOrPath);
     if (!entry) {
       const names = entries.map((candidate) => candidate.name);
-      throw new Error(
+      throw new Refusal(
+        "no_such_workflow",
         `no workflow "${nameOrPath}". Looked in ${view.dirs.join(" and ")}.${names.length ? ` Saved workflows: ${names.join(", ")}.` : ""}`,
+        "Give the name of a saved workflow, or the path of a workflow file.",
+        "sous workflows --json",
       );
     }
     if (entry.error) throw new Error(`${entry.file} does not parse: ${entry.error}`);

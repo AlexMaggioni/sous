@@ -10,10 +10,11 @@ import type { HarnessId } from "@sous/harnesses";
 import { foldStep } from "../display.js";
 import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
-import { listQuestions, readQuestion, removeRunQuestions, reply, type Question, type Reply } from "./inbox.js";
+import { listQuestions, readQuestion, removeRunQuestions, reply, type Misfit, type Question, type Reply } from "./inbox.js";
 import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
 import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestStepStop, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { olderSave } from "../older-save.js";
+import { Refusal } from "./refusal.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
 import { logFile, readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
 import { currentWorkflows, stopColdRun } from "./worker.js";
@@ -81,7 +82,7 @@ function viewOf(record: RunRecord, state: PersistedRunState | undefined, questio
 
 function needRecord(paths: HomePaths, id: string): RunRecord {
   const record = findRecord(paths, id);
-  if (!record) throw new Error(`no run "${id}". sous list shows the runs.`);
+  if (!record) throw new Refusal("no_such_run", `no run "${id}". sous list shows the runs.`, "Give the id of a run, or a unique start of one.", "sous status --json");
   return record;
 }
 
@@ -331,11 +332,14 @@ export function stopStep(paths: HomePaths, runId: string, step: string): boolean
   const record = needRecord(paths, runId);
   if (!processAlive(record.pid)) return false;
   const state = readState(paths, record.runId);
-  const running = state ? liveSteps(paths, record, state).running : [];
+  const live = state ? liveSteps(paths, record, state) : { running: [] };
+  const running = live.running;
   const calls = running.filter((call) => call.name === step).map(({ name: _name, ...call }) => call);
   if (!calls.length) {
     const now = running.length ? `Running now: ${running.map((call) => `"${call.name}"`).join(", ")}.` : "No step runs now.";
-    throw new Error(`no step named "${step}" runs in ${record.runId}. ${now}`);
+    const ran = (live.steps ?? []).some((agent) => `${scopePrefix(record.runId, typeof agent.scope === "string" ? agent.scope : undefined, record.nested)}${agent.label}` === step);
+    const message = ran ? `"${step}" does not run now in ${record.runId}. ${now}` : `no step named "${step}" runs in ${record.runId}. ${now}`;
+    throw new Refusal(ran ? "step_not_running" : "no_such_step", message, "Name a step that runs now, by the name sous log gives it.", `sous show ${record.runId} --json`);
   }
   requestStepStop(paths, record.runId, { step, calls });
   process.kill(record.pid!, "SIGUSR2");
@@ -445,16 +449,19 @@ export function findQuestion(paths: HomePaths, id: string): RunQuestion {
   if (record) {
     const forRun = all.filter((q) => q.runId === record.runId);
     if (forRun.length === 1) return forRun[0]!;
-    if (forRun.length > 1) throw new Error(`run ${record.runId} asks ${forRun.length} questions. Name one: ${forRun.map((q) => q.id).join(", ")}`);
-    throw new Error(`run ${record.runId} asks nothing right now`);
+    if (forRun.length > 1) {
+      const message = `run ${record.runId} asks ${forRun.length} questions. Name one: ${forRun.map((q) => q.id).join(", ")}`;
+      throw new Refusal("no_such_question", message, "Give the id of one question.", `sous inbox ${record.runId} --json`);
+    }
+    throw new Refusal("no_such_question", `run ${record.runId} asks nothing right now`, "Answer once the run asks.", `sous wait ${record.runId} --json`);
   }
-  throw new Error(`no open question "${id}". sous inbox lists them.`);
+  throw new Refusal("no_such_question", `no open question "${id}". sous inbox lists them.`, "Give the id of an open question.", "sous inbox --json");
 }
 
 /** What an answer did. It was written, and `running` says whether the run reads it now or on
  *  resume. Or it stopped the run, or it does not fit the command, or the prompt's question was
  *  already closed. */
-export type AnswerOutcome = { answered: true; running: boolean } | { stopped: ReturnType<typeof stopRun> } | { usage: string } | { gone: true };
+export type AnswerOutcome = { answered: true; running: boolean } | { stopped: ReturnType<typeof stopRun> } | Misfit | { gone: true };
 
 /** Answer a question with what a person typed. A reply that stops the run stops it as sous stop does. */
 export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply): AnswerOutcome {

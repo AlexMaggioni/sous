@@ -205,7 +205,7 @@ export interface Reply {
  * answer as from the prompt. A choice that is not listed, or a confirm that is not yes or no,
  * throws. A reply typed at a prompt counts only while the question's file is there.
  */
-export function reply(paths: HomePaths, question: Question, typed: Reply): { answered: true } | { stop: true } | { usage: string } | { gone: true } {
+export function reply(paths: HomePaths, question: Question, typed: Reply): { answered: true } | { stop: true } | Misfit | { gone: true } {
   if (typed.via === "prompt" && !readQuestion(paths, question.id)) return { gone: true };
   const meaning = meaningOf(question, typed);
   if (!("value" in meaning)) return meaning;
@@ -213,8 +213,20 @@ export function reply(paths: HomePaths, question: Question, typed: Reply): { ans
   return { answered: true };
 }
 
+/** What is wrong with a command's answer. `choices` lists what the question takes, when the
+ *  answer is not one of its choices. */
+export interface Misfit {
+  usage: string;
+  choices?: string[];
+}
+
+/** The choices a question takes, for a select or a confirm. */
+function choicesOf(question: Question): string[] {
+  return question.kind === "confirm" ? ["yes", "no"] : (question.choices ?? []);
+}
+
 /** The answer a reply gives, a stop, or what is wrong with the command. */
-function meaningOf(question: Question, { via, text, json }: Reply): { value: unknown } | { stop: true } | { usage: string } {
+function meaningOf(question: Question, { via, text, json }: Reply): { value: unknown } | { stop: true } | Misfit {
   if (via === "prompt") {
     const typed = text.trim();
     if (!question.breakpoint) return { value: normalizeAnswer(question, typed) };
@@ -228,10 +240,16 @@ function meaningOf(question: Question, { via, text, json }: Reply): { value: unk
     return { value: { decision: "send back", note: text } };
   }
   if (!text && question.kind !== "confirm") return { usage: `sous answer ${question.id} "your answer"` };
-  const value = question.breakpoint ? breakpointValue(text) : json ? parseJson(text) : normalizeAnswer(question, text);
+  let value: unknown;
+  try {
+    value = question.breakpoint ? breakpointValue(text) : json ? parseJson(text) : normalizeAnswer(question, text);
+  } catch (error) {
+    if (json || question.breakpoint) throw error;
+    return { usage: (error as Error).message, choices: choicesOf(question) };
+  }
   if (question.breakpoint && value === "stop") return { stop: true };
   if (question.kind === "select" && question.choices && !question.choices.includes(value as string)) {
-    return { usage: `answer one of: ${question.choices.join(", ")}` };
+    return { usage: `answer one of: ${question.choices.join(", ")}`, choices: question.choices };
   }
   return { value };
 }

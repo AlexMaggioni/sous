@@ -3,6 +3,7 @@
 import { resolve } from "node:path";
 import { answerQuestion, findProjectDir, hint, logFile, readRun, stopRun, waitForRun, type HomePaths, type RunQuestion, type RunRecord, type RunView } from "@sous/engine";
 import { str, Usage, type Parsed } from "../args.js";
+import { reply, type Reply } from "../reply.js";
 import type { Ctx } from "./index.js";
 
 /** How long ago, in one short unit. */
@@ -36,20 +37,19 @@ export function needRun(paths: HomePaths, id: string | undefined): RunView {
  * wait goes on. Elsewhere, such as from an agent's shell, the wait returns at the question
  * with exit code 4, so the caller can answer with `sous answer` and wait again.
  */
-export async function waitFor(ctx: Ctx, runId: string, json: boolean): Promise<number> {
+export async function waitFor(ctx: Ctx, runId: string, json: boolean): Promise<number | Reply<object>> {
   const { paths, machine } = ctx;
   const interactive = machine.isTerminal && !json;
   const end = await waitForRun(paths, runId, {
     ...(json ? {} : { log: (text: string) => machine.write(text) }),
     ...(interactive ? { asks: (questions: RunQuestion[]) => askHere(ctx, questions) } : {}),
   });
+  if (json) return reply(end.summary, { exit: end.code });
   if (end.questions) {
-    if (json) machine.out(JSON.stringify(end.summary, null, 2));
-    else for (const q of end.questions) machine.out(`\nwaiting for an answer to ${q.id}:\n  ${q.prompt}\n  ${hint(q)}\n  then: sous wait ${runId}`);
+    for (const q of end.questions) machine.out(`\nwaiting for an answer to ${q.id}:\n  ${q.prompt}\n  ${hint(q)}\n  then: sous wait ${runId}`);
     return end.code;
   }
-  if (json) machine.out(JSON.stringify(end.summary, null, 2));
-  else if (end.summary.status === "completed" && end.summary.result !== undefined) {
+  if (end.summary.status === "completed" && end.summary.result !== undefined) {
     machine.out("result:");
     machine.out(typeof end.summary.result === "string" ? end.summary.result : JSON.stringify(end.summary.result, null, 2));
   }
@@ -65,10 +65,10 @@ async function askHere(ctx: Ctx, questions: RunQuestion[]): Promise<void> {
 }
 
 /** Say the run started, or wait for it with --wait. */
-export async function startedOrWait(ctx: Ctx, record: RunRecord, mode: "start" | "resume", args: Parsed): Promise<number> {
+export async function startedOrWait(ctx: Ctx, record: RunRecord, mode: "start" | "resume", args: Parsed): Promise<number | Reply<object>> {
   const { machine } = ctx;
   if (!args.flags.wait) {
-    if (ctx.json) machine.out(JSON.stringify({ runId: record.runId, workflow: record.workflow, cwd: record.cwd, log: logFile(ctx.paths, record.runId) }, null, 2));
+    if (ctx.json) return reply({ runId: record.runId, workflow: record.workflow, cwd: record.cwd, log: logFile(ctx.paths, record.runId) });
     else {
       machine.out(`${mode === "start" ? "started" : "resumed"} ${record.runId}  ${record.workflow}  in ${record.cwd}`);
       machine.out(`  follow: sous wait ${record.runId}    log: sous log ${record.runId} -f`);

@@ -2,13 +2,14 @@
 
 import { isPlace, rerunRun, resumeRun, startRun, type Place } from "@sous/engine";
 import { parseSets, str, Usage, type Parsed } from "../args.js";
+import type { Reply } from "../reply.js";
 import { needRun, projectDir, startedOrWait } from "./common.js";
 import type { Ctx } from "./index.js";
 
 /** The --set values of the command line. */
 const sets = (args: Parsed): string[] => (Array.isArray(args.flags.set) ? args.flags.set : []);
 
-export async function cmdRun(args: Parsed, ctx: Ctx): Promise<number> {
+export async function cmdRun(args: Parsed, ctx: Ctx): Promise<number | Reply<object>> {
   const paths = ctx.paths;
   const dir = projectDir(args);
   const workflow = args.positional[0];
@@ -33,7 +34,7 @@ export async function cmdRun(args: Parsed, ctx: Ctx): Promise<number> {
   return startedOrWait(ctx, record, "start", args);
 }
 
-export async function cmdResume(args: Parsed, ctx: Ctx): Promise<number> {
+export async function cmdResume(args: Parsed, ctx: Ctx): Promise<number | Reply<object>> {
   const paths = ctx.paths;
   const run = needRun(paths, args.positional[0]);
   // A run that cannot resume says so before this usage error. resumeRun refuses it.
@@ -42,7 +43,7 @@ export async function cmdResume(args: Parsed, ctx: Ctx): Promise<number> {
   return startedOrWait(ctx, record, "resume", args);
 }
 
-export async function cmdRerun(args: Parsed, ctx: Ctx): Promise<number> {
+export async function cmdRerun(args: Parsed, ctx: Ctx): Promise<number | Reply<object>> {
   const paths = ctx.paths;
   const run = needRun(paths, args.positional[0]);
   const place = str(args.flags.place) ?? run.record.place;

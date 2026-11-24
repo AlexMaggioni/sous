@@ -4,6 +4,7 @@
 // sous uses for new runs.
 
 import { checkPrograms, DEFAULT, describeAccount, folderText, homePaths, loadConfig } from "@sous/engine";
+import { print, reply } from "./reply.js";
 
 export interface DoctorOptions {
   live?: boolean;
@@ -26,10 +27,7 @@ export async function doctor(options: DoctorOptions = {}): Promise<number> {
   const reports = await checkPrograms(paths, loadConfig(paths), { ...(options.live ? { live: true } : {}), ...(options.model ? { model: options.model } : {}) });
 
   const failed = reports.some((report) => report.problem || report.talks === false || report.live?.error);
-  if (options.json) {
-    out(JSON.stringify(reports, null, 2));
-    return failed ? 1 : 0;
-  }
+  if (options.json) return print(reply({ programs: reports }, { exit: failed ? 1 : 0 }), true, out);
   for (const report of reports) {
     out(`${report.name}${report.version ? ` ${report.version}` : ""}`);
     if (!report.path) {

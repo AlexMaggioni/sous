@@ -3,10 +3,11 @@
 import { resolve } from "node:path";
 import { cronMatches, daemonLog, daemonMain, daemonPid, fileSchedules, isPlace, loadSchedules, nextRun, parseCron, rememberProject, resolveWorkflow, saveSchedules, type Place, type Schedule } from "@sous/engine";
 import { str, Usage, type Parsed } from "../args.js";
+import { reply, type Reply } from "../reply.js";
 import { projectDir } from "./common.js";
 import type { Ctx } from "./index.js";
 
-export function cmdSchedule(args: Parsed, ctx: Ctx): number {
+export function cmdSchedule(args: Parsed, ctx: Ctx): number | Reply<object> {
   const paths = ctx.paths;
   const dir = projectDir(args);
   const out = ctx.machine.out;
@@ -52,10 +53,7 @@ export function cmdSchedule(args: Parsed, ctx: Ctx): number {
     case "list":
     case undefined: {
       const all = [...schedules, ...inFiles];
-      if (ctx.json) {
-        out(JSON.stringify(all, null, 2));
-        return 0;
-      }
+      if (ctx.json) return reply({ schedules: all });
       if (!all.length) {
         out("no schedules");
         return 0;

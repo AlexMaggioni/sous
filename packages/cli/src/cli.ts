@@ -8,9 +8,10 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { daemonLog, ensureHome, homePaths, InputProblems, workerMain, workerProcess, type HomePaths, type Launcher } from "@sous/engine";
+import { daemonLog, ensureHome, homePaths, workerMain, workerProcess, type HomePaths, type Launcher } from "@sous/engine";
 import { parseArgs, Usage } from "./args.js";
 import { ALIASES, COMMANDS, type CommandSpec, type Ctx, type Machine } from "./commands/index.js";
+import { print, printError } from "./reply.js";
 
 /** The built command-line file, which also runs the worker. */
 export function cliFile(): string {
@@ -160,12 +161,13 @@ export async function main(argv: string[], options: MainOptions = {}): Promise<n
       return 0;
     }
     if (!spec) throw new Usage(`unknown command "${command}". sous help lists them.`);
-    return await spec.run(parsed, contextOf(parsed.flags.json === true, options, host));
+    const json = parsed.flags.json === true;
+    const result = await spec.run(parsed, contextOf(json, options, host));
+    return typeof result === "number" ? result : print(result, json, (line) => host.out(line));
   } catch (error) {
-    if (error instanceof Usage) host.err(`usage: ${error.message}`);
-    else if (error instanceof InputProblems) host.err(error.message);
-    else host.err(`sous: ${(error as Error).message}`);
-    return error instanceof Usage ? 64 : 1;
+    // A command line that does not parse is read again for --json, before any "--".
+    const json = (rest.includes("--") ? rest.slice(0, rest.indexOf("--")) : rest).includes("--json");
+    return printError(error, json, (line) => (json ? host.out(line) : host.err(line)));
   }
 }
 

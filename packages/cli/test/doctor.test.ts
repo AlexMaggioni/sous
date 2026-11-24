@@ -58,7 +58,7 @@ describe("sous doctor", () => {
     const reports = async (claudePath?: string) => {
       const { paths } = fakeHome(claudePath ? { claudePath } : {});
       const run = await sous(paths, ["doctor", "--json"]);
-      return { code: run.code, reports: JSON.parse(run.out) as Array<Record<string, unknown>> };
+      return { code: run.code, reports: (JSON.parse(run.out) as { programs: Array<Record<string, unknown>> }).programs };
     };
     const healthy = await reports();
     assert.equal(healthy.code, 0);

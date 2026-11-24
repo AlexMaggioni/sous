@@ -4,7 +4,9 @@ exit 0
   "runId": "<run-1>",
   "workflow": "limit",
   "cwd": "<tmp>/scenario-limit-codex/sous-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-limit-codex/sous-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-limit-codex/sous-home/logs/<run-1>.log",
+  "notes": [],
+  "next": []
 }
 
 $ sous wait <run-1> --json
@@ -16,7 +18,9 @@ exit 2
   "pauseReason": "usage_limit",
   "resetHint": "Resets at 2100-01-01T12:00:00.000Z",
   "reason": "usage_limit",
-  "cwd": "<tmp>/scenario-limit-codex/sous-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-limit-codex/sous-home/scratch/<run-1>",
+  "notes": [],
+  "next": []
 }
 
 $ sous resume <run-1>
@@ -34,7 +38,9 @@ exit 0
   "result": {
     "before": "before",
     "answer": "Fake codex answer."
-  }
+  },
+  "notes": [],
+  "next": []
 }
 
 $ sous show <run-1>
@@ -224,7 +230,9 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "questions": [],
+  "notes": [],
+  "next": []
 }
 
 fake requests (sorted):

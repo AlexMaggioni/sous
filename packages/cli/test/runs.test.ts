@@ -122,7 +122,7 @@ return await ask('Breakpoint: not one')`,
     const answer = await sous(paths, ["answer", id, "fine"]);
     const result = await running;
     assert.deepEqual(
-      (JSON.parse(inbox.out) as Array<{ prompt: string; breakpoint: boolean }>).map((q) => [q.prompt, q.breakpoint]),
+      (JSON.parse(inbox.out) as { questions: Array<{ prompt: string; breakpoint: boolean }> }).questions.map((q) => [q.prompt, q.breakpoint]),
       [["Breakpoint: not one", false]],
     );
     assert.equal(sendBack.code, 64, sendBack.out);
@@ -728,7 +728,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('ticket', { id }, { 
     );
 
     const wrong = await sous(paths, "stop", record.runId, "--step", "checker");
-    assert.equal(wrong.code, 1);
+    assert.equal(wrong.code, 65, "a step that is not there is a missing thing");
     assert.match(wrong.err, /no step named "checker" runs .*Running now: "ticket A \/ check A: checker"/);
     assert.equal((await sous(paths, "stop", record.runId, "--step", "ticket A / check A: checker")).code, 0);
     await running;
@@ -1096,14 +1096,14 @@ describe("sous schedule", () => {
 
     const json = await schedule("list", "--json");
     assert.equal(json.code, 0);
-    const [morning, often] = JSON.parse(json.out) as Array<{ createdAt: string }>;
+    const [morning, often] = (JSON.parse(json.out) as { schedules: Array<{ createdAt: string }> }).schedules;
     for (const one of [morning!, often!]) assert.match(one.createdAt, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
     const stored = [
       { name: "morning", workflow: dailyFile, projectDir, cron: "0 9 * * 1-5", inputs: { who: "me" }, enabled: true, createdAt: morning!.createdAt },
       { name: "often", workflow: nightlyFile, projectDir, cron: "* * * * *", inputs: {}, place: "folder", enabled: true, createdAt: often!.createdAt },
       { name: nightlyFile, workflow: nightlyFile, projectDir, cron: "0 3 * * *", inputs: { who: "night" }, enabled: true, createdAt: "", fromFile: true },
     ];
-    assert.equal(json.out, `${JSON.stringify(stored, null, 2)}\n`);
+    assert.equal(json.out, `${JSON.stringify({ schedules: stored, notes: [], next: [] }, null, 2)}\n`);
 
     assert.deepEqual(await schedule("disable", "morning"), { code: 0, out: "disabled morning\n" });
     assert.deepEqual(timed(await schedule("list")), { code: 0, out: listed.replace(`${daily}  next <time>`, `${daily}  disabled`) });
@@ -1135,8 +1135,8 @@ describe("sous schedule", () => {
     assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 25 * * *"), { code: 1, out: 'sous: bad hour in cron: "25" (allowed 0-23)\n' });
     assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 9 * *"), { code: 1, out: 'sous: cron needs five fields (minute hour day month weekday), got "0 9 * *"\n' });
     assert.deepEqual(await schedule("add", "late", "nope", "--cron", "0 9 * * *"), {
-      code: 1,
-      out: `sous: no workflow "nope". Looked in ${join(projectDir, ".sous", "workflows")} and ${paths.workflows}. Saved workflows: daily, nightly.\n`,
+      code: 65,
+      out: `no workflow "nope". Looked in ${join(projectDir, ".sous", "workflows")} and ${paths.workflows}. Saved workflows: daily, nightly.\n  change: Give the name of a saved workflow, or the path of a workflow file.\n  try: sous workflows --json\n`,
     });
     assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 9 * * *", "--place", "moon"), { code: 64, out: 'usage: --place is worktree, folder or none, got "moon"\n' });
     // With two mistakes, the name that exists comes before the bad place.

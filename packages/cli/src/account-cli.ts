@@ -22,6 +22,7 @@ import {
   type HomePaths,
   type Launcher,
 } from "@sous/engine";
+import { print, reply } from "./reply.js";
 
 export interface AccountCommandOptions {
   json?: boolean;
@@ -139,10 +140,7 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
 function listCommand(paths: HomePaths, out: (line: string) => void, json: boolean): number {
   const rows = listAccounts(paths);
   const waiting = waitingRuns(paths);
-  if (json) {
-    out(JSON.stringify({ accounts: rows, waiting: waiting.map((run) => ({ runId: run.runId, workflow: run.workflow, limit: run.limit })) }, null, 2));
-    return 0;
-  }
+  if (json) return print(reply({ accounts: rows, waiting: waiting.map((run) => ({ runId: run.runId, workflow: run.workflow, limit: run.limit })) }), true, out);
   const width = Math.max(...rows.map((row) => accountLabel(row.program, row.name).length)) + 2;
   for (const program of HARNESSES) {
     out(harnessName(program));

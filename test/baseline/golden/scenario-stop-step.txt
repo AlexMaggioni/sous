@@ -4,7 +4,9 @@ exit 0
   "runId": "<run-1>",
   "workflow": "stop-step",
   "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-stop-step/sous-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-stop-step/sous-home/logs/<run-1>.log",
+  "notes": [],
+  "next": []
 }
 
 $ sous stop <run-1> --step slow
@@ -19,7 +21,9 @@ exit 2
   "status": "paused",
   "pauseReason": "step_stopped",
   "reason": "step \"slow\" was stopped",
-  "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
+  "notes": [],
+  "next": []
 }
 
 $ sous resume <run-1>
@@ -38,7 +42,9 @@ exit 0
     "slow": "Fake claude answer.",
     "quick": "Fake claude answer.",
     "after": "Fake claude answer."
-  }
+  },
+  "notes": [],
+  "next": []
 }
 
 $ sous show <run-1>
@@ -273,7 +279,9 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "questions": [],
+  "notes": [],
+  "next": []
 }
 
 fake requests (sorted):

@@ -4,7 +4,9 @@ exit 0
   "runId": "<run-1>",
   "workflow": "rulesync-mcp",
   "cwd": "<tmp>/scenario-rulesync-mcp/sous-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-rulesync-mcp/sous-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-rulesync-mcp/sous-home/logs/<run-1>.log",
+  "notes": [],
+  "next": []
 }
 
 $ sous wait <run-1> --json
@@ -19,7 +21,9 @@ exit 0
     "onCodex": "Fake codex answer.",
     "ownServer": "Fake claude answer.",
     "codexServer": "Fake codex answer."
-  }
+  },
+  "notes": [],
+  "next": []
 }
 
 $ sous show <run-1>
@@ -311,7 +315,9 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "questions": [],
+  "notes": [],
+  "next": []
 }
 
 fake requests (sorted):

@@ -4,7 +4,9 @@ exit 0
   "runId": "<run-1>",
   "workflow": "questions",
   "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-questions/sous-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-questions/sous-home/logs/<run-1>.log",
+  "notes": [],
+  "next": []
 }
 
 $ sous wait <run-1> --json
@@ -25,7 +27,9 @@ exit 4
       "breakpoint": false
     }
   ],
-  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
+  "notes": [],
+  "next": []
 }
 
 $ sous inbox
@@ -52,7 +56,9 @@ exit 4
       "breakpoint": false
     }
   ],
-  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
+  "notes": [],
+  "next": []
 }
 
 $ sous inbox <run-1>
@@ -79,7 +85,9 @@ exit 4
       "breakpoint": true
     }
   ],
-  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
+  "notes": [],
+  "next": []
 }
 
 $ sous send-back <run-1> "Make it shorter"
@@ -100,7 +108,9 @@ exit 4
       "breakpoint": true
     }
   ],
-  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
+  "notes": [],
+  "next": []
 }
 
 $ sous approve <run-1>
@@ -118,7 +128,9 @@ exit 0
     "color": "blue",
     "asked": "Fake claude answer.",
     "draft": "Fake claude answer."
-  }
+  },
+  "notes": [],
+  "next": []
 }
 
 $ sous show <run-1>
@@ -449,7 +461,9 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "questions": [],
+  "notes": [],
+  "next": []
 }
 
 fake requests (sorted):

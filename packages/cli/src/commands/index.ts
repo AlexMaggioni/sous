@@ -2,6 +2,7 @@
 
 import type { HomePaths, Launcher } from "@sous/engine";
 import { flagsNamed, RESERVED, type FlagSpec, type Parsed } from "../args.js";
+import type { Reply } from "../reply.js";
 import { cmdDiscard, cmdGc, cmdPause, cmdPrune, cmdStop } from "./control.js";
 import { cmdAnswer, cmdInbox } from "./questions.js";
 import { cmdList, cmdLog, cmdShow, cmdWait } from "./reads.js";
@@ -45,7 +46,8 @@ export interface Ctx {
   now: () => Date;
 }
 
-export type Command = (args: Parsed, ctx: Ctx) => number | Promise<number>;
+/** A command gives its exit code after printing, or a reply that main prints. */
+export type Command = (args: Parsed, ctx: Ctx) => number | Reply<object> | Promise<number | Reply<object>>;
 
 export interface CommandSpec {
   run: Command;

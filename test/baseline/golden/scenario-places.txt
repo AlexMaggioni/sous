@@ -4,7 +4,9 @@ exit 0
   "runId": "<run-1>",
   "workflow": "places",
   "cwd": "<tmp>/scenario-places/sous-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-places/sous-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-places/sous-home/logs/<run-1>.log",
+  "notes": [],
+  "next": []
 }
 
 $ sous wait <run-1> --json
@@ -19,7 +21,9 @@ exit 0
       "no git"
     ],
     "said": "Fake claude answer."
-  }
+  },
+  "notes": [],
+  "next": []
 }
 
 $ sous run places --json --place folder
@@ -28,7 +32,9 @@ exit 0
   "runId": "<run-2>",
   "workflow": "places",
   "cwd": "<tmp>/scenario-places/project",
-  "log": "<tmp>/scenario-places/sous-home/logs/<run-2>.log"
+  "log": "<tmp>/scenario-places/sous-home/logs/<run-2>.log",
+  "notes": [],
+  "next": []
 }
 
 $ sous wait <run-2> --json
@@ -46,7 +52,9 @@ exit 0
       "src"
     ],
     "said": "Fake claude answer."
-  }
+  },
+  "notes": [],
+  "next": []
 }
 
 $ sous run places --json --place worktree
@@ -55,7 +63,9 @@ exit 0
   "runId": "<run-3>",
   "workflow": "places",
   "cwd": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
-  "log": "<tmp>/scenario-places/sous-home/logs/<run-3>.log"
+  "log": "<tmp>/scenario-places/sous-home/logs/<run-3>.log",
+  "notes": [],
+  "next": []
 }
 
 $ sous wait <run-3> --json
@@ -74,7 +84,9 @@ exit 0
       "src"
     ],
     "said": "Fake claude answer."
-  }
+  },
+  "notes": [],
+  "next": []
 }
 
 $ sous show <run-1>
@@ -237,7 +249,9 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "questions": [],
+  "notes": [],
+  "next": []
 }
 
 $ sous show <run-2>
@@ -418,7 +432,9 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "questions": [],
+  "notes": [],
+  "next": []
 }
 
 $ sous show <run-3>
@@ -601,7 +617,9 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "questions": [],
+  "notes": [],
+  "next": []
 }
 
 fake requests (sorted):

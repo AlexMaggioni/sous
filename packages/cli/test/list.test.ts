@@ -51,7 +51,7 @@ describe("sous list", () => {
   it("limits --json to the newest 20 runs too, and --all --json lists every run", async () => {
     const { paths, ids } = makeRuns(21);
     const newest = [...ids].reverse();
-    const ofRuns = async (...flags: string[]) => (JSON.parse((await sous(paths, ["list", "--json", ...flags])).out) as Array<{ runId: string }>).map((run) => run.runId);
+    const ofRuns = async (...flags: string[]) => (JSON.parse((await sous(paths, ["list", "--json", ...flags])).out) as { runs: Array<{ runId: string }> }).runs.map((run) => run.runId);
     assert.deepEqual(await ofRuns(), newest.slice(0, 20));
     assert.deepEqual(await ofRuns("--all"), newest);
   });

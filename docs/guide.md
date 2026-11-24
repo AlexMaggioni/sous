@@ -335,7 +335,16 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous discard <run> --yes` | delete the run's branches and worktrees, merged or not |
 | `sous prune --days N` | remove finished runs older than N days |
 
-A command with a wrong or missing argument exits 64.
+A command with a wrong or missing argument exits 64. A run, workflow, question or step that is not
+there exits 65. Any other refusal exits 66.
+
+With `--json`, each command prints one object with two more keys: `notes`, a list of sentences, and
+`next`, a list of `{call, does}` commands to run next. Some outputs changed shape for this. `sous
+list`, `inbox`, `workflows`, `schedule list` and `doctor` printed a bare array. They now print an
+object that holds it under `runs`, `questions`, `workflows`, `schedules` or `programs`. `sous list
+--json` shows 20 runs like `sous list`, and a note says how many more `--all` shows. An error
+prints `{"error": {code, message, change, call}}` on stdout. Without `--json`, the error goes to
+stderr: the message, then `change:`, then `try:` with the command to run instead.
 
 On macOS a run notifies when it asks something, and when it ends or pauses. A scheduled run stays
 quiet when it completes or is stopped. `notify: false` in `config.json` or `SOUS_NOTIFY=0` turns

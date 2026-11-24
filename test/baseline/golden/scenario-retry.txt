@@ -4,7 +4,9 @@ exit 0
   "runId": "<run-1>",
   "workflow": "retry",
   "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-retry/sous-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-retry/sous-home/logs/<run-1>.log",
+  "notes": [],
+  "next": []
 }
 
 $ sous wait <run-1> --json
@@ -15,7 +17,9 @@ exit 2
   "status": "paused",
   "pauseReason": "step_failed",
   "reason": "step \"no retries\" failed after 1 try: API Error: 500 Overloaded",
-  "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>",
+  "notes": [],
+  "next": []
 }
 
 $ sous resume <run-1>
@@ -34,7 +38,9 @@ exit 0
     "again": "Fake claude answer.",
     "once": "Fake claude answer.",
     "code": 3
-  }
+  },
+  "notes": [],
+  "next": []
 }
 
 $ sous show <run-1>
@@ -240,7 +246,9 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": []
+  "questions": [],
+  "notes": [],
+  "next": []
 }
 
 fake requests (sorted):
