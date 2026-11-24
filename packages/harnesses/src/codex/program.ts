@@ -40,9 +40,10 @@ export function codexLogin(env: Record<string, string | undefined> = process.env
   return { variable: "CODEX_HOME", ...(value ? { value } : {}), folder: value ?? join(homedir(), ".codex") };
 }
 
-/** Where Codex looks for user skills. Codex reads ~/.agents/skills whatever CODEX_HOME says. */
-export function codexPlaces() {
-  return { skills: join(homedir(), ".agents", "skills") };
+/** Where Codex looks for user skills. Codex reads ~/.agents/skills whatever CODEX_HOME says, with
+ *  the home from env's HOME. */
+export function codexPlaces(env: Record<string, string | undefined> = process.env) {
+  return { skills: join(env.HOME || homedir(), ".agents", "skills") };
 }
 
 /** The environment of one step: the caller's, with CODEX_HOME set to the account's folder or removed. */

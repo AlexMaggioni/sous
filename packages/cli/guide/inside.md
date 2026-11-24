@@ -12,7 +12,7 @@ They see what your step returns, and the run's log.
 sous run <workflow> --json
 ```
 
-A workflow with `startedBy: "people"` refuses a start from a run.
+Do not start a workflow with `startedBy: "people"`. Only a person starts it.
 
 - Read your own run.
 
@@ -28,8 +28,8 @@ sous show $SOUS_RUN_ID --json
 
 ## Asking the person
 
-When your step was started with `ask: true`, end with a line that starts with `QUESTION:`. The
-run asks the person, and your session goes on with their answer. Otherwise, do your best with
+When your step was started with `ask: true`, reply with only one line, which starts with
+`QUESTION:`. The run asks the person, and your session goes on with their answer. Otherwise, do your best with
 what you have, and say what you assumed in your answer.
 
 ## Your account

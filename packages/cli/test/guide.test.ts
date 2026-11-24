@@ -37,6 +37,29 @@ function sousLines(text: string): string[] {
   return lines;
 }
 
+/** The inline `sous ...` spans outside the code blocks, such as `sous guide wait`. */
+function inlineCalls(text: string): string[] {
+  const calls: string[] = [];
+  let inBlock = false;
+  for (const line of text.split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inBlock = !inBlock;
+      continue;
+    }
+    if (!inBlock) for (const span of line.matchAll(/`(sous\s[^`]+)`/g)) calls.push(span[1]!);
+  }
+  return calls;
+}
+
+/** The skill file, whose calls must parse too. */
+const SKILL_FILE = resolve(GUIDE, "../skill/sous/SKILL.md");
+
+/** The saved pause reasons: the "paused, <reason>" keys of the rule's table in the engine. */
+function savedPauseReasons(): string[] {
+  const rule = readFileSync(resolve(GUIDE, "../../engine/src/runs/rule.ts"), "utf8");
+  return [...rule.matchAll(/^\s*"paused, ([^"]+)":/gm)].map((match) => match[1]!);
+}
+
 describe("the guide topics", () => {
   it("each of the ten topic files exists and is under 4,000 characters", () => {
     for (const topic of TOPICS) {
@@ -46,21 +69,40 @@ describe("the guide topics", () => {
     }
   });
 
-  it("every sous line in the topics' code blocks parses against COMMANDS", () => {
+  it("every sous call in the topics and the skill, in code blocks and inline, parses against COMMANDS", () => {
     const problems: string[] = [];
     let calls = 0;
-    for (const topic of TOPICS) {
-      for (const line of sousLines(topicText(topic))) {
+    let inline = 0;
+    const files: Array<[string, string]> = [...TOPICS.map((topic): [string, string] => [`${topic}.md`, topicText(topic)]), ["SKILL.md", readFileSync(SKILL_FILE, "utf8")]];
+    for (const [name, text] of files) {
+      const spans = inlineCalls(text);
+      inline += spans.length;
+      for (const line of [...sousLines(text), ...spans]) {
         calls++;
         const problem = callProblem(line);
-        if (problem) problems.push(`${topic}.md: ${problem}`);
+        if (problem) problems.push(`${name}: ${problem}`);
         // A call to a topic names one that exists.
         const [, command, topicName] = words(line.replace(/^\$\s+/, ""));
-        if (command === "guide" && topicName !== undefined && !topicName.startsWith("-") && !TOPICS.includes(topicName)) problems.push(`${topic}.md: "${line}" names no topic`);
+        if (command === "guide" && topicName !== undefined && !topicName.startsWith("-") && !TOPICS.includes(topicName)) problems.push(`${name}: "${line}" names no topic`);
       }
     }
     assert.ok(calls > 0, "no topic has a sous call in a code block");
+    assert.ok(inline > 0, "no topic or skill has an inline sous call");
     assert.deepEqual(problems, []);
+  });
+
+  it("the pauses topic has one row for each pause reason the rule knows", () => {
+    const saved = savedPauseReasons();
+    assert.ok(saved.length > 0, "found no paused rows in rule.ts");
+    const firstCells = topicText("pauses")
+      .split("\n")
+      .filter((line) => line.startsWith("|"))
+      .map((line) => line.split("|")[1]!.trim())
+      .filter((cell) => cell !== "pauseReason" && !/^-+$/.test(cell));
+    const named = firstCells.filter((cell) => cell.startsWith("`")).map((cell) => cell.replace(/`/g, ""));
+    const known = saved.filter((reason) => reason !== "other text");
+    assert.deepEqual([...named].sort(), [...known].sort(), "the pauses table names other reasons than rule.ts saves");
+    if (saved.includes("other text")) assert.ok(firstCells.includes("any other text"), "the pauses table has no row for any other text");
   });
 
   it("the topics use no em dash and no emoji", () => {

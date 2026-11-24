@@ -8,16 +8,18 @@
 sous show <run> --json
 ```
 
-The wait reply and `show` give `result`, what the workflow returned, and `review`, with the
-branch and the worktree it worked in. Read the diff on the run's branch yourself, against the
-branch it started from:
+The wait reply gives `result`, what the workflow returned, and `review`, with the branch and the
+worktree it worked in. `sous show <run> --full --json` has the result under `state.result`.
+
+Read the diff on the run's branch yourself, against the branch the project was on when the run
+started:
 
 ```sh
 git -C <worktree> log --oneline
-git -C <worktree> diff main...HEAD
+git -C <worktree> diff <start-branch>...HEAD
 ```
 
-`sous show <run> --json` also lists each step with its status, time and tokens. `--full` adds the
+`sous show <run> --json` lists each step with its status, time and tokens. `--full` adds the
 whole record. `sous log <run>` prints what each step said.
 
 ## The report

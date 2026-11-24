@@ -51,8 +51,8 @@ folder. `--model claude/haiku` sets the model for steps that name none.
 
 ## Workflows only a person starts
 
-A workflow with `startedBy: "people"` refuses a start from an agent. The refusal gives the
-command for the person to type. Show it to them. Never try to get around it.
+Do not start a workflow with `startedBy: "people"`. Give the person the `sous run` command to
+type themselves. Never try to get around it.
 
 ## Codex
 

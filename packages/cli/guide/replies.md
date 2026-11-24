@@ -14,7 +14,7 @@ An error prints `{"error": {...}}` instead. See `sous guide errors`.
 | `status` | `needsYou`, `running`, `waiting`, `finished`, `service` |
 | `status --line` | `line`, one sentence, or nothing when nothing needs the person |
 | `run`, `rerun` | `runId`, `workflow`, `cwd`, `log`, `status`, `branch`, `asks`, `lastRuns` |
-| `wait` | `runId`, `workflow`, `status`, `pauseReason`, `reason`, `questions`, `cwd`, `branch`, `result`, `review`, `failure`, `resumesAt` |
+| `wait` | `runId`, `workflow`, `status`, `pauseReason`, `resetHint`, `reason`, `questions`, `cwd`, `branch`, `result`, `review`, `failure`, `resumesAt` |
 | `show` | `runId`, `workflow`, `status`, `word`, `cwd`, `branch`, `worktree`, `startedAt`, `seconds`, `tokens`, `steps`, `questions`, `failure`, `resumesAt` |
 | `show --full` | the same, plus `record` and `state` |
 | `list` | `runs` |

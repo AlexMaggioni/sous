@@ -15,7 +15,8 @@ the user a question. Its work lands on a git branch for review.
 ## Start here
 
 Run `sous status --json`. It says what needs the user, what runs and what finished.
-Every reply has `next`, the exact calls you can make now. Use them as written.
+Every reply has `next`, the exact calls you can make now. Use them as written. A call may hold
+a placeholder such as `<red|blue>` or `"<note>"`. Fill it in, and keep the rest.
 For anything this page leaves out, run `sous guide`. It matches the installed version.
 
 ## Start a run
@@ -24,8 +25,8 @@ For anything this page leaves out, run `sous guide`. It matches the installed ve
 2. `sous run <name> --<input> <value> --json` starts it and returns at once.
 3. Tell the user the run id, what it will do, what it may ask, and what the last runs cost.
 
-A workflow marked `startedBy: "people"` starts only when the user types the command. Give them
-the command from the refusal. Never try to get around it.
+Do not start a workflow marked `startedBy: "people"`. Give the user the `sous run` command to
+type themselves. Never try to get around it.
 
 ## Wait for it
 
@@ -63,7 +64,8 @@ who may start a workflow only when the user asked for that.
 ## Errors
 
 A refusal has `error.change`, what to change, and `error.call`, the call to make instead.
-Make that call. Do not retry the refused one.
+Make that call. Do not retry the refused one. When `call` is null, read `change`. If it needs
+the user, tell them.
 
 ## Inside a run
 

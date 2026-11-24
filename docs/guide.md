@@ -472,8 +472,8 @@ session or the run that started it, as in [Accounts](#accounts).
 `sous guide` lists the topics an agent reads to drive sous for a person, and `sous guide <topic>`
 prints one. The topics are in `packages/cli/guide/`. `sous skill install` links the sous skill
 into `<CLAUDE_CONFIG_DIR or ~/.claude>/skills/sous` and `~/.agents/skills/sous`, where Claude Code
-and Codex find it. It refuses with `not_ours` when either place holds something else, and then
-writes nothing. `sous skill check` shows each place, and `sous skill path` prints the skill folder.
+and Codex find it. It replaces a broken link that sous made from a checkout or worktree that is
+gone. It refuses with `not_ours` when either place holds anything else, and then writes nothing. `sous skill check` shows each place, and `sous skill path` prints the skill folder.
 
 ## Status
 

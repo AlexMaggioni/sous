@@ -198,9 +198,7 @@ describe("sous skill install", () => {
   });
 
   // A link sous did not make is not ours, wherever it leads. A link to another folder may be the
-  // person's own copy of the skill. A broken link may be one sous made from a checkout that has
-  // moved, but sous cannot tell it from someone else's, and the owner said sous writes nowhere else
-  // in those folders. So both are refused, and the change tells the person to move them.
+  // person's own copy of the skill, so it is refused, and the change tells the person to move it.
   it("refuses a link to some other folder as not ours, and leaves it", async () => {
     const h = newHome();
     const other = join(h.home, "other-skill");
@@ -214,9 +212,27 @@ describe("sous skill install", () => {
     assert.ok(!there(h.codex), "sous linked the Codex place although it refused");
   });
 
-  it("refuses a broken link as not ours, and leaves it", async () => {
+  // The overseer's rule, after review: a broken link whose target ends in the skill folder's own
+  // tail, cli/skill/sous, is one sous made from a checkout or worktree that is gone. The install
+  // replaces it and names the old target in a note. A broken link to anything else is refused.
+  it("replaces a broken link to a removed checkout's skill folder, and names the old target", async () => {
     const h = newHome();
-    const gone = join(h.home, "moved-checkout", "skill", "sous");
+    const gone = join(h.home, "removed-worktree", "packages", "cli", "skill", "sous");
+    mkdirSync(dirname(h.codex), { recursive: true });
+    symlinkSync(gone, h.codex);
+    const { code, out } = await call(h, ["skill", "install", "--json"]);
+    assert.equal(code, 0, out);
+    const parsed = replyOf(out);
+    const { programs } = parsed as unknown as { programs: ProgramRow[] };
+    assert.deepEqual(rowOf(programs, "codex"), { program: "codex", place: h.codex, already: false });
+    assertOurs(h.codex);
+    assertOurs(h.claude);
+    assert.ok(parsed.notes.some((note) => note.includes(h.codex) && note.includes(gone)), `no note names ${gone}: ${out}`);
+  });
+
+  it("refuses a broken link to some other folder as not ours, and leaves it", async () => {
+    const h = newHome();
+    const gone = join(h.home, "moved-away", "my-skill");
     mkdirSync(dirname(h.codex), { recursive: true });
     symlinkSync(gone, h.codex);
     const { code, out } = await call(h, ["skill", "install", "--json"]);
@@ -246,6 +262,36 @@ describe("sous skill check", () => {
     assert.equal(programs.length, 2, out);
     assert.deepEqual(rowOf(programs, "claude"), { program: "claude", place: h.claude, installed: true, ours: true });
     assert.deepEqual(rowOf(programs, "codex"), { program: "codex", place: h.codex, installed: true, ours: true });
+  });
+
+  it("gives the install call as next only when an install can work", async () => {
+    const h = newHome();
+    const calls = async () => replyOf((await call(h, ["skill", "check", "--json"])).out);
+    const install = "sous skill install --json";
+    assert.deepEqual((await calls()).next.map((next) => next.call), [install], "a new home can install");
+    assert.equal((await call(h, ["skill", "install"])).code, 0);
+    assert.deepEqual((await calls()).next, [], "nothing to do once installed");
+  });
+
+  it("gives no install call while a place holds something else, and says to move it", async () => {
+    const h = newHome();
+    mkdirSync(h.claude, { recursive: true });
+    const checked = replyOf((await call(h, ["skill", "check", "--json"])).out);
+    assert.deepEqual(checked.next, [], JSON.stringify(checked));
+    assert.ok(checked.notes.some((note) => note.includes(h.claude) && /did not put there/.test(note)), JSON.stringify(checked.notes));
+    assert.ok(checked.notes.some((note) => note.includes(h.claude) && /Move/.test(note)), JSON.stringify(checked.notes));
+    const { programs } = checked as unknown as { programs: ProgramRow[] };
+    assert.deepEqual(rowOf(programs, "claude"), { program: "claude", place: h.claude, installed: true, ours: false });
+  });
+
+  it("gives the install call for a broken link to a removed checkout's skill folder", async () => {
+    const h = newHome();
+    const gone = join(h.home, "removed-worktree", "packages", "cli", "skill", "sous");
+    mkdirSync(dirname(h.codex), { recursive: true });
+    symlinkSync(gone, h.codex);
+    const checked = replyOf((await call(h, ["skill", "check", "--json"])).out);
+    assert.deepEqual(checked.next.map((next) => next.call), ["sous skill install --json"]);
+    assert.ok(checked.notes.some((note) => note.includes(gone)), JSON.stringify(checked.notes));
   });
 
   it("says a link to another folder is not ours", async () => {

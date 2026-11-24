@@ -32,7 +32,7 @@ const TOPICS: ReadonlyArray<{ name: string; about: string }> = [
   { name: "asks", about: "a run asks a question: the person answers, you pass it on" },
   { name: "ends", about: "a run ended: read the result and the diff before you report" },
   { name: "pauses", about: "failures, the usage limit and pauses: resume, rerun or stop" },
-  { name: "steer", about: "stop one step or the whole run" },
+  { name: "steer", about: "pause the run, or stop one step or the whole run" },
   { name: "writing", about: "write a workflow and check it before it runs" },
   { name: "errors", about: "the error shape, the exit codes and what to do with each" },
   { name: "inside", about: "you are a step of a run: what you call and what you leave" },
@@ -62,29 +62,34 @@ export function cmdGuide(args: Parsed, ctx: Ctx): Reply<object> {
 export function cmdSkill(args: Parsed, ctx: Ctx): Reply<object> {
   const action = args.positional[0];
   const folder = resolve(ctx.machine.skillDir);
-  const check = { call: "sous skill check --json", does: "shows where each program finds the skill" };
   if (action === "path") return reply({ path: folder }, { text: [folder] });
   if (action === "install") {
-    const programs = installSkill(folder, ctx.env);
+    const { programs, replaced } = installSkill(folder, ctx.env);
+    const notes = replaced.map(({ place, target }) => `${place} linked to ${target}, which is gone. It now links to this skill.`);
     return reply(
       { programs },
       {
         text: programs.map(({ program, place, already }) => `${program}: ${place} ${already ? "already links to the skill" : "now links to the skill"}`),
-        notes: ["A new session loads the skill. A session that is open now does not."],
-        next: [check],
+        notes: [...notes, "A new session loads the skill. A session that is open now does not."],
+        next: [{ call: "sous skill check --json", does: "shows where each program finds the skill" }],
       },
     );
   }
   if (action === "check") {
-    const programs = skillPlaces(folder, ctx.env);
-    const notes = programs.filter((p) => p.installed && !p.ours).map((p) => `${p.place} holds a sous skill that sous did not put there.`);
-    const missing = programs.some((p) => !p.installed);
+    const { places: programs, blocked, change, stale } = skillPlaces(folder, ctx.env);
+    const notes = [
+      ...blocked.map((place) => `${place} holds something sous did not put there.`),
+      ...(change ? [change] : []),
+      ...stale.map(({ place, target }) => `${place} links to ${target}, which is gone. sous skill install replaces it.`),
+    ];
+    const installs = !blocked.length && programs.some((p) => !p.ours);
+    const word = (p: (typeof programs)[number]) => (p.ours ? "links to this skill" : stale.some((old) => old.place === p.place) ? "is an old sous link to a folder that is gone" : p.installed ? "holds something sous did not put there" : "is empty");
     return reply(
       { programs },
       {
-        text: programs.map(({ program, place, installed, ours }) => `${program}: ${place} ${ours ? "links to this skill" : installed ? "holds another skill" : "is empty"}`),
+        text: programs.map((p) => `${p.program}: ${p.place} ${word(p)}`),
         notes,
-        next: missing ? [{ call: "sous skill install --json", does: "links the skill for each program" }] : [],
+        next: installs ? [{ call: "sous skill install --json", does: "links the skill for each program" }] : [],
       },
     );
   }

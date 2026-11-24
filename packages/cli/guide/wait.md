@@ -25,8 +25,8 @@ sous wait <run> --timeout 540 --json
 | Exit | Status | What to do |
 | --- | --- | --- |
 | 0 | completed | Read the result and the diff. See `sous guide ends`. |
-| 1 | failed | Read `failure`. See `sous guide pauses`. |
-| 2 | paused | Read `pauseReason`. See `sous guide pauses`. |
+| 1 | failed, not started | Read `failure`. A run that never started has none. See `sous guide pauses`. |
+| 2 | paused, interrupted | Read `pauseReason`. See `sous guide pauses`. |
 | 3 | stopped | Someone stopped it. Tell the person. |
 | 4 | asks | A question waits. See `sous guide asks`. |
 | 5 | running | The timeout ran out. Wait again. |
@@ -35,7 +35,9 @@ sous wait <run> --timeout 540 --json
 
 - `runId`, `workflow` and `status`.
 - `pauseReason` on a paused run, and `reason` in words.
-- `questions`, each with `id`, `prompt`, `kind`, `choices`, `breakpoint` and `answeredBy`.
+- `resetHint`, the reset time the program gave at the usage limit, in its words.
+- `questions`, each with `id`, `prompt`, `kind`, `choices`, `breakpoint`, `askedAt` and
+  `answeredBy`.
 - `cwd` and `branch`.
 - `result` and `review`, once the run completed. `review` holds the branch, the worktree and the
   result.

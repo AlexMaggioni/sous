@@ -1,7 +1,8 @@
 # When a run pauses or fails
 
 Read `pauseReason`, `reason`, `failure` and `next` in the wait reply. `next` holds the call that
-fits.
+fits. A run that waits at a question while it runs has the status `asks` and no `pauseReason`.
+See `sous guide asks`.
 
 ## Pause reasons
 
@@ -13,8 +14,14 @@ fits.
 | `time_limit` | The workflow's `timeout` ran out. | Resume gives it the whole limit again. |
 | `requested` | Someone ran `sous pause`. | Resume when the person wants. |
 | `step_stopped` | Someone stopped one step. | Resume runs that step again. |
-| `interrupted` | The worker died, as in a restart. | Resume. |
-| `asks` | A question waits. | See `sous guide asks`. |
+| `interrupted` | The worker died, as in a restart. The status is `interrupted`. | Resume. |
+| `checkpoint_required` | A question waits and no worker runs. | Answer it, then resume. |
+| any other text | The run paused for that reason. | Read `reason`, tell the person. |
+
+## A failed run
+
+A run with the status `failed` exits 1. Read `failure`, tell the person, and offer a resume.
+`sous resume` takes a failed run too.
 
 ## Resume, not rerun
 
@@ -63,4 +70,4 @@ Do that only when the person asks.
 sous stop <run> --json
 ```
 
-`stop` ends the run. Its worktree stays for review.
+`stop` ends the run. Its worktree stays for review when the run changed a file.

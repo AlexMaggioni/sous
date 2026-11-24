@@ -632,4 +632,9 @@ describe("the skill places", () => {
     assert.deepEqual(codex.places({}), { skills: join(home, ".agents", "skills") });
     assert.deepEqual(codex.places({ CODEX_HOME: "/b" }), { skills: join(home, ".agents", "skills") });
   });
+
+  test("both take the home from the env they are given", () => {
+    assert.deepEqual(claude.places({ HOME: "/h" }), { skills: join("/h", ".claude", "skills"), settings: join("/h", ".claude", "settings.json") });
+    assert.deepEqual(codex.places({ HOME: "/h" }), { skills: join("/h", ".agents", "skills") });
+  });
 });

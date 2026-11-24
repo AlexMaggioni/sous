@@ -1,8 +1,8 @@
 // The installed Claude Code and Codex, as `sous doctor` and `sous account add` see them. Each check
 // goes through the harness: find, version, models, and for `--live` one step.
 
-import { existsSync, lstatSync, mkdirSync, realpathSync, symlinkSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { lstatSync, mkdirSync, readlinkSync, realpathSync, symlinkSync, unlinkSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 import { createHarness, type FindOptions, type HarnessId } from "@sous/harnesses";
 import { CALLER, currentAccount, DEFAULT, stepAccount } from "./accounts.js";
 import { envFor, HARNESSES, harnessName, loginOf, routeHarness, stepModel } from "./agents.js";
@@ -115,10 +115,22 @@ export interface SkillPlace {
   program: HarnessId;
   /** The sous folder in the program's skill folder. */
   place: string;
-  /** Something is there that the program can read. A broken link is not installed. */
+  /** Something is there, a broken link included. */
   installed: boolean;
   /** It is a link to this sous's skill folder. */
   ours: boolean;
+}
+
+/** What each place holds, and what an install would do. */
+export interface SkillCheck {
+  places: SkillPlace[];
+  /** The places that hold something sous did not put there. An install refuses while there are any. */
+  blocked: string[];
+  /** What to do about blocked, for a refusal or a note. */
+  change?: string;
+  /** Broken links sous made to a skill folder that is gone, as when a worktree is removed. An
+   *  install replaces them. */
+  stale: Array<{ place: string; target: string }>;
 }
 
 /** realpath, or undefined when the path is missing or a broken link. */
@@ -130,56 +142,60 @@ function real(path: string): string | undefined {
   }
 }
 
-/** True when path is a link, even a broken one. */
-function isLink(path: string): boolean {
+/** What lstat finds at path: a link, something else, or nothing. */
+function kindAt(path: string): "link" | "other" | undefined {
   try {
-    return lstatSync(path).isSymbolicLink();
+    return lstatSync(path).isSymbolicLink() ? "link" : "other";
   } catch {
-    return false;
+    return undefined;
   }
 }
 
-/** True when anything is at path, a broken link included. */
-function taken(path: string): boolean {
-  try {
-    lstatSync(path);
-    return true;
-  } catch {
-    return false;
-  }
+/** The target of the broken link at place when it ends in the skill folder's own tail, such as
+ *  cli/skill/sous, so sous made it from a checkout or worktree that is gone. */
+function staleTarget(place: string, skillDir: string): string | undefined {
+  const target = resolve(dirname(place), readlinkSync(place));
+  const tail = resolve(skillDir).split(sep).slice(-3).join(sep);
+  return target.endsWith(sep + tail) ? target : undefined;
 }
 
 /** Where each program looks for the sous skill, and what is there now. */
-export function skillPlaces(skillDir: string, env: Env): SkillPlace[] {
+export function skillPlaces(skillDir: string, env: Env): SkillCheck {
   const ourReal = real(skillDir);
-  return HARNESSES.map((program) => {
+  const check: SkillCheck = { places: [], blocked: [], stale: [] };
+  for (const program of HARNESSES) {
     const place = join(createHarness(program).places(env).skills, "sous");
-    const ours = isLink(place) && ourReal !== undefined && real(place) === ourReal;
-    return { program, place, installed: existsSync(place), ours };
-  });
+    const kind = kindAt(place);
+    const target = kind === "link" ? real(place) : undefined;
+    const ours = target !== undefined && target === ourReal;
+    check.places.push({ program, place, installed: kind !== undefined, ours });
+    if (kind === undefined || ours) continue;
+    const old = kind === "link" && target === undefined ? staleTarget(place, skillDir) : undefined;
+    if (old) check.stale.push({ place, target: old });
+    else check.blocked.push(place);
+  }
+  if (check.blocked.length) check.change = `Move ${check.blocked.join(" and ")} aside, or remove it if it is an old sous skill, then install again.`;
+  return check;
 }
 
 /**
- * Links each program's sous skill place to skillDir. A place that holds something else refuses the
- * whole install before any link is made.
+ * Links each program's sous skill place to skillDir, in place of a broken link sous made before. A
+ * place that holds anything else refuses the whole install before any write.
  */
-export function installSkill(skillDir: string, env: Env): { program: HarnessId; place: string; already: boolean }[] {
-  const places = skillPlaces(skillDir, env);
-  const others = places.filter((p) => !p.ours && taken(p.place)).map((p) => p.place);
-  if (others.length) {
-    const list = others.join(" and ");
-    throw new Refusal(
-      "not_ours",
-      `${list} already ${others.length > 1 ? "hold" : "holds"} something sous did not put there.`,
-      `Move ${list} aside, or remove it if it is an old sous skill, then install again.`,
-      "sous skill install --json",
-    );
+export function installSkill(skillDir: string, env: Env): { programs: Array<{ program: HarnessId; place: string; already: boolean }>; replaced: SkillCheck["stale"] } {
+  const check = skillPlaces(skillDir, env);
+  const { blocked } = check;
+  if (blocked.length) {
+    const list = blocked.join(" and ");
+    throw new Refusal("not_ours", `${list} already ${blocked.length > 1 ? "hold" : "holds"} something sous did not put there.`, check.change!, "sous skill install --json");
   }
-  return places.map(({ program, place, ours }) => {
+  const programs = check.places.map(({ program, place, ours }) => {
     if (!ours) {
+      if (check.stale.some((old) => old.place === place)) unlinkSync(place);
       mkdirSync(dirname(place), { recursive: true });
       symlinkSync(resolve(skillDir), place);
     }
     return { program, place, already: ours };
   });
+  return { programs, replaced: check.stale };
 }

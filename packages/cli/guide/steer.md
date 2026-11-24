@@ -36,7 +36,7 @@ The running steps finish, and nothing new starts. `sous resume <run> --json` goe
 sous stop <run> --json
 ```
 
-The run ends. Its worktree stays for review. A stopped run does not resume. `sous rerun` starts
+The run ends. Its worktree stays for review when the run changed a file. A stopped run does not resume. `sous rerun` starts
 it again from the start.
 
 Stop or pause only when the person asks, or when a run does something they said it must not.
