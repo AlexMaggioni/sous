@@ -190,28 +190,38 @@ function printSteps(out: (line: string) => void, record: RunRecord, agents: read
 /** How long the printed reply of sous log --json may be, as every JSON reply. */
 const LOG_REPLY_MAX = 8000;
 
+/** The characters an event adds to the printed reply: its lines, indented in the array, and the comma. */
+const eventSize = (event: unknown) => `    ${JSON.stringify(event, null, 2).split("\n").join("\n    ")}`.length + 2;
+
 /** sous log --json: the run's events after --after, as many as fit in the reply. Quotes and
- *  backslashes print longer than they are, so the fit is measured on the printed reply. */
+ *  backslashes print longer than they are, so the fit is measured on the printed reply, and each
+ *  event once. */
 function logPage(ctx: Ctx, runId: string, running: boolean, args: Parsed): Reply<object> {
-  const page = logAfter(ctx.paths, runId, wholeFlag(args, "after", 0) ?? 0);
-  const notes = args.flags.follow ? ["--follow does not work with --json. This is one page of the log. Call again with the after it gives."] : [];
-  const shaped = (count: number) => {
+  const asked = wholeFlag(args, "after", 0) ?? 0;
+  const page = logAfter(ctx.paths, runId, asked);
+  const notes = [
+    ...(page.last === undefined ? [] : [`--after ${asked} is past the end of the log, whose last event is ${page.last}. Read it from the start.`]),
+    ...(args.flags.follow ? ["--follow does not work with --json. This is one page of the log. Call again with the after it gives."] : []),
+  ];
+  const shaped = (count: number, forceMore = false) => {
     const events = page.events.slice(0, count);
-    const cut = count < page.events.length;
-    const after = cut ? events.at(-1)!.seq : page.after;
+    const cut = forceMore || count < page.events.length;
+    const after = cut ? (events.at(-1)?.seq ?? page.after) : page.after;
     const more = cut || page.more;
     const next: Next[] = [
+      ...(page.last === undefined ? [] : [{ call: `sous log ${runId} --json`, does: "gives the log from its first event" }]),
       ...(more || running ? [{ call: `sous log ${runId} --json --after ${after}`, does: more ? "gives the next events" : "gives the events since this page" }] : []),
       ...(running ? [waitNext(runId, "waits until the run ends, pauses or asks")] : []),
     ];
     return { data: { runId, events, after, more }, next };
   };
-  const fits = (count: number) => {
-    const { data, next } = shaped(count);
-    return JSON.stringify({ ...data, notes, next }, null, 2).length <= LOG_REPLY_MAX;
-  };
+  const printed = (shape: ReturnType<typeof shaped>) => JSON.stringify({ ...shape.data, notes, next: shape.next }, null, 2).length;
   let count = page.events.length;
-  while (count > 1 && !fits(count)) count -= 1;
+  if (printed(shaped(count)) > LOG_REPLY_MAX) {
+    // A cut page says more, and names the last seq it keeps, which is no longer than the last of all.
+    let total = printed(shaped(count, true));
+    while (count > 1 && total > LOG_REPLY_MAX) total -= eventSize(page.events[--count]);
+  }
   const { data, next } = shaped(count);
   return reply(data, { notes, next });
 }

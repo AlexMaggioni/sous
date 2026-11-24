@@ -161,7 +161,7 @@ describe("how sous shows a question", () => {
     ];
     assert.deepEqual(
       replies.map((reply) => [reply.code, ids(reply.out)]),
-      [color, name, ship, plan].map((q) => [0, `answered ${n(q)}\n`]),
+      [color, name, ship, plan].map((q) => [0, `answered ${n(q)}\nnext: sous wait <id> --json  (waits for the run, which goes on with the answer)\n`]),
     );
     const result = await workers.ended(record.runId);
     assert.equal(result?.status, "completed");
@@ -176,7 +176,7 @@ describe("what a reply writes", () => {
     input: { kind: "input" },
     breakpoint: { kind: "input", breakpoint: true, prompt: "Breakpoint: Check\n\nReply approve, stop, or send back with a note." },
   };
-  const not = (id: string) => `answered ${id}. The run is not running: sous resume r1 uses the answer.\n`;
+  const not = (id: string) => `answered ${id}. The run is not running: sous resume r1 uses the answer.\nnext: sous resume r1 --json  (resumes the run, which uses the answer)\n`;
   // [kind, command and its words, exit code, what sous prints, the answer's value or none]
   const cases: Array<[string, string[], number, (id: string) => string, unknown?]> = [
     ["confirm", ["answer", "yes"], 0, not, true],
@@ -203,7 +203,7 @@ describe("what a reply writes", () => {
     ["input", ["answer", "some", "text"], 0, not, "some text"],
     ["input", ["answer", "  padded "], 0, not, "  padded "],
     ["input", ["answer", "--value-json", '{"a":1}'], 0, not, { a: 1 }],
-    ["input", ["answer", "--value-json", "not json"], 0, (id) => `${not(id)}note: The text is not JSON, so it went as text.\n`, "not json"],
+    ["input", ["answer", "--value-json", "not json"], 0, (id) => `answered ${id}. The run is not running: sous resume r1 uses the answer.\nnote: The text is not JSON, so it went as text.\nnext: sous resume r1 --json  (resumes the run, which uses the answer)\n`, "not json"],
     ["input", ["approve"], 0, not, "approve"],
     ["breakpoint", ["answer"], 64, (id) => `usage: sous answer ${id} "your answer"\n  change: Fix the command line. sous help lists the commands and their flags.\n`],
     ["breakpoint", ["answer", " "], 0, not, "approve"],

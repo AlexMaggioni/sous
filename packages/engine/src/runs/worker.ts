@@ -116,7 +116,8 @@ async function runOnAccounts(
   const secrets = loadSecrets(paths);
   const slots = agentSlots(paths, () => loadConfig(paths).maxAgents, record.priority);
   const inner = options.inner;
-  const onActivity = activityWriter(paths, runId);
+  // It reads the file at its first write, once the run manager holds the run's lease.
+  const onActivity = activityWriter(paths, runId, Object.values(secrets));
   const runner = createSteps({
     cwd: record.cwd,
     ...(inner ? { inner } : {}),

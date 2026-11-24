@@ -8,12 +8,14 @@ import type { HomePaths } from "./home.js";
 import { readActivity, type ActivityLine } from "./records.js";
 import { Refusal } from "./refusal.js";
 import { runDetail } from "./run.js";
-import { readEventsAfter } from "./store.js";
+import { lastEventSeq, readEventsAfter } from "./store.js";
 
 /** One call of a step, as sous step shows it. */
 export interface StepView {
   runId: string;
   step: string;
+  /** The run the step ran in: the run's id, or a nested run's. */
+  scope: string;
   /** Which call of the label this is, from 1, and how many calls it made. */
   call: number;
   calls: number;
@@ -37,6 +39,8 @@ export interface StepView {
   earlier?: number;
   /** Set when the prompt is cut to 2,000 characters. */
   promptCut?: true;
+  /** The other runs, nested in this one, whose steps have the label too. */
+  alsoIn?: string[];
 }
 
 /** An event of the run's log, in sous's vocabulary. */
@@ -73,22 +77,24 @@ function specCommand(prompt: string): string | undefined {
 }
 
 /**
- * One call of a step of a run, by its label: the last call, or the one `call` names. A label in a
- * nested run is found when the top-level run has no step with it. Throws no_such_step when the
- * run has no such step or call.
+ * One call of a step of a run, by its label: the last call, or the one `call` names. The calls are
+ * the top-level run's, or, when it has no step with the label, those of the first nested run that
+ * has one. Calls count in that one run. Throws no_such_step when the run has no such step or call.
  */
 export function stepView(paths: HomePaths, runId: string, label: string, options: { call?: number; tail?: number; full?: boolean } = {}): StepView {
   const detail = runDetail(paths, runId);
   const id = detail.record.runId;
-  const top = detail.steps.filter((step) => step.label === label && (step.scope === undefined || step.scope === id));
-  const calls = top.length ? top : detail.steps.filter((step) => step.label === label);
+  const scopeOf = (step: { scope?: string }) => step.scope ?? id;
+  const named = detail.steps.filter((step) => step.label === label);
+  const scopes = [...new Set(named.map(scopeOf))];
+  const scope = scopes.includes(id) ? id : scopes[0];
+  const calls = named.filter((step) => scopeOf(step) === scope);
   const show = `sous show ${id} --json`;
-  if (!calls.length) throw new Refusal("no_such_step", `run ${id} has no step "${label}".`, "Give the label of one of the run's steps, as sous show lists them.", show);
+  if (!calls.length || scope === undefined) throw new Refusal("no_such_step", `run ${id} has no step "${label}".`, "Give the label of one of the run's steps, as sous show lists them.", show);
   const number = options.call ?? calls.length;
   const step = calls[number - 1];
   if (!step) throw new Refusal("no_such_step", `step "${label}" of run ${id} made ${calls.length} calls, so it has no call ${number}.`, `Give --call from 1 to ${calls.length}.`, show);
 
-  const scope = step.scope ?? id;
   const all = readActivity(paths, id).filter((line) => line.scope === scope && (step.callIndex === undefined ? line.label === label : line.callIndex === step.callIndex));
   const exec = step.model === EXEC_MODEL;
   const last = (kind: string) => all.filter((line) => line.kind === kind).at(-1)?.text;
@@ -96,11 +102,12 @@ export function stepView(paths: HomePaths, runId: string, label: string, options
   const output = exec ? last("output") : undefined;
   const prompt = exec ? undefined : options.full || step.prompt.length <= PROMPT ? step.prompt : step.prompt.slice(0, PROMPT);
   const tokens = step.tokens ?? step.usage?.total;
-  const tail = Math.max(0, options.tail ?? TAIL);
+  const tail = Math.max(0, options.tail ?? (options.full ? Infinity : TAIL));
   const activity = tail ? all.slice(-tail) : [];
   return {
     runId: id,
     step: label,
+    scope,
     call: number,
     calls: calls.length,
     status: step.status,
@@ -110,13 +117,15 @@ export function stepView(paths: HomePaths, runId: string, label: string, options
     ...(step.startedAt && step.endedAt ? { seconds: secondsOf(step.startedAt, step.endedAt) } : {}),
     ...(tokens ? { tokens } : {}),
     ...(prompt === undefined ? {} : { prompt }),
-    ...(step.result === undefined ? {} : { result: step.result }),
+    // A saved step keeps a preview of its result, not the result.
+    ...(step.result === undefined && step.resultPreview === undefined ? {} : { result: step.result ?? step.resultPreview }),
     ...(step.error === undefined ? {} : { failure: step.error }),
     ...(command === undefined ? {} : { command }),
     ...(output === undefined ? {} : { output }),
     activity,
     ...(activity.length < all.length ? { earlier: all.length - activity.length } : {}),
     ...(prompt !== undefined && prompt.length < step.prompt.length ? { promptCut: true as const } : {}),
+    ...(scopes.length > 1 ? { alsoIn: scopes.filter((other) => other !== scope) } : {}),
   };
 }
 
@@ -132,7 +141,7 @@ function logEvent(runId: string, event: PersistedRunEvent): Omit<LogEvent, "seq"
       if (event.reason === "checkpoint_required") return { kind: "asks", ...(event.checkpointContext?.prompt ? { prompt: brief(event.checkpointContext.prompt) } : {}), ...where };
       return { kind: "paused", ...(event.reason ? { reason: event.reason } : {}), ...where };
     case "callRecord":
-      return event.record.kind === "checkpoint" && event.record.origin === "confirm" ? { kind: "answered", call: event.record.index, ...where } : undefined;
+      return event.record.kind === "checkpoint" && event.record.origin === "confirm" && event.record.outcome === "result" ? { kind: "answered", call: event.record.index, ...where } : undefined;
     case "resumed":
       return { kind: "resumed", ...where };
     case "complete":
@@ -146,21 +155,35 @@ function logEvent(runId: string, event: PersistedRunEvent): Omit<LogEvent, "seq"
   }
 }
 
+/** The codes of an event log that is not there yet: a run that never started, or one an older sous saved. */
+const NO_LOG = new Set(["RUN_NOT_FOUND", "EVENT_LOG_UNAVAILABLE"]);
+
 /**
  * The run's events after the seq `after`, oldest first, at most `max` of them. `after` in the
  * answer is the seq of the last event given, or the one asked for when none came, and `more` says
- * whether more events wait. A run with no event log yet gives none.
+ * whether more events wait. A run with no event log yet gives none. An `after` past the log's end
+ * gives none, and `last`, the seq of the log's last event. Throws broken_record when the log does
+ * not parse.
  */
-export function logAfter(paths: HomePaths, runId: string, after: number, max = EVENTS): { events: LogEvent[]; after: number; more: boolean } {
+export function logAfter(paths: HomePaths, runId: string, after: number, max = EVENTS): { events: LogEvent[]; after: number; more: boolean; last?: number } {
+  const limit = Math.max(0, max);
   const events: LogEvent[] = [];
   try {
     readEventsAfter(paths, runId, after, ({ event, timestamp, seq }) => {
       const shown = logEvent(runId, event);
       if (shown) events.push({ seq, at: timestamp, ...shown } as LogEvent);
+      // One more than the page tells whether more wait.
+      return events.length <= limit;
     });
-  } catch {
-    // No event log yet.
+  } catch (error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && NO_LOG.has(code)) return { events: [], after, more: false };
+    if (code === "CURSOR_AHEAD") return { events: [], after, more: false, last: lastEventSeq(paths, runId) };
+    if (code === "CORRUPT_LOG") {
+      throw new Refusal("broken_record", `the event log of run ${runId} is broken: ${(error as Error).message}.`, "Read the run's text log, which sous log prints without --json, or start the workflow again.", `sous show ${runId} --json`);
+    }
+    throw error;
   }
-  const page = events.slice(0, Math.max(0, max));
+  const page = events.slice(0, limit);
   return { events: page, after: page.at(-1)?.seq ?? after, more: events.length > page.length };
 }

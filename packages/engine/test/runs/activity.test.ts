@@ -4,7 +4,7 @@
 // goes on from the last seq. The tests read the file raw, so they hold whatever module writes it.
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { HomePaths } from "../../src/runs/home.js";
@@ -76,7 +76,7 @@ describe("piece 5: the worker's activity file", () => {
     const long = "p".repeat(5_000);
     const { paths, projectDir } = setup({
       long: `export const meta = { name: 'long', description: 'Long texts', place: 'none' }
-await sh("printf '%05000d' 0; printf END", { label: "loud" })
+await sh("for i in $(seq 1700); do printf 'ab '; done; printf END", { label: "loud" })
 await agent('${long}', { label: "wordy" })
 return 1`,
     });
@@ -110,5 +110,39 @@ return 1`,
       after.map((_, i) => i + 1),
     );
     assert.ok(after.slice(before.length).some((line) => line.label === "boom" && line.kind === "command"));
+  });
+});
+
+describe("piece 5 review: the activity file", () => {
+  it("saves a code step's output when the step runs out of time", async () => {
+    const { paths, projectDir } = setup({
+      slow: `export const meta = { name: 'slow', description: 'A step past its time', place: 'none' }
+await sh("echo started; sleep 5", { label: "slow", timeout: 0.5 })
+return 1`,
+    });
+    const { runId } = createRun(paths, { workflow: "slow", projectDir, inputs: {} });
+    assert.equal((await run(paths, runId, "start"))?.status, "paused");
+    const slow = readActivity(paths, runId).filter((line) => line.label === "slow");
+    assert.deepEqual(slow.map((line) => line.kind), ["command", "output"]);
+    assert.match(slow[1]!.text, /started/);
+  });
+
+  it("hides credentials and the loaded secrets' values", async () => {
+    const secret = "plainwords4242plain";
+    const { paths, projectDir } = setup({
+      leaks: `export const meta = { name: 'leaks', description: 'Texts with secrets', place: 'none' }
+await sh("echo the key is ${secret}; echo password=hunter2", { label: "loud" })
+await agent('use ${secret} to log in', { label: "agent" })
+return 1`,
+    });
+    writeFileSync(paths.secrets, `DEPLOY_KEY=${secret}\n`);
+    const { runId } = createRun(paths, { workflow: "leaks", projectDir, inputs: {} });
+    assert.equal((await run(paths, runId, "start"))?.status, "completed");
+    const lines = readActivity(paths, runId);
+    const raw = readFileSync(activityFile(paths, runId), "utf8");
+    assert.ok(!raw.includes(secret), "the loaded secret's value is not in the file");
+    assert.ok(!raw.includes("hunter2"), "a password is not in the file");
+    assert.match(lines.find((line) => line.label === "agent" && line.kind === "prompt")?.text ?? "", /use \[REDACTED\] to log in/);
+    assert.match(lines.find((line) => line.label === "loud" && line.kind === "output")?.text ?? "", /password=\[REDACTED\]/);
   });
 });
