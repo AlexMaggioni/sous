@@ -119,9 +119,6 @@ sous runs saved workflows in the background.
         --line                          one line for a new agent session, or nothing
   sous list [--all]                     runs, newest first
   sous show <run> [--full]              one run: status, steps, questions, result
-  sous workflows [show <name> [--diff] [--full]]  the saved workflows, or one: its steps, its
-                                        approval, its last runs; --diff shows what changed
-  sous agents                           the agents a step can name
   sous log <run> [-f]                   the run's log
         --json --after <seq>            the run's events after a seq, 100 at most
   sous step <run> <label>               one step: status, prompt or command, failure, what it did
@@ -142,6 +139,9 @@ sous runs saved workflows in the background.
   sous rerun <run> [--name value ...]   start the same workflow again with the same inputs
         --reuse                         keep the results of the steps you did not edit, in the same place
   sous workflows                        saved workflows and their inputs
+  sous workflows show <name> [--full]   one workflow: its steps, its approval, its last runs
+        --diff                          what changed since the person's yes
+  sous agents                           the agents a step can name
   sous workflows approve <name> | --all the person's yes to a workflow's text as it is now
         --by person                     the person decided; an agent passes on their word
   sous check <workflow> [--name value]  check a workflow without running it
