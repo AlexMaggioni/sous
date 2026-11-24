@@ -7,7 +7,8 @@ import { PERSON, fakeRunner, inProcess, readState, testHome, writeAnswer } from 
 import { sous } from "./sous.js";
 
 // A workflow's time limit reached while a code step runs, and while no step runs. runs.test.ts
-// has the limit reached while an agent step runs.
+// has the limit reached while an agent step runs. Piece 14: between steps the limit pauses the
+// run with its own reason, time_limit, where it used to fall back to sous pause's "requested".
 
 describe("time limit", () => {
   it("reached in a code step, stops it and pauses the run on it, and resume runs the code step again", async () => {
@@ -38,7 +39,7 @@ return await agent('check ' + built.stdout.trim(), { label: 'check' })`,
     assert.deepEqual(calls.map((call) => call.label), ["check"]);
   });
 
-  it("reached while the run waits for an answer, pauses the run as sous pause does, and resume goes on with the answer", async () => {
+  it("reached between steps, while the run waits for an answer, pauses the run on the time limit, and resume goes on with the answer", async () => {
     // The question comes first, so no step can be running when the limit is reached.
     const { paths, projectDir } = testHome({
       asks: `export const meta = { name: 'asks', description: 'asks', timeout: '1s' }
@@ -53,7 +54,8 @@ return await agent('Build ' + name, { label: 'build' })`,
     const paused = await workers.ended(record.runId);
     assert.equal(paused?.status, "paused", lines.join("\n"));
     assert.match(lines.join("\n"), /time limit 1s reached/);
-    assert.equal(readState(paths, record.runId)?.pauseReason, "requested", "the pause sous pause makes");
+    assert.equal(readState(paths, record.runId)?.pauseReason, "time_limit", "the time limit's own reason, not requested");
+    assert.match((await sous(paths, ["list"])).out, /paused: time limit/);
     assert.match((await sous(paths, ["show", record.runId])).out, /^status {4}paused$/m);
     const [question] = runQuestions(paths, record.runId);
     assert.equal(question?.id, `${record.runId}--0`, "the question waits while the run is paused");

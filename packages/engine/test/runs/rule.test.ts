@@ -25,6 +25,9 @@ type Answers = ReturnType<typeof answers>;
 const gone = { alive: false, openQuestions: 0 };
 const alive = { alive: true, openQuestions: 0 };
 
+/** Piece 14 adds the pause reason budget. PauseReason has no "budget" yet, so the cast keeps the types right. */
+const BUDGET = "budget" as Answers["pause"];
+
 /** One row per row of the rule's table, with today's answers. */
 const TABLE: Array<{ row: string; facts: RunFacts } & Answers> = [
   { row: "asks",                        facts: { state: saved("running"), alive: true, openQuestions: 2 },  status: "asks",        word: "asks",                  exit: 4,         unfinished: true,  pause: undefined,       resume: "running",       reuse: "running" },
@@ -41,6 +44,7 @@ const TABLE: Array<{ row: string; facts: RunFacts } & Answers> = [
   { row: "paused, step_failed",         facts: { state: saved("paused", "step_failed"), ...gone },           status: "paused",      word: "paused: failed step",   exit: 2,         unfinished: true,  pause: "step_failed",   resume: "ok",            reuse: "paused" },
   { row: "paused, step_stopped",        facts: { state: saved("paused", "step_stopped"), ...gone },          status: "paused",      word: "paused: stopped step",  exit: 2,         unfinished: true,  pause: "step_stopped",  resume: "ok",            reuse: "paused" },
   { row: "paused, time_limit",          facts: { state: saved("paused", "time_limit"), ...gone },            status: "paused",      word: "paused: time limit",    exit: 2,         unfinished: true,  pause: "time_limit",    resume: "ok",            reuse: "paused" },
+  { row: "paused, budget",              facts: { state: saved("paused", "budget"), ...gone },                status: "paused",      word: "paused: budget",        exit: 2,         unfinished: true,  pause: BUDGET,          resume: "ok",            reuse: "paused" },
   { row: "paused, interrupted",         facts: { state: saved("paused", "interrupted"), ...gone },           status: "interrupted", word: "interrupted",           exit: 2,         unfinished: true,  pause: "interrupted",   resume: "ok",            reuse: "paused" },
   { row: "paused, other text",          facts: { state: saved("paused", "disk_full"), ...gone },             status: "paused",      word: "paused: disk_full",     exit: 2,         unfinished: true,  pause: "other",         resume: "ok",            reuse: "paused" },
   { row: "completed",                   facts: { state: saved("completed"), ...gone },                       status: "completed",   word: "completed",             exit: 0,         unfinished: false, pause: undefined,       resume: "completed",     reuse: "ok" },
@@ -122,7 +126,7 @@ describe("the reset time", () => {
   });
 
   it("gives no resume time to any other pause", () => {
-    for (const reason of ["auth_required", "checkpoint_required", "requested", "step_failed", "step_stopped", "time_limit", "interrupted"]) {
+    for (const reason of ["auth_required", "checkpoint_required", "requested", "step_failed", "step_stopped", "time_limit", "budget", "interrupted"]) {
       assert.equal(judge({ state: { ...saved("paused", reason), resetHint: "Resets at 2026-11-21T12:00:00.000Z" }, ...gone }).pause?.resumeAt, undefined, reason);
     }
   });

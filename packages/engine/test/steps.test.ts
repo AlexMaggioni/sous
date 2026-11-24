@@ -608,3 +608,68 @@ describe("piece 5: step activity", () => {
     });
   }
 });
+
+// Piece 14. The budget and the time limit stop a step through a gate the steps module asks
+// before each agent step, and the worker counts a step's tokens while it runs through onUsage.
+// StepsOptions has neither yet, so the types below add them. The fake codex sends its token
+// count only when the turn ends, so the mid-step test runs on the fake claude alone.
+interface GateStop {
+  pauseReason: "time_limit" | "budget";
+  message: string;
+}
+interface UsageStep {
+  scope: string;
+  callIndex: number;
+  label?: string;
+}
+type WithGate = StepsOptions & { gate: () => GateStop | undefined };
+type WithUsage = Partial<StepsOptions> & { onUsage: (step: UsageStep, usage: AgentUsage) => void };
+
+describe("piece 14: budget", () => {
+  for (const stop of [
+    { pauseReason: "budget", message: "the run reached its budget of 1500 tokens" },
+    { pauseReason: "time_limit", message: "the run reached its time limit of 1s" },
+  ] as const) {
+    it(`a gate that returns ${stop.pauseReason} stops the next agent step before it starts`, async () => {
+      const ran: string[] = [];
+      let closed: GateStop | undefined;
+      const options: WithGate = {
+        cwd: temp("gate"),
+        inner: { run: async (prompt: string) => { ran.push(prompt); return `${prompt} done`; } },
+        gate: () => closed,
+      };
+      const steps = createSteps(options);
+      assert.equal(await steps.run("first", routed(steps, { label: "a" })), "first done", "an open gate lets the step run");
+      closed = stop;
+      await assert.rejects(steps.run("second", routed(steps, { label: "b" })), (error: unknown) => {
+        assert.ok(error instanceof WorkflowError, String(error));
+        assert.equal(error.code, WorkflowErrorCode.AGENT_CANCELLED);
+        assert.equal((error.details as { pauseReason?: unknown } | undefined)?.pauseReason, stop.pauseReason);
+        assert.match(error.message, new RegExp(stop.message));
+        return true;
+      });
+      assert.deepEqual(ran, ["first"], "the stopped step never reached the agent");
+    });
+  }
+
+  it("reports a claude step's usage while the step still runs", async () => {
+    // The fake writes its tool call, with the tokens of that message, then holds until "release".
+    const place = fakePlace([{ match: "Work long", tool: "echo hi", hold: "release", answer: "Done." }]);
+    const seen: Array<{ step: UsageStep; usage: AgentUsage }> = [];
+    const extra: WithUsage = { onUsage: (step, usage) => seen.push({ step, usage }) };
+    const steps = createSteps(onFakes(place, extra as Partial<StepsOptions>));
+    const answer = steps.run("Work long.", routed(steps, { label: "long", model: "claude/haiku" }, { runId: "run-usage", callIndex: 2 }));
+    try {
+      await waitUntil(() => seen.length > 0, "no usage came while the step ran");
+      const [first] = seen;
+      assert.deepEqual(first!.step, { scope: "run-usage", callIndex: 2, label: "long" });
+      assert.equal(first!.usage.total, 150, "the tool call's message spent 120 input and 30 output tokens");
+    } finally {
+      // Let the held turn end either way, so a failure does not leave the fake waiting.
+      place.gate("release");
+      const ended = await answer.catch((error: unknown) => error);
+      await steps.dispose();
+      assert.equal(ended, "Done.");
+    }
+  });
+});
