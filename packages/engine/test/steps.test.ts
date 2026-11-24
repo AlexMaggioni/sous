@@ -560,3 +560,51 @@ describe("steps with a runner of their own", () => {
     assert.deepEqual(seen, [{ token: "t", named: true }, { folder: "/codex" }]);
   });
 });
+
+// Piece 5. The steps module reports what happens inside a step through onActivity, so the
+// worker can save it. StepsOptions has no onActivity yet, so the cast keeps the types right.
+interface ActivityStep {
+  scope: string;
+  callIndex: number;
+  label?: string;
+}
+interface ActivityEntry {
+  kind: string;
+  tool?: string;
+  text: string;
+}
+type WithActivity = Partial<StepsOptions> & { onActivity: (step: ActivityStep, entry: ActivityEntry) => void };
+
+describe("piece 5: step activity", () => {
+  for (const [harness, model] of [
+    ["claude", "claude/haiku"],
+    ["codex", "codex/gpt-6.1-sol"],
+  ] as const) {
+    it(`reports a ${harness} step's prompt first, then one entry per history item`, async () => {
+      const place = fakePlace([{ match: "List the files", tool: "echo hi", answer: "Two files." }]);
+      const seen: Array<{ step: ActivityStep; entry: ActivityEntry }> = [];
+      const extra: WithActivity = { onActivity: (step, entry) => seen.push({ step, entry }) };
+      const steps = createSteps(onFakes(place, extra as Partial<StepsOptions>));
+      try {
+        const answer = await steps.run("List the files here.", routed(steps, { label: "look", model }, { runId: "run-activity", callIndex: 4 }));
+        assert.equal(answer, "Two files.");
+      } finally {
+        await steps.dispose();
+      }
+      assert.deepEqual(
+        seen.map(({ entry }) => entry.kind),
+        ["prompt", "tool", "tool-result", "text"],
+      );
+      const [prompt, tool, result, text] = seen.map(({ entry }) => entry);
+      assert.match(prompt!.text, /List the files here\./);
+      // The prompt is reported once, by the steps module, not again from the harness's own copy.
+      assert.equal(seen.filter(({ entry }) => /List the files here\./.test(entry.text)).length, 1);
+      assert.equal(tool!.tool, "Bash");
+      assert.match(tool!.text, /echo hi/);
+      assert.equal(result!.text, "ok");
+      assert.equal(text!.text, "Two files.");
+      // Every entry names the step it belongs to.
+      for (const { step } of seen) assert.deepEqual(step, { scope: "run-activity", callIndex: 4, label: "look" });
+    });
+  }
+});
