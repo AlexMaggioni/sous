@@ -549,7 +549,8 @@ approved ones.
   `approve-workflow` line to `events.jsonl`, and one through an agent sends the person a notice.
 - A person's own `sous run`, and their `sous resume --latest`, approve the texts they run.
 - A dry run needs no yes and gives none. A dry run that was cut off never resumes as a real run.
-  `sous resume` refuses it with `cannot_resume`, and its call runs the dry run again.
+  `sous resume` and `sous rerun --reuse` refuse it with `cannot_resume`, and the call runs the dry
+  run again.
 - When the edited workflow has a schedule, the service skips it each time it comes due, logs why,
   and sends the person one notice per edit with the approve command.
 - An agent that writes or edits a workflow tells the person its name, what changed, and that sous

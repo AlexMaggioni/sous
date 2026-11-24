@@ -36,7 +36,7 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | `no_such_step` | Find the step's name in `sous show <run> --json`. |
 | `step_not_running` | The step is not running now. Read `sous show <run> --json`. |
 | `run_is_running` | Stop the run first, if the person wants that. |
-| `cannot_resume` | An older sous saved the run. Rerun it, after asking. |
+| `cannot_resume` | An older sous saved the run, or it is a dry run. Make `call`, after asking. |
 | `not_ours` | A skill place holds something sous did not put there, or Claude Code's `settings.json` does not parse, has a shape sous can't edit, or is a broken link. Tell the person. |
 | `home_not_writable` | sous can't write to its home. Under Codex the sandbox blocks it. Tell the person what `change` says. |
 | `started_by_people` | Only a person starts this workflow. Give them `forPerson` to type in their own terminal. |

@@ -635,6 +635,11 @@ export interface RerunRequest {
 /** Start an earlier run again as a new run, with its inputs, step changes and model. */
 export function rerunRun(paths: HomePaths, launch: Launcher, runId: string, request: RerunRequest): RunRecord {
   const { record: old, reuse } = readRun(paths, runId);
+  // A dry run's steps ran with stand-ins, so a real run never reuses them.
+  if (request.reuse && old.origin === "check") {
+    const message = `${old.runId} is a dry run, and its steps ran with stand-ins, so a real run does not reuse them. sous rerun ${old.runId} without --reuse starts it fresh, and sous check ${old.workflow} --dry-run runs the dry run again.`;
+    throw new Refusal("cannot_resume", message, "Run the dry run again, or rerun it without --reuse.", `sous check ${old.workflow} --dry-run --json`);
+  }
   if (request.reuse && !reuse.ok) throw new Error(REUSE_REFUSALS[reuse.why](old.runId));
   const defaultModel = request.defaultModel ?? old.defaultModel;
   return startRun(paths, launch, {

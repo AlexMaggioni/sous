@@ -151,7 +151,7 @@ describe("piece 9 review: the worker runs the text sous checked", () => {
 
 describe("piece 9 review: a dry run left behind", () => {
   /** A dry run of a new workflow whose process died mid run: its record and a running state. */
-  function leftBehind(paths: HomePaths, projectDir: string): string {
+  function leftBehind(paths: HomePaths, projectDir: string, status: "running" | "completed" = "running"): string {
     writeFileSync(workflowFile(projectDir, "sneaky"), plain("sneaky"));
     const record = createRun(paths, {
       workflow: "sneaky",
@@ -162,7 +162,7 @@ describe("piece 9 review: a dry run left behind", () => {
       who: { by: "agent", through: { kind: "agent", program: "claude", session: "s1" } },
     });
     const now = new Date().toISOString();
-    plantState(paths, { runId: record.runId, status: "running", script: plain("sneaky"), startedAt: now, updatedAt: now, agents: [], logs: [], phases: [] });
+    plantState(paths, { runId: record.runId, status, script: plain("sneaky"), startedAt: now, updatedAt: now, agents: [], logs: [], phases: [], ...(status === "completed" ? { result: "stand-in", completedAt: now } : {}) });
     return record.runId;
   }
 
@@ -177,6 +177,28 @@ describe("piece 9 review: a dry run left behind", () => {
 
       for (const env of [CLAUDE, PERSON]) {
         const error = refusal(await sous(paths, ["resume", runId, "--json"], { env, launch: workers.launch }), "cannot_resume", "the resume of a dry run");
+        assert.equal(error.call, "sous check sneaky --dry-run --json");
+      }
+      assert.equal(workers.launched.length, launched, "no worker started");
+    } finally {
+      await settle(workers);
+    }
+  });
+
+  it("a rerun --reuse of a completed dry run is refused with the dry run's call, so no real run takes its stand-in results", async () => {
+    const { paths, projectDir } = testHome({ hello: HELLO });
+    const workers = inProcess({ inner: runner });
+    try {
+      await firstUse(paths, projectDir, workers);
+      const runId = leftBehind(paths, projectDir, "completed");
+      assert.equal(readRun(paths, runId).status, "completed");
+      // The person approves the workflow, so only the dry run's stand-ins stop the reuse.
+      const approved = await sous(paths, ["workflows", "approve", "sneaky", "--project", projectDir, "--json"], { env: PERSON });
+      assert.equal(approved.code, 0, approved.out);
+      const launched = workers.launched.length;
+
+      for (const env of [CLAUDE, PERSON]) {
+        const error = refusal(await sous(paths, ["rerun", runId, "--reuse", "--json"], { env, launch: workers.launch }), "cannot_resume", "the rerun --reuse of a dry run");
         assert.equal(error.call, "sous check sneaky --dry-run --json");
       }
       assert.equal(workers.launched.length, launched, "no worker started");
