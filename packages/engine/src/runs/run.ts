@@ -329,19 +329,26 @@ export function stopRun(paths: HomePaths, runId: string): { outcome: StopOutcome
 
 /** Stop one running step by its name in the log. The run pauses on it, and resume runs it again.
  *  The worker gets the step's run or nested run and its call, so a step with the same label
- *  elsewhere goes on. Returns false when the run is not running. */
+ *  elsewhere goes on. Returns false when the run is not running, and refuses a name the run never had. */
 export function stopStep(paths: HomePaths, runId: string, step: string): boolean {
   const record = needRecord(paths, runId);
-  if (!processAlive(record.pid)) return false;
+  const alive = processAlive(record.pid);
   const state = readState(paths, record.runId);
   const live = state ? liveSteps(paths, record, state) : { running: [] };
+  // With no event log to read, the steps are the ones the state saved.
+  const ran = (live.steps ?? state?.agents ?? []).some((agent) => `${scopePrefix(record.runId, typeof agent.scope === "string" ? agent.scope : undefined, record.nested)}${agent.label}` === step);
+  const change = "Name a step that runs now, by the name sous log gives it.";
+  // With no worker no step runs, so a step the run has stops nothing. A name it lacks is a typo.
+  if (!alive) {
+    if (ran) return false;
+    throw new Refusal("no_such_step", `no step named "${step}" ran in ${record.runId}.`, change, `sous show ${record.runId} --json`);
+  }
   const running = live.running;
   const calls = running.filter((call) => call.name === step).map(({ name: _name, ...call }) => call);
   if (!calls.length) {
     const now = running.length ? `Running now: ${running.map((call) => `"${call.name}"`).join(", ")}.` : "No step runs now.";
-    const ran = (live.steps ?? []).some((agent) => `${scopePrefix(record.runId, typeof agent.scope === "string" ? agent.scope : undefined, record.nested)}${agent.label}` === step);
     const message = ran ? `"${step}" does not run now in ${record.runId}. ${now}` : `no step named "${step}" runs in ${record.runId}. ${now}`;
-    throw new Refusal(ran ? "step_not_running" : "no_such_step", message, "Name a step that runs now, by the name sous log gives it.", `sous show ${record.runId} --json`);
+    throw new Refusal(ran ? "step_not_running" : "no_such_step", message, change, `sous show ${record.runId} --json`);
   }
   requestStepStop(paths, record.runId, { step, calls });
   process.kill(record.pid!, "SIGUSR2");
@@ -383,7 +390,7 @@ const WRONG_STATE: Record<ResumeWrongState, (runId: string) => string> = {
 export type ResumeOutcome =
   | { resumed: RunRecord }
   | { wrongState: ResumeWrongState; view: RunView; message: string }
-  | { mustChoose: string[]; record: RunRecord; message: string };
+  | { mustChoose: string[]; message: string };
 
 /**
  * Resume a run in a new worker. A workflow edited since the run started reaches it only by
@@ -407,7 +414,7 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, cho
       `${changed.join(", ")} changed since ${record.runId} started. ` +
       `sous resume ${record.runId} --latest takes the new version, and the finished steps that match stay done. ` +
       `sous resume ${record.runId} --same goes on with the version it started with.`;
-    return { mustChoose: changed, record, message };
+    return { mustChoose: changed, message };
   }
   if (choice === "latest") updateRecord(paths, record.runId, { resumeLatest: true });
   launch(paths, record.runId, "resume");
@@ -488,15 +495,18 @@ function ownRun(paths: HomePaths, scope: string): RunRecord | undefined {
 }
 
 /** What an answer did. It was written, and `running` says whether the run reads it now or on
- *  resume. Or it stopped the run, or it does not fit the command, or the prompt's question was
- *  already closed. */
-export type AnswerOutcome = { answered: true; running: boolean } | { stopped: ReturnType<typeof stopRun> } | Misfit | { gone: true };
+ *  resume, and `notJson` that --value-json text went as text. Or it stopped the run, or it does
+ *  not fit the command, or the prompt's question was already closed. */
+export type AnswerOutcome = { answered: true; running: boolean; notJson?: true } | { stopped: ReturnType<typeof stopRun> } | Misfit | { gone: true };
 
-/** Answer a question with what a person typed. A reply that stops the run stops it as sous stop does. */
+/** Answer a question with what a person typed. A reply that stops the run stops it as sous stop
+ *  does. Only a reply typed at a prompt finds the question gone. */
+export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply & { via: Exclude<Reply["via"], "prompt"> }): Exclude<AnswerOutcome, { gone: true }>;
+export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply): AnswerOutcome;
 export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply): AnswerOutcome {
   const result = reply(paths, question, typed);
   if ("stop" in result) return { stopped: stopRun(paths, question.runId) };
-  if ("answered" in result) return { answered: true, running: processAlive(findRecord(paths, question.runId)?.pid) };
+  if ("answered" in result) return { answered: true, running: processAlive(findRecord(paths, question.runId)?.pid), ...(result.notJson ? { notJson: true as const } : {}) };
   return result;
 }
 

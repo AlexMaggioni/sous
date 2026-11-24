@@ -170,7 +170,9 @@ export async function main(argv: string[], options: MainOptions = {}): Promise<n
     }
     if (!spec) throw new Usage(`unknown command "${command}". sous help lists them.`);
     const result = await spec.run(parsed, contextOf(json, options, host));
-    return print(result, json, (line) => host.out(line));
+    // Each next call takes --json, so only the JSON form prints them. The text lines name the
+    // command to run in words.
+    return print(json ? result : { ...result, next: [] }, json, (line) => host.out(line));
   } catch (error) {
     // A command line that does not parse is read again for --json, before any "--".
     const asJson = json ?? (rest.includes("--") ? rest.slice(0, rest.indexOf("--")) : rest).includes("--json");

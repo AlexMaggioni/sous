@@ -203,7 +203,7 @@ describe("what a reply writes", () => {
     ["input", ["answer", "some", "text"], 0, not, "some text"],
     ["input", ["answer", "  padded "], 0, not, "  padded "],
     ["input", ["answer", "--value-json", '{"a":1}'], 0, not, { a: 1 }],
-    ["input", ["answer", "--value-json", "not json"], 0, not, "not json"],
+    ["input", ["answer", "--value-json", "not json"], 0, (id) => `${not(id)}note: The text is not JSON, so it went as text.\n`, "not json"],
     ["input", ["approve"], 0, not, "approve"],
     ["breakpoint", ["answer"], 64, (id) => `usage: sous answer ${id} "your answer"\n  change: Fix the command line. sous help lists the commands and their flags.\n`],
     ["breakpoint", ["answer", " "], 0, not, "approve"],
@@ -335,6 +335,19 @@ return await breakpoint('Check the plan', { show: 'the plan' })`;
     assert.deepEqual(await sous(paths, ["answer", question!.id, "stop"]), { code: 0, out: `stopped ${record.runId}\n` });
     await stopped(paths, record.runId);
   });
+
+  it("sous answer <q> stop --json replies with the keys of any answer, answered true", async () => {
+    const { paths, projectDir } = testHome({ held });
+    const workers = inProcess({ inner: runner });
+    const record = startRun(paths, workers.launch, { workflow: "held", projectDir, inputs: {} });
+    await workers.ended(record.runId);
+    const [question] = runQuestions(paths, record.runId);
+    const done = await sous(paths, ["answer", question!.id, "stop", "--json"]);
+    assert.equal(done.code, 0, done.out);
+    const reply = JSON.parse(done.out) as Record<string, unknown>;
+    assert.deepEqual({ question: reply.question, runId: reply.runId, answered: reply.answered }, { question: question!.id, runId: record.runId, answered: true });
+    await stopped(paths, record.runId);
+  });
 });
 
 describe("answer, approve and send-back replies", () => {
@@ -414,5 +427,26 @@ describe("answer, approve and send-back replies", () => {
       );
       assert.deepEqual(answered(paths, question.id), value, command);
     }
+  });
+
+  it("sous answer on a breakpoint gives no --value-json note, since the text is a decision", async () => {
+    const { paths } = testHome();
+    const question = plant(paths, 0, BREAKPOINT);
+    const done = await sous(paths, ["answer", question.id, "{shorter}", "--json"]);
+    assert.equal(done.code, 0, done.out);
+    assert.deepEqual(answered(paths, question.id), { decision: "send back", note: "{shorter}" });
+    assert.equal(replyOf(done.out).notes.some((note) => note.includes("--value-json")), false, done.out);
+  });
+
+  it("sous answer --value-json with text that is not JSON passes the text and says so", async () => {
+    const { paths } = testHome();
+    const question = plant(paths, 0);
+    const done = await sous(paths, ["answer", question.id, "{not json", "--value-json", "--json"]);
+    assert.equal(done.code, 0, done.out);
+    assert.equal(answered(paths, question.id), "{not json");
+    assert.deepEqual(replyOf(done.out).notes, ["The text is not JSON, so it went as text."]);
+    const parsed = plant(paths, 1);
+    const fine = await sous(paths, ["answer", parsed.id, "[1]", "--value-json", "--json"]);
+    assert.deepEqual(replyOf(fine.out).notes, [], "JSON text gets no note");
   });
 });

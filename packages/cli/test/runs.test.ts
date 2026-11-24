@@ -1165,7 +1165,11 @@ describe("sous schedule", () => {
     assert.equal((await schedule("list")).code, 0);
     const inMeta = `sous: the schedule of ${nightly} is set in its meta. Change or remove meta.schedule there.\n`;
     for (const action of ["remove", "disable", "enable"]) assert.deepEqual(await schedule(action, nightlyFile), { code: 1, out: inMeta }, action);
-    for (const action of ["remove", "disable", "enable", "test"]) assert.deepEqual(await schedule(action, "nope"), { code: 1, out: 'sous: no schedule "nope". sous schedule list shows them.\n' }, action);
+    const missing = `no schedule "nope".\n  change: Name a schedule that sous schedule list shows.\n  try: sous schedule list --json --project ${projectDir}\n`;
+    for (const action of ["remove", "disable", "enable", "test"]) assert.deepEqual(await schedule(action, "nope"), { code: 65, out: missing }, action);
+    const asJson = await schedule("remove", "nope", "--json");
+    assert.equal(asJson.code, 65, asJson.out);
+    assert.equal((JSON.parse(asJson.out) as { error: { code: string } }).error.code, "no_such_schedule");
     assert.deepEqual(await schedule("launch"), { code: 64, out: "usage: sous schedule add|list|remove|enable|disable|test\n  change: Fix the command line. sous help lists the commands and their flags.\n" });
     assert.equal(readFileSync(paths.schedules, "utf8"), saved, "a refused change writes nothing");
   });
@@ -1319,5 +1323,44 @@ describe("control replies", () => {
     }
     assert.ok(existsSync(projectDir), "prune keeps the project");
     assert.ok(listRecords(paths).some((record) => record.runId === runId), "prune keeps a run made a minute ago");
+  });
+
+  it("stop --step on a run with no worker refuses a name the run never had, and gives one data shape", async () => {
+    const step = { label: "worker", status: "done", callIndex: 0, scope: undefined };
+    const { paths, runId } = planted("paused", { state: { pauseReason: "requested", agents: [step] } });
+    const typo = await sous(paths, ["stop", runId, "--step", "wroker", "--json"]);
+    assert.equal(typo.code, 65, typo.out);
+    assert.deepEqual(errorOf(typo.out), { code: "no_such_step", message: `no step named "wroker" ran in ${runId}.`, change: "Name a step that runs now, by the name sous log gives it.", call: `sous show ${runId} --json` });
+
+    const known = await sous(paths, ["stop", runId, "--step", "worker", "--json"]);
+    assert.equal(known.code, 0, known.out);
+    const reply = replyOf(known.out);
+    assert.deepEqual(Object.keys(reply).sort(), ["next", "notes", "runId", "status", "step", "stopping"]);
+    assert.equal(reply.stopping, false);
+    assert.ok(reply.notes.length > 0, known.out);
+    assert.deepEqual(reply.next.map((next) => next.call), [`sous resume ${runId} --json`], "a paused run resumes");
+  });
+
+  it("pause and stop in the wrong state give the call that fits in next", async () => {
+    const paused = planted("paused", { state: { pauseReason: "requested" } });
+    const pause = replyOf((await sous(paused.paths, ["pause", paused.runId, "--json"])).out);
+    assert.deepEqual(pause.next.map((next) => next.call), [`sous resume ${paused.runId} --json`]);
+    const completed = planted("completed");
+    const stop = replyOf((await sous(completed.paths, ["stop", completed.runId, "--json"])).out);
+    assert.deepEqual(stop.next.map((next) => next.call), [`sous rerun ${completed.runId} --json`]);
+    const pauseDone = replyOf((await sous(completed.paths, ["pause", completed.runId, "--json"])).out);
+    assert.deepEqual(pauseDone.next.map((next) => next.call), [`sous rerun ${completed.runId} --json`]);
+    const text = await sous(paused.paths, ["pause", paused.runId]);
+    assert.doesNotMatch(text.out, /^next: /m, "the text form leaves out the next calls, which take --json");
+  });
+
+  it("resume with --latest and --same, and prune with no days, give a call to paste", async () => {
+    const { paths, runId } = planted("paused", { state: { pauseReason: "requested" } });
+    const both = await sous(paths, ["resume", runId, "--latest", "--same", "--json"]);
+    assert.equal(both.code, 64, both.out);
+    assert.equal(errorOf(both.out).call, `sous resume ${runId} --same`);
+    const prune = await sous(paths, ["prune", "--days", "soon", "--json"]);
+    assert.equal(prune.code, 64, prune.out);
+    assert.equal(errorOf(prune.out).call, "sous prune --days 30");
   });
 });

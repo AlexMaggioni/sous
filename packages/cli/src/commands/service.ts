@@ -1,9 +1,9 @@
 // sous schedule and daemon: the service that starts runs on its own.
 
 import { resolve } from "node:path";
-import { cronMatches, daemonLog, daemonMain, daemonPid, fileSchedules, isPlace, loadSchedules, nextRun, parseCron, rememberProject, resolveWorkflow, saveSchedules, type Place, type Schedule } from "@sous/engine";
+import { cronMatches, daemonLog, daemonMain, daemonPid, fileSchedules, isPlace, loadSchedules, nextRun, parseCron, Refusal, rememberProject, resolveWorkflow, saveSchedules, type Place, type Schedule } from "@sous/engine";
 import { str, Usage, type Parsed } from "../args.js";
-import { reply, type Reply } from "../reply.js";
+import { reply, type Next, type Reply } from "../reply.js";
 import { projectDir } from "./common.js";
 import type { Ctx } from "./index.js";
 
@@ -25,7 +25,7 @@ export function cmdSchedule(args: Parsed, ctx: Ctx): Reply<object> {
     if (found) return found;
     const fromFile = inFiles.find((schedule) => schedule.name === resolve(name ?? ""));
     if (fromFile) throw new Error(`the schedule of ${tilde(fromFile.workflow)} is set in its meta. Change or remove meta.schedule there.`);
-    throw new Error(`no schedule "${name}". sous schedule list shows them.`);
+    throw new Refusal("no_such_schedule", `no schedule "${name}".`, "Name a schedule that sous schedule list shows.", "sous schedule list --json");
   };
   switch (action) {
     case "add": {
@@ -106,20 +106,26 @@ export async function cmdDaemon(args: Parsed, ctx: Ctx): Promise<Reply<object>> 
   const action = args.positional[0] ?? "status";
   const pid = daemonPid(paths);
   const log = daemonLog(paths);
-  const said = (line: string, exit = 0) => reply({}, { text: [line], exit });
+  // The text line says it all, so notes are for --json alone.
+  const said = (line: string, running: number | null, notes: string[] = [], next: Next[] = []) =>
+    reply({ running: running !== null, pid: running, log }, { text: [line], notes: ctx.json ? notes : [], next });
+  const start: Next = { call: "sous daemon start --json", does: "starts the service" };
   switch (action) {
     case "run":
       await daemonMain(paths, ctx.launch);
       return reply({});
-    case "start":
-      if (pid) return said(`the service runs already (pid ${pid})`);
-      return said(`the service started (pid ${machine.spawnDaemon(paths)}). Log: ${log}`);
+    case "start": {
+      if (pid) return said(`the service runs already (pid ${pid})`, pid, ["the service runs already, so nothing started."]);
+      const started = machine.spawnDaemon(paths);
+      return said(`the service started (pid ${started}). Log: ${log}`, started ?? null);
+    }
     case "stop":
-      if (!pid) return said("the service is not running");
+      if (!pid) return said("the service is not running", null, ["the service is not running, so nothing stops."]);
       machine.kill(pid);
-      return said(`stopping the service (pid ${pid})`);
+      return said(`stopping the service (pid ${pid})`, pid, ["the service got SIGTERM and stops in a moment."], [{ call: "sous daemon status --json", does: "says whether the service still runs" }]);
     case "status":
-      return pid ? said(`the service runs (pid ${pid}). Log: ${log}`) : said("the service is not running: sous daemon start", 1);
+      // A service that does not run is a state, not a failure.
+      return pid ? said(`the service runs (pid ${pid}). Log: ${log}`, pid) : said("the service is not running: sous daemon start", null, ["the service is not running"], [start]);
     default:
       throw new Usage("sous daemon start|stop|status|run");
   }

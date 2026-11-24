@@ -7,7 +7,7 @@ import { reply, type Reply } from "../reply.js";
 import type { Ctx } from "./index.js";
 
 /** account-cli.ts and doctor.ts print as they go and give an exit code, or give a reply with --json.
- *  Tests call them on their own, so the command turns the code into a reply here. */
+ *  Tests call them on their own, so the command turns the code into a reply here. Piece 15 reworks doctor, and this with it. */
 const asReply = async (result: Promise<number | Reply<object>>): Promise<Reply<object>> => {
   const done = await result;
   return typeof done === "number" ? reply({}, { exit: done }) : done;

@@ -7,6 +7,7 @@ export type RefusalCode =
   | "no_such_workflow"
   | "no_such_question"
   | "no_such_step"
+  | "no_such_schedule"
   | "step_not_running"
   | "started_by_people"
   | "not_approved"
@@ -21,7 +22,7 @@ export type RefusalCode =
   | "workflow_invalid";
 
 /** The codes of a thing that is not there. */
-const MISSING: ReadonlySet<RefusalCode> = new Set(["no_such_run", "no_such_workflow", "no_such_question", "no_such_step", "step_not_running"]);
+const MISSING: ReadonlySet<RefusalCode> = new Set(["no_such_run", "no_such_workflow", "no_such_question", "no_such_step", "no_such_schedule", "step_not_running"]);
 
 export class Refusal extends Error {
   constructor(

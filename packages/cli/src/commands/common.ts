@@ -3,7 +3,7 @@
 import { resolve } from "node:path";
 import { answerQuestion, findProjectDir, hint, logFile, readRun, stopRun, waitForRun, type HomePaths, type RunQuestion, type RunRecord, type RunView } from "@sous/engine";
 import { str, Usage, type Parsed } from "../args.js";
-import { reply, type Reply } from "../reply.js";
+import { reply, type Next, type Reply } from "../reply.js";
 import type { Ctx } from "./index.js";
 
 /** How long ago, in one short unit. */
@@ -21,6 +21,9 @@ export function projectDir(args: Parsed): string {
   const project = str(args.flags.project);
   return project ? resolve(project) : findProjectDir();
 }
+
+/** The call that waits for a run, in JSON. */
+export const waitNext = (runId: string, does: string): Next => ({ call: `sous wait ${runId} --json`, does });
 
 /** The run id the command names. */
 export function runIdArg(id: string | undefined): string {

@@ -201,6 +201,23 @@ describe("sous's reads", () => {
     return { printed: () => chunks.join(""), ended };
   }
 
+  it("keep the reply of sous log --json under 8,000 characters, though quotes print longer than they are", async () => {
+    const { paths, ids } = plant();
+    const text = `12:00:00 agent      said ${'"'.repeat(40)}\n`.repeat(300);
+    writeFileSync(join(paths.logs, `${ids.done}.log`), text);
+    const result = await sous(paths, ["log", ids.done, "--json"]);
+    assert.equal(result.code, 0, result.out);
+    const printed = result.out.trimEnd();
+    assert.ok(printed.length <= 8000, `the reply is ${printed.length} characters`);
+    const reply = JSON.parse(printed) as { log: string; notes: string[] };
+    assert.ok(text.endsWith(reply.log), "the log is the end of the file");
+    assert.ok(reply.log.length > 3000, `it keeps as much as fits, here ${reply.log.length} characters`);
+    assert.deepEqual(reply.notes, [`The log is longer. This is its last ${reply.log.length} characters. sous log ${ids.done} prints all of it.`]);
+
+    const whole = JSON.parse((await sous(paths, ["log", ids.dead, "--json"])).out) as { log: string; notes: string[] };
+    assert.deepEqual(whole.notes, [], "a short log comes whole, with no note");
+  });
+
   it("let sous log -f print the log, then what the worker adds, until the worker ends", async () => {
     const { paths, ids } = plant();
     const { runId, log, workerEnds } = plantFollowed(paths, ids.done);

@@ -336,14 +336,16 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous prune --days N` | remove finished runs older than N days |
 
 A command with a wrong or missing argument exits 64. So does `sous resume` after an edit, with
-neither `--latest` nor `--same`. A run, workflow, question or step that is not there exits 65. Any
-other refusal exits 66, such as `sous discard` of a running run, or `sous resume` of a run an
-older sous saved.
+neither `--latest` nor `--same`. A run, workflow, question, step or schedule that is not there
+exits 65. So does `sous stop --step` with a name the run never had. Any other refusal exits 66,
+such as `sous discard` of a running run, or `sous resume` of a run an older sous saved.
 
 A request that changes nothing exits 0 with a note. That covers pausing a run that is not
-running, stopping a run that has ended, stopping a step when no worker runs, and resuming a run
-that is running, completed, was stopped or never started. The note says why. With `--json`, the next call is `sous wait` for a
-running run and `sous rerun` for the others.
+running, stopping a run that has ended, stopping a step when no worker runs, resuming a run that
+is running, completed, was stopped or never started, and `sous daemon status` when the service
+is not running. The note says why. With `--json`, `next` holds the call that fits: `sous resume`
+for a paused run, `sous wait` for a running one, and `sous rerun` for one that ended or never
+started.
 
 With `--json`, each command prints one object with two more keys: `notes`, a list of sentences, and
 `next`, a list of `{call, does}` commands to run next. Some outputs changed shape for this. `sous
@@ -354,8 +356,17 @@ prints `{"error": {code, message, change, call}}` on stdout. Without `--json`, t
 stderr: the message, then `change:`, then `try:` with the command to run instead.
 
 `sous answer --json` used to mean the text is JSON. Now `--json` asks for the JSON reply, as on every
-command, and `--value-json` reads the text as JSON. `sous log --json` gives the run's id, whether it
-runs, and the last 6,000 characters of its log.
+command, and `--value-json` reads the text as JSON. Text that does not parse goes as text, and a
+note says so. `sous log --json` gives `runId`, `running` and `log`, the end of the log that keeps
+the reply under 8,000 characters. A later version replaces this with `after`, which reads the log
+from a point. The other new replies have these keys: `pause` has `runId`, `status` and `pausing`.
+`stop` has `runId`, `outcome` and `status`, and with `--step`, `runId`, `step`, `stopping` and
+`status`. `discard` has `runId`, `worktrees` and `deleted`. `gc` has `dryRun`, `removed` and
+`kept`. `prune` has `days`, `removed` and `runIds`, which lists at most 100 run ids. `schedule add`
+has `schedule` and `nextAt`, `remove` has `removed`, `enable` and `disable` have `name` and
+`enabled`, and `test` has `name`, `matches` and `nextAt`. `account add` has `added` and
+`program`, `use` has `program`, `name`, `moved` and `same`, and `remove` has `removed`, `program`
+and `current`. `daemon` has `running`, `pid` and `log`.
 
 On macOS a run notifies when it asks something, and when it ends or pauses. A scheduled run stays
 quiet when it completes or is stopped. `notify: false` in `config.json` or `SOUS_NOTIFY=0` turns

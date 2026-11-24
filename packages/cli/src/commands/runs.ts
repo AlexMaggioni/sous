@@ -2,8 +2,9 @@
 
 import { isPlace, rerunRun, resumeRun, startRun, type Place } from "@sous/engine";
 import { parseSets, str, Usage, type Parsed } from "../args.js";
-import { reply, type Next, type Reply } from "../reply.js";
+import { reply, type Reply } from "../reply.js";
 import { needRun, projectDir, startedOrWait } from "./common.js";
+import { stateNext } from "./control.js";
 import type { Ctx } from "./index.js";
 
 /** The --set values of the command line. */
@@ -38,7 +39,9 @@ export async function cmdResume(args: Parsed, ctx: Ctx): Promise<Reply<object>> 
   const paths = ctx.paths;
   const run = needRun(paths, args.positional[0]);
   // A run that cannot resume says so before this usage error. resumeRun refuses it.
-  if (args.flags.latest && args.flags.same && run.resume.ok) throw new Usage("--latest or --same, not both");
+  if (args.flags.latest && args.flags.same && run.resume.ok) {
+    throw new Usage("--latest or --same, not both", "bad_argument", "Keep one: --latest takes the new version, --same goes on with the version the run started with.", `sous resume ${run.runId} --same`);
+  }
   const resumed = resumeRun(paths, ctx.launch, run.runId, args.flags.latest ? "latest" : args.flags.same ? "same" : undefined);
   if ("mustChoose" in resumed) {
     const change = "Add --latest to take the new version, or --same to go on with the version the run started with.";
@@ -46,12 +49,7 @@ export async function cmdResume(args: Parsed, ctx: Ctx): Promise<Reply<object>> 
   }
   if ("wrongState" in resumed) {
     const { runId, status } = resumed.view;
-    const next: Next[] = !ctx.json
-      ? []
-      : resumed.wrongState === "running"
-        ? [{ call: `sous wait ${runId} --json`, does: "waits for the run" }]
-        : [{ call: `sous rerun ${runId} --json`, does: "starts the run again" }];
-    return reply({ runId, status }, { notes: [resumed.message], next });
+    return reply({ runId, status }, { notes: [resumed.message], next: stateNext(resumed.view) });
   }
   return startedOrWait(ctx, resumed.resumed, "resume", args);
 }

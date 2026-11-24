@@ -205,12 +205,19 @@ export interface Reply {
  * answer as from the prompt. A choice that is not listed, or a confirm that is not yes or no,
  * throws. A reply typed at a prompt counts only while the question's file is there.
  */
-export function reply(paths: HomePaths, question: Question, typed: Reply): { answered: true } | { stop: true } | Misfit | { gone: true } {
+export function reply(paths: HomePaths, question: Question, typed: Reply): Answered | { stop: true } | Misfit | { gone: true } {
   if (typed.via === "prompt" && !readQuestion(paths, question.id)) return { gone: true };
   const meaning = meaningOf(question, typed);
   if (!("value" in meaning)) return meaning;
   writeAnswer(paths, question, meaning.value);
-  return { answered: true };
+  return meaning.notJson ? { answered: true, notJson: true } : { answered: true };
+}
+
+/** A written answer. `notJson` says that --value-json was given, the text did not parse, and the
+ *  answer went as text. */
+export interface Answered {
+  answered: true;
+  notJson?: true;
 }
 
 /** What is wrong with a command's answer. `choices` lists what the question takes, when the
@@ -226,7 +233,7 @@ function choicesOf(question: Question): string[] {
 }
 
 /** The answer a reply gives, a stop, or what is wrong with the command. */
-function meaningOf(question: Question, { via, text, valueJson }: Reply): { value: unknown } | { stop: true } | Misfit {
+function meaningOf(question: Question, { via, text, valueJson }: Reply): { value: unknown; notJson?: true } | { stop: true } | Misfit {
   if (via === "prompt") {
     const typed = text.trim();
     if (!question.breakpoint) return { value: normalizeAnswer(question, typed) };
@@ -241,9 +248,13 @@ function meaningOf(question: Question, { via, text, valueJson }: Reply): { value
   }
   if (!text && question.kind !== "confirm") return { usage: `sous answer ${question.id} "your answer"` };
   let value: unknown;
+  let notJson = false;
   if (question.breakpoint) value = breakpointValue(text);
-  else if (valueJson) value = parseJson(text);
-  else {
+  else if (valueJson) {
+    const parsed = parseJson(text);
+    value = parsed.ok ? parsed.value : text;
+    notJson = !parsed.ok;
+  } else {
     try {
       value = normalizeAnswer(question, text);
     } catch (error) {
@@ -254,7 +265,7 @@ function meaningOf(question: Question, { via, text, valueJson }: Reply): { value
   if (question.kind === "select" && question.choices && !question.choices.includes(value as string)) {
     return { usage: `answer one of: ${question.choices.join(", ")}`, choices: question.choices };
   }
-  return { value };
+  return notJson ? { value, notJson: true } : { value };
 }
 
 /**
@@ -276,10 +287,11 @@ export function hint(question: Question, where: "sous" | "log" | "prompt" = "sou
   return `sous answer ${question.id} "..."`;
 }
 
-function parseJson(text: string): unknown {
+/** The value the text holds as JSON, or ok false when it is not JSON. */
+function parseJson(text: string): { ok: true; value: unknown } | { ok: false } {
   try {
-    return JSON.parse(text);
+    return { ok: true, value: JSON.parse(text) };
   } catch {
-    return text;
+    return { ok: false };
   }
 }

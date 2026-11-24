@@ -80,7 +80,7 @@ export const COMMANDS: Record<string, CommandSpec> = {
   workflows: { run: cmdWorkflows, flags: takes("project", "json") },
   check: { run: cmdCheck, flags: takes("project", "dry-run", "answers", "json"), inputs: true },
   schedule: { run: cmdSchedule, flags: takes("cron", "place", "project", "json"), inputs: true },
-  daemon: { run: cmdDaemon, flags: takes() },
+  daemon: { run: cmdDaemon, flags: takes("json") },
   gc: { run: cmdGc, flags: takes("dry-run", "json") },
   discard: { run: cmdDiscard, flags: takes("yes", "json") },
   prune: { run: cmdPrune, flags: takes("days", "json") },
