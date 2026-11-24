@@ -229,7 +229,7 @@ return { first, second }`,
     assert.equal(choose.code, 64, choose.out);
     const error = (JSON.parse(choose.out) as { error: { code: string; change: string; call: string | null } }).error;
     assert.equal(error.code, "bad_argument");
-    assert.match(error.call ?? "", new RegExp(`^sous resume ${record.runId} --same( --json)?$`), "its call is --same");
+    assert.match(error.call ?? "", new RegExp(`^sous resume ${record.runId} --same --json$`), "its call is --same");
     assert.match(error.change, /--latest/, "its change names --latest");
     assert.match(error.change, /--same/, "its change names --same");
     assert.equal(workers.launched.length, 1, "a resume that asks starts no worker");
@@ -619,7 +619,7 @@ describe("places and reruns", () => {
     // sous gc prints the folders as git names them, so /var/... on macOS shows as /private/var/....
     const waitingLine = `kept ${realpathSync(waiting.worktree!)} (${waiting.branch}): its run has not finished\n`;
     const dry = await sous(paths, ["gc", "--dry-run"]);
-    assert.deepEqual(dry, { code: 0, out: `would remove ${realpathSync(writer.worktree!)} (${writer.branch}): merged\n${waitingLine}` });
+    assert.deepEqual(dry, { code: 0, out: `would remove ${realpathSync(writer.worktree!)} (${writer.branch}): merged\n${waitingLine}next: sous gc --json  (removes the merged worktrees)\n` });
     assert.equal(existsSync(writer.worktree!), true, "a dry run removes nothing");
     const result = gcRuns(paths);
     assert.deepEqual(result.removed.map((r) => r.reason), ["merged"]);
@@ -1275,7 +1275,7 @@ describe("control replies", () => {
     assert.equal(json.code, 66, json.out);
     const error = errorOf(json.out);
     assert.equal(error.code, "cannot_resume");
-    assert.equal(error.call, `sous rerun ${runId}`);
+    assert.equal(error.call, `sous rerun ${runId} --json`);
     assert.equal(workers.launched.length, 0, "nothing starts");
   });
 
@@ -1285,7 +1285,7 @@ describe("control replies", () => {
     assert.equal(json.code, 66, json.out);
     const error = errorOf(json.out);
     assert.equal(error.code, "run_is_running");
-    assert.equal(error.call, `sous stop ${runId}`);
+    assert.equal(error.call, `sous stop ${runId} --json`);
     const text = await sous(paths, ["discard", runId, "--yes"]);
     assert.equal(text.code, 66, text.out);
   });
@@ -1351,14 +1351,15 @@ describe("control replies", () => {
     const pauseDone = replyOf((await sous(completed.paths, ["pause", completed.runId, "--json"])).out);
     assert.deepEqual(pauseDone.next.map((next) => next.call), [`sous rerun ${completed.runId} --json`]);
     const text = await sous(paused.paths, ["pause", paused.runId]);
-    assert.doesNotMatch(text.out, /^next: /m, "the text form leaves out the next calls, which take --json");
+    // The text form prints the notes, then the next calls, as the JSON form gives them.
+    assert.equal(text.out, `note: ${paused.runId} is not running (paused), so there is nothing to pause.\nnext: sous resume ${paused.runId} --json  (goes on with the run)\n`);
   });
 
   it("resume with --latest and --same, and prune with no days, give a call to paste", async () => {
     const { paths, runId } = planted("paused", { state: { pauseReason: "requested" } });
     const both = await sous(paths, ["resume", runId, "--latest", "--same", "--json"]);
     assert.equal(both.code, 64, both.out);
-    assert.equal(errorOf(both.out).call, `sous resume ${runId} --same`);
+    assert.equal(errorOf(both.out).call, `sous resume ${runId} --same --json`);
     const prune = await sous(paths, ["prune", "--days", "soon", "--json"]);
     assert.equal(prune.code, 64, prune.out);
     assert.equal(errorOf(prune.out).call, "sous prune --days 30");

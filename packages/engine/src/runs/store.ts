@@ -151,17 +151,23 @@ export interface SavedEvent {
   seq: number;
 }
 
-/** Each event saved after `seq`, in order. Throws when the run has no event log. */
-export function readEventsAfter(paths: HomePaths, runId: string, seq: number, visit: (saved: SavedEvent) => void): void {
+/** Each event saved after `seq`, in order, until `visit` returns false. Throws when the run has no
+ *  event log, or when `seq` is past its last event. */
+export function readEventsAfter(paths: HomePaths, runId: string, seq: number, visit: (saved: SavedEvent) => unknown): void {
   // Built on each call: it writes nothing, since nothing saves through it.
   const events = enginePersistence(paths);
   let after = seq;
   for (;;) {
     const page = events.readEvents(runId, { after, limit: 1000 });
-    for (const { event, timestamp, seq: number } of page.events) visit({ event, timestamp, seq: number });
+    for (const { event, timestamp, seq: number } of page.events) if (visit({ event, timestamp, seq: number }) === false) return;
     if (!page.hasMore || page.events.length === 0) break;
     after = page.events[page.events.length - 1]!.seq;
   }
+}
+
+/** The seq of the run's last saved event, 0 for an empty log. Throws when the run has no event log. */
+export function lastEventSeq(paths: HomePaths, runId: string): number {
+  return enginePersistence(paths).readEvents(runId, { after: 0, limit: 1 }).endCursor;
 }
 
 /** Delete the engine's files for a run: its state, event log and lock. It takes the run's lease

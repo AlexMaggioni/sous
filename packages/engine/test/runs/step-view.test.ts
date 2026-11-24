@@ -5,11 +5,12 @@
 // missing module fails each test on its own.
 
 import assert from "node:assert/strict";
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { HomePaths } from "../../src/runs/home.js";
 import { createRun } from "../../src/runs/launch.js";
+import { readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import { fakeRunner } from "../../src/testing.js";
 import { quiet, setup } from "./fixture.js";
@@ -183,5 +184,108 @@ describe("piece 5: logAfter", () => {
     const rest = logAfter(paths, runId, first.after);
     assert.equal(rest.more, false);
     assert.deepEqual([...first.events, ...rest.events], all);
+  });
+});
+
+/** A workflow that runs the same child twice, so two nested runs have a step "inner". */
+const NESTS = `export const meta = { name: 'nests', description: 'Two nested runs' }
+await workflow('child', {}, { label: 'c1' })
+await workflow('child', {}, { label: 'c2' })
+return 1`;
+const CHILD = `export const meta = { name: 'child', description: 'child' }
+return await agent('child step', { label: 'inner' })`;
+
+/** The path of a run's engine event log, found by its name under the home's runs folder. */
+function eventLog(paths: HomePaths, runId: string): string {
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (name === `${runId}.events.jsonl`) found.push(path);
+    }
+  };
+  walk(paths.runs);
+  assert.equal(found.length, 1, `one event log for ${runId}`);
+  return found[0]!;
+}
+
+describe("piece 5 review: stepView", () => {
+  it("keeps the top run's scope for a step of the top run", async () => {
+    const { stepView } = await stepViewModule();
+    const { paths, projectDir } = setup({ fails: FAILS });
+    const { runId } = await ran(paths, projectDir, "fails");
+    const view = stepView(paths, runId, "boom") as StepView & { scope: string; alsoIn?: string[] };
+    assert.equal(view.scope, runId);
+    assert.equal(view.alsoIn, undefined);
+  });
+
+  it("shows every activity entry with full and no tail", async () => {
+    const { stepView } = await stepViewModule();
+    const { paths, projectDir } = setup({ fails: FAILS });
+    const { runId } = await ran(paths, projectDir, "fails");
+    const boom = readActivity(paths, runId).filter((line) => line.label === "boom");
+    let seq = Math.max(...readActivity(paths, runId).map((line) => line.seq));
+    for (let i = 0; i < 30; i++) {
+      seq += 1;
+      appendFileSync(activityFile(paths, runId), `${JSON.stringify({ ...boom[0], seq, kind: "note", text: `n${i}` })}\n`);
+    }
+    const full = stepView(paths, runId, "boom", { full: true });
+    assert.equal(full.activity.length, boom.length + 30);
+    assert.equal((full as { earlier?: number }).earlier, undefined, "nothing is left out");
+    assert.equal(stepView(paths, runId, "boom", { full: true, tail: 3 }).activity.length, 3, "a tail asked for still counts");
+  });
+
+  it("shows the result the store saved for an agent step", async () => {
+    const { stepView } = await stepViewModule();
+    const { paths, projectDir } = setup({ thrice: TWICE });
+    const { runId } = await ran(paths, projectDir, "thrice");
+    const saved = readState(paths, runId)?.agents.filter((agent) => agent.label === "go").at(-1);
+    assert.ok(saved?.resultPreview !== undefined, "the store saved a preview of the result");
+    assert.equal(saved?.result, undefined, "the store saved no result, only its preview");
+    assert.equal(stepView(paths, runId, "go").result, saved?.resultPreview);
+  });
+
+  it("counts the calls of a label in one nested run, the first that has it, and names the others", async () => {
+    const { stepView } = await stepViewModule();
+    const { paths, projectDir } = setup({ nests: NESTS, child: CHILD });
+    const { runId, status } = await ran(paths, projectDir, "nests");
+    assert.equal(status, "completed");
+    const view = stepView(paths, runId, "inner") as StepView & { scope: string; alsoIn?: string[] };
+    assert.deepEqual([view.call, view.calls], [1, 1], "each nested run called inner once");
+    assert.notEqual(view.scope, runId);
+    assert.equal(view.alsoIn?.length, 1);
+    assert.notEqual(view.alsoIn?.[0], view.scope);
+    assert.ok(view.activity.every((line) => line.scope === view.scope), "the activity is the chosen run's");
+  });
+});
+
+describe("piece 5 review: logAfter", () => {
+  it("gives no events and the last seq for an after past the end of the log", async () => {
+    const { logAfter } = await stepViewModule();
+    const { paths, projectDir } = setup({ fails: FAILS });
+    const { runId } = await ran(paths, projectDir, "fails");
+    const all = logAfter(paths, runId, 0);
+    const last = JSON.parse(readFileSync(eventLog(paths, runId), "utf8").trim().split("\n").at(-1)!).seq as number;
+    assert.deepEqual(logAfter(paths, runId, last + 50), { events: [], after: last + 50, more: false, last });
+    assert.ok(all.after <= last);
+  });
+
+  it("refuses a broken event log as a broken record, with the change and a call", async () => {
+    const { logAfter } = await stepViewModule();
+    const { paths, projectDir } = setup({ fails: FAILS });
+    const { runId } = await ran(paths, projectDir, "fails");
+    appendFileSync(eventLog(paths, runId), "not json\n");
+    assert.throws(
+      () => logAfter(paths, runId, 0),
+      (error: { code?: string; change?: string; call?: string }) => error.code === "broken_record" && Boolean(error.change) && error.call === `sous show ${runId} --json`,
+    );
+  });
+
+  it("gives no events for a run that has no event log yet", async () => {
+    const { logAfter } = await stepViewModule();
+    const { paths, projectDir } = setup({ fails: FAILS });
+    const { runId } = createRun(paths, { workflow: "fails", projectDir, inputs: {} });
+    assert.deepEqual(logAfter(paths, runId, 0), { events: [], after: 0, more: false });
   });
 });

@@ -152,6 +152,8 @@ export interface Harness {
    * program uses, and token is a Claude Code login token.
    */
   login(env?: Record<string, string | undefined>): { variable: string; value?: string; folder: string; token?: string };
+  /** Where the program looks for skills in env, and its settings file when it has one. */
+  places(env?: Record<string, string | undefined>): { skills: string; settings?: string };
   /** base with the account's variables set, for the program started outside run(). Default base process.env. */
   env(account: Account | undefined, base?: Record<string, string | undefined>): Record<string, string | undefined>;
 }

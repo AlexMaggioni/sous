@@ -68,6 +68,7 @@ exit 0
 $ sous answer <run-1> blue
 exit 0
 answered <run-1>--0
+next: sous wait <run-1> --json  (waits for the run, which goes on with the answer)
 
 $ sous wait <run-1> --json
 exit 4
@@ -108,6 +109,7 @@ exit 0
 $ sous answer <run-1> src/textkit.js
 exit 0
 answered <run-1>--2
+next: sous wait <run-1> --json  (waits for the run, which goes on with the answer)
 
 $ sous wait <run-1> --json
 exit 4
@@ -146,6 +148,7 @@ exit 4
 $ sous send-back <run-1> "Make it shorter"
 exit 0
 answered <run-1>--5
+next: sous wait <run-1> --json  (waits for the run, which goes on with the answer)
 
 $ sous wait <run-1> --json
 exit 4
@@ -184,6 +187,7 @@ exit 4
 $ sous approve <run-1>
 exit 0
 answered <run-1>--7
+next: sous wait <run-1> --json  (waits for the run, which goes on with the answer)
 
 $ sous wait <run-1> --json
 exit 0

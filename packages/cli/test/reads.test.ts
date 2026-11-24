@@ -911,6 +911,21 @@ describe("piece 5: sous log --json --after", () => {
     assert.equal(next.after, page.after);
   });
 
+  it("an after past the end of the log gives no events, a note with the last seq, and the call from the start", async () => {
+    const { paths, projectDir } = testHome({ fails: fixture("fails") });
+    const workers = inProcess({ inner: heldRunner().runner });
+    const { runId } = await started(paths, projectDir, workers, ["fails"]);
+    await workers.ended(runId);
+    const all = logPage(await sous(paths, ["log", runId, "--json"]));
+    const printed = await sous(paths, ["log", runId, "--json", "--after", "999"]);
+    const page = logPage(printed);
+    assert.deepEqual(page.events, []);
+    assert.equal(page.more, false);
+    const reply = JSON.parse(printed.out) as { notes: string[]; next: Array<{ call: string }> };
+    assert.ok(reply.notes.some((note) => note.includes("999") && note.includes(`last event is ${all.after}`)), JSON.stringify(reply.notes));
+    assert.ok(reply.next.some((next) => next.call === `sous log ${runId} --json`), JSON.stringify(reply.next));
+  });
+
   it("a second call with the returned after gives only the newer events", async () => {
     const { paths, projectDir } = testHome({ slow: SLOW });
     const held = heldRunner();

@@ -25,7 +25,7 @@ describe("sous daemon", () => {
   it("says the service is not running, with exit 0 for status and stop, since it is a state", async () => {
     const { paths } = testHome();
     const status = await sous(paths, ["daemon", "status"]);
-    assert.deepEqual(status, { code: 0, out: "the service is not running: sous daemon start\n" });
+    assert.deepEqual(status, { code: 0, out: "the service is not running: sous daemon start\nnext: sous daemon start --json  (starts the service)\n" });
     assert.deepEqual(await sous(paths, ["daemon"]), status, "status is the default");
     assert.deepEqual(await sous(paths, ["daemon", "stop"]), { code: 0, out: "the service is not running\n" });
   });
@@ -33,7 +33,7 @@ describe("sous daemon", () => {
   it("does not count a pid file whose process has ended", async () => {
     const { paths } = testHome();
     plant(paths, deadPid());
-    assert.deepEqual(await sous(paths, ["daemon", "status"]), { code: 0, out: "the service is not running: sous daemon start\n" });
+    assert.deepEqual(await sous(paths, ["daemon", "status"]), { code: 0, out: "the service is not running: sous daemon start\nnext: sous daemon start --json  (starts the service)\n" });
     assert.deepEqual(await sous(paths, ["daemon", "stop"]), { code: 0, out: "the service is not running\n" });
   });
 
@@ -84,7 +84,7 @@ describe("sous daemon", () => {
       assert.equal(existsSync(log), false, "no second service opened the log");
       assert.equal(service.ended(), undefined, "the stand-in still runs");
 
-      assert.deepEqual(await sous(paths, ["daemon", "stop"]), { code: 0, out: `stopping the service (pid ${service.pid})\n` });
+      assert.deepEqual(await sous(paths, ["daemon", "stop"]), { code: 0, out: `stopping the service (pid ${service.pid})\nnext: sous daemon status --json  (says whether the service still runs)\n` });
       await waitFor(() => service.ended() !== undefined, "the service to end");
       assert.equal(service.ended(), "SIGTERM");
     } finally {
@@ -107,11 +107,11 @@ describe("sous daemon", () => {
       assert.deepEqual(await sous(paths, ["daemon", "status"]), { code: 0, out: `the service runs (pid ${pid}). Log: ${log}\n` });
       assert.deepEqual(await sous(paths, ["daemon", "start"]), { code: 0, out: `the service runs already (pid ${pid})\n` });
 
-      assert.deepEqual(await sous(paths, ["daemon", "stop"]), { code: 0, out: `stopping the service (pid ${pid})\n` });
+      assert.deepEqual(await sous(paths, ["daemon", "stop"]), { code: 0, out: `stopping the service (pid ${pid})\nnext: sous daemon status --json  (says whether the service still runs)\n` });
       await waitFor(() => !processAlive(pid), "the service to end");
       assert.equal(existsSync(paths.daemonPid), false, "it removes its pid file");
       assert.match(readFileSync(log, "utf8"), / service started\n.* service stopped\n$/);
-      assert.deepEqual(await sous(paths, ["daemon", "status"]), { code: 0, out: "the service is not running: sous daemon start\n" });
+      assert.deepEqual(await sous(paths, ["daemon", "status"]), { code: 0, out: "the service is not running: sous daemon start\nnext: sous daemon start --json  (starts the service)\n" });
     } finally {
       const left = daemonPid(paths);
       if (left) process.kill(left, "SIGKILL");

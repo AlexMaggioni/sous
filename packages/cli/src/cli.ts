@@ -90,7 +90,9 @@ function contextOf(json: boolean, options: MainOptions, machine: Machine): Ctx {
   };
 }
 
-const HELP = `sous runs saved workflows in the background.
+const HELP = `Agents: run \`sous guide\`.
+
+sous runs saved workflows in the background.
 
   sous run <workflow> [--name value ...] [-- --name value ...]
         --place worktree|folder|none    where the run works (default: the workflow's, else config)
@@ -141,6 +143,9 @@ const HELP = `sous runs saved workflows in the background.
   sous doctor [--live]                  the installed Claude Code and Codex the steps run on, and
                                         whether sous talks to them; --live runs one tiny step on each
         --model <spec>                  with --live, check this model only, such as codex/gpt-6.1-sol
+  sous guide [topic]                    how an agent drives sous for a person, one topic at a time
+  sous skill install|path|check         link the sous skill for Claude Code and Codex, print its
+                                        folder, or show where each program finds it
 
 With --json, a command prints one JSON object, with its notes and the calls to make next. A
 request that changes nothing, such as pausing a paused run, exits 0 with a note.
@@ -174,9 +179,8 @@ export async function main(argv: string[], options: MainOptions = {}): Promise<n
     }
     if (!spec) throw new Usage(`unknown command "${command}". sous help lists them.`);
     const result = await spec.run(parsed, contextOf(json, options, host));
-    // Each next call takes --json, so only the JSON form prints them. The text lines name the
-    // command to run in words.
-    return print(json ? result : { ...result, next: [] }, json, (line) => host.out(line));
+    // The text form prints the text, then a note: line for each note, then a next: line for each call.
+    return print(result, json, (line) => host.out(line));
   } catch (error) {
     // A command line that does not parse is read again for --json, before any "--".
     const asJson = json ?? (rest.includes("--") ? rest.slice(0, rest.indexOf("--")) : rest).includes("--json");

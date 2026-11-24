@@ -570,7 +570,7 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, cho
   const why = resume.ok ? undefined : resume.why;
   if (why === "older") {
     const message = `${record.runId} was saved by an older sous, and this sous cannot resume it. sous rerun ${record.runId} starts it again, and sous stop ${record.runId} ends it.`;
-    throw new Refusal("cannot_resume", message, "Start the run again with sous rerun, or end it with sous stop.", `sous rerun ${record.runId}`);
+    throw new Refusal("cannot_resume", message, "Start the run again with sous rerun, or end it with sous stop.", `sous rerun ${record.runId} --json`);
   }
   if (why) return { wrongState: why, view, message: WRONG_STATE[why](record.runId) };
   // The rule lets a run resume only once it has a state. The check runs with a choice too, so a
@@ -681,7 +681,7 @@ export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: R
  *  after each. */
 export function discardRun(paths: HomePaths, runId: string, options: { remove?: boolean; deleted?: (tree: { dir: string; branch: string }) => void } = {}): Array<{ dir: string; branch: string }> {
   const record = needRecord(paths, runId);
-  if (processAlive(record.pid)) throw new Refusal("run_is_running", `${record.runId} is running. sous stop ${record.runId} first.`, "Stop the run, then discard it.", `sous stop ${record.runId}`);
+  if (processAlive(record.pid)) throw new Refusal("run_is_running", `${record.runId} is running. sous stop ${record.runId} first.`, "Stop the run, then discard it.", `sous stop ${record.runId} --json`);
   const trees = runWorktrees(record);
   if (options.remove) {
     for (const tree of trees) {

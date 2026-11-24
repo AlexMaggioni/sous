@@ -4,7 +4,7 @@ import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { StepFailure } from "../failure.js";
 import { findProgram } from "../lookup.js";
 import type { Account, FindOptions, Found, Harness, Step, StepEvents } from "../types.js";
-import { CLAUDE, claudeEnv, claudeLogin, claudeVersion } from "./program.js";
+import { CLAUDE, claudeEnv, claudeLogin, claudePlaces, claudeVersion } from "./program.js";
 import { runClaude } from "./run.js";
 
 export function createClaudeHarness(lookup: FindOptions = {}): Harness {
@@ -47,6 +47,7 @@ export function createClaudeHarness(lookup: FindOptions = {}): Harness {
       return runClaude(await ready(), step, events);
     },
     login: claudeLogin,
+    places: claudePlaces,
     env: claudeEnv,
   };
 }

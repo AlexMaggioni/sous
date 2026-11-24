@@ -37,7 +37,7 @@ export function cmdAnswer(args: Parsed, ctx: Ctx, via: Exclude<Typed["via"], "pr
   const answer = answerQuestion(paths, question, { via, text, valueJson });
   if ("usage" in answer) {
     if (!answer.choices) throw new Usage(answer.usage);
-    throw new Usage(answer.usage, "not_a_choice", "Answer with one of the choices.", answerCommand(question, "answer", `<${answer.choices.join("|")}>`));
+    throw new Usage(answer.usage, "not_a_choice", "Answer with one of the choices.", answerCommand(question, "answer", `<${answer.choices.join("|")}>`, true));
   }
   if ("stopped" in answer) return stopReply(runId, answer.stopped, { question: id, runId, answered: true, outcome: answer.stopped.outcome });
   const notes: string[] = [];
