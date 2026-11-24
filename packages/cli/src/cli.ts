@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonLog, ensureHome, homePaths, seedApprovals, traceCall, workerMain, workerProcess, type HomePaths, type Launcher, type Who } from "@sous/engine";
 import { parseArgs, str, Usage, type Parsed } from "./args.js";
+import { atProject } from "./commands/common.js";
 import { ALIASES, COMMANDS, type CommandSpec, type Ctx, type Machine } from "./commands/index.js";
 import { errorCode, print, printError } from "./reply.js";
 import { personCommand, whoIsCalling } from "./through.js";
@@ -143,6 +144,9 @@ sous runs saved workflows in the background.
   sous rerun <run> [--name value ...]   start the same workflow again with the same inputs
         --reuse                         keep the results of the steps you did not edit, in the same place
   sous workflows                        saved workflows and their inputs
+  sous workflows show <name> [--full]   one workflow: its steps, its approval, its last runs
+        --diff                          what changed since the person's yes
+  sous agents                           the agents a step can name
   sous workflows approve <name> | --all the person's yes to a workflow's text as it is now
         --by person                     the person decided; an agent passes on their word
   sous check <workflow> [--name value]  check a workflow without running it
@@ -239,8 +243,7 @@ function withProject(project: string | undefined): ((call: string) => string) | 
   if (!project) return undefined;
   return (call) => {
     const called = commandNamed(call.split(" ")[1] ?? "");
-    if (!called?.flags.some((flag) => flag.name === "project") || /(^| )--project( |$)/.test(call)) return call;
-    return `${call} --project ${/^[\w./~-]+$/.test(project) ? project : `'${project.replace(/'/g, "'\\''")}'`}`;
+    return called?.flags.some((flag) => flag.name === "project") ? atProject(call, project) : call;
   };
 }
 
