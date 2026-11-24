@@ -330,7 +330,8 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous stop <run>` | end the run. Its worktree stays, unless the run changed no file. |
 | `sous stop <run> --step <name>` | stop one running step, by the name `sous log` gives it, such as `"ticket A: implementer"`. The run pauses on it, and `sous resume` runs it again. |
 | `sous rerun <run> [--reuse]` | the same workflow with the same inputs. `--reuse` keeps the results of the steps you did not edit and works in the same place. |
-| `sous wait <run>` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer. In a terminal it asks the run's questions itself, so 4 comes only off a terminal or with `--json`. |
+| `sous wait <run> [--timeout N]` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer, 5 still running after `--timeout N` seconds. The run goes on after a timeout. In a terminal it asks the run's questions itself, so 4 comes only off a terminal or with `--json`. |
+| `sous status [--since 3d] [--line] [--all]` | what needs you, what runs, what waits to resume on its own, and what finished. Runs that ended show for the last 24 hours, or for the `--since` time. A failed or stopped run that ended before that counts only in a note, like a finished one. Each list shows 20 entries, or all with `--all`. `--line` prints one line for an agent's session start, or nothing when nothing needs you. |
 | `sous gc [--dry-run]` | remove worktrees whose branch is merged |
 | `sous discard <run> --yes` | delete the run's branches and worktrees, merged or not |
 | `sous prune --days N` | remove finished runs older than N days |
@@ -342,7 +343,17 @@ With `--json`, each command prints one object with two more keys: `notes`, a lis
 `next`, a list of `{call, does}` commands to run next. Some outputs changed shape for this. `sous
 list`, `inbox`, `workflows`, `schedule list` and `doctor` printed a bare array. They now print an
 object that holds it under `runs`, `questions`, `workflows`, `schedules` or `programs`. `sous list
---json` shows 20 runs like `sous list`, and a note says how many more `--all` shows. An error
+--json` shows 20 runs like `sous list`, and a note says how many more `--all` shows.
+
+`sous show <run> --json` is short: the status, the time and tokens, each step's label, status, time
+and tokens, the questions, and the failure when there is one. It keeps the last 30 steps, and a
+note says how many earlier steps `--full` shows. `--full` adds `record` and `state`, which
+`show --json` printed before, and gives each question with every field the inbox keeps. A run
+paused at a usage limit has `resumesAt`, the time the service resumes it.
+
+`sous wait --json` gives a run's status with three new words. `stopped` was `aborted`.
+`interrupted` is a run whose worker died. `not started` is a run with no state and no worker. A
+wait that times out gives `running`. An error
 prints `{"error": {code, message, change, call}}` on stdout. Without `--json`, the error goes to
 stderr: the message, then `change:`, then `try:` with the command to run instead.
 

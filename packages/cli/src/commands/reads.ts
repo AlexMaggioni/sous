@@ -5,7 +5,7 @@ import { str, Usage, type Parsed } from "../args.js";
 import { cut, reply, type Next, type Reply } from "../reply.js";
 import { age, needRun, runIdArg, waitFor } from "./common.js";
 import type { Ctx } from "./index.js";
-import { nextCalls } from "./next.js";
+import { nextCalls, promptLine } from "./next.js";
 
 type Step = RunDetail["steps"][number];
 
@@ -18,6 +18,7 @@ export function cmdWait(args: Parsed, ctx: Ctx): Promise<number | Reply<object>>
 
 /** How many runs each list of sous status shows without --all. */
 const STATUS_MAX = 20;
+const DAY_MS = 24 * 3600_000;
 
 export function cmdStatus(args: Parsed, ctx: Ctx): Reply<object> {
   const since = str(args.flags.since);
@@ -35,9 +36,23 @@ export function cmdStatus(args: Parsed, ctx: Ctx): Reply<object> {
     return part.items;
   };
   const data: HomeStatus = { needsYou: shown(status.needsYou, "entries that need you"), running: shown(status.running, "running runs"), waiting: shown(status.waiting, "waiting runs"), finished: shown(status.finished, "finished runs"), service: status.service };
-  if (earlier) notes.push(`${earlier} run${earlier === 1 ? "" : "s"} ended before the last ${since ?? "24h"}. Add --since with a longer time, such as --since 7d, to see them.`);
-  if (ctx.json) return reply(data, { notes, next: data.needsYou.map((entry) => ({ call: entry.call, does: entry.question ? `answers "${entry.question.prompt}"` : `shows why ${entry.runId} needs you` })) });
+  if (earlier) notes.push(`${earlier} run${earlier === 1 ? "" : "s"} ended before the last ${since ?? "24h"}. Add --since ${longerWindow(since)} to see them.`);
+  if (ctx.json) return reply(data, { notes, next: data.needsYou.flatMap(entryNext) });
   return reply({}, { notes, text: statusText(data, ctx.now()) });
+}
+
+/** A --since window longer than `since`: twice as long in days, and at least 2 days. */
+function longerWindow(since: string | undefined): string {
+  const window = since === undefined ? DAY_MS : sinceWindow(since)!;
+  return `${Math.max(2, Math.ceil((2 * window) / DAY_MS))}d`;
+}
+
+/** The calls for one needsYou entry: the answer calls of a question, or the show call. */
+function entryNext(entry: HomeStatus["needsYou"][number]): Next[] {
+  if (!entry.question) return [{ call: entry.call, does: `shows why ${entry.runId} needs you` }];
+  const calls: Next[] = [{ call: entry.call, does: `${entry.sendBack ? "approves" : "answers"} "${promptLine(entry.question.prompt)}"` }];
+  if (entry.sendBack) calls.push({ call: entry.sendBack, does: "sends the run back with a note" });
+  return calls;
 }
 
 /** sous status in text, one section a list. */
@@ -48,7 +63,7 @@ function statusText(status: HomeStatus, now: Date): string[] {
     text.push(title);
     for (const item of items) text.push(...lines(item).map((line) => `  ${line}`));
   };
-  section("needs you", status.needsYou, (entry) => [`${entry.runId}  ${entry.workflow}  ${entry.question ? `asks: ${entry.question.prompt}` : entry.what}`, `  ${entry.call}`]);
+  section("needs you", status.needsYou, (entry) => [`${entry.runId}  ${entry.workflow}  ${entry.question ? `asks: ${promptLine(entry.question.prompt)}` : entry.what}`, `  ${entry.call}`, ...(entry.sendBack ? [`  ${entry.sendBack}`] : [])]);
   section("running", status.running, (run) => [`${run.runId}  ${run.workflow}  ${run.minutes}m  ${run.tokens} tokens${run.steps.length ? `  ${run.steps.join(", ")}` : ""}`]);
   section("waiting", status.waiting, (run) => [`${run.runId}  ${run.workflow}  ${run.what}${run.resumesAt ? `, resumes at ${run.resumesAt}` : ""}`]);
   section("finished", status.finished, (run) => [`${run.runId}  ${run.workflow}  ${run.status}  ${age(run.at, now)} ago${run.branch ? `  branch ${run.branch}` : ""}`]);
@@ -96,10 +111,11 @@ export function cmdShow(args: Parsed, ctx: Ctx): Reply<object> {
   const { record, saved } = run;
   if (ctx.json) {
     const short = shortRun(run, ctx.now());
-    const next = nextCalls(short, "show");
-    if (args.flags.full) return reply({ ...short, record, state: run.engineState }, { next });
-    const steps = cut(short.steps, SHOW_STEPS, "--full", "steps");
-    return reply({ ...short, steps: steps.items }, { notes: steps.note ? [steps.note] : [], next });
+    const { next, notes } = nextCalls(short, "show");
+    if (args.flags.full) return reply({ ...short, questions: run.questions, record, state: run.engineState }, { next, notes });
+    const earlier = short.steps.length - SHOW_STEPS;
+    if (earlier > 0) notes.unshift(`${earlier} earlier step${earlier === 1 ? "" : "s"} not shown. This shows the last ${SHOW_STEPS}. Add --full to see them all.`);
+    return reply({ ...short, steps: short.steps.slice(-SHOW_STEPS) }, { notes, next });
   }
   const text: string[] = [];
   const out = (line: string) => text.push(line);

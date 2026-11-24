@@ -2,12 +2,12 @@
 // finished. It reads the runs once and writes nothing.
 
 import type { HomePaths } from "./home.js";
-import type { Question } from "./inbox.js";
+import { answerCalls } from "./inbox.js";
 import { listRuns, runDetail } from "./run.js";
 import { daemonPid } from "./service.js";
 
 export interface HomeStatus {
-  needsYou: Array<{ runId: string; workflow: string; what: string; question?: { id: string; prompt: string; answeredBy: "people" }; since: string; call: string }>;
+  needsYou: Array<{ runId: string; workflow: string; what: string; question?: { id: string; prompt: string; answeredBy: "people" }; since: string; call: string; sendBack?: string }>;
   running: Array<{ runId: string; workflow: string; minutes: number; tokens: number; steps: string[] }>;
   waiting: Array<{ runId: string; workflow: string; what: string; resumesAt?: string }>;
   finished: Array<{ runId: string; workflow: string; status: string; at: string; branch?: string }>;
@@ -27,14 +27,6 @@ export function sinceWindow(text: string): number | undefined {
   return match && count > 0 ? count * UNIT_MS[match[2] as keyof typeof UNIT_MS] : undefined;
 }
 
-/** The call that answers a question. */
-export function answerCall(question: Pick<Question, "id" | "kind" | "choices" | "breakpoint">): string {
-  if (question.breakpoint) return `sous approve ${question.id}`;
-  if (question.kind === "confirm") return `sous answer ${question.id} <yes|no>`;
-  if (question.kind === "select") return `sous answer ${question.id} <${(question.choices ?? []).join("|")}>`;
-  return `sous answer ${question.id} "<answer>"`;
-}
-
 /** The home now. Runs that ended show while they ended within `since`, 24 hours by default. */
 export function homeStatus(paths: HomePaths, now: Date, options: { since?: string } = {}): HomeStatus {
   const window = options.since === undefined ? DAY_MS : sinceWindow(options.since);
@@ -46,7 +38,10 @@ export function homeStatus(paths: HomePaths, now: Date, options: { since?: strin
     const base = { runId: record.runId, workflow: record.workflow };
     const at = run.changedAt ?? record.createdAt;
     if (run.status === "asks") {
-      for (const q of run.questions) status.needsYou.push({ ...base, what: "asks", question: { id: q.id, prompt: q.prompt, answeredBy: "people" }, since: q.askedAt, call: answerCall(q) });
+      for (const q of run.questions) {
+        const [call, sendBack] = answerCalls(q);
+        status.needsYou.push({ ...base, what: "asks", question: { id: q.id, prompt: q.prompt, answeredBy: "people" }, since: q.askedAt, call: call!, ...(sendBack ? { sendBack } : {}) });
+      }
     } else if (run.status === "running" || run.status === "pending" || run.status === "starting") {
       const detail = runDetail(paths, record.runId);
       status.running.push({ ...base, minutes: Math.floor((now.getTime() - Date.parse(record.createdAt)) / 60_000), tokens: detail.tokens ?? 0, steps: detail.running });

@@ -50,9 +50,9 @@ export async function waitFor(ctx: Ctx, runId: string, json: boolean, timeout?: 
   if (end.timedOut) {
     if (!json) machine.out(`\nstill running after ${timeout}s. sous wait ${runId} waits again.`);
     const summary = { ...end.summary, status: "running" as const };
-    return json ? reply(summary, { exit: WAIT_TIMED_OUT, next: nextCalls(summary, "wait", timeout) }) : WAIT_TIMED_OUT;
+    return json ? reply(summary, { exit: WAIT_TIMED_OUT, ...nextCalls(summary, "wait", timeout) }) : WAIT_TIMED_OUT;
   }
-  if (json) return reply(end.summary, { exit: end.code, next: nextCalls(end.summary, "wait") });
+  if (json) return reply(end.summary, { exit: end.code, ...nextCalls(end.summary, "wait", timeout) });
   if (end.questions) {
     for (const q of end.questions) machine.out(`\nwaiting for an answer to ${q.id}:\n  ${q.prompt}\n  ${hint(q)}\n  then: sous wait ${runId}`);
     return end.code;

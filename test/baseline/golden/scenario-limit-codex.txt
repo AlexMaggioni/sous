@@ -35,11 +35,14 @@ exit 2
   "resetHint": "Resets at 2100-01-01T12:00:00.000Z",
   "reason": "usage_limit",
   "cwd": "<tmp>/scenario-limit-codex/sous-home/scratch/<run-1>",
-  "notes": [],
+  "resumesAt": "2100-01-01T12:00:30.000Z",
+  "notes": [
+    "The service resumes this run by itself at 2100-01-01T12:00:30.000Z. Until then sous wait returns at once, so call it after that time."
+  ],
   "next": [
     {
-      "call": "sous resume <run-1> --json",
-      "does": "resumes the run where it stopped"
+      "call": "sous wait <run-1> --json",
+      "does": "waits for the run once the service resumed it"
     },
     {
       "call": "sous show <run-1> --json",

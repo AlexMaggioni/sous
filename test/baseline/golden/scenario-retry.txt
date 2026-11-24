@@ -41,7 +41,7 @@ exit 2
   "notes": [],
   "next": [
     {
-      "call": "sous step <run-1> \"no retries\" --json",
+      "call": "sous step <run-1> 'no retries' --json",
       "does": "shows the step that failed"
     },
     {

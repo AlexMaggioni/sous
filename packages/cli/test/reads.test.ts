@@ -581,3 +581,135 @@ describe("piece 4: sous status", () => {
     assert.deepEqual(changes(before, walk(root)), []);
   });
 });
+
+describe("piece 4: review fixes", () => {
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  const base = { workflowName: "build", script: "return 1", phases: [], agents: [], logs: [] };
+
+  it("show --full --json gives the questions as the inbox keeps them", async () => {
+    const { paths, questionId } = plantStatus();
+    const shown = await sous(paths, ["show", "run-asking", "--full", "--json"]);
+    assert.equal(shown.code, 0, shown.out);
+    const questions = replyIn(shown).questions as Array<Record<string, unknown>>;
+    assert.equal(questions.length, 1, shown.out);
+    assert.deepEqual(
+      { id: questions[0]!.id, runId: questions[0]!.runId, scope: questions[0]!.scope, callIndex: questions[0]!.callIndex, hash: questions[0]!.hash, workflow: questions[0]!.workflow, askedAt: typeof questions[0]!.askedAt },
+      { id: questionId, runId: "run-asking", scope: "run-asking", callIndex: 0, hash: "h0", workflow: "build", askedAt: "string" },
+    );
+    const short = replyIn(await sous(paths, ["show", "run-asking", "--json"])).questions as Array<{ askedAt?: string }>;
+    assert.equal(typeof short[0]?.askedAt, "string", "the short view has askedAt too");
+  });
+
+  it("wait --json on a stopped run gives status stopped, exit 3 and the rerun call", async () => {
+    const { paths, projectDir } = testHome();
+    plantRecord(paths, projectDir, "run-stopped", minutesAgo(10), { pid: deadPid() });
+    plantState(paths, { ...base, runId: "run-stopped", status: "aborted", reason: "stopped by the person", startedAt: minutesAgo(10), updatedAt: minutesAgo(5) });
+    const printed = await sous(paths, ["wait", "run-stopped", "--json"]);
+    assert.equal(printed.code, 3, printed.out);
+    const wait = replyIn(printed);
+    assert.equal(wait.status, "stopped");
+    assert.ok(calls(wait).includes("sous rerun run-stopped --json"), JSON.stringify(wait.next));
+  });
+
+  it("wait --json on a run whose worker died gives status interrupted, exit 2 and the resume call", async () => {
+    const { paths, projectDir } = testHome();
+    plantRecord(paths, projectDir, "run-dead", minutesAgo(10), { pid: deadPid() });
+    plantState(paths, { ...base, runId: "run-dead", status: "running", startedAt: minutesAgo(10), updatedAt: minutesAgo(5) });
+    const printed = await sous(paths, ["wait", "run-dead", "--json"]);
+    assert.equal(printed.code, 2, printed.out);
+    const wait = replyIn(printed);
+    assert.equal(wait.status, "interrupted");
+    assert.ok(calls(wait).includes("sous resume run-dead --json"), JSON.stringify(wait.next));
+  });
+
+  it("a run paused at a usage limit suggests wait and a note with the resume time, not resume", async () => {
+    const { paths } = plantStatus();
+    const show = replyIn(await sous(paths, ["show", "run-limit", "--json"]));
+    assert.equal(typeof show.resumesAt, "string");
+    assert.ok(calls(show).includes("sous wait run-limit --json"), JSON.stringify(show.next));
+    assert.ok(!calls(show).some((call) => call.startsWith("sous resume")), JSON.stringify(show.next));
+    assert.ok(show.notes.some((note) => note.includes(show.resumesAt as string)), JSON.stringify(show.notes));
+  });
+
+  it("a failed step's label goes in single quotes, and a run reason that is not the step's error names no step", async () => {
+    const { paths, projectDir } = testHome();
+    const agent = { id: 1, label: "it's done", prompt: "p", status: "error", error: "boom", startedAt: minutesAgo(9), endedAt: minutesAgo(8) };
+    plantRecord(paths, projectDir, "run-step", minutesAgo(10));
+    plantState(paths, { ...base, runId: "run-step", status: "failed", reason: "boom", agents: [agent] as never, startedAt: minutesAgo(10), updatedAt: minutesAgo(8), completedAt: minutesAgo(8) });
+    const step = replyIn(await sous(paths, ["show", "run-step", "--json"]));
+    assert.deepEqual(step.failure, { step: "it's done", message: "boom" });
+    assert.ok(calls(step).includes(`sous step run-step 'it'\\''s done' --json`), JSON.stringify(step.next));
+    assert.equal(step.seconds, 120, "an ended run with no duration counts to its last change");
+
+    plantRecord(paths, projectDir, "run-script", minutesAgo(10));
+    plantState(paths, { ...base, runId: "run-script", status: "failed", reason: "the script threw: x is not defined", agents: [agent] as never, startedAt: minutesAgo(10), updatedAt: minutesAgo(8), completedAt: minutesAgo(8) });
+    const script = replyIn(await sous(paths, ["show", "run-script", "--json"]));
+    assert.deepEqual(script.failure, { message: "the script threw: x is not defined" });
+    assert.ok(!calls(script).some((call) => call.startsWith("sous step")), JSON.stringify(script.next));
+  });
+
+  it("a breakpoint gives approve and send-back, and every answer call has --json", async () => {
+    const { paths, projectDir } = testHome();
+    plantRecord(paths, projectDir, "run-break", minutesAgo(5), { pid: process.pid });
+    plantState(paths, { ...base, runId: "run-break", status: "running", startedAt: minutesAgo(5), updatedAt: minutesAgo(4) }, "");
+    const id = "run-break--0";
+    writeJson(join(paths.inbox, `${id}.json`), { id, runId: "run-break", scope: "run-break", callIndex: 0, hash: "h0", workflow: "build", prompt: `Ship it?\n${"More detail. ".repeat(20)}`, kind: "confirm", breakpoint: true, askedAt: minutesAgo(4) });
+    for (const argv of [["status", "--json"], ["show", "run-break", "--json"]]) {
+      const reply = replyIn(await sous(paths, argv));
+      assert.ok(calls(reply).includes(`sous approve ${id} --json`), JSON.stringify(reply.next));
+      assert.ok(calls(reply).includes(`sous send-back ${id} "<note>" --json`), JSON.stringify(reply.next));
+      for (const next of reply.next.filter((n) => /^sous (answer|approve|send-back) /.test(n.call))) assert.match(next.call, / --json$/);
+      const approve = reply.next.find((n) => n.call.startsWith("sous approve"))!;
+      assert.ok(approve.does.includes("Ship it?") && !approve.does.includes("More detail") && approve.does.length < 100, approve.does);
+    }
+  });
+
+  it("show --json keeps the last 30 steps and says so", async () => {
+    const { paths, projectDir } = testHome();
+    const at = minutesAgo(1);
+    plantRecord(paths, projectDir, "run-long", at);
+    const agents = Array.from({ length: 40 }, (_, i) => ({ id: i + 1, label: `step ${i + 1}`, prompt: "p", status: "done", startedAt: at, endedAt: at, usage: { total: 7 } }));
+    plantState(paths, { ...base, runId: "run-long", status: "completed", result: "done", agents: agents as never, startedAt: at, updatedAt: at, completedAt: at });
+    const show = replyIn(await sous(paths, ["show", "run-long", "--json"]));
+    const steps = show.steps as Array<{ label: string; tokens?: number }>;
+    assert.deepEqual([steps[0]!.label, steps.at(-1)!.label], ["step 11", "step 40"]);
+    assert.equal(steps[0]!.tokens, 7, "a step's tokens come from its usage when it has no tokens");
+    assert.ok(show.notes.some((note) => note.includes("last 30") && note.includes("--full")), JSON.stringify(show.notes));
+  });
+
+  it("sous status --line prints nothing on an empty home, and one line naming sous status when a run asks", async () => {
+    const empty = await sous(testHome().paths, ["status", "--line"]);
+    assert.equal(empty.code, 0, empty.out);
+    assert.equal(empty.out.trim(), "");
+    const { paths } = plantStatus();
+    const printed = await sous(paths, ["status", "--line"]);
+    assert.equal(printed.code, 0, printed.out);
+    const lines = printed.out.trim().split("\n");
+    assert.equal(lines.length, 1, printed.out);
+    assert.match(lines[0]!, /sous status/);
+  });
+
+  it("sous status cuts a list at 20 with a note naming --all, and --all shows every run", async () => {
+    const { paths, projectDir } = testHome();
+    for (let i = 0; i < 25; i++) {
+      const at = minutesAgo(30 + i);
+      plantRecord(paths, projectDir, `run-${i}`, at);
+      plantState(paths, { ...base, runId: `run-${i}`, status: "completed", result: "done", startedAt: at, updatedAt: at, completedAt: at });
+    }
+    const cut = replyIn(await sous(paths, ["status", "--json"]));
+    assert.equal((cut.finished as unknown[]).length, 20);
+    assert.ok(cut.notes.some((note) => note.includes("--all")), JSON.stringify(cut.notes));
+    const all = replyIn(await sous(paths, ["status", "--all", "--json"]));
+    assert.equal((all.finished as unknown[]).length, 25);
+    assert.ok(!all.notes.some((note) => note.includes("--all")), JSON.stringify(all.notes));
+  });
+
+  it("the earlier note suggests a window longer than the --since given", async () => {
+    const { paths, projectDir } = testHome();
+    const at = new Date(Date.now() - 5 * 24 * 3600_000).toISOString();
+    plantRecord(paths, projectDir, "run-old", at);
+    plantState(paths, { ...base, runId: "run-old", status: "completed", result: "done", startedAt: at, updatedAt: at, completedAt: at });
+    const status = replyIn(await sous(paths, ["status", "--since", "3d", "--json"]));
+    assert.ok(status.notes.some((note) => note.includes("--since 6d")), JSON.stringify(status.notes));
+  });
+});

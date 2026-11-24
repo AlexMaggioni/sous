@@ -80,6 +80,7 @@ export interface QuestionView {
   kind: RunQuestion["kind"];
   choices?: string[];
   breakpoint: boolean;
+  askedAt: string;
   answeredBy: "people";
 }
 
@@ -98,6 +99,8 @@ export interface ShortRun {
   steps: Array<{ label: string; status: string; seconds?: number; tokens?: number }>;
   questions: QuestionView[];
   failure?: Failure;
+  /** When the service resumes a run paused at a usage limit. */
+  resumesAt?: string;
 }
 
 /** What a run that starts may cost, from the workflow's text and its last runs. */
@@ -112,18 +115,21 @@ export interface RunPreview {
 const PREVIEW_READS = 20;
 const PREVIEW_RUNS = 5;
 
-/** The failure of a failed run or a run paused at a failed step: the last step in error. */
+/** The failure of a failed run or a run paused at a failed step: the last step in error, when
+ *  the run's reason is that step's error. Otherwise only the run's reason. */
 function failureOf(state: PersistedRunState | undefined, steps: readonly Step[]): Failure | undefined {
   if (state?.status !== "failed" && !(state?.status === "paused" && state.pauseReason === "step_failed")) return undefined;
   const step = [...steps].reverse().find((agent) => agent.status === "error");
-  const message = step?.error ?? state.reason ?? "the run failed";
-  return { ...(step ? { step: step.label } : {}), message };
+  const { reason } = state;
+  const ours = step?.error !== undefined && (reason === undefined || reason.includes(step.error) || step.error.includes(reason) || reason.includes(`"${step.label}"`));
+  if (ours) return { step: step.label, message: step.error! };
+  return { message: reason ?? step?.error ?? "the run failed" };
 }
 
 /** A question as a reply shows it. */
 function questionView(question: RunQuestion): QuestionView {
-  const { id, prompt, kind, choices, breakpoint } = question;
-  return { id, prompt, kind, ...(choices ? { choices } : {}), breakpoint, answeredBy: "people" };
+  const { id, prompt, kind, choices, breakpoint, askedAt } = question;
+  return { id, prompt, kind, ...(choices ? { choices } : {}), breakpoint, askedAt, answeredBy: "people" };
 }
 
 const secondsOf = (ms: number) => Math.round(ms / 1000);
@@ -205,16 +211,20 @@ export function runDetail(paths: HomePaths, id: string): RunDetail {
 
 const withFailure = (failure: Failure | undefined) => (failure ? { failure } : {});
 
-/** The short view of a run, from its detail. A run a worker runs counts its seconds to `now`. */
+/** The short view of a run, from its detail. A run a worker runs counts its seconds to `now`, a
+ *  paused run to its pause, and an ended run with no saved duration to its last change. */
 export function shortRun(run: RunDetail, now: Date): ShortRun {
   const { record } = run;
-  const seconds = run.durationMs !== undefined ? secondsOf(run.durationMs) : run.unfinished ? secondsOf(now.getTime() - Date.parse(record.createdAt)) : undefined;
-  const steps = run.steps.map((step) => ({
-    label: step.label,
-    status: step.status,
-    ...(step.startedAt && step.endedAt ? { seconds: secondsOf(Date.parse(step.endedAt) - Date.parse(step.startedAt)) } : {}),
-    ...(step.tokens ? { tokens: step.tokens } : {}),
-  }));
+  const seconds = secondsOf(run.durationMs ?? spanOf(run, now));
+  const steps = run.steps.map((step) => {
+    const tokens = step.tokens ?? step.usage?.total;
+    return {
+      label: step.label,
+      status: step.status,
+      ...(step.startedAt && step.endedAt ? { seconds: secondsOf(Date.parse(step.endedAt) - Date.parse(step.startedAt)) } : {}),
+      ...(tokens ? { tokens } : {}),
+    };
+  });
   return {
     runId: record.runId,
     workflow: record.workflow,
@@ -223,12 +233,20 @@ export function shortRun(run: RunDetail, now: Date): ShortRun {
     cwd: record.cwd,
     ...placeOf(record),
     startedAt: record.createdAt,
-    ...(seconds === undefined ? {} : { seconds }),
+    ...(Number.isNaN(seconds) ? {} : { seconds }),
     tokens: run.tokens ?? 0,
     steps,
     questions: run.questions.map(questionView),
     ...withFailure(run.failure),
+    ...(run.pause?.resumeAt ? { resumesAt: run.pause.resumeAt.toISOString() } : {}),
   };
+}
+
+/** How long a run with no saved duration ran, in ms: to now while a worker runs it, else to its
+ *  pause or its last change. NaN when it has no state to tell. */
+function spanOf(run: RunDetail, now: Date): number {
+  const end = run.unfinished && !run.pause && run.status !== "not started" ? now.toISOString() : (run.engineState?.pausedAt ?? run.changedAt);
+  return end === undefined ? Number.NaN : Date.parse(end) - Date.parse(run.record.createdAt);
 }
 
 /** The branch and worktree a run works in, when it has them. */
@@ -332,6 +350,7 @@ function runSummary(record: RunRecord, state: PersistedRunState | undefined, vie
     ...(record.branch ? { branch: record.branch } : {}),
     ...(done ? { result: state.result, review: { ...placeOf(record), result: state.result } } : {}),
     ...withFailure(failureOf(state, state?.agents ?? [])),
+    ...(view.pause?.resumeAt ? { resumesAt: view.pause.resumeAt.toISOString() } : {}),
   };
 }
 
@@ -350,6 +369,8 @@ export interface WaitSummary {
   /** Set once the run completed: where it worked and what it returned. */
   review?: { branch?: string; worktree?: string; result: unknown };
   failure?: Failure;
+  /** When the service resumes a run paused at a usage limit. */
+  resumesAt?: string;
 }
 
 /** A piece of a run's log. */
