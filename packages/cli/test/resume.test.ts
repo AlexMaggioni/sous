@@ -649,6 +649,32 @@ describe("piece 13: sous resume --note", () => {
     assert.deepEqual({ text: added[0]!.text, step: added[0]!.step }, { text: NOTE, step: "a" });
   });
 
+  it("--step naming a later step the run has not reached, by the label its text writes, gives the note to that step only", async () => {
+    const { paths, runId, fakes, ran } = await pausedOnFake("abc", "Do A");
+    const before = noteActions(paths).length;
+    const printed = await sous(paths, ["resume", runId, "--note", NOTE, "--step", "c", "--json"]);
+    assert.equal(printed.code, 0, printed.out);
+    const reply = printedJson(printed);
+    await resumedEnd(paths, runId);
+    assert.equal(readState(paths, runId)?.status, "completed");
+    assert.ok(!(reply.notes as string[]).some((note) => /already finished/.test(note)), `no note says c finished: ${JSON.stringify(reply.notes)}`);
+
+    // This go ran A again, then B and C. Only C got the note.
+    const live = fakes.prompts().slice(ran);
+    assert.equal(live.length, 3, `the resume ran A, B and C: ${JSON.stringify(live)}`);
+    const [a, b, c] = live;
+    assert.match(a ?? "", /Do A\./);
+    assert.match(b ?? "", /Do B\./);
+    assert.match(c ?? "", /Do C\./);
+    assert.ok(!(a ?? "").includes(NOTE) && !(b ?? "").includes(NOTE), `A and B got no note: ${JSON.stringify([a, b])}`);
+    assert.ok((c ?? "").trimEnd().endsWith(NOTE), `C's prompt ends with the note:\n${c}`);
+    const activity = await stepActivity(paths, runId, "c");
+    assert.ok(activity.some((line) => line.kind === "note" && line.text.includes(NOTE)), `c's activity has the note: ${JSON.stringify(activity)}`);
+    const added = noteActions(paths).slice(before).filter((line) => line.act === "resume");
+    assert.equal(added.length, 1, `one resume line: ${JSON.stringify(added)}`);
+    assert.deepEqual({ text: added[0]!.text, step: added[0]!.step }, { text: NOTE, step: "c" });
+  });
+
   it("resume --note on a run that runs already loses no note: a note and next give the sous tell call, which runs as given", async () => {
     noteFakes([{ match: "Do A", tool: "echo working", hold: "go", answer: "Done." }]);
     const gate = join(dirname(process.env.FAKE_LOG!), "go");

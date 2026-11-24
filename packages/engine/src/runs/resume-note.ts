@@ -1,17 +1,20 @@
 // `sous resume <run> --note "..." [--step <step>]`: a resume that gives a note to the first agent
 // call that runs, or to the first call of the named step. This module checks the step against the
-// run's steps and says where the note went. resumeRun leaves the note for the worker.
+// run's steps and its text, and says where the note went. resumeRun leaves the note for the worker.
 
 import { EXEC_MODEL } from "../code-steps.js";
 import type { Who } from "./actions.js";
 import type { Launcher } from "./launch.js";
 import type { HomePaths } from "./home.js";
 import type { NoteRequest } from "./records.js";
+import { readWorkflowScript } from "../workflows/script.js";
 import { Refusal, word } from "./refusal.js";
 import { resumeRun, runDetail, type ResumeOptions, type ResumeOutcome, type RunDetail } from "./run.js";
 import { stepCalls } from "./step-view.js";
+import { readState } from "./store.js";
 
-/** A note as the caller gives it: the text, and the step by its name in the log or its label. */
+/** A note as the caller gives it: the text, and the step by its name in the log or its label. A
+ *  label the run's text writes names a step the run has not reached yet too. */
 export interface ResumeNote {
   text: string;
   step?: string;
@@ -23,7 +26,8 @@ export type NotedResume = ResumeOutcome & { notes: string[]; tell?: string };
 
 /**
  * Resume a run, as resumeRun does, with a note. The step, when given, is one the run has had, as
- * sous step and sous tell find it, else the resume refuses no_such_step and changes nothing. A
+ * sous step and sous tell find it, or a label the run's saved text writes, as the workflow's outline
+ * lists its calls. Else the resume refuses no_such_step and changes nothing. A
  * note for a step whose calls all finished reaches it only if the workflow calls it again, and a
  * note says so. A run that runs already gets no note: a note gives the sous tell call instead. A
  * run in any other state that does not resume says the note reached no step.
@@ -33,7 +37,7 @@ export function resumeWithNote(paths: HomePaths, launch: Launcher, runId: string
   const detail = runDetail(paths, runId);
   const why = detail.resume.ok ? undefined : detail.resume.why;
   // A run that cannot resume says why first, through resumeRun, and a step there names nothing.
-  const aimed = why === undefined || why === "running" ? aimNote(detail, note) : undefined;
+  const aimed = why === undefined || why === "running" ? aimNote(paths, detail, note) : undefined;
   if (why === "running") {
     const resumed = resumeRun(paths, launch, runId, who, rest);
     return { ...resumed, ...tellInstead(detail, note.text, aimed!.step?.name) };
@@ -43,16 +47,28 @@ export function resumeWithNote(paths: HomePaths, launch: Launcher, runId: string
   return { ...resumed, notes: aimed?.step ? finishedNote(detail, aimed.step) : [] };
 }
 
-/** The note with its step found in the run, or no_such_step when the run never had it. */
-function aimNote(detail: RunDetail, note: ResumeNote): NoteRequest {
+/** The note with its step found in the run, else in the run's text, or no_such_step when neither has it. */
+function aimNote(paths: HomePaths, detail: RunDetail, note: ResumeNote): NoteRequest {
   if (note.step === undefined) return { text: note.text };
   const id = detail.record.runId;
   const found = stepCalls(detail, note.step);
-  if (!found) {
-    const change = "Name one of the run's steps, by its label or its name in sous log, or leave out --step to give the note to the first agent call that runs.";
-    throw new Refusal("no_such_step", `run ${id} has no step "${note.step}".`, change, `sous show ${id} --json`);
+  if (found) return { text: note.text, step: { name: found.name, scope: found.calls.at(-1)!.scope, label: found.label } };
+  // A label the top-level text writes, of a step the run has not reached: the top-level run's step.
+  if (textLabels(paths, id).has(note.step)) return { text: note.text, step: { name: note.step, scope: id, label: note.step } };
+  const change = "Name one of the run's steps, by its label or its name in sous log, or a label its workflow writes, or leave out --step to give the note to the first agent call that runs.";
+  throw new Refusal("no_such_step", `run ${id} has no step "${note.step}", and its workflow writes no such label.`, change, `sous show ${id} --json`);
+}
+
+/** The literal labels of the step calls the run's saved text writes, not the file as it is now.
+ *  Empty when the run has no saved text or the text does not parse. */
+function textLabels(paths: HomePaths, runId: string): Set<string> {
+  const script = readState(paths, runId)?.script;
+  if (script === undefined) return new Set();
+  try {
+    return new Set(readWorkflowScript(script).refs.calls.flatMap((call) => (call.label === undefined ? [] : [call.label])));
+  } catch {
+    return new Set();
   }
-  return { text: note.text, step: { name: found.name, scope: found.calls.at(-1)!.scope, label: found.label } };
 }
 
 /** A note when every call of the step finished: the resume does not run it again by itself. */
