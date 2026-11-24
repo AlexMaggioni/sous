@@ -46,7 +46,8 @@ export interface Ctx {
   now: () => Date;
 }
 
-/** A command gives its exit code after printing, or a reply that main prints. */
+/** A command gives its exit code after printing, or a reply that main prints. The number arm
+ *  goes once every command returns a reply, in piece 3. */
 export type Command = (args: Parsed, ctx: Ctx) => number | Reply<object> | Promise<number | Reply<object>>;
 
 export interface CommandSpec {

@@ -80,6 +80,7 @@ function viewOf(record: RunRecord, state: PersistedRunState | undefined, questio
   return { view: { runId: record.runId, record, ...verdict, questions, ...(shown ? { saved: savedFacts(shown) } : {}) }, shown };
 }
 
+/** The run with this id or a unique start of it. The call `sous status --json` arrives in piece 4. */
 function needRecord(paths: HomePaths, id: string): RunRecord {
   const record = findRecord(paths, id);
   if (!record) throw new Refusal("no_such_run", `no run "${id}". sous list shows the runs.`, "Give the id of a run, or a unique start of one.", "sous status --json");
@@ -88,10 +89,11 @@ function needRecord(paths: HomePaths, id: string): RunRecord {
 
 /**
  * sous's runs, newest first, or the newest `limit` of them. It reads the records, the engine
- * folder and the inbox once each, so its cost grows with the number of runs. `fs` is for tests.
+ * folder and the inbox once each, so its cost grows with the number of runs. The records option
+ * saves the read of the records when the caller has them, newest first. `fs` is for tests.
  */
-export function listRuns(paths: HomePaths, options: { limit?: number; fs?: StoreFs } = {}): RunView[] {
-  const records = listRecords(paths);
+export function listRuns(paths: HomePaths, options: { limit?: number; fs?: StoreFs; records?: RunRecord[] } = {}): RunView[] {
+  const records = options.records ?? listRecords(paths);
   const shown = options.limit === undefined ? records : records.slice(0, options.limit);
   const states = readStates(paths, shown.map((record) => record.runId), options.fs);
   const asked = new Map<string, RunQuestion[]>();
@@ -455,7 +457,19 @@ export function findQuestion(paths: HomePaths, id: string): RunQuestion {
     }
     throw new Refusal("no_such_question", `run ${record.runId} asks nothing right now`, "Answer once the run asks.", `sous wait ${record.runId} --json`);
   }
+  // A question's id is its run or nested run, "--" and its call. While that run is there, the
+  // question was answered or closed, and the run's next question comes from waiting on it.
+  const asker = id.includes("--") ? ownRun(paths, id.slice(0, id.lastIndexOf("--"))) : undefined;
+  if (asker) throw new Refusal("no_such_question", `no open question "${id}". It was answered, or ${asker.runId} no longer asks it.`, "Wait for the run's next question.", `sous wait ${asker.runId} --json`);
   throw new Refusal("no_such_question", `no open question "${id}". sous inbox lists them.`, "Give the id of an open question.", "sous inbox --json");
+}
+
+/** The root run of a run or nested run id, when its record is there. A nested run's id starts
+ *  with its root's id and a dash. */
+function ownRun(paths: HomePaths, scope: string): RunRecord | undefined {
+  return listRecords(paths)
+    .filter((record) => scope === record.runId || scope.startsWith(`${record.runId}-`))
+    .sort((a, b) => b.runId.length - a.runId.length)[0];
 }
 
 /** What an answer did. It was written, and `running` says whether the run reads it now or on

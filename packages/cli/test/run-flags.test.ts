@@ -76,7 +76,7 @@ describe("sous run --set", () => {
   it("refuses a value with no label.key=value form, and starts nothing", async () => {
     for (const bad of ["effort=high", "b.effort", "=high", ".effort=high"]) {
       const fan = await runFan(["--set", bad]);
-      assert.deepEqual(fan.run, { code: 64, out: `usage: --set needs label.key=value, got "${bad}"\n` });
+      assert.deepEqual(fan.run, { code: 64, out: `usage: --set needs label.key=value, got "${bad}"\n  change: Fix the command line. sous help lists the commands and their flags.\n` });
       assert.equal(fan.runId, undefined, "no worker started");
       assert.deepEqual(listRecords(fan.paths), [], "no run was made");
     }

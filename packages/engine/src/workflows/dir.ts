@@ -166,7 +166,9 @@ export function resolveWorkflow(paths: HomePaths, projectDir: string, nameOrPath
         "sous workflows --json",
       );
     }
-    if (entry.error) throw new Error(`${entry.file} does not parse: ${entry.error}`);
+    if (entry.error) {
+      throw new Refusal("workflow_invalid", `${entry.file} does not parse: ${entry.error}`, `Fix the workflow file ${entry.file}.`, `sous check ${entry.name} --json`);
+    }
     file = entry.file;
   }
   const script = readFileSync(file, "utf8");

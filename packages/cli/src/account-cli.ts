@@ -22,7 +22,7 @@ import {
   type HomePaths,
   type Launcher,
 } from "@sous/engine";
-import { print, reply } from "./reply.js";
+import { reply, type Reply } from "./reply.js";
 
 export interface AccountCommandOptions {
   json?: boolean;
@@ -90,7 +90,7 @@ function launcher(options: AccountCommandOptions): Launcher {
   );
 }
 
-export async function cmdAccount(positionals: string[], options: AccountCommandOptions = {}): Promise<number> {
+export async function cmdAccount(positionals: string[], options: AccountCommandOptions = {}): Promise<number | Reply<object>> {
   const paths = ensureHome(homePaths());
   const out = options.out ?? ((line: string) => process.stdout.write(`${line}\n`));
   const usage = options.usage ?? ((message: string) => new Error(message));
@@ -137,10 +137,11 @@ export async function cmdAccount(positionals: string[], options: AccountCommandO
   }
 }
 
-function listCommand(paths: HomePaths, out: (line: string) => void, json: boolean): number {
+/** The accounts, printed, or with json a reply for main to print. */
+function listCommand(paths: HomePaths, out: (line: string) => void, json: boolean): number | Reply<object> {
   const rows = listAccounts(paths);
   const waiting = waitingRuns(paths);
-  if (json) return print(reply({ accounts: rows, waiting: waiting.map((run) => ({ runId: run.runId, workflow: run.workflow, limit: run.limit })) }), true, out);
+  if (json) return reply({ accounts: rows, waiting: waiting.map((run) => ({ runId: run.runId, workflow: run.workflow, limit: run.limit })) });
   const width = Math.max(...rows.map((row) => accountLabel(row.program, row.name).length)) + 2;
   for (const program of HARNESSES) {
     out(harnessName(program));

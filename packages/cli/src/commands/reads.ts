@@ -20,7 +20,7 @@ export function cmdList(args: Parsed, ctx: Ctx): Reply<object> {
   const records = listRecords(paths);
   // Only the shown runs' states are read, so the count reads the records alone.
   const shown = args.flags.all ? { items: records } : cut(records, LIST_MAX, "--all", "runs");
-  const runs = listRuns(paths, { limit: shown.items.length });
+  const runs = listRuns(paths, { records: shown.items });
   if (ctx.json) {
     const rows = runs.map(({ record, word, saved }) => ({ runId: record.runId, workflow: record.workflow, status: word, state: saved?.status, pauseReason: saved?.pauseReason, createdAt: record.createdAt, place: record.place, cwd: record.cwd, origin: record.origin }));
     const next: Next[] = shown.note ? [{ call: "sous list --all --json", does: "lists every run" }] : [];
@@ -131,7 +131,8 @@ export async function cmdLog(args: Parsed, ctx: Ctx): Promise<number> {
 }
 
 /** The log after `read`. A run that goes away while sous follows it is no wrong id, so its
- *  refusal becomes a plain error that exits 1. */
+ *  refusal becomes a plain error that exits 1. The pinned test "let sous log -f print the no run
+ *  error, and exit 1, when the run goes away while it follows" in reads.test.ts holds this. */
 function followOn(paths: Ctx["paths"], read: ReturnType<typeof readLog>): ReturnType<typeof readLog> {
   try {
     return readLog(paths, read.runId, read.end);

@@ -227,7 +227,7 @@ describe("reply.ts", () => {
     assert.equal(printError(new Error("EACCES: permission denied"), true, (line) => fault.push(line)), 1);
     assert.equal(JSON.parse(fault.join("\n")).error.code, "internal");
 
-    // The text forms of these two stay as today's.
+    // The text of a fault stays one line.
     const text: string[] = [];
     printError(new Error("boom"), false, (line) => text.push(line));
     assert.deepEqual(text, ["sous: boom"]);
@@ -305,14 +305,14 @@ describe("errors through sous", () => {
     assert.equal(typeof error.call, "string");
   });
 
-  it("sous run of a workflow that does not exist exits 65 with no_such_workflow and the call sous workflows --json", async () => {
+  it("sous run of a workflow that does not exist exits 65 with no_such_workflow and the call sous workflows --json, with the command's --project", async () => {
     const { paths, projectDir } = testHome({ one: ONE });
     const workers = inProcess({ inner: fakeRunner(() => "done").runner });
     const run = await call(paths, ["run", "nosuch", "--json", "--project", projectDir], { launch: workers.launch });
     assert.equal(run.code, 65, run.stdout + run.stderr);
     const error = errorOf(run);
     assert.equal(error.code, "no_such_workflow");
-    assert.equal(error.call, "sous workflows --json");
+    assert.equal(error.call, `sous workflows --json --project ${projectDir}`);
     assert.equal(workers.launched.length, 0);
   });
 
@@ -346,10 +346,116 @@ describe("errors through sous", () => {
     try {
       const listed = await call(paths, ["list", "--json"]);
       assert.equal(listed.code, 1, listed.stdout + listed.stderr);
-      assert.equal(errorOf(listed).code, "internal");
+      const error = errorOf(listed);
+      assert.equal(error.code, "internal");
+      assert.equal(error.change, "The command is fine. sous itself failed. Read the message, fix the cause and run the same command again.");
     } finally {
       chmodSync(paths.records, 0o755);
     }
+  });
+
+  it("a run prefix that matches two runs exits 65 with no_such_run, names both runs and gives the call sous list --json", async () => {
+    const { paths, projectDir } = testHome({ one: ONE });
+    plantDone(paths, projectDir, "run-a1");
+    plantDone(paths, projectDir, "run-a2");
+    const shown = await call(paths, ["show", "run-a", "--json"]);
+    assert.equal(shown.code, 65, shown.stdout + shown.stderr);
+    const error = errorOf(shown);
+    assert.equal(error.code, "no_such_run");
+    assert.match(error.message, /matches 2 runs: /);
+    assert.match(error.message, /run-a1/);
+    assert.match(error.message, /run-a2/);
+    assert.equal(error.call, "sous list --json");
+  });
+
+  it("sous run of a workflow file that does not parse exits 66 with workflow_invalid, names the file and gives the call sous check", async () => {
+    const { paths, projectDir } = testHome({ broken: "export const meta = {" });
+    const workers = inProcess({ inner: fakeRunner(() => "done").runner });
+    const run = await call(paths, ["run", "broken", "--json", "--project", projectDir], { launch: workers.launch });
+    assert.equal(run.code, 66, run.stdout + run.stderr);
+    const error = errorOf(run);
+    assert.equal(error.code, "workflow_invalid");
+    assert.equal(error.change, `Fix the workflow file ${join(projectDir, ".sous", "workflows", "broken.js")}.`);
+    assert.equal(error.call, `sous check broken --json --project ${projectDir}`);
+    assert.equal(workers.launched.length, 0);
+  });
+
+  it("sous run of a workflow whose meta has a problem exits 66 with workflow_invalid, not bad_argument", async () => {
+    const { paths, projectDir } = testHome({ late: "export const meta = { name: 'late', description: 'd', timeout: 'never' }\nreturn 1" });
+    const workers = inProcess({ inner: fakeRunner(() => "done").runner });
+    const run = await call(paths, ["run", "late", "--json", "--project", projectDir], { launch: workers.launch });
+    assert.equal(run.code, 66, run.stdout + run.stderr);
+    const error = errorOf(run);
+    assert.equal(error.code, "workflow_invalid");
+    assert.match(error.message, /meta\.timeout/);
+    assert.equal(error.change, `Fix the workflow file ${join(projectDir, ".sous", "workflows", "late.js")}.`);
+    assert.equal(error.call, `sous check late --json --project ${projectDir}`);
+    assert.equal(workers.launched.length, 0);
+  });
+
+  it("sous run without a required input exits 64 with bad_argument and the call sous check, and its text has the change and try lines", async () => {
+    const { paths, projectDir } = testHome({ needs: "export const meta = { name: 'needs', description: 'd', inputs: { topic: 'what to write about' } }\nreturn 1" });
+    const workers = inProcess({ inner: fakeRunner(() => "done").runner });
+    const run = await call(paths, ["run", "needs", "--json", "--project", projectDir], { launch: workers.launch });
+    assert.equal(run.code, 64, run.stdout + run.stderr);
+    const error = errorOf(run);
+    assert.equal(error.code, "bad_argument");
+    assert.equal(error.call, `sous check needs --json --project ${projectDir}`);
+
+    const text = await call(paths, ["run", "needs", "--project", projectDir], { launch: workers.launch });
+    assert.equal(text.code, 64, text.stdout + text.stderr);
+    assert.equal(text.stdout, "");
+    assert.ok(text.stderr.endsWith(`\n  change: ${error.change}\n  try: sous check needs --json --project ${projectDir}\n`), text.stderr);
+    assert.equal(workers.launched.length, 0);
+  });
+
+  it("a --json flag with a value still gives the error as JSON", async () => {
+    const { paths } = testHome();
+    const shown = await call(paths, ["show", "--json=1", "nosuch"]);
+    assert.equal(shown.code, 65, shown.stdout + shown.stderr);
+    assert.equal(shown.stderr, "");
+    assert.equal(errorOf(shown).code, "no_such_run");
+  });
+
+  it("sous answer on a question that was answered, while its run is there, gives the call sous wait <run> --json", async () => {
+    const { paths, projectDir } = testHome({ one: ONE });
+    plantDone(paths, projectDir, "r1");
+    for (const id of ["r1--0", "r1-nested1--2"]) {
+      const gone = await call(paths, ["answer", id, "red", "--json"]);
+      assert.equal(gone.code, 65, gone.stdout + gone.stderr);
+      const error = errorOf(gone);
+      assert.equal(error.code, "no_such_question");
+      assert.equal(error.call, "sous wait r1 --json", id);
+    }
+  });
+
+  it("sous stop --step on a step that ran but does not run now exits 65 with step_not_running", async () => {
+    const { paths, projectDir } = testHome({ one: ONE });
+    const runId = "run-live";
+    const at = new Date().toISOString();
+    writeFileSync(
+      join(paths.records, `${runId}.json`),
+      JSON.stringify({ runId, workflow: "one", file: join(projectDir, ".sous", "workflows", "one.js"), args: {}, place: "folder", cwd: projectDir, projectDir, priority: "user", origin: "cli", createdAt: at, pid: process.pid }),
+    );
+    // The state has a watermark, so the step that ran is read from it.
+    const agents = [{ id: 1, label: "go", prompt: "go", status: "done" as const, startedAt: at, endedAt: at }];
+    plantState(paths, { runId, workflowName: "one", script: "return 1", status: "running", eventStreamId: "0123456789abcdef0123456789abcdef", eventSeq: 0, phases: [], agents, logs: [], startedAt: at, updatedAt: at }, "");
+    const stopped = await call(paths, ["stop", runId, "--step", "go", "--json"]);
+    assert.equal(stopped.code, 65, stopped.stdout + stopped.stderr);
+    const error = errorOf(stopped);
+    assert.equal(error.code, "step_not_running");
+    assert.equal(error.call, `sous show ${runId} --json`);
+  });
+
+  it("a usage error in text prints its change, and its try line when it has a call", async () => {
+    const { paths } = testHome();
+    const shown = await call(paths, ["show"]);
+    assert.equal(shown.code, 64, shown.stdout + shown.stderr);
+    assert.deepEqual(shown.stderr.trimEnd().split("\n").slice(1), ["  change: Fix the command line. sous help lists the commands and their flags."]);
+    const { printError } = await replyModule();
+    const lines: string[] = [];
+    printError(new Usage("pick one", "bad_argument", "Pick one of them.", "sous list --json"), false, (line) => lines.push(line));
+    assert.deepEqual(lines, ["usage: pick one", "  change: Pick one of them.", "  try: sous list --json"]);
   });
 });
 
