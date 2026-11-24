@@ -46,9 +46,8 @@ export interface Ctx {
   now: () => Date;
 }
 
-/** A command gives its exit code after printing, or a reply that main prints. The number arm
- *  goes once every command returns a reply, in piece 3. */
-export type Command = (args: Parsed, ctx: Ctx) => number | Reply<object> | Promise<number | Reply<object>>;
+/** A command gives a reply, which main prints. */
+export type Command = (args: Parsed, ctx: Ctx) => Reply<object> | Promise<Reply<object>>;
 
 export interface CommandSpec {
   run: Command;
@@ -69,22 +68,22 @@ export const COMMANDS: Record<string, CommandSpec> = {
   wait: { run: cmdWait, flags: takes("json") },
   list: { run: cmdList, flags: takes("all", "json") },
   show: { run: cmdShow, flags: takes("json") },
-  log: { run: cmdLog, flags: takes("follow") },
+  log: { run: cmdLog, flags: takes("follow", "json") },
   inbox: { run: cmdInbox, flags: takes("json") },
-  answer: { run: (args, ctx) => cmdAnswer(args, ctx, "answer"), flags: takes("json") },
+  answer: { run: (args, ctx) => cmdAnswer(args, ctx, "answer"), flags: takes("value-json", "json") },
   approve: { run: (args, ctx) => cmdAnswer(args, ctx, "approve"), flags: takes("json") },
   "send-back": { run: (args, ctx) => cmdAnswer(args, ctx, "send-back"), flags: takes("json") },
-  pause: { run: cmdPause, flags: takes() },
+  pause: { run: cmdPause, flags: takes("json") },
   resume: { run: cmdResume, flags: takes("latest", "same", "wait", "json") },
-  stop: { run: cmdStop, flags: takes("step") },
+  stop: { run: cmdStop, flags: takes("step", "json") },
   rerun: { run: cmdRerun, flags: takes("place", "reuse", "set", "model", "wait", "json"), inputs: true },
   workflows: { run: cmdWorkflows, flags: takes("project", "json") },
   check: { run: cmdCheck, flags: takes("project", "dry-run", "answers", "json"), inputs: true },
   schedule: { run: cmdSchedule, flags: takes("cron", "place", "project", "json"), inputs: true },
-  daemon: { run: cmdDaemon, flags: takes() },
-  gc: { run: cmdGc, flags: takes("dry-run") },
-  discard: { run: cmdDiscard, flags: takes("yes") },
-  prune: { run: cmdPrune, flags: takes("days") },
+  daemon: { run: cmdDaemon, flags: takes("json") },
+  gc: { run: cmdGc, flags: takes("dry-run", "json") },
+  discard: { run: cmdDiscard, flags: takes("yes", "json") },
+  prune: { run: cmdPrune, flags: takes("days", "json") },
   account: { run: cmdAccount, flags: takes("json") },
   doctor: { run: cmdDoctor, flags: takes("live", "model", "json") },
 };

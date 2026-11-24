@@ -33,7 +33,7 @@ export interface Parsed {
 const OWN: FlagSpec[] = [
   ...["place", "model", "project", "concurrency", "priority", "cron", "days", "lines", "step", "answers", "by", "budget", "timeout", "note"].map((name) => ({ name, takes: "one" as const })),
   { name: "set", takes: "many", value: "label.key=value" },
-  ...["wait", "json", "all", "follow", "f", "dry-run", "yes", "reuse", "latest", "same", "live", "help", "h", "let-agent-answer"].map((name) => ({ name, takes: "none" as const })),
+  ...["wait", "json", "all", "follow", "f", "dry-run", "yes", "reuse", "latest", "same", "live", "help", "h", "let-agent-answer", "value-json"].map((name) => ({ name, takes: "none" as const })),
 ];
 
 export const RESERVED: readonly string[] = OWN.map((flag) => flag.name);
