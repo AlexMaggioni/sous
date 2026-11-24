@@ -353,6 +353,17 @@ async function runOnHarness(
     };
     call.onSessionOpen?.(ref);
   };
+  // The attempt's tokens as the program last reported them while a turn ran.
+  let running: AgentUsage | undefined;
+  // A stop the host asks for (the budget, the time limit, `sous stop --step`) settles the step
+  // as soon as it asks, before the program's last count arrives. So the stop reports the larger
+  // of the running and the counted totals at once, and the record keeps at least what the budget saw.
+  const stopped = () => {
+    const counted = spent && agentUsage(spent, cost ?? 0);
+    const now = running && (!counted || running.total > counted.total) ? running : counted;
+    if (now) call.onUsage?.(now);
+  };
+  signal?.addEventListener("abort", stopped, { once: true });
   // Each turn's first user entry is its prompt. A later one is a tell the program read.
   let prompted = false;
   const events: StepEvents = {
@@ -368,7 +379,10 @@ async function runOnHarness(
     },
     ...(board ? { steer: (send) => (send ? board.board.open(board.call, send) : board.board.close(board.call)) } : {}),
     // The turn's running total, on top of the turns of this attempt before it.
-    ...(usage ? { usage: (turn) => usage(agentUsage(spent ? addUsage(spent, turn) : turn, cost ?? 0)) } : {}),
+    usage: (turn) => {
+      running = agentUsage(spent ? addUsage(spent, turn) : turn, cost ?? 0);
+      usage?.(running);
+    },
   };
   const once = async (turn: Step): Promise<StepResult> => {
     prompted = false;
@@ -452,6 +466,7 @@ async function runOnHarness(
   } catch (error) {
     throw mapFailure(error, harness, label, call.signal);
   } finally {
+    signal?.removeEventListener("abort", stopped);
     // The adapter closes the seam at the end of each turn. A turn that threw may not have.
     if (board) board.board.close(board.call);
     if (spent) {
