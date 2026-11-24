@@ -56,6 +56,12 @@ failed step did. `sous resume` runs the failed step again and keeps
 the finished ones. `sous rerun` pays for every step again, so ask first. A run paused at the
 usage limit needs nothing. The service resumes it.
 
+## Steer a running step
+
+When the user wants a running step to change course, `sous tell <run> --step <label> "<message>" --json`
+gives it the message after its current tool call, and the step goes on. Stop a step only when
+they want it done over. `sous guide steer` has the rest.
+
 ## Write or change a workflow
 
 Read `sous guide writing` first. Show the user what you will save, and save only after their

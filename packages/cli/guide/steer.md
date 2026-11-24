@@ -1,7 +1,7 @@
 # Steer a run
 
-Today you steer a run by stopping a step or the run. A later version adds a way to give a
-running step more to go on, and this topic grows with it.
+You steer a run by telling a running step more, by stopping a step, or by pausing or stopping
+the run. Telling is the lightest: the step goes on with what it has done.
 
 ## Find the steps that run now
 
@@ -20,6 +20,28 @@ sous step <run> <label> --json
 
 It gives the step's prompt or command, its status, its `failure` when it failed, and its
 `activity`, the last 20 things it did. Read it before you stop a step, and after one fails.
+
+## Tell a running step
+
+```sh
+sous tell <run> --step "implementer" "Use the v2 API." --json
+```
+
+The step reads the message after its current tool call, and goes on. Use it when the person
+wants a step to change course without starting over. The reply has `delivery`: `delivered` when
+the step got it, or `pending` when the step reads it once its tool call ends. `sous step` then
+shows it in the step's `activity`.
+
+A step that runs more than once at the same time gets the message in each call, and a note says
+so. `--call 2` tells only the second call of the step, counted as `sous step` counts them.
+
+Some steps take no message:
+
+- A code step (`sh`, `js` or `py`) fails with `step_takes_no_message`. Stop it instead.
+- A step that does not run now fails with `step_not_running`. For a paused run, its call is
+  `resume --note`, which gives the message to the step when the run goes on.
+- A turn that takes no message for a moment, such as a compact, fails with
+  `turn_not_steerable`. Its call is the same tell. Run it again soon.
 
 ## Stop one step
 

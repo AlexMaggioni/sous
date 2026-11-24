@@ -24,7 +24,7 @@ export const resumeNext = (runId: string, does: string): Next => ({ call: `sous 
 export const rerunNext = (runId: string, does: string): Next => ({ call: `sous rerun ${runId} --json`, does });
 
 /** A step label as one shell word, in single quotes when it needs them. */
-const word = (text: string) => (/^[\w./-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`);
+export const word = (text: string) => (/^[\w./-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`);
 
 /** The calls after sous step, from the step's status. A failed step can run again with a resume,
  *  a running one can be told more or stopped, and every step can wait for its run. */

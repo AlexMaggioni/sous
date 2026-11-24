@@ -6,7 +6,7 @@
 // replaces the whole file, so two writers at once would lose one's change.
 
 import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
-import type { HarnessId } from "@sous/harnesses";
+import type { HarnessId, SteerOutcome } from "@sous/harnesses";
 import { appendJsonLine, readJsonFile, readJsonLines, writeJsonFile } from "../json-file.js";
 import { redactText } from "../redact.js";
 import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";
@@ -14,7 +14,7 @@ import type { PlaceNotes } from "../places/places.js";
 import type { By, Through } from "./actions.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
-import { activityFile, recordFile, recordFiles, snapshotFile, stopRequestFile } from "./store.js";
+import { activityFile, recordFile, recordFiles, snapshotFile, stopRequestFile, tellRequestFile } from "./store.js";
 import { Refusal } from "./refusal.js";
 
 export interface RunRecord {
@@ -179,7 +179,13 @@ export function requestStepStop(paths: HomePaths, runId: string, stop: StepStop)
  *  that lands meanwhile starts a new file and waits for the next take. A line an older sous wrote,
  *  a bare name, is dropped. */
 export function takeStepStops(paths: HomePaths, runId: string): StepStop[] {
-  const file = stopRequestFile(paths, runId);
+  return takeLines(stopRequestFile(paths, runId))
+    .map((line) => JSON.parse(line) as StepStop | string)
+    .filter((stop): stop is StepStop => typeof stop === "object");
+}
+
+/** A request file's lines since the last take. It moves aside before the read. */
+function takeLines(file: string): string[] {
   const taken = `${file}.${process.pid}.taken`;
   try {
     renameSync(file, taken);
@@ -188,7 +194,33 @@ export function takeStepStops(paths: HomePaths, runId: string): StepStop[] {
   }
   const lines = readFileSync(taken, "utf8").split("\n").filter(Boolean);
   unlinkSync(taken);
-  return lines.map((line) => JSON.parse(line) as StepStop | string).filter((stop): stop is StepStop => typeof stop === "object");
+  return lines;
+}
+
+/** A message `sous tell` sends: its id, the step's name in the log, the text, and each call it
+ *  reaches, by its run or nested run, its label and its call index when the state has one. */
+export interface TellRequest {
+  id: string;
+  step: string;
+  text: string;
+  calls: Array<{ scope: string; label: string; callIndex?: number }>;
+}
+
+/** Ask the worker to give a running step a message. Each request is one appended line, as a step stop is. */
+export function requestTell(paths: HomePaths, runId: string, tell: TellRequest): void {
+  appendFileSync(tellRequestFile(paths, runId), `${JSON.stringify(tell)}\n`);
+}
+
+/** The text of a tell's receipt in the step's activity, by what became of the message. */
+export const TELL_RECEIPTS: Record<SteerOutcome, string> = {
+  delivered: "delivered",
+  not_steerable: "not delivered, the turn takes no message now",
+  ended: "not delivered, the turn ended first",
+};
+
+/** The tells sent since the last take, as takeStepStops takes the stops. */
+export function takeTells(paths: HomePaths, runId: string): TellRequest[] {
+  return takeLines(tellRequestFile(paths, runId)).map((line) => JSON.parse(line) as TellRequest);
 }
 
 /** One saved activity entry: its number in the run's file, when it happened, its step and what it says. */
@@ -213,12 +245,12 @@ export function activityWriter(paths: HomePaths, runId: string, secrets: readonl
   const hidden = secrets.filter((value) => value.length >= SECRET_MIN);
   let seq: number | undefined;
   return (step, entry) => {
-    const { kind, tool } = entry;
+    const { kind, tool, id } = entry;
     const text = hidden.reduce((out, value) => out.split(value).join("[REDACTED]"), redactText(entry.text).value);
     const cut = text.length <= ACTIVITY_TEXT ? text : kind === "output" ? text.slice(-ACTIVITY_TEXT) : text.slice(0, ACTIVITY_TEXT);
     try {
       seq ??= readActivity(paths, runId).reduce((last, line) => Math.max(last, line.seq), 0);
-      appendJsonLine(file, { seq: seq + 1, at: new Date().toISOString(), ...step, kind, ...(tool === undefined ? {} : { tool }), text: cut });
+      appendJsonLine(file, { seq: seq + 1, at: new Date().toISOString(), ...step, kind, ...(tool === undefined ? {} : { tool }), text: cut, ...(id === undefined ? {} : { id }) });
       seq += 1;
     } catch {
       // The activity is for people to read. The step goes on.

@@ -1,6 +1,6 @@
 // One run, in its own background process. `sous run` and `sous resume` start it detached, and it
 // keeps running when the terminal closes. It holds the run's lease, asks questions through the
-// inbox, and answers `sous pause` (SIGUSR1), `sous stop --step` (SIGUSR2) and `sous stop` (SIGTERM).
+// inbox, and answers `sous pause` (SIGUSR1), `sous stop --step` and `sous tell` (SIGUSR2) and `sous stop` (SIGTERM).
 
 import { readFileSync, existsSync } from "node:fs";
 import type { WorkflowRunResult } from "../workflow-result.js";
@@ -15,10 +15,12 @@ import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "
 import { ask, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
 import { authorAnsweredBy, nestedLookup } from "./consent.js";
-import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
+import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
+import { SteeringBoard } from "../steps/steering.js";
+import type { OnActivity } from "../steps/activity.js";
 import { programLookup } from "../programs.js";
 
 export interface WorkerOptions {
@@ -54,6 +56,25 @@ export function currentWorkflows(paths: HomePaths, projectDir: string): Record<s
     if (script !== undefined) out[entry.name] = script;
   }
   return out;
+}
+
+/**
+ * Send the tells `sous tell` wrote through the steering board, before the step stops of the same
+ * signal. Each call gets a receipt in its activity, which the cli waits for. A call named by its
+ * call index that no longer runs gets "ended".
+ */
+function sendTells(paths: HomePaths, runId: string, steering: SteeringBoard, onActivity: OnActivity, log: (line: string) => void): void {
+  for (const { id, step, text, calls } of takeTells(paths, runId)) {
+    for (const call of calls) {
+      void steering.tell({ label: call.label, scope: call.scope, ...(call.callIndex === undefined ? {} : { callIndex: call.callIndex }) }, text, id).then((told) => {
+        const outcomes = told.length || call.callIndex === undefined ? told : [{ call: { ...call, callIndex: call.callIndex }, outcome: "ended" as const }];
+        for (const { call: to, outcome } of outcomes) {
+          onActivity({ scope: to.scope, callIndex: to.callIndex, ...(to.label === undefined ? {} : { label: to.label }) }, { kind: "tell", id, text: TELL_RECEIPTS[outcome] });
+          log(`${stamp()} tell       ${step}: ${TELL_RECEIPTS[outcome]}`);
+        }
+      });
+    }
+  }
 }
 
 /** The engine's manager for a run's project. Only this file builds one. A nested workflow() or
@@ -110,6 +131,7 @@ async function runOnAccounts(
   updateRecord(paths, runId, { pid: process.pid, limit: undefined });
   // A step stop the last worker never took names a step of that worker, not this one.
   takeStepStops(paths, runId);
+  takeTells(paths, runId);
 
   // The environment with the run's accounts on it, for code steps and the agent lookup.
   const base = envFor("codex", accounts.codex, envFor("claude", accounts.claude, process.env));
@@ -120,6 +142,7 @@ async function runOnAccounts(
   const inner = options.inner;
   // It reads the file at its first write, once the run manager holds the run's lease.
   const onActivity = activityWriter(paths, runId, Object.values(secrets));
+  const steering = new SteeringBoard();
   const runner = createSteps({
     cwd: record.cwd,
     ...(inner ? { inner } : {}),
@@ -147,6 +170,7 @@ async function runOnAccounts(
       for (const note of notes) log(`${stamp()} note       ${label ?? "agent"}: ${oneLine(note, 400)}`);
     },
     onActivity,
+    steering,
   });
   // A run keeps the workflows as they were when it started. A resume takes the edited ones only
   // after `sous resume --latest`.
@@ -227,6 +251,11 @@ async function runOnAccounts(
       log(`${stamp()} ${stopped ? `stopping   ${step}` : `no step    ${step} runs; nothing stopped`}`);
     }
   };
+  // The tells go first. Each is sent before a stop of another call can end that call's turn.
+  const onSteer = () => {
+    sendTells(paths, runId, steering, onActivity, log);
+    onStopSteps();
+  };
   const onStop = () => {
     stopping = true;
     log(`${stamp()} stopping`);
@@ -234,7 +263,7 @@ async function runOnAccounts(
   };
   if (options.handleSignals) {
     process.on("SIGUSR1", onPause);
-    process.on("SIGUSR2", onStopSteps);
+    process.on("SIGUSR2", onSteer);
     process.on("SIGTERM", onStop);
     process.on("SIGINT", onStop);
   }
@@ -292,7 +321,7 @@ async function runOnAccounts(
     waits.abort();
     if (options.handleSignals) {
       process.off("SIGUSR1", onPause);
-      process.off("SIGUSR2", onStopSteps);
+      process.off("SIGUSR2", onSteer);
       process.off("SIGTERM", onStop);
       process.off("SIGINT", onStop);
     }

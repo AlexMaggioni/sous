@@ -339,6 +339,7 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous pause <run>`, `sous resume <run> [--latest \| --same]` | finish the running steps and start nothing new; go on from there |
 | `sous stop <run>` | end the run. Its worktree stays, unless the run changed no file. |
 | `sous stop <run> --step <name>` | stop one running step, by the name `sous log` gives it, such as `"ticket A: implementer"`. The run pauses on it, and `sous resume` runs it again. |
+| `sous tell <run> --step <name> "<message>" [--call N]` | give a running agent step a message, which it reads after its current tool call. The step goes on. Each running call of the step gets it, and `--call N` tells only the Nth call. The reply's `delivery` is `delivered`, or `pending` while the step has not read it within 5 seconds. A code step fails with `step_takes_no_message`, a step that does not run now with `step_not_running`, and a turn that takes no message for a moment, such as a compact, with `turn_not_steerable`. |
 | `sous rerun <run> [--reuse]` | the same workflow with the same inputs. `--reuse` keeps the results of the steps you did not edit and works in the same place. |
 | `sous run`, `rerun` or `resume` with `--let-agent-answer` | lets agents answer the run's questions for people, and its nested runs' questions. Never its breakpoints. A rerun does not carry it over. |
 | `sous wait <run> [--timeout N]` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer, 5 still running after `--timeout N` seconds. The run goes on after a timeout. An agent's wait, or a step's, has a timeout of 110 seconds when it gives none. A person's waits as long as it takes. In a terminal it asks the run's questions itself, so 4 comes only off a terminal or with `--json`. |
@@ -349,7 +350,8 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 
 A command with a wrong or missing argument exits 64. So does `sous resume` after an edit, with
 neither `--latest` nor `--same`. A run, workflow, question, step or schedule that is not there
-exits 65. So does `sous stop --step` with a name the run never had. Any other refusal exits 66,
+exits 65. So do `sous stop --step` and `sous tell` with a name the run never had, and `sous tell` to
+a step that does not run now. Any other refusal exits 66,
 such as `sous discard` of a running run, or `sous resume` of a run an older sous saved. A write
 the system refuses under the sous home, with EACCES, EPERM or EROFS, exits 1 with
 `home_not_writable`. Its `change` says how to make the home writable, under Codex too, and its

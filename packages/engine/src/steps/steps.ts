@@ -22,6 +22,7 @@ import {
 } from "@sous/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
 import { activityStep, type ActivityEntry, type OnActivity } from "./activity.js";
+import type { LiveCall, SteeringBoard } from "./steering.js";
 import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, PlannedRequest, StepRequest } from "./agent-run.js";
 import type { AgentRunner, StepAsk, StepRoute } from "./agent-runner.js";
 import type { AgentSessionRef } from "../workflow-result.js";
@@ -60,6 +61,8 @@ export interface StepsOptions {
   onNotes?: (event: { label?: string; notes: string[] }) => void;
   /** Called with the step's prompt, then with each thing its program does, as it happens. */
   onActivity?: OnActivity;
+  /** The board each agent call opens on while its turn runs, so `sous tell` reaches it. */
+  steering?: SteeringBoard;
 }
 
 
@@ -74,8 +77,8 @@ function addUsage(a: Usage, b: Usage): Usage {
   return { input: a.input + b.input, output: a.output + b.output, cacheRead: a.cacheRead + b.cacheRead, cacheWrite: a.cacheWrite + b.cacheWrite, total: a.total + b.total };
 }
 
-/** The activity entry of a history item. The user's turns are left out: the steps module
- *  reports the prompt itself, and a repair turn is its own text. */
+/** The activity entry of a history item. A turn's own prompt is left out: the steps module
+ *  reports the prompt itself, and a repair turn is its own text. A user message after it is a tell. */
 const ACTIVITY_KINDS: Record<HistoryEntry["kind"], ActivityEntry["kind"]> = { text: "text", toolCall: "tool", toolResult: "tool-result", error: "error" };
 
 const toHistory = (entry: HistoryEntry): AgentHistoryEntry => ({
@@ -147,7 +150,9 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
       if (options.inner) return await runInner(options.inner, prompt, call, step, { signal, servers, account });
       const notesTo = options.onNotes;
       const onNotes = notesTo && ((notes: string[]) => notesTo({ label: call.label, notes }));
-      return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account, onNotes, activity: report });
+      const steering = options.steering && activityStep(call.runId, call.callIndex, call.label);
+      const board = steering ? { board: options.steering!, call: steering } : undefined;
+      return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account, onNotes, activity: report, board });
     } catch (error) {
       if ((error as { code?: unknown } | undefined)?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT) {
         options.onLimit?.({ program: step.harness, label: call.label });
@@ -215,9 +220,10 @@ async function runOnHarness(
     account?: Account;
     onNotes?: (notes: string[]) => void;
     activity?: (entry: ActivityEntry) => void;
+    board?: { board: SteeringBoard; call: LiveCall };
   },
 ): Promise<unknown> {
-  const { cwd, signal, servers, stop, account, onNotes, activity } = given;
+  const { cwd, signal, servers, stop, account, onNotes, activity, board } = given;
   const harness = step.harness;
   const label = call.label;
   const schema = call.schema;
@@ -274,15 +280,23 @@ async function runOnHarness(
     };
     call.onSessionOpen?.(ref);
   };
+  // Each turn's first user entry is its prompt. A later one is a tell the program read.
+  let prompted = false;
   const events: StepEvents = {
     session: open,
     history: (entry) => {
-      if (entry.role === "user") return;
+      if (entry.role === "user") {
+        if (prompted) activity?.({ kind: "tell", text: entry.text });
+        prompted = true;
+        return;
+      }
       history.push(toHistory(entry));
       activity?.({ kind: ACTIVITY_KINDS[entry.kind], ...(entry.toolName === undefined ? {} : { tool: entry.toolName }), text: entry.text });
     },
+    ...(board ? { steer: (send) => (send ? board.board.open(board.call, send) : board.board.close(board.call)) } : {}),
   };
   const once = async (turn: Step): Promise<StepResult> => {
+    prompted = false;
     try {
       const result = await adapter.run(turn, events);
       count(result.usage, turn.resume !== undefined);
@@ -363,6 +377,8 @@ async function runOnHarness(
   } catch (error) {
     throw mapFailure(error, harness, label, call.signal);
   } finally {
+    // The adapter closes the seam at the end of each turn. A turn that threw may not have.
+    if (board) board.board.close(board.call);
     if (spent) {
       const usage: AgentUsage = { input: spent.input, output: spent.output, cacheRead: spent.cacheRead, cacheWrite: spent.cacheWrite, total: spent.total, cost: cost ?? 0 };
       call.onUsage?.(usage);
