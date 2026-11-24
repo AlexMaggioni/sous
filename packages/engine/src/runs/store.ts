@@ -51,6 +51,11 @@ export function tellRequestFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.tell`);
 }
 
+/** The note `sous resume --note` gave the next worker, until that worker takes it. */
+export function noteFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.note`);
+}
+
 /** What the run's steps did, one JSON line per entry. Only the worker appends to it. */
 export function activityFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.activity.jsonl`);
@@ -190,11 +195,11 @@ export function removeEngineRun(paths: HomePaths, runId: string): boolean {
   }
 }
 
-/** Delete a run's record, workflow snapshot, step stop requests and logs. removeEngineRun deletes the engine's files. */
+/** Delete a run's record, workflow snapshot, step stop, tell and note requests, and logs. removeEngineRun deletes the engine's files. */
 export function removeRunFiles(paths: HomePaths, record: RunRecord): void {
   // The engine keeps its own copy of the log, in a folder named after where the run worked.
   const engineLogs = workflowProjectPaths(record.cwd, { persistenceRoot: paths.runs });
-  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), tellRequestFile(paths, record.runId), activityFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
+  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), tellRequestFile(paths, record.runId), noteFile(paths, record.runId), activityFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
   for (const file of files) {
     try {
       unlinkSync(file);

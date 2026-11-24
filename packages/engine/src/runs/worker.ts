@@ -18,7 +18,7 @@ import { approvedLookup } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 import { authorAnsweredBy } from "./consent.js";
 import { Refusal } from "./refusal.js";
-import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type RunRecord, type TellOutcome } from "./records.js";
+import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeNote, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type RunRecord, type TellOutcome } from "./records.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
@@ -187,6 +187,9 @@ async function runOnAccounts(
   // A step stop the last worker never took names a step of that worker, not this one.
   takeStepStops(paths, runId);
   takeTells(paths, runId);
+  // A resume's note goes to the steps of this go only.
+  const note = mode === "resume" ? takeNote(paths, runId) : undefined;
+  if (note) log(`${stamp()} note       for ${note.step ? note.step.name : "the first agent call"}`);
 
   // The environment with the run's accounts on it, for code steps and the agent lookup.
   const base = envFor("codex", accounts.codex, envFor("claude", accounts.claude, process.env));
@@ -226,6 +229,7 @@ async function runOnAccounts(
     },
     onActivity,
     steering,
+    ...(note ? { note: { text: note.text, ...(note.step ? { step: note.step.label, scope: note.step.scope } : {}) } } : {}),
   });
   // A run keeps the workflows as they were when it started. A resume takes the edited ones only
   // after `sous resume --latest`.

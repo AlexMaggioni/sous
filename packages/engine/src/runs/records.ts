@@ -14,7 +14,7 @@ import type { PlaceNotes } from "../places/places.js";
 import type { By, Through } from "./actions.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
-import { activityFile, recordFile, recordFiles, snapshotFile, stopRequestFile, tellRequestFile } from "./store.js";
+import { activityFile, noteFile, recordFile, recordFiles, snapshotFile, stopRequestFile, tellRequestFile } from "./store.js";
 import { Refusal } from "./refusal.js";
 
 export interface RunRecord {
@@ -234,6 +234,25 @@ export const TELL_RECEIPTS: Record<TellOutcome, string> = {
 /** The tells sent since the last take, as takeStepStops takes the stops. */
 export function takeTells(paths: HomePaths, runId: string): TellRequest[] {
   return takeLines(tellRequestFile(paths, runId)).map((line) => JSON.parse(line) as TellRequest);
+}
+
+/** A note `sous resume --note` gives the resumed run: its text, and the step it is for, by its
+ *  name in the log, its run or nested run and its label there. Without a step it goes to the first
+ *  agent call that runs. */
+export interface NoteRequest {
+  text: string;
+  step?: { name: string; scope: string; label: string };
+}
+
+/** Leave a note for the next worker of the run. The latest note wins. */
+export function requestNote(paths: HomePaths, runId: string, note: NoteRequest): void {
+  appendFileSync(noteFile(paths, runId), `${JSON.stringify(note)}\n`);
+}
+
+/** The note left for this worker, if any. It moves aside before the read, as the tells do. */
+export function takeNote(paths: HomePaths, runId: string): NoteRequest | undefined {
+  const last = takeLines(noteFile(paths, runId)).at(-1);
+  return last === undefined ? undefined : (JSON.parse(last) as NoteRequest);
 }
 
 /** One saved activity entry: its number in the run's file, when it happened, its step and what it says. */

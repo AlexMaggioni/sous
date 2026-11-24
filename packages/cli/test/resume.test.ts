@@ -628,7 +628,7 @@ describe("piece 13: sous resume --note", () => {
     }
   });
 
-  it("--step naming a finished step resumes the run with a note that the step won't run again, and no call gets the note", async () => {
+  it("--step naming a finished step resumes the run with a note that the step already finished and gets the note only if called again, and no call gets the note", async () => {
     const { paths, runId, fakes, ran } = await pausedOnFake("abc", "Do B");
     const before = noteActions(paths).length;
     const printed = await sous(paths, ["resume", runId, "--note", NOTE, "--step", "a", "--json"]);
@@ -637,8 +637,8 @@ describe("piece 13: sous resume --note", () => {
     await resumedEnd(paths, runId);
     assert.ok(Array.isArray(reply.notes), printed.out);
     assert.ok(
-      (reply.notes as string[]).some((note) => /["'`]a["'`]|step a\b/.test(note) && /again/.test(note)),
-      `a note names step a and says it won't run again: ${JSON.stringify(reply.notes)}`,
+      (reply.notes as string[]).some((note) => /["'`]a["'`]|step a\b/.test(note) && /already finished/.test(note) && /only if the workflow calls .* again/.test(note)),
+      `a note names step a, says it already finished, and says the note reaches it only if the workflow calls it again: ${JSON.stringify(reply.notes)}`,
     );
     assert.equal(readState(paths, runId)?.status, "completed");
     const live = fakes.prompts().slice(ran);
@@ -647,6 +647,37 @@ describe("piece 13: sous resume --note", () => {
     const added = noteActions(paths).slice(before).filter((line) => line.act === "resume");
     assert.equal(added.length, 1, `one resume line: ${JSON.stringify(added)}`);
     assert.deepEqual({ text: added[0]!.text, step: added[0]!.step }, { text: NOTE, step: "a" });
+  });
+
+  it("resume --note on a run that runs already loses no note: a note and next give the sous tell call, which runs as given", async () => {
+    noteFakes([{ match: "Do A", tool: "echo working", hold: "go", answer: "Done." }]);
+    const gate = join(dirname(process.env.FAKE_LOG!), "go");
+    const { paths, projectDir } = testHome(NOTE_WORKFLOWS, { claudePath: join(NOTE_FAKES, "claude"), codexPath: join(NOTE_FAKES, "codex"), retries: 0 });
+    const run = await sous(paths, ["run", "abc", "--json", "--project", projectDir]);
+    assert.equal(run.code, 0, run.out);
+    const runId = printedJson(run).runId as string;
+    try {
+      await untilHolds(async () => (await stepActivity(paths, runId, "a").catch(() => [])).some((line) => line.kind === "tool"), "step a to run its tool call");
+      const before = noteActions(paths).length;
+      const printed = await sous(paths, ["resume", runId, "--note", NOTE, "--json"]);
+      assert.equal(printed.code, 0, printed.out);
+      const reply = printedJson(printed);
+      assert.equal(reply.status, "running", printed.out);
+      const tell = `sous tell ${runId} --step a 'Use the v2 API.' --json`;
+      assert.ok((reply.notes as string[]).some((note) => note.includes(tell)), `a note gives ${tell}: ${JSON.stringify(reply.notes)}`);
+      assert.equal(reply.next?.[0]?.call, tell, printed.out);
+      assert.equal(callProblem(tell), undefined, callProblem(tell));
+      assert.equal(noteActions(paths).length, before, "a resume that did not resume adds no line");
+
+      const told = await sous(paths, words(tell).slice(1));
+      assert.equal(told.code, 0, `${tell} runs as given:\n${told.out}`);
+      // The tell reached the worker. Whether the fake reads it in this turn is the tell tests' matter.
+      assert.equal(printedJson(told).told, true, told.out);
+    } finally {
+      writeFileSync(gate, "");
+      await resumedEnd(paths, runId);
+    }
+    assert.equal(readState(paths, runId)?.status, "completed");
   });
 
   it("sous guide pauses names resume --note and --step", async () => {

@@ -48,6 +48,21 @@ sous rerun <run> --json
 `rerun` starts the same workflow with the same inputs, and pays for every step again. Ask the
 person first. `--reuse` keeps the results of the steps whose text did not change.
 
+## Resume with a note
+
+```sh
+sous resume <run> --note "Use the v2 API." --json
+sous resume <run> --note "Use the v2 API." --step <step> --json
+```
+
+`--note` adds the message to the prompt of the first agent call that runs. `--step` gives it to
+that step's first call instead, by its label or its name in `sous log`, such as `"sub: impl"`.
+A step the run never had exits 65 with `no_such_step`, and the run stays paused. When the step
+already finished, a note says so: the message reaches it only if the workflow calls it again.
+The step's activity in `sous step` shows a `note` line when the call gets it.
+
+A run that runs already does not resume. Its reply gives the `sous tell` call for the note.
+
 ## After an edit to the workflow
 
 A run keeps the workflow as it was when it started. After an edit, `sous resume` exits 64 and

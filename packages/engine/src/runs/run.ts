@@ -13,7 +13,7 @@ import type { HomePaths, Place } from "./home.js";
 import { decisionOf, listQuestions, questionView, readQuestion, removeRunQuestions, reply, triedOf, type Misfit, type Question, type QuestionView, type Reply } from "./inbox.js";
 import { answerCalls, letAgentAnswerBy, mayAnswer } from "./consent.js";
 import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
-import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestStepStop, scopePrefix, updateRecord, type RunRecord } from "./records.js";
+import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestNote, requestStepStop, scopePrefix, updateRecord, type NoteRequest, type RunRecord } from "./records.js";
 import { olderSave } from "../older-save.js";
 import { readWorkflowScript } from "../workflows/script.js";
 import { resolveWorkflow } from "../workflows/dir.js";
@@ -567,14 +567,15 @@ export type ResumeOutcome =
   | { wrongState: ResumeWrongState; view: RunView; message: string }
   | { mustChoose: string[]; message: string };
 
-export interface ResumeOptions { choice?: "latest" | "same"; letAgentAnswer?: { command: string }; tell?: Tell }
+export interface ResumeOptions { choice?: "latest" | "same"; letAgentAnswer?: { command: string }; tell?: Tell; note?: NoteRequest }
 
 /**
  * Resume a run in a new worker. A workflow edited since the run started reaches it only by
  * choice: "latest" takes the edits, and "same" goes on with the version it started with. With
  * no choice, an edit makes the caller choose. A run an older sous saved is refused. With
  * `letAgentAnswer`, the person lets agents answer the run's people questions; `command` is the
- * resume the person types, for needs_person. `tell` sends that consent's notice.
+ * resume the person types, for needs_person. `tell` sends that consent's notice. A `note`, which
+ * resumeWithNote checks, waits for the worker, and the resume line in events.jsonl holds it.
  */
 export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who: Who, options: ResumeOptions = {}): ResumeOutcome {
   const { choice, letAgentAnswer } = options;
@@ -607,8 +608,10 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
   if (latest) needApproval(paths, record.projectDir, latest, who);
   const latestHash = latest ? workflowHash(latest.script) : undefined;
   if (choice === "latest" || consent) updateRecord(paths, record.runId, { ...(choice === "latest" ? { resumeLatest: true, latestHash } : {}), ...(consent ? { letAgentAnswer: consent } : {}) });
+  const { note } = options;
+  if (note) requestNote(paths, record.runId, note);
   launch(paths, record.runId, "resume");
-  recordAction(paths, { act: "resume", ...who, runId: record.runId });
+  recordAction(paths, { act: "resume", ...who, runId: record.runId, ...(note ? { text: note.text, ...(note.step ? { step: note.step.name } : {}) } : {}) });
   if (consent) recordAndTell(paths, { act: "let-agent-answer", ...who, runId: record.runId, workflow: record.workflow }, options.tell);
   return { resumed: record };
 }
