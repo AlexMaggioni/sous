@@ -14,6 +14,7 @@ import { listQuestions, readQuestion, removeRunQuestions, reply, type Misfit, ty
 import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
 import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestStepStop, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { olderSave } from "../older-save.js";
+import { readWorkflowScript } from "../workflows/script.js";
 import { Refusal } from "./refusal.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
 import { logFile, readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
@@ -40,6 +41,9 @@ export interface RunView extends Verdict {
   questions: RunQuestion[];
   /** Unset while the run has no state. */
   saved?: SavedFacts;
+  /** When the state last changed: the end, else the pause, else the last save. Unset while the
+   *  run has no state. */
+  changedAt?: string;
 }
 
 type Step = PersistedRunState["agents"][number];
@@ -58,9 +62,77 @@ export interface RunDetail extends RunView {
   tokens?: number;
   durationMs?: number;
   /** The saved state with the steps above, without the script and the journals. sous show
-   *  --json prints it. */
+   *  --full --json prints it. */
   engineState?: Omit<PersistedRunState, "script" | "journal" | "nestedJournal" | "calls">;
+  failure?: Failure;
 }
+
+/** The step that failed and what it said, on a failed run or a run paused at a failed step. */
+export interface Failure {
+  step?: string;
+  message: string;
+}
+
+/** A question as a reply shows it. Who may answer it comes in piece 8; today only people do. */
+export interface QuestionView {
+  id: string;
+  prompt: string;
+  kind: RunQuestion["kind"];
+  choices?: string[];
+  breakpoint: boolean;
+  askedAt: string;
+  answeredBy: "people";
+}
+
+/** The short view of a run, what sous show --json prints. */
+export interface ShortRun {
+  runId: string;
+  workflow: string;
+  status: Verdict["status"];
+  word: string;
+  cwd: string;
+  branch?: string;
+  worktree?: string;
+  startedAt: string;
+  seconds?: number;
+  tokens: number;
+  steps: Array<{ label: string; status: string; seconds?: number; tokens?: number }>;
+  questions: QuestionView[];
+  failure?: Failure;
+  /** When the service resumes a run paused at a usage limit. */
+  resumesAt?: string;
+}
+
+/** What a run that starts may cost, from the workflow's text and its last runs. */
+export interface RunPreview {
+  /** The ask(), breakpoint() and checkpoint() calls in the workflow's text. */
+  asks: number;
+  /** The workflow's last completed runs, at most five: how many, and their mean seconds and tokens. */
+  lastRuns: { count: number; seconds: number; tokens: number };
+}
+
+/** How many of the workflow's last runs the preview reads, and how many completed ones it counts. */
+const PREVIEW_READS = 20;
+const PREVIEW_RUNS = 5;
+
+/** The failure of a failed run or a run paused at a failed step: the last step in error, when
+ *  the run's reason is that step's error. Otherwise only the run's reason. */
+function failureOf(state: PersistedRunState | undefined, steps: readonly Step[]): Failure | undefined {
+  if (state?.status !== "failed" && !(state?.status === "paused" && state.pauseReason === "step_failed")) return undefined;
+  const step = [...steps].reverse().find((agent) => agent.status === "error");
+  const { reason } = state;
+  const ours = step?.error !== undefined && (reason === undefined || reason.includes(step.error) || step.error.includes(reason) || reason.includes(`"${step.label}"`));
+  if (ours) return { step: step.label, message: step.error! };
+  return { message: reason ?? step?.error ?? "the run failed" };
+}
+
+/** A question as a reply shows it. */
+function questionView(question: RunQuestion): QuestionView {
+  const { id, prompt, kind, choices, breakpoint, askedAt } = question;
+  return { id, prompt, kind, ...(choices ? { choices } : {}), breakpoint, askedAt, answeredBy: "people" };
+}
+
+const secondsOf = (ms: number) => Math.round(ms / 1000);
 
 /** The state as sous shows it, given what the rule says of it. Nothing is written. */
 function shownState(record: RunRecord, state: PersistedRunState | undefined, verdict: Verdict): PersistedRunState | undefined {
@@ -77,10 +149,10 @@ function savedFacts(shown: PersistedRunState): SavedFacts {
 function viewOf(record: RunRecord, state: PersistedRunState | undefined, questions: RunQuestion[], alive = processAlive(record.pid)): { view: RunView; shown: PersistedRunState | undefined } {
   const verdict = judge({ state, alive, openQuestions: alive ? questions.length : 0, older: state !== undefined && olderSave(state) !== undefined });
   const shown = shownState(record, state, verdict);
-  return { view: { runId: record.runId, record, ...verdict, questions, ...(shown ? { saved: savedFacts(shown) } : {}) }, shown };
+  return { view: { runId: record.runId, record, ...verdict, questions, ...(shown ? { saved: savedFacts(shown), changedAt: shown.completedAt ?? shown.pausedAt ?? shown.updatedAt } : {}) }, shown };
 }
 
-/** The run with this id or a unique start of it. The call `sous status --json` arrives in piece 4. */
+/** The run with this id or a unique start of it. */
 function needRecord(paths: HomePaths, id: string): RunRecord {
   const record = findRecord(paths, id);
   if (!record) throw new Refusal("no_such_run", `no run "${id}". sous list shows the runs.`, "Give the id of a run, or a unique start of one.", "sous status --json");
@@ -133,7 +205,69 @@ export function runDetail(paths: HomePaths, id: string): RunDetail {
     ...(shown?.tokenUsage ? { tokens: shown.tokenUsage.total } : {}),
     ...(shown?.durationMs === undefined ? {} : { durationMs: shown.durationMs }),
     ...(engineState ? { engineState } : {}),
+    ...withFailure(failureOf(shown, steps)),
   };
+}
+
+const withFailure = (failure: Failure | undefined) => (failure ? { failure } : {});
+
+/** The short view of a run, from its detail. A run a worker runs counts its seconds to `now`, a
+ *  paused run to its pause, and an ended run with no saved duration to its last change. */
+export function shortRun(run: RunDetail, now: Date): ShortRun {
+  const { record } = run;
+  const seconds = secondsOf(run.durationMs ?? spanOf(run, now));
+  const steps = run.steps.map((step) => {
+    const tokens = step.tokens ?? step.usage?.total;
+    return {
+      label: step.label,
+      status: step.status,
+      ...(step.startedAt && step.endedAt ? { seconds: secondsOf(Date.parse(step.endedAt) - Date.parse(step.startedAt)) } : {}),
+      ...(tokens ? { tokens } : {}),
+    };
+  });
+  return {
+    runId: record.runId,
+    workflow: record.workflow,
+    status: run.status,
+    word: run.word,
+    cwd: record.cwd,
+    ...placeOf(record),
+    startedAt: record.createdAt,
+    ...(Number.isNaN(seconds) ? {} : { seconds }),
+    tokens: run.tokens ?? 0,
+    steps,
+    questions: run.questions.map(questionView),
+    ...withFailure(run.failure),
+    ...(run.pause?.resumeAt ? { resumesAt: run.pause.resumeAt.toISOString() } : {}),
+  };
+}
+
+/** How long a run with no saved duration ran, in ms: to now while a worker runs it, else to its
+ *  pause or its last change. NaN when it has no state to tell. */
+function spanOf(run: RunDetail, now: Date): number {
+  const end = run.unfinished && !run.pause && run.status !== "not started" ? now.toISOString() : (run.engineState?.pausedAt ?? run.changedAt);
+  return end === undefined ? Number.NaN : Date.parse(end) - Date.parse(run.record.createdAt);
+}
+
+/** The branch and worktree a run works in, when it has them. */
+function placeOf(record: RunRecord): { branch?: string; worktree?: string } {
+  return { ...(record.branch ? { branch: record.branch } : {}), ...(record.worktree ? { worktree: record.worktree } : {}) };
+}
+
+/** What a run that starts may ask and cost: the asks in its workflow's text, and its workflow's
+ *  last completed runs, by the workflow's file. */
+export function runPreview(paths: HomePaths, record: RunRecord): RunPreview {
+  let asks = 0;
+  try {
+    asks = readWorkflowScript(readFileSync(record.file, "utf8")).refs.asks;
+  } catch {
+    // The worker reports a workflow that does not read. The preview counts no ask.
+  }
+  const earlier = listRecords(paths).filter((other) => other.file === record.file && other.runId !== record.runId).slice(0, PREVIEW_READS);
+  const states = readStates(paths, earlier.map((other) => other.runId));
+  const done = earlier.flatMap((other) => (states.get(other.runId)?.status === "completed" ? [states.get(other.runId)!] : [])).slice(0, PREVIEW_RUNS);
+  const mean = (values: number[]) => (values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0);
+  return { asks, lastRuns: { count: done.length, seconds: mean(done.map((state) => (state.durationMs ?? 0) / 1000)), tokens: mean(done.map((state) => state.tokenUsage?.total ?? 0)) } };
 }
 
 /** The open questions, oldest first: every run's, or one run's. */
@@ -199,20 +333,44 @@ function liveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState
   return { ...(state ? { steps: agents } : {}), running: named() };
 }
 
-/** What `sous wait --json` prints. Its status is the saved one, not the rule's word. */
-function runSummary(record: RunRecord, state: PersistedRunState | undefined, questions: RunQuestion[]): Record<string, unknown> {
+/** What `sous wait --json` prints. Its status is the rule's, so a run at a question "asks". A
+ *  completed run has its result twice: as today, and under review with where it worked. */
+function runSummary(record: RunRecord, state: PersistedRunState | undefined, view: RunView): WaitSummary {
+  const { questions } = view;
+  const done = state?.status === "completed";
   return {
     runId: record.runId,
     workflow: record.workflow,
-    status: state?.status ?? (processAlive(record.pid) ? "running" : "pending"),
+    status: view.status,
     ...(state?.pauseReason ? { pauseReason: state.pauseReason } : {}),
     ...(state?.resetHint ? { resetHint: state.resetHint } : {}),
-    ...(state?.reason && state.status !== "completed" ? { reason: state.reason } : {}),
-    ...(questions.length ? { questions: questions.map((q) => ({ id: q.id, prompt: q.prompt, kind: q.kind, ...(q.choices ? { choices: q.choices } : {}), breakpoint: q.breakpoint })) } : {}),
+    ...(state?.reason && !done ? { reason: state.reason } : {}),
+    ...(questions.length ? { questions: questions.map(questionView) } : {}),
     cwd: record.cwd,
     ...(record.branch ? { branch: record.branch } : {}),
-    ...(state?.status === "completed" ? { result: state.result } : {}),
+    ...(done ? { result: state.result, review: { ...placeOf(record), result: state.result } } : {}),
+    ...withFailure(failureOf(state, state?.agents ?? [])),
+    ...(view.pause?.resumeAt ? { resumesAt: view.pause.resumeAt.toISOString() } : {}),
   };
+}
+
+/** What `sous wait --json` prints. */
+export interface WaitSummary {
+  runId: string;
+  workflow: string;
+  status: Verdict["status"];
+  pauseReason?: string;
+  resetHint?: string;
+  reason?: string;
+  questions?: QuestionView[];
+  cwd: string;
+  branch?: string;
+  result?: unknown;
+  /** Set once the run completed: where it worked and what it returned. */
+  review?: { branch?: string; worktree?: string; result: unknown };
+  failure?: Failure;
+  /** When the service resumes a run paused at a usage limit. */
+  resumesAt?: string;
 }
 
 /** A piece of a run's log. */
@@ -253,6 +411,8 @@ function readLogFrom(file: string, from: number, write: (text: string) => void):
 }
 
 export interface WaitHooks {
+  /** The time, in ms since the epoch, after which the wait ends while the run goes on. */
+  until?: number;
   /** Gets the log as it grows. */
   log?: (text: string) => void;
   /** Gets the questions the run asks, each once, and the wait goes on. Without it, the wait ends at them. */
@@ -262,9 +422,11 @@ export interface WaitHooks {
 export interface WaitEnd {
   /** The rule's exit code for how the wait ended. */
   code: number;
-  summary: Record<string, unknown>;
+  summary: WaitSummary;
   /** Set when the wait ended at questions. */
   questions?: RunQuestion[];
+  /** Set when the wait reached `until` while the run went on. */
+  timedOut?: true;
 }
 
 /** Wait for a run to end, or to ask something the hooks do not answer. */
@@ -284,19 +446,24 @@ export async function waitForRun(paths: HomePaths, runId: string, hooks: WaitHoo
       follow();
       const { view, shown } = viewOf(record, readState(paths, runId), listQuestions(paths, runId), false);
       // The rule gives every run with a gone worker an exit code.
-      return { code: view.exit!, summary: runSummary(record, shown, view.questions) };
+      return { code: view.exit!, summary: runSummary(record, shown, view) };
     }
     const open = listQuestions(paths, runId).filter((q) => !asked.has(q.id));
     if (open.length) {
       if (!hooks.asks) {
         // Nothing was asked here, so these are all the run's questions.
         const { view, shown } = viewOf(record, readState(paths, runId), open, true);
-        return { code: view.exit!, summary: runSummary(record, shown, open), questions: open };
+        return { code: view.exit!, summary: runSummary(record, shown, view), questions: open };
       }
       for (const question of open) asked.add(question.id);
       await hooks.asks(open, record);
     }
-    await new Promise((r) => setTimeout(r, 400));
+    const left = hooks.until === undefined ? 400 : hooks.until - Date.now();
+    if (left <= 0) {
+      const { view, shown } = viewOf(record, readState(paths, runId), [], true);
+      return { code: 0, summary: runSummary(record, shown, view), timedOut: true };
+    }
+    await new Promise((r) => setTimeout(r, Math.min(400, left)));
   }
 }
 

@@ -1,9 +1,10 @@
 // sous inbox, answer, approve and send-back: the questions runs ask.
 
-import { answerQuestion, findQuestion, hint, runQuestions, type HomePaths, type Reply as Typed, type RunQuestion } from "@sous/engine";
+import { answerCommand, answerQuestion, findQuestion, hint, runQuestions, type HomePaths, type Reply as Typed, type RunQuestion } from "@sous/engine";
 import { Usage, type Parsed } from "../args.js";
 import { reply, type Reply } from "../reply.js";
-import { age, needRun, stopReply, waitNext } from "./common.js";
+import { age, needRun, stopReply } from "./common.js";
+import { resumeNext, waitNext } from "./next.js";
 import type { Ctx } from "./index.js";
 
 function needQuestion(paths: HomePaths, id: string | undefined): RunQuestion {
@@ -36,7 +37,7 @@ export function cmdAnswer(args: Parsed, ctx: Ctx, via: Exclude<Typed["via"], "pr
   const answer = answerQuestion(paths, question, { via, text, valueJson });
   if ("usage" in answer) {
     if (!answer.choices) throw new Usage(answer.usage);
-    throw new Usage(answer.usage, "not_a_choice", "Answer with one of the choices.", `sous answer ${id} <${answer.choices.join("|")}>`);
+    throw new Usage(answer.usage, "not_a_choice", "Answer with one of the choices.", answerCommand(question, "answer", `<${answer.choices.join("|")}>`));
   }
   if ("stopped" in answer) return stopReply(runId, answer.stopped, { question: id, runId, answered: true, outcome: answer.stopped.outcome });
   const notes: string[] = [];
@@ -44,7 +45,7 @@ export function cmdAnswer(args: Parsed, ctx: Ctx, via: Exclude<Typed["via"], "pr
   if (answer.notJson) notes.push("The text is not JSON, so it went as text.");
   const next = answer.running
     ? [waitNext(runId, "waits for the run, which goes on with the answer")]
-    : [{ call: `sous resume ${runId} --json`, does: "resumes the run, which uses the answer" }];
+    : [resumeNext(runId, "resumes the run, which uses the answer")];
   return reply(
     { question: id, runId, answered: true, running: answer.running },
     { text: [`answered ${id}${answer.running ? "" : `. The run is not running: sous resume ${runId} uses the answer.`}`], notes, next },

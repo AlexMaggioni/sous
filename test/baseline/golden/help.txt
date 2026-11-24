@@ -9,10 +9,11 @@ sous runs saved workflows in the background.
         --concurrency N                 steps at once in this run
         --wait                          follow the run until it ends; in a terminal, answer here
         --json                          machine-readable output
-  sous wait <run> [--json]              wait for a run to end, pause or ask (exit 0 done, 1 failed,
-                                        2 paused, 3 stopped, 4 waits for an answer)
+  sous wait <run> [--timeout N] [--json]  wait for a run to end, pause or ask (exit 0 done, 1 failed,
+                                        2 paused, 3 stopped, 4 waits for an answer, 5 timed out)
+  sous status [--since 3d] [--json]     what needs you, what runs, what waits and what finished
   sous list [--all]                     runs, newest first
-  sous show <run>                       one run: status, steps, questions, result
+  sous show <run> [--full]              one run: status, steps, questions, result
   sous log <run> [-f]                   the run's log
   sous inbox [run]                      questions waiting for you
   sous answer <question> <text>         answer a question (a run id works when it asks one thing)

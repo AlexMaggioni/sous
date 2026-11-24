@@ -12,7 +12,7 @@ export {
   type Place,
 } from "./runs/home.js";
 export { listRecords, loadRecord, scopePath, type RunRecord } from "./runs/records.js";
-export { hint, type Reply } from "./runs/inbox.js";
+export { answerCalls, answerCommand, hint, type Reply } from "./runs/inbox.js";
 export { Refusal } from "./runs/refusal.js";
 export { cronMatches, nextRun, parseCron } from "./runs/cron.js";
 export { InputProblems, workerProcess, type Launcher } from "./runs/launch.js";
@@ -33,17 +33,21 @@ export {
   rerunRun,
   resumeRun,
   runDetail,
+  runPreview,
   runQuestions,
+  shortRun,
   startRun,
   stopRun,
   stopStep,
   useAccount,
   waitForRun,
   waitingRuns,
+  type Failure,
   type RunDetail,
   type RunQuestion,
   type RunView,
 } from "./runs/run.js";
+export { homeStatus, sinceWindow, statusLine, type HomeStatus } from "./runs/status.js";
 export { isPlace } from "./places/places.js";
 
 // ── Saved workflows: the folders that hold them, the check and the dry run ──

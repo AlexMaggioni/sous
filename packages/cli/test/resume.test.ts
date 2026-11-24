@@ -127,9 +127,9 @@ async function resumed(options: {
   return { first, live: agent.since(first.length), done, paths, runId: record.runId };
 }
 
-/** The engine's state of the run, as `sous show --json` prints it. */
+/** The engine's state of the run, as `sous show --full --json` prints it. */
 async function shownState(paths: HomePaths, runId: string): Promise<PersistedRunState> {
-  const shown = await sous(paths, ["show", runId, "--json"]);
+  const shown = await sous(paths, ["show", runId, "--full", "--json"]);
   assert.equal(shown.code, 0, shown.out);
   return (JSON.parse(shown.out) as { state: PersistedRunState }).state;
 }

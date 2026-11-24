@@ -268,6 +268,20 @@ function meaningOf(question: Question, { via, text, valueJson }: Reply): { value
   return notJson ? { value, notJson: true } : { value };
 }
 
+/** A sous command that answers a question: `answer` with a value, `approve`, or `send-back` with
+ *  a note. Every answer call sous prints is built here. */
+export function answerCommand(question: Pick<Question, "id">, verb: "answer" | "approve" | "send-back", value?: string, json = false): string {
+  return `sous ${verb} ${question.id}${value === undefined ? "" : ` ${value}`}${json ? " --json" : ""}`;
+}
+
+/** The --json calls an agent makes to answer a question. A breakpoint has two: approve and send back. */
+export function answerCalls(question: Pick<Question, "id" | "kind" | "choices" | "breakpoint">): string[] {
+  if (question.breakpoint) return [answerCommand(question, "approve", undefined, true), answerCommand(question, "send-back", '"<note>"', true)];
+  if (question.kind === "confirm") return [answerCommand(question, "answer", "<yes|no>", true)];
+  if (question.kind === "select") return [answerCommand(question, "answer", `<${(question.choices ?? []).join("|")}>`, true)];
+  return [answerCommand(question, "answer", '"<answer>"', true)];
+}
+
 /**
  * How to answer a question. "sous" gives the commands that sous inbox, show and wait print.
  * "log" gives the commands the run's log prints, which leave out yes or no and the choices.
@@ -280,11 +294,11 @@ export function hint(question: Question, where: "sous" | "log" | "prompt" = "sou
     if (question.kind === "select") return (question.choices ?? []).join(" / ");
     return "your answer";
   }
-  if (question.breakpoint) return `sous approve ${question.id}  |  sous send-back ${question.id} "note"  |  sous stop ${question.runId}`;
-  if (where === "log") return `sous answer ${question.id} "..."`;
-  if (question.kind === "confirm") return `sous answer ${question.id} yes|no`;
-  if (question.kind === "select") return `sous answer ${question.id} <one of: ${(question.choices ?? []).join(", ")}>`;
-  return `sous answer ${question.id} "..."`;
+  if (question.breakpoint) return `${answerCommand(question, "approve")}  |  ${answerCommand(question, "send-back", '"note"')}  |  sous stop ${question.runId}`;
+  if (where === "log") return answerCommand(question, "answer", '"..."');
+  if (question.kind === "confirm") return answerCommand(question, "answer", "yes|no");
+  if (question.kind === "select") return answerCommand(question, "answer", `<one of: ${(question.choices ?? []).join(", ")}>`);
+  return answerCommand(question, "answer", '"..."');
 }
 
 /** The value the text holds as JSON, or ok false when it is not JSON. */

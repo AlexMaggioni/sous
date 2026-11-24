@@ -5,8 +5,24 @@ exit 0
   "workflow": "agent-session",
   "cwd": "<tmp>/scenario-agent-session/sous-home/scratch/<run-1>",
   "log": "<tmp>/scenario-agent-session/sous-home/logs/<run-1>.log",
+  "status": "starting",
+  "asks": 0,
+  "lastRuns": {
+    "count": 0,
+    "seconds": "<seconds>",
+    "tokens": 0
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous wait <run-1> --json
@@ -26,8 +42,25 @@ exit 0
     },
     "more": "Fake claude answer."
   },
+  "review": {
+    "result": {
+      "plan": {
+        "steps": [
+          "fake-steps-1"
+        ],
+        "size": "small",
+        "done": true
+      },
+      "more": "Fake claude answer."
+    }
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous show <run-1>
@@ -56,9 +89,32 @@ result
   "more": "Fake claude answer."
 }
 
-$ sous show <run-1> --json
+$ sous show <run-1> --full --json
 exit 0
 {
+  "runId": "<run-1>",
+  "workflow": "agent-session",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-agent-session/sous-home/scratch/<run-1>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 300,
+  "steps": [
+    {
+      "label": "planner",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "planner again",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-1>",
     "workflow": "agent-session",
@@ -254,7 +310,6 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": [],
   "notes": [],
   "next": []
 }

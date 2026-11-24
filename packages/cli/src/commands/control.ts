@@ -4,7 +4,8 @@
 import { discardRun, gcRuns, loadConfig, pauseRun, pruneRuns, readRun, stopRun, stopStep, type RunView } from "@sous/engine";
 import { str, Usage, type Parsed } from "../args.js";
 import { reply, type Next, type Reply } from "../reply.js";
-import { needRun, stopReply, waitNext } from "./common.js";
+import { needRun, stopReply } from "./common.js";
+import { rerunNext, resumeNext, waitNext } from "./next.js";
 import type { Ctx } from "./index.js";
 
 /** The states of a run whose worker works. */
@@ -13,9 +14,9 @@ const LIVE = new Set<RunView["status"]>(["starting", "pending", "running", "asks
 /** The call that fits a run a request found in the wrong state: resume a paused run, wait for a
  *  live one, and rerun one that ended or never started. */
 export function stateNext(view: RunView): Next[] {
-  if (view.resume.ok) return [{ call: `sous resume ${view.runId} --json`, does: "goes on with the run" }];
+  if (view.resume.ok) return [resumeNext(view.runId, "goes on with the run")];
   if (LIVE.has(view.status)) return [waitNext(view.runId, "waits for the run")];
-  return [{ call: `sous rerun ${view.runId} --json`, does: "starts the run again" }];
+  return [rerunNext(view.runId, "starts the run again")];
 }
 
 export function cmdStop(args: Parsed, ctx: Ctx): Reply<object> {

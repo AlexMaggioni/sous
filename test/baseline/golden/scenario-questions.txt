@@ -5,8 +5,24 @@ exit 0
   "workflow": "questions",
   "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
   "log": "<tmp>/scenario-questions/sous-home/logs/<run-1>.log",
+  "status": "starting",
+  "asks": 2,
+  "lastRuns": {
+    "count": 0,
+    "seconds": "<seconds>",
+    "tokens": 0
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous wait <run-1> --json
@@ -14,7 +30,7 @@ exit 4
 {
   "runId": "<run-1>",
   "workflow": "questions",
-  "status": "running",
+  "status": "asks",
   "questions": [
     {
       "id": "<run-1>--0",
@@ -24,12 +40,23 @@ exit 4
         "red",
         "blue"
       ],
-      "breakpoint": false
+      "breakpoint": false,
+      "askedAt": "<time>",
+      "answeredBy": "people"
     }
   ],
   "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous answer <run-1>--0 <red|blue> --json",
+      "does": "answers \"Pick a color for the draft\""
+    },
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits again once the answer is in"
+    }
+  ]
 }
 
 $ sous inbox
@@ -47,18 +74,29 @@ exit 4
 {
   "runId": "<run-1>",
   "workflow": "questions",
-  "status": "running",
+  "status": "asks",
   "questions": [
     {
       "id": "<run-1>--2",
       "prompt": "asker asks: Which file should I edit?",
       "kind": "input",
-      "breakpoint": false
+      "breakpoint": false,
+      "askedAt": "<time>",
+      "answeredBy": "people"
     }
   ],
   "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous answer <run-1>--2 \"<answer>\" --json",
+      "does": "answers \"asker asks: Which file should I edit?\""
+    },
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits again once the answer is in"
+    }
+  ]
 }
 
 $ sous inbox <run-1>
@@ -76,18 +114,33 @@ exit 4
 {
   "runId": "<run-1>",
   "workflow": "questions",
-  "status": "running",
+  "status": "asks",
   "questions": [
     {
       "id": "<run-1>--5",
       "prompt": "Breakpoint: Check the draft\n\nDraft: Fake claude answer.\n\nReply approve, stop, or send back with a note.",
       "kind": "input",
-      "breakpoint": true
+      "breakpoint": true,
+      "askedAt": "<time>",
+      "answeredBy": "people"
     }
   ],
   "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous approve <run-1>--5 --json",
+      "does": "approves \"Breakpoint: Check the draft\""
+    },
+    {
+      "call": "sous send-back <run-1>--5 \"<note>\" --json",
+      "does": "sends the run back with a note"
+    },
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits again once the answer is in"
+    }
+  ]
 }
 
 $ sous send-back <run-1> "Make it shorter"
@@ -99,18 +152,33 @@ exit 4
 {
   "runId": "<run-1>",
   "workflow": "questions",
-  "status": "running",
+  "status": "asks",
   "questions": [
     {
       "id": "<run-1>--7",
       "prompt": "Breakpoint: Check the draft\n\nDraft: Fake claude answer.\n\nReply approve, stop, or send back with a note.",
       "kind": "input",
-      "breakpoint": true
+      "breakpoint": true,
+      "askedAt": "<time>",
+      "answeredBy": "people"
     }
   ],
   "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous approve <run-1>--7 --json",
+      "does": "approves \"Breakpoint: Check the draft\""
+    },
+    {
+      "call": "sous send-back <run-1>--7 \"<note>\" --json",
+      "does": "sends the run back with a note"
+    },
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits again once the answer is in"
+    }
+  ]
 }
 
 $ sous approve <run-1>
@@ -129,8 +197,20 @@ exit 0
     "asked": "Fake claude answer.",
     "draft": "Fake claude answer."
   },
+  "review": {
+    "result": {
+      "color": "blue",
+      "asked": "Fake claude answer.",
+      "draft": "Fake claude answer."
+    }
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous show <run-1>
@@ -155,9 +235,44 @@ result
   "draft": "Fake claude answer."
 }
 
-$ sous show <run-1> --json
+$ sous show <run-1> --full --json
 exit 0
 {
+  "runId": "<run-1>",
+  "workflow": "questions",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 600,
+  "steps": [
+    {
+      "label": "asker",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "asker (answer 1)",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "drafter",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "drafter",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-1>",
     "workflow": "questions",
@@ -461,7 +576,6 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": [],
   "notes": [],
   "next": []
 }

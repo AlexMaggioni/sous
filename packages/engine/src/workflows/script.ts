@@ -37,6 +37,8 @@ export interface ScriptRefs {
   scripts: string[];
   /** True when a choose() lets an agent pick any saved workflow. */
   choosesAnyWorkflow: boolean;
+  /** The ask(), breakpoint() and checkpoint() calls the script writes. One in a loop counts once. */
+  asks: number;
 }
 
 /** A name workflow() looks up as a saved workflow. Other text is an inline script. */
@@ -281,6 +283,7 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
   const scripts = new Set<string>();
   const steps: StepRefs[] = [];
   let choosesAnyWorkflow = false;
+  let asks = 0;
   const pending = [ast];
   while (pending.length > 0) {
     const node = pending.pop()!;
@@ -289,6 +292,7 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
       const callee = node.callee.name;
       if (callee === "workflow" && first && SAVED_WORKFLOW_NAME.test(first)) workflows.add(first);
       if (callee === "run" && first) scripts.add(first);
+      if (callee === "ask" || callee === "breakpoint" || callee === "checkpoint") asks++;
       if (callee === "choose") {
         for (const argument of node.arguments as AnyNode[]) {
           const any = argument.type === "ObjectExpression" ? ownProperty(argument, "any") : undefined;
@@ -319,5 +323,5 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
     }
     pushAstChildren(node, pending);
   }
-  return { workflows: [...workflows], models: [...models], steps, scripts: [...scripts], choosesAnyWorkflow };
+  return { workflows: [...workflows], models: [...models], steps, scripts: [...scripts], choosesAnyWorkflow, asks };
 }

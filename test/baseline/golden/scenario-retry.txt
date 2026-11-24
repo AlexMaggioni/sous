@@ -5,8 +5,24 @@ exit 0
   "workflow": "retry",
   "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>",
   "log": "<tmp>/scenario-retry/sous-home/logs/<run-1>.log",
+  "status": "starting",
+  "asks": 0,
+  "lastRuns": {
+    "count": 0,
+    "seconds": "<seconds>",
+    "tokens": 0
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous wait <run-1> --json
@@ -18,8 +34,25 @@ exit 2
   "pauseReason": "step_failed",
   "reason": "step \"no retries\" failed after 1 try: API Error: 500 Overloaded",
   "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>",
+  "failure": {
+    "step": "no retries",
+    "message": "API Error: 500 Overloaded"
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous step <run-1> 'no retries' --json",
+      "does": "shows the step that failed"
+    },
+    {
+      "call": "sous resume <run-1> --json",
+      "does": "resumes the run where it stopped"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous resume <run-1>
@@ -39,8 +72,20 @@ exit 0
     "once": "Fake claude answer.",
     "code": 3
   },
+  "review": {
+    "result": {
+      "again": "Fake claude answer.",
+      "once": "Fake claude answer.",
+      "code": 3
+    }
+  },
   "notes": [],
-  "next": []
+  "next": [
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
 }
 
 $ sous show <run-1>
@@ -64,9 +109,36 @@ result
   "code": 3
 }
 
-$ sous show <run-1> --json
+$ sous show <run-1> --full --json
 exit 0
 {
+  "runId": "<run-1>",
+  "workflow": "retry",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 600,
+  "steps": [
+    {
+      "label": "retried",
+      "status": "done",
+      "seconds": "<seconds>"
+    },
+    {
+      "label": "no retries",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "failing code",
+      "status": "done",
+      "seconds": "<seconds>"
+    }
+  ],
+  "questions": [],
   "record": {
     "runId": "<run-1>",
     "workflow": "retry",
@@ -246,7 +318,6 @@ exit 0
     "completedAt": "<completedAt>",
     "durationMs": "<durationMs>"
   },
-  "questions": [],
   "notes": [],
   "next": []
 }

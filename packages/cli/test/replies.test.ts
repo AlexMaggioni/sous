@@ -485,9 +485,14 @@ describe("the --json replies keep today's fields and gain notes and next", () =>
     const shown = await call(paths, ["show", runId, "--json"]);
     assert.equal(shown.code, 0, shown.stdout + shown.stderr);
     const show = replyOf(shown);
-    assert.equal((show.record as { runId: string }).runId, runId);
-    assert.ok(show.state && typeof show.state === "object", "show keeps the engine state");
     assert.deepEqual(show.questions, []);
+    // The record and the engine state moved to --full in piece 4.
+    const fullShown = await call(paths, ["show", runId, "--full", "--json"]);
+    assert.equal(fullShown.code, 0, fullShown.stdout + fullShown.stderr);
+    const full = replyOf(fullShown);
+    assert.equal((full.record as { runId: string }).runId, runId);
+    assert.ok(full.state && typeof full.state === "object", "show --full keeps the engine state");
+    assert.deepEqual(full.questions, []);
   });
 
   it("sous list puts the runs under runs, each with today's fields", async () => {
