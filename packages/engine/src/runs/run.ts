@@ -711,9 +711,9 @@ export function rerunRun(paths: HomePaths, launch: Launcher, runId: string, requ
 }
 
 /** The answer calls of a question for `who`, the person when not given, as consent.ts builds
- *  them for its root run's record. */
-export function answerCallsFor(paths: HomePaths, question: Question, who?: Who): string[] {
-  return answerCalls(question, who, loadRecord(paths, question.runId));
+ *  them for its root run's record, with one per value when `values` are given. */
+export function answerCallsFor(paths: HomePaths, question: Question, who?: Who, values?: string[]): string[] {
+  return answerCalls(question, who, loadRecord(paths, question.runId), values);
 }
 
 /** An open question by its id, a unique start of it, or the run that asks only it. */

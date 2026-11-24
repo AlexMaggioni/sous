@@ -191,7 +191,7 @@ export class Refusal extends Error {
 | 3 | The run was stopped, as today. |
 | 4 | The run asks a question, as today. |
 | 5 | New: `wait --timeout` ran out. |
-| 64 | Usage: `bad_argument`, `not_a_choice`. |
+| 64 | Usage: `bad_argument`, `not_a_choice`. A `not_a_choice` error's `next` has one call per choice, or yes and no for a confirm. |
 | 65 | Not found: a `Refusal` whose `missing` is true. |
 | 66 | Refused: any other `Refusal`. |
 
@@ -592,7 +592,7 @@ Each piece is one implementer session: a few hundred lines plus tests, `pnpm tes
 
 **Tests first.** `cli/test/replies.test.ts`:
 - `sous show nosuch --json` exits 65 with `error.code` `no_such_run` and `call` `sous status --json`.
-- `sous answer <id> green --json` on a red or blue question exits 64 with `not_a_choice` and the call listing `red|blue`.
+- `sous answer <id> green --json` on a red or blue question exits 64 with `not_a_choice`. Its `next` holds `sous answer <id> red --json`, then `sous answer <id> blue --json`, and its call is the first. Each runs as it is, and an agent's call keeps `--by person` when the refused answer needed it.
 - `sous list --json` has `notes` and `next` arrays.
 - The same error without `--json` prints `change:` and `try:` lines on stderr.
 - A reply of 500 runs stays under 8,000 characters and has a note naming `--all`.
