@@ -14,6 +14,7 @@ import { logFile } from "./store.js";
 import type { Priority } from "./slots.js";
 import { Refusal } from "./refusal.js";
 import { recordAction, type Who } from "./actions.js";
+import { recordAndTell, type Tell } from "./notify.js";
 import { letAgentAnswerBy, mayStart } from "./consent.js";
 
 export interface CreateRunRequest {
@@ -40,6 +41,8 @@ export interface CreateRunRequest {
   command?: string;
   /** --let-agent-answer: agents may answer the run's people questions. Only the person sets it. */
   letAgentAnswer?: boolean;
+  /** How the notice of a --let-agent-answer passed on by an agent reaches the person. Default: a macOS notice. */
+  tell?: Tell;
 }
 
 export class InputProblems extends Error {
@@ -61,7 +64,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   }
   if (problems.length) throw new InputProblems(resolved.name, problems);
   mayStart(resolved, request.who, request.command ?? `sous run ${resolved.name}`);
-  const letAgentAnswer = request.letAgentAnswer ? letAgentAnswerBy(request.who, request.command ?? `sous run ${resolved.name} --let-agent-answer`) : undefined;
+  const letAgentAnswer = request.letAgentAnswer ? letAgentAnswerBy(request.who, request.command ?? `sous run ${resolved.name} --let-agent-answer`, new Date()) : undefined;
   const config = loadConfig(paths);
   const runId = generateRunId();
   const reuse = request.reuseFrom;
@@ -97,7 +100,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   saveRecord(paths, record);
   rememberProject(paths, request.projectDir);
   if (record.origin !== "check") recordAction(paths, { act: request.rerunOf ? "rerun" : "run", ...request.who, runId, workflow: resolved.name });
-  if (letAgentAnswer && record.origin !== "check") recordAction(paths, { act: "let-agent-answer", ...request.who, runId, workflow: resolved.name });
+  if (letAgentAnswer && record.origin !== "check") recordAndTell(paths, { act: "let-agent-answer", ...request.who, runId, workflow: resolved.name }, request.tell);
   return record;
 }
 

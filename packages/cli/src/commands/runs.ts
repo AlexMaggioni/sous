@@ -53,7 +53,7 @@ export async function cmdResume(args: Parsed, ctx: Ctx): Promise<Reply<object>> 
     throw new Usage("--latest or --same, not both", "bad_argument", "Keep one: --latest takes the new version, --same goes on with the version the run started with.", `sous resume ${run.runId} --same --json`);
   }
   const choice = args.flags.latest ? "latest" : args.flags.same ? "same" : undefined;
-  const resumed = resumeRun(paths, ctx.launch, run.runId, ctx.who, choice, args.flags["let-agent-answer"] ? { command: ctx.command } : undefined);
+  const resumed = resumeRun(paths, ctx.launch, run.runId, ctx.who, { choice, ...(args.flags["let-agent-answer"] ? { letAgentAnswer: { command: ctx.command } } : {}) });
   if ("mustChoose" in resumed) {
     const change = "Add --latest to take the new version, or --same to go on with the version the run started with.";
     throw new Usage(resumed.message, "bad_argument", change, `sous resume ${run.runId} --same --json`);

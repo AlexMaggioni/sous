@@ -6,7 +6,8 @@
 //   3. Anyone, an agent or a step of a run, may answer a question whose author set answeredBy "anyone".
 //   4. An agent may answer a people question of a run started with --let-agent-answer. The
 //      record is the root run's, so it covers nested runs.
-//   Otherwise question_for_people, with the call that passes on the person's answer: --by person.
+//   Otherwise question_for_people. An agent gets the call that passes on the person's answer with
+//   --by person. A step of a run gets no call, since it cannot give --by person: the run waits.
 // An old question file without answeredBy is a people question.
 //
 // mayAnswer comes through a dynamic import, so each test fails on its own while it is missing.
@@ -80,6 +81,11 @@ describe("piece 8: mayAnswer", () => {
       const refusal = refusedFor(() => may(question, run, who), `${question.id} by ${who.through.kind}`);
       assert.match(refusal.message, new RegExp(question.id), refusal.message);
       for (const verb of ["approve", "send-back", "stop"]) assert.match(refusal.change, new RegExp(verb), `the change names ${verb}: ${refusal.change}`);
+      if (who.through.kind === "run") {
+        assert.equal(refusal.call, null, "a step of a run gets no call: it cannot pass on the person's decision");
+        assert.match(refusal.change, /^Only the person answers this\. The run waits for them\./, refusal.change);
+        continue;
+      }
       assert.ok(refusal.call?.includes(question.id), `the call names the question: ${refusal.call}`);
       assert.ok(refusal.call?.includes("--by person"), `the call passes on the person's decision: ${refusal.call}`);
     }
@@ -105,6 +111,11 @@ describe("piece 8: mayAnswer", () => {
         const refusal = refusedFor(() => may(question, record, who), `${question.id} by ${who.through.kind}`);
         assert.match(refusal.message, new RegExp(`${question.id}.*person`), refusal.message);
         assert.ok(refusal.change.length > 0, "the refusal says what to change");
+        if (who.through.kind === "run") {
+          assert.equal(refusal.call, null, "a step of a run gets no call: it cannot pass on the person's answer");
+          assert.equal(refusal.change, "Only the person answers this. The run waits for them.");
+          continue;
+        }
         assert.ok(refusal.call?.startsWith(`sous answer ${question.id} <red|blue>`), `the call answers with one of the choices: ${refusal.call}`);
         assert.ok(refusal.call?.includes("--by person"), `the call passes on the person's choice: ${refusal.call}`);
       }

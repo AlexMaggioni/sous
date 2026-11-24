@@ -14,7 +14,7 @@ import { dropUnchangedWorktrees, runPlaces, runWorktrees } from "../places/place
 import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
 import { ask, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
-import { nestedLookup } from "./consent.js";
+import { authorAnsweredBy, nestedLookup } from "./consent.js";
 import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
@@ -174,7 +174,7 @@ async function runOnAccounts(
       kind: checkpoint.kind ?? "confirm",
       ...(checkpoint.choices ? { choices: [...checkpoint.choices] } : {}),
       breakpoint: context?.purpose?.breakpoint === true,
-      answeredBy: context?.purpose?.answeredBy === "anyone" && !context.purpose.breakpoint ? "anyone" : "people",
+      answeredBy: authorAnsweredBy({ answeredBy: context?.purpose?.answeredBy, breakpoint: context?.purpose?.breakpoint }),
       ...(context?.purpose?.step ? { step: context.purpose.step } : {}),
       askedAt: new Date().toISOString(),
     };

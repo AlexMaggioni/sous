@@ -650,6 +650,55 @@ describe("piece 8: who may answer", () => {
     }
   });
 
+  it("review: an agent's refused decision gets back the call for the same decision, with --by person", async () => {
+    const w = world("review");
+    try {
+      const { runId, id } = await w.start(AS_PERSON, "review");
+      await w.pause(runId);
+      const tries: Array<[string[], string]> = [
+        [["approve", id], `sous approve ${id} --by person --json`],
+        [["send-back", id, "make", "it", "shorter"], `sous send-back ${id} "make it shorter" --by person --json`],
+        [["answer", id, "send", "back:", "shorter"], `sous send-back ${id} "shorter" --by person --json`],
+        [["answer", id, "stop"], `sous stop ${runId} --json`],
+      ];
+      for (const [argv, call] of tries) {
+        const refused = await w.call(AS_CLAUDE, [...argv, "--json"]);
+        assert.equal(refused.code, 66, refused.out);
+        assert.equal(json(refused).error?.code, "question_for_people", refused.out);
+        assert.equal(json(refused).error?.call, call, refused.out);
+      }
+      assert.equal(existsSync(answerFile(w.paths, id)), false, "no answer is written");
+    } finally {
+      await w.stopAll();
+    }
+  });
+
+  it("asks: a step of a run that waits on a question for people gets no answer call, and its answer is refused with no call", async () => {
+    const w = world("asks");
+    try {
+      const { runId, id } = await w.start(AS_PERSON, "asks");
+      const AS_STEP: NodeJS.ProcessEnv = { SOUS_RUN_ID: "other-run" };
+      const waited = await w.call(AS_STEP, ["wait", runId, "--timeout", "1", "--json"]);
+      assert.equal(waited.code, 4, waited.out);
+      assert.equal(json(waited).questions?.[0]?.answeredBy, "people", waited.out);
+      assert.deepEqual(answerCallsIn(json(waited), id), [], `the step gets no answer call: ${waited.out}`);
+      assert.ok(calls(json(waited)).some((call) => call.startsWith(`sous wait ${runId}`)), `the step can wait again: ${waited.out}`);
+      const inbox = await w.call(AS_STEP, ["inbox", "--json"]);
+      assert.deepEqual(answerCallsIn(json(inbox), id), [], `the inbox gives the step no answer call: ${inbox.out}`);
+
+      await w.pause(runId);
+      const refused = await w.call(AS_STEP, ["answer", id, "blue", "--json"]);
+      assert.equal(refused.code, 66, refused.out);
+      const { error } = json(refused);
+      assert.equal(error?.code, "question_for_people", refused.out);
+      assert.equal(error.call, null, refused.out);
+      assert.equal(error.change, "Only the person answers this. The run waits for them.", refused.out);
+      assert.equal(existsSync(answerFile(w.paths, id)), false, "no answer is written");
+    } finally {
+      await w.stopAll();
+    }
+  });
+
   it("run asks --let-agent-answer from an agent without --by person exits 66 with needs_person, and starts nothing", async () => {
     const w = world("asks");
     try {

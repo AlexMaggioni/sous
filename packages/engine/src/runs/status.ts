@@ -3,8 +3,8 @@
 
 import type { HomePaths } from "./home.js";
 import type { Who } from "./actions.js";
-import { answerCalls, answeredByFor } from "./inbox.js";
-import { listRuns, runDetail } from "./run.js";
+import { answeredByFor } from "./consent.js";
+import { answerCallsFor, listRuns, runDetail } from "./run.js";
 import { daemonPid } from "./service.js";
 
 export interface HomeStatus {
@@ -41,9 +41,9 @@ export function homeStatus(paths: HomePaths, now: Date, options: { since?: strin
     const at = run.changedAt ?? record.createdAt;
     if (run.status === "asks") {
       for (const q of run.questions) {
-        const lets = Boolean(record.letAgentAnswer);
-        const [call, sendBack] = answerCalls(q, options.who, lets);
-        status.needsYou.push({ ...base, what: "asks", question: { id: q.id, prompt: q.prompt, answeredBy: answeredByFor(q, lets) }, since: q.askedAt, call: call!, ...(sendBack ? { sendBack } : {}) });
+        // A caller that cannot reach the person, such as a step of a run, gets no answer call.
+        const [call = `sous show ${record.runId} --json`, sendBack] = answerCallsFor(paths, q, options.who);
+        status.needsYou.push({ ...base, what: "asks", question: { id: q.id, prompt: q.prompt, answeredBy: answeredByFor(q, record) }, since: q.askedAt, call, ...(sendBack ? { sendBack } : {}) });
       }
     } else if (run.status === "running" || run.status === "pending" || run.status === "starting") {
       const detail = runDetail(paths, record.runId);

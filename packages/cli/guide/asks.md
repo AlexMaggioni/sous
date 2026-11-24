@@ -22,7 +22,7 @@ sous answer <question> "<their words>" --by person --json
 `sous send-back` take it too. sous tells the person in a notice each time an agent answers.
 Without `--by person`, an answer to a question for people exits 66 with `question_for_people`.
 
-Never answer with a choice you made yourself. If the person is not there, say that the run waits
+Never answer a question for people with a choice you made yourself. If the person is not there, say that the run waits
 for them, and stop. A question waits as long as it takes. No timeout picks a default.
 
 To list what waits, for one run or for all:

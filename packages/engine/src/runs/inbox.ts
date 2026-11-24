@@ -5,7 +5,9 @@
 import { unlinkSync } from "node:fs";
 import { readJsonFile, writeJsonFile } from "../json-file.js";
 import type { By, Through, Who } from "./actions.js";
+import { answerCommand, answeredByFor, authorAnsweredBy, type Tried } from "./consent.js";
 import type { HomePaths } from "./home.js";
+import type { RunRecord } from "./records.js";
 import { answerFile, questionFile, questionFiles } from "./store.js";
 
 export interface Question {
@@ -51,7 +53,7 @@ function writeQuestion(paths: HomePaths, question: Question): void {
 /** A question file as it reads today: an old file, or a breakpoint that says anyone, is for people. */
 function asRead(question: Question | undefined): Question | undefined {
   if (!question) return question;
-  return { ...question, answeredBy: question.answeredBy === "anyone" && !question.breakpoint ? "anyone" : "people" };
+  return { ...question, answeredBy: authorAnsweredBy(question) };
 }
 
 export function readQuestion(paths: HomePaths, id: string): Question | undefined {
@@ -184,6 +186,16 @@ export function breakpointValue(reply: string): unknown {
   return { decision: "send back", note: reply.replace(SEND_BACK, "").trim() };
 }
 
+/** The decision a reply makes at a breakpoint: approve, send-back with its note, or an answer
+ *  read as breakpointValue reads it. */
+export function triedOf(typed: Pick<Reply, "via" | "text">): Tried {
+  if (typed.via === "approve") return { decision: "approve" };
+  if (typed.via === "send-back") return { decision: "send back", note: typed.text };
+  const value = breakpointValue(typed.text);
+  if (value === "approve" || value === "stop") return { decision: value };
+  return { decision: "send back", note: decisionOf(value).note ?? "" };
+}
+
 /**
  * Read a breakpoint's answer as a decision. It reads what breakpointValue writes, the answer
  * files of older runs, and what a library caller's confirm returns: a decision object, true,
@@ -287,32 +299,6 @@ function meaningOf(question: Question, { via, text, valueJson }: Reply): { value
   return notJson ? { value, notJson: true } : { value };
 }
 
-/** A sous command that answers a question: `answer` with a value, `approve`, or `send-back` with
- *  a note. `byPerson` passes on the person's answer. Every answer call sous prints is built here. */
-export function answerCommand(question: Pick<Question, "id">, verb: "answer" | "approve" | "send-back", value?: string, json = false, byPerson = false): string {
-  return `sous ${verb} ${question.id}${value === undefined ? "" : ` ${value}`}${byPerson ? " --by person" : ""}${json ? " --json" : ""}`;
-}
-
-/** Who may answer a question as it stands for its run. A run started with --let-agent-answer
- *  opens its people questions to anyone, never its breakpoints. */
-export function answeredByFor(question: Pick<Question, "breakpoint" | "answeredBy">, letAgentAnswer: boolean): "people" | "anyone" {
-  if (question.breakpoint) return "people";
-  return question.answeredBy === "anyone" || letAgentAnswer ? "anyone" : "people";
-}
-
-/**
- * The --json calls that answer a question. A breakpoint has two: approve and send back. A caller
- * that is not the person gets --by person on a question it may not answer alone, so it passes on
- * the person's answer. With no caller, the calls are the person's.
- */
-export function answerCalls(question: Pick<Question, "id" | "kind" | "choices" | "breakpoint" | "answeredBy">, who?: Who, letAgentAnswer = false): string[] {
-  const by = who !== undefined && who.through.kind !== "person" && answeredByFor(question, letAgentAnswer) === "people";
-  if (question.breakpoint) return [answerCommand(question, "approve", undefined, true, by), answerCommand(question, "send-back", '"<note>"', true, by)];
-  if (question.kind === "confirm") return [answerCommand(question, "answer", "<yes|no>", true, by)];
-  if (question.kind === "select") return [answerCommand(question, "answer", `<${(question.choices ?? []).join("|")}>`, true, by)];
-  return [answerCommand(question, "answer", '"<answer>"', true, by)];
-}
-
 /** A question as a reply shows it, with who may answer it as it stands for its run. */
 export interface QuestionView {
   id: string;
@@ -325,10 +311,10 @@ export interface QuestionView {
   answeredBy: "people" | "anyone";
 }
 
-/** The view of a question, for a run started with --let-agent-answer or not. */
-export function questionView(question: Question, letAgentAnswer: boolean): QuestionView {
+/** The view of a question, for its root run's record: one started with --let-agent-answer or not. */
+export function questionView(question: Question, record?: Pick<RunRecord, "letAgentAnswer">): QuestionView {
   const { id, step, prompt, kind, choices, breakpoint, askedAt } = question;
-  return { id, ...(step ? { step } : {}), prompt, kind, ...(choices ? { choices } : {}), breakpoint, askedAt, answeredBy: answeredByFor(question, letAgentAnswer) };
+  return { id, ...(step ? { step } : {}), prompt, kind, ...(choices ? { choices } : {}), breakpoint, askedAt, answeredBy: answeredByFor(question, record) };
 }
 
 /**

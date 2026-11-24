@@ -45,10 +45,12 @@ export function promptLine(prompt: string): string {
   return line.length > 80 ? `${line.slice(0, 77)}...` : line;
 }
 
-/** The calls that answer a question, each with what it does, for the caller. */
+/** The calls that answer a question, each with what it does, for the caller. A step of a run
+ *  gets none for a question for people, since only the person answers it. */
 export function answerNext(question: Pick<RunQuestion, "id" | "kind" | "choices" | "breakpoint" | "prompt" | "answeredBy">, who: Who): Next[] {
   const [first, sendBack] = answerCalls(question, who);
-  const calls: Next[] = [{ call: first!, does: `${question.breakpoint ? "approves" : "answers"} "${promptLine(question.prompt)}"` }];
+  if (!first) return [];
+  const calls: Next[] = [{ call: first, does: `${question.breakpoint ? "approves" : "answers"} "${promptLine(question.prompt)}"` }];
   if (sendBack) calls.push({ call: sendBack, does: "sends the run back with a note" });
   return calls;
 }

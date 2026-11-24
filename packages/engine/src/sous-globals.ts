@@ -244,7 +244,7 @@ export function createSousGlobals(deps: SousGlobalDeps) {
   const agent = async (prompt: string, options: Record<string, unknown> = {}): Promise<unknown> => {
     const { ask: canAsk, answeredBy, ...rest } = options;
     const anyone = answeredByOf(answeredBy, "agent()") === "anyone";
-    if (answeredBy !== undefined && !canAsk) fail("agent(): answeredBy works with ask: true");
+    if (anyone && !canAsk) fail("agent(): answeredBy \"anyone\" works with ask: true");
     const label = typeof rest.label === "string" ? rest.label : undefined;
     const override = label ? deps.stepOverrides?.[label] : undefined;
     const merged: Record<string, unknown> = override ? { ...rest, ...override } : rest;

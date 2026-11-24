@@ -23,7 +23,7 @@ export function whoIsCalling(env: NodeJS.ProcessEnv, by?: string): Who {
   if (by !== undefined && by !== "person") throw new Usage(`--by takes only person, got "${by}"`, "bad_argument", "Give --by person when the person decided, or leave --by out.");
   if (by === "person" && through.kind === "run") {
     const message = `a step of run ${through.runId} has no person to speak for, so it cannot give --by person.`;
-    throw new Refusal("no_person_here", message, "Leave --by person out. The step decides for itself, or asks the person with a question in the workflow.", null);
+    throw new Refusal("no_person_here", message, "Leave --by person out. A step answers only a question open to anyone. The person answers the rest, and the run waits for them.", null);
   }
   return { by: by === "person" || through.kind === "person" ? "person" : "agent", through };
 }

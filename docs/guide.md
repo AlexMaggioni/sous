@@ -512,14 +512,17 @@ approval or send-back through an agent sends the person a notice.
 Each question says who may answer it in `answeredBy`. `"people"`, the default, takes only the
 person's answer, typed or passed on with `--by person`. `"anyone"` takes an agent's answer too. A
 breakpoint is always for people. An agent's own answer to a question for people exits 66 with
-`question_for_people`, and its `call` passes on the person's answer with `--by person`. A run
+`question_for_people`, and its `call` passes on the person's answer with `--by person`. A step of
+a run gets no answer call for a question for people, and its refusal has no `call`: only the
+person answers, and the run waits for them. A run
 started with `--let-agent-answer` lets agents answer its questions for people, never its
 breakpoints. Only the person gives that flag: from an agent without `--by person` it exits 66 with
 `needs_person`, and nothing starts. The record keeps it as `letAgentAnswer: { by, through, at }`,
 and `events.jsonl` gets a `let-agent-answer` line. `sous inbox --json`, `sous wait --json` and
 `sous status --json` show `answeredBy` as it stands for the run, so a question for people of such
 a run shows `"anyone"`. Their answer calls carry `--by person` only for an agent, and only where it
-may not answer alone.
+may not answer alone. These rules hold for `sous answer`, `sous approve` and `sous send-back`.
+Writing an answer file in the home yourself bypasses them, so agents always use `sous answer`.
 
 sous refuses to start a workflow with `startedBy: "people"` through an agent or a run, also with
 `--by person`, and also as a rerun, a dry run or a schedule. A run that an agent or a run started
