@@ -52,6 +52,7 @@ export {
 } from "./runs/run.js";
 export { removeAccount, useAccount, waitingRuns } from "./runs/run-accounts.js";
 export { logAfter, stepView, type StepView } from "./runs/step-view.js";
+export { tellResult, tellStep } from "./runs/tell.js";
 export { homeStatus, sinceWindow, statusLine, type HomeStatus } from "./runs/status.js";
 export { isPlace } from "./places/places.js";
 

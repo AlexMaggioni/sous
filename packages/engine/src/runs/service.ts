@@ -23,6 +23,7 @@ import { seedApprovals } from "./approvals.js";
 import { createRun, type Launcher } from "./launch.js";
 import { notify } from "./notify.js";
 import { processAlive } from "./records.js";
+import { word } from "./refusal.js";
 import { readState } from "./store.js";
 import { changedWorkflows, gcRuns, listRuns, pruneRuns, startedAndUnfinished, workerRuns } from "./run.js";
 
@@ -161,7 +162,7 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
       const hashes = error instanceof NotApproved ? error.texts.map((text) => text.hash).join(",") : undefined;
       if (error instanceof NotApproved && state.approvalsTold?.[schedule.name] !== hashes) {
         (state.approvalsTold ??= {})[schedule.name] = hashes!;
-        const project = schedule.projectDir === paths.home ? "" : ` --project ${shellWord(schedule.projectDir)}`;
+        const project = schedule.projectDir === paths.home ? "" : ` --project ${word(schedule.projectDir)}`;
         const approve = error.texts.map((text) => `${approveCall(text.workflow, true)}${project}`).join(", then ");
         const names = error.texts.map((text) => text.workflow).join(", ");
         tell(`${error.workflow} needs your approval`, `The schedule ${schedule.name} did not start ${schedule.workflow}, because ${names} is new or changed since you approved it. ${approve} lets it start.`);
@@ -274,9 +275,4 @@ export async function daemonMain(paths: HomePaths, launch: Launcher, everyMs = 2
     // already gone
   }
   process.stdout.write(`${new Date().toISOString()} service stopped\n`);
-}
-
-/** A path as one shell word, in single quotes when it needs them. */
-function shellWord(text: string): string {
-  return /^[\w./-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`;
 }

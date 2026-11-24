@@ -9,11 +9,12 @@ export interface ActivityStep {
   label?: string;
 }
 
-/** One thing a step did. A tool entry names the tool. */
+/** One thing a step did. A tool entry names the tool. A tell's receipt has the tell's id. */
 export interface ActivityEntry {
   kind: "prompt" | "text" | "tool" | "tool-result" | "command" | "output" | "tell" | "note" | "error";
   tool?: string;
   text: string;
+  id?: string;
 }
 
 export type OnActivity = (step: ActivityStep, entry: ActivityEntry) => void;

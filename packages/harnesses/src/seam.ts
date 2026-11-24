@@ -1,4 +1,4 @@
-// The seam into a running turn. The index leaves these out until the engine imports them.
+// The seam into a running turn. The engine's steering board sends each tell through it.
 
 /**
  * What became of a message sent into a running turn. delivered: the turn read it. not_steerable:

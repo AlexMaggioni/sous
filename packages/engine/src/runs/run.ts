@@ -279,7 +279,7 @@ const ENDS_STEPS = new Set(["complete", "paused", "error", "stopped", "resumed"]
 
 /** A step that runs now: the name the log gives it, the run or nested run it runs in, its label
  *  there, and its call index when known. */
-interface RunningStep {
+export interface RunningStep {
   name: string;
   scope: string;
   label: string;
@@ -520,6 +520,13 @@ export function stopStep(paths: HomePaths, runId: string, step: string, who: Who
   process.kill(record.pid!, "SIGUSR2");
   recordAction(paths, { act: "stop-step", ...who, runId: record.runId, step });
   return true;
+}
+
+/** The calls that run now, as stopStep finds them. Empty when no worker runs. */
+export function runningCalls(paths: HomePaths, runId: string): RunningStep[] {
+  const record = needRecord(paths, runId);
+  const state = readState(paths, record.runId);
+  return processAlive(record.pid) && state ? liveSteps(paths, record, state).running : [];
 }
 
 /** Pause a running run: steps already running finish, nothing new starts. False when it does not run. */

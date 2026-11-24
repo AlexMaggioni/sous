@@ -46,6 +46,11 @@ export function stopRequestFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.stop`);
 }
 
+/** The messages `sous tell` sent a running run's steps, one per line, until the worker takes them. */
+export function tellRequestFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.tell`);
+}
+
 /** What the run's steps did, one JSON line per entry. Only the worker appends to it. */
 export function activityFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.activity.jsonl`);
@@ -189,7 +194,7 @@ export function removeEngineRun(paths: HomePaths, runId: string): boolean {
 export function removeRunFiles(paths: HomePaths, record: RunRecord): void {
   // The engine keeps its own copy of the log, in a folder named after where the run worked.
   const engineLogs = workflowProjectPaths(record.cwd, { persistenceRoot: paths.runs });
-  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), activityFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
+  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), tellRequestFile(paths, record.runId), activityFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
   for (const file of files) {
     try {
       unlinkSync(file);

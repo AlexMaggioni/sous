@@ -1,10 +1,10 @@
-// sous stop, pause, discard, prune and gc: the commands that change or clear runs. A request that
-// finds nothing to change exits 0 with a note.
+// sous stop, pause, tell, discard, prune and gc: the commands that change or clear runs. A request
+// that finds nothing to change exits 0 with a note.
 
-import { discardRun, gcRuns, loadConfig, pauseRun, pruneRuns, readRun, stopRun, stopStep, type RunView } from "@sous/engine";
+import { discardRun, gcRuns, loadConfig, pauseRun, pruneRuns, readRun, stopRun, stopStep, tellResult, tellStep, word, type RunView } from "@sous/engine";
 import { str, Usage, type Parsed } from "../args.js";
 import { reply, type Next, type Reply } from "../reply.js";
-import { needRun, stopReply } from "./common.js";
+import { needRun, runIdArg, stopReply, wholeFlag } from "./common.js";
 import { rerunNext, resumeNext, waitNext } from "./next.js";
 import type { Ctx } from "./index.js";
 
@@ -40,6 +40,32 @@ export function cmdStop(args: Parsed, ctx: Ctx): Reply<object> {
   if (stop.outcome === "stopping") answer.next.push(waitNext(runId, "waits until the run stops"));
   else if (stop.outcome !== "stopped") answer.next.push(...stateNext(view));
   return answer;
+}
+
+/** sous tell: a message to a running agent step, which it reads after its current tool call. The
+ *  reply waits up to tellWaitMs for the worker's receipt. */
+export async function cmdTell(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
+  const id = runIdArg(args.positional[0]);
+  const step = str(args.flags.step);
+  const text = args.positional[1];
+  if (!step) throw new Usage("give the step to tell with --step, such as sous tell <run> --step <step> \"message\"", "bad_argument", undefined, `sous show ${id} --json`);
+  if (!text) throw new Usage("give the message after the run id, such as sous tell <run> --step <step> \"message\"", "bad_argument", undefined, null);
+  const call = wholeFlag(args, "call", 1);
+  const sent = tellStep(ctx.paths, id, { step, text, ...(call === undefined ? {} : { call }) }, ctx.who);
+  const { delivery, calls, notes } = await tellResult(ctx.paths, sent, { waitMs: ctx.tellWaitMs, sleep: ctx.machine.sleep });
+  const runId = sent.runId;
+  const to = calls.length === 1 ? `"${step}"` : `${calls.length} calls of "${step}"`;
+  return reply(
+    { runId, step, told: true, delivery, calls },
+    {
+      text: [delivery === "delivered" ? `told ${to} in ${runId}.` : `sent to ${to} in ${runId}. It is not read yet.`],
+      notes,
+      next: [
+        ...calls.map((told) => ({ call: `sous step ${runId} ${word(told.step)} --call ${told.call} --json`, does: `shows call ${told.call} of the step, with the message once it reads it` })),
+        waitNext(runId, "waits until the run ends, pauses or asks"),
+      ],
+    },
+  );
 }
 
 export function cmdPause(args: Parsed, ctx: Ctx): Reply<object> {

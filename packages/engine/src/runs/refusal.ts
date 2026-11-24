@@ -48,4 +48,5 @@ export class Refusal extends Error {
   }
 }
 
+/** A word as one shell word, in single quotes when it needs them, for the calls sous gives. */
 export const word = (text: string) => (/^[\w./-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`);

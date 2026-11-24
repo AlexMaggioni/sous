@@ -333,7 +333,7 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | --- | --- |
 | `sous run <workflow> [--input value]` | start a run in the background. `--place`, `--model`, `--set reviewer.model=claude/opus` and `--concurrency` change this run only. `--wait` follows it, `--json` prints machine-readable output. |
 | `sous list [--all]`, `sous show <run>`, `sous log <run> -f` | the last 20 runs, or every run with `--all`; one run's steps with the time and tokens of each, its questions and result; its log |
-| `sous step <run> <label> [--call N] [--tail N] [--full]` | one step of a run: its status, time and tokens, its prompt or its command, its failure, and the last 20 entries of what it did. A step that ran more than once shows its last call, and `--call N` shows another. A label only nested runs have shows the first nested run that has it, and a note names the others. `--tail N` shows N entries, and `--full` shows the whole prompt and every entry. A label the run never had exits 65. |
+| `sous step <run> <label> [--call N] [--tail N] [--full]` | one step of a run: its status, time and tokens, its prompt or its command, its failure, and the last 20 entries of what it did. A step that ran more than once shows its last call, and `--call N` shows another. A label only nested runs have shows the first nested run that has it, and a note names the others. The name `sous log` gives a step of a nested run, such as `"ticket A: implementer"`, shows that run's step. When several nested runs share the name, `--call N` counts the calls of all of them in start order. `--tail N` shows N entries, and `--full` shows the whole prompt and every entry. A label the run never had exits 65. |
 | `sous workflows` | the saved workflows and their inputs |
 | `sous workflows show <name> [--full]` | one workflow's outline: its inputs, its steps in the order the file writes them, its nested workflows, the check's problems, the approval that speaks for its text, and its last 3 runs with their time and tokens. A long workflow's steps are cut to keep the reply under 8,000 characters, and `--full` shows them all. `next` gives the run and the check for an approved text, and the check and the approve call for a new or changed one. |
 | `sous workflows show <name> --diff` | what changed in the file since the person's yes, as `- `, `+ ` and matching lines, with 3 matching lines around each change. A new file shows in full. The diff is cut at 200 lines with a note. |
@@ -344,6 +344,7 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous pause <run>`, `sous resume <run> [--latest \| --same]` | finish the running steps and start nothing new; go on from there |
 | `sous stop <run>` | end the run. Its worktree stays, unless the run changed no file. |
 | `sous stop <run> --step <name>` | stop one running step, by the name `sous log` gives it, such as `"ticket A: implementer"`. The run pauses on it, and `sous resume` runs it again. |
+| `sous tell <run> --step <name> "<message>" [--call N]` | give a running agent step a message, which it reads after its current tool call. The step goes on. The step is its label or its name in `sous log`, as `sous step` takes it. Each running call of the step gets it, and `--call N` tells only the Nth call, counted as `sous step --call` counts them. The reply's `calls` lists each call told with its `step` name, its `call` number and its `delivery`. The reply's `delivery` is `delivered`, or `pending` while the step has not read it within 5 seconds. A code step fails with `step_takes_no_message`, a step that does not run now with `step_not_running`, and a step in a turn that takes no message for a moment, such as a compact, or between two turns, with `turn_not_steerable`. |
 | `sous rerun <run> [--reuse]` | the same workflow with the same inputs. `--reuse` keeps the results of the steps you did not edit and works in the same place. |
 | `sous run`, `rerun` or `resume` with `--let-agent-answer` | lets agents answer the run's questions for people, and its nested runs' questions. Never its breakpoints. A rerun does not carry it over. |
 | `sous wait <run> [--timeout N]` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer, 5 still running after `--timeout N` seconds. The run goes on after a timeout. An agent's wait, or a step's, has a timeout of 110 seconds when it gives none. A person's waits as long as it takes. In a terminal it asks the run's questions itself, so 4 comes only off a terminal or with `--json`. |
@@ -354,7 +355,8 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 
 A command with a wrong or missing argument exits 64. So does `sous resume` after an edit, with
 neither `--latest` nor `--same`. A run, workflow, question, step or schedule that is not there
-exits 65. So does `sous stop --step` with a name the run never had. Any other refusal exits 66,
+exits 65. So do `sous stop --step` and `sous tell` with a name the run never had, and `sous tell` to
+a step that does not run now. Any other refusal exits 66,
 such as `sous discard` of a running run, or `sous resume` of a run an older sous saved. A write
 the system refuses under the sous home, with EACCES, EPERM or EROFS, exits 1 with
 `home_not_writable`. Its `change` says how to make the home writable, under Codex too, and its
@@ -398,7 +400,7 @@ no events, a note with the last seq, and the call to read the log from the start
 log exits 66 with the code `broken_record`. A question a step asks while it runs has no `asks`
 event, only its `answered` event, so use `sous wait` to catch questions.
 
-`sous step <run> <label> --json` gives `runId`, `step`, `scope`, `call`, `calls`, `status` and
+`sous step <run> <label> --json` gives `runId`, `step`, the step's name in `sous log`, `scope`, `call`, `calls`, `status` and
 `kind`, which is `agent` or `exec`. `scope` is the run the step ran in: the run's id, or a nested
 run's. An agent step adds `model` and `prompt`, and a code step adds `command` and `output`, the
 end of what it printed. Both add `failure` when the step failed, `result`, which for an agent step

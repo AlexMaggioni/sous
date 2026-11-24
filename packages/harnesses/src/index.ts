@@ -5,6 +5,7 @@ import { createCodexHarness } from "./codex/index.js";
 import type { FindOptions, Harness, HarnessId } from "./types.js";
 
 export type * from "./types.js";
+export type { Steer, SteerOutcome } from "./seam.js";
 
 const ADAPTERS: Record<HarnessId, (lookup: FindOptions) => Harness> = { claude: createClaudeHarness, codex: createCodexHarness };
 
