@@ -37,6 +37,9 @@ export function goLimits(record: RunRecord, log: (line: string) => void): GoLimi
   // By step: the tokens of its attempts that ended, and of the attempt that runs, until it ends.
   const attempts = new Map<string, number>();
   const running = new Map<string, number>();
+  // The steps that ended in this go. A step the host stopped ends at once, and its runner reports
+  // later, when its program has ended. The step's own count holds those tokens already.
+  const closed = new Set<string>();
   const key = (step: { scope?: string; callIndex: number }) => `${step.scope ?? runId}#${step.callIndex}`;
 
   // The log says what happened: running steps stop and the run pauses on them, or no new step
@@ -64,6 +67,7 @@ export function goLimits(record: RunRecord, log: (line: string) => void): GoLimi
     },
     onUsage: (step, usage, done) => {
       const at = key(step);
+      if (closed.has(at)) return;
       if (!done) {
         running.set(at, usage.total);
         check();
@@ -79,6 +83,7 @@ export function goLimits(record: RunRecord, log: (line: string) => void): GoLimi
       watched.on("agentEnd", (event) => {
         if (event.runId !== runId) return;
         // The step's own count, of all its attempts, takes the place of what was counted so far.
+        closed.add(key(event));
         attempts.delete(key(event));
         running.delete(key(event));
         ended += event.tokens ?? 0;

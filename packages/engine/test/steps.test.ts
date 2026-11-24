@@ -664,6 +664,24 @@ describe("piece 14: budget", () => {
       assert.equal(ended, "Done.");
     }
   });
+
+  it("gives a running count the cost Claude Code's result reports, as only the session's new spend on a resumed turn", async () => {
+    // The fake's result reports a total of 0.0012. A stop that lands after it reports the running count.
+    const place = fakePlace();
+    const running: number[] = [];
+    const steps = createSteps(onFakes(place, { onUsage: (_step, usage, ended) => void (ended || running.push(usage.cost)) }));
+    let first: AgentSessionRef | undefined;
+    try {
+      await steps.run("first", routed(steps, { label: "a", model: "claude/haiku" }, { runId: "run-cost", callIndex: 0, onSessionOpen: (ref: AgentSessionRef) => (first ??= ref) }));
+      const fresh = running.splice(0);
+      // A resumed session restores its total, so a reading equal to the recorded one adds nothing.
+      await steps.run("next", routed(steps, { label: "a", model: "claude/haiku" }, { runId: "run-cost", callIndex: 1, continueFromSession: { ...first!, costGauge: 0.0012 } }));
+      assert.equal(fresh.at(-1), 0.0012, `the count at the result keeps its cost: ${fresh}`);
+      assert.equal(running.at(-1), 0, `a resumed turn adds only what it spent: ${running}`);
+    } finally {
+      await steps.dispose();
+    }
+  });
 });
 
 // Piece 13, resume with a note. `sous resume <run> --note "..." [--step <step>]` hands the worker
