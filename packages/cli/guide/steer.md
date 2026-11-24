@@ -34,9 +34,9 @@ the step got it, or `pending` when the step reads it once its tool call ends. `s
 shows it in the step's `activity`.
 
 A step that runs more than once at the same time gets the message in each call, and a note says
-so. `--call 2` tells only the second call of the step, counted as `sous step` counts them: in
-one run, or in one nested run when you give the name `sous log` gives the step. The reply's
-`calls` lists each call told, with its name, its number and its delivery.
+so. `--call 2` tells only the second call of the step, counted from 1 in start order as `sous
+step` counts them. A name from `sous log` that several nested runs share counts the calls of all
+of them. The reply's `calls` lists each call told, with its name, its number and its delivery.
 
 Some steps take no message:
 

@@ -10,7 +10,7 @@ import { cmdRerun, cmdResume, cmdRun } from "./runs.js";
 import { cmdStep } from "./step.js";
 import { cmdDaemon, cmdSchedule } from "./service.js";
 import { cmdAccount, cmdDoctor, cmdGuide, cmdHook, cmdSkill } from "./setup.js";
-import { cmdCheck, cmdWorkflows } from "./workflows.js";
+import { cmdAgents, cmdCheck, cmdWorkflows } from "./workflows.js";
 
 /** What the commands do on the machine. Only cli.ts makes the real one. */
 export interface Machine {
@@ -88,7 +88,8 @@ export const COMMANDS: Record<string, CommandSpec> = {
   stop: { run: cmdStop, flags: takes("step", "by", "json") },
   tell: { run: cmdTell, flags: takes("step", "call", "by", "json") },
   rerun: { run: cmdRerun, flags: takes("place", "reuse", "set", "model", "wait", "let-agent-answer", "by", "json"), inputs: true },
-  workflows: { run: cmdWorkflows, flags: takes("project", "all", "by", "json") },
+  workflows: { run: cmdWorkflows, flags: takes("project", "all", "by", "diff", "full", "json") },
+  agents: { run: cmdAgents, flags: takes("project", "json") },
   check: { run: cmdCheck, flags: takes("project", "dry-run", "answers", "json"), inputs: true },
   schedule: { run: cmdSchedule, flags: takes("cron", "place", "project", "by", "json"), inputs: true },
   daemon: { run: cmdDaemon, flags: takes("json") },

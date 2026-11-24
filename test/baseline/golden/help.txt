@@ -40,6 +40,9 @@ sous runs saved workflows in the background.
   sous rerun <run> [--name value ...]   start the same workflow again with the same inputs
         --reuse                         keep the results of the steps you did not edit, in the same place
   sous workflows                        saved workflows and their inputs
+  sous workflows show <name> [--full]   one workflow: its steps, its approval, its last runs
+        --diff                          what changed since the person's yes
+  sous agents                           the agents a step can name
   sous workflows approve <name> | --all the person's yes to a workflow's text as it is now
         --by person                     the person decided; an agent passes on their word
   sous check <workflow> [--name value]  check a workflow without running it

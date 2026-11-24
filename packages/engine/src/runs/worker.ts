@@ -186,7 +186,6 @@ async function runOnAccounts(
   updateRecord(paths, runId, { pid: process.pid, limit: undefined, refused: undefined });
   // A step stop the last worker never took names a step of that worker, not this one.
   takeStepStops(paths, runId);
-  takeTells(paths, runId);
   // A resume's note goes to the steps of this go only.
   const note = mode === "resume" ? takeNote(paths, runId) : undefined;
   if (note) log(`${stamp()} note       for ${note.step ? note.step.name : "the first agent call"}`);
@@ -328,6 +327,9 @@ async function runOnAccounts(
     process.on("SIGTERM", onStop);
     process.on("SIGINT", onStop);
   }
+  // A tell sent before the steps start gets its receipt now. No call is open yet, so it is no_turn,
+  // and the cli tells from the run's steps whether its call runs.
+  sendTells(paths, runId, steering, onActivity, log);
 
   const exec = {
     agent: runner,

@@ -53,9 +53,9 @@ const runs = (running: RunningStep[], call: { scope: string; label: string; call
 
 /**
  * Send a message to a running agent step. The step is its name in the log or its label, as sous
- * step finds it, so the calls are those of one run or nested run. Every running call of it gets
- * the message, or the `call`th of its calls, counted from 1 in start order as sous step --call
- * counts them. Refusals, in this order, write nothing: no_such_run, no_such_step for a step or
+ * step finds it, so a name several nested runs share covers the calls of each. Every running call
+ * of it gets the message, or the `call`th of its calls, counted from 1 in start order as sous step
+ * --call counts them. Refusals, in this order, write nothing: no_such_run, no_such_step for a step or
  * call the run never had, step_not_running when the call does not run now, and
  * step_takes_no_message for a code step. Then the request goes to the worker, and events.jsonl
  * gets one line, whatever the number of calls.
@@ -68,15 +68,15 @@ export function tellStep(paths: HomePaths, runId: string, tell: { step: string; 
   const show = `sous show ${id} --json`;
   const found = stepCalls(detail, step);
   if (!found) throw new Refusal("no_such_step", `run ${id} has no step "${step}".`, "Name one of the run's steps, as sous show lists them.", show);
-  const { name, scope, label } = found;
-  let numbered = found.calls.map((agent, i) => ({ agent, call: i + 1 }));
+  const { name, label } = found;
+  let numbered = found.calls.map(({ agent, scope }, i) => ({ agent, scope, call: i + 1 }));
   if (tell.call !== undefined) {
     numbered = numbered.filter(({ call }) => call === tell.call);
     if (!numbered.length) throw new Refusal("no_such_step", `step "${step}" of run ${id} made ${found.calls.length} calls, so it has no call ${tell.call}.`, `Give --call from 1 to ${found.calls.length}.`, show);
   }
   // The calls that run now, as stopStep finds them, so a step between two turns or in a retry counts.
   const now = runningCalls(paths, id);
-  const running = numbered.filter(({ agent }) => runs(now, { scope, label, ...(agent.callIndex === undefined ? {} : { callIndex: agent.callIndex }) }));
+  const running = numbered.filter(({ agent, scope }) => runs(now, { scope, label, ...(agent.callIndex === undefined ? {} : { callIndex: agent.callIndex }) }));
   if (!running.length) {
     const resume = detail.resume.ok;
     const change = resume ? "Resume the run with the message as a note for this step." : "Tell a step that runs now. sous show lists the run's steps.";
@@ -85,7 +85,7 @@ export function tellStep(paths: HomePaths, runId: string, tell: { step: string; 
   if (running.some(({ agent }) => agent.model === EXEC_MODEL)) {
     throw new Refusal("step_takes_no_message", `"${step}" is a code step, and a code step takes no message.`, "Stop the step, or tell an agent step.", `sous stop ${id} --step ${word(name)} --json`);
   }
-  const calls: ToldCall[] = running.map(({ agent, call }) => ({ step: name, call, scope, label, ...(agent.callIndex === undefined ? {} : { callIndex: agent.callIndex }) }));
+  const calls: ToldCall[] = running.map(({ agent, scope, call }) => ({ step: name, call, scope, label, ...(agent.callIndex === undefined ? {} : { callIndex: agent.callIndex }) }));
   const sent: TellSent = { runId: id, id: randomUUID(), step, text, ...(tell.call === undefined ? {} : { call: tell.call }), calls };
   requestTell(paths, id, { id: sent.id, step, text, calls: calls.map(({ step: _step, call: _call, ...rest }) => rest) });
   try {

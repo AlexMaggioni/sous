@@ -39,7 +39,7 @@ export interface StepView {
   earlier?: number;
   /** Set when the prompt is cut to 2,000 characters. */
   promptCut?: true;
-  /** The other runs, nested in this one, whose steps have the label too. */
+  /** The other runs, this one or nested in it, with a step of the same label under another name in the log. */
   alsoIn?: string[];
 }
 
@@ -76,23 +76,28 @@ function specCommand(prompt: string): string | undefined {
   }
 }
 
-/** The calls of one step of a run, in one run or nested run, as sous step and sous tell count them. */
+/** One call of a step, and the run or nested run it ran in. */
+interface StepCall {
+  agent: RunDetail["steps"][number];
+  scope: string;
+}
+
+/** The calls of one step of a run, as sous step, sous tell and sous stop --step count them. */
 export interface StepCalls {
   /** The step's name in the log, with its nested run's name before the label. */
   name: string;
-  scope: string;
   label: string;
-  /** The step's calls in that run, in start order. The nth is call n. */
-  calls: RunDetail["steps"];
-  /** Every run with a step of that label, the chosen one too. */
-  scopes: string[];
+  /** The step's calls in start order, in every run its name covers. The nth is call n. */
+  calls: StepCall[];
+  /** The other runs with a step of that label, under another name in the log. */
+  others: string[];
 }
 
 /**
  * A step of a run, by its name in the log or by its label. A name in the log, such as
- * "sub: impl", picks the run it names, and the latest of them when several nested runs share the
- * name. A label picks the top-level run's step, or, when it has none, the first nested run's.
- * Undefined when the run has no such step.
+ * "sub: impl", covers every nested run with that name, as sous stop --step does, so the calls of
+ * two nested runs that share a name count as one step. A label picks the top-level run's step, or,
+ * when it has none, the first nested run's. Undefined when the run has no such step.
  */
 export function stepCalls(detail: RunDetail, step: string): StepCalls | undefined {
   const id = detail.record.runId;
@@ -100,18 +105,20 @@ export function stepCalls(detail: RunDetail, step: string): StepCalls | undefine
   const nameOf = (agent: { scope?: unknown; label: string }) => `${scopePrefix(id, scopeOf(agent), detail.record.nested)}${agent.label}`;
   const byName = detail.steps.filter((agent) => nameOf(agent) === step);
   const labeled = detail.steps.filter((agent) => agent.label === step);
-  const scope = byName.length ? byName.map(scopeOf).at(-1) : labeled.some((agent) => scopeOf(agent) === id) ? id : labeled.map(scopeOf)[0];
-  const calls = (byName.length ? byName : labeled).filter((agent) => scopeOf(agent) === scope);
-  if (scope === undefined || !calls.length) return undefined;
-  const label = calls[0]!.label;
-  const scopes = [...new Set(detail.steps.filter((agent) => agent.label === label).map(scopeOf))];
-  return { name: nameOf(calls[0]!), scope, label, calls, scopes };
+  const scope = labeled.some((agent) => scopeOf(agent) === id) ? id : labeled.map(scopeOf)[0];
+  const chosen = byName.length ? byName : labeled.filter((agent) => scopeOf(agent) === scope);
+  if (!chosen.length) return undefined;
+  const calls = chosen.map((agent) => ({ agent, scope: scopeOf(agent) }));
+  const { label } = chosen[0]!;
+  const name = nameOf(chosen[0]!);
+  const others = [...new Set(detail.steps.filter((agent) => agent.label === label && nameOf(agent) !== name).map(scopeOf))];
+  return { name, label, calls, others };
 }
 
 /**
  * One call of a step of a run, by its name in the log or its label, as stepCalls finds it: the
- * last call, or the one `call` names. Calls count in that one run. Throws no_such_step when the
- * run has no such step or call.
+ * last call, or the one `call` names. Calls count across the runs the name covers, in start order.
+ * Throws no_such_step when the run has no such step or call.
  */
 export function stepView(paths: HomePaths, runId: string, name: string, options: { call?: number; tail?: number; full?: boolean } = {}): StepView {
   const detail = runDetail(paths, runId);
@@ -119,10 +126,11 @@ export function stepView(paths: HomePaths, runId: string, name: string, options:
   const found = stepCalls(detail, name);
   const show = `sous show ${id} --json`;
   if (!found) throw new Refusal("no_such_step", `run ${id} has no step "${name}".`, "Give the label of one of the run's steps, or its name in sous log.", show);
-  const { scope, label, calls, scopes } = found;
+  const { label, calls, others } = found;
   const number = options.call ?? calls.length;
-  const step = calls[number - 1];
-  if (!step) throw new Refusal("no_such_step", `step "${name}" of run ${id} made ${calls.length} calls, so it has no call ${number}.`, `Give --call from 1 to ${calls.length}.`, show);
+  const chosen = calls[number - 1];
+  if (!chosen) throw new Refusal("no_such_step", `step "${name}" of run ${id} made ${calls.length} calls, so it has no call ${number}.`, `Give --call from 1 to ${calls.length}.`, show);
+  const { agent: step, scope } = chosen;
 
   const all = readActivity(paths, id).filter((line) => line.scope === scope && (step.callIndex === undefined ? line.label === label : line.callIndex === step.callIndex));
   const exec = step.model === EXEC_MODEL;
@@ -154,7 +162,7 @@ export function stepView(paths: HomePaths, runId: string, name: string, options:
     activity,
     ...(activity.length < all.length ? { earlier: all.length - activity.length } : {}),
     ...(prompt !== undefined && prompt.length < step.prompt.length ? { promptCut: true as const } : {}),
-    ...(scopes.length > 1 ? { alsoIn: scopes.filter((other) => other !== scope) } : {}),
+    ...(others.length ? { alsoIn: others } : {}),
   };
 }
 

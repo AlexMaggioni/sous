@@ -1,7 +1,7 @@
 // What several commands share: the run a command names, the wait, and the start line.
 
 import { resolve } from "node:path";
-import { answerQuestion, findProjectDir, hint, logFile, readRun, runPreview, stopRun, waitForRun, type HomePaths, type RunQuestion, type RunRecord, type RunView } from "@sous/engine";
+import { answerQuestion, findProjectDir, hint, logFile, readRun, runPreview, stopRun, waitForRun, word, type HomePaths, type RunQuestion, type RunRecord, type RunView } from "@sous/engine";
 import { str, Usage, type Parsed } from "../args.js";
 import { reply, type Next, type Reply } from "../reply.js";
 import type { Ctx } from "./index.js";
@@ -21,6 +21,12 @@ export function age(iso: string | undefined, now: Date): string {
 export function projectDir(args: Parsed): string {
   const project = str(args.flags.project);
   return project ? resolve(project) : findProjectDir();
+}
+
+/** The call with the command's --project, when the command had one and the call names none. */
+export function atProject(call: string, project: string | undefined): string {
+  if (!project || /(^| )--project( |$)/.test(call)) return call;
+  return `${call} --project ${word(project)}`;
 }
 
 /** The whole number a flag gives, at least `min`. Undefined when the flag is not there. */

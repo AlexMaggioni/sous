@@ -52,13 +52,13 @@ function aimNote(detail: RunDetail, note: ResumeNote): NoteRequest {
     const change = "Name one of the run's steps, by its label or its name in sous log, or leave out --step to give the note to the first agent call that runs.";
     throw new Refusal("no_such_step", `run ${id} has no step "${note.step}".`, change, `sous show ${id} --json`);
   }
-  return { text: note.text, step: { name: found.name, scope: found.scope, label: found.label } };
+  return { text: note.text, step: { name: found.name, scope: found.calls.at(-1)!.scope, label: found.label } };
 }
 
 /** A note when every call of the step finished: the resume does not run it again by itself. */
 function finishedNote(detail: RunDetail, step: NonNullable<NoteRequest["step"]>): string[] {
   const calls = stepCalls(detail, step.name)?.calls ?? [];
-  if (!calls.length || calls.some((call) => call.status !== "done")) return [];
+  if (!calls.length || calls.some((call) => call.agent.status !== "done")) return [];
   return [`Step "${step.name}" already finished. The note reaches it only if the workflow calls "${step.label}" again.`];
 }
 
@@ -66,7 +66,7 @@ function finishedNote(detail: RunDetail, step: NonNullable<NoteRequest["step"]>)
  *  agent step, the one named or else the first that runs now. */
 function tellInstead(detail: RunDetail, text: string, named: string | undefined): { notes: string[]; tell?: string } {
   const id = detail.record.runId;
-  const agentStep = (name: string) => stepCalls(detail, name)?.calls.some((call) => call.model !== EXEC_MODEL) ?? false;
+  const agentStep = (name: string) => stepCalls(detail, name)?.calls.some((call) => call.agent.model !== EXEC_MODEL) ?? false;
   const step = named ?? detail.running.find(agentStep);
   if (step === undefined) {
     return { notes: [`The note reached no step, since the run runs already and no agent step runs now. Once one runs, sous tell ${id} --step <step> gives it the note. sous show ${id} --json lists the steps.`] };

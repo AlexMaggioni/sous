@@ -18,7 +18,7 @@ import { openWorkflowDir } from "../workflows/dir.js";
 import { recordAction, SERVICE } from "./actions.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
-import { NotApproved } from "./approval-check.js";
+import { approveCall, NotApproved } from "./approval-check.js";
 import { seedApprovals } from "./approvals.js";
 import { createRun, type Launcher } from "./launch.js";
 import { notify } from "./notify.js";
@@ -163,7 +163,7 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
       if (error instanceof NotApproved && state.approvalsTold?.[schedule.name] !== hashes) {
         (state.approvalsTold ??= {})[schedule.name] = hashes!;
         const project = schedule.projectDir === paths.home ? "" : ` --project ${word(schedule.projectDir)}`;
-        const approve = error.texts.map((text) => `sous workflows approve ${word(text.workflow)}${project}`).join(", then ");
+        const approve = error.texts.map((text) => `${approveCall(text.workflow, true)}${project}`).join(", then ");
         const names = error.texts.map((text) => text.workflow).join(", ");
         tell(`${error.workflow} needs your approval`, `The schedule ${schedule.name} did not start ${schedule.workflow}, because ${names} is new or changed since you approved it. ${approve} lets it start.`);
       }
