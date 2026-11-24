@@ -354,6 +354,10 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous discard <run> --yes` | delete the run's branches and worktrees, merged or not. Without `--yes` it lists them, deletes nothing and exits 0. A running run is refused: stop it first. |
 | `sous prune --days N` | remove finished runs older than N days |
 
+A command that takes no workflow inputs, such as `sous list`, leaves out a flag it does not take
+and says so in a note that names the flag. `sous run`, `sous rerun` and `sous check` read an
+unknown `--name value` as an input instead, and so does `sous schedule add`.
+
 A command with a wrong or missing argument exits 64. So does `sous resume` after an edit, with
 neither `--latest` nor `--same`. A run, workflow, question, step or schedule that is not there
 exits 65. So do `sous stop --step` and `sous tell` with a name the run never had, `sous resume --step` with a name in neither the run nor its text, and `sous tell` to

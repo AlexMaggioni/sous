@@ -118,12 +118,13 @@ export const COMMANDS: Record<string, { run: Command; flags: FlagSpec[]; inputs?
 
 // args.ts
 export interface FlagSpec { name: string; takes: "none" | "one" | "many" }
-export interface Parsed { positional: string[]; flags: Record<string, string | string[] | true>; inputs: Record<string, string> }
+export interface Parsed { positional: string[]; flags: Record<string, string | string[] | true>; inputs: Record<string, string>; dropped: string[] }
 export function parseArgs(argv: string[], flags: FlagSpec[], takesInputs: boolean): Parsed;
 export const RESERVED: readonly string[];
 ```
 
 - A command that takes workflow inputs (run, rerun, check) puts an unknown `--name value` into `inputs`. Its own flags never become inputs. `RESERVED` lists every flag those commands own, today's and the new `--by`, `--budget`, `--timeout`, `--note` and `--let-agent-answer`.
+- A command that takes no inputs leaves out a flag it does not take, with its value, and names it in `dropped`. The reply adds a note for each: `sous list does not take --bogus, so it left it out. It takes --all and --json.` `--by` on a read keeps its own note instead.
 - `sous check` adds a note when a workflow declares an input with a reserved name, since the command line can't give it.
 - A command never prompts when `machine.isTerminal` is false. That replaces the check at `cli.ts:201`.
 - `cli.ts` keeps `spawn`, the `fs` calls, `cliFile` and the daemon start, behind `Machine`. The command files import no machine module.
