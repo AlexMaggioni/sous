@@ -223,7 +223,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       assert.equal(result.resumeReport?.live, 1);
       assert.deepEqual(orderedDecisions, [0, 1, 2]);
 
-      git(dirs.cwd, "branch", "orc/degrade-0-item-0");
+      git(dirs.cwd, "branch", "sous/degrade-0-item-0");
       const degraded = [...original];
       degraded[0] = "worktree-0-changed";
       const degradedPrompts: string[] = [];

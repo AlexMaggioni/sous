@@ -1,4 +1,4 @@
-// orc's runs. The reads: the list of runs, one run, its steps, its questions, and the wait for it
+// sous's runs. The reads: the list of runs, one run, its steps, its questions, and the wait for it
 // to end. The requests: start, stop, stop a step, pause, resume, run again, answer, discard the
 // worktrees, forget and prune, and the account changes that look at the runs. Callers get views
 // and never open a run file. A read writes nothing.
@@ -6,7 +6,7 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { interruptedReason, type PersistedRunState, type RunStatus } from "./persistence/run-persistence.js";
 import { deleteAccount, DEFAULT, moveRunAccount, setCurrentAccount, type AccountName } from "../accounts.js";
-import type { HarnessId } from "@orchestrator/harnesses";
+import type { HarnessId } from "@sous/harnesses";
 import { foldStep } from "../display.js";
 import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
@@ -21,8 +21,8 @@ import { currentWorkflows, stopColdRun } from "./worker.js";
 /** A question a run asks, as the inbox holds it. */
 export type RunQuestion = Question;
 
-/** What the run's saved state says, as orc shows it. A run left pending or running by a worker
- *  that died shows as paused "interrupted", the way `orc resume` saves it before it goes on. */
+/** What the run's saved state says, as sous shows it. A run left pending or running by a worker
+ *  that died shows as paused "interrupted", the way `sous resume` saves it before it goes on. */
 export interface SavedFacts {
   status: RunStatus;
   pauseReason?: string;
@@ -31,7 +31,7 @@ export interface SavedFacts {
   reason?: string;
 }
 
-/** A run as orc's readers see it: its record, what the pause rule says of it, and its open
+/** A run as sous's readers see it: its record, what the pause rule says of it, and its open
  *  questions. */
 export interface RunView extends Verdict {
   runId: string;
@@ -43,7 +43,7 @@ export interface RunView extends Verdict {
 
 type Step = PersistedRunState["agents"][number];
 
-/** A run with its steps, for orc show. */
+/** A run with its steps, for sous show. */
 export interface RunDetail extends RunView {
   /** The steps in the order they started. While the worker runs, the steps the event log has
    *  since the last save are in it too. */
@@ -56,12 +56,12 @@ export interface RunDetail extends RunView {
   result?: unknown;
   tokens?: number;
   durationMs?: number;
-  /** The saved state with the steps above, without the script and the journals. orc show
+  /** The saved state with the steps above, without the script and the journals. sous show
    *  --json prints it. */
   engineState?: Omit<PersistedRunState, "script" | "journal" | "nestedJournal" | "calls">;
 }
 
-/** The state as orc shows it, given what the rule says of it. Nothing is written. */
+/** The state as sous shows it, given what the rule says of it. Nothing is written. */
 function shownState(record: RunRecord, state: PersistedRunState | undefined, verdict: Verdict): PersistedRunState | undefined {
   if (!state || state.status === "paused" || verdict.pause?.reason !== "interrupted") return state;
   return { ...state, status: "paused", pauseReason: "interrupted", reason: interruptedReason(record.pid) };
@@ -81,12 +81,12 @@ function viewOf(record: RunRecord, state: PersistedRunState | undefined, questio
 
 function needRecord(paths: HomePaths, id: string): RunRecord {
   const record = findRecord(paths, id);
-  if (!record) throw new Error(`no run "${id}". orc list shows the runs.`);
+  if (!record) throw new Error(`no run "${id}". sous list shows the runs.`);
   return record;
 }
 
 /**
- * orc's runs, newest first, or the newest `limit` of them. It reads the records, the engine
+ * sous's runs, newest first, or the newest `limit` of them. It reads the records, the engine
  * folder and the inbox once each, so its cost grows with the number of runs. `fs` is for tests.
  */
 export function listRuns(paths: HomePaths, options: { limit?: number; fs?: StoreFs } = {}): RunView[] {
@@ -196,7 +196,7 @@ function liveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState
   return { ...(state ? { steps: agents } : {}), running: named() };
 }
 
-/** What `orc wait --json` prints. Its status is the saved one, not the rule's word. */
+/** What `sous wait --json` prints. Its status is the saved one, not the rule's word. */
 function runSummary(record: RunRecord, state: PersistedRunState | undefined, questions: RunQuestion[]): Record<string, unknown> {
   return {
     runId: record.runId,
@@ -364,10 +364,10 @@ export function changedWorkflows(paths: HomePaths, record: RunRecord, state: Per
 /** What resume says when the rule refuses it. */
 const RESUME_REFUSALS: Record<ResumeRefusal, (runId: string) => string> = {
   running: (runId) => `${runId} is running already`,
-  "never-started": (runId) => `${runId} never started. orc rerun ${runId} starts it fresh.`,
-  completed: (runId) => `${runId} completed. orc rerun ${runId} runs it again.`,
-  stopped: (runId) => `${runId} was stopped. orc rerun ${runId} starts it again.`,
-  older: (runId) => `${runId} was saved by an older orc, and this orc cannot resume it. orc rerun ${runId} starts it again, and orc stop ${runId} ends it.`,
+  "never-started": (runId) => `${runId} never started. sous rerun ${runId} starts it fresh.`,
+  completed: (runId) => `${runId} completed. sous rerun ${runId} runs it again.`,
+  stopped: (runId) => `${runId} was stopped. sous rerun ${runId} starts it again.`,
+  older: (runId) => `${runId} was saved by an older sous, and this sous cannot resume it. sous rerun ${runId} starts it again, and sous stop ${runId} ends it.`,
 };
 
 /**
@@ -384,8 +384,8 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, cho
   if (changed.length && !choice) {
     throw new Error(
       `${changed.join(", ")} changed since ${record.runId} started. ` +
-        `orc resume ${record.runId} --latest takes the new version, and the finished steps that match stay done. ` +
-        `orc resume ${record.runId} --same goes on with the version it started with.`,
+        `sous resume ${record.runId} --latest takes the new version, and the finished steps that match stay done. ` +
+        `sous resume ${record.runId} --same goes on with the version it started with.`,
     );
   }
   if (choice === "latest") updateRecord(paths, record.runId, { resumeLatest: true });
@@ -395,9 +395,9 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, cho
 
 /** What rerun --reuse says when the rule refuses it. */
 const REUSE_REFUSALS: Record<ReuseRefusal, (runId: string) => string> = {
-  running: (runId) => `${runId} is still running. orc stop ${runId} first.`,
-  paused: (runId) => `${runId} is paused. orc resume ${runId} takes your edits and keeps the finished steps.`,
-  older: (runId) => `${runId} was saved by an older orc, and this orc cannot reuse its steps. orc rerun ${runId} without --reuse starts it again.`,
+  running: (runId) => `${runId} is still running. sous stop ${runId} first.`,
+  paused: (runId) => `${runId} is paused. sous resume ${runId} takes your edits and keeps the finished steps.`,
+  older: (runId) => `${runId} was saved by an older sous, and this sous cannot reuse its steps. sous rerun ${runId} without --reuse starts it again.`,
 };
 
 export interface RerunRequest {
@@ -448,7 +448,7 @@ export function findQuestion(paths: HomePaths, id: string): RunQuestion {
     if (forRun.length > 1) throw new Error(`run ${record.runId} asks ${forRun.length} questions. Name one: ${forRun.map((q) => q.id).join(", ")}`);
     throw new Error(`run ${record.runId} asks nothing right now`);
   }
-  throw new Error(`no open question "${id}". orc inbox lists them.`);
+  throw new Error(`no open question "${id}". sous inbox lists them.`);
 }
 
 /** What an answer did. It was written, and `running` says whether the run reads it now or on
@@ -456,7 +456,7 @@ export function findQuestion(paths: HomePaths, id: string): RunQuestion {
  *  already closed. */
 export type AnswerOutcome = { answered: true; running: boolean } | { stopped: ReturnType<typeof stopRun> } | { usage: string } | { gone: true };
 
-/** Answer a question with what a person typed. A reply that stops the run stops it as orc stop does. */
+/** Answer a question with what a person typed. A reply that stops the run stops it as sous stop does. */
 export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply): AnswerOutcome {
   const result = reply(paths, question, typed);
   if ("stop" in result) return { stopped: stopRun(paths, question.runId) };
@@ -468,7 +468,7 @@ export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: R
  *  after each. */
 export function discardRun(paths: HomePaths, runId: string, options: { remove?: boolean; deleted?: (tree: { dir: string; branch: string }) => void } = {}): Array<{ dir: string; branch: string }> {
   const record = needRecord(paths, runId);
-  if (processAlive(record.pid)) throw new Error(`${record.runId} is running. orc stop ${record.runId} first.`);
+  if (processAlive(record.pid)) throw new Error(`${record.runId} is running. sous stop ${record.runId} first.`);
   const trees = runWorktrees(record);
   if (options.remove) {
     for (const tree of trees) {
@@ -499,7 +499,7 @@ export function workerRuns(run: RunView): boolean {
   return processAlive(run.record.pid) || (!run.resume.ok && run.resume.why === "running");
 }
 
-/** Remove finished runs older than `days`: the engine's state, orc's record and the log. Worktrees stay. */
+/** Remove finished runs older than `days`: the engine's state, sous's record and the log. Worktrees stay. */
 export function pruneRuns(paths: HomePaths, days: number, now = new Date()): string[] {
   const cutoff = now.getTime() - days * 86_400_000;
   const removed: string[] = [];
@@ -523,7 +523,7 @@ export function busyWorktrees(paths: HomePaths, runs = listRuns(paths)): Set<str
 }
 
 /**
- * Remove orc's merged worktrees in each project a run used, and keep those of the runs that have
+ * Remove sous's merged worktrees in each project a run used, and keep those of the runs that have
  * not finished. The service passes the scan it already made as `runs`.
  */
 export function gcRuns(paths: HomePaths, options: { dryRun?: boolean; runs?: RunView[] } = {}): GcResult {
@@ -534,7 +534,7 @@ export function gcRuns(paths: HomePaths, options: { dryRun?: boolean; runs?: Run
 
 // ── Accounts ──
 
-/** A run that `orc account use` moved, or left waiting. */
+/** A run that `sous account use` moved, or left waiting. */
 export interface Moved {
   runId: string;
   workflow: string;
@@ -549,7 +549,7 @@ export interface UseResult extends AccountName {
 }
 
 /**
- * Make the account orc's current one for its program. Then each run waiting at that program's
+ * Make the account sous's current one for its program. Then each run waiting at that program's
  * usage limit moves to it and resumes now, also the runs that agents started.
  */
 export function useAccount(paths: HomePaths, spec: string, launch: Launcher): UseResult {
@@ -582,7 +582,7 @@ export interface WaitingRun {
 }
 
 /** The runs waiting at a usage limit, newest first: their worker is gone and they paused there.
- *  `orc account` lists them, and `orc account use` moves them. */
+ *  `sous account` lists them, and `sous account use` moves them. */
 export function waitingRuns(paths: HomePaths): WaitingRun[] {
   const waiting: WaitingRun[] = [];
   for (const { record, pause } of listRuns(paths)) {

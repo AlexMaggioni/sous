@@ -1,6 +1,6 @@
-$ orc check ticket --dry-run --ticket "Add a shout option that upper-cases the text" --test "node --test --test-reporter=dot"
+$ sous check ticket --dry-run --ticket "Add a shout option that upper-cases the text" --test "node --test --test-reporter=dot"
 exit 0
-ticket  <tmp>/check-ticket/project/.orchestrator/workflows/ticket.js
+ticket  <tmp>/check-ticket/project/.sous/workflows/ticket.js
 ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
   (log lines sorted)
@@ -11,13 +11,13 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> done       reviewer 1, 41 tokens
   <hh:mm:ss> done       tests
   <hh:mm:ss> done       verifier, 54 tokens
-  <hh:mm:ss> log        Logs persisted to <tmp>/check-ticket/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
+  <hh:mm:ss> log        Logs persisted to <tmp>/check-ticket/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
   <hh:mm:ss> log        review 1: approved
   <hh:mm:ss> phase      implement
   <hh:mm:ss> phase      review
   <hh:mm:ss> phase      verify
-  <hh:mm:ss> removed    <tmp>/check-ticket/orc-home/worktrees/<run-1>, which changed no file
-  <hh:mm:ss> run        ticket in <tmp>/check-ticket/orc-home/worktrees/<run-1>
+  <hh:mm:ss> removed    <tmp>/check-ticket/sous-home/worktrees/<run-1>, which changed no file
+  <hh:mm:ss> run        ticket in <tmp>/check-ticket/sous-home/worktrees/<run-1>
   <hh:mm:ss> start      commit (exec)
   <hh:mm:ss> start      diff 1 (exec)
   <hh:mm:ss> start      implementer (claude/haiku)

@@ -1,4 +1,4 @@
-// `orc check <workflow> --dry-run`: run a workflow once with stand-in agents, to catch mistakes in
+// `sous check <workflow> --dry-run`: run a workflow once with stand-in agents, to catch mistakes in
 // its steps and how they connect before a real run. Code steps run for real, in the workflow's own
 // place, except that a worktree (or a scratch folder outside a git repo) stands in for the project
 // folder, so a dry run never changes the project.

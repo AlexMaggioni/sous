@@ -1,4 +1,4 @@
-// What parallel() and pipeline() do when a function fails, as docs/orchestrator.md states it.
+// What parallel() and pipeline() do when a function fails, as docs/guide.md states it.
 // A step that fails its last try pauses the run. An error the script throws outside any step
 // gives null in that slot.
 import assert from "node:assert/strict";

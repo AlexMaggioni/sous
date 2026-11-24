@@ -5,7 +5,7 @@ import { checkWorkflow } from "../../src/workflows/check.js";
 import { setup } from "../runs/fixture.js";
 import { write } from "../helpers/files.js";
 
-// `orc check` without orc: the problems and notes it prints for a workflow.
+// `sous check` without sous: the problems and notes it prints for a workflow.
 
 describe("check", () => {
   it("finds missing workflows, agents and MCP servers, and agents sent to a harness they can't run on", () => {
@@ -25,9 +25,9 @@ await agent('z', { agentType: 'nobody' })`,
     write(join(projectDir, ".codex", "agents", "fixer.toml"), 'name = "fixer"\ndescription = "fixes"\ndeveloper_instructions = "Fix it."\n');
     const result = checkWorkflow(paths, projectDir, "outer", { tickt: "x" });
     const expected = [
-      /^no MCP server "linear" for Claude Code\. orc looks in .*Add it to \.rulesync\/mcp\.jsonc\.$/,
+      /^no MCP server "linear" for Claude Code\. sous looks in .*Add it to \.rulesync\/mcp\.jsonc\.$/,
       /^agent "fixer" comes from .*\/\.codex\/agents\/fixer\.toml, a Codex folder, so it runs only on Codex, and this step sends it to Claude Code\. Move it to rulesync, as \.rulesync\/subagents\/fixer\.md/,
-      /^in inner: no agent "nobody"\. orc looks in \.rulesync\/subagents\/, then the global rulesync folder/,
+      /^in inner: no agent "nobody"\. sous looks in \.rulesync\/subagents\/, then the global rulesync folder/,
       /^no saved workflow "ghost"$/,
       /^missing input --ticket \(The ticket\)$/,
       /^unknown input --tickt\. This workflow takes: --ticket, --harness$/,
@@ -39,7 +39,7 @@ await agent('z', { agentType: 'nobody' })`,
     assert.equal(checkWorkflow(paths, projectDir, "outer").problems.some((p) => p.includes("linear")), false);
   });
 
-  it("refuses a step model or a default that names Pi or OpenCode, which orc no longer runs", () => {
+  it("refuses a step model or a default that names Pi or OpenCode, which sous no longer runs", () => {
     const { paths, projectDir } = setup({
       gone: `export const meta = { name: 'gone', description: 'old harnesses' }
 await agent('a', { model: 'pi/gpt-test' })
@@ -48,9 +48,9 @@ await agent('c', { model: 'claude/haiku' })`,
     }, { defaultHarness: "opencode", defaultModel: "pi/gpt-test" });
     const problems = checkWorkflow(paths, projectDir, "gone").problems;
     const expected = [
-      /^model "pi\/gpt-test" names the harness "pi", which orc no longer runs\. Use one of claude, codex\.$/,
-      /^model "opencode\/big" names the harness "opencode", which orc no longer runs\. Use one of claude, codex\.$/,
-      /^the configured default harness "opencode" is not one orc runs\. Use one of claude, codex\.$/,
+      /^model "pi\/gpt-test" names the harness "pi", which sous no longer runs\. Use one of claude, codex\.$/,
+      /^model "opencode\/big" names the harness "opencode", which sous no longer runs\. Use one of claude, codex\.$/,
+      /^the configured default harness "opencode" is not one sous runs\. Use one of claude, codex\.$/,
       /^the configured default model "pi\/gpt-test" names the harness "pi"/,
     ];
     assert.equal(problems.length, expected.length, problems.join("\n"));
@@ -84,7 +84,7 @@ await tools.run('missing.sh')`);
 
     it("reads a quoted key, which the text scan missed", () => {
       const result = check(`await agent('a', { "model": "pi/gpt-test" })`);
-      assert.deepEqual(result, { problems: ['model "pi/gpt-test" names the harness "pi", which orc no longer runs. Use one of claude, codex.'], notes: [] });
+      assert.deepEqual(result, { problems: ['model "pi/gpt-test" names the harness "pi", which sous no longer runs. Use one of claude, codex.'], notes: [] });
     });
 
     it("reads a template string with nothing in it to fill, which the text scan missed", () => {

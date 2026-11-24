@@ -42,7 +42,7 @@
       "3 tickets",
       "review 1: approved",
       "review 1: approved",
-      "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+      "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run1.log"
     ],
     "steps": [
       {
@@ -85,15 +85,15 @@
       {
         "label": "TK-1",
         "workflow": "ticket",
-        "cwd": "$ORC_HOME/worktrees/run1-TK-1",
-        "branch": "orc/run1-TK-1",
+        "cwd": "$SOUS_HOME/worktrees/run1-TK-1",
+        "branch": "sous/run1-TK-1",
         "steps": [
           {
             "label": "implementer",
             "phase": "implement",
             "program": "claude",
             "model": "claude/haiku",
-            "place": "$ORC_HOME/worktrees/run1-TK-1",
+            "place": "$SOUS_HOME/worktrees/run1-TK-1",
             "status": "done",
             "continuedSession": false,
             "keptOpen": true
@@ -103,7 +103,7 @@
             "phase": "review",
             "program": "code",
             "model": "exec",
-            "place": "$ORC_HOME/worktrees/run1-TK-1",
+            "place": "$SOUS_HOME/worktrees/run1-TK-1",
             "status": "done",
             "exit": 0
           },
@@ -112,7 +112,7 @@
             "phase": "review",
             "program": "claude",
             "model": "claude/haiku",
-            "place": "$ORC_HOME/worktrees/run1-TK-1",
+            "place": "$SOUS_HOME/worktrees/run1-TK-1",
             "status": "done",
             "continuedSession": false,
             "schema": "matched"
@@ -122,7 +122,7 @@
             "phase": "verify",
             "program": "code",
             "model": "exec",
-            "place": "$ORC_HOME/worktrees/run1-TK-1",
+            "place": "$SOUS_HOME/worktrees/run1-TK-1",
             "status": "done",
             "exit": 0
           },
@@ -131,7 +131,7 @@
             "phase": "verify",
             "program": "claude",
             "model": "claude/haiku",
-            "place": "$ORC_HOME/worktrees/run1-TK-1",
+            "place": "$SOUS_HOME/worktrees/run1-TK-1",
             "status": "done",
             "continuedSession": false,
             "schema": "matched"
@@ -141,7 +141,7 @@
             "phase": "verify",
             "program": "code",
             "model": "exec",
-            "place": "$ORC_HOME/worktrees/run1-TK-1",
+            "place": "$SOUS_HOME/worktrees/run1-TK-1",
             "status": "done",
             "exit": 0
           }
@@ -150,15 +150,15 @@
       {
         "label": "TK-2",
         "workflow": "ticket",
-        "cwd": "$ORC_HOME/worktrees/run1-TK-2",
-        "branch": "orc/run1-TK-2",
+        "cwd": "$SOUS_HOME/worktrees/run1-TK-2",
+        "branch": "sous/run1-TK-2",
         "steps": [
           {
             "label": "implementer",
             "phase": "implement",
             "program": "claude",
             "model": "claude/haiku",
-            "place": "$ORC_HOME/worktrees/run1-TK-2",
+            "place": "$SOUS_HOME/worktrees/run1-TK-2",
             "status": "done",
             "continuedSession": false,
             "keptOpen": true
@@ -168,7 +168,7 @@
             "phase": "review",
             "program": "code",
             "model": "exec",
-            "place": "$ORC_HOME/worktrees/run1-TK-2",
+            "place": "$SOUS_HOME/worktrees/run1-TK-2",
             "status": "done",
             "exit": 0
           },
@@ -177,7 +177,7 @@
             "phase": "review",
             "program": "claude",
             "model": "claude/haiku",
-            "place": "$ORC_HOME/worktrees/run1-TK-2",
+            "place": "$SOUS_HOME/worktrees/run1-TK-2",
             "status": "done",
             "continuedSession": false,
             "schema": "matched"
@@ -187,7 +187,7 @@
             "phase": "verify",
             "program": "code",
             "model": "exec",
-            "place": "$ORC_HOME/worktrees/run1-TK-2",
+            "place": "$SOUS_HOME/worktrees/run1-TK-2",
             "status": "done",
             "exit": 0
           },
@@ -196,7 +196,7 @@
             "phase": "verify",
             "program": "claude",
             "model": "claude/haiku",
-            "place": "$ORC_HOME/worktrees/run1-TK-2",
+            "place": "$SOUS_HOME/worktrees/run1-TK-2",
             "status": "done",
             "continuedSession": false,
             "schema": "matched"
@@ -206,7 +206,7 @@
             "phase": "verify",
             "program": "code",
             "model": "exec",
-            "place": "$ORC_HOME/worktrees/run1-TK-2",
+            "place": "$SOUS_HOME/worktrees/run1-TK-2",
             "status": "done",
             "exit": 0
           }
@@ -261,7 +261,7 @@
         "commits": 1
       },
       {
-        "name": "orc/run1-TK-1",
+        "name": "sous/run1-TK-1",
         "commits": 1,
         "files": [
           "src/textkit.js",
@@ -269,7 +269,7 @@
         ]
       },
       {
-        "name": "orc/run1-TK-2",
+        "name": "sous/run1-TK-2",
         "commits": 1,
         "files": [
           "src/textkit.js",
@@ -279,12 +279,12 @@
     ],
     "worktrees": [
       {
-        "path": "$ORC_HOME/worktrees/run1-TK-1",
-        "branch": "orc/run1-TK-1"
+        "path": "$SOUS_HOME/worktrees/run1-TK-1",
+        "branch": "sous/run1-TK-1"
       },
       {
-        "path": "$ORC_HOME/worktrees/run1-TK-2",
-        "branch": "orc/run1-TK-2"
+        "path": "$SOUS_HOME/worktrees/run1-TK-2",
+        "branch": "sous/run1-TK-2"
       },
       {
         "path": "$S/factory/tk",

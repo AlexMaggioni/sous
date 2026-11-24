@@ -15,18 +15,18 @@ import { heldRunner, setup, until } from "./runs/fixture.js";
 import { git, initGitRepo } from "./helpers/git.js";
 
 // A step with `isolation: "worktree"` gets its worktree from the places module, named like every
-// other worktree orc makes: a folder under the home's worktrees folder, on branch orc/<name>.
+// other worktree sous makes: a folder under the home's worktrees folder, on branch sous/<name>.
 
-const gitRepo = () => initGitRepo(mkdtempSync(join(tmpdir(), "orc-places-repo-")));
+const gitRepo = () => initGitRepo(mkdtempSync(join(tmpdir(), "sous-places-repo-")));
 
 function tempHome(): HomePaths {
-  return ensureHome(homePaths(mkdtempSync(join(tmpdir(), "orc-places-home-"))));
+  return ensureHome(homePaths(mkdtempSync(join(tmpdir(), "sous-places-home-"))));
 }
 
 const step = { runId: "run-9", index: 0, label: "Edit it" };
 
 describe("a step's worktree", () => {
-  it("is made under the home's worktrees folder on branch orc/<name>, then removed with its branch", () => {
+  it("is made under the home's worktrees folder on branch sous/<name>, then removed with its branch", () => {
     const home = tempHome();
     const repo = gitRepo();
     try {
@@ -34,7 +34,7 @@ describe("a step's worktree", () => {
       assert.ok("tree" in made, "a worktree was made");
       const { tree } = made;
       assert.equal(tree.dir, join(home.worktrees, "run-9-0-edit-it"));
-      assert.equal(tree.branch, "orc/run-9-0-edit-it");
+      assert.equal(tree.branch, "sous/run-9-0-edit-it");
       assert.ok(existsSync(join(tree.dir, "file.txt")), "the worktree has a checkout");
       assert.equal(git(tree.dir, "branch", "--show-current"), tree.branch);
 
@@ -55,7 +55,7 @@ describe("a step's worktree", () => {
     const home = tempHome();
     const repo = gitRepo();
     try {
-      git(repo, "branch", "orc/run-9-0-edit-it");
+      git(repo, "branch", "sous/run-9-0-edit-it");
       const made = placesIn(home, "run-9").makeStepWorktree(repo, step);
       assert.ok("reason" in made);
       assert.match(made.reason, /already exists/i);
@@ -105,9 +105,9 @@ return {}`;
         },
       });
       const dir = join(home.worktrees, "iso-run-0-editor");
-      assert.deepEqual(seen, [{ cwd: dir, branch: "orc/iso-run-0-editor" }]);
+      assert.deepEqual(seen, [{ cwd: dir, branch: "sous/iso-run-0-editor" }]);
       assert.equal(existsSync(dir), false, "the worktree is gone after the step");
-      assert.equal(git(repo, "branch", "--list", "orc/iso-run-0-editor"), "", "and its branch");
+      assert.equal(git(repo, "branch", "--list", "sous/iso-run-0-editor"), "", "and its branch");
     } finally {
       rmSync(repo, { recursive: true, force: true });
       rmSync(home.home, { recursive: true, force: true });
@@ -116,7 +116,7 @@ return {}`;
 
   it("a step with isolation worktree outside a git repository works in the run's folder, and the log says why", async () => {
     const home = tempHome();
-    const dir = mkdtempSync(join(tmpdir(), "orc-places-nogit-"));
+    const dir = mkdtempSync(join(tmpdir(), "sous-places-nogit-"));
     try {
       const seen: string[] = [];
       const logs: string[] = [];
@@ -164,7 +164,7 @@ return {}`, {
       });
       assert.deepEqual(seen, [repo]);
       assert.ok(logs.includes(`isolation ignored for "editor" (no home for worktrees)`), logs.join("\n"));
-      assert.equal(git(repo, "branch", "--list", "orc/*"), "", "no branch was made");
+      assert.equal(git(repo, "branch", "--list", "sous/*"), "", "no branch was made");
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -181,7 +181,7 @@ return await agent('edit', { label: 'editor', isolation: 'worktree' })`,
     const record = createRun(paths, { workflow: "iso", projectDir, inputs: {}, place: "folder" });
     const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: () => {} });
     await until(() => calls.length === 1);
-    const tree = { dir: join(paths.worktrees, `${record.runId}-0-editor`), branch: `orc/${record.runId}-0-editor` };
+    const tree = { dir: join(paths.worktrees, `${record.runId}-0-editor`), branch: `sous/${record.runId}-0-editor` };
     assert.deepEqual(loadRecord(paths, record.runId)?.stepWorktrees, [tree]);
     assert.ok(existsSync(tree.dir));
     release("editor");
@@ -210,7 +210,7 @@ return await agent('edit', { label: 'editor', isolation: 'worktree' })`,
     const worker = runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: () => {} });
     await until(() => calls.length === 1);
     const name = `${record.runId}-${question.callIndex + 1}-editor`;
-    const tree = { dir: join(paths.worktrees, name), branch: `orc/${name}` };
+    const tree = { dir: join(paths.worktrees, name), branch: `sous/${name}` };
     assert.deepEqual(loadRecord(paths, record.runId)?.stepWorktrees, [tree]);
     assert.ok(existsSync(tree.dir));
     release("editor");
@@ -266,7 +266,7 @@ describe("a run's places note each place before they make it", () => {
     const home = tempHome();
     const repo = gitRepo();
     try {
-      git(repo, "branch", "orc/run-9-0-edit-it");
+      git(repo, "branch", "sous/run-9-0-edit-it");
       const { notes, sink } = fakeNotes();
       const made = runPlaces(home, sink).makeStepWorktree(repo, step);
       assert.ok("reason" in made);
@@ -303,7 +303,7 @@ describe("a run's places note each place before they make it", () => {
     const repo = gitRepo();
     try {
       // A folder git does not know as a worktree: the removal fails and the folder stays.
-      const tree = { dir: join(home.worktrees, "run-9-0-edit-it"), branch: "orc/run-9-0-edit-it" };
+      const tree = { dir: join(home.worktrees, "run-9-0-edit-it"), branch: "sous/run-9-0-edit-it" };
       mkdirSync(tree.dir, { recursive: true });
       const { notes, sink } = fakeNotes();
       runPlaces(home, sink).removeStepWorktree(repo, tree);
@@ -331,7 +331,7 @@ describe("a run's places note each place before they make it", () => {
       assert.ok(existsSync(tree) && existsSync(scratch));
       assert.deepEqual(notes, [
         { nested: "run-9-nested1", change: { parent: "run-9", workflow: "child", label: "ticket" } },
-        { nested: "run-9-nested1", change: { cwd: tree, branch: "orc/run-9-nested1" }, there: false },
+        { nested: "run-9-nested1", change: { cwd: tree, branch: "sous/run-9-nested1" }, there: false },
         { nested: "run-9-nested2", change: { cwd: scratch }, there: false },
         { nested: "run-9-nested3", change: { cwd: repo }, there: true },
       ]);

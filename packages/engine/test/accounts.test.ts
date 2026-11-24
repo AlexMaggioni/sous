@@ -1,4 +1,4 @@
-// The accounts a run records, and the account each of its steps runs as. orc's account tests
+// The accounts a run records, and the account each of its steps runs as. sous's account tests
 // cover the commands; these cover the engine's part on its own.
 
 import assert from "node:assert/strict";
@@ -18,12 +18,12 @@ describe("accounts", () => {
     assert.deepEqual(accountsForRun(paths, { CLAUDE_CONFIG_DIR: "/somewhere" }).claude, { name: "default", folder: "/somewhere" });
   });
 
-  it("runs a step as a named account, and refuses one orc no longer has", () => {
+  it("runs a step as a named account, and refuses one sous no longer has", () => {
     const paths = home();
     addAccount(paths, "work", "sk-ant-oat-work");
     assert.deepEqual(stepAccount(paths, "claude", { name: "work", folder: "/claude" }), { folder: "/claude", token: "sk-ant-oat-work", named: true });
     assert.deepEqual(stepAccount(paths, "codex", { name: "default", folder: null }), { folder: undefined });
-    assert.throws(() => stepAccount(paths, "claude", { name: "gone", folder: null }), /the run uses Claude Code account gone, which orc no longer has\. orc account add gone adds it again\./);
+    assert.throws(() => stepAccount(paths, "claude", { name: "gone", folder: null }), /the run uses Claude Code account gone, which sous no longer has\. sous account add gone adds it again\./);
     assert.deepEqual(runAccounts(paths, undefined), {}, "a run from before accounts keeps the caller's login");
   });
 });

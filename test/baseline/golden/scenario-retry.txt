@@ -1,13 +1,13 @@
-$ orc run retry --json
+$ sous run retry --json
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "retry",
-  "cwd": "<tmp>/scenario-retry/orc-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-retry/orc-home/logs/<run-1>.log"
+  "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-retry/sous-home/logs/<run-1>.log"
 }
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 2
 {
   "runId": "<run-1>",
@@ -15,21 +15,21 @@ exit 2
   "status": "paused",
   "pauseReason": "step_failed",
   "reason": "step \"no retries\" failed after 1 try: API Error: 500 Overloaded",
-  "cwd": "<tmp>/scenario-retry/orc-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>"
 }
 
-$ orc resume <run-1>
+$ sous resume <run-1>
 exit 0
-resumed <run-1>  retry  in <tmp>/scenario-retry/orc-home/scratch/<run-1>
-  follow: orc wait <run-1>    log: orc log <run-1> -f
+resumed <run-1>  retry  in <tmp>/scenario-retry/sous-home/scratch/<run-1>
+  follow: sous wait <run-1>    log: sous log <run-1> -f
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "retry",
   "status": "completed",
-  "cwd": "<tmp>/scenario-retry/orc-home/scratch/<run-1>",
+  "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>",
   "result": {
     "again": "Fake claude answer.",
     "once": "Fake claude answer.",
@@ -37,11 +37,11 @@ exit 0
   }
 }
 
-$ orc show <run-1>
+$ sous show <run-1>
 exit 0
 retry  <run-1>
 status    completed
-place     none  <tmp>/scenario-retry/orc-home/scratch/<run-1>
+place     none  <tmp>/scenario-retry/sous-home/scratch/<run-1>
 started   <time>  by cli
 program   Claude Code 2.1.330  <repo>/test/fakes/claude
 account   Claude Code: default, Claude Code's own login in ~/.claude
@@ -58,16 +58,16 @@ result
   "code": 3
 }
 
-$ orc show <run-1> --json
+$ sous show <run-1> --json
 exit 0
 {
   "record": {
     "runId": "<run-1>",
     "workflow": "retry",
-    "file": "<tmp>/scenario-retry/project/.orchestrator/workflows/retry.js",
+    "file": "<tmp>/scenario-retry/project/.sous/workflows/retry.js",
     "args": {},
     "place": "none",
-    "cwd": "<tmp>/scenario-retry/orc-home/scratch/<run-1>",
+    "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>",
     "projectDir": "<tmp>/scenario-retry/project",
     "priority": "user",
     "origin": "cli",
@@ -93,8 +93,8 @@ exit 0
     "runId": "<run-1>",
     "workflowName": "retry",
     "args": {},
-    "cwd": "<tmp>/scenario-retry/orc-home/scratch/<run-1>",
-    "effectiveCwd": "<tmp>/scenario-retry/orc-home/scratch/<run-1>",
+    "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>",
     "runtime": {
       "engineVersion": "4.0.5",
       "node": "<node>",
@@ -143,7 +143,7 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-retry/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -187,7 +187,7 @@ exit 0
           "sessionId": "<id-2>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-retry/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-retry/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -220,7 +220,7 @@ exit 0
       "agent \"retried\" attempt 1/3 failed: AGENT_EXECUTION_ERROR API Error: 500 Overloaded; retrying",
       "agent no retries attempt 1/1 failed: API Error: 500 Overloaded",
       "step \"no retries\" failed after 1 try: API Error: 500 Overloaded. The run pauses: fix the cause and resume it.",
-      "Logs persisted to <tmp>/scenario-retry/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+      "Logs persisted to <tmp>/scenario-retry/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
     ],
     "result": {
       "again": "Fake claude answer.",
@@ -244,7 +244,7 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-retry/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: no retries\n\nRETRY-NONE Try once.","rule":1,"outcome":"fail"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-retry/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: no retries\n\nRETRY-NONE Try once.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-4>"],"cwd":"<tmp>/scenario-retry/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-4>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: retried\n\nRETRY-AUTO Try twice.","rule":0,"outcome":"fail"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-retry/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: retried\n\nRETRY-AUTO Try twice.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-retry/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: no retries\n\nRETRY-NONE Try once.","rule":1,"outcome":"fail"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-retry/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: no retries\n\nRETRY-NONE Try once.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-4>"],"cwd":"<tmp>/scenario-retry/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-4>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: retried\n\nRETRY-AUTO Try twice.","rule":0,"outcome":"fail"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-retry/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: retried\n\nRETRY-AUTO Try twice.","rule":null,"outcome":"answer"}

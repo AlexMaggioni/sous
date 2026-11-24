@@ -50,7 +50,7 @@
     "workflow": "emails",
     "origin": "cli",
     "place": "none",
-    "cwd": "$ORC_HOME/scratch/run1",
+    "cwd": "$SOUS_HOME/scratch/run1",
     "inputs": {
       "mailbox": "mail/inbox.json"
     },
@@ -73,14 +73,14 @@
       }
     },
     "logs": [
-      "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+      "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run1.log"
     ],
     "steps": [
       {
         "label": "read mailbox",
         "program": "code",
         "model": "exec",
-        "place": "$ORC_HOME/scratch/run1",
+        "place": "$SOUS_HOME/scratch/run1",
         "status": "done",
         "exit": 0
       },
@@ -88,7 +88,7 @@
         "label": "sort",
         "program": "claude",
         "model": "claude/haiku",
-        "place": "$ORC_HOME/scratch/run1",
+        "place": "$SOUS_HOME/scratch/run1",
         "status": "done",
         "continuedSession": false,
         "schema": "matched"
@@ -97,7 +97,7 @@
         "label": "draft m1",
         "program": "claude",
         "model": "claude/haiku",
-        "place": "$ORC_HOME/scratch/run1",
+        "place": "$SOUS_HOME/scratch/run1",
         "status": "done",
         "continuedSession": false
       },
@@ -105,7 +105,7 @@
         "label": "draft m3",
         "program": "claude",
         "model": "claude/haiku",
-        "place": "$ORC_HOME/scratch/run1",
+        "place": "$SOUS_HOME/scratch/run1",
         "status": "done",
         "continuedSession": false
       },
@@ -113,7 +113,7 @@
         "label": "draft m5",
         "program": "claude",
         "model": "claude/haiku",
-        "place": "$ORC_HOME/scratch/run1",
+        "place": "$SOUS_HOME/scratch/run1",
         "status": "done",
         "continuedSession": false
       },
@@ -131,7 +131,7 @@
         "label": "draft m1 again",
         "program": "claude",
         "model": "claude/haiku",
-        "place": "$ORC_HOME/scratch/run1",
+        "place": "$SOUS_HOME/scratch/run1",
         "status": "done",
         "continuedSession": false
       },
@@ -139,7 +139,7 @@
         "label": "draft m3 again",
         "program": "claude",
         "model": "claude/haiku",
-        "place": "$ORC_HOME/scratch/run1",
+        "place": "$SOUS_HOME/scratch/run1",
         "status": "done",
         "continuedSession": false
       },
@@ -147,7 +147,7 @@
         "label": "draft m5 again",
         "program": "claude",
         "model": "claude/haiku",
-        "place": "$ORC_HOME/scratch/run1",
+        "place": "$SOUS_HOME/scratch/run1",
         "status": "done",
         "continuedSession": false
       },
@@ -162,7 +162,7 @@
         "label": "save drafts",
         "program": "code",
         "model": "exec",
-        "place": "$ORC_HOME/scratch/run1",
+        "place": "$SOUS_HOME/scratch/run1",
         "status": "done",
         "exit": 0
       }

@@ -1,11 +1,11 @@
-# orc
+# sous
 
-`orc` runs saved workflows on this machine, in the background. A workflow is a JavaScript file
+`sous` runs saved workflows on this machine, in the background. A workflow is a JavaScript file
 whose steps are agent calls and code. Each agent step runs on the Claude Code or Codex you have
 installed. A run keeps going when the terminal closes. It asks its questions through an inbox,
 pauses on a failed step, and waits out the subscription limit.
 
-[`docs/orchestrator.md`](docs/orchestrator.md) is the full guide. [`examples/`](examples/README.md)
+[`docs/guide.md`](docs/guide.md) is the full guide. [`examples/`](examples/README.md)
 has three workflows to try.
 
 ## Build
@@ -13,7 +13,7 @@ has three workflows to try.
 ```sh
 pnpm install
 pnpm build
-node packages/orc/dist/cli.js help
+node packages/cli/dist/cli.js help
 ```
 
 ## Try it
@@ -21,7 +21,7 @@ node packages/orc/dist/cli.js help
 ```sh
 examples/setup-textkit.sh ~/textkit
 cd ~/textkit
-node <this repo>/packages/orc/dist/cli.js check ticket --ticket "$(cat tickets/TK-1.md)" --dry-run
+node <this repo>/packages/cli/dist/cli.js check ticket --ticket "$(cat tickets/TK-1.md)" --dry-run
 ```
 
 `--dry-run` runs the workflow with stand-in agents, so it costs nothing.
@@ -30,7 +30,7 @@ node <this repo>/packages/orc/dist/cli.js check ticket --ticket "$(cat tickets/T
 
 | Package | What it does |
 | --- | --- |
-| `packages/orc` | The `orc` command: runs, the inbox, schedules and the service. |
+| `packages/cli` | The `sous` command: runs, the inbox, schedules and the service. |
 | `packages/engine` | Runs a workflow script, with its journal and resume. |
 | `packages/harnesses` | Runs one step on Claude Code, through the Claude Agent SDK, or on Codex, through `codex app-server`. |
 
@@ -43,8 +43,8 @@ and [`docs/proof/refactor.md`](docs/proof/refactor.md) shows the result.
 package, then the baseline. It needs no credentials and starts no real agent. The steps run on the
 fake programs in `test/fakes`. The proofs in `test/proofs` run on the real programs, by hand.
 
-orc's own tests run their workers in the test's process, with a fake runner, through the test
-kit at `@orchestrator/engine/testing`. The [engine's README](packages/engine/README.md#the-test-kit)
+sous's own tests run their workers in the test's process, with a fake runner, through the test
+kit at `@sous/engine/testing`. The [engine's README](packages/engine/README.md#the-test-kit)
 describes it.
 
 ## License

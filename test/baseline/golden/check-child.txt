@@ -1,15 +1,15 @@
-$ orc check child --dry-run
+$ sous check child --dry-run
 exit 0
-child  <tmp>/check-child/project/.orchestrator/workflows/child.js
+child  <tmp>/check-child/project/.sous/workflows/child.js
 ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
   (log lines sorted)
   <hh:mm:ss> completed  child
   <hh:mm:ss> done       child agent, 15 tokens
   <hh:mm:ss> done       child echo
-  <hh:mm:ss> log        Logs persisted to <tmp>/check-child/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
-  <hh:mm:ss> removed    <tmp>/check-child/orc-home/worktrees/<run-1>, which changed no file
-  <hh:mm:ss> run        child in <tmp>/check-child/orc-home/worktrees/<run-1>
+  <hh:mm:ss> log        Logs persisted to <tmp>/check-child/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
+  <hh:mm:ss> removed    <tmp>/check-child/sous-home/worktrees/<run-1>, which changed no file
+  <hh:mm:ss> run        child in <tmp>/check-child/sous-home/worktrees/<run-1>
   <hh:mm:ss> start      child agent
   <hh:mm:ss> start      child echo (exec)
 dry run completed, with 1 agent step answered by stand-ins

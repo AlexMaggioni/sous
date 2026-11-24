@@ -1,13 +1,13 @@
-$ orc run fanout --json
+$ sous run fanout --json
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "fanout",
   "cwd": "<tmp>/scenario-fanout/project",
-  "log": "<tmp>/scenario-fanout/orc-home/logs/<run-1>.log"
+  "log": "<tmp>/scenario-fanout/sous-home/logs/<run-1>.log"
 }
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 0
 {
   "runId": "<run-1>",
@@ -35,7 +35,7 @@ exit 0
   }
 }
 
-$ orc show <run-1>
+$ sous show <run-1>
 exit 0
 fanout  <run-1>
 status    completed
@@ -73,13 +73,13 @@ result
   }
 }
 
-$ orc show <run-1> --json
+$ sous show <run-1> --json
 exit 0
 {
   "record": {
     "runId": "<run-1>",
     "workflow": "fanout",
-    "file": "<tmp>/scenario-fanout/project/.orchestrator/workflows/fanout.js",
+    "file": "<tmp>/scenario-fanout/project/.sous/workflows/fanout.js",
     "args": {},
     "place": "folder",
     "cwd": "<tmp>/scenario-fanout/project",
@@ -127,7 +127,7 @@ exit 0
     },
     "environment": {
       "git": {
-        "head": "9e9677ccc62025a0975507f728b6a3525c3e9947",
+        "head": "2a25c37a7d008b82358ed3a5ce289e326522c1d4",
         "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       }
     },
@@ -135,7 +135,7 @@ exit 0
       "format": "identity-v1",
       "terminalEnvironment": {
         "git": {
-          "head": "9e9677ccc62025a0975507f728b6a3525c3e9947",
+          "head": "2a25c37a7d008b82358ed3a5ce289e326522c1d4",
           "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       }
@@ -323,7 +323,7 @@ exit 0
       }
     ],
     "logs": [
-      "Logs persisted to <tmp>/scenario-fanout/orc-home/runs/projects/project-<hash>/runs/<run-1>.log"
+      "Logs persisted to <tmp>/scenario-fanout/sous-home/runs/projects/project-<hash>/runs/<run-1>.log"
     ],
     "result": {
       "left": "Fake claude answer.",

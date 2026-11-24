@@ -1,4 +1,4 @@
-// Finding an installed program and reading its version. Ported from orc's programs.ts.
+// Finding an installed program and reading its version. Ported from sous's programs.ts.
 // The order is the adapter's own variable, the caller's path, PATH, then the usual folders.
 // On PATH it skips wrapper scripts, such as a launcher that picks an account, since the adapter
 // needs the program itself. An official npm launcher counts as the program.

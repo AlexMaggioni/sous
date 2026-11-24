@@ -6,10 +6,10 @@
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
-export const WORKFLOW_HOME_RELATIVE_DIR = ".orchestrator/engine";
+export const WORKFLOW_HOME_RELATIVE_DIR = ".sous/engine";
 
 export interface WorkflowPathOptions {
-  /** Absolute workflow persistence root. When omitted, the home default (`~/.orchestrator/engine`). */
+  /** Absolute workflow persistence root. When omitted, the home default (`~/.sous/engine`). */
   persistenceRoot?: string;
 }
 

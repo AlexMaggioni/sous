@@ -1,6 +1,6 @@
-// One run, in its own background process. `orc run` and `orc resume` start it detached, and it
+// One run, in its own background process. `sous run` and `sous resume` start it detached, and it
 // keeps running when the terminal closes. It holds the run's lease, asks questions through the
-// inbox, and answers `orc pause` (SIGUSR1), `orc stop --step` (SIGUSR2) and `orc stop` (SIGTERM).
+// inbox, and answers `sous pause` (SIGUSR1), `sous stop --step` (SIGUSR2) and `sous stop` (SIGTERM).
 
 import { readFileSync, existsSync } from "node:fs";
 import type { WorkflowRunResult } from "../workflow-result.js";
@@ -30,7 +30,7 @@ export interface WorkerOptions {
   log?: (line: string) => void;
   /** Set by the process wrapper so signals pause and stop the run. */
   handleSignals?: boolean;
-  /** A dry run (`orc check --dry-run`): each question gets a stand-in answer at once, agents take
+  /** A dry run (`sous check --dry-run`): each question gets a stand-in answer at once, agents take
    *  no slot, and nothing notifies. */
   dryRun?: boolean;
 }
@@ -144,7 +144,7 @@ async function runOnAccounts(
     },
   });
   // A run keeps the workflows as they were when it started. A resume takes the edited ones only
-  // after `orc resume --latest`.
+  // after `sous resume --latest`.
   const takeLatest = mode === "resume" && record.resumeLatest === true;
   if (mode === "start" || takeLatest) saveSnapshot(paths, runId, currentWorkflows(paths, record.projectDir));
   if (takeLatest) updateRecord(paths, runId, { resumeLatest: undefined });
@@ -214,7 +214,7 @@ async function runOnAccounts(
     log(`${stamp()} pausing`);
     manager.pause(runId);
   };
-  // `orc stop --step` writes its request, with each call to stop, then sends SIGUSR2.
+  // `sous stop --step` writes its request, with each call to stop, then sends SIGUSR2.
   const onStopSteps = () => {
     for (const { step, calls } of takeStepStops(paths, runId)) {
       let stopped = 0;
@@ -239,7 +239,7 @@ async function runOnAccounts(
     cwd: record.cwd,
     confirm: confirm as never,
     // Code steps also get the project folder, since a run may work elsewhere (a worktree, a scratch folder).
-    codeEnv: { env: { ...secrets, ORC_PROJECT: record.projectDir }, base },
+    codeEnv: { env: { ...secrets, SOUS_PROJECT: record.projectDir }, base },
     ...(record.concurrency ? { concurrency: record.concurrency } : {}),
     ...(record.overrides ? { stepOverrides: record.overrides } : {}),
     ...(record.defaultModel ?? config.defaultModel ? { defaultModel: record.defaultModel ?? config.defaultModel } : {}),
@@ -318,17 +318,17 @@ async function runOnAccounts(
   if (!quiet) {
     notify(
       `${record.workflow} ${status}`,
-      limitText ?? (status === "paused" ? `paused${reason}. orc resume ${runId}` : status === "failed" ? oneLine(String(error ?? "failed"), 200) : `run ${runId}`),
+      limitText ?? (status === "paused" ? `paused${reason}. sous resume ${runId}` : status === "failed" ? oneLine(String(error ?? "failed"), 200) : `run ${runId}`),
       config.notify,
     );
   }
   return result;
 }
 
-/** The detached process: `orc _worker <runId> start|resume`. */
+/** The detached process: `sous _worker <runId> start|resume`. */
 export async function workerMain(runId: string, mode: "start" | "resume"): Promise<number> {
-  // The agents' shells inherit it, so `orc run` knows when an agent starts a workflow.
-  process.env.ORC_RUN_ID = runId;
+  // The agents' shells inherit it, so `sous run` knows when an agent starts a workflow.
+  process.env.SOUS_RUN_ID = runId;
   try {
     const result = await runWorker(runId, mode, { handleSignals: true });
     return result?.status === "failed" ? 1 : 0;

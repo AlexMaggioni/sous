@@ -10,7 +10,7 @@ import type { AgentRunner } from "../../src/steps/agent-runner.js";
 import type { HomePaths } from "../../src/runs/home.js";
 import type { RunRecord } from "../../src/runs/records.js";
 
-// The home and the planted state come from the test kit, which orc's tests use too.
+// The home and the planted state come from the test kit, which sous's tests use too.
 export { plantState, testHome as setup } from "../../src/testing.js";
 
 /** The engine names a project's folder after the folder's name and a hash of its path. */
@@ -28,7 +28,7 @@ export function layout(paths: HomePaths, runId: string, cwd: string): string[] {
     for (const name of readdirSync(dir)) {
       const path = join(dir, name);
       const rel = relative(root, path);
-      if (rel.startsWith(join("project", ".orchestrator", "workflows") + "/")) continue;
+      if (rel.startsWith(join("project", ".sous", "workflows") + "/")) continue;
       if (statSync(path).isDirectory()) {
         out.push(`${rel}/`);
         walk(path);
@@ -96,9 +96,9 @@ export function plantTodayRun(paths: HomePaths, options: TodayRunOptions = {}): 
   const recordFile = join(paths.home, "records", `${TODAY_ID}.json`);
   const record = JSON.parse(readFileSync(recordFile, "utf8")) as RunRecord;
   if (!options.worktree) return record;
-  // orc names a run's worktree and its branch after the run.
+  // sous names a run's worktree and its branch after the run.
   mkdirSync(cwd, { recursive: true });
-  const moved: RunRecord = { ...record, place: "worktree", worktree: cwd, branch: `orc/${TODAY_ID}` };
+  const moved: RunRecord = { ...record, place: "worktree", worktree: cwd, branch: `sous/${TODAY_ID}` };
   writeFileSync(recordFile, `${JSON.stringify(moved, null, 2)}\n`);
   return moved;
 }

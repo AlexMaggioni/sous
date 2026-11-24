@@ -3,22 +3,22 @@
   "check": {
     "exit": 0,
     "workflow": "tick",
-    "file": "$ORC_HOME/workflows/tick.js",
+    "file": "$SOUS_HOME/workflows/tick.js",
     "description": "One code step every minute",
     "inputs": {},
     "problems": [],
     "notes": [
       "declares no inputs, so it takes any",
-      "the service starts it at \"* * * * *\", next <time>, when it runs (orc daemon start)"
+      "the service starts it at \"* * * * *\", next <time>, when it runs (sous daemon start)"
     ]
   },
   "schedules": {
     "exit": 0,
     "value": [
       {
-        "name": "$ORC_HOME/workflows/tick.js",
-        "workflow": "$ORC_HOME/workflows/tick.js",
-        "projectDir": "$ORC_HOME",
+        "name": "$SOUS_HOME/workflows/tick.js",
+        "workflow": "$SOUS_HOME/workflows/tick.js",
+        "projectDir": "$SOUS_HOME",
         "cron": "* * * * *",
         "inputs": {},
         "place": "none",
@@ -33,9 +33,9 @@
     "pidFileLeft": false,
     "log": [
       "service started",
-      "schedule $ORC_HOME/workflows/tick.js: started run run1",
-      "schedule $ORC_HOME/workflows/tick.js: started run run2",
-      "schedule $ORC_HOME/workflows/tick.js: started run run3",
+      "schedule $SOUS_HOME/workflows/tick.js: started run run1",
+      "schedule $SOUS_HOME/workflows/tick.js: started run run2",
+      "schedule $SOUS_HOME/workflows/tick.js: started run run3",
       "service stopped"
     ]
   },
@@ -49,9 +49,9 @@
       "run": {
         "workflow": "tick",
         "origin": "schedule",
-        "schedule": "$ORC_HOME/workflows/tick.js",
+        "schedule": "$SOUS_HOME/workflows/tick.js",
         "place": "none",
-        "cwd": "$ORC_HOME/scratch/run1",
+        "cwd": "$SOUS_HOME/scratch/run1",
         "inputs": {},
         "status": "completed",
         "phases": [],
@@ -66,14 +66,14 @@
           }
         },
         "logs": [
-          "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+          "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run1.log"
         ],
         "steps": [
           {
             "label": "tick",
             "program": "code",
             "model": "exec",
-            "place": "$ORC_HOME/scratch/run1",
+            "place": "$SOUS_HOME/scratch/run1",
             "status": "done",
             "exit": 0
           }
@@ -91,9 +91,9 @@
       "run": {
         "workflow": "tick",
         "origin": "schedule",
-        "schedule": "$ORC_HOME/workflows/tick.js",
+        "schedule": "$SOUS_HOME/workflows/tick.js",
         "place": "none",
-        "cwd": "$ORC_HOME/scratch/run2",
+        "cwd": "$SOUS_HOME/scratch/run2",
         "inputs": {},
         "status": "completed",
         "phases": [],
@@ -108,14 +108,14 @@
           }
         },
         "logs": [
-          "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run2.log"
+          "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run2.log"
         ],
         "steps": [
           {
             "label": "tick",
             "program": "code",
             "model": "exec",
-            "place": "$ORC_HOME/scratch/run2",
+            "place": "$SOUS_HOME/scratch/run2",
             "status": "done",
             "exit": 0
           }
@@ -133,9 +133,9 @@
       "run": {
         "workflow": "tick",
         "origin": "schedule",
-        "schedule": "$ORC_HOME/workflows/tick.js",
+        "schedule": "$SOUS_HOME/workflows/tick.js",
         "place": "none",
-        "cwd": "$ORC_HOME/scratch/run3",
+        "cwd": "$SOUS_HOME/scratch/run3",
         "inputs": {},
         "status": "completed",
         "phases": [],
@@ -150,14 +150,14 @@
           }
         },
         "logs": [
-          "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run3.log"
+          "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run3.log"
         ],
         "steps": [
           {
             "label": "tick",
             "program": "code",
             "model": "exec",
-            "place": "$ORC_HOME/scratch/run3",
+            "place": "$SOUS_HOME/scratch/run3",
             "status": "done",
             "exit": 0
           }

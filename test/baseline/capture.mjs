@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Captures what today's orc prints, so a later change can show it kept the same behavior.
-// orc runs with ORC_HOME in a fresh temp folder, the fake claude and codex from test/fakes as
+// Captures what today's sous prints, so a later change can show it kept the same behavior.
+// sous runs with SOUS_HOME in a fresh temp folder, the fake claude and codex from test/fakes as
 // its programs, and a temp git copy of examples/textkit with the scenario workflows added.
 // Each command and each scenario becomes one normalized file in the output folder.
 //
@@ -18,11 +18,11 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "..", "..");
-const ORC = join(repo, "packages", "orc", "dist", "cli.js");
+const SOUS = join(repo, "packages", "cli", "dist", "cli.js");
 const FAKES = join(repo, "test", "fakes");
 const TEXTKIT = join(repo, "examples", "textkit");
 
-// Every command orc knows. `orc <command> --help` prints the same text as `orc --help` today.
+// Every command sous knows. `sous <command> --help` prints the same text as `sous --help` today.
 const COMMANDS = [
   "run", "wait", "list", "show", "log", "inbox", "answer", "approve", "send-back", "pause", "resume", "stop", "rerun",
   "workflows", "check", "schedule", "daemon", "gc", "discard", "prune", "account", "doctor",
@@ -36,14 +36,14 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 // ── the temp folder ──
 
 function setupRoot() {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "orc-baseline-")));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sous-baseline-")));
   for (const dir of ["home", "bin", "tmp"]) mkdirSync(join(root, dir));
   // A PATH with node and the system folders only, so no real claude or codex is found.
   symlinkSync(process.execPath, join(root, "bin", "node"));
   return root;
 }
 
-function worldEnv(root, orcHome, fakeDir, debug) {
+function worldEnv(root, sousHome, fakeDir, debug) {
   const date = "2024-01-01T00:00:00Z";
   return {
     HOME: join(root, "home"),
@@ -53,7 +53,7 @@ function worldEnv(root, orcHome, fakeDir, debug) {
     LANG: "en_US.UTF-8",
     LC_ALL: "en_US.UTF-8",
     NO_COLOR: "1",
-    ORC_HOME: orcHome,
+    SOUS_HOME: sousHome,
     CLAUDE_CODE_EXECUTABLE: join(FAKES, "claude"),
     CODEX_PATH: join(FAKES, "codex"),
     FAKE_LOG: join(fakeDir, "requests.jsonl"),
@@ -69,34 +69,34 @@ function worldEnv(root, orcHome, fakeDir, debug) {
   };
 }
 
-/** One orc home, one project copy and one fake log, for a group of commands or a scenario. */
+/** One sous home, one project copy and one fake log, for a group of commands or a scenario. */
 function makeWorld(root, name, { config = { notify: false }, rules = [], debug = false } = {}) {
   const base = join(root, name);
-  const orcHome = join(base, "orc-home");
+  const sousHome = join(base, "sous-home");
   const project = join(base, "project");
   const fakeDir = join(base, "fake");
   mkdirSync(fakeDir, { recursive: true });
   if (config) {
-    mkdirSync(orcHome, { recursive: true });
-    writeFileSync(join(orcHome, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
+    mkdirSync(sousHome, { recursive: true });
+    writeFileSync(join(sousHome, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
   }
   writeFileSync(join(fakeDir, "rules.json"), `${JSON.stringify(rules, null, 2)}\n`);
-  const env = worldEnv(root, orcHome, fakeDir, debug);
+  const env = worldEnv(root, sousHome, fakeDir, debug);
   cpSync(TEXTKIT, project, { recursive: true });
   cpSync(join(here, "project"), project, { recursive: true });
-  cpSync(join(here, "workflows"), join(project, ".orchestrator", "workflows"), { recursive: true });
+  cpSync(join(here, "workflows"), join(project, ".sous", "workflows"), { recursive: true });
   const git = (...args) => execFileSync("git", args, { cwd: project, env, stdio: "ignore" });
   git("init", "-q", "-b", "main");
   git("add", "-A");
   git("commit", "-q", "-m", "textkit");
-  return { name, root, orcHome, project, fakeDir, env, runIds: [], transcript: [] };
+  return { name, root, sousHome, project, fakeDir, env, runIds: [], transcript: [] };
 }
 
-// ── running orc ──
+// ── running sous ──
 
-function orc(world, args, { cwd = world.project, timeoutMs = 90_000 } = {}) {
+function sous(world, args, { cwd = world.project, timeoutMs = 90_000 } = {}) {
   return new Promise((done) => {
-    const child = spawn(process.execPath, [ORC, ...args], { cwd, env: world.env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [SOUS, ...args], { cwd, env: world.env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => (stdout += chunk));
@@ -112,26 +112,26 @@ function orc(world, args, { cwd = world.project, timeoutMs = 90_000 } = {}) {
 const quote = (arg) => (/^[\w./:=@-]+$/.test(arg) ? arg : JSON.stringify(arg));
 
 function transcriptEntry(result) {
-  const parts = [`$ orc ${result.args.map(quote).join(" ")}`, `exit ${result.code}`];
+  const parts = [`$ sous ${result.args.map(quote).join(" ")}`, `exit ${result.code}`];
   if (result.stdout) parts.push(result.stdout.replace(/\n$/, ""));
   if (result.stderr) parts.push(`stderr:\n${result.stderr.replace(/\n$/, "")}`);
   return parts.join("\n");
 }
 
-/** Run orc and add the command, its exit code and its output to the world's transcript. */
+/** Run sous and add the command, its exit code and its output to the world's transcript. */
 async function step(world, args, options) {
-  const result = await orc(world, args, options);
+  const result = await sous(world, args, options);
   world.transcript.push(transcriptEntry(result));
   return result;
 }
 
 async function start(world, workflow, extra = []) {
-  const result = await orc(world, ["run", workflow, "--json", ...extra]);
+  const result = await sous(world, ["run", workflow, "--json", ...extra]);
   let runId;
   try {
     runId = JSON.parse(result.stdout).runId;
   } catch {
-    throw new Error(`orc run ${workflow} printed no run id:\n${result.stdout}${result.stderr}`);
+    throw new Error(`sous run ${workflow} printed no run id:\n${result.stdout}${result.stderr}`);
   }
   world.runIds.push(runId);
   world.transcript.push(transcriptEntry(result));
@@ -162,13 +162,13 @@ const logged = (world, pattern) => until(`a request matching ${pattern}`, () => 
 
 const workerLogged = (world, runId, pattern) =>
   until(`the worker log to show ${pattern}`, () => {
-    const file = join(world.orcHome, "logs", `${runId}.log`);
+    const file = join(world.sousHome, "logs", `${runId}.log`);
     return existsSync(file) && pattern.test(readFileSync(file, "utf8"));
   });
 
 async function stepDone(world, runId, label) {
   await until(`step ${label} to end`, async () => {
-    const shown = await orc(world, ["show", runId, "--json"]);
+    const shown = await sous(world, ["show", runId, "--json"]);
     const agents = JSON.parse(shown.stdout).state?.agents ?? [];
     return agents.some((agent) => agent.label === label && agent.status === "done");
   });
@@ -180,8 +180,8 @@ const gate = (world, name) => writeFileSync(join(world.fakeDir, name), "");
 async function snapshot(world) {
   const parts = [];
   for (const runId of world.runIds) {
-    parts.push(transcriptEntry(await orc(world, ["show", runId])));
-    const json = await orc(world, ["show", runId, "--json"]);
+    parts.push(transcriptEntry(await sous(world, ["show", runId])));
+    const json = await sous(world, ["show", runId, "--json"]);
     try {
       json.stdout = `${JSON.stringify(scrubJson(JSON.parse(json.stdout)), null, 2)}\n`;
     } catch {
@@ -192,9 +192,9 @@ async function snapshot(world) {
   return parts;
 }
 
-/** Stop any worker a scenario left running. Only a process that is this run's orc worker. */
+/** Stop any worker a scenario left running. Only a process that is this run's sous worker. */
 function cleanup(world) {
-  const records = join(world.orcHome, "records");
+  const records = join(world.sousHome, "records");
   if (!existsSync(records)) return;
   for (const file of readdirSync(records)) {
     try {
@@ -230,7 +230,7 @@ function scrubJson(value) {
 
 /** The world's run ids: the ones it started first, then any other record, by name. */
 function runIdsOf(world) {
-  const records = join(world.orcHome, "records");
+  const records = join(world.sousHome, "records");
   const found = existsSync(records)
     ? readdirSync(records)
         .filter((file) => file.endsWith(".json"))
@@ -259,7 +259,7 @@ function normalizer(root, runIds) {
     }
     known.forEach((id, i) => (text = text.split(id).join(`<run-${i + 1}>`)));
     // A project's log folder is named after its folder and a hash of its temp path.
-    text = text.replace(/(project|orc-home|<run-\d+>)-[0-9a-f]{12}\b/g, "$1-<hash>");
+    text = text.replace(/(project|sous-home|<run-\d+>)-[0-9a-f]{12}\b/g, "$1-<hash>");
     // Times near now change on every run; fixed times, such as a reset in 2100, stay.
     text = text.replace(ISO, (iso) => (Math.abs(Date.parse(iso) - now) < 7 * 86_400_000 ? "<time>" : iso));
     text = text.replace(/\b\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/g, "<hh:mm:ss>");
@@ -294,19 +294,19 @@ function writeWorld(out, file, world, extra = []) {
 
 async function captureHelp(root, out) {
   const world = makeWorld(root, "help");
-  const main = await orc(world, ["--help"]);
+  const main = await sous(world, ["--help"]);
   writeFileSync(join(out, "help.txt"), `${normalizer(root, [])(transcriptEntry(main))}\n`);
   const lines = [];
   for (const args of [[], ["help"], ["-h"], ...COMMANDS.map((command) => [command, "--help"])]) {
-    const result = await orc(world, args);
+    const result = await sous(world, args);
     const same = result.code === main.code && result.stdout === main.stdout && result.stderr === main.stderr;
-    lines.push(same ? `$ orc ${args.join(" ")}\nexit ${result.code}\nsame as orc --help` : transcriptEntry(result));
+    lines.push(same ? `$ sous ${args.join(" ")}\nexit ${result.code}\nsame as sous --help` : transcriptEntry(result));
   }
   writeFileSync(join(out, "help-commands.txt"), `${normalizer(root, [])(lines.join("\n\n"))}\n`);
 }
 
 async function captureFresh(root, out) {
-  // No config.json and no folder: orc makes its home on the first command.
+  // No config.json and no folder: sous makes its home on the first command.
   const world = makeWorld(root, "fresh", { config: null });
   for (const [file, args] of [
     ["fresh-list.txt", ["list"]],
@@ -342,7 +342,7 @@ async function captureChecks(root, out, wanted) {
     4,
     async ([name, inputs]) => {
       const own = makeWorld(root, `check-${name}`);
-      const result = await orc(own, ["check", name, "--dry-run", ...inputs]);
+      const result = await sous(own, ["check", name, "--dry-run", ...inputs]);
       const text = sortDryRunLog(normalizer(root, [])(transcriptEntry(result)));
       writeFileSync(join(out, `check-${name}.txt`), `${text}\n`);
     },
@@ -498,7 +498,7 @@ async function pool(items, size, work) {
 
 /** Capture everything into `out`. Returns the temp folder when `keep` is set. */
 export async function capture(out, { only, keep = false, debug = false } = {}) {
-  if (!existsSync(ORC)) throw new Error(`${ORC} is missing. Build the packages first.`);
+  if (!existsSync(SOUS)) throw new Error(`${SOUS} is missing. Build the packages first.`);
   mkdirSync(out, { recursive: true });
   const wanted = (name) => !only?.length || only.some((prefix) => name.startsWith(prefix));
   const root = setupRoot();

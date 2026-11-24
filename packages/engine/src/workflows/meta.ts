@@ -13,7 +13,7 @@
 //     schedule: "0 9 * * 1-5", // the service starts it on this cron; or { cron, inputs }
 //   }
 //
-// `orc run ticket --ticket "Add a --json flag"` turns the flags into the run's args.
+// `sous run ticket --ticket "Add a --json flag"` turns the flags into the run's args.
 // workflowExtras reads these fields from the parsed meta once, into a typed WorkflowExtras.
 
 import { parseDurationSeconds } from "../duration.js";

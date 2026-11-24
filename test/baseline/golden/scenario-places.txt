@@ -1,19 +1,19 @@
-$ orc run places --json --place none
+$ sous run places --json --place none
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "places",
-  "cwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-places/orc-home/logs/<run-1>.log"
+  "cwd": "<tmp>/scenario-places/sous-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-places/sous-home/logs/<run-1>.log"
 }
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "places",
   "status": "completed",
-  "cwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
+  "cwd": "<tmp>/scenario-places/sous-home/scratch/<run-1>",
   "result": {
     "where": [
       "no git"
@@ -22,16 +22,16 @@ exit 0
   }
 }
 
-$ orc run places --json --place folder
+$ sous run places --json --place folder
 exit 0
 {
   "runId": "<run-2>",
   "workflow": "places",
   "cwd": "<tmp>/scenario-places/project",
-  "log": "<tmp>/scenario-places/orc-home/logs/<run-2>.log"
+  "log": "<tmp>/scenario-places/sous-home/logs/<run-2>.log"
 }
 
-$ orc wait <run-2> --json
+$ sous wait <run-2> --json
 exit 0
 {
   "runId": "<run-2>",
@@ -49,26 +49,26 @@ exit 0
   }
 }
 
-$ orc run places --json --place worktree
+$ sous run places --json --place worktree
 exit 0
 {
   "runId": "<run-3>",
   "workflow": "places",
-  "cwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
-  "log": "<tmp>/scenario-places/orc-home/logs/<run-3>.log"
+  "cwd": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
+  "log": "<tmp>/scenario-places/sous-home/logs/<run-3>.log"
 }
 
-$ orc wait <run-3> --json
+$ sous wait <run-3> --json
 exit 0
 {
   "runId": "<run-3>",
   "workflow": "places",
   "status": "completed",
-  "cwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
-  "branch": "orc/<run-3>",
+  "cwd": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
+  "branch": "sous/<run-3>",
   "result": {
     "where": [
-      "git orc/<run-3>",
+      "git sous/<run-3>",
       "mail",
       "package.json",
       "src"
@@ -77,11 +77,11 @@ exit 0
   }
 }
 
-$ orc show <run-1>
+$ sous show <run-1>
 exit 0
 places  <run-1>
 status    completed
-place     none  <tmp>/scenario-places/orc-home/scratch/<run-1>
+place     none  <tmp>/scenario-places/sous-home/scratch/<run-1>
 started   <time>  by cli
 program   Claude Code 2.1.330  <repo>/test/fakes/claude
 account   Claude Code: default, Claude Code's own login in ~/.claude
@@ -98,16 +98,16 @@ result
   "said": "Fake claude answer."
 }
 
-$ orc show <run-1> --json
+$ sous show <run-1> --json
 exit 0
 {
   "record": {
     "runId": "<run-1>",
     "workflow": "places",
-    "file": "<tmp>/scenario-places/project/.orchestrator/workflows/places.js",
+    "file": "<tmp>/scenario-places/project/.sous/workflows/places.js",
     "args": {},
     "place": "none",
-    "cwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
+    "cwd": "<tmp>/scenario-places/sous-home/scratch/<run-1>",
     "projectDir": "<tmp>/scenario-places/project",
     "priority": "user",
     "origin": "cli",
@@ -133,8 +133,8 @@ exit 0
     "runId": "<run-1>",
     "workflowName": "places",
     "args": {},
-    "cwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
-    "effectiveCwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
+    "cwd": "<tmp>/scenario-places/sous-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-places/sous-home/scratch/<run-1>",
     "runtime": {
       "engineVersion": "4.0.5",
       "node": "<node>",
@@ -200,7 +200,7 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-places/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-places/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -216,7 +216,7 @@ exit 0
       }
     ],
     "logs": [
-      "Logs persisted to <tmp>/scenario-places/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+      "Logs persisted to <tmp>/scenario-places/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
     ],
     "result": {
       "where": [
@@ -240,7 +240,7 @@ exit 0
   "questions": []
 }
 
-$ orc show <run-2>
+$ sous show <run-2>
 exit 0
 places  <run-2>
 status    completed
@@ -264,13 +264,13 @@ result
   "said": "Fake claude answer."
 }
 
-$ orc show <run-2> --json
+$ sous show <run-2> --json
 exit 0
 {
   "record": {
     "runId": "<run-2>",
     "workflow": "places",
-    "file": "<tmp>/scenario-places/project/.orchestrator/workflows/places.js",
+    "file": "<tmp>/scenario-places/project/.sous/workflows/places.js",
     "args": {},
     "place": "folder",
     "cwd": "<tmp>/scenario-places/project",
@@ -311,7 +311,7 @@ exit 0
     },
     "environment": {
       "git": {
-        "head": "9e9677ccc62025a0975507f728b6a3525c3e9947",
+        "head": "2a25c37a7d008b82358ed3a5ce289e326522c1d4",
         "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       }
     },
@@ -319,7 +319,7 @@ exit 0
       "format": "identity-v1",
       "terminalEnvironment": {
         "git": {
-          "head": "9e9677ccc62025a0975507f728b6a3525c3e9947",
+          "head": "2a25c37a7d008b82358ed3a5ce289e326522c1d4",
           "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       }
@@ -394,7 +394,7 @@ exit 0
       }
     ],
     "logs": [
-      "Logs persisted to <tmp>/scenario-places/orc-home/runs/projects/project-<hash>/runs/<run-2>.log"
+      "Logs persisted to <tmp>/scenario-places/sous-home/runs/projects/project-<hash>/runs/<run-2>.log"
     ],
     "result": {
       "where": [
@@ -421,11 +421,11 @@ exit 0
   "questions": []
 }
 
-$ orc show <run-3>
+$ sous show <run-3>
 exit 0
 places  <run-3>
 status    completed
-place     worktree  <tmp>/scenario-places/orc-home/worktrees/<run-3>  (branch orc/<run-3>)
+place     worktree  <tmp>/scenario-places/sous-home/worktrees/<run-3>  (branch sous/<run-3>)
 started   <time>  by cli
 program   Claude Code 2.1.330  <repo>/test/fakes/claude
 account   Claude Code: default, Claude Code's own login in ~/.claude
@@ -437,7 +437,7 @@ steps
 result
 {
   "where": [
-    "git orc/<run-3>",
+    "git sous/<run-3>",
     "mail",
     "package.json",
     "src"
@@ -445,19 +445,19 @@ result
   "said": "Fake claude answer."
 }
 
-$ orc show <run-3> --json
+$ sous show <run-3> --json
 exit 0
 {
   "record": {
     "runId": "<run-3>",
     "workflow": "places",
-    "file": "<tmp>/scenario-places/project/.orchestrator/workflows/places.js",
+    "file": "<tmp>/scenario-places/project/.sous/workflows/places.js",
     "args": {},
     "place": "worktree",
-    "cwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
+    "cwd": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
     "projectDir": "<tmp>/scenario-places/project",
-    "worktree": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
-    "branch": "orc/<run-3>",
+    "worktree": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
+    "branch": "sous/<run-3>",
     "priority": "user",
     "origin": "cli",
     "createdAt": "<createdAt>",
@@ -482,8 +482,8 @@ exit 0
     "runId": "<run-3>",
     "workflowName": "places",
     "args": {},
-    "cwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
-    "effectiveCwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
+    "cwd": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
+    "effectiveCwd": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
     "runtime": {
       "engineVersion": "4.0.5",
       "node": "<node>",
@@ -494,7 +494,7 @@ exit 0
     },
     "environment": {
       "git": {
-        "head": "9e9677ccc62025a0975507f728b6a3525c3e9947",
+        "head": "2a25c37a7d008b82358ed3a5ce289e326522c1d4",
         "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       }
     },
@@ -502,7 +502,7 @@ exit 0
       "format": "identity-v1",
       "terminalEnvironment": {
         "git": {
-          "head": "9e9677ccc62025a0975507f728b6a3525c3e9947",
+          "head": "2a25c37a7d008b82358ed3a5ce289e326522c1d4",
           "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       }
@@ -527,7 +527,7 @@ exit 0
         "callIndex": 0,
         "scope": "<run-3>",
         "startedAt": "<startedAt>",
-        "resultPreview": "{\"code\":0,\"stdout\":\"git orc/<run-3>\\nmail\\npackage.json\\nsrc\\n\",\"stderr…",
+        "resultPreview": "{\"code\":0,\"stdout\":\"git sous/<run-3>\\nmail\\npackage.json\\nsrc\\n\",\"stder…",
         "tokens": 0,
         "endedAt": "<endedAt>"
       },
@@ -561,7 +561,7 @@ exit 0
           "sessionId": "<id-3>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-places/orc-home/worktrees/<run-3>",
+          "cwd": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -577,11 +577,11 @@ exit 0
       }
     ],
     "logs": [
-      "Logs persisted to <tmp>/scenario-places/orc-home/runs/projects/<run-3>-<hash>/runs/<run-3>.log"
+      "Logs persisted to <tmp>/scenario-places/sous-home/runs/projects/<run-3>-<hash>/runs/<run-3>.log"
     ],
     "result": {
       "where": [
-        "git orc/<run-3>",
+        "git sous/<run-3>",
         "mail",
         "package.json",
         "src"
@@ -605,6 +605,6 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-places/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-places/orc-home/worktrees/<run-3>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}
 {"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-places/project","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-places/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-places/sous-home/worktrees/<run-3>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: where agent\n\nPLACES Say where you are.","rule":null,"outcome":"answer"}

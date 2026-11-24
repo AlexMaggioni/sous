@@ -75,10 +75,10 @@ import { isPlace, NO_PLACES, type RunPlaces, type Worktree } from "./places/plac
 import { nestedArgs } from "./workflows/meta.js";
 import { parseWorkflowScript } from "./workflows/script.js";
 import {
-  createOrchestratorGlobals,
+  createSousGlobals,
   DEFAULT_MAX_NESTING_DEPTH,
   type CodeStepOptions,
-} from "./orchestrator-globals.js";
+} from "./sous-globals.js";
 import { parseDurationSeconds } from "./duration.js";
 import { EXEC_MODEL, EXEC_RESULT_SCHEMA, runCodeStep, type CodeStepEnv, type ExecSpec } from "./code-steps.js";
 
@@ -1891,7 +1891,7 @@ async function runLevel<T>(
     }) as F;
 
   // Code steps, questions, breakpoints and choose(), built on agent() and checkpoint().
-  const orchestrator = createOrchestratorGlobals({
+  const orchestrator = createSousGlobals({
     agent: agent as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
     code,
     checkpoint: checkpoint as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,

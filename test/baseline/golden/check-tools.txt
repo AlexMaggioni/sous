@@ -1,6 +1,6 @@
-$ orc check tools --dry-run
+$ sous check tools --dry-run
 exit 0
-tools  <tmp>/check-tools/project/.orchestrator/workflows/tools.js
+tools  <tmp>/check-tools/project/.sous/workflows/tools.js
   note: declares no inputs, so it takes any
 ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
@@ -8,8 +8,8 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> completed  tools
   <hh:mm:ss> done       free, 14 tokens
   <hh:mm:ss> done       limited, 16 tokens
-  <hh:mm:ss> log        Logs persisted to <tmp>/check-tools/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
-  <hh:mm:ss> run        tools in <tmp>/check-tools/orc-home/scratch/<run-1>
+  <hh:mm:ss> log        Logs persisted to <tmp>/check-tools/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
+  <hh:mm:ss> run        tools in <tmp>/check-tools/sous-home/scratch/<run-1>
   <hh:mm:ss> start      free
   <hh:mm:ss> start      limited (claude/sonnet)
 dry run completed, with 2 agent steps answered by stand-ins

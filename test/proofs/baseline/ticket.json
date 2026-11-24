@@ -10,9 +10,9 @@
       "workflow": "ticket",
       "origin": "cli",
       "place": "worktree",
-      "cwd": "$ORC_HOME/worktrees/run1",
-      "worktree": "$ORC_HOME/worktrees/run1",
-      "branch": "orc/run1",
+      "cwd": "$SOUS_HOME/worktrees/run1",
+      "worktree": "$SOUS_HOME/worktrees/run1",
+      "branch": "sous/run1",
       "inputs": {
         "ticket": "<text>",
         "rounds": 3,
@@ -43,7 +43,7 @@
       },
       "logs": [
         "review 1: approved",
-        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+        "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run1.log"
       ],
       "steps": [
         {
@@ -51,7 +51,7 @@
           "phase": "implement",
           "program": "claude",
           "model": "claude/haiku",
-          "place": "$ORC_HOME/worktrees/run1",
+          "place": "$SOUS_HOME/worktrees/run1",
           "status": "done",
           "continuedSession": false,
           "keptOpen": true
@@ -61,7 +61,7 @@
           "phase": "review",
           "program": "code",
           "model": "exec",
-          "place": "$ORC_HOME/worktrees/run1",
+          "place": "$SOUS_HOME/worktrees/run1",
           "status": "done",
           "exit": 0
         },
@@ -70,7 +70,7 @@
           "phase": "review",
           "program": "claude",
           "model": "claude/haiku",
-          "place": "$ORC_HOME/worktrees/run1",
+          "place": "$SOUS_HOME/worktrees/run1",
           "status": "done",
           "continuedSession": false,
           "schema": "matched"
@@ -80,7 +80,7 @@
           "phase": "verify",
           "program": "code",
           "model": "exec",
-          "place": "$ORC_HOME/worktrees/run1",
+          "place": "$SOUS_HOME/worktrees/run1",
           "status": "done",
           "exit": 0
         },
@@ -89,7 +89,7 @@
           "phase": "verify",
           "program": "claude",
           "model": "claude/haiku",
-          "place": "$ORC_HOME/worktrees/run1",
+          "place": "$SOUS_HOME/worktrees/run1",
           "status": "done",
           "continuedSession": false,
           "schema": "matched"
@@ -99,7 +99,7 @@
           "phase": "verify",
           "program": "code",
           "model": "exec",
-          "place": "$ORC_HOME/worktrees/run1",
+          "place": "$SOUS_HOME/worktrees/run1",
           "status": "done",
           "exit": 0
         }
@@ -124,9 +124,9 @@
       "workflow": "ticket",
       "origin": "cli",
       "place": "worktree",
-      "cwd": "$ORC_HOME/worktrees/run2",
-      "worktree": "$ORC_HOME/worktrees/run2",
-      "branch": "orc/run2",
+      "cwd": "$SOUS_HOME/worktrees/run2",
+      "worktree": "$SOUS_HOME/worktrees/run2",
+      "branch": "sous/run2",
       "inputs": {
         "ticket": "<text>",
         "rounds": 3,
@@ -158,7 +158,7 @@
       "logs": [
         "review 1: changes asked",
         "review 2: approved",
-        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run2.log"
+        "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run2.log"
       ],
       "steps": [
         {
@@ -166,7 +166,7 @@
           "phase": "implement",
           "program": "claude",
           "model": "claude/haiku",
-          "place": "$ORC_HOME/worktrees/run2",
+          "place": "$SOUS_HOME/worktrees/run2",
           "status": "done",
           "continuedSession": false,
           "keptOpen": true
@@ -176,7 +176,7 @@
           "phase": "review",
           "program": "code",
           "model": "exec",
-          "place": "$ORC_HOME/worktrees/run2",
+          "place": "$SOUS_HOME/worktrees/run2",
           "status": "done",
           "exit": 0
         },
@@ -185,7 +185,7 @@
           "phase": "review",
           "program": "claude",
           "model": "claude/haiku",
-          "place": "$ORC_HOME/worktrees/run2",
+          "place": "$SOUS_HOME/worktrees/run2",
           "status": "done",
           "continuedSession": false,
           "schema": "matched"
@@ -195,7 +195,7 @@
           "phase": "review",
           "program": "claude",
           "model": "claude/haiku",
-          "place": "$ORC_HOME/worktrees/run2",
+          "place": "$SOUS_HOME/worktrees/run2",
           "status": "done",
           "continuedSession": true,
           "keptOpen": true
@@ -205,7 +205,7 @@
           "phase": "review",
           "program": "code",
           "model": "exec",
-          "place": "$ORC_HOME/worktrees/run2",
+          "place": "$SOUS_HOME/worktrees/run2",
           "status": "done",
           "exit": 0
         },
@@ -214,7 +214,7 @@
           "phase": "review",
           "program": "claude",
           "model": "claude/haiku",
-          "place": "$ORC_HOME/worktrees/run2",
+          "place": "$SOUS_HOME/worktrees/run2",
           "status": "done",
           "continuedSession": false,
           "schema": "matched"
@@ -224,7 +224,7 @@
           "phase": "verify",
           "program": "code",
           "model": "exec",
-          "place": "$ORC_HOME/worktrees/run2",
+          "place": "$SOUS_HOME/worktrees/run2",
           "status": "done",
           "exit": 0
         },
@@ -233,7 +233,7 @@
           "phase": "verify",
           "program": "claude",
           "model": "claude/haiku",
-          "place": "$ORC_HOME/worktrees/run2",
+          "place": "$SOUS_HOME/worktrees/run2",
           "status": "done",
           "continuedSession": false,
           "schema": "matched"
@@ -243,7 +243,7 @@
           "phase": "verify",
           "program": "code",
           "model": "exec",
-          "place": "$ORC_HOME/worktrees/run2",
+          "place": "$SOUS_HOME/worktrees/run2",
           "status": "done",
           "exit": 0
         }
@@ -265,7 +265,7 @@
         "commits": 1
       },
       {
-        "name": "orc/run1",
+        "name": "sous/run1",
         "commits": 1,
         "files": [
           "src/textkit.js",
@@ -273,7 +273,7 @@
         ]
       },
       {
-        "name": "orc/run2",
+        "name": "sous/run2",
         "commits": 1,
         "files": [
           "src/textkit.js",
@@ -283,12 +283,12 @@
     ],
     "worktrees": [
       {
-        "path": "$ORC_HOME/worktrees/run1",
-        "branch": "orc/run1"
+        "path": "$SOUS_HOME/worktrees/run1",
+        "branch": "sous/run1"
       },
       {
-        "path": "$ORC_HOME/worktrees/run2",
-        "branch": "orc/run2"
+        "path": "$SOUS_HOME/worktrees/run2",
+        "branch": "sous/run2"
       },
       {
         "path": "$S/ticket/tk",

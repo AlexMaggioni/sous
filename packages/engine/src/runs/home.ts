@@ -1,4 +1,4 @@
-// The orc home folder (~/.orchestrator, or $ORC_HOME) and a project's .orchestrator folder.
+// The sous home folder (~/.sous, or $SOUS_HOME) and a project's .sous folder.
 // A project's workflows win over the home folder's.
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -16,7 +16,7 @@ export interface OrcConfig {
   defaultPlace: Place;
   /** Model for agent steps that name none. */
   defaultModel?: string;
-  /** The harness of a rulesync agent that names none in its orc block. orc checks the name. */
+  /** The harness of a rulesync agent that names none in its sous block. sous checks the name. */
   defaultHarness?: string;
   /** The folder that holds the user's global .rulesync folder, such as ~/.aiglobal. */
   rulesyncGlobal?: string;
@@ -26,19 +26,19 @@ export interface OrcConfig {
   keepDays?: number;
   /** Retries of a failed step before the run pauses on it, when the step sets none. At most 4. */
   retries: number;
-  /** The Claude Code program, when orc should not look for it on PATH. */
+  /** The Claude Code program, when sous should not look for it on PATH. */
   claudePath?: string;
-  /** The Codex program, when orc should not look for it on PATH. */
+  /** The Codex program, when sous should not look for it on PATH. */
   codexPath?: string;
 }
 
 const DEFAULT_CONFIG: OrcConfig = { maxAgents: 4, defaultPlace: "worktree", notify: true, retries: 2 };
 
-function orcHome(): string {
-  return resolve(process.env.ORC_HOME ?? join(homedir(), ".orchestrator"));
+function sousHome(): string {
+  return resolve(process.env.SOUS_HOME ?? join(homedir(), ".sous"));
 }
 
-export function homePaths(home = orcHome()) {
+export function homePaths(home = sousHome()) {
   return {
     home,
     runs: join(home, "runs"),
@@ -69,18 +69,18 @@ export function loadConfig(paths: HomePaths = homePaths()): OrcConfig {
   return { ...DEFAULT_CONFIG, ...readStrictJsonFile<Partial<OrcConfig>>(paths.config, {}) };
 }
 
-/** The project a command runs for: the nearest folder up with .orchestrator or .git, else cwd. */
+/** The project a command runs for: the nearest folder up with .sous or .git, else cwd. */
 export function findProjectDir(cwd = process.cwd()): string {
   let dir = resolve(cwd);
   for (;;) {
-    if (existsSync(join(dir, ".orchestrator")) || existsSync(join(dir, ".git"))) return dir;
+    if (existsSync(join(dir, ".sous")) || existsSync(join(dir, ".git"))) return dir;
     const parent = dirname(dir);
     if (parent === dir) return resolve(cwd);
     dir = parent;
   }
 }
 
-/** The projects where orc ran, whose workflow files the service reads for a schedule. */
+/** The projects where sous ran, whose workflow files the service reads for a schedule. */
 export function knownProjects(paths: HomePaths = homePaths()): string[] {
   try {
     return readStrictJsonFile<string[]>(paths.projects, []).filter((dir) => typeof dir === "string");
@@ -92,13 +92,13 @@ export function knownProjects(paths: HomePaths = homePaths()): string[] {
 export function rememberProject(paths: HomePaths, projectDir: string): void {
   const dir = resolve(projectDir);
   const known = knownProjects(paths);
-  if (known.includes(dir) || !existsSync(join(dir, ".orchestrator", "workflows"))) return;
+  if (known.includes(dir) || !existsSync(join(dir, ".sous", "workflows"))) return;
   mkdirSync(paths.home, { recursive: true });
   writeJsonFile(paths.projects, [...known, dir]);
 }
 
 export function workflowDirs(projectDir: string, paths: HomePaths = homePaths()): string[] {
-  return [join(projectDir, ".orchestrator", "workflows"), paths.workflows];
+  return [join(projectDir, ".sous", "workflows"), paths.workflows];
 }
 
 /** KEY=VALUE lines from secrets.env. Lines starting with # are skipped. Quotes are removed. */

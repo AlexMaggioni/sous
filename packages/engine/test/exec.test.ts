@@ -1,5 +1,5 @@
 // Code steps: a shell command, JS, Python or a script file, run in the step's folder. Moved
-// from orc's units test with the code it tests.
+// from sous's units test with the code it tests.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -14,7 +14,7 @@ const temp = (name: string) => mkdtempSync(join(tmpdir(), `engine-${name}-`));
 describe("code steps", () => {
   it("run sh, js, py and a script file, and return code, output and result", async () => {
     const cwd = temp("exec");
-    writeFileSync(join(cwd, "step.py"), "import json, os, sys\nd = json.load(sys.stdin)\nopen(os.environ['ORC_RESULT'], 'w').write(json.dumps(d['n'] * 2))\n");
+    writeFileSync(join(cwd, "step.py"), "import json, os, sys\nd = json.load(sys.stdin)\nopen(os.environ['SOUS_RESULT'], 'w').write(json.dumps(d['n'] * 2))\n");
     const sh = await runCodeStep({ kind: "sh", command: "echo hi; pwd" }, { cwd });
     assert.equal(sh.code, 0);
     assert.match(sh.stdout, /^hi\n/);

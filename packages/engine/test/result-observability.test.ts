@@ -31,8 +31,8 @@ function sessionRunner(): AgentRunner {
 }
 
 test("manager persists checkpoint observability and replay-only executions omit fallbacks", async () => {
-  const persistenceRoot = mkdtempSync(join(tmpdir(), "orchestrator-result-observability-"));
-  const cwd = mkdtempSync(join(tmpdir(), "orchestrator-result-observability-cwd-"));
+  const persistenceRoot = mkdtempSync(join(tmpdir(), "sous-result-observability-"));
+  const cwd = mkdtempSync(join(tmpdir(), "sous-result-observability-cwd-"));
   try {
     const manager = new WorkflowManager({ cwd, persistenceRoot, agent: sessionRunner() });
     const first = await manager.runSync(SCRIPT, undefined, { confirm: async () => false });
@@ -69,8 +69,8 @@ test("manager persists checkpoint observability and replay-only executions omit 
 });
 
 test("a reuse run that fails before its engine returns lists its root call rows in the order they settled", async () => {
-  const persistenceRoot = mkdtempSync(join(tmpdir(), "orchestrator-result-settled-"));
-  const cwd = mkdtempSync(join(tmpdir(), "orchestrator-result-settled-cwd-"));
+  const persistenceRoot = mkdtempSync(join(tmpdir(), "sous-result-settled-"));
+  const cwd = mkdtempSync(join(tmpdir(), "sous-result-settled-cwd-"));
   try {
     const source = await new WorkflowManager({ cwd, persistenceRoot, agent: { run: async () => "source" } }).runSync(
       `export const meta = { name: 'settled', description: 'settled' }\nreturn await agent('source')`,

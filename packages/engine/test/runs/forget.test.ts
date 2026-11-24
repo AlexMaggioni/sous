@@ -21,12 +21,12 @@ const folders = [
   "home/slots/",
   "home/worktrees/",
   "project/",
-  "project/.orchestrator/",
-  "project/.orchestrator/workflows/",
+  "project/.sous/",
+  "project/.sous/workflows/",
 ];
 
-/** The files of the run that orc writes. */
-const orcFiles = ["home/records/<id>.json", "home/records/<id>.workflows", "home/runs/projects/<cwd key>/", "home/runs/projects/<cwd key>/runs/", "home/runs/projects/<cwd key>/runs/<id>.log"];
+/** The files of the run that sous writes. */
+const sousFiles = ["home/records/<id>.json", "home/records/<id>.workflows", "home/runs/projects/<cwd key>/", "home/runs/projects/<cwd key>/runs/", "home/runs/projects/<cwd key>/runs/<id>.log"];
 
 /** The files of the run that the engine writes. */
 const engineFiles = [
@@ -70,7 +70,7 @@ describe("forget and prune on today's files", () => {
       const { paths } = setup({});
       const record = plantTodayRun(paths, { worktree: true });
       assert.equal(record.cwd, `${paths.home}/worktrees/${TODAY_ID}`);
-      assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles, "home/worktrees/<id>/"].sort());
+      assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...sousFiles, ...engineFiles, "home/worktrees/<id>/"].sort());
       remove(paths, record);
       assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, "home/worktrees/<id>/"].sort(), name);
     }
@@ -80,7 +80,7 @@ describe("forget and prune on today's files", () => {
     const { paths } = setup({});
     const record = plantTodayRun(paths, { liveLock: true });
     assert.equal(forgetRun(paths, record), false);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles, lock].sort());
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...sousFiles, ...engineFiles, lock].sort());
   });
 
   it("with a lock held by a live process, pruneRuns keeps the finished run whole", () => {
@@ -89,7 +89,7 @@ describe("forget and prune on today's files", () => {
     const { paths } = setup({});
     const record = plantTodayRun(paths, { liveLock: true });
     assert.deepEqual(pruneRuns(paths, 7, later), []);
-    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...orcFiles, ...engineFiles, lock].sort());
+    assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...sousFiles, ...engineFiles, lock].sort());
   });
 
   it("forgetRun removes the run's open question from the inbox", () => {

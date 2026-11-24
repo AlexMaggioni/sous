@@ -56,7 +56,7 @@ describe("where the MCP lookup looks", () => {
   it("lists the global file in the message for a server that is nowhere", () => {
     const place = lookupPlace();
     const message = missingServer("gmail", "codex", lookupMcpServers(place, {}));
-    assert.ok(message.startsWith('no MCP server "gmail" for Codex. orc looks in '), message);
+    assert.ok(message.startsWith('no MCP server "gmail" for Codex. sous looks in '), message);
     assert.ok(message.includes(join(place.globalDir, ".rulesync", "mcp.jsonc")), message);
     assert.ok(message.endsWith(" Add it to .rulesync/mcp.jsonc."), message);
   });

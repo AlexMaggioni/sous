@@ -1,5 +1,5 @@
 /**
- * Configuration constants for @orchestrator/engine.
+ * Configuration constants for @sous/engine.
  */
 
 /** Maximum number of agents allowed per workflow run. */

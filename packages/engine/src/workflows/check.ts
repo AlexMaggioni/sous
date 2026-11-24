@@ -1,4 +1,4 @@
-// `orc check`: what can be known about a workflow without running it. The script parses, the
+// `sous check`: what can be known about a workflow without running it. The script parses, the
 // inputs given fit what it declares, and each workflow, agent, MCP server and script file it
 // names exists. It reads the names from the parsed script. Names built at run time can't be
 // checked, so it reads strings written in the script only.
@@ -19,7 +19,7 @@ import {
   routeHarness,
   type McpLookup,
 } from "../agents.js";
-import type { HarnessId } from "@orchestrator/harnesses";
+import type { HarnessId } from "@sous/harnesses";
 import { nextRun, parseCron } from "../runs/cron.js";
 import { loadConfig, loadSecrets, type HomePaths } from "../runs/home.js";
 import { projectWorkflows, resolveWorkflow } from "./dir.js";
@@ -52,10 +52,10 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
     for (const name of names) if (mcp && !mcp.find(name, harness)) problems.push(`${within}${missingServer(name, harness, mcp)}`);
   };
 
-  // A default harness or model orc no longer runs would send steps to Claude Code without a word.
+  // A default harness or model sous no longer runs would send steps to Claude Code without a word.
   const config = loadConfig(paths);
   if (config.defaultHarness !== undefined && !isHarness(config.defaultHarness)) {
-    problems.push(`the configured default harness "${config.defaultHarness}" is not one orc runs. Use one of ${HARNESSES.join(", ")}.`);
+    problems.push(`the configured default harness "${config.defaultHarness}" is not one sous runs. Use one of ${HARNESSES.join(", ")}.`);
   }
   const defaultModel = removedHarness(config.defaultModel);
   if (defaultModel) problems.push(`the configured default ${defaultModel}`);
@@ -124,7 +124,7 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
   if (!Object.keys(extras.inputs).length) notes.push("declares no inputs, so it takes any");
   if (extras.schedule) {
     const next = nextRun(parseCron(extras.schedule.cron));
-    notes.push(`the service starts it at "${extras.schedule.cron}"${next ? `, next ${next.toLocaleString()}` : ""}, when it runs (orc daemon start)`);
+    notes.push(`the service starts it at "${extras.schedule.cron}"${next ? `, next ${next.toLocaleString()}` : ""}, when it runs (sous daemon start)`);
   }
   return {
     workflow: resolved.name,

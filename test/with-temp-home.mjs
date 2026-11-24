@@ -4,7 +4,7 @@
 //   node ../../test/with-temp-home.mjs tsx --test "test/**/*.test.ts"
 //
 // HOME, CLAUDE_CONFIG_DIR, CODEX_HOME and XDG_CONFIG_HOME point into a new folder. The Claude
-// token, ORC_HOME and AGENTPRISM_DEFAULT_BACKEND are removed. The agent lookup then reads empty
+// token, SOUS_HOME and AGENTPRISM_DEFAULT_BACKEND are removed. The agent lookup then reads empty
 // login folders, and a bare model name routes to Claude. A test gives the same result on every
 // machine and under every login.
 //
@@ -23,7 +23,7 @@ if (!command) {
   process.exit(2);
 }
 
-const home = mkdtempSync(join(tmpdir(), "orc-test-home-"));
+const home = mkdtempSync(join(tmpdir(), "sous-test-home-"));
 const env = {
   ...process.env,
   HOME: home,
@@ -32,7 +32,7 @@ const env = {
   XDG_CONFIG_HOME: join(home, ".config"),
 };
 delete env.CLAUDE_CODE_OAUTH_TOKEN;
-delete env.ORC_HOME;
+delete env.SOUS_HOME;
 delete env.AGENTPRISM_DEFAULT_BACKEND;
 
 const child = spawn(command, args, { env, stdio: "inherit" });

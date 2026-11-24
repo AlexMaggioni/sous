@@ -1,4 +1,4 @@
-// How each adapter finds its installed program and reads its version. Ported from orc's
+// How each adapter finds its installed program and reads its version. Ported from sous's
 // programs test, which tested the same lookup before it moved here.
 
 import assert from "node:assert/strict";

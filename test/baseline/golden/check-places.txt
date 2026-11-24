@@ -1,6 +1,6 @@
-$ orc check places --dry-run
+$ sous check places --dry-run
 exit 0
-places  <tmp>/check-places/project/.orchestrator/workflows/places.js
+places  <tmp>/check-places/project/.sous/workflows/places.js
   note: declares no inputs, so it takes any
 ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
@@ -8,15 +8,15 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> completed  places
   <hh:mm:ss> done       where
   <hh:mm:ss> done       where agent, 16 tokens
-  <hh:mm:ss> log        Logs persisted to <tmp>/check-places/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
-  <hh:mm:ss> removed    <tmp>/check-places/orc-home/worktrees/<run-1>, which changed no file
-  <hh:mm:ss> run        places in <tmp>/check-places/orc-home/worktrees/<run-1>
+  <hh:mm:ss> log        Logs persisted to <tmp>/check-places/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
+  <hh:mm:ss> removed    <tmp>/check-places/sous-home/worktrees/<run-1>, which changed no file
+  <hh:mm:ss> run        places in <tmp>/check-places/sous-home/worktrees/<run-1>
   <hh:mm:ss> start      where (exec)
   <hh:mm:ss> start      where agent
 dry run completed, with 1 agent step answered by stand-ins
 {
   "where": [
-    "git orc/<run-1>",
+    "git sous/<run-1>",
     "mail",
     "package.json",
     "src"

@@ -1,4 +1,4 @@
-$ orc workflows
+$ sous workflows
 exit 0
 agent-session  An agent step with a schema, then a second turn in the same session
   --topic  string, optional, default "a small change"  What to plan

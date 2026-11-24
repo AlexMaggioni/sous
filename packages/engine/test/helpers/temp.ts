@@ -14,7 +14,7 @@ export interface TempDirs {
 }
 
 /** A working folder and a persistence folder side by side, in a folder of their own. */
-export function tempDirs(prefix = "orc-test"): TempDirs {
+export function tempDirs(prefix = "sous-test"): TempDirs {
   const base = mkdtempSync(join(tmpdir(), `${prefix}-`));
   const cwd = join(base, "cwd");
   const root = join(base, "root");
@@ -39,8 +39,8 @@ export async function withTempDirs<T>(run: (dirs: TempDirs) => Promise<T>, prefi
  */
 export function withTempCwd(fn: (cwd: string) => Promise<void>) {
   return async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "orc-test-cwd-"));
-    const home = mkdtempSync(join(tmpdir(), "orc-test-home-"));
+    const cwd = mkdtempSync(join(tmpdir(), "sous-test-cwd-"));
+    const home = mkdtempSync(join(tmpdir(), "sous-test-home-"));
     try {
       await withFakeHomeAsync(home, () => fn(cwd));
     } finally {

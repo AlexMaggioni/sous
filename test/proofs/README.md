@@ -6,24 +6,24 @@ the real runs still behave as before.
 
 ## What it runs
 
-Each proof gets a fresh `ORC_HOME` and fresh projects in a scratch folder. The textkit proofs copy
+Each proof gets a fresh `SOUS_HOME` and fresh projects in a scratch folder. The textkit proofs copy
 the example with `examples/setup-textkit.sh`.
 
 | proof | runs |
 | --- | --- |
 | tools | an agent with a deny list and one with an allow list, both asked to run Bash |
-| accounts | `orc account`, and one Claude Code step from a Claude Code session and from a plain shell |
-| installed | one step on each program, `orc doctor`, and dry runs of ticket, factory and emails with neither program on PATH |
+| accounts | `sous account`, and one Claude Code step from a Claude Code session and from a plain shell |
+| installed | one step on each program, `sous doctor`, and dry runs of ticket, factory and emails with neither program on PATH |
 | ticket | TK-1, then TK-2 with `--reviewer strict-reviewer` |
-| emails | sends the drafts back with a note, then approves them, through `orc inbox`, `orc send-back` and `orc approve` |
+| emails | sends the drafts back with a note, then approves them, through `sous inbox`, `sous send-back` and `sous approve` |
 | factory | the three textkit tickets, each a nested ticket run in its own worktree |
-| shared | the `orc check` refusals, the global reviewer on both programs, agents from each program's folders, and an agent's own skill and MCP server |
-| schedule | a workflow with `schedule: "* * * * *"` and one code step, under `orc daemon run` for 150 seconds |
+| shared | the `sous check` refusals, the global reviewer on both programs, agents from each program's folders, and an agent's own skill and MCP server |
+| schedule | a workflow with `schedule: "* * * * *"` and one code step, under `sous daemon run` for 150 seconds |
 
-It never runs `orc account add`, and it leaves out the lookup-order case of the shared proof.
+It never runs `sous account add`, and it leaves out the lookup-order case of the shared proof.
 
 Claude Code steps run on haiku. Codex steps run on `gpt-6.1-sol` at low effort. The scratch
-config and workflows set the models, never `~/.orchestrator`.
+config and workflows set the models, never `~/.sous`.
 
 ## Cost
 
@@ -38,15 +38,15 @@ gives Codex a scratch `CODEX_HOME` with a link to `~/.codex/auth.json`.
 ## How to run it
 
 ```sh
-pnpm build                         # run.mjs uses packages/orc/dist/cli.js
+pnpm build                         # run.mjs uses packages/cli/dist/cli.js
 PROOFS_SCRATCH="$TMPDIR" node test/proofs/run.mjs /tmp/proofs-new
 PROOFS_SCRATCH="$TMPDIR" node test/proofs/run.mjs /tmp/proofs-new ticket emails
 node test/proofs/compare.mjs test/proofs/baseline /tmp/proofs-new
 ```
 
 `PROOFS_SCRATCH` is the folder for the scratch homes and projects. It defaults to the system temp
-folder. Each run makes a new `orc-proofs-*` folder in it and leaves it there, with a `trace.log` of
-every orc call per proof.
+folder. Each run makes a new `sous-proofs-*` folder in it and leaves it there, with a `trace.log` of
+every sous call per proof.
 
 ## What the output holds
 
@@ -56,14 +56,14 @@ keeps what it collected and its error.
 The files keep the structure of each run: the workflow, the inputs and the final status, then each
 step in order with its label, program, model, place, status and whether it continued a session.
 Nested runs have the same fields. They also keep the branches and worktrees made, the inbox
-questions and the answers, the program versions and the `orc check` outputs. Run ids become
+questions and the answers, the program versions and the `sous check` outputs. Run ids become
 `run1`, `run2` and so on, and paths, times, durations, session ids and token counts become
 placeholders. The agents' text is left out. A step with a schema says whether its value matched
 it, and a proof that looks for a word (OK, APPROVED, ORCHID) says which words the text held.
 
 A checkpoint or a question is a step too, with `program: "question"` and the answer it got.
 
-orc records no agent name or effort for a step today, so the files say so in `gaps`. A code step
+sous records no agent name or effort for a step today, so the files say so in `gaps`. A code step
 in a nested run records no folder either, so the files give it the nested run's folder.
 
 ## Comparing

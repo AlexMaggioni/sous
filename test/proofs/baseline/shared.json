@@ -4,7 +4,7 @@
     "wrong-harness": {
       "exit": 1,
       "workflow": "wrong-harness",
-      "file": "$S/shared/g4/.orchestrator/workflows/wrong-harness.js",
+      "file": "$S/shared/g4/.sous/workflows/wrong-harness.js",
       "description": "wrong-harness",
       "inputs": {},
       "problems": [
@@ -17,7 +17,7 @@
     "two-folders": {
       "exit": 1,
       "workflow": "two-folders",
-      "file": "$S/shared/g4/.orchestrator/workflows/two-folders.js",
+      "file": "$S/shared/g4/.sous/workflows/two-folders.js",
       "description": "two-folders",
       "inputs": {},
       "problems": [
@@ -30,7 +30,7 @@
     "pick-later": {
       "exit": 0,
       "workflow": "pick-later",
-      "file": "$S/shared/g4/.orchestrator/workflows/pick-later.js",
+      "file": "$S/shared/g4/.sous/workflows/pick-later.js",
       "description": "pick-later",
       "inputs": {
         "harness": {
@@ -47,11 +47,11 @@
     "ghost": {
       "exit": 1,
       "workflow": "ghost",
-      "file": "$S/shared/g4/.orchestrator/workflows/ghost.js",
+      "file": "$S/shared/g4/.sous/workflows/ghost.js",
       "description": "ghost",
       "inputs": {},
       "problems": [
-        "no agent \"ghost\". orc looks in .rulesync/subagents/, then the global rulesync folder ($S/shared/aiglobal/.rulesync/subagents/), then .claude/agents/, .codex/agents/ and .opencode/agents/ in the project and in the home folder."
+        "no agent \"ghost\". sous looks in .rulesync/subagents/, then the global rulesync folder ($S/shared/aiglobal/.rulesync/subagents/), then .claude/agents/, .codex/agents/ and .opencode/agents/ in the project and in the home folder."
       ],
       "notes": [
         "declares no inputs, so it takes any"
@@ -60,11 +60,11 @@
     "old-home": {
       "exit": 1,
       "workflow": "old-home",
-      "file": "$S/shared/g4/.orchestrator/workflows/old-home.js",
+      "file": "$S/shared/g4/.sous/workflows/old-home.js",
       "description": "old-home",
       "inputs": {},
       "problems": [
-        "no agent \"oldie\". orc looks in .rulesync/subagents/, then the global rulesync folder ($S/shared/aiglobal/.rulesync/subagents/), then .claude/agents/, .codex/agents/ and .opencode/agents/ in the project and in the home folder."
+        "no agent \"oldie\". sous looks in .rulesync/subagents/, then the global rulesync folder ($S/shared/aiglobal/.rulesync/subagents/), then .claude/agents/, .codex/agents/ and .opencode/agents/ in the project and in the home folder."
       ],
       "notes": [
         "declares no inputs, so it takes any"
@@ -123,7 +123,7 @@
   "reviewBothCheck": {
     "exit": 0,
     "workflow": "review-both",
-    "file": "$S/shared/g1/.orchestrator/workflows/review-both.js",
+    "file": "$S/shared/g1/.sous/workflows/review-both.js",
     "description": "review-both",
     "inputs": {},
     "problems": [],
@@ -166,7 +166,7 @@
         }
       },
       "logs": [
-        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run2.log"
+        "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run2.log"
       ],
       "steps": [
         {
@@ -211,7 +211,7 @@
   "foldersCheck": {
     "exit": 0,
     "workflow": "folders",
-    "file": "$S/shared/folders/.orchestrator/workflows/folders.js",
+    "file": "$S/shared/folders/.sous/workflows/folders.js",
     "description": "folders",
     "inputs": {},
     "problems": [],
@@ -254,7 +254,7 @@
         }
       },
       "logs": [
-        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run3.log"
+        "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run3.log"
       ],
       "steps": [
         {
@@ -318,7 +318,7 @@
         }
       },
       "logs": [
-        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run4.log"
+        "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run4.log"
       ],
       "steps": [
         {
@@ -354,7 +354,7 @@
   "wordCheck": {
     "exit": 0,
     "workflow": "word",
-    "file": "$S/shared/textkit/.orchestrator/workflows/word.js",
+    "file": "$S/shared/textkit/.sous/workflows/word.js",
     "description": "word",
     "inputs": {},
     "problems": [],
@@ -397,7 +397,7 @@
         }
       },
       "logs": [
-        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run5.log"
+        "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run5.log"
       ],
       "steps": [
         {

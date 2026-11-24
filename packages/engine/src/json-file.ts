@@ -1,5 +1,5 @@
 /**
- * Read and write the JSON files under the orc home. A write never lets a reader see half of a
+ * Read and write the JSON files under the sous home. A write never lets a reader see half of a
  * file. The value goes to a temporary file next to the target, then a rename replaces the target.
  * The temporary name carries the process id, so two processes writing the same file never share
  * one.
@@ -18,7 +18,7 @@ export function readJsonFile<T>(file: string): T | undefined {
 
 /**
  * A JSON file that a person may edit, such as the config or the accounts. A missing file gives
- * `fallback`. A file that does not parse throws with its path, so a mistake in it stops orc
+ * `fallback`. A file that does not parse throws with its path, so a mistake in it stops sous
  * instead of passing for an empty file.
  */
 export function readStrictJsonFile<T>(file: string, fallback: T): T {

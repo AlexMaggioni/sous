@@ -1,4 +1,4 @@
-$ orc account
+$ sous account
 exit 0
 Claude Code
 * default        Claude Code's own login, in ~/.claude

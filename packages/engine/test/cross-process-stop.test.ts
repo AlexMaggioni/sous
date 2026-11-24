@@ -42,8 +42,8 @@ function controlledRunner() {
 }
 
 test("the lease shows the live owner's pid and a second manager cannot cold-stop it", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orchestrator-live-owner-stop-"));
-  const persistenceRoot = mkdtempSync(join(tmpdir(), "orchestrator-live-owner-store-"));
+  const cwd = mkdtempSync(join(tmpdir(), "sous-live-owner-stop-"));
+  const persistenceRoot = mkdtempSync(join(tmpdir(), "sous-live-owner-store-"));
   const controlled = controlledRunner();
   const owner = new WorkflowManager({ cwd, persistenceRoot, agent: controlled.runner });
   const observer = new WorkflowManager({ cwd, persistenceRoot });
@@ -68,8 +68,8 @@ test("the lease shows the live owner's pid and a second manager cannot cold-stop
 });
 
 test("a manager cold-stops a lease-free paused run and appends one durable stopped event", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orchestrator-cold-stop-"));
-  const persistenceRoot = mkdtempSync(join(tmpdir(), "orchestrator-cold-stop-store-"));
+  const cwd = mkdtempSync(join(tmpdir(), "sous-cold-stop-"));
+  const persistenceRoot = mkdtempSync(join(tmpdir(), "sous-cold-stop-store-"));
   const controlled = controlledRunner();
   const owner = new WorkflowManager({ cwd, persistenceRoot, agent: controlled.runner });
   try {

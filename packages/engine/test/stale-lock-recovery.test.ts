@@ -41,8 +41,8 @@ async function waitForChildOutput(child: ChildProcess, needle: string): Promise<
 }
 
 test("SIGKILL crash residue is lazily paused and resumes under its own id", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orchestrator-crash-cwd-"));
-  const persistenceRoot = mkdtempSync(join(tmpdir(), "orchestrator-crash-runs-"));
+  const cwd = mkdtempSync(join(tmpdir(), "sous-crash-cwd-"));
+  const persistenceRoot = mkdtempSync(join(tmpdir(), "sous-crash-runs-"));
   const sourceRunId = "sigkill-source";
   const livePrompts: string[] = [];
   const manager = new WorkflowManager({

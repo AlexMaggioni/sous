@@ -14,7 +14,7 @@ export function placesIn(home: HomePaths, rootRunId: string): RunPlaces {
 
 /** A temp home, the places of any run tree under it, and a cleanup that removes the home. */
 export function tempPlaces(): { home: HomePaths; places: (rootRunId: string) => RunPlaces; cleanup: () => void } {
-  const home = ensureHome(homePaths(mkdtempSync(join(tmpdir(), "orc-test-home-"))));
+  const home = ensureHome(homePaths(mkdtempSync(join(tmpdir(), "sous-test-home-"))));
   return {
     home,
     places: (rootRunId) => placesIn(home, rootRunId),

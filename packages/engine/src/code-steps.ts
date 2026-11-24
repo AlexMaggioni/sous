@@ -79,12 +79,12 @@ const MAX_OUTPUT = 200_000;
 // js: the code is the body of an async function with `input` and `require`.
 const JS_WRAPPER = `
 const fs = require("node:fs");
-const raw = fs.readFileSync(process.env.ORC_INPUT_FILE, "utf8");
+const raw = fs.readFileSync(process.env.SOUS_INPUT_FILE, "utf8");
 const input = raw ? JSON.parse(raw) : null;
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const body = fs.readFileSync(process.env.ORC_SOURCE_FILE, "utf8");
+const body = fs.readFileSync(process.env.SOUS_SOURCE_FILE, "utf8");
 new AsyncFunction("input", "require", body)(input, require).then(
-  (value) => { if (value !== undefined) fs.writeFileSync(process.env.ORC_RESULT, JSON.stringify(value)); },
+  (value) => { if (value !== undefined) fs.writeFileSync(process.env.SOUS_RESULT, JSON.stringify(value)); },
   (error) => { console.error(error && error.stack ? error.stack : String(error)); process.exit(1); },
 );
 `;
@@ -92,20 +92,20 @@ new AsyncFunction("input", "require", body)(input, require).then(
 // py: the code becomes the body of a function with `input`, so it may `return` a value.
 const PY_WRAPPER = `
 import ast, json, os
-with open(os.environ["ORC_INPUT_FILE"]) as f:
+with open(os.environ["SOUS_INPUT_FILE"]) as f:
     raw = f.read()
 input = json.loads(raw) if raw else None
-with open(os.environ["ORC_SOURCE_FILE"]) as f:
+with open(os.environ["SOUS_SOURCE_FILE"]) as f:
     tree = ast.parse(f.read())
-fn = ast.parse("def __orc_main(input):\\n    pass\\n").body[0]
+fn = ast.parse("def __sous_main(input):\\n    pass\\n").body[0]
 fn.body = tree.body or [ast.Pass()]
 module = ast.Module(body=[fn], type_ignores=[])
 ast.fix_missing_locations(module)
-scope = {"__name__": "__orc__"}
+scope = {"__name__": "__sous__"}
 exec(compile(module, "<step>", "exec"), scope)
-value = scope["__orc_main"](input)
+value = scope["__sous_main"](input)
 if value is not None:
-    with open(os.environ["ORC_RESULT"], "w") as f:
+    with open(os.environ["SOUS_RESULT"], "w") as f:
         json.dump(value, f)
 `;
 
@@ -211,7 +211,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 export async function runCodeStep(spec: ExecSpec, context: ExecContext): Promise<ExecResult> {
   const cwd = spec.cwd ? (isAbsolute(spec.cwd) ? spec.cwd : resolve(context.cwd, spec.cwd)) : context.cwd;
   if (!existsSync(cwd)) throw stepError(`the step's folder does not exist: ${cwd}`);
-  const work = mkdtempSync(join(tmpdir(), "orc-step-"));
+  const work = mkdtempSync(join(tmpdir(), "sous-step-"));
   try {
     const resultFile = join(work, "result.json");
     const inputFile = join(work, "input.json");
@@ -222,9 +222,9 @@ export async function runCodeStep(spec: ExecSpec, context: ExecContext): Promise
       ...(context.base ?? process.env),
       ...context.env,
       ...spec.env,
-      ORC_RESULT: resultFile,
-      ORC_INPUT_FILE: inputFile,
-      ORC_SOURCE_FILE: sourceFile,
+      SOUS_RESULT: resultFile,
+      SOUS_INPUT_FILE: inputFile,
+      SOUS_SOURCE_FILE: sourceFile,
     };
     const base = { cwd, env, signal: context.signal, timeoutMs: context.timeoutMs };
 

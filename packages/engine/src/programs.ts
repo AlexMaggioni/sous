@@ -1,9 +1,9 @@
-// The installed Claude Code and Codex, as `orc doctor` and `orc account add` see them. Each check
+// The installed Claude Code and Codex, as `sous doctor` and `sous account add` see them. Each check
 // goes through the harness: find, version, models, and for `--live` one step.
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { createHarness, type FindOptions, type HarnessId } from "@orchestrator/harnesses";
+import { createHarness, type FindOptions, type HarnessId } from "@sous/harnesses";
 import { CALLER, currentAccount, DEFAULT, stepAccount } from "./accounts.js";
 import { envFor, HARNESSES, harnessName, loginOf, routeHarness, stepModel } from "./agents.js";
 import type { HomePaths, OrcConfig } from "./runs/home.js";
@@ -13,7 +13,7 @@ export function programLookup(config: OrcConfig): (harness: HarnessId) => FindOp
   return (harness) => {
     const key = harness === "claude" ? "claudePath" : "codexPath";
     const path = config[key];
-    return { ...(path ? { path } : {}), setting: `${key} in ~/.orchestrator/config.json` };
+    return { ...(path ? { path } : {}), setting: `${key} in ~/.sous/config.json` };
   };
 }
 
@@ -25,11 +25,11 @@ export interface ProgramReport {
   source?: string;
   skipped: string[];
   others: Array<{ path: string; version?: string }>;
-  /** Where the program keeps its settings, and its own login, for orc's steps. */
+  /** Where the program keeps its settings, and its own login, for sous's steps. */
   folder: string;
   /** The variable that moves the folder. */
   variable: string;
-  /** The account orc uses for new runs. default is the program's own login. */
+  /** The account sous uses for new runs. default is the program's own login. */
   account: string;
   /** No program, or one the harness does not support. */
   problem?: string;
@@ -43,7 +43,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 
 /**
  * Each program, how it was found, its version and models. With live, one tiny step on each, or
- * only on the harness of model. Both run on the account orc uses for new runs.
+ * only on the harness of model. Both run on the account sous uses for new runs.
  */
 export async function checkPrograms(paths: HomePaths, config: OrcConfig, options: { live?: boolean; model?: string } = {}): Promise<ProgramReport[]> {
   const asked = options.model ? routeHarness(options.model) : undefined;
@@ -52,7 +52,7 @@ export async function checkPrograms(paths: HomePaths, config: OrcConfig, options
   mkdirSync(cwd, { recursive: true });
   const reports: ProgramReport[] = [];
   for (const program of HARNESSES) {
-    // orc keeps no Codex accounts yet, so Codex always runs on its own login.
+    // sous keeps no Codex accounts yet, so Codex always runs on its own login.
     const name = program === "claude" ? currentAccount(paths, program) : DEFAULT;
     const { folder, variable } = loginOf(program);
     const account = name === DEFAULT || name === CALLER ? undefined : stepAccount(paths, program, { name, folder: loginOf(program).value ?? null });

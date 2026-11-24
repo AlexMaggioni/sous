@@ -9,7 +9,7 @@ import { answerFile, questionFile, questionFiles } from "./store.js";
 
 export interface Question {
   id: string;
-  /** The root run, the one `orc list` shows. */
+  /** The root run, the one `sous list` shows. */
   runId: string;
   /** The run that asks: the root run or a nested one. */
   scope: string;
@@ -190,18 +190,18 @@ export function decisionOf(answer: unknown): Decision {
   return { decision: "send back", ...(note ? { note } : {}) };
 }
 
-/** What a person typed to answer a question: after orc answer, orc approve or orc send-back and
- *  the question's id, or at the prompt of orc wait in a terminal. */
+/** What a person typed to answer a question: after sous answer, sous approve or sous send-back and
+ *  the question's id, or at the prompt of sous wait in a terminal. */
 export interface Reply {
   via: "answer" | "approve" | "send-back" | "prompt";
   text: string;
-  /** orc answer --json: the text is JSON. */
+  /** sous answer --json: the text is JSON. */
   json?: boolean;
 }
 
 /**
  * Answer a question with what a person typed. It writes the answer, or says that the reply stops
- * the run, or what is wrong with the command. "stop" at a breakpoint stops the run, from orc
+ * the run, or what is wrong with the command. "stop" at a breakpoint stops the run, from sous
  * answer as from the prompt. A choice that is not listed, or a confirm that is not yes or no,
  * throws. A reply typed at a prompt counts only while the question's file is there.
  */
@@ -223,11 +223,11 @@ function meaningOf(question: Question, { via, text, json }: Reply): { value: unk
   }
   if (via === "approve") return { value: question.kind === "confirm" && !question.breakpoint ? true : "approve" };
   if (via === "send-back") {
-    if (!question.breakpoint) return { usage: `${question.id} is not a breakpoint. Use orc answer ${question.id} "..."` };
-    if (!text) return { usage: `orc send-back ${question.id} "what to change"` };
+    if (!question.breakpoint) return { usage: `${question.id} is not a breakpoint. Use sous answer ${question.id} "..."` };
+    if (!text) return { usage: `sous send-back ${question.id} "what to change"` };
     return { value: { decision: "send back", note: text } };
   }
-  if (!text && question.kind !== "confirm") return { usage: `orc answer ${question.id} "your answer"` };
+  if (!text && question.kind !== "confirm") return { usage: `sous answer ${question.id} "your answer"` };
   const value = question.breakpoint ? breakpointValue(text) : json ? parseJson(text) : normalizeAnswer(question, text);
   if (question.breakpoint && value === "stop") return { stop: true };
   if (question.kind === "select" && question.choices && !question.choices.includes(value as string)) {
@@ -237,22 +237,22 @@ function meaningOf(question: Question, { via, text, json }: Reply): { value: unk
 }
 
 /**
- * How to answer a question. "orc" gives the commands that orc inbox, show and wait print.
+ * How to answer a question. "sous" gives the commands that sous inbox, show and wait print.
  * "log" gives the commands the run's log prints, which leave out yes or no and the choices.
- * "prompt" gives what the prompt of orc wait takes.
+ * "prompt" gives what the prompt of sous wait takes.
  */
-export function hint(question: Question, where: "orc" | "log" | "prompt" = "orc"): string {
+export function hint(question: Question, where: "sous" | "log" | "prompt" = "sous"): string {
   if (where === "prompt") {
     if (question.breakpoint) return "approve, stop, or a note to send back";
     if (question.kind === "confirm") return "yes or no";
     if (question.kind === "select") return (question.choices ?? []).join(" / ");
     return "your answer";
   }
-  if (question.breakpoint) return `orc approve ${question.id}  |  orc send-back ${question.id} "note"  |  orc stop ${question.runId}`;
-  if (where === "log") return `orc answer ${question.id} "..."`;
-  if (question.kind === "confirm") return `orc answer ${question.id} yes|no`;
-  if (question.kind === "select") return `orc answer ${question.id} <one of: ${(question.choices ?? []).join(", ")}>`;
-  return `orc answer ${question.id} "..."`;
+  if (question.breakpoint) return `sous approve ${question.id}  |  sous send-back ${question.id} "note"  |  sous stop ${question.runId}`;
+  if (where === "log") return `sous answer ${question.id} "..."`;
+  if (question.kind === "confirm") return `sous answer ${question.id} yes|no`;
+  if (question.kind === "select") return `sous answer ${question.id} <one of: ${(question.choices ?? []).join(", ")}>`;
+  return `sous answer ${question.id} "..."`;
 }
 
 function parseJson(text: string): unknown {

@@ -1,6 +1,6 @@
-$ orc check factory --dry-run
+$ sous check factory --dry-run
 exit 0
-factory  <tmp>/check-factory/project/.orchestrator/workflows/factory.js
+factory  <tmp>/check-factory/project/.sous/workflows/factory.js
 ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
   (log lines sorted)
@@ -25,7 +25,7 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> done       triage TK-2, 125 tokens
   <hh:mm:ss> done       triage TK-3, 85 tokens
   <hh:mm:ss> log        3 tickets
-  <hh:mm:ss> log        Logs persisted to <tmp>/check-factory/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
+  <hh:mm:ss> log        Logs persisted to <tmp>/check-factory/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
   <hh:mm:ss> log        TK-1: review 1: approved
   <hh:mm:ss> log        TK-2: review 1: approved
   <hh:mm:ss> log        TK-3: review 1: approved
@@ -38,11 +38,11 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> phase      TK-3: implement
   <hh:mm:ss> phase      TK-3: review
   <hh:mm:ss> phase      TK-3: verify
-  <hh:mm:ss> removed    <tmp>/check-factory/orc-home/worktrees/<run-1>, which changed no file
-  <hh:mm:ss> removed    <tmp>/check-factory/orc-home/worktrees/<run-1>-nested1, which changed no file
-  <hh:mm:ss> removed    <tmp>/check-factory/orc-home/worktrees/<run-1>-nested2, which changed no file
-  <hh:mm:ss> removed    <tmp>/check-factory/orc-home/worktrees/<run-1>-nested3, which changed no file
-  <hh:mm:ss> run        factory in <tmp>/check-factory/orc-home/worktrees/<run-1>
+  <hh:mm:ss> removed    <tmp>/check-factory/sous-home/worktrees/<run-1>, which changed no file
+  <hh:mm:ss> removed    <tmp>/check-factory/sous-home/worktrees/<run-1>-nested1, which changed no file
+  <hh:mm:ss> removed    <tmp>/check-factory/sous-home/worktrees/<run-1>-nested2, which changed no file
+  <hh:mm:ss> removed    <tmp>/check-factory/sous-home/worktrees/<run-1>-nested3, which changed no file
+  <hh:mm:ss> run        factory in <tmp>/check-factory/sous-home/worktrees/<run-1>
   <hh:mm:ss> start      TK-1: diff 1 (exec)
   <hh:mm:ss> start      TK-1: implementer (claude/haiku)
   <hh:mm:ss> start      TK-1: reviewer 1 (claude/haiku)

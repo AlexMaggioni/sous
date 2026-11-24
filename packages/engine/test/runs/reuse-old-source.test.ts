@@ -33,7 +33,7 @@ async function pauseThenResume(): Promise<{ first: string[]; journal: string[]; 
   await runWorker(source.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
   assert.equal(readState(paths, source.runId)?.status, "completed");
 
-  writeFileSync(join(projectDir, ".orchestrator", "workflows", "three.js"), three("B2"));
+  writeFileSync(join(projectDir, ".sous", "workflows", "three.js"), three("B2"));
   const reuse = createRun(paths, { workflow: "three", projectDir, inputs: {}, reuseFrom: loadRecord(paths, source.runId)! });
   let mark = prompts.length;
   await runWorker(reuse.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });

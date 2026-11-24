@@ -1,14 +1,14 @@
-// The account orc's steps use. orc is logged in on one account per program, and `default` is the
-// program's own login. `orc account add` keeps a Claude Code login token, made with
+// The account sous's steps use. sous is logged in on one account per program, and `default` is the
+// program's own login. `sous account add` keeps a Claude Code login token, made with
 // `claude setup-token`, in accounts.json, which only the user can read. Each run records its
 // account and keeps it when it pauses and resumes, also when the service resumes it. A run that an
-// agent starts uses that agent's account. `orc account use` moves the runs waiting at a usage limit
+// agent starts uses that agent's account. `sous account use` moves the runs waiting at a usage limit
 // to the new account and resumes them, through run.ts. Codex steps use Codex's own login for now.
 
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import type { Account, HarnessId } from "@orchestrator/harnesses";
+import type { Account, HarnessId } from "@sous/harnesses";
 import { HARNESSES, harnessName, isHarness, loginOf } from "./agents.js";
 import { readStrictJsonFile, writeJsonFile } from "./json-file.js";
 import type { HomePaths } from "./runs/home.js";
@@ -25,10 +25,10 @@ export interface Login {
 }
 
 interface AccountsFile {
-  /** The account orc uses for new runs, by program. Missing means default. */
+  /** The account sous uses for new runs, by program. Missing means default. */
   current?: Partial<Record<HarnessId, string>>;
   logins?: Partial<Record<HarnessId, Record<string, Login>>>;
-  /** Tokens that runs started with and that are no account of orc's, such as an agent's own, by key. */
+  /** Tokens that runs started with and that are no account of sous's, such as an agent's own, by key. */
   kept?: Record<string, string>;
 }
 
@@ -50,7 +50,7 @@ function parseAccountName(text: string | undefined): AccountName {
   return { program, name };
 }
 
-/** How the account reads in orc's output: a bare name for Claude Code, codex/<name> for Codex. */
+/** How the account reads in sous's output: a bare name for Claude Code, codex/<name> for Codex. */
 export function accountLabel(program: HarnessId, name: string): string {
   return program === "claude" ? name : `${program}/${name}`;
 }
@@ -87,7 +87,7 @@ export function listAccounts(paths: HomePaths): AccountRow[] {
   return rows;
 }
 
-/** The account orc uses for the program's new runs. */
+/** The account sous uses for the program's new runs. */
 export function currentAccount(paths: HomePaths, program: HarnessId, file = readFile(paths)): string {
   const name = file.current?.[program];
   return name && file.logins?.[program]?.[name] ? name : DEFAULT;
@@ -97,10 +97,10 @@ export function currentAccount(paths: HomePaths, program: HarnessId, file = read
 export function checkNewAccount(paths: HomePaths, spec: string, file = readFile(paths)): AccountName {
   const { program, name } = parseAccountName(spec);
   if (program !== "claude") {
-    throw new Error(`Codex accounts come later. Codex steps use Codex's own login, from ${loginOf("codex").variable} where orc starts.`);
+    throw new Error(`Codex accounts come later. Codex steps use Codex's own login, from ${loginOf("codex").variable} where sous starts.`);
   }
-  if (name === DEFAULT || name === CALLER) throw new Error(`"${name}" is taken by orc. Pick another name.`);
-  if (file.logins?.[program]?.[name]) throw new Error(`there is an account ${name} already. orc account remove ${name} first.`);
+  if (name === DEFAULT || name === CALLER) throw new Error(`"${name}" is taken by sous. Pick another name.`);
+  if (file.logins?.[program]?.[name]) throw new Error(`there is an account ${name} already. sous account remove ${name} first.`);
   return { program, name };
 }
 
@@ -123,12 +123,12 @@ export function addAccount(paths: HomePaths, spec: string, token: string): Accou
 export function deleteAccount(paths: HomePaths, spec: string, unfinished: readonly RunRecord[]): AccountName {
   const { program, name } = parseAccountName(spec);
   const file = readFile(paths);
-  if (!file.logins?.[program]?.[name]) throw new Error(`no account ${accountLabel(program, name)}. orc account lists them.`);
+  if (!file.logins?.[program]?.[name]) throw new Error(`no account ${accountLabel(program, name)}. sous account lists them.`);
   const using = unfinished.filter((record) => record.accounts?.[program]?.name === name);
   if (using.length) {
     throw new Error(
       `${using.map((record) => record.runId).join(", ")} ${using.length === 1 ? "uses" : "use"} account ${accountLabel(program, name)}. ` +
-        `orc account use <name> moves the runs waiting at the limit to another account. Stop or finish the others first.`,
+        `sous account use <name> moves the runs waiting at the limit to another account. Stop or finish the others first.`,
     );
   }
   const { [name]: _gone, ...rest } = file.logins[program]!;
@@ -138,13 +138,13 @@ export function deleteAccount(paths: HomePaths, spec: string, unfinished: readon
   return { program, name };
 }
 
-/** Make the account orc's current one for its program. run.ts's useAccount then moves the runs
+/** Make the account sous's current one for its program. run.ts's useAccount then moves the runs
  *  waiting at the limit. */
 export function setCurrentAccount(paths: HomePaths, spec: string): AccountName {
   const { program, name } = parseAccountName(spec);
   const file = readFile(paths);
   if (name !== DEFAULT && !file.logins?.[program]?.[name]) {
-    throw new Error(`no account ${accountLabel(program, name)}. orc account lists them, and orc account add ${accountLabel(program, name)} adds it.`);
+    throw new Error(`no account ${accountLabel(program, name)}. sous account lists them, and sous account add ${accountLabel(program, name)} adds it.`);
   }
   file.current = { ...file.current, [program]: name };
   if (name === DEFAULT) delete file.current[program];
@@ -164,8 +164,8 @@ export function moveRunAccount(paths: HomePaths, runId: string, program: Harness
 /**
  * The accounts a new run records. A run an agent of another run starts takes that run's accounts.
  * A run a Claude Code session starts uses that session's login for its Claude Code steps. Any
- * other run uses orc's current account. A login token in the environment that is no account of
- * orc's is kept, so a resume by the service uses it too.
+ * other run uses sous's current account. A login token in the environment that is no account of
+ * sous's is kept, so a resume by the service uses it too.
  */
 export function accountsForRun(
   paths: HomePaths,
@@ -201,7 +201,7 @@ export function stepAccount(paths: HomePaths, program: HarnessId, account: RunAc
   const file = readFile(paths);
   if (account.name !== DEFAULT && account.name !== CALLER) {
     const login = file.logins?.claude?.[account.name];
-    if (!login) throw new Error(`the run uses Claude Code account ${account.name}, which orc no longer has. orc account add ${account.name} adds it again.`);
+    if (!login) throw new Error(`the run uses Claude Code account ${account.name}, which sous no longer has. sous account add ${account.name} adds it again.`);
     return { folder, token: login.token, named: true };
   }
   const kept = account.kept ? file.kept?.[account.kept] : undefined;
@@ -252,6 +252,6 @@ export function limitNotice(paths: HomePaths, record: RunRecord, resetAt: Date |
   const who = name === CALLER ? `The agent's ${what} login` : name === DEFAULT ? `${what}'s own login (default)` : `${what} account ${name}`;
   const reset = resetText(resetAt);
   const current = currentAccount(paths, program);
-  const now = current !== name ? `orc account use ${accountLabel(program, current)} moves it to the account orc uses now.` : `orc account use <name> goes on now on another account.`;
+  const now = current !== name ? `sous account use ${accountLabel(program, current)} moves it to the account sous uses now.` : `sous account use <name> goes on now on another account.`;
   return `${who} hit its usage limit.${reset ? ` It resets at ${reset}.` : ""} ${now}`;
 }

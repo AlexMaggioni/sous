@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Reruns the proofs in docs/proof/ on the real Claude Code and Codex, each proof in a fresh scratch
-// ORC_HOME, and writes one normalized JSON file per proof to <outdir>. The files keep the shape of
+// SOUS_HOME, and writes one normalized JSON file per proof to <outdir>. The files keep the shape of
 // each run: its steps, programs, models, places, statuses, branches, questions and check outputs.
 // They leave out the agents' text, and replace run ids, paths, times and token counts.
 //
@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
-const ORC = join(REPO, "packages/orc/dist/cli.js");
+const SOUS = join(REPO, "packages/cli/dist/cli.js");
 const WORDSRV = join(HERE, "wordsrv.mjs");
 const NODE = process.execPath;
 const HOME = homedir();
@@ -91,11 +91,11 @@ function writeConfig(ctx, extra) {
   write(join(ctx.home, "config.json"), `${JSON.stringify({ notify: false, maxAgents: 2, defaultModel: CLAUDE, ...extra }, null, 2)}\n`);
 }
 
-/** The environment of one orc call. `extra` sets variables, and an undefined value removes one. */
+/** The environment of one sous call. `extra` sets variables, and an undefined value removes one. */
 function envFor(ctx, extra = {}) {
   const env = { ...process.env };
-  for (const key of Object.keys(env)) if (key.startsWith("ORC_") || DROP_ENV.includes(key)) delete env[key];
-  env.ORC_HOME = ctx.home;
+  for (const key of Object.keys(env)) if (key.startsWith("SOUS_") || DROP_ENV.includes(key)) delete env[key];
+  env.SOUS_HOME = ctx.home;
   for (const [key, value] of Object.entries(extra)) {
     if (value === undefined) delete env[key];
     else env[key] = value;
@@ -103,10 +103,10 @@ function envFor(ctx, extra = {}) {
   return env;
 }
 
-/** One orc call with a time limit. A call that runs out of time is killed. */
-function orc(ctx, args, { cwd = ctx.dir, env = envFor(ctx), limit = QUICK } = {}) {
+/** One sous call with a time limit. A call that runs out of time is killed. */
+function sous(ctx, args, { cwd = ctx.dir, env = envFor(ctx), limit = QUICK } = {}) {
   const started = Date.now();
-  const r = spawnSync(NODE, [ORC, ...args], {
+  const r = spawnSync(NODE, [SOUS, ...args], {
     cwd,
     env,
     encoding: "utf8",
@@ -119,7 +119,7 @@ function orc(ctx, args, { cwd = ctx.dir, env = envFor(ctx), limit = QUICK } = {}
   const result = { code: timedOut ? null : r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", timedOut };
   const shown = args.map((a) => (a.length > 60 || a.includes("\n") ? "<text>" : a)).join(" ");
   const clip = (text) => (text.length > 4000 ? `${text.slice(0, 4000)}\n...` : text);
-  trace(ctx, `$ orc ${shown}  (exit ${result.code}${timedOut ? ", timed out" : ""}, ${Math.round((Date.now() - started) / 1000)}s)\n${clip(result.stdout)}${clip(result.stderr)}`);
+  trace(ctx, `$ sous ${shown}  (exit ${result.code}${timedOut ? ", timed out" : ""}, ${Math.round((Date.now() - started) / 1000)}s)\n${clip(result.stdout)}${clip(result.stderr)}`);
   return result;
 }
 
@@ -142,9 +142,9 @@ function alias(ctx, runId, name) {
 }
 
 function start(ctx, workflow, inputs = [], opts = {}) {
-  const r = orc(ctx, ["run", workflow, ...inputs, "--json"], opts);
+  const r = sous(ctx, ["run", workflow, ...inputs, "--json"], opts);
   const started = parseJson(r.stdout);
-  if (!started?.runId) throw new Error(`orc run ${workflow} exited with ${r.code}: ${firstLine(r.stderr || r.stdout)}`);
+  if (!started?.runId) throw new Error(`sous run ${workflow} exited with ${r.code}: ${firstLine(r.stderr || r.stdout)}`);
   alias(ctx, started.runId);
   progress(ctx, `started ${workflow} ${started.runId}`);
   return started.runId;
@@ -152,10 +152,10 @@ function start(ctx, workflow, inputs = [], opts = {}) {
 
 /** Wait for a run to end, pause or ask. A run that outlasts the limit is stopped. */
 function wait(ctx, runId, limit, opts = {}) {
-  const r = orc(ctx, ["wait", runId, "--json"], { ...opts, limit });
+  const r = sous(ctx, ["wait", runId, "--json"], { ...opts, limit });
   if (r.timedOut) {
     progress(ctx, `${runId} ran out of time after ${limit}s, stopping it`);
-    orc(ctx, ["stop", runId], opts);
+    sous(ctx, ["stop", runId], opts);
     return { code: null, timedOut: true };
   }
   const summary = parseJson(r.stdout);
@@ -196,7 +196,7 @@ function jsonOut(r) {
   return { exit: r.code, ...(r.timedOut ? { timedOut: true } : {}), ...(value === undefined ? { stdout: r.stdout.trim(), stderr: r.stderr.trim() } : { value }) };
 }
 
-/** The engine state file, which keeps the calls and the journal that `orc show` leaves out. */
+/** The engine state file, which keeps the calls and the journal that `sous show` leaves out. */
 function readState(home, runId) {
   const base = join(home, "runs", "projects");
   if (!existsSync(base)) return undefined;
@@ -302,8 +302,8 @@ function stepsOf(state, scope, spec, runCwd) {
 
 /** One run, from its record and its engine state. */
 function collect(ctx, runId, spec = {}) {
-  const shown = parseJson(orc(ctx, ["show", runId, "--json"]).stdout);
-  if (!shown?.record) return { error: "orc show printed no run" };
+  const shown = parseJson(sous(ctx, ["show", runId, "--json"]).stdout);
+  if (!shown?.record) return { error: "sous show printed no run" };
   const { record } = shown;
   const state = readState(ctx.home, runId) ?? shown.state ?? {};
   const nested = Object.entries(record.nested ?? {}).map(([childId, child]) => {
@@ -361,7 +361,7 @@ function doctorOut(r) {
 }
 
 function inboxOf(ctx, runId, opts) {
-  const list = parseJson(orc(ctx, ["inbox", "--json"], opts).stdout);
+  const list = parseJson(sous(ctx, ["inbox", "--json"], opts).stdout);
   return (Array.isArray(list) ? list : []).filter((q) => q.runId === runId);
 }
 
@@ -449,12 +449,12 @@ const proofs = {
     const p = join(ctx.dir, "p1");
     write(join(p, ".claude/agents/nobash.md"), "---\nname: nobash\nmodel: claude/haiku\ndisallowedTools: [Bash]\n---\n");
     write(join(p, ".claude/agents/readonly.md"), "---\nname: readonly\nmodel: claude/haiku\ntools: [Read, Grep, Glob]\n---\n");
-    write(join(p, ".orchestrator/workflows/refusal.js"), REFUSAL);
+    write(join(p, ".sous/workflows/refusal.js"), REFUSAL);
     const spec = {
       schemas: [[/^allow list$/, (v) => isObj(v) && typeof v.ranBash === "boolean" && typeof v.note === "string"]],
       markers: [["ls output", /total \d+/]],
     };
-    ctx.out.check = checkOut(orc(ctx, ["check", "refusal", "--json"], { cwd: p }));
+    ctx.out.check = checkOut(sous(ctx, ["check", "refusal", "--json"], { cwd: p }));
     const id = start(ctx, "refusal", [], { cwd: p });
     ctx.out.wait = waitOut(wait(ctx, id, SMALL_RUN, { cwd: p }));
     ctx.out.run = collect(ctx, id, spec);
@@ -462,14 +462,14 @@ const proofs = {
 
   async accounts(ctx) {
     const p = join(ctx.dir, "p1");
-    write(join(p, ".orchestrator/workflows/hello.js"), HELLO);
+    write(join(p, ".sous/workflows/hello.js"), HELLO);
     const session = envFor(ctx, { CLAUDECODE: "1" });
     const spec = { markers: [word("OK")] };
     ctx.out.list = {
-      fromSession: jsonOut(orc(ctx, ["account", "--json"], { cwd: p, env: session })),
-      fromPlainShell: jsonOut(orc(ctx, ["account", "--json"], { cwd: p })),
+      fromSession: jsonOut(sous(ctx, ["account", "--json"], { cwd: p, env: session })),
+      fromPlainShell: jsonOut(sous(ctx, ["account", "--json"], { cwd: p })),
     };
-    ctx.out.useNobody = cmdOut(orc(ctx, ["account", "use", "nobody"], { cwd: p }));
+    ctx.out.useNobody = cmdOut(sous(ctx, ["account", "use", "nobody"], { cwd: p }));
     const a = start(ctx, "hello", ["--place", "none"], { cwd: p, env: session });
     ctx.out.fromSession = { wait: waitOut(wait(ctx, a, SMALL_RUN, { cwd: p, env: session })), run: collect(ctx, a, spec) };
     const b = start(ctx, "hello", ["--place", "none"], { cwd: p });
@@ -479,21 +479,21 @@ const proofs = {
 
   async installed(ctx) {
     const p = join(ctx.dir, "p1");
-    write(join(p, ".orchestrator/workflows/installed.js"), INSTALLED);
-    ctx.out.check = checkOut(orc(ctx, ["check", "installed", "--json"], { cwd: p }));
+    write(join(p, ".sous/workflows/installed.js"), INSTALLED);
+    ctx.out.check = checkOut(sous(ctx, ["check", "installed", "--json"], { cwd: p }));
     const id = start(ctx, "installed", [], { cwd: p });
     ctx.out.wait = waitOut(wait(ctx, id, SMALL_RUN, { cwd: p }));
     ctx.out.run = collect(ctx, id, { markers: [word("OK")] });
-    progress(ctx, "orc doctor");
-    ctx.out.doctor = doctorOut(orc(ctx, ["doctor", "--json"], { cwd: p, limit: DOCTOR }));
-    ctx.out.doctorWithWrongCodexPath = doctorOut(orc(ctx, ["doctor", "--json"], { cwd: p, limit: DOCTOR, env: envFor(ctx, { CODEX_PATH: "/nope/codex" }) }));
+    progress(ctx, "sous doctor");
+    ctx.out.doctor = doctorOut(sous(ctx, ["doctor", "--json"], { cwd: p, limit: DOCTOR }));
+    ctx.out.doctorWithWrongCodexPath = doctorOut(sous(ctx, ["doctor", "--json"], { cwd: p, limit: DOCTOR, env: envFor(ctx, { CODEX_PATH: "/nope/codex" }) }));
     // Dry runs with neither program on PATH. node is called by its full path.
     const tk = textkit(ctx, "tk");
     const bare = { cwd: tk, env: envFor(ctx, { PATH: "/usr/bin:/bin" }), limit: 120 };
     ctx.out.dryRuns = {
-      ticket: checkOut(orc(ctx, ["check", "ticket", "--ticket", ticketText(tk, "TK-1"), "--dry-run", "--json"], bare)),
-      factory: checkOut(orc(ctx, ["check", "factory", "--dry-run", "--json"], bare)),
-      emails: checkOut(orc(ctx, ["check", "emails", "--dry-run", "--json"], bare)),
+      ticket: checkOut(sous(ctx, ["check", "ticket", "--ticket", ticketText(tk, "TK-1"), "--dry-run", "--json"], bare)),
+      factory: checkOut(sous(ctx, ["check", "factory", "--dry-run", "--json"], bare)),
+      emails: checkOut(sous(ctx, ["check", "emails", "--dry-run", "--json"], bare)),
     };
   },
 
@@ -520,7 +520,7 @@ const proofs = {
         ctx.out.answers.push({ answer: verb, error: "no open question" });
         return false;
       }
-      const r = orc(ctx, note ? [verb, q.id, note] : [verb, q.id], opts);
+      const r = sous(ctx, note ? [verb, q.id, note] : [verb, q.id], opts);
       answered.add(q.id);
       ctx.out.answers.push({ question: questionOut(q), openQuestions: open.length, answer: verb, ...(note ? { note } : {}), exit: r.code });
       progress(ctx, `${verb} ${q.id}`);
@@ -531,7 +531,7 @@ const proofs = {
       if (answer("approve")) ctx.out.stops.push(waitOut(waitPast(ctx, id, answered, EMAILS_WAIT, opts)));
     }
     ctx.out.run = collect(ctx, id, EMAILS_SPEC);
-    const cwd = parseJson(orc(ctx, ["show", id, "--json"], opts).stdout)?.record?.cwd;
+    const cwd = parseJson(sous(ctx, ["show", id, "--json"], opts).stdout)?.record?.cwd;
     const drafts = cwd && join(cwd, "drafts.md");
     ctx.out.draftsFile = drafts && existsSync(drafts) ? { replies: (readFileSync(drafts, "utf8").match(/^To: /gm) ?? []).length } : null;
   },
@@ -582,7 +582,7 @@ most whether the change is correct, then end with one line: APPROVED or CHANGES.
     write(join(g4, ".codex/agents/dual.toml"), codexAgent("dual", "Say hello."));
     write(join(g4, ".opencode/agents/dual.md"), "---\ndescription: Says hello\n---\nSay hello.\n");
     write(join(ctx.home, "agents/oldie.md"), "---\nname: oldie\nmodel: claude/haiku\n---\nSay OLD.\n");
-    const wf = (name, text) => write(join(g4, `.orchestrator/workflows/${name}.js`), text);
+    const wf = (name, text) => write(join(g4, `.sous/workflows/${name}.js`), text);
     wf("wrong-harness", flow("wrong-harness", 'return await agent("Fix it.", { agentType: "fixer", label: "fixer", model: "claude/haiku" })'));
     wf("two-folders", flow("two-folders", 'return await agent("Say hello.", { agentType: "dual", label: "dual" })'));
     wf(
@@ -592,7 +592,7 @@ most whether the change is correct, then end with one line: APPROVED or CHANGES.
     wf("ghost", flow("ghost", 'return await agent("Hello.", { agentType: "ghost", label: "ghost" })'));
     wf("old-home", flow("old-home", 'return await agent("Hello.", { agentType: "oldie", label: "oldie" })'));
     ctx.out.checks = {};
-    for (const name of ["wrong-harness", "two-folders", "pick-later", "ghost", "old-home"]) ctx.out.checks[name] = checkOut(orc(ctx, ["check", name, "--json"], { cwd: g4 }));
+    for (const name of ["wrong-harness", "two-folders", "pick-later", "ghost", "old-home"]) ctx.out.checks[name] = checkOut(sous(ctx, ["check", name, "--json"], { cwd: g4 }));
     const pick = start(ctx, "pick-later", ["--harness", "claude"], { cwd: g4 });
     ctx.out.pickLaterOnClaude = { wait: waitOut(wait(ctx, pick, QUICK, { cwd: g4 })), run: collect(ctx, pick) };
 
@@ -600,7 +600,7 @@ most whether the change is correct, then end with one line: APPROVED or CHANGES.
     const g1 = join(ctx.dir, "g1");
     write(join(g1, "change.diff"), "--- a/math.js\n+++ b/math.js\n@@ -1,3 +1,3 @@\n export function add(a, b) {\n-  return a - b\n+  return a + b\n }\n");
     write(
-      join(g1, ".orchestrator/workflows/review-both.js"),
+      join(g1, ".sous/workflows/review-both.js"),
       flow(
         "review-both",
         `const diff = await sh("cat change.diff", { label: "diff" })
@@ -613,7 +613,7 @@ return { claude, codex }`,
       ),
     );
     const verdicts = { markers: [word("APPROVED"), word("CHANGES")] };
-    ctx.out.reviewBothCheck = checkOut(orc(ctx, ["check", "review-both", "--json"], { cwd: g1 }));
+    ctx.out.reviewBothCheck = checkOut(sous(ctx, ["check", "review-both", "--json"], { cwd: g1 }));
     const review = start(ctx, "review-both", [], { cwd: g1 });
     ctx.out.reviewBoth = { wait: waitOut(wait(ctx, review, SMALL_RUN, { cwd: g1 })), run: collect(ctx, review, verdicts) };
 
@@ -622,7 +622,7 @@ return { claude, codex }`,
     write(join(fo, ".claude/agents/pair-reviewer.md"), `---\nname: pair-reviewer\ndescription: Gives its word\nmodel: haiku\n---\n${giveWord("CLAUDE-COPY")}\n`);
     write(join(fo, ".codex/agents/pair-reviewer.toml"), codexAgent("pair-reviewer", giveWord("CODEX-COPY")));
     write(
-      join(fo, ".orchestrator/workflows/folders.js"),
+      join(fo, ".sous/workflows/folders.js"),
       flow(
         "folders",
         `const [stylist, pair] = await parallel([
@@ -634,7 +634,7 @@ return { stylist, pair }`,
     );
     const copies = { markers: ["CLAUDE-COPY", "CODEX-COPY", "CODEX-HOME"].map(word) };
     const folders = { cwd: fo, env: withCodexHome };
-    ctx.out.foldersCheck = checkOut(orc(ctx, ["check", "folders", "--json"], folders));
+    ctx.out.foldersCheck = checkOut(sous(ctx, ["check", "folders", "--json"], folders));
     const f1 = start(ctx, "folders", [], folders);
     ctx.out.foldersClaudeDefault = { wait: waitOut(wait(ctx, f1, SMALL_RUN, folders)), run: collect(ctx, f1, copies) };
     writeConfig(ctx, { rulesyncGlobal: global, defaultHarness: "codex" });
@@ -668,7 +668,7 @@ as WORD: <word>. Then sign off as the textkit-style skill says. Do not change an
     const skill = "---\nname: textkit-style\ndescription: How textkit signs off an answer\n---\nEnd your answer with this line, on its own: Signed off in the textkit house style, mark PLUM-HARBOR.\n";
     for (const folder of [".rulesync/skills", ".claude/skills", ".agents/skills"]) write(join(tk, folder, "textkit-style/SKILL.md"), skill);
     write(
-      join(tk, ".orchestrator/workflows/word.js"),
+      join(tk, ".sous/workflows/word.js"),
       flow(
         "word",
         `const ask = "Do your task."
@@ -686,7 +686,7 @@ return { claude, codex, claudeOwn, codexOwn }`,
     );
     const words = { markers: ["ORCHID", "DECOY", "PLUM-HARBOR", "NO TOOL"].map(word) };
     const wordOpts = { cwd: tk, env: withCodexHome };
-    ctx.out.wordCheck = checkOut(orc(ctx, ["check", "word", "--json"], wordOpts));
+    ctx.out.wordCheck = checkOut(sous(ctx, ["check", "word", "--json"], wordOpts));
     const w = start(ctx, "word", [], wordOpts);
     ctx.out.word = { wait: waitOut(wait(ctx, w, SMALL_RUN, wordOpts)), run: collect(ctx, w, words) };
   },
@@ -696,8 +696,8 @@ return { claude, codex, claudeOwn, codexOwn }`,
     const p = join(ctx.dir, "p0");
     mkdirSync(p, { recursive: true });
     const opts = { cwd: p };
-    ctx.out.check = checkOut(orc(ctx, ["check", "tick", "--json"], opts));
-    ctx.out.schedules = jsonOut(orc(ctx, ["schedule", "list", "--json"], opts));
+    ctx.out.check = checkOut(sous(ctx, ["check", "tick", "--json"], opts));
+    ctx.out.schedules = jsonOut(sous(ctx, ["schedule", "list", "--json"], opts));
     // Start at second 5 of a minute, so 150 seconds cover the same three minutes each time.
     const now = new Date();
     let ms = ((65 - now.getSeconds()) % 60) * 1000 - now.getMilliseconds();
@@ -706,10 +706,10 @@ return { claude, codex, claudeOwn, codexOwn }`,
     await sleep(ms);
     const logFile = join(ctx.dir, "daemon.log");
     const fd = openSync(logFile, "w");
-    const daemon = spawn(NODE, [ORC, "daemon", "run"], { cwd: p, env: envFor(ctx), stdio: ["ignore", fd, fd] });
+    const daemon = spawn(NODE, [SOUS, "daemon", "run"], { cwd: p, env: envFor(ctx), stdio: ["ignore", fd, fd] });
     closeSync(fd);
     const exited = new Promise((done) => daemon.on("exit", (code, signal) => done({ code, signal })));
-    progress(ctx, `orc daemon run, pid ${daemon.pid}, for 150s`);
+    progress(ctx, `sous daemon run, pid ${daemon.pid}, for 150s`);
     await sleep(150_000);
     daemon.kill("SIGTERM");
     let end = await Promise.race([exited, sleep(20_000).then(() => null)]);
@@ -727,7 +727,7 @@ return { claude, codex, claudeOwn, codexOwn }`,
       pidFileLeft: existsSync(join(ctx.home, "daemon.pid")),
       log: lines.map((line) => line.replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z /, "")),
     };
-    const runs = (parseJson(orc(ctx, ["list", "--all", "--json"], opts).stdout) ?? []).slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    const runs = (parseJson(sous(ctx, ["list", "--all", "--json"], opts).stdout) ?? []).slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
     for (const r of runs) alias(ctx, r.runId);
     ctx.out.runs = runs.map((r) => ({ wait: waitOut(wait(ctx, r.runId, QUICK, opts)), run: collect(ctx, r.runId) }));
   },
@@ -749,7 +749,7 @@ function normalizer(ctx) {
       // not a path on disk
     }
   };
-  add(ctx.home, "$ORC_HOME");
+  add(ctx.home, "$SOUS_HOME");
   add(ctx.root, "$S");
   add(REPO, "$REPO");
   add(tmpdir(), "$TMP");
@@ -760,7 +760,7 @@ function normalizer(ctx) {
     for (const [from, to] of pairs) s = s.split(from).join(to);
     return s
       .replace(/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z/g, "<time>")
-      // Local times, such as the next start that orc check prints for a schedule.
+      // Local times, such as the next start that sous check prints for a schedule.
       .replace(/\d{1,2}\/\d{1,2}\/\d{4},? \d{1,2}:\d\d(:\d\d)?\s?[AP]M/g, "<time>")
       .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<uuid>")
       .replace(/runs\/projects\/[^/\s"]+/g, "runs/projects/<folder>")
@@ -809,7 +809,7 @@ function gaps(out) {
 
 function finish(ctx) {
   // Runs that this script did not start, such as nested ones, get a placeholder too.
-  const listed = parseJson(orc(ctx, ["list", "--all", "--json"]).stdout) ?? [];
+  const listed = parseJson(sous(ctx, ["list", "--all", "--json"]).stdout) ?? [];
   for (const r of [...listed].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))) alias(ctx, r.runId);
   const out = { ...ctx.out, models: { claude: CLAUDE, codex: `${CODEX_MODEL}, ${CODEX_EFFORT} effort where a step or agent sets it` } };
   const missing = gaps(out);
@@ -823,7 +823,7 @@ function leftovers(root, ids) {
   const r = spawnSync("ps", ["-axo", "pid=,command="], { encoding: "utf8", timeout: QUICK * 1000, killSignal: "SIGKILL" });
   return (r.stdout ?? "")
     .split("\n")
-    .filter((line) => line.includes(root) || line.includes(`${ORC} daemon`) || [...ids].some((id) => line.includes(id)))
+    .filter((line) => line.includes(root) || line.includes(`${SOUS} daemon`) || [...ids].some((id) => line.includes(id)))
     .filter((line) => !line.includes(" ps -axo"));
 }
 
@@ -838,15 +838,15 @@ async function main() {
     process.stderr.write(`no proof ${unknown.join(", ")}. The proofs: ${PROOFS.join(", ")}\n`);
     process.exit(2);
   }
-  if (!existsSync(ORC)) {
-    process.stderr.write(`${ORC} is missing. Build orc first.\n`);
+  if (!existsSync(SOUS)) {
+    process.stderr.write(`${SOUS} is missing. Build sous first.\n`);
     process.exit(2);
   }
   const outdir = resolve(outArg);
   mkdirSync(outdir, { recursive: true });
   const base = process.env.PROOFS_SCRATCH ? resolve(process.env.PROOFS_SCRATCH) : tmpdir();
   mkdirSync(base, { recursive: true });
-  const root = realpathSync(mkdtempSync(join(base, "orc-proofs-")));
+  const root = realpathSync(mkdtempSync(join(base, "sous-proofs-")));
   process.stdout.write(`${clock()} scratch folder ${root}\n`);
 
   const summaryFile = join(outdir, "summary.json");

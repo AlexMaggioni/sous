@@ -41,8 +41,8 @@ const home = [
   "home/slots/",
   "home/worktrees/",
   "project/",
-  "project/.orchestrator/",
-  "project/.orchestrator/workflows/",
+  "project/.sous/",
+  "project/.sous/workflows/",
 ];
 
 const runFiles = [
@@ -73,7 +73,7 @@ describe("where a run leaves its files", () => {
     const state = JSON.parse(readFileSync(join(runs, `${record.runId}.json`), "utf8"));
     const backup = JSON.parse(readFileSync(join(runs, `${record.runId}.json.bak`), "utf8"));
     assert.deepEqual(snapshot, { child, top });
-    assert.equal(readFileSync(join(projectDir, ".orchestrator", "workflows", "top.js"), "utf8"), top);
+    assert.equal(readFileSync(join(projectDir, ".sous", "workflows", "top.js"), "utf8"), top);
     assert.equal(state.script, top);
     assert.equal(backup.script, top);
     const holders = (text: string) => {
@@ -92,9 +92,9 @@ describe("where a run leaves its files", () => {
       "home/records/<id>.workflows",
       "home/runs/projects/<home key>/runs/<id>.json",
       "home/runs/projects/<home key>/runs/<id>.json.bak",
-      "project/.orchestrator/workflows/top.js",
+      "project/.sous/workflows/top.js",
     ]);
-    assert.deepEqual(holders("// the child workflow"), ["home/records/<id>.workflows", "project/.orchestrator/workflows/child.js"]);
+    assert.deepEqual(holders("// the child workflow"), ["home/records/<id>.workflows", "project/.sous/workflows/child.js"]);
   });
 
   it("a run paused on a failed step leaves the same files as a finished run", async () => {

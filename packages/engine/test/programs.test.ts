@@ -1,4 +1,4 @@
-// What `orc doctor` checks, on the fake programs in test/fakes: the live step runs the model it
+// What `sous doctor` checks, on the fake programs in test/fakes: the live step runs the model it
 // was asked for.
 
 import assert from "node:assert/strict";
@@ -14,10 +14,10 @@ const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../test/fa
 delete process.env.FAKE_VERSION;
 for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) delete process.env[name];
 
-/** An orc home whose config points at the fakes, and the fakes' request log. */
+/** A sous home whose config points at the fakes, and the fakes' request log. */
 function fakeHome() {
   const dir = mkdtempSync(join(tmpdir(), "engine-programs-"));
-  const paths = homePaths(join(dir, "orc"));
+  const paths = homePaths(join(dir, "sous"));
   const log = join(dir, "fake.log");
   const rules = join(dir, "rules.json");
   writeFileSync(rules, "[]");

@@ -1,4 +1,4 @@
-// The two ways the engine reads a JSON file under the orc home.
+// The two ways the engine reads a JSON file under the sous home.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -31,7 +31,7 @@ describe("JSON files", () => {
     assert.throws(() => readStrictJsonFile(file, {}), new RegExp(`^Error: ${file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} is not valid JSON: `));
   });
 
-  it("stop orc on a config with a mistake in it", () => {
+  it("stop sous on a config with a mistake in it", () => {
     const paths = ensureHome(homePaths(join(folder(), "home")));
     writeFileSync(paths.config, '{ "notify": false, }');
     assert.throws(() => loadConfig(paths), /config\.json is not valid JSON/);

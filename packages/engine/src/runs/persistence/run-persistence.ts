@@ -281,7 +281,7 @@ export type FsLayer = {
 };
 
 export interface RunPersistenceOptions {
-  /** Absolute workflow persistence root. When omitted, `~/.orchestrator/engine`. */
+  /** Absolute workflow persistence root. When omitted, `~/.sous/engine`. */
   persistenceRoot?: string;
 }
 

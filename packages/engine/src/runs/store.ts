@@ -18,7 +18,7 @@ export type StoreFs = Pick<FsLayer, "existsSync" | "readdirSync" | "readFileSync
 
 const DISK: StoreFs = { existsSync, readdirSync, readFileSync };
 
-/** The home's folders that hold run files orc writes: records, questions, the agent cap and the
+/** The home's folders that hold run files sous writes: records, questions, the agent cap and the
  *  worker logs. homePaths takes them from here. */
 export function runFolders(home: string) {
   return {
@@ -41,7 +41,7 @@ export function snapshotFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.workflows`);
 }
 
-/** The steps `orc stop --step` asked a running run to stop, one per line, until the worker takes them. */
+/** The steps `sous stop --step` asked a running run to stop, one per line, until the worker takes them. */
 export function stopRequestFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.stop`);
 }
@@ -87,7 +87,7 @@ export function daemonLog(paths: HomePaths): string {
   return join(paths.logs, "daemon.log");
 }
 
-/** The engine's folders for orc's runs. Every orc manager works from the home folder, so the
+/** The engine's folders for sous's runs. Every sous manager works from the home folder, so the
  *  folders do not depend on the run's project. */
 function engineFolders(paths: HomePaths) {
   return workflowProjectPaths(paths.home, { persistenceRoot: paths.runs });
@@ -100,14 +100,14 @@ export function engineRunFiles(paths: HomePaths, runId: string): { state: string
   return { state: join(runsDir, `${runId}.json`), events: join(runsDir, `${runId}.events.jsonl`) };
 }
 
-/** The engine's persistence for orc's runs. The worker hands it to its manager. It writes nothing
+/** The engine's persistence for sous's runs. The worker hands it to its manager. It writes nothing
  *  until something saves or takes a lease through it. */
 export function enginePersistence(paths: HomePaths): RunEventPersistence {
   return createRunPersistence(paths.home, undefined, { persistenceRoot: paths.runs });
 }
 
-/** Where a manager of orc's runs keeps them. Run state is keyed to the manager's folder, so every
- *  orc manager uses the home folder. */
+/** Where a manager of sous's runs keeps them. Run state is keyed to the manager's folder, so every
+ *  sous manager uses the home folder. */
 export function managerStore(paths: HomePaths): { cwd: string; persistenceRoot: string; persistence: RunEventPersistence } {
   return { cwd: paths.home, persistenceRoot: paths.runs, persistence: enginePersistence(paths) };
 }

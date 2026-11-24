@@ -1,8 +1,8 @@
-// The baseline: today's orc, driven by the fake claude and codex, must print what
+// The baseline: today's sous, driven by the fake claude and codex, must print what
 // test/baseline/golden/ holds. No credentials, no network, no real Claude Code or Codex.
 //
 //   node --test test/baseline.test.mjs                     compare with golden
-//   BASELINE_UPDATE=1 node --test test/baseline.test.mjs   rewrite golden from today's orc
+//   BASELINE_UPDATE=1 node --test test/baseline.test.mjs   rewrite golden from today's sous
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -22,8 +22,8 @@ function diffOf(expected, actual) {
   return result.stdout;
 }
 
-test("orc behaves as the golden files say", { timeout: 300_000 }, async () => {
-  const out = mkdtempSync(join(tmpdir(), "orc-baseline-out-"));
+test("sous behaves as the golden files say", { timeout: 300_000 }, async () => {
+  const out = mkdtempSync(join(tmpdir(), "sous-baseline-out-"));
   try {
     await capture(out);
     if (process.env.BASELINE_UPDATE === "1") {
@@ -43,7 +43,7 @@ test("orc behaves as the golden files say", { timeout: 300_000 }, async () => {
       const actual = join(out, file);
       if (readFileSync(expected, "utf8") !== readFileSync(actual, "utf8")) problems.push(diffOf(expected, actual));
     }
-    assert.equal(problems.length, 0, `orc changed from the baseline:\n\n${problems.join("\n")}`);
+    assert.equal(problems.length, 0, `sous changed from the baseline:\n\n${problems.join("\n")}`);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }

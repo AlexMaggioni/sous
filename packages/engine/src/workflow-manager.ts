@@ -1,5 +1,5 @@
 /**
- * The manager of one orc run, set up by the run's worker. It starts or resumes the run, pauses
+ * The manager of one sous run, set up by the run's worker. It starts or resumes the run, pauses
  * it, saves its state and publishes its events.
  *
  * The agent steps go to the injected `AgentRunner` (steps/agent-runner.ts). The manager never
@@ -222,7 +222,7 @@ export interface ExecOptions {
   defaultModel?: string;
   /** Retry attempts after recoverable agent failures for this execution. */
   agentRetries?: number;
-  /** Answer a checkpoint() question with a person's reply. orc's worker asks it through the inbox. */
+  /** Answer a checkpoint() question with a person's reply. sous's worker asks it through the inbox. */
   confirm?: (
     promptText: string,
     options: CheckpointOptions,
@@ -237,7 +237,7 @@ export interface ExecOptions {
 }
 
 /** Options every run of a manager gets. */
-export interface OrchestratorOptions extends Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows"> {
+export interface SousOptions extends Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows"> {
   /** The places of a run tree, from its root run's id. A run without them has none. */
   places?: (rootRunId: string) => RunPlaces;
 }
@@ -248,7 +248,7 @@ export interface WorkflowManagerOptions {
   /** Resolve a saved-workflow name to its script, enabling nested `workflow('name')`. */
   loadSavedWorkflow?: (name: string) => string | undefined;
   /** Options every run gets, such as the nesting limit and nested places. */
-  orchestrator?: OrchestratorOptions;
+  orchestrator?: SousOptions;
   /**
    * The injected agent backend (the frozen AgentRunner seam). May be overridden
    * per-run via ExecOptions.agent. The engine depends on this injection and never
@@ -257,7 +257,7 @@ export interface WorkflowManagerOptions {
   agent?: AgentRunner;
   /** Default retry attempts after recoverable agent failures. */
   defaultAgentRetries?: number;
-  /** Absolute workflow persistence root. When omitted, `~/.orchestrator/engine`. */
+  /** Absolute workflow persistence root. When omitted, `~/.sous/engine`. */
   persistenceRoot?: string;
   /**
    * Custom run persistence implementation. When omitted, the manager constructs
@@ -482,7 +482,7 @@ export class WorkflowManager extends EventEmitter {
   readonly cwd: string;
   private concurrency: number;
   private loadSavedWorkflow?: (name: string) => string | undefined;
-  private orchestratorOptions: OrchestratorOptions;
+  private sousOptions: SousOptions;
   private agent?: AgentRunner;
   private defaultAgentRetries: number;
   private persistenceRoot: string;
@@ -492,7 +492,7 @@ export class WorkflowManager extends EventEmitter {
     this.cwd = options.cwd ?? process.cwd();
     this.concurrency = options.concurrency ?? 8;
     this.loadSavedWorkflow = options.loadSavedWorkflow;
-    this.orchestratorOptions = options.orchestrator ?? {};
+    this.sousOptions = options.orchestrator ?? {};
     this.agent = options.agent;
     this.defaultAgentRetries = options.defaultAgentRetries ?? 0;
     this.persistenceRoot = workflowHomeDir({ persistenceRoot: options.persistenceRoot });
@@ -1125,7 +1125,7 @@ export class WorkflowManager extends EventEmitter {
       const agent = this.resolveAgent(exec);
       const vmArgsSnapshot = managed.argsSnapshotOk ? snapshotArgs(managed.args) : { ok: false as const };
       const argsForVm = vmArgsSnapshot.ok ? vmArgsSnapshot.clone : managed.args;
-      const { places, ...orchestrator } = this.orchestratorOptions;
+      const { places, ...sous } = this.sousOptions;
       const engineResult = await runWorkflow(script, {
         cwd: managed.effectiveCwd,
         args: argsForVm,
@@ -1142,7 +1142,7 @@ export class WorkflowManager extends EventEmitter {
           onNestedWorkflow?.(ordinal, childRunId);
         },
         loadSavedWorkflow: this.loadSavedWorkflow,
-        ...orchestrator,
+        ...sous,
         // This run is the root of its run tree, so its places are noted under its id.
         ...(places ? { places: places(managed.runId) } : {}),
         ...(exec.stepOverrides ? { stepOverrides: exec.stepOverrides } : {}),
@@ -1712,7 +1712,7 @@ export class WorkflowManager extends EventEmitter {
     if (!persisted) return { accepted: false };
     assertExplicitCheckpointProvenance(persisted);
     if (persisted.status === "completed") return { accepted: false };
-    // A run older code saved never resumes. orc refuses it before it starts a worker.
+    // A run older code saved never resumes. sous refuses it before it starts a worker.
     if (!persisted.script || olderSave(persisted) !== undefined || persisted.argsUnreplayable) {
       return { accepted: false };
     }

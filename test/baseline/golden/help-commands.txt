@@ -1,99 +1,99 @@
-$ orc 
+$ sous 
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc help
+$ sous help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc -h
+$ sous -h
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc run --help
+$ sous run --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc wait --help
+$ sous wait --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc list --help
+$ sous list --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc show --help
+$ sous show --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc log --help
+$ sous log --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc inbox --help
+$ sous inbox --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc answer --help
+$ sous answer --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc approve --help
+$ sous approve --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc send-back --help
+$ sous send-back --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc pause --help
+$ sous pause --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc resume --help
+$ sous resume --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc stop --help
+$ sous stop --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc rerun --help
+$ sous rerun --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc workflows --help
+$ sous workflows --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc check --help
+$ sous check --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc schedule --help
+$ sous schedule --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc daemon --help
+$ sous daemon --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc gc --help
+$ sous gc --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc discard --help
+$ sous discard --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc prune --help
+$ sous prune --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc account --help
+$ sous account --help
 exit 0
-same as orc --help
+same as sous --help
 
-$ orc doctor --help
+$ sous doctor --help
 exit 0
-same as orc --help
+same as sous --help

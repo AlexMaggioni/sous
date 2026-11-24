@@ -70,14 +70,14 @@ export type StepEvent =
 
 /**
  * Fold one step event into the step list, at the time `at`, and return the step it touched. The
- * manager folds each event as it happens. orc folds the event log the same way while a run is
+ * manager folds each event as it happens. sous folds the event log the same way while a run is
  * live, for the steps the saved state does not have yet.
  *
  * A step is its scope and its call index. A start adds the step, or starts the listed one again
  * in its place. An end settles the running step: "error" when it carries an error record, "done"
  * otherwise. An end with no running step changes nothing.
  *
- * The keys go in the order the saved state has always had, since `orc show --json` prints them
+ * The keys go in the order the saved state has always had, since `sous show --json` prints them
  * in that order. So the start sets phase and model even when they are undefined.
  */
 export function foldStep(steps: WorkflowAgentSnapshot[], event: StepEvent, at: string): WorkflowAgentSnapshot | undefined {

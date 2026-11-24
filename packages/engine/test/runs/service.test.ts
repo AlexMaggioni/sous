@@ -24,7 +24,7 @@ describe("usage limit", () => {
     const deps = { notify: (title: string, body: string) => told.push(`${title}: ${body}`), log: (line: string) => lines.push(line) };
     tick(paths, launch, { ...deps, now: new Date("2026-11-21T11:00:00.000Z") });
     tick(paths, launch, { ...deps, now: new Date("2026-11-21T11:05:00.000Z") });
-    const text = `job changed since ${edited.runId} started. orc resume ${edited.runId} --latest takes the new version, orc resume ${edited.runId} --same goes on with the old one.`;
+    const text = `job changed since ${edited.runId} started. sous resume ${edited.runId} --latest takes the new version, sous resume ${edited.runId} --same goes on with the old one.`;
     assert.deepEqual(spawned, [kept.runId], "only the run with no edit resumes");
     assert.deepEqual(told, [`job did not resume: ${text}`], "the user hears it once");
     assert.equal(lines.filter((line) => line === text).length, 1);

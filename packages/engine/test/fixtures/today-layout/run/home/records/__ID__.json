@@ -1,7 +1,7 @@
 {
   "runId": "__ID__",
   "workflow": "today",
-  "file": "__ROOT__/project/.orchestrator/workflows/today.js",
+  "file": "__ROOT__/project/.sous/workflows/today.js",
   "args": {},
   "place": "folder",
   "cwd": "__CWD__",

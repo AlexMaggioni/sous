@@ -221,7 +221,7 @@ return 'done'`,
     });
     const { runner } = standIn();
     const record = createRun(paths, { workflow: "asks", projectDir, inputs: {} });
-    const answered = answerInTurn(paths, record.runId, [true, "orc", "blue", true]);
+    const answered = answerInTurn(paths, record.runId, [true, "sous", "blue", true]);
     const result = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal((await answered).length, 4);
     assert.equal(result?.status, "completed");

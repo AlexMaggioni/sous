@@ -1,5 +1,5 @@
 // A made-up value that fits a JSON Schema, for a dry run's stand-in agents. Moved here from the
-// workflows package, which orc no longer uses.
+// workflows package, which sous no longer uses.
 
 function defineDataProperty(target: Record<string, unknown>, key: string, value: unknown): void {
   Object.defineProperty(target, key, {

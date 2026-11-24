@@ -1,17 +1,17 @@
-$ orc run pause --json
+$ sous run pause --json
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "pause",
-  "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-pause/orc-home/logs/<run-1>.log"
+  "cwd": "<tmp>/scenario-pause/sous-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-pause/sous-home/logs/<run-1>.log"
 }
 
-$ orc pause <run-1>
+$ sous pause <run-1>
 exit 0
-pausing <run-1>: steps already running finish, nothing new starts. orc resume <run-1> goes on.
+pausing <run-1>: steps already running finish, nothing new starts. sous resume <run-1> goes on.
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 2
 {
   "runId": "<run-1>",
@@ -19,32 +19,32 @@ exit 2
   "status": "paused",
   "pauseReason": "requested",
   "reason": "requested",
-  "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-pause/sous-home/scratch/<run-1>"
 }
 
-$ orc resume <run-1>
+$ sous resume <run-1>
 exit 0
-resumed <run-1>  pause  in <tmp>/scenario-pause/orc-home/scratch/<run-1>
-  follow: orc wait <run-1>    log: orc log <run-1> -f
+resumed <run-1>  pause  in <tmp>/scenario-pause/sous-home/scratch/<run-1>
+  follow: sous wait <run-1>    log: sous log <run-1> -f
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "pause",
   "status": "completed",
-  "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
+  "cwd": "<tmp>/scenario-pause/sous-home/scratch/<run-1>",
   "result": {
     "first": "Fake claude answer.",
     "second": "Fake claude answer."
   }
 }
 
-$ orc show <run-1>
+$ sous show <run-1>
 exit 0
 pause  <run-1>
 status    completed
-place     none  <tmp>/scenario-pause/orc-home/scratch/<run-1>
+place     none  <tmp>/scenario-pause/sous-home/scratch/<run-1>
 started   <time>  by cli
 program   Claude Code 2.1.330  <repo>/test/fakes/claude
 account   Claude Code: default, Claude Code's own login in ~/.claude
@@ -59,16 +59,16 @@ result
   "second": "Fake claude answer."
 }
 
-$ orc show <run-1> --json
+$ sous show <run-1> --json
 exit 0
 {
   "record": {
     "runId": "<run-1>",
     "workflow": "pause",
-    "file": "<tmp>/scenario-pause/project/.orchestrator/workflows/pause.js",
+    "file": "<tmp>/scenario-pause/project/.sous/workflows/pause.js",
     "args": {},
     "place": "none",
-    "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
+    "cwd": "<tmp>/scenario-pause/sous-home/scratch/<run-1>",
     "projectDir": "<tmp>/scenario-pause/project",
     "priority": "user",
     "origin": "cli",
@@ -94,8 +94,8 @@ exit 0
     "runId": "<run-1>",
     "workflowName": "pause",
     "args": {},
-    "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
-    "effectiveCwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
+    "cwd": "<tmp>/scenario-pause/sous-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-pause/sous-home/scratch/<run-1>",
     "runtime": {
       "engineVersion": "4.0.5",
       "node": "<node>",
@@ -144,7 +144,7 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-pause/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -188,7 +188,7 @@ exit 0
           "sessionId": "<id-2>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-pause/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-pause/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -204,7 +204,7 @@ exit 0
       }
     ],
     "logs": [
-      "Logs persisted to <tmp>/scenario-pause/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+      "Logs persisted to <tmp>/scenario-pause/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
     ],
     "result": {
       "first": "Fake claude answer.",
@@ -227,5 +227,5 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-pause/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: first\n\nPAUSE-FIRST Start.","rule":0,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-pause/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: second\n\nPAUSE-SECOND Go on.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-pause/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: first\n\nPAUSE-FIRST Start.","rule":0,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-pause/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: second\n\nPAUSE-SECOND Go on.","rule":null,"outcome":"answer"}

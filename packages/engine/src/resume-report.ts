@@ -1,4 +1,4 @@
-// A resumed run's report, in two parts that `orc show --json` prints side by side. The resume
+// A resumed run's report, in two parts that `sous show --json` prints side by side. The resume
 // report holds each call's decision, replayed, live or failed, and their counts. The replay
 // eligibility sums it up: the prefix the admission predicted, the prefix that replayed, the first
 // call that did not replay, and what differs between the source run and this one. The manager

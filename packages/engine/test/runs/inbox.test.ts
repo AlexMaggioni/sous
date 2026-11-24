@@ -55,7 +55,7 @@ describe("a breakpoint's decision", () => {
   });
 });
 
-// The answer files below are raw writes, the way today's orc writes them.
+// The answer files below are raw writes, the way today's sous writes them.
 
 function answerFile(paths: HomePaths, id: string): string {
   return join(paths.inbox, `${id}.answer.json`);
@@ -154,12 +154,12 @@ describe("reply", () => {
     assert.deepEqual(inbox(paths, "r1"), []);
   });
 
-  it("tells how to answer, in orc, in the run's log and at the prompt", () => {
-    assert.equal(hint(name), 'orc answer r1--2 "..."');
-    assert.equal(hint(color), "orc answer r1--2 <one of: red, blue>");
-    assert.equal(hint(ship), "orc answer r1--2 yes|no");
-    assert.equal(hint(plan), 'orc approve r1--2  |  orc send-back r1--2 "note"  |  orc stop r1');
-    assert.equal(hint(ship, "log"), 'orc answer r1--2 "..."');
+  it("tells how to answer, in sous, in the run's log and at the prompt", () => {
+    assert.equal(hint(name), 'sous answer r1--2 "..."');
+    assert.equal(hint(color), "sous answer r1--2 <one of: red, blue>");
+    assert.equal(hint(ship), "sous answer r1--2 yes|no");
+    assert.equal(hint(plan), 'sous approve r1--2  |  sous send-back r1--2 "note"  |  sous stop r1');
+    assert.equal(hint(ship, "log"), 'sous answer r1--2 "..."');
     assert.equal(hint(plan, "log"), hint(plan));
     assert.equal(hint(name, "prompt"), "your answer");
     assert.equal(hint(color, "prompt"), "red / blue");
@@ -206,11 +206,11 @@ describe("a run that waits for an answer", () => {
     assert.deepEqual(inbox(paths, record.runId), [], "the inbox is empty");
     const id = (question: Question) => `<id>--${question.callIndex}`;
     assert.deepEqual(questionLines(lines, record.runId), [
-      `question   ${id(color!)}: Pick a color\n           answer with: orc answer ${id(color!)} "..."`,
+      `question   ${id(color!)}: Pick a color\n           answer with: sous answer ${id(color!)} "..."`,
       `answered   ${id(color!)}: "blue"`,
-      `question   ${id(ship!)}: Ship it?\n           answer with: orc answer ${id(ship!)} "..."`,
+      `question   ${id(ship!)}: Ship it?\n           answer with: sous answer ${id(ship!)} "..."`,
       `answered   ${id(ship!)}: true`,
-      `question   ${id(plan!)}: Breakpoint: Check the plan the plan Reply approve, stop, or send back with a note.\n           answer with: orc approve ${id(plan!)}  |  orc send-back ${id(plan!)} "note"  |  orc stop <id>`,
+      `question   ${id(plan!)}: Breakpoint: Check the plan the plan Reply approve, stop, or send back with a note.\n           answer with: sous approve ${id(plan!)}  |  sous send-back ${id(plan!)} "note"  |  sous stop <id>`,
       `answered   ${id(plan!)}: "approve"`,
     ]);
   });

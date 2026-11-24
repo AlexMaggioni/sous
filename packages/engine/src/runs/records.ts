@@ -1,4 +1,4 @@
-// What orc knows about a run beyond the engine's own state: which workflow, where it works,
+// What sous knows about a run beyond the engine's own state: which workflow, where it works,
 // who started it and which process runs it. One JSON file per root run in records/.
 //
 // While a worker runs a run, only the worker writes its record, apart from the pid the launcher
@@ -6,7 +6,7 @@
 // replaces the whole file, so two writers at once would lose one's change.
 
 import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
-import type { HarnessId } from "@orchestrator/harnesses";
+import type { HarnessId } from "@sous/harnesses";
 import { readJsonFile, writeJsonFile } from "../json-file.js";
 import type { PlaceNotes } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
@@ -51,23 +51,23 @@ export interface RunRecord {
   nested?: Record<string, NestedRun>;
   /** Worktrees of steps with `isolation: "worktree"` that exist now. A step removes its own when it ends. */
   stepWorktrees?: Array<{ dir: string; branch: string }>;
-  /** Set by `orc resume --latest`: the next resume takes the edited workflows. */
+  /** Set by `sous resume --latest`: the next resume takes the edited workflows. */
   resumeLatest?: boolean;
   /** The installed Claude Code and Codex the run's steps used, by harness, from its last start. */
   programs?: Record<string, { path: string; version?: string }>;
-  /** The account each program's steps use, kept across pauses and resumes (orc's accounts.ts). */
+  /** The account each program's steps use, kept across pauses and resumes (sous's accounts.ts). */
   accounts?: Partial<Record<HarnessId, RunAccount>>;
   /** Set when a step hit a usage limit: whose limit it was. A start or resume clears it. */
   limit?: { program: HarnessId; account: string; at: string };
 }
 
 export interface RunAccount {
-  /** An account of orc's, "default" for the program's own login, or "caller" for the login of
+  /** An account of sous's, "default" for the program's own login, or "caller" for the login of
    *  the agent's session that started the run. */
   name: string;
   /** The program's config folder variable as it was where the run started. Null when it was not set. */
   folder: string | null;
-  /** The key of the login token the run started with, when it is no account of orc's. */
+  /** The key of the login token the run started with, when it is no account of sous's. */
   kept?: string;
 }
 
@@ -166,7 +166,7 @@ export function requestStepStop(paths: HomePaths, runId: string, stop: StepStop)
 }
 
 /** The steps asked to stop since the last take. The file moves aside before the read, so a request
- *  that lands meanwhile starts a new file and waits for the next take. A line an older orc wrote,
+ *  that lands meanwhile starts a new file and waits for the next take. A line an older sous wrote,
  *  a bare name, is dropped. */
 export function takeStepStops(paths: HomePaths, runId: string): StepStop[] {
   const file = stopRequestFile(paths, runId);
@@ -190,7 +190,7 @@ export function updateRecord(paths: HomePaths, runId: string, change: Partial<Ru
   return next;
 }
 
-/** Every run orc started, newest first. */
+/** Every run sous started, newest first. */
 export function listRecords(paths: HomePaths): RunRecord[] {
   const out: RunRecord[] = [];
   for (const file of recordFiles(paths)) {

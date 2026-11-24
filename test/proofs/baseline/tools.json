@@ -3,7 +3,7 @@
   "check": {
     "exit": 0,
     "workflow": "refusal",
-    "file": "$S/tools/p1/.orchestrator/workflows/refusal.js",
+    "file": "$S/tools/p1/.sous/workflows/refusal.js",
     "description": "Two agents with tool lists try to run Bash",
     "inputs": {},
     "problems": [],
@@ -20,7 +20,7 @@
     "workflow": "refusal",
     "origin": "cli",
     "place": "none",
-    "cwd": "$ORC_HOME/scratch/run1",
+    "cwd": "$SOUS_HOME/scratch/run1",
     "inputs": {},
     "status": "completed",
     "phases": [],
@@ -41,7 +41,7 @@
       }
     },
     "logs": [
-      "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+      "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run1.log"
     ],
     "steps": [
       {
@@ -49,7 +49,7 @@
         "program": "claude",
         "model": "claude/haiku",
         "requested": "claude/claude/haiku",
-        "place": "$ORC_HOME/scratch/run1",
+        "place": "$SOUS_HOME/scratch/run1",
         "status": "done",
         "continuedSession": false,
         "words": []
@@ -59,7 +59,7 @@
         "program": "claude",
         "model": "claude/haiku",
         "requested": "claude/claude/haiku",
-        "place": "$ORC_HOME/scratch/run1",
+        "place": "$SOUS_HOME/scratch/run1",
         "status": "done",
         "continuedSession": false,
         "schema": "matched",

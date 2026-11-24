@@ -41,7 +41,7 @@
   "useNobody": {
     "exit": 1,
     "stdout": "",
-    "stderr": "orc: no account nobody. orc account lists them, and orc account add nobody adds it."
+    "stderr": "sous: no account nobody. sous account lists them, and sous account add nobody adds it."
   },
   "fromSession": {
     "wait": {
@@ -53,7 +53,7 @@
       "workflow": "hello",
       "origin": "cli",
       "place": "none",
-      "cwd": "$ORC_HOME/scratch/run1",
+      "cwd": "$SOUS_HOME/scratch/run1",
       "inputs": {},
       "status": "completed",
       "phases": [],
@@ -74,14 +74,14 @@
         }
       },
       "logs": [
-        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+        "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run1.log"
       ],
       "steps": [
         {
           "label": "claude code on haiku",
           "program": "claude",
           "model": "claude/haiku",
-          "place": "$ORC_HOME/scratch/run1",
+          "place": "$SOUS_HOME/scratch/run1",
           "status": "done",
           "continuedSession": false,
           "words": [
@@ -103,7 +103,7 @@
       "workflow": "hello",
       "origin": "cli",
       "place": "none",
-      "cwd": "$ORC_HOME/scratch/run2",
+      "cwd": "$SOUS_HOME/scratch/run2",
       "inputs": {},
       "status": "completed",
       "phases": [],
@@ -124,14 +124,14 @@
         }
       },
       "logs": [
-        "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run2.log"
+        "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run2.log"
       ],
       "steps": [
         {
           "label": "claude code on haiku",
           "program": "claude",
           "model": "claude/haiku",
-          "place": "$ORC_HOME/scratch/run2",
+          "place": "$SOUS_HOME/scratch/run2",
           "status": "done",
           "continuedSession": false,
           "words": [

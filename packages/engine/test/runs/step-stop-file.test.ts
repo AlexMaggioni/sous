@@ -1,4 +1,4 @@
-// The file `orc stop --step` writes its requests to. It holds one JSON object per line, until the
+// The file `sous stop --step` writes its requests to. It holds one JSON object per line, until the
 // worker takes them.
 
 import assert from "node:assert/strict";

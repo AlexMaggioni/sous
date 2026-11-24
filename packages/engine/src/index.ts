@@ -1,7 +1,7 @@
-// @orchestrator/engine runs saved workflows. It runs each agent step through the steps module,
-// which uses @orchestrator/harnesses. This entry exports only the names orc imports.
+// @sous/engine runs saved workflows. It runs each agent step through the steps module,
+// which uses @sous/harnesses. This entry exports only the names sous imports.
 
-// ── Runs: the orc home, run records, questions, schedules, the reads and the requests ──
+// ── Runs: the sous home, run records, questions, schedules, the reads and the requests ──
 export {
   ensureHome,
   findProjectDir,

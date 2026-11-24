@@ -1,5 +1,5 @@
-// The test kit, at @orchestrator/engine/testing. A test makes a home with it, plants a run's
-// files, and starts workers in its own process through the launcher orc's commands take. orc's
+// The test kit, at @sous/engine/testing. A test makes a home with it, plants a run's
+// files, and starts workers in its own process through the launcher sous's commands take. sous's
 // code never imports it: the architecture test flags an import past the entry from src.
 
 import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -14,7 +14,7 @@ import type { PersistedRunState } from "./runs/persistence/run-persistence.js";
 import type { InnerRunner } from "./steps/steps.js";
 import type { WorkflowRunResult } from "./workflow-result.js";
 
-// Engine parts orc's tests use and orc's code does not, so the main entry leaves them out.
+// Engine parts sous's tests use and sous's code does not, so the main entry leaves them out.
 export { WorkflowError, WorkflowErrorCode } from "./errors.js";
 export { knownProjects } from "./runs/home.js";
 export { writeAnswer } from "./runs/inbox.js";
@@ -32,12 +32,12 @@ export type { InnerRunner } from "./steps/steps.js";
  * folder as `<name>.js`.
  */
 export function testHome(workflows: Record<string, string> = {}, config: Record<string, unknown> = {}): { paths: HomePaths; projectDir: string } {
-  const root = mkdtempSync(join(tmpdir(), "orc-test-"));
+  const root = mkdtempSync(join(tmpdir(), "sous-test-"));
   const paths = ensureHome(homePaths(join(root, "home")));
   writeFileSync(paths.config, JSON.stringify({ notify: false, defaultPlace: "folder", ...config }));
   const projectDir = join(root, "project");
-  mkdirSync(join(projectDir, ".orchestrator", "workflows"), { recursive: true });
-  for (const [name, script] of Object.entries(workflows)) writeFileSync(join(projectDir, ".orchestrator", "workflows", `${name}.js`), script);
+  mkdirSync(join(projectDir, ".sous", "workflows"), { recursive: true });
+  for (const [name, script] of Object.entries(workflows)) writeFileSync(join(projectDir, ".sous", "workflows", `${name}.js`), script);
   return { paths, projectDir };
 }
 
@@ -81,13 +81,13 @@ export interface InProcessOptions {
   pollMs?: number;
   /** Gets each line the worker logs. The run's log file gets them too. */
   log?: (line: string) => void;
-  /** Let `orc pause`, `orc stop` and `orc stop --step` reach the worker. They signal the
+  /** Let `sous pause`, `sous stop` and `sous stop --step` reach the worker. They signal the
    *  record's pid, which is this process. Default false. */
   handleSignals?: boolean;
 }
 
 export interface InProcessWorkers {
-  /** Starts each worker in this process. Pass it where orc passes workerProcess. */
+  /** Starts each worker in this process. Pass it where sous passes workerProcess. */
   launch: Launcher;
   /** Each worker started, in order. */
   launched: Array<{ runId: string; mode: "start" | "resume" }>;
@@ -97,9 +97,9 @@ export interface InProcessWorkers {
 
 /**
  * A launcher that runs each worker in this process, with the given runner. The worker writes its
- * lines to the run's log file, as a worker process does, so `orc log` and `orc run --wait` read
+ * lines to the run's log file, as a worker process does, so `sous log` and `sous run --wait` read
  * them. A worker that throws writes the error to the log and clears its pid, as workerMain does.
- * Unlike a worker process, it leaves ORC_RUN_ID unset.
+ * Unlike a worker process, it leaves SOUS_RUN_ID unset.
  */
 export function inProcess(options: InProcessOptions): InProcessWorkers {
   const { inner, pollMs = 20, handleSignals = false } = options;

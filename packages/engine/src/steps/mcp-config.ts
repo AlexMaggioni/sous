@@ -1,4 +1,4 @@
-// The MCP servers a step can be given: from orc's settings, or from the workflow's agent()
+// The MCP servers a step can be given: from sous's settings, or from the workflow's agent()
 // call. The steps module hands each one to the harness as stdio or http.
 //
 // IDENTITY NOTE: mcpServers is an ADDITIVE run input. It is NOT part of the resume

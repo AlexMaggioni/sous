@@ -1,6 +1,6 @@
-$ orc check harnesses --dry-run
+$ sous check harnesses --dry-run
 exit 0
-harnesses  <tmp>/check-harnesses/project/.orchestrator/workflows/harnesses.js
+harnesses  <tmp>/check-harnesses/project/.sous/workflows/harnesses.js
   note: declares no inputs, so it takes any
 ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
@@ -9,8 +9,8 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> done       codex agent, 21 tokens
   <hh:mm:ss> done       on claude, 19 tokens
   <hh:mm:ss> done       on codex, 17 tokens
-  <hh:mm:ss> log        Logs persisted to <tmp>/check-harnesses/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
-  <hh:mm:ss> run        harnesses in <tmp>/check-harnesses/orc-home/scratch/<run-1>
+  <hh:mm:ss> log        Logs persisted to <tmp>/check-harnesses/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
+  <hh:mm:ss> run        harnesses in <tmp>/check-harnesses/sous-home/scratch/<run-1>
   <hh:mm:ss> start      codex agent
   <hh:mm:ss> start      on claude (claude/opus)
   <hh:mm:ss> start      on codex (codex)

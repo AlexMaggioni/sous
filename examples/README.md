@@ -1,7 +1,7 @@
 # Examples
 
 `textkit/` is a small Node library with two known bugs, three tickets and an inbox. Its
-`.orchestrator/workflows/` folder holds three workflows, and `.rulesync/subagents/` the agents
+`.sous/workflows/` folder holds three workflows, and `.rulesync/subagents/` the agents
 they use, in rulesync's format. Each agent runs on Claude Code with haiku, to keep the runs cheap.
 `docs/proof/` has real runs of all three.
 
@@ -20,29 +20,29 @@ at most `--rounds` rounds. A verifier then tries the cases, and the workflow com
 branch only when the reviewer approved, the verifier passed it and `npm test` passes.
 
 ```sh
-orc run ticket --ticket "$(cat tickets/TK-1.md)" --rounds 3 --wait
-orc show <run>
+sous run ticket --ticket "$(cat tickets/TK-1.md)" --rounds 3 --wait
+sous show <run>
 ```
 
 `--reviewer strict-reviewer` swaps in a reviewer with a higher bar on edge cases, which usually
 sends the first change back.
 
-To try a workflow without real agents, which costs nothing, add `--dry-run` to `orc check`:
+To try a workflow without real agents, which costs nothing, add `--dry-run` to `sous check`:
 
 ```sh
-orc check ticket --ticket "$(cat tickets/TK-1.md)" --dry-run
+sous check ticket --ticket "$(cat tickets/TK-1.md)" --dry-run
 ```
 
 ## The factory
 
 `factory.js` takes open tickets labelled `Bug` from Linear when `LINEAR_API_KEY` is set, in the
-environment or in `~/.orchestrator/secrets.env`. Without a key it reads `tickets/`. A triager agent
+environment or in `~/.sous/secrets.env`. Without a key it reads `tickets/`. A triager agent
 reads each ticket and picks the next step: build it with the ticket workflow, nested, in a worktree
 of its own, or skip it for a person to clarify. Two tickets run at once.
 
 ```sh
-orc run factory --wait
-orc run factory --team ENG --label Bug --limit 5   # with a Linear key
+sous run factory --wait
+sous run factory --team ENG --label Bug --limit 5   # with a Linear key
 ```
 
 `TK-3` is too vague on purpose. The triager should skip it.
@@ -53,10 +53,10 @@ orc run factory --team ENG --label Bug --limit 5   # with a Linear key
 don't, and drafts the replies in parallel. Then it stops for your approval:
 
 ```sh
-orc run emails
-orc inbox
-orc approve <question>                       # keep the drafts
-orc send-back <question> "Shorter, please"   # redraft them with this note
+sous run emails
+sous inbox
+sous approve <question>                       # keep the drafts
+sous send-back <question> "Shorter, please"   # redraft them with this note
 ```
 
 The approved drafts go to `drafts.md` in the run's scratch folder. Nothing is sent. Reading a

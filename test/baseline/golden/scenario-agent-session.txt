@@ -1,19 +1,19 @@
-$ orc run agent-session --json
+$ sous run agent-session --json
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "agent-session",
-  "cwd": "<tmp>/scenario-agent-session/orc-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-agent-session/orc-home/logs/<run-1>.log"
+  "cwd": "<tmp>/scenario-agent-session/sous-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-agent-session/sous-home/logs/<run-1>.log"
 }
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "agent-session",
   "status": "completed",
-  "cwd": "<tmp>/scenario-agent-session/orc-home/scratch/<run-1>",
+  "cwd": "<tmp>/scenario-agent-session/sous-home/scratch/<run-1>",
   "result": {
     "plan": {
       "steps": [
@@ -26,11 +26,11 @@ exit 0
   }
 }
 
-$ orc show <run-1>
+$ sous show <run-1>
 exit 0
 agent-session  <run-1>
 status    completed
-place     none  <tmp>/scenario-agent-session/orc-home/scratch/<run-1>
+place     none  <tmp>/scenario-agent-session/sous-home/scratch/<run-1>
 started   <time>  by cli
 inputs    {"topic":"a small change"}
 program   Claude Code 2.1.330  <repo>/test/fakes/claude
@@ -52,18 +52,18 @@ result
   "more": "Fake claude answer."
 }
 
-$ orc show <run-1> --json
+$ sous show <run-1> --json
 exit 0
 {
   "record": {
     "runId": "<run-1>",
     "workflow": "agent-session",
-    "file": "<tmp>/scenario-agent-session/project/.orchestrator/workflows/agent-session.js",
+    "file": "<tmp>/scenario-agent-session/project/.sous/workflows/agent-session.js",
     "args": {
       "topic": "a small change"
     },
     "place": "none",
-    "cwd": "<tmp>/scenario-agent-session/orc-home/scratch/<run-1>",
+    "cwd": "<tmp>/scenario-agent-session/sous-home/scratch/<run-1>",
     "projectDir": "<tmp>/scenario-agent-session/project",
     "priority": "user",
     "origin": "cli",
@@ -91,8 +91,8 @@ exit 0
     "args": {
       "topic": "a small change"
     },
-    "cwd": "<tmp>/scenario-agent-session/orc-home/scratch/<run-1>",
-    "effectiveCwd": "<tmp>/scenario-agent-session/orc-home/scratch/<run-1>",
+    "cwd": "<tmp>/scenario-agent-session/sous-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-agent-session/sous-home/scratch/<run-1>",
     "runtime": {
       "engineVersion": "4.0.5",
       "node": "<node>",
@@ -158,7 +158,7 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-agent-session/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-agent-session/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -209,7 +209,7 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-agent-session/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-agent-session/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -225,7 +225,7 @@ exit 0
       }
     ],
     "logs": [
-      "Logs persisted to <tmp>/scenario-agent-session/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+      "Logs persisted to <tmp>/scenario-agent-session/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
     ],
     "result": {
       "plan": {
@@ -254,5 +254,5 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"steps\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"size\":{\"type\":\"string\",\"enum\":[\"small\",\"large\"]},\"done\":{\"type\":\"boolean\"}},\"required\":[\"steps\",\"size\",\"done\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-agent-session/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"steps":{"type":"array","items":{"type":"string"}},"size":{"type":"string","enum":["small","large"]},"done":{"type":"boolean"}},"required":["steps","size","done"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: planner\n\nSESSION-1 Plan a small change.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--resume=<id-1>","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local"],"cwd":"<tmp>/scenario-agent-session/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: planner again\n\nSESSION-2 Add one more step to: fake-steps-1","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"steps\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"size\":{\"type\":\"string\",\"enum\":[\"small\",\"large\"]},\"done\":{\"type\":\"boolean\"}},\"required\":[\"steps\",\"size\",\"done\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-agent-session/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"steps":{"type":"array","items":{"type":"string"}},"size":{"type":"string","enum":["small","large"]},"done":{"type":"boolean"}},"required":["steps","size","done"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: planner\n\nSESSION-1 Plan a small change.\n\nFinal output contract:\n- Your FINAL message MUST be a single JSON object that conforms to the required output schema.\n- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.\n- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--resume=<id-1>","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local"],"cwd":"<tmp>/scenario-agent-session/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: planner again\n\nSESSION-2 Add one more step to: fake-steps-1","rule":null,"outcome":"answer"}

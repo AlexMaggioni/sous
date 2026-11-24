@@ -5,7 +5,7 @@ import type { PreparedResume } from "../src/resume.js";
 import type { PersistedRunState } from "../src/runs/persistence/run-persistence.js";
 import type { WorkflowResumeCallDecision } from "../src/workflow-result.js";
 
-// A resumed run's report, as `orc show --json` prints it. The manager tests reach these rules only
+// A resumed run's report, as `sous show --json` prints it. The manager tests reach these rules only
 // through whole resumes. These tests guard them one by one, with no run: the first call that did
 // not replay, the replayed prefix, and each difference between the source run and this one. They
 // compare the JSON text where the key order is what a reader sees.

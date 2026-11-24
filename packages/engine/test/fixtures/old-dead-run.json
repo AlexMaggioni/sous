@@ -3,7 +3,7 @@
   "record": {
     "runId": "mwsrl6pk-ydzdb3",
     "workflow": "two",
-    "file": "__ROOT__/project/.orchestrator/workflows/two.js",
+    "file": "__ROOT__/project/.sous/workflows/two.js",
     "args": {},
     "place": "folder",
     "cwd": "__ROOT__/project",

@@ -3,7 +3,7 @@
   "check": {
     "exit": 0,
     "workflow": "installed",
-    "file": "$S/installed/p1/.orchestrator/workflows/installed.js",
+    "file": "$S/installed/p1/.sous/workflows/installed.js",
     "description": "One step on each installed program",
     "inputs": {},
     "problems": [],
@@ -45,7 +45,7 @@
       }
     },
     "logs": [
-      "Logs persisted to $ORC_HOME/runs/projects/<folder>/runs/run1.log"
+      "Logs persisted to $SOUS_HOME/runs/projects/<folder>/runs/run1.log"
     ],
     "steps": [
       {
@@ -160,7 +160,7 @@
     "ticket": {
       "exit": 0,
       "workflow": "ticket",
-      "file": "$S/installed/tk/.orchestrator/workflows/ticket.js",
+      "file": "$S/installed/tk/.sous/workflows/ticket.js",
       "description": "Implement a ticket, loop with a reviewer until it approves, verify it, and commit",
       "inputs": {
         "ticket": {
@@ -205,7 +205,7 @@
     "factory": {
       "exit": 0,
       "workflow": "factory",
-      "file": "$S/installed/tk/.orchestrator/workflows/factory.js",
+      "file": "$S/installed/tk/.sous/workflows/factory.js",
       "description": "Take open bug tickets from Linear, or from tickets/ without a key, and run the ticket workflow on each clear one",
       "inputs": {
         "team": {
@@ -293,7 +293,7 @@
     "emails": {
       "exit": 0,
       "workflow": "emails",
-      "file": "$S/installed/tk/.orchestrator/workflows/emails.js",
+      "file": "$S/installed/tk/.sous/workflows/emails.js",
       "description": "Sort an inbox, draft replies to the emails that need one, and wait for your approval",
       "inputs": {
         "mailbox": {

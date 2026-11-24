@@ -1,5 +1,5 @@
 // The pause rule: what a run's saved state, its worker and its open questions mean. One pure
-// function, so orc's readers, the worker's end and the service decide the same way.
+// function, so sous's readers, the worker's end and the service decide the same way.
 
 import type { RunPauseReason } from "../run-events.js";
 import type { RunStatus } from "./persistence/run-persistence.js";
@@ -43,9 +43,9 @@ export type ReuseRefusal = "running" | "paused" | "older";
 
 export interface Verdict {
   status: ViewStatus;
-  /** What orc list prints, such as "paused: limit". */
+  /** What sous list prints, such as "paused: limit". */
   word: string;
-  /** The exit code of orc wait when it stops: at open questions, or once the worker is gone. */
+  /** The exit code of sous wait when it stops: at open questions, or once the worker is gone. */
   exit?: number;
   /** A worker runs it, or it waits to go on. */
   unfinished: boolean;
@@ -83,7 +83,7 @@ interface Row {
  * What a run's facts mean, one row per case. The answers of an "any" row are for a gone worker.
  * A live worker on such a row still runs or ends the run, so judge holds the wait, resume and
  * reuse for it. A pending or running run whose worker is gone answers as paused "interrupted":
- * no read rewrites its state, and `orc resume` saves it paused "interrupted" before it goes on.
+ * no read rewrites its state, and `sous resume` saves it paused "interrupted" before it goes on.
  */
 const ROWS = {
   "asks":                        { worker: "alive", status: "asks",        word: "asks",                  exit: 4, unfinished: true,  resume: no("running"),       reuse: no("running") },
@@ -113,7 +113,7 @@ ROWS satisfies Record<`paused, ${RunPauseReason | "interrupted"}`, Row>;
 
 type Key = keyof typeof ROWS;
 
-/** A live worker on a saved state. orc wait goes on, and resume and reuse refuse. */
+/** A live worker on a saved state. sous wait goes on, and resume and reuse refuse. */
 const WORKER_RUNS: Pick<Row, "exit" | "unfinished" | "resume" | "reuse"> = { unfinished: true, resume: no("running"), reuse: no("running") };
 
 /** What the facts mean. */

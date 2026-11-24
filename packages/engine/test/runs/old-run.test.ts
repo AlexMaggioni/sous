@@ -69,10 +69,10 @@ const replayMarker = (state: PersistedRunState) => {
 };
 
 const refusal = (runId: string) =>
-  `${runId} was saved by an older orc, and this orc cannot resume it. orc rerun ${runId} starts it again, and orc stop ${runId} ends it.`;
+  `${runId} was saved by an older sous, and this sous cannot resume it. sous rerun ${runId} starts it again, and sous stop ${runId} ends it.`;
 
 describe("a run saved by older code", () => {
-  it("shows in orc list as its state says", () => {
+  it("shows in sous list as its state says", () => {
     const { paths, runId } = plantOldRun(DEAD, olderShape);
     const [run] = listRuns(paths);
     assert.equal(run?.runId, runId);
@@ -81,30 +81,30 @@ describe("a run saved by older code", () => {
     assert.deepEqual(run?.reuse, { ok: false, why: "older" });
   });
 
-  it("shows in orc show with its steps", () => {
+  it("shows in sous show with its steps", () => {
     const { paths, runId } = plantOldRun(DEAD, olderShape);
     const detail = runDetail(paths, runId);
     assert.equal(detail.word, "interrupted");
     assert.deepEqual(detail.steps.map((step) => step.label), ["first", "second"]);
   });
 
-  it("orc resume refuses it, says why and what to do instead, and starts no worker", () => {
+  it("sous resume refuses it, says why and what to do instead, and starts no worker", () => {
     const { paths, runId } = plantOldRun(DEAD, olderShape);
     const launched: string[] = [];
     assert.throws(() => resumeRun(paths, (_paths, id) => launched.push(id), runId), { message: refusal(runId) });
     assert.deepEqual(launched, []);
   });
 
-  it("orc rerun --reuse refuses it and points to a rerun without --reuse", () => {
+  it("sous rerun --reuse refuses it and points to a rerun without --reuse", () => {
     const { paths, runId } = plantOldRun(DEAD, olderShape);
     const launched: string[] = [];
     assert.throws(() => rerunRun(paths, (_paths, id) => launched.push(id), runId, { place: "folder", reuse: true }), {
-      message: `${runId} was saved by an older orc, and this orc cannot reuse its steps. orc rerun ${runId} without --reuse starts it again.`,
+      message: `${runId} was saved by an older sous, and this sous cannot reuse its steps. sous rerun ${runId} without --reuse starts it again.`,
     });
     assert.deepEqual(launched, []);
   });
 
-  it("orc resume refuses a run with the resume safety marker of the last release on a replay row", () => {
+  it("sous resume refuses a run with the resume safety marker of the last release on a replay row", () => {
     const { paths, runId } = plantOldRun(DEAD, replayMarker);
     const launched: string[] = [];
     assert.throws(() => resumeRun(paths, (_paths, id) => launched.push(id), runId), { message: refusal(runId) });

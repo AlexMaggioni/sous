@@ -355,7 +355,7 @@ test("a running run whose lock another owner took and deleted never recreates it
     const eventPath = join(runsDir(cwd, root), `${background.runId}.events.jsonl`);
     assert.equal(existsSync(eventPath), true);
 
-    // The lock file goes away, so another owner takes the lease and deletes the run, as orc's delete does.
+    // The lock file goes away, so another owner takes the lease and deletes the run, as sous's delete does.
     unlinkSync(join(runsDir(cwd, root), `${background.runId}.lock`));
     const other = persistence.acquireRunLease(background.runId);
     assert.ok(other, "another owner takes the free lease");

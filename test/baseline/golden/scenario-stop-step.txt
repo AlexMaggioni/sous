@@ -1,17 +1,17 @@
-$ orc run stop-step --json
+$ sous run stop-step --json
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "stop-step",
-  "cwd": "<tmp>/scenario-stop-step/orc-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-stop-step/orc-home/logs/<run-1>.log"
+  "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-stop-step/sous-home/logs/<run-1>.log"
 }
 
-$ orc stop <run-1> --step slow
+$ sous stop <run-1> --step slow
 exit 0
-stopping "slow" in <run-1>. The run pauses on it, and orc resume <run-1> runs it again.
+stopping "slow" in <run-1>. The run pauses on it, and sous resume <run-1> runs it again.
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 2
 {
   "runId": "<run-1>",
@@ -19,21 +19,21 @@ exit 2
   "status": "paused",
   "pauseReason": "step_stopped",
   "reason": "step \"slow\" was stopped",
-  "cwd": "<tmp>/scenario-stop-step/orc-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>"
 }
 
-$ orc resume <run-1>
+$ sous resume <run-1>
 exit 0
-resumed <run-1>  stop-step  in <tmp>/scenario-stop-step/orc-home/scratch/<run-1>
-  follow: orc wait <run-1>    log: orc log <run-1> -f
+resumed <run-1>  stop-step  in <tmp>/scenario-stop-step/sous-home/scratch/<run-1>
+  follow: sous wait <run-1>    log: sous log <run-1> -f
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "stop-step",
   "status": "completed",
-  "cwd": "<tmp>/scenario-stop-step/orc-home/scratch/<run-1>",
+  "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
   "result": {
     "slow": "Fake claude answer.",
     "quick": "Fake claude answer.",
@@ -41,11 +41,11 @@ exit 0
   }
 }
 
-$ orc show <run-1>
+$ sous show <run-1>
 exit 0
 stop-step  <run-1>
 status    completed
-place     none  <tmp>/scenario-stop-step/orc-home/scratch/<run-1>
+place     none  <tmp>/scenario-stop-step/sous-home/scratch/<run-1>
 started   <time>  by cli
 program   Claude Code 2.1.330  <repo>/test/fakes/claude
 account   Claude Code: default, Claude Code's own login in ~/.claude
@@ -62,16 +62,16 @@ result
   "after": "Fake claude answer."
 }
 
-$ orc show <run-1> --json
+$ sous show <run-1> --json
 exit 0
 {
   "record": {
     "runId": "<run-1>",
     "workflow": "stop-step",
-    "file": "<tmp>/scenario-stop-step/project/.orchestrator/workflows/stop-step.js",
+    "file": "<tmp>/scenario-stop-step/project/.sous/workflows/stop-step.js",
     "args": {},
     "place": "none",
-    "cwd": "<tmp>/scenario-stop-step/orc-home/scratch/<run-1>",
+    "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
     "projectDir": "<tmp>/scenario-stop-step/project",
     "priority": "user",
     "origin": "cli",
@@ -97,8 +97,8 @@ exit 0
     "runId": "<run-1>",
     "workflowName": "stop-step",
     "args": {},
-    "cwd": "<tmp>/scenario-stop-step/orc-home/scratch/<run-1>",
-    "effectiveCwd": "<tmp>/scenario-stop-step/orc-home/scratch/<run-1>",
+    "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
     "runtime": {
       "engineVersion": "4.0.5",
       "node": "<node>",
@@ -155,7 +155,7 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-stop-step/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -191,7 +191,7 @@ exit 0
           "sessionId": "<id-2>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-stop-step/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -235,7 +235,7 @@ exit 0
           "sessionId": "<id-3>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-stop-step/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -253,7 +253,7 @@ exit 0
     "logs": [
       "agent slow attempt 1/3 cancelled by host: agent call cancelled by host",
       "step \"slow\" was stopped. The run pauses: resume it to run the step again.",
-      "Logs persisted to <tmp>/scenario-stop-step/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+      "Logs persisted to <tmp>/scenario-stop-step/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
     ],
     "result": {
       "slow": "Fake claude answer.",
@@ -277,7 +277,7 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-stop-step/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: after\n\nSTOP-AFTER Wrap up.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-stop-step/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: quick\n\nSTOP-QUICK Answer now.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-4>"],"cwd":"<tmp>/scenario-stop-step/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-4>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: slow\n\nSTOP-SLOW Take your time.","rule":0,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-stop-step/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: slow\n\nSTOP-SLOW Take your time.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-stop-step/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: after\n\nSTOP-AFTER Wrap up.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-stop-step/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: quick\n\nSTOP-QUICK Answer now.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-4>"],"cwd":"<tmp>/scenario-stop-step/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-4>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: slow\n\nSTOP-SLOW Take your time.","rule":0,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-stop-step/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: slow\n\nSTOP-SLOW Take your time.","rule":null,"outcome":"answer"}

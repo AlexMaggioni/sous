@@ -23,7 +23,7 @@ importers:
 
   packages/engine:
     dependencies:
-      '@orchestrator/harnesses':
+      '@sous/harnesses':
         specifier: workspace:*
         version: link:../harnesses
       acorn:
@@ -49,9 +49,9 @@ importers:
         specifier: 1.3.2
         version: 1.3.2
 
-  packages/orc:
+  packages/cli:
     dependencies:
-      '@orchestrator/engine':
+      '@sous/engine':
         specifier: workspace:*
         version: link:../engine
 

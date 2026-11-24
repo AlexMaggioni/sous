@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { SlotPool } from "../../src/runs/slots.js";
 
-const temp = (name: string) => mkdtempSync(join(tmpdir(), `orc-${name}-`));
+const temp = (name: string) => mkdtempSync(join(tmpdir(), `sous-${name}-`));
 
 describe("agent slots", () => {
   it("cap the agents running at once, and a person's run goes before a scheduled one", async () => {

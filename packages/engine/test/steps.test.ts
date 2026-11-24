@@ -1,6 +1,6 @@
 // The steps module. The first part runs the real adapters against the fake programs in
 // test/fakes. The second part gives a runner of its own, as a test or the dry run does, and
-// checks what the module plans before a step runs. Some tests moved here from orc's runner and
+// checks what the module plans before a step runs. Some tests moved here from sous's runner and
 // programs tests.
 
 import assert from "node:assert/strict";
@@ -10,7 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
-import type { Account } from "@orchestrator/harnesses";
+import type { Account } from "@sous/harnesses";
 import type { AgentResultProvenance, AgentUsage, StepRequest } from "../src/steps/agent-run.js";
 import type { StepAsk } from "../src/steps/agent-runner.js";
 import type { AgentSessionRef } from "../src/workflow-result.js";
@@ -469,7 +469,7 @@ describe("steps with a runner of their own", () => {
     assert.deepEqual([seen[0]!.effort, seen[0]!.skills], ["high", ["tdd"]]);
     assert.equal((seen[0]!.mcpServers as Array<{ name: string }>)[0]!.name, "linear");
     assert.equal(seen[0]!.mcpNames, undefined);
-    await assert.rejects(steps.run("go", routed(steps, { label: "b", mcp: ["gmail"] })), /step "b": no MCP server "gmail" for Claude Code\. orc looks in .*Add it to \.rulesync\/mcp\.jsonc\./);
+    await assert.rejects(steps.run("go", routed(steps, { label: "b", mcp: ["gmail"] })), /step "b": no MCP server "gmail" for Claude Code\. sous looks in .*Add it to \.rulesync\/mcp\.jsonc\./);
   });
 
   it("times out an agent step as a failure a retry can fix", async () => {
@@ -494,7 +494,7 @@ describe("steps with a runner of their own", () => {
     for (const model of ["pi/gpt-test", "opencode/big", "OpenCode"]) {
       await assert.rejects(steps.run("go", routed(steps, { label: "old", model })), (error: unknown) => {
         assert.ok(error instanceof WorkflowError);
-        assert.match(error.message, /^step "old": model "[^"]+" names the harness "(pi|opencode)", which orc no longer runs\. Use one of claude, codex\.$/);
+        assert.match(error.message, /^step "old": model "[^"]+" names the harness "(pi|opencode)", which sous no longer runs\. Use one of claude, codex\.$/);
         assert.equal(error.recoverable, false);
         return true;
       });

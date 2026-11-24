@@ -19,7 +19,7 @@ import {
   type StepResult,
   type Usage,
   type Account,
-} from "@orchestrator/harnesses";
+} from "@sous/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
 import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, PlannedRequest, StepRequest } from "./agent-run.js";
 import type { AgentRunner, StepAsk, StepRoute } from "./agent-runner.js";

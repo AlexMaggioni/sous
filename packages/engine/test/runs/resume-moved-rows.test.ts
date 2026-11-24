@@ -80,7 +80,7 @@ it("runs a folder's step in that folder after two failed resumes, when another f
   const r2 = join(projectDir, "r2");
   mkdirSync(r1, { recursive: true });
   mkdirSync(r2, { recursive: true });
-  writeFileSync(join(projectDir, ".orchestrator", "workflows", "fan.js"), `export const meta = { name: 'fan', description: 'fan-out' }
+  writeFileSync(join(projectDir, ".sous", "workflows", "fan.js"), `export const meta = { name: 'fan', description: 'fan-out' }
 return await parallel([
   async () => {
     await agent('Lint', { label: 'lint r1', cwd: ${JSON.stringify(r1)} })

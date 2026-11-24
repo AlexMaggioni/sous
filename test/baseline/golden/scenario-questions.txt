@@ -1,13 +1,13 @@
-$ orc run questions --json
+$ sous run questions --json
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "questions",
-  "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
-  "log": "<tmp>/scenario-questions/orc-home/logs/<run-1>.log"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-questions/sous-home/logs/<run-1>.log"
 }
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 4
 {
   "runId": "<run-1>",
@@ -25,20 +25,20 @@ exit 4
       "breakpoint": false
     }
   ],
-  "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>"
 }
 
-$ orc inbox
+$ sous inbox
 exit 0
 <run-1>--0  questions  <n>s ago
   Pick a color for the draft
-  orc answer <run-1>--0 <one of: red, blue>
+  sous answer <run-1>--0 <one of: red, blue>
 
-$ orc answer <run-1> blue
+$ sous answer <run-1> blue
 exit 0
 answered <run-1>--0
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 4
 {
   "runId": "<run-1>",
@@ -52,20 +52,20 @@ exit 4
       "breakpoint": false
     }
   ],
-  "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>"
 }
 
-$ orc inbox <run-1>
+$ sous inbox <run-1>
 exit 0
 <run-1>--2  questions  <n>s ago
   asker asks: Which file should I edit?
-  orc answer <run-1>--2 "..."
+  sous answer <run-1>--2 "..."
 
-$ orc answer <run-1> src/textkit.js
+$ sous answer <run-1> src/textkit.js
 exit 0
 answered <run-1>--2
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 4
 {
   "runId": "<run-1>",
@@ -79,14 +79,14 @@ exit 4
       "breakpoint": true
     }
   ],
-  "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>"
 }
 
-$ orc send-back <run-1> "Make it shorter"
+$ sous send-back <run-1> "Make it shorter"
 exit 0
 answered <run-1>--5
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 4
 {
   "runId": "<run-1>",
@@ -100,20 +100,20 @@ exit 4
       "breakpoint": true
     }
   ],
-  "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>"
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>"
 }
 
-$ orc approve <run-1>
+$ sous approve <run-1>
 exit 0
 answered <run-1>--7
 
-$ orc wait <run-1> --json
+$ sous wait <run-1> --json
 exit 0
 {
   "runId": "<run-1>",
   "workflow": "questions",
   "status": "completed",
-  "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
   "result": {
     "color": "blue",
     "asked": "Fake claude answer.",
@@ -121,11 +121,11 @@ exit 0
   }
 }
 
-$ orc show <run-1>
+$ sous show <run-1>
 exit 0
 questions  <run-1>
 status    completed
-place     none  <tmp>/scenario-questions/orc-home/scratch/<run-1>
+place     none  <tmp>/scenario-questions/sous-home/scratch/<run-1>
 started   <time>  by cli
 program   Claude Code 2.1.330  <repo>/test/fakes/claude
 account   Claude Code: default, Claude Code's own login in ~/.claude
@@ -143,16 +143,16 @@ result
   "draft": "Fake claude answer."
 }
 
-$ orc show <run-1> --json
+$ sous show <run-1> --json
 exit 0
 {
   "record": {
     "runId": "<run-1>",
     "workflow": "questions",
-    "file": "<tmp>/scenario-questions/project/.orchestrator/workflows/questions.js",
+    "file": "<tmp>/scenario-questions/project/.sous/workflows/questions.js",
     "args": {},
     "place": "none",
-    "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+    "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
     "projectDir": "<tmp>/scenario-questions/project",
     "priority": "user",
     "origin": "cli",
@@ -178,8 +178,8 @@ exit 0
     "runId": "<run-1>",
     "workflowName": "questions",
     "args": {},
-    "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
-    "effectiveCwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+    "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
     "runtime": {
       "engineVersion": "4.0.5",
       "node": "<node>",
@@ -274,7 +274,7 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -325,7 +325,7 @@ exit 0
           "sessionId": "<id-1>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -369,7 +369,7 @@ exit 0
           "sessionId": "<id-2>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -413,7 +413,7 @@ exit 0
           "sessionId": "<id-3>",
           "backendId": "claude",
           "poolKey": "claude",
-          "cwd": "<tmp>/scenario-questions/orc-home/scratch/<run-1>",
+          "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
           "reopen": {
             "load": true,
             "resume": true,
@@ -429,7 +429,7 @@ exit 0
       }
     ],
     "logs": [
-      "Logs persisted to <tmp>/scenario-questions/orc-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+      "Logs persisted to <tmp>/scenario-questions/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
     ],
     "result": {
       "color": "blue",
@@ -453,7 +453,7 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-questions/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: asker\n\nASKER Which file should change?\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.","rule":0,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-questions/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: drafter\n\nDRAFT again in blue: Make it shorter","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-questions/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: drafter\n\nDRAFT first in blue","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--resume=<id-1>","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local"],"cwd":"<tmp>/scenario-questions/orc-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: asker (answer 1)\n\nThe user answered: src/textkit.js\n\nContinue the task.\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: asker\n\nASKER Which file should change?\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.","rule":0,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: drafter\n\nDRAFT again in blue: Make it shorter","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: drafter\n\nDRAFT first in blue","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--resume=<id-1>","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":null,"skills":null,"login":[],"prompt":"Task label: asker (answer 1)\n\nThe user answered: src/textkit.js\n\nContinue the task.\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.","rule":null,"outcome":"answer"}

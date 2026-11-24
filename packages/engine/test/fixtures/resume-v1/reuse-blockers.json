@@ -9,7 +9,7 @@
       "record": {
         "runId": "mwsup4c8-kyuyae",
         "workflow": "four",
-        "file": "__ROOT__/project/.orchestrator/workflows/four.js",
+        "file": "__ROOT__/project/.sous/workflows/four.js",
         "args": {},
         "place": "folder",
         "cwd": "__ROOT__/project",
@@ -317,7 +317,7 @@
       "record": {
         "runId": "mwsup4eh-3h8hyr",
         "workflow": "four",
-        "file": "__ROOT__/project/.orchestrator/workflows/four.js",
+        "file": "__ROOT__/project/.sous/workflows/four.js",
         "args": {},
         "place": "folder",
         "cwd": "__ROOT__/project",

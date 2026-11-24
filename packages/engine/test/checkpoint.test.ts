@@ -46,7 +46,7 @@ function recordingAgent() {
 
 function withTempPersistenceRoot(fn: (root: string) => Promise<void>) {
   return async () => {
-    const root = mkdtempSync(join(tmpdir(), "orchestrator-durable-checkpoint-"));
+    const root = mkdtempSync(join(tmpdir(), "sous-durable-checkpoint-"));
     try {
       await fn(root);
     } finally {
@@ -57,8 +57,8 @@ function withTempPersistenceRoot(fn: (root: string) => Promise<void>) {
 
 function withTempPersistenceDirs(fn: (root: string, cwd: string) => Promise<void>) {
   return async () => {
-    const root = mkdtempSync(join(tmpdir(), "orchestrator-durable-checkpoint-root-"));
-    const cwd = mkdtempSync(join(tmpdir(), "orchestrator-durable-checkpoint-cwd-"));
+    const root = mkdtempSync(join(tmpdir(), "sous-durable-checkpoint-root-"));
+    const cwd = mkdtempSync(join(tmpdir(), "sous-durable-checkpoint-cwd-"));
     try {
       await fn(root, cwd);
     } finally {
@@ -317,7 +317,7 @@ test(
     assert.equal(persistedPause?.journal?.[0]?.index, 0);
     assert.equal(persistedPause?.journal?.[0]?.result, "agent:before");
 
-    // Fresh manager instance: the resuming call answers through its own confirm, as orc does.
+    // Fresh manager instance: the resuming call answers through its own confirm, as sous does.
     const resumedAgent = recordingAgent();
     const manager2 = new WorkflowManager({
       agent: resumedAgent.runner,

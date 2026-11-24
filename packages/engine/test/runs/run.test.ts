@@ -23,7 +23,7 @@ function writeJson(file: string, value: unknown): void {
 
 interface Home {
   paths: HomePaths;
-  /** The engine's folder for orc's runs. */
+  /** The engine's folder for sous's runs. */
   engine: string;
 }
 
@@ -132,7 +132,7 @@ describe("the list of runs", () => {
         pauseReason: "interrupted",
         reason: `Interrupted: owning process PID ${planted.gone} exited before completion; recovered to a resumable pause.`,
       },
-      "shown as orc resume saves it",
+      "shown as sous resume saves it",
     );
     assert.equal(dead.exit, 2);
     assert.deepEqual(runs.find((run) => run.runId === asking)!.questions.map((q) => q.id), [`${asking}--0`]);
@@ -183,7 +183,7 @@ describe("the runs waiting at a usage limit", () => {
       writeFileSync(join(planted.engine, `${runId}.json`), stateText(runId, minutesAgo, state));
     };
     const limit = { status: "paused", pauseReason: "usage_limit" };
-    // Moved to spare by orc account use, whose worker never started: it still waits at work's limit.
+    // Moved to spare by sous account use, whose worker never started: it still waits at work's limit.
     plant("run-moved", 9, limit, { accounts: { claude: { name: "spare", folder: null } }, limit: { program: "claude", account: "work", at: hit } }, gone);
     plant("run-codex", 8, limit, { accounts: { codex: { name: "default", folder: null } }, limit: { program: "codex", account: "team", at: hit } });
     // From before the record kept the limit: it names its own account, or default.
@@ -219,13 +219,13 @@ describe("a run's log", () => {
     assert.deepEqual(readLog(planted.paths, "run-live", next.end), { runId: "run-live", text: "", end: 14, running: true });
 
     assert.deepEqual(readLog(planted.paths, "run-g"), { runId: "run-gone", text: "", end: 0, running: false }, "a unique start of the id, and no log yet");
-    assert.throws(() => readLog(planted.paths, "run-nope"), /^Error: no run "run-nope"\. orc list shows the runs\.$/);
+    assert.throws(() => readLog(planted.paths, "run-nope"), /^Error: no run "run-nope"\. sous list shows the runs\.$/);
   });
 });
 
 const child = `export const meta = { name: 'child', description: 'child' }\nreturn await agent('build it', { label: 'build' })`;
 
-/** The steps that run now, read the way `orc stop --step` reads them. */
+/** The steps that run now, read the way `sous stop --step` reads them. */
 function running(paths: HomePaths, runId: string): string[] {
   return runDetail(paths, runId).running.sort();
 }
@@ -317,7 +317,7 @@ await agent('bad', { label: 'bad', retries: 0 })
 return 1`;
     const { paths, projectDir } = setup({ three: script });
     const record = createRun(paths, { workflow: "three", projectDir, inputs: {} });
-    // A library caller's runner may report a replayed result. orc's never does, so this test runs
+    // A library caller's runner may report a replayed result. sous's never does, so this test runs
     // the manager itself.
     const runner = {
       async run(_prompt: string, options: { label?: string; onResultProvenance?: (provenance: unknown) => void }) {

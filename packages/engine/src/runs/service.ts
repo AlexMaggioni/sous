@@ -1,10 +1,10 @@
-// The background service: `orc daemon start`. Every 20 seconds it
+// The background service: `sous daemon start`. Every 20 seconds it
 //  - starts scheduled runs, and skips one when the schedule's last run has not finished. A
-//    schedule comes from `orc schedule add`, or from `schedule` in a workflow file's meta, in the
-//    home folder or in a project where orc ran;
+//    schedule comes from `sous schedule add`, or from `schedule` in a workflow file's meta, in the
+//    home folder or in a project where sous ran;
 //  - resumes runs paused at the subscription limit once the limit resets, unless a workflow they
-//    use was edited since they started. Then it tells the user once and waits for `orc resume`;
-//  - tells the user, once, about a run cut off by a crash or a restart. It waits for `orc resume`;
+//    use was edited since they started. Then it tells the user once and waits for `sous resume`;
+//  - tells the user, once, about a run cut off by a crash or a restart. It waits for `sous resume`;
 //  - removes finished runs older than keepDays, when config.json sets it;
 //  - once an hour, removes the worktrees whose branch was merged and that have nothing uncommitted.
 
@@ -54,7 +54,7 @@ export function saveSchedules(paths: HomePaths, schedules: Schedule[]): void {
 
 /**
  * The schedules set in workflow files: those of the home folder, which run in a scratch folder,
- * and those of each project where orc ran. A file with a problem in its meta has none; `orc check`
+ * and those of each project where sous ran. A file with a problem in its meta has none; `sous check`
  * shows the problem.
  */
 export function fileSchedules(paths: HomePaths): Schedule[] {
@@ -78,7 +78,7 @@ export function fileSchedules(paths: HomePaths): Schedule[] {
   };
   if (existsSync(paths.workflows)) read(paths.workflows, paths.home, "none");
   for (const projectDir of knownProjects(paths)) {
-    const dir = join(projectDir, ".orchestrator", "workflows");
+    const dir = join(projectDir, ".sous", "workflows");
     if (existsSync(dir)) read(dir, projectDir);
   }
   return out;
@@ -126,7 +126,7 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
     if (!cronMatches(cron, now)) continue;
     state.fired[schedule.name] = key;
     const last = runs.find((run) => run.record.schedule === schedule.name);
-    // The log names the status orc list shows: a run its worker left running reads paused.
+    // The log names the status sous list shows: a run its worker left running reads paused.
     if (last && startedAndUnfinished(last)) {
       log(`schedule ${schedule.name}: skipped, run ${last.runId} has not finished (${last.saved?.status ?? "running"})`);
       continue;
@@ -164,8 +164,8 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
       // A run cut off by a crash or a restart never starts again on its own.
       if (!state.told[record.runId]) {
         state.told[record.runId] = now.toISOString();
-        log(`run ${record.runId} was cut off. orc resume ${record.runId} goes on from there.`);
-        tell(`${record.workflow} was cut off`, `orc resume ${record.runId} goes on from where it stopped`);
+        log(`run ${record.runId} was cut off. sous resume ${record.runId} goes on from there.`);
+        tell(`${record.workflow} was cut off`, `sous resume ${record.runId} goes on from where it stopped`);
       }
       continue;
     }
@@ -174,14 +174,14 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
     // Only a run paused at the usage limit has a time to resume by itself.
     const due = pause.resumeAt !== undefined && now.getTime() >= pause.resumeAt.getTime();
     if (!due) continue;
-    // An edit reaches a run only when the user says so, as with `orc resume`.
+    // An edit reaches a run only when the user says so, as with `sous resume`.
     const persisted = readState(paths, record.runId);
     if (!persisted) continue;
     const changed = record.resumeLatest ? [] : changedWorkflows(paths, record, persisted);
     if (changed.length) {
       if (!state.told[record.runId]) {
         state.told[record.runId] = now.toISOString();
-        const text = `${changed.join(", ")} changed since ${record.runId} started. orc resume ${record.runId} --latest takes the new version, orc resume ${record.runId} --same goes on with the old one.`;
+        const text = `${changed.join(", ")} changed since ${record.runId} started. sous resume ${record.runId} --latest takes the new version, sous resume ${record.runId} --same goes on with the old one.`;
         log(text);
         tell(`${record.workflow} did not resume`, text);
       }
@@ -218,7 +218,7 @@ export function daemonPid(paths: HomePaths): number | undefined {
   return Number.isInteger(pid) && processAlive(pid) ? pid : undefined;
 }
 
-/** The service loop, run by `orc daemon run`. */
+/** The service loop, run by `sous daemon run`. */
 export async function daemonMain(paths: HomePaths, launch: Launcher, everyMs = 20_000): Promise<void> {
   ensureHome(paths);
   const existing = daemonPid(paths);

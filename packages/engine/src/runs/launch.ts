@@ -1,5 +1,5 @@
 // Start a run: find the workflow, check its inputs, make its place, write its record, and
-// start its worker through a launcher. Used by `orc run`, `orc rerun` and the schedules.
+// start its worker through a launcher. Used by `sous run`, `sous rerun` and the schedules.
 
 import { spawn } from "node:child_process";
 import { openSync, closeSync } from "node:fs";
@@ -86,11 +86,11 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
 
 /**
  * Starts the worker of a run whose record is written. The worker notes its process in the
- * record. orc starts it as a process of its own with workerProcess. Tests pass their own.
+ * record. sous starts it as a process of its own with workerProcess. Tests pass their own.
  */
 export type Launcher = (paths: HomePaths, runId: string, mode: "start" | "resume") => void;
 
-/** The worker as a process of its own, in the background, as orc starts it. `cliFile` gives orc's
+/** The worker as a process of its own, in the background, as sous starts it. `cliFile` gives sous's
  *  built cli.js. It is read only when a worker starts. */
 export function workerProcess(cliFile: () => string): Launcher {
   return (paths, runId, mode) => updateRecord(paths, runId, { pid: spawnWorker(paths, cliFile(), runId, mode) });
@@ -103,7 +103,7 @@ function spawnWorker(paths: HomePaths, cliFile: string, runId: string, mode: "st
     const child = spawn(process.execPath, [cliFile, "_worker", runId, mode], {
       detached: true,
       stdio: ["ignore", out, out],
-      env: { ...process.env, ORC_HOME: paths.home },
+      env: { ...process.env, SOUS_HOME: paths.home },
     });
     child.unref();
     return child.pid!;

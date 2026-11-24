@@ -1,5 +1,5 @@
 // Agents and MCP servers: where the engine looks each one up, and the step it plans from it. Moved
-// from orc's units test with the code it tests.
+// from sous's units test with the code it tests.
 
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -98,16 +98,16 @@ describe("agents", () => {
     assert.equal(lookupAgents({ ...place, defaultHarness: "codex" }).agents.get("reviewer")?.prompt, "Answer CODEX.");
     const missing = planStep(lookupAgents(place), "nobody");
     assert.ok("problem" in missing);
-    assert.match(missing.problem, /^no agent "nobody"\. orc looks in \.rulesync\/subagents\/, then the global rulesync folder/);
+    assert.match(missing.problem, /^no agent "nobody"\. sous looks in \.rulesync\/subagents\/, then the global rulesync folder/);
   });
 
   it("refuses a broken rulesync file instead of falling back to another copy", () => {
     const place = lookupPlace();
-    write(join(place.projectDir, ".rulesync", "subagents", "reviewer.md"), "---\nname: reviewer\norc:\n  harness: gemini\n---\nx\n");
+    write(join(place.projectDir, ".rulesync", "subagents", "reviewer.md"), "---\nname: reviewer\nsous:\n  harness: gemini\n---\nx\n");
     write(join(place.projectDir, ".claude", "agents", "reviewer.md"), "---\nname: reviewer\n---\nAnswer FOLDER.\n");
     const planned = planStep(lookupAgents(place), "reviewer");
     assert.ok("problem" in planned);
-    assert.match(planned.problem, /orc\.harness is "gemini"\. Use one of claude, codex\./);
+    assert.match(planned.problem, /sous\.harness is "gemini"\. Use one of claude, codex\./);
   });
 
   it("finds an MCP server in rulesync before the harness's own config", () => {
@@ -133,7 +133,7 @@ function pinnedLookup() {
     implementer: "---\nname: implementer\ndescription: builds\n---\nBuild it.\n",
     doubler: "---\nname: doubler\ndescription: doubles\nclaudecode:\n  model: claude/haiku\n---\nDouble it.\n",
     isolated: "---\nname: isolated\ndescription: works apart\nisolation: worktree\n---\nWork apart.\n",
-    broken: "---\nname: broken\norc:\n  harness: gemini\n---\nx\n",
+    broken: "---\nname: broken\nsous:\n  harness: gemini\n---\nx\n",
   };
   for (const [name, content] of Object.entries(files)) write(join(place.projectDir, ".rulesync", "subagents", `${name}.md`), content);
   const fixer = join(place.home, ".codex", "agents", "fixer.toml");
@@ -195,11 +195,11 @@ describe("routeStep", () => {
     assert.deepEqual(routeStep(lookup, { agentType: "nobody", model: "claude/haiku" }), {
       requested: "claude/haiku",
       agentKey: null,
-      problem: `no agent "nobody". orc looks in .rulesync/subagents/, then the global rulesync folder (${place.global}/.rulesync/subagents/), then .claude/agents/ and .codex/agents/ in the project and in the home folder.`,
+      problem: `no agent "nobody". sous looks in .rulesync/subagents/, then the global rulesync folder (${place.global}/.rulesync/subagents/), then .claude/agents/ and .codex/agents/ in the project and in the home folder.`,
     });
     assert.deepEqual(routeStep(lookup, { agentType: "broken" }), {
       agentKey: null,
-      problem: `${join(place.projectDir, ".rulesync", "subagents", "broken.md")}: orc.harness is "gemini". Use one of claude, codex.`,
+      problem: `${join(place.projectDir, ".rulesync", "subagents", "broken.md")}: sous.harness is "gemini". Use one of claude, codex.`,
     });
     assert.deepEqual(routeStep(lookup, { agentType: "fixer", model: "claude/haiku" }), {
       requested: "claude/haiku",
@@ -211,12 +211,12 @@ describe("routeStep", () => {
       requested: "pi/x",
       agentKey: REVIEWER_KEY,
       prompt: "Answer REVIEW.",
-      problem: 'model "pi/x" names the harness "pi", which orc no longer runs. Use one of claude, codex.',
+      problem: 'model "pi/x" names the harness "pi", which sous no longer runs. Use one of claude, codex.',
     });
     assert.deepEqual(routeStep(lookup, { model: "opencode/x" }), {
       requested: "opencode/x",
       agentKey: null,
-      problem: 'model "opencode/x" names the harness "opencode", which orc no longer runs. Use one of claude, codex.',
+      problem: 'model "opencode/x" names the harness "opencode", which sous no longer runs. Use one of claude, codex.',
     });
   });
 

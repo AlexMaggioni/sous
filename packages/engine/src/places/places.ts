@@ -1,4 +1,4 @@
-// Where a run works. A worktree (the default) is a new branch orc/<name> in its own folder under
+// Where a run works. A worktree (the default) is a new branch sous/<name> in its own folder under
 // the home's worktrees folder, kept after the run so the work can be reviewed and merged. A folder
 // run works in the project itself. A run with no place gets an empty scratch folder. A nested run
 // and a step with `isolation: "worktree"` get their worktrees here too, named the same way, through
@@ -39,9 +39,9 @@ export function isGitRepo(dir: string): boolean {
   }
 }
 
-/** The folder and branch of the worktree with this name. Every worktree orc makes is named so. */
+/** The folder and branch of the worktree with this name. Every worktree sous makes is named so. */
 function worktreeAt(paths: HomePaths, name: string): Worktree {
-  return { dir: join(paths.worktrees, name), branch: `orc/${name}` };
+  return { dir: join(paths.worktrees, name), branch: `sous/${name}` };
 }
 
 /**
@@ -94,7 +94,7 @@ function slug(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-/** Where a run tree's places are written down. In orc, the root run's record. */
+/** Where a run tree's places are written down. In sous, the root run's record. */
 export interface PlaceNotes {
   nested(childRunId: string, change: Partial<NestedRun>): void;
   stepWorktree(tree: Worktree, exists: boolean): void;
@@ -219,7 +219,7 @@ export function dropUnchangedWorktrees(repoDir: string, trees: Worktree[]): stri
       removeWorktree(repoDir, dir, branch);
       removed.push(dir);
     } catch {
-      // Left for `orc gc`.
+      // Left for `sous gc`.
     }
   }
   return removed;
@@ -231,7 +231,7 @@ export interface GcResult {
 }
 
 /**
- * Remove orc's worktrees whose branch is merged into the project's current branch and has no
+ * Remove sous's worktrees whose branch is merged into the project's current branch and has no
  * uncommitted changes. Everything else stays, and so does each worktree in `busy`.
  */
 export function gcWorktrees(paths: HomePaths, projectDirs: string[], options: { dryRun?: boolean; busy: Set<string> }): GcResult {
