@@ -21,7 +21,7 @@ export { readActions } from "./runs/actions.js";
 export { knownProjects } from "./runs/home.js";
 export { writeAnswer } from "./runs/inbox.js";
 export { createRun } from "./runs/launch.js";
-export { processAlive, requestStepStop, saveRecord, updateRecord } from "./runs/records.js";
+export { processAlive, requestStepStop, requestTell, saveRecord, updateRecord } from "./runs/records.js";
 export { tick } from "./runs/service.js";
 export { enginePersistence, readState, stopRequestFile } from "./runs/store.js";
 export { workflowProjectPaths } from "./runs/persistence/project-paths.js";

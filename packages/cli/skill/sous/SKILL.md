@@ -17,7 +17,7 @@ the user a question. Its work lands on a git branch for review.
 Run `sous status --json`. It says what needs the user, what runs and what finished.
 Every reply has `next`, the exact calls you can make now. Use them as written. A call may hold
 a placeholder such as `<red|blue>` or `"<note>"`. Fill it in, and keep the rest.
-For anything this page leaves out, run `sous guide`. It matches the installed version.
+For anything this page leaves out, run `sous guide`.
 
 ## Start a run
 
@@ -33,7 +33,8 @@ type themselves. Never try to get around it.
 In Claude Code, run `sous wait <run> --json` as a background command. You are called again
 when it returns. Elsewhere, run `sous wait <run> --timeout 540 --json`, and call it again
 while it exits 5. Never wait with sleep. Never call `sous show` in a loop.
-`sous tell` gives a running step a message. See `sous guide steer`.
+If the user wants a running step to change course, use `sous tell`. Stop a step only to redo
+it. See `sous guide steer`.
 
 The exit code says why it returned: 0 completed, 1 failed, 2 paused, 3 stopped, 4 asks.
 
@@ -61,7 +62,7 @@ usage limit needs nothing. The service resumes it.
 
 Read `sous guide writing` first. Show the user what you will save, and save only after their
 yes. Save in the project's `.sous/workflows/`. Run `sous check <name> --dry-run --json` until
-it passes. A dry run spends no tokens. Add a schedule, save into `~/.sous/workflows/`, or change
+it passes. Add a schedule, save into `~/.sous/workflows/`, or change
 who may start a workflow only when the user asked for that.
 
 sous starts a new or changed workflow from you, a run or a schedule only after the user

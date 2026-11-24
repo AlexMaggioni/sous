@@ -110,6 +110,11 @@ describe("piece 12 review: tell to a step of a nested run", () => {
       const nested = await stepOf(paths, runId, NESTED);
       assert.notEqual(nested?.scope, runId, "sous step takes the nested step's name in the log");
       assert.match(nested?.prompt ?? "", /Build the part/);
+      const notes = json(await sous(paths, ["step", runId, NESTED, "--json"], { env: PERSON })).notes as string[];
+      assert.ok(
+        notes.some((note) => note.startsWith("The run itself also has a step with this label") && note.endsWith(`This is the one in nested run ${nested?.scope}.`)),
+        `the note names the top-level run as the run itself: ${JSON.stringify(notes)}`,
+      );
 
       const options = { env: PERSON, tellWaitMs: 300 } as MainOptions & { tellWaitMs: number };
       const printed = await sous(paths, ["tell", runId, "--step", NESTED, MESSAGE, "--json"], options);
