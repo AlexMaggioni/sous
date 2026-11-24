@@ -44,6 +44,14 @@ export class SteeringBoard {
     this.open_.delete(keyOf(call));
   }
 
+  /** The open calls of the label in the run or nested run, in callIndex order. */
+  openOf(label: string, scope: string): LiveCall[] {
+    return [...this.open_.values()]
+      .map(({ call }) => call)
+      .filter((call) => call.label === label && call.scope === scope)
+      .sort((a, b) => a.callIndex - b.callIndex);
+  }
+
   /**
    * Send the text to each open call the target names, all with the same id. The results come in
    * callIndex order. A send that throws counts as ended. A target no open call has gives [].

@@ -1,11 +1,11 @@
 // sous stop, pause, tell, discard, prune and gc: the commands that change or clear runs. A request
 // that finds nothing to change exits 0 with a note.
 
-import { discardRun, gcRuns, loadConfig, pauseRun, pruneRuns, readRun, stopRun, stopStep, tellResult, tellStep, type RunView } from "@sous/engine";
+import { discardRun, gcRuns, loadConfig, pauseRun, pruneRuns, readRun, stopRun, stopStep, tellResult, tellStep, word, type RunView } from "@sous/engine";
 import { str, Usage, type Parsed } from "../args.js";
 import { reply, type Next, type Reply } from "../reply.js";
 import { needRun, runIdArg, stopReply, wholeFlag } from "./common.js";
-import { rerunNext, resumeNext, waitNext, word } from "./next.js";
+import { rerunNext, resumeNext, waitNext } from "./next.js";
 import type { Ctx } from "./index.js";
 
 /** The states of a run whose worker works. */
@@ -56,11 +56,14 @@ export async function cmdTell(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   const runId = sent.runId;
   const to = calls.length === 1 ? `"${step}"` : `${calls.length} calls of "${step}"`;
   return reply(
-    { runId, step, told: true, delivery, calls: calls.map(({ label: _label, ...told }) => told) },
+    { runId, step, told: true, delivery, calls },
     {
       text: [delivery === "delivered" ? `told ${to} in ${runId}.` : `sent to ${to} in ${runId}. It is not read yet.`],
       notes,
-      next: [{ call: `sous step ${runId} ${word(calls[0]!.label)}${calls.length === 1 && calls[0]!.call > 1 ? ` --call ${calls[0]!.call}` : ""} --json`, does: "shows the step, with the message once it reads it" }, waitNext(runId, "waits until the run ends, pauses or asks")],
+      next: [
+        ...calls.map((told) => ({ call: `sous step ${runId} ${word(told.step)} --call ${told.call} --json`, does: `shows call ${told.call} of the step, with the message once it reads it` })),
+        waitNext(runId, "waits until the run ends, pauses or asks"),
+      ],
     },
   );
 }

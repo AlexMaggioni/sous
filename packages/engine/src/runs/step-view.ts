@@ -5,9 +5,9 @@
 import { EXEC_MODEL } from "../code-steps.js";
 import type { PersistedRunEvent } from "../run-events.js";
 import type { HomePaths } from "./home.js";
-import { readActivity, type ActivityLine } from "./records.js";
+import { readActivity, scopePrefix, type ActivityLine } from "./records.js";
 import { Refusal } from "./refusal.js";
-import { runDetail } from "./run.js";
+import { runDetail, type RunDetail } from "./run.js";
 import { lastEventSeq, readEventsAfter } from "./store.js";
 
 /** One call of a step, as sous step shows it. */
@@ -76,24 +76,53 @@ function specCommand(prompt: string): string | undefined {
   }
 }
 
+/** The calls of one step of a run, in one run or nested run, as sous step and sous tell count them. */
+export interface StepCalls {
+  /** The step's name in the log, with its nested run's name before the label. */
+  name: string;
+  scope: string;
+  label: string;
+  /** The step's calls in that run, in start order. The nth is call n. */
+  calls: RunDetail["steps"];
+  /** Every run with a step of that label, the chosen one too. */
+  scopes: string[];
+}
+
 /**
- * One call of a step of a run, by its label: the last call, or the one `call` names. The calls are
- * the top-level run's, or, when it has no step with the label, those of the first nested run that
- * has one. Calls count in that one run. Throws no_such_step when the run has no such step or call.
+ * A step of a run, by its name in the log or by its label. A name in the log, such as
+ * "sub: impl", picks the run it names, and the latest of them when several nested runs share the
+ * name. A label picks the top-level run's step, or, when it has none, the first nested run's.
+ * Undefined when the run has no such step.
  */
-export function stepView(paths: HomePaths, runId: string, label: string, options: { call?: number; tail?: number; full?: boolean } = {}): StepView {
+export function stepCalls(detail: RunDetail, step: string): StepCalls | undefined {
+  const id = detail.record.runId;
+  const scopeOf = (agent: { scope?: unknown }) => (typeof agent.scope === "string" ? agent.scope : id);
+  const nameOf = (agent: { scope?: unknown; label: string }) => `${scopePrefix(id, scopeOf(agent), detail.record.nested)}${agent.label}`;
+  const byName = detail.steps.filter((agent) => nameOf(agent) === step);
+  const labeled = detail.steps.filter((agent) => agent.label === step);
+  const scope = byName.length ? byName.map(scopeOf).at(-1) : labeled.some((agent) => scopeOf(agent) === id) ? id : labeled.map(scopeOf)[0];
+  const calls = (byName.length ? byName : labeled).filter((agent) => scopeOf(agent) === scope);
+  if (scope === undefined || !calls.length) return undefined;
+  const label = calls[0]!.label;
+  const scopes = [...new Set(detail.steps.filter((agent) => agent.label === label).map(scopeOf))];
+  return { name: nameOf(calls[0]!), scope, label, calls, scopes };
+}
+
+/**
+ * One call of a step of a run, by its name in the log or its label, as stepCalls finds it: the
+ * last call, or the one `call` names. Calls count in that one run. Throws no_such_step when the
+ * run has no such step or call.
+ */
+export function stepView(paths: HomePaths, runId: string, name: string, options: { call?: number; tail?: number; full?: boolean } = {}): StepView {
   const detail = runDetail(paths, runId);
   const id = detail.record.runId;
-  const scopeOf = (step: { scope?: string }) => step.scope ?? id;
-  const named = detail.steps.filter((step) => step.label === label);
-  const scopes = [...new Set(named.map(scopeOf))];
-  const scope = scopes.includes(id) ? id : scopes[0];
-  const calls = named.filter((step) => scopeOf(step) === scope);
+  const found = stepCalls(detail, name);
   const show = `sous show ${id} --json`;
-  if (!calls.length || scope === undefined) throw new Refusal("no_such_step", `run ${id} has no step "${label}".`, "Give the label of one of the run's steps, as sous show lists them.", show);
+  if (!found) throw new Refusal("no_such_step", `run ${id} has no step "${name}".`, "Give the label of one of the run's steps, or its name in sous log.", show);
+  const { scope, label, calls, scopes } = found;
   const number = options.call ?? calls.length;
   const step = calls[number - 1];
-  if (!step) throw new Refusal("no_such_step", `step "${label}" of run ${id} made ${calls.length} calls, so it has no call ${number}.`, `Give --call from 1 to ${calls.length}.`, show);
+  if (!step) throw new Refusal("no_such_step", `step "${name}" of run ${id} made ${calls.length} calls, so it has no call ${number}.`, `Give --call from 1 to ${calls.length}.`, show);
 
   const all = readActivity(paths, id).filter((line) => line.scope === scope && (step.callIndex === undefined ? line.label === label : line.callIndex === step.callIndex));
   const exec = step.model === EXEC_MODEL;
@@ -106,7 +135,7 @@ export function stepView(paths: HomePaths, runId: string, label: string, options
   const activity = tail ? all.slice(-tail) : [];
   return {
     runId: id,
-    step: label,
+    step: found.name,
     scope,
     call: number,
     calls: calls.length,

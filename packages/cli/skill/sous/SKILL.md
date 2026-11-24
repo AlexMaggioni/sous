@@ -33,6 +33,7 @@ type themselves. Never try to get around it.
 In Claude Code, run `sous wait <run> --json` as a background command. You are called again
 when it returns. Elsewhere, run `sous wait <run> --timeout 540 --json`, and call it again
 while it exits 5. Never wait with sleep. Never call `sous show` in a loop.
+`sous tell` gives a running step a message. See `sous guide steer`.
 
 The exit code says why it returned: 0 completed, 1 failed, 2 paused, 3 stopped, 4 asks.
 
@@ -55,12 +56,6 @@ Read `pauseReason`, `failure` and `next`. `sous step <run> <label> --json` shows
 failed step did. `sous resume` runs the failed step again and keeps
 the finished ones. `sous rerun` pays for every step again, so ask first. A run paused at the
 usage limit needs nothing. The service resumes it.
-
-## Steer a running step
-
-When the user wants a running step to change course, `sous tell <run> --step <label> "<message>" --json`
-gives it the message after its current tool call, and the step goes on. Stop a step only when
-they want it done over. `sous guide steer` has the rest.
 
 ## Write or change a workflow
 

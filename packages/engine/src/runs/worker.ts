@@ -18,12 +18,12 @@ import { approvedLookup } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 import { authorAnsweredBy } from "./consent.js";
 import { Refusal } from "./refusal.js";
-import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type RunRecord } from "./records.js";
+import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type RunRecord, type TellOutcome } from "./records.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
 import { createSteps, type InnerRunner } from "../steps/steps.js";
 import { SteeringBoard } from "../steps/steering.js";
-import type { OnActivity } from "../steps/activity.js";
+import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";
 import { programLookup } from "../programs.js";
 
 export interface WorkerOptions {
@@ -63,21 +63,45 @@ export function currentWorkflows(paths: HomePaths, projectDir: string): Record<s
 
 /**
  * Send the tells `sous tell` wrote through the steering board, before the step stops of the same
- * signal. Each call gets a receipt in its activity, which the cli waits for. A call named by its
- * call index that no longer runs gets "ended".
+ * signal. Each call gets one receipt in its activity, which the cli waits for. A call with no turn
+ * open gets no_turn, and the cli tells from the run's steps whether the call still runs. A call an
+ * older state saved with no call index gets the first open call of its label not told yet.
  */
 function sendTells(paths: HomePaths, runId: string, steering: SteeringBoard, onActivity: OnActivity, log: (line: string) => void): void {
   for (const { id, step, text, calls } of takeTells(paths, runId)) {
+    const taken = new Set<string>();
     for (const call of calls) {
-      void steering.tell({ label: call.label, scope: call.scope, ...(call.callIndex === undefined ? {} : { callIndex: call.callIndex }) }, text, id).then((told) => {
-        const outcomes = told.length || call.callIndex === undefined ? told : [{ call: { ...call, callIndex: call.callIndex }, outcome: "ended" as const }];
-        for (const { call: to, outcome } of outcomes) {
-          onActivity({ scope: to.scope, callIndex: to.callIndex, ...(to.label === undefined ? {} : { label: to.label }) }, { kind: "tell", id, text: TELL_RECEIPTS[outcome] });
-          log(`${stamp()} tell       ${step}: ${TELL_RECEIPTS[outcome]}`);
-        }
+      const callIndex = call.callIndex ?? steering.openOf(call.label, call.scope).find((open) => !taken.has(`${call.scope}#${open.callIndex}`))?.callIndex;
+      if (callIndex !== undefined) taken.add(`${call.scope}#${callIndex}`);
+      const told = callIndex === undefined ? Promise.resolve([]) : steering.tell({ label: call.label, scope: call.scope, callIndex }, text, id);
+      // A call with no index and no open call to take has a receipt under its label alone.
+      const receipt = onActivity as (step: Omit<ActivityStep, "callIndex"> & { callIndex?: number }, entry: ActivityEntry) => void;
+      void told.then((outcomes) => {
+        const outcome: TellOutcome = outcomes[0]?.outcome ?? "no_turn";
+        receipt({ scope: call.scope, label: call.label, ...(callIndex === undefined ? {} : { callIndex }) }, { kind: "tell", id, text: TELL_RECEIPTS[outcome] });
+        log(`${stamp()} tell       ${step}: ${TELL_RECEIPTS[outcome]}`);
       });
     }
   }
+}
+
+/** What SIGUSR2 does in this process: each run whose steps run takes its tells and step stops. */
+const steerHandlers = new Set<() => void>();
+const onSteerSignal = () => {
+  for (const handler of steerHandlers) handler();
+};
+let steerHolders = 0;
+
+/** Keep the SIGUSR2 handler in place until the call it returns, so the signal never ends the process
+ *  before a run's steps start or after they end. Holds nest, and the last release removes it. */
+function holdSteerSignal(): () => void {
+  if (steerHolders++ === 0) process.on("SIGUSR2", onSteerSignal);
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    if (--steerHolders === 0) process.off("SIGUSR2", onSteerSignal);
+  };
 }
 
 /** The engine's manager for a run's project. Only this file builds one. A nested workflow() or
@@ -282,7 +306,8 @@ async function runOnAccounts(
       log(`${stamp()} ${stopped ? `stopping   ${step}` : `no step    ${step} runs; nothing stopped`}`);
     }
   };
-  // The tells go first. Each is sent before a stop of another call can end that call's turn.
+  // The tells go first. sendTells hands each message to its call's seam at once, so a call told and
+  // stopped by the same signal is handed the message before the stop aborts it.
   const onSteer = () => {
     sendTells(paths, runId, steering, onActivity, log);
     onStopSteps();
@@ -292,9 +317,10 @@ async function runOnAccounts(
     log(`${stamp()} stopping`);
     manager.stop(runId);
   };
+  const releaseSteer = options.handleSignals ? holdSteerSignal() : undefined;
   if (options.handleSignals) {
     process.on("SIGUSR1", onPause);
-    process.on("SIGUSR2", onSteer);
+    steerHandlers.add(onSteer);
     process.on("SIGTERM", onStop);
     process.on("SIGINT", onStop);
   }
@@ -351,10 +377,11 @@ async function runOnAccounts(
     waits.abort();
     if (options.handleSignals) {
       process.off("SIGUSR1", onPause);
-      process.off("SIGUSR2", onSteer);
+      steerHandlers.delete(onSteer);
       process.off("SIGTERM", onStop);
       process.off("SIGINT", onStop);
     }
+    releaseSteer?.();
     await runner.dispose().catch(() => {});
   }
 
@@ -393,6 +420,9 @@ async function runOnAccounts(
 export async function workerMain(runId: string, mode: "start" | "resume"): Promise<number> {
   // The agents' shells inherit it, so `sous run` knows when an agent starts a workflow.
   process.env.SOUS_RUN_ID = runId;
+  // The record names this process from its launch, so `sous tell` and `sous stop --step` may signal
+  // it before the steps start or after they end. The handler stays until the pid clears.
+  const release = holdSteerSignal();
   try {
     const result = await runWorker(runId, mode, { handleSignals: true });
     return result?.status === "failed" ? 1 : 0;
@@ -403,5 +433,7 @@ export async function workerMain(runId: string, mode: "start" | "resume"): Promi
     const paths = homePaths();
     if (loadRecord(paths, runId)) updateRecord(paths, runId, { pid: undefined });
     return 1;
+  } finally {
+    release();
   }
 }

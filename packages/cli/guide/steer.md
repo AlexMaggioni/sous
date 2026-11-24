@@ -10,7 +10,8 @@ sous show <run> --json
 ```
 
 Each step has its label and status. `sous log <run>` names each running step the way
-`stop --step` takes it, such as `"ticket A: implementer"` for a step of a nested run.
+`stop --step`, `tell --step` and `sous step` take it, such as `"ticket A: implementer"` for a
+step of a nested run.
 
 ## See what a step does
 
@@ -33,15 +34,20 @@ the step got it, or `pending` when the step reads it once its tool call ends. `s
 shows it in the step's `activity`.
 
 A step that runs more than once at the same time gets the message in each call, and a note says
-so. `--call 2` tells only the second call of the step, counted as `sous step` counts them.
+so. `--call 2` tells only the second call of the step, counted as `sous step` counts them: in
+one run, or in one nested run when you give the name `sous log` gives the step. The reply's
+`calls` lists each call told, with its name, its number and its delivery.
 
 Some steps take no message:
 
 - A code step (`sh`, `js` or `py`) fails with `step_takes_no_message`. Stop it instead.
 - A step that does not run now fails with `step_not_running`. For a paused run, its call is
   `resume --note`, which gives the message to the step when the run goes on.
-- A turn that takes no message for a moment, such as a compact, fails with
-  `turn_not_steerable`. Its call is the same tell. Run it again soon.
+- A step in a turn that takes no message for a moment, such as a compact, or between two
+  turns, fails with `turn_not_steerable`. Its call is the same tell. Run it again soon.
+- A Codex older than 0.169.0 takes no message at all, and its steps fail with
+  `turn_not_steerable` each time. Update Codex, or stop the step and give the message with
+  `resume --note "..." --step <step>`.
 
 ## Stop one step
 

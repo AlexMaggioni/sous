@@ -219,11 +219,16 @@ export function requestTell(paths: HomePaths, runId: string, tell: TellRequest):
   appendFileSync(tellRequestFile(paths, runId), `${JSON.stringify(tell)}\n`);
 }
 
+/** What became of a tell at one call: what its turn said, or no_turn when the call was in no turn
+ *  that reads a message, such as while it starts, waits for a slot, or between two turns. */
+export type TellOutcome = SteerOutcome | "no_turn";
+
 /** The text of a tell's receipt in the step's activity, by what became of the message. */
-export const TELL_RECEIPTS: Record<SteerOutcome, string> = {
+export const TELL_RECEIPTS: Record<TellOutcome, string> = {
   delivered: "delivered",
   not_steerable: "not delivered, the turn takes no message now",
   ended: "not delivered, the turn ended first",
+  no_turn: "not delivered, the step is not in a turn that can read a message now",
 };
 
 /** The tells sent since the last take, as takeStepStops takes the stops. */

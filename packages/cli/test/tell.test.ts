@@ -293,6 +293,7 @@ describe("piece 12: sous tell", () => {
       const before = actions(paths).length;
       const error = refused(await sous(paths, ["tell", runId, "--step", "impl", MESSAGE, "--json"], { env: PERSON }), 65, "step_not_running");
       assert.match(error.call ?? "", new RegExp(`^sous resume ${runId} --note `), JSON.stringify(error));
+      assert.match(error.call ?? "", / --step impl /, `the resume call names the step: ${JSON.stringify(error)}`);
       const missing = refused(await sous(paths, ["tell", runId, "--step", "nosuch", MESSAGE, "--json"], { env: PERSON }), 65, "no_such_step");
       assert.ok(missing.call?.startsWith(`sous show ${runId}`), JSON.stringify(missing));
       assert.equal(actions(paths).length, before, "a refused tell adds no line");
@@ -430,6 +431,7 @@ describe("piece 12: sous tell", () => {
       assert.equal(second.calls.length, 1, JSON.stringify(second.calls));
       // The second call, as sous step --call 2 shows it.
       const prompt = (await stepOf(paths, runId, "impl", 2))?.prompt ?? "";
+      assert.ok(prompt, "sous step --call 2 shows the second call's prompt");
       const session = place.lines().find((line) => line.prompt !== undefined && !line.steer && line.prompt.includes(prompt))?.sessionId;
       assert.ok(session, `the fakes logged the second call's prompt: ${prompt}`);
       assert.deepEqual(
