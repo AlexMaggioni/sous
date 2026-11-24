@@ -68,7 +68,7 @@ export function cmdSchedule(args: Parsed, ctx: Ctx): Reply<object> {
         createdAt: ctx.now().toISOString(),
       };
       saveSchedules(paths, [...schedules, schedule]);
-      recordAction(paths, { act: "schedule-add", ...ctx.who, workflow: resolved.name, value: { schedule: name, cron } });
+      recordAction(paths, { act: "schedule-add", ...ctx.who, schedule: name, workflow: resolved.name, value: { cron } });
       const next = nextRun(parseCron(cron));
       out(`schedule ${name}: ${resolved.name} at "${cron}"${next ? `, next ${next.toLocaleString()}` : ""}`);
       const notes: string[] = [];
@@ -102,16 +102,24 @@ export function cmdSchedule(args: Parsed, ctx: Ctx): Reply<object> {
     case "remove":
       find();
       saveSchedules(paths, schedules.filter((schedule) => schedule.name !== name));
-      recordAction(paths, { act: "schedule-remove", ...ctx.who, value: { schedule: name } });
+      recordAction(paths, { act: "schedule-remove", ...ctx.who, schedule: name });
       out(`removed ${name}`);
       return done({ removed: name });
     case "enable":
-    case "disable":
-      find().enabled = action === "enable";
-      saveSchedules(paths, schedules);
-      recordAction(paths, { act: `schedule-${action}`, ...ctx.who, value: { schedule: name } });
+    case "disable": {
+      const schedule = find();
+      const enabled = action === "enable";
+      // Enabling starts the workflow again with no one at the terminal, as adding does.
+      if (enabled) mayStart(resolveWorkflow(paths, schedule.projectDir, schedule.workflow), ctx.who, ctx.command);
+      // A schedule already in that state changes nothing, so nothing is recorded.
+      if (schedule.enabled !== enabled) {
+        schedule.enabled = enabled;
+        saveSchedules(paths, schedules);
+        recordAction(paths, { act: `schedule-${action}`, ...ctx.who, schedule: schedule.name });
+      }
       out(`${action}d ${name}`);
-      return done({ name, enabled: action === "enable" });
+      return done({ name, enabled });
+    }
     case "test": {
       const schedule = find(true);
       const cron = parseCron(schedule.cron);

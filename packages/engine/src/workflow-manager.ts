@@ -1220,7 +1220,7 @@ export class WorkflowManager extends EventEmitter {
         },
         onAgentEnd: (event) => {
           if (this.dropPostTerminal(managed, "agentEnd")) return;
-          foldStep(managed.snapshot.agents, { type: "agentEnd", ...event, resultPreview: preview(event.result) }, new Date().toISOString());
+          foldStep(managed.snapshot.agents, { type: "agentEnd", ...event, resultPreview: event.result == null ? undefined : preview(event.result) }, new Date().toISOString());
           publish(this.createRunEvent("agentEnd", { runId: managed.runId, ...event }));
           this.completeAgentCancellation(managed, event);
         },

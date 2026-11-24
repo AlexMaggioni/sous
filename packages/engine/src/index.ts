@@ -6,6 +6,7 @@ export {
   ensureHome,
   findProjectDir,
   homePaths,
+  homeWriteProblem,
   loadConfig,
   rememberProject,
   type HomePaths,
@@ -71,4 +72,4 @@ export {
   listAccounts,
 } from "./accounts.js";
 export { HARNESSES, harnessName, isHarness, loginOf } from "./agents.js";
-export { checkPrograms, installSkill, setupTokenProgram, skillPlaces } from "./programs.js";
+export { checkPrograms, installHook, installSkill, removeHook, setupTokenProgram, skillPlaces, type ProgramReport, type SkillPlace } from "./programs.js";

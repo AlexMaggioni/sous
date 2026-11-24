@@ -246,6 +246,16 @@ describe("piece 5 review: stepView", () => {
     assert.equal(stepView(paths, runId, "go").result, saved?.resultPreview);
   });
 
+  it("gives no result for a step whose result is null, never the string null", async () => {
+    const { stepView } = await stepViewModule();
+    const { paths, projectDir } = setup({ thrice: TWICE });
+    const record = createRun(paths, { workflow: "thrice", projectDir, inputs: {}, who: PERSON });
+    await runWorker(record.runId, "start", { paths, inner: fakeRunner(() => null).runner, pollMs: 20, log: quiet });
+    const view = stepView(paths, record.runId, "go");
+    assert.equal(view.status, "done");
+    assert.equal("result" in view, false, `a step with a null result has no result key, got ${JSON.stringify(view.result)}`);
+  });
+
   it("counts the calls of a label in one nested run, the first that has it, and names the others", async () => {
     const { stepView } = await stepViewModule();
     const { paths, projectDir } = setup({ nests: NESTS, child: CHILD });

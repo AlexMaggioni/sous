@@ -3,14 +3,17 @@
 // SOUS_TRACE_CALLS=1 the cli adds each call to <home>/calls.jsonl too.
 
 import { appendJsonLine, readJsonLines } from "../json-file.js";
+import { redactText, truncateUtf8 } from "../redact.js";
 import type { HomePaths } from "./home.js";
 
-/** How a call reached sous: from the person's terminal, an agent's shell, a step of a run, or a schedule. */
+/** How a call reached sous: from the person's terminal, an agent's shell, a step of a run, a
+ *  schedule, or the service's own chores (an automatic resume, a prune or a gc). */
 export type Through =
   | { kind: "person" }
   | { kind: "agent"; program: "claude" | "codex"; session?: string }
   | { kind: "run"; runId: string }
-  | { kind: "schedule"; schedule: string };
+  | { kind: "schedule"; schedule: string }
+  | { kind: "service" };
 
 /** Who decided: the person, an agent, or sous itself on a schedule. */
 export type By = "person" | "agent" | "sous";
@@ -19,6 +22,9 @@ export interface Who {
   by: By;
   through: Through;
 }
+
+/** The service's own writes: sous decided, through its chores. */
+export const SERVICE: Who = { by: "sous", through: { kind: "service" } };
 
 /** The writes sous records. */
 export type ActionKind =
@@ -35,23 +41,40 @@ export interface Action {
   runId?: string;
   workflow?: string;
   question?: string;
+  /** The question's text, for an answer, an approval or a send back. */
+  prompt?: string;
+  /** The schedule a schedule-add, remove, enable or disable changed. */
+  schedule?: string;
   step?: string;
   value?: unknown;
   text?: string;
   hash?: string;
 }
 
-/** The most characters of free text a line keeps. */
+/** The most bytes of free text a line keeps. */
 const TEXT_MAX = 1_000;
 
-const cut = (text: string) => (text.length > TEXT_MAX ? text.slice(0, TEXT_MAX) : text);
+/** Free text with secrets hidden, cut to its first 1,000 bytes. */
+const cut = (text: string) => truncateUtf8(redactText(text).value, TEXT_MAX);
+
+/** A value as a line keeps it: text cut, and anything else as it is unless it holds a secret or
+ *  its JSON is longer than 1,000 bytes. Then the line keeps its JSON as text, hidden and cut. */
+function kept(value: unknown): unknown {
+  if (typeof value === "string") return cut(value);
+  const json = JSON.stringify(value);
+  if (json === undefined) return value;
+  const hidden = redactText(json);
+  return hidden.redacted || Buffer.byteLength(json) > TEXT_MAX ? truncateUtf8(hidden.value, TEXT_MAX) : value;
+}
 
 /** Add the action as one line, in one write, so lines from two processes never mix. Free text,
- *  and a value that is text, keep their first 1,000 characters. Returns the line. */
+ *  the question's text and the value have their secrets hidden and keep their first 1,000 bytes.
+ *  Returns the line. */
 export function recordAction(paths: HomePaths, action: Omit<Action, "at">, now = new Date()): Action {
   const line: Action = { at: now.toISOString(), ...action };
   if (line.text !== undefined) line.text = cut(line.text);
-  if (typeof line.value === "string") line.value = cut(line.value);
+  if (line.prompt !== undefined) line.prompt = cut(line.prompt);
+  if (line.value !== undefined) line.value = kept(line.value);
   appendJsonLine(paths.actions, line);
   return line;
 }
@@ -63,12 +86,15 @@ export function readActions(paths: HomePaths, filter: { runId?: string; act?: Ac
 
 /** What a noticed action did, in words that follow its doer's name. */
 const DID: Partial<Record<ActionKind, (action: Action) => string>> = {
-  answer: (action) => `answered ${shown(action.value)} to ${action.question}`,
-  approve: (action) => `approved ${action.question}`,
-  "send-back": (action) => `sent back ${action.question}${action.text ? ` with "${action.text}"` : ""}`,
+  answer: (action) => `answered ${shown(action.value)} to ${asked(action)}`,
+  approve: (action) => `approved ${asked(action)}`,
+  "send-back": (action) => `sent back ${asked(action)}${action.text ? ` with "${action.text}"` : ""}`,
   "let-agent-answer": () => "let agents answer the questions",
   "approve-workflow": (action) => `approved the workflow ${action.workflow ?? ""}`.trim(),
 };
+
+/** The question as a notice names it: its text on one line, else its id. */
+const asked = (action: Action) => (action.prompt ? shown(action.prompt.replace(/\s+/g, " ").trim()) : action.question);
 
 /** A value as a notice shows it: text as it is, anything else as JSON, both cut short. */
 function shown(value: unknown): string {

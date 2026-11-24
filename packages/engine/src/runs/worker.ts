@@ -14,6 +14,7 @@ import { dropUnchangedWorktrees, runPlaces, runWorktrees } from "../places/place
 import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
 import { ask, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
+import { nestedLookup } from "./consent.js";
 import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
@@ -55,13 +56,15 @@ export function currentWorkflows(paths: HomePaths, projectDir: string): Record<s
   return out;
 }
 
-/** The engine's manager for a project's runs. Only this file builds one. */
-function managerFor(paths: HomePaths, projectDir: string, extra: Partial<ConstructorParameters<typeof WorkflowManager>[0]> = {}) {
-  const dirs = projectWorkflows(paths, projectDir);
+/** The engine's manager for a run's project. Only this file builds one. A nested workflow() or
+ *  choose() finds its workflow by `lookup`, the project's live ones by default, and a run an agent
+ *  started finds no people workflow there. */
+function managerFor(paths: HomePaths, record: RunRecord, lookup?: (name: string) => string | undefined) {
+  const dirs = projectWorkflows(paths, record.projectDir);
   return new WorkflowManager({
     ...managerStore(paths),
     defaultAgentRetries: loadConfig(paths).retries,
-    loadSavedWorkflow: (name) => dirs.resolve(name),
+    loadSavedWorkflow: nestedLookup(record.through, lookup ?? ((name) => dirs.resolve(name))),
     sous: {
       maxNestingDepth: 5,
       // What an agent may pick with choose({ any: true }). Workflows for people only stay out.
@@ -74,14 +77,13 @@ function managerFor(paths: HomePaths, projectDir: string, extra: Partial<Constru
       // root run's record names them.
       places: (rootRunId) => runPlaces(paths, placeNotes(paths, rootRunId)),
     },
-    ...extra,
   });
 }
 
 /** Stop a run that no worker runs: a paused run, or one whose worker died. The manager saves it
  *  as stopped under the run's lease and changes no other run's files. */
 export function stopColdRun(paths: HomePaths, record: RunRecord): PersistedRunStopResult {
-  return managerFor(paths, record.projectDir).stopPersistedRun(record.runId);
+  return managerFor(paths, record).stopPersistedRun(record.runId);
 }
 
 /** Run or resume one run in this process. Resolves with the engine's result. */
@@ -153,9 +155,7 @@ async function runOnAccounts(
   if (takeLatest) updateRecord(paths, runId, { resumeLatest: undefined });
   const snapshot = loadSnapshot(paths, runId);
   const live = projectWorkflows(paths, record.projectDir);
-  const manager = managerFor(paths, record.projectDir, {
-    loadSavedWorkflow: (name) => snapshot[name] ?? live.resolve(name),
-  });
+  const manager = managerFor(paths, record, (name) => snapshot[name] ?? live.resolve(name));
 
   const waits = new AbortController();
   const pollMs = options.pollMs ?? 500;

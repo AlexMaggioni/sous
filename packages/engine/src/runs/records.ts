@@ -11,6 +11,7 @@ import { appendJsonLine, readJsonFile, readJsonLines, writeJsonFile } from "../j
 import { redactText } from "../redact.js";
 import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";
 import type { PlaceNotes } from "../places/places.js";
+import type { Through } from "./actions.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
 import { activityFile, recordFile, recordFiles, snapshotFile, stopRequestFile } from "./store.js";
@@ -50,6 +51,9 @@ export interface RunRecord {
   reuseFrom?: string;
   /** The run whose agent started this one. */
   startedByRun?: string;
+  /** How the start reached sous. A run an agent or a step started may not reach a people
+   *  workflow inside itself, through workflow() or choose(). Older records have none. */
+  through?: Through;
   /** Workflows this run started inside itself, by child run id. */
   nested?: Record<string, NestedRun>;
   /** Worktrees of steps with `isolation: "worktree"` that exist now. A step removes its own when it ends. */
