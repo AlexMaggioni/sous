@@ -1,0 +1,329 @@
+{
+  "scenario": "4",
+  "title": "A failed step",
+  "rep": 2,
+  "dir": "/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-28-39-073Z/4-r2",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Run the fails workflow.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:31:26.087Z",
+      "endedAt": "2026-11-24T17:31:38.148Z",
+      "ms": 12061,
+      "args": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+        "--setting-sources",
+        "project,local",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "acceptEdits",
+        "--permission-prompts",
+        "none",
+        "--allowedTools",
+        "Bash(sous *),Bash(git *),Bash(cat *),Bash(ls *),Bash(sleep *),Read,Glob,Grep",
+        "--disallowedTools",
+        "Workflow",
+        "--",
+        "<prompt>"
+      ],
+      "sessionId": "5563099f-1262-4867-ada6-d94abc2e4f1c",
+      "finalText": "The `fails` workflow (run `mwuz1l8v-w5uzir`) failed as designed, and the run is now paused.\n\n- **Failed step:** `boom` exited with code 3 and printed \"disk check failed\". The command was `echo 'disk check failed' >&2; exit 3`.\n- **Finished step:** `prepare` completed before it.\n- **Code changes:** none. This workflow runs only shell steps, so there is no branch or diff to review.\n\n`sous resume mwuz1l8v-w5uzir --json` would run `boom` again, but it's hard-coded to exit 3, so it would fail the same way. I haven't resumed it. Tell me if you want that or something else.",
+      "tokens": {
+        "input": 47450,
+        "cachedInput": 45841,
+        "output": 393,
+        "total": 47843
+      },
+      "costUsd": 0.0722208,
+      "tools": [
+        "Skill",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "skills": [
+        "sous",
+        "deep-research",
+        "design",
+        "design-sync",
+        "dataviz",
+        "update-config",
+        "verify",
+        "debug",
+        "code-review",
+        "simplify",
+        "batch",
+        "fewer-permission-prompts",
+        "doctor",
+        "claude-approvals",
+        "loop",
+        "schedule",
+        "claude-api",
+        "workflow-authoring",
+        "run",
+        "run-skill-generator",
+        "plugin-authoring",
+        "sous",
+        "deep-research",
+        "design",
+        "design-sync",
+        "dataviz",
+        "update-config",
+        "verify",
+        "debug",
+        "code-review",
+        "simplify",
+        "batch",
+        "fewer-permission-prompts",
+        "doctor",
+        "claude-approvals",
+        "loop",
+        "schedule",
+        "claude-api",
+        "workflow-authoring",
+        "run",
+        "run-skill-generator",
+        "plugin-authoring"
+      ]
+    }
+  ],
+  "verdict": "pass",
+  "checks": [
+    {
+      "name": "the run paused on the failed step",
+      "result": "pass",
+      "reason": "mwuz1l8v-w5uzir paused step_failed",
+      "source": "records"
+    },
+    {
+      "name": "no rerun",
+      "result": "pass",
+      "reason": "no rerun",
+      "source": "records"
+    },
+    {
+      "name": "the report names the step",
+      "result": "pass",
+      "reason": "it names boom",
+      "source": "answer"
+    },
+    {
+      "name": "the report names the error",
+      "result": "pass",
+      "reason": "it names exit 3 or the message",
+      "source": "answer"
+    },
+    {
+      "name": "the agent offers a resume",
+      "result": "pass",
+      "reason": "it offers a resume",
+      "source": "answer"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 5,
+    "sousInCommands": 5,
+    "commands": 5,
+    "denied": 0,
+    "background": 1,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 12,
+    "tokens": 47843,
+    "inputTokens": 47450,
+    "cachedInputTokens": 45841,
+    "outputTokens": 393,
+    "costUsd": 0.0722,
+    "skillListed": true,
+    "timedOut": false
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "workflows",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "workflows",
+        "show",
+        "fails",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "run",
+        "fails",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "wait",
+        "mwuz1l8v-w5uzir",
+        "--json"
+      ],
+      "exit": 2,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "step",
+        "mwuz1l8v-w5uzir",
+        "boom",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwuz1l8v-w5uzir",
+      "workflow": "fails",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:31:30.895Z",
+      "status": "paused",
+      "pauseReason": "step_failed",
+      "reason": "step \"boom\" failed after 1 try: exited with code 3: disk check failed",
+      "answers": []
+    }
+  ],
+  "homeEvents": [
+    {
+      "at": "2026-11-24T17:31:26.038Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks",
+      "hash": "c8ef2dfe595f3fd33b07791afc12c65b24d7f086fe3a7639353bf7f7f6c72992"
+    },
+    {
+      "at": "2026-11-24T17:31:26.046Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks-anyone",
+      "hash": "6499283149e2745d2cf7f2bc4d67db70c7882d7146af7d1e81d67fa06dcfeb3b"
+    },
+    {
+      "at": "2026-11-24T17:31:26.057Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "deploy",
+      "hash": "0d6ead89c160894eb646df97e2b3013a749e92f11cc07e5ee66c28532d7b8f99"
+    },
+    {
+      "at": "2026-11-24T17:31:26.073Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "fails",
+      "hash": "e36c6881b2922702af39c332fd93ab65468bb3f7a27a5b4554c2bbe262f1ca41"
+    },
+    {
+      "at": "2026-11-24T17:31:26.076Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "hello",
+      "hash": "8c061f17ea3f5e5c8686b4982781340e6acc52eee4cdc080d1459b0f007ec65f"
+    },
+    {
+      "at": "2026-11-24T17:31:26.081Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "review",
+      "hash": "476aa61bdc2ece3e7fb5127fe472f0d5d5c5ef6ee28fec126b8b228f53046c18"
+    },
+    {
+      "at": "2026-11-24T17:31:30.897Z",
+      "act": "run",
+      "by": "agent",
+      "through": {
+        "kind": "agent",
+        "program": "claude",
+        "session": "5563099f-1262-4867-ada6-d94abc2e4f1c"
+      },
+      "runId": "mwuz1l8v-w5uzir",
+      "workflow": "fails"
+    }
+  ],
+  "setupRunIds": [],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:31:38.148Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwuz1l8v-w5uzir",
+          "workflow": "fails",
+          "status": "paused",
+          "pauseReason": "step_failed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

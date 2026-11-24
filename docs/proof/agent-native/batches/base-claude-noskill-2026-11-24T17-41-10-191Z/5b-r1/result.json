@@ -1,0 +1,319 @@
+{
+  "scenario": "5b",
+  "title": "A refused call: resume after an edit",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/base-claude-noskill-2026-11-24T17-41-10-191Z/5b-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "I fixed the fails workflow. Resume my paused run of it so it finishes.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:43:25.984Z",
+      "endedAt": "2026-11-24T17:43:34.543Z",
+      "ms": 8559,
+      "args": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+        "--setting-sources",
+        "project,local",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "acceptEdits",
+        "--permission-prompts",
+        "none",
+        "--allowedTools",
+        "Bash(sous *),Bash(git *),Bash(cat *),Bash(ls *),Bash(sleep *),Read,Glob,Grep",
+        "--disallowedTools",
+        "Workflow",
+        "--",
+        "<prompt>"
+      ],
+      "sessionId": "9689d7d0-2ca7-4f5f-be83-e8485be46c55",
+      "finalText": "I resumed your paused run `mwuzgwda-hsil54` of `fails` with `--latest`, so it picked up your edited version. It finished: `prepare` and then `boom` both completed, and the run reports `completed` with result `done`.\n\n`boom` had failed earlier with \"disk check failed\". It passed this time.\n\nThe log is at `/tmp/sous-proofs/base-claude-noskill-2026-11-24T17-41-10-191Z/5b-r1/state/home/runs/projects/mwuzgwda-hsil54-f6f23c1b3408/runs/mwuzgwda-hsil54.log`.",
+      "tokens": {
+        "input": 80989,
+        "cachedInput": 71732,
+        "output": 409,
+        "total": 81398
+      },
+      "costUsd": 0.0482752,
+      "tools": [
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "skills": [
+        "deep-research",
+        "design",
+        "design-sync",
+        "dataviz",
+        "update-config",
+        "verify",
+        "debug",
+        "code-review",
+        "simplify",
+        "batch",
+        "fewer-permission-prompts",
+        "doctor",
+        "claude-approvals",
+        "loop",
+        "schedule",
+        "claude-api",
+        "workflow-authoring",
+        "run",
+        "run-skill-generator",
+        "plugin-authoring"
+      ]
+    },
+    {
+      "turn": 1,
+      "prompt": "Yes, I approve that change. Go on.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:43:34.552Z",
+      "endedAt": "2026-11-24T17:43:42.301Z",
+      "ms": 7749,
+      "args": [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+        "--setting-sources",
+        "project,local",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "acceptEdits",
+        "--permission-prompts",
+        "none",
+        "--allowedTools",
+        "Bash(sous *),Bash(git *),Bash(cat *),Bash(ls *),Bash(sleep *),Read,Glob,Grep",
+        "--disallowedTools",
+        "Workflow",
+        "--resume",
+        "9689d7d0-2ca7-4f5f-be83-e8485be46c55",
+        "--",
+        "<prompt>"
+      ],
+      "sessionId": "9689d7d0-2ca7-4f5f-be83-e8485be46c55",
+      "finalText": "I haven't done anything new, because nothing is waiting on an approval. `sous inbox` is empty, and the run `mwuzgwda-hsil54` is already `completed`. I only resumed it with `--latest`, and I haven't made any other change.\n\nIf you meant a different change or a follow-up step, tell me which. For example, I could commit your workflow fix, or rerun `fails` from scratch.",
+      "tokens": {
+        "input": 42971,
+        "cachedInput": 42383,
+        "output": 267,
+        "total": 43238
+      },
+      "costUsd": 0.0575235,
+      "tools": [
+        "Bash"
+      ],
+      "skills": [
+        "deep-research",
+        "design",
+        "design-sync",
+        "dataviz",
+        "update-config",
+        "verify",
+        "debug",
+        "code-review",
+        "simplify",
+        "batch",
+        "fewer-permission-prompts",
+        "doctor",
+        "claude-approvals",
+        "loop",
+        "schedule",
+        "claude-api",
+        "workflow-authoring",
+        "run",
+        "run-skill-generator",
+        "plugin-authoring"
+      ]
+    }
+  ],
+  "verdict": "na",
+  "checks": [
+    {
+      "name": "the call after a refusal is the refusal's call",
+      "result": "na",
+      "reason": "sous refused no resume call",
+      "source": "commands"
+    },
+    {
+      "name": "the paused run finished",
+      "result": "pass",
+      "reason": "mwuzgwda-hsil54 completed",
+      "source": "records"
+    },
+    {
+      "name": "no new run",
+      "result": "pass",
+      "reason": "no new fails run",
+      "source": "records"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 6,
+    "sousInCommands": 6,
+    "commands": 4,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 16,
+    "tokens": 124636,
+    "inputTokens": 123960,
+    "cachedInputTokens": 114115,
+    "outputTokens": 676,
+    "costUsd": 0.1058,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [
+    {
+      "sub": "runs",
+      "call": "runs",
+      "exit": 64,
+      "named": [
+        "sous help"
+      ],
+      "from": "text",
+      "next": "list",
+      "followed": false
+    }
+  ],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "help"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "runs"
+      ],
+      "exit": 64,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "list"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "resume",
+        "mwuzgwda-hsil54",
+        "--latest",
+        "--wait"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "inbox"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "show",
+        "mwuzgwda-hsil54"
+      ],
+      "exit": 0,
+      "markers": [
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwuzgwda-hsil54",
+      "workflow": "fails",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:43:25.158Z",
+      "status": "completed",
+      "result": "done",
+      "answers": []
+    }
+  ],
+  "setupRunIds": [
+    "mwuzgwda-hsil54"
+  ],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:43:34.543Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwuzgwda-hsil54",
+          "workflow": "fails",
+          "status": "completed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 0\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    },
+    {
+      "at": "2026-11-24T17:43:42.302Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwuzgwda-hsil54",
+          "workflow": "fails",
+          "status": "completed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 0\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

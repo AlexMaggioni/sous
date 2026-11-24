@@ -1,0 +1,42 @@
+[
+  {
+    "tool": "Bash",
+    "command": "sous guide writing; sous workflows --json",
+    "background": false,
+    "error": false,
+    "output": "# Write or change a workflow\n\nWrite or change a workflow only with the person's yes. Show them what you will save, and save\nonly after they agree. Save in the project's `.sous/workflows/<name>.js`. Change\n`~/.sous/workflows/`, a schedule, or `startedBy` only when the person asked for that.\n\nStart from a workflow that exists. `sous workflows --json` lists them. Before you change or run\none you don't know, read `sous workflows show <name> --json`: its steps, inputs, approval and\nlast runs. `sous agents --json` lists the agents a step can name.\n\n## The person approves it\n\nsous keeps the person's yes for each workflow's exact text. A new or changed workflow does not\nstart from an agent, a step of a run or a schedule until the person approves it. A scheduled run of\nit is skipped, and the person gets a notice. Once you saved it and the check passes, show them\n`sous workflows show <name> --diff --json`, what changed since their last yes. Tell them sous\nstarts it from you, a run or a schedule only after they approve it, by saying yes to you or with\n`sous workflows approve <name>` in their own terminal.\n\nWhen they say yes to you, run `sous workflows approve <name> --by person --json`. A yes they gave\nto the whole text you showed them counts, if you saved that text unchanged. If the check made you\nchange it, show them the diff and ask again. Without\n`--by person` an agent's approve is refused with `needs_person`. Never approve without their yes.\nA person's own `sous run <name>` approves the text it runs. Never edit, move or delete\n`approvals.json` or `approved/` in sous's home. Without them no workflow counts as approved.\n\n## The file\n\n```js\nexport const meta = {\n  name: \"ticket\",\n  description: \"Implement a ticket, review it\",\n  inputs: {\n    ticket: { type: \"string\", description: \"What to build\", required: true },\n    rounds: { type: \"number\", default: 3 },\n  },\n  outputs: { summary: \"What was built\" },\n  place: \"worktree\",\n  startedBy: \"anyone\",\n  timeout: \"2h\",\n}\n\nconst b",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "cd .sous/workflows; cat hello.js review.js",
+    "background": false,
+    "error": false,
+    "output": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\nexport const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "sous check greet-approve --name Ada --dry-run --json",
+    "background": false,
+    "error": false,
+    "output": "{\n  \"workflow\": \"greet-approve\",\n  \"file\": \"/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-28-39-073Z/6-r1/project/.sous/workflows/greet-approve.js\",\n  \"description\": \"Greet someone, then stop for a person to approve\",\n  \"inputs\": {\n    \"name\": {\n      \"type\": \"string\",\n      \"description\": \"Who to greet\",\n      \"required\": true\n    }\n  },\n  \"problems\": [],\n  \"dryRun\": {\n    \"runId\": \"mwuz421a-jkeavi\",\n    \"status\": \"completed\",\n    \"result\": {\n      \"greeting\": \"hello Ada\"\n    },\n    \"agents\": []\n  },\n  \"notes\": [],\n  \"next\": []\n}",
+    "turn": 1
+  },
+  {
+    "tool": "Bash",
+    "command": "sous workflows approve greet-approve --by person --json && sous run greet-approve --name Ada --json",
+    "background": false,
+    "error": false,
+    "output": "{\n  \"approved\": [\n    {\n      \"workflow\": \"greet-approve\",\n      \"file\": \"/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-28-39-073Z/6-r1/project/.sous/workflows/greet-approve.js\",\n      \"hash\": \"ca4ea92f17fbf72eb4f1ff81b34ddd54b574ce47cb71dfc99f3f831880477cf9\"\n    }\n  ],\n  \"unchanged\": [],\n  \"notes\": [],\n  \"next\": []\n}\n{\n  \"runId\": \"mwuz449w-g322wf\",\n  \"workflow\": \"greet-approve\",\n  \"cwd\": \"/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-28-39-073Z/6-r1/state/home/scratch/mwuz449w-g322wf\",\n  \"log\": \"/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-28-39-073Z/6-r1/state/home/logs/mwuz449w-g322wf.log\",\n  \"status\": \"starting\",\n  \"asks\": 1,\n  \"lastRuns\": {\n    \"count\": 0,\n    \"seconds\": 0,\n    \"tokens\": 0\n  },\n  \"notes\": [],\n  \"next\": [\n    {\n      \"call\": \"sous wait mwuz449w-g322wf --json\",\n      \"does\": \"waits until the run ends, pauses or asks\"\n    },\n    {\n      \"call\": \"sous show mwuz449w-g322wf --json\",\n      \"does\": \"shows the run and its steps\"\n    }\n  ]\n}",
+    "turn": 1
+  },
+  {
+    "tool": "Bash",
+    "command": "sous wait mwuz449w-g322wf --timeout 540 --json",
+    "background": false,
+    "error": true,
+    "output": "Exit code 4\n{\n  \"runId\": \"mwuz449w-g322wf\",\n  \"workflow\": \"greet-approve\",\n  \"status\": \"asks\",\n  \"questions\": [\n    {\n      \"id\": \"mwuz449w-g322wf--1\",\n      \"prompt\": \"Breakpoint: Approve the greeting\\n\\nhello Ada\\n\\nReply approve, stop, or send back with a note.\",\n      \"kind\": \"input\",\n      \"breakpoint\": true,\n      \"askedAt\": \"2026-11-24T17:33:29.431Z\",\n      \"answeredBy\": \"people\"\n    }\n  ],\n  \"cwd\": \"/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-28-39-073Z/6-r1/state/home/scratch/mwuz449w-g322wf\",\n  \"notes\": [],\n  \"next\": [\n    {\n      \"call\": \"sous approve mwuz449w-g322wf--1 --by person --json\",\n      \"does\": \"approves \\\"Breakpoint: Approve the greeting\\\"\"\n    },\n    {\n      \"call\": \"sous send-back mwuz449w-g322wf--1 \\\"<note>\\\" --by person --json\",\n      \"does\": \"sends the run back with a note\"\n    },\n    {\n      \"call\": \"sous wait mwuz449w-g322wf --timeout 540 --json\",\n      \"does\": \"waits again once the answer is in\"\n    }\n  ]\n}",
+    "turn": 1
+  }
+]

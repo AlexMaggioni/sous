@@ -1,0 +1,34 @@
+[
+  {
+    "tool": "Bash",
+    "command": "sous workflows show asks-anyone --json; sous status --json",
+    "background": false,
+    "error": false,
+    "output": "{\n  \"name\": \"asks-anyone\",\n  \"file\": \"/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-28-39-073Z/3-r2/project/.sous/workflows/asks-anyone.js\",\n  \"from\": \"project\",\n  \"description\": \"Ask for a color that anyone may pick\",\n  \"inputs\": {},\n  \"place\": \"none\",\n  \"startedBy\": \"anyone\",\n  \"steps\": [\n    {\n      \"kind\": \"ask\",\n      \"title\": \"Which color?\"\n    }\n  ],\n  \"asks\": 1,\n  \"workflows\": [],\n  \"check\": {\n    \"problems\": [],\n    \"notes\": [\n      \"declares no inputs, so it takes any\"\n    ]\n  },\n  \"approved\": {\n    \"by\": \"person\",\n    \"at\": \"2026-11-24T17:30:54.226Z\",\n    \"changedSince\": false\n  },\n  \"lastRuns\": [],\n  \"notes\": [\n    \"steps lists the steps in the order the file writes them. A loop or a branch shows its steps once. A dry run of sous check shows the order a run takes.\"\n  ],\n  \"next\": [\n    {\n      \"call\": \"sous run asks-anyone --json\",\n      \"does\": \"start a run\"\n    },\n    {\n      \"call\": \"sous check asks-anyone --json\",\n      \"does\": \"check the workflow without running it: its inputs, agents, MCP servers and nested workflows\"\n    }\n  ]\n}\n{\n  \"needsYou\": [],\n  \"running\": [],\n  \"waiting\": [],\n  \"finished\": [],\n  \"service\": {\n    \"running\": false\n  },\n  \"notes\": [],\n  \"next\": []\n}",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "sous run asks-anyone --json",
+    "background": false,
+    "error": false,
+    "output": "{\n  \"runId\": \"mwuz0zb7-90hjfl\",\n  \"workflow\": \"asks-anyone\",\n  \"cwd\": \"/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-28-39-073Z/3-r2/state/home/scratch/mwuz0zb7-90hjfl\",\n  \"log\": \"/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-28-39-073Z/3-r2/state/home/logs/mwuz0zb7-90hjfl.log\",\n  \"status\": \"starting\",\n  \"asks\": 1,\n  \"lastRuns\": {\n    \"count\": 0,\n    \"seconds\": 0,\n    \"tokens\": 0\n  },\n  \"notes\": [],\n  \"next\": [\n    {\n      \"call\": \"sous wait mwuz0zb7-90hjfl --json\",\n      \"does\": \"waits until the run ends, pauses or asks\"\n    },\n    {\n      \"call\": \"sous show mwuz0zb7-90hjfl --json\",\n      \"does\": \"shows the run and its steps\"\n    }\n  ]\n}",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "sous wait mwuz0zb7-90hjfl --timeout 540 --json",
+    "background": false,
+    "error": true,
+    "output": "Exit code 4\n{\n  \"runId\": \"mwuz0zb7-90hjfl\",\n  \"workflow\": \"asks-anyone\",\n  \"status\": \"asks\",\n  \"questions\": [\n    {\n      \"id\": \"mwuz0zb7-90hjfl--0\",\n      \"prompt\": \"Which color?\",\n      \"kind\": \"select\",\n      \"choices\": [\n        \"red\",\n        \"blue\"\n      ],\n      \"breakpoint\": false,\n      \"askedAt\": \"2026-11-24T17:31:02.736Z\",\n      \"answeredBy\": \"anyone\"\n    }\n  ],\n  \"cwd\": \"/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-28-39-073Z/3-r2/state/home/scratch/mwuz0zb7-90hjfl\",\n  \"notes\": [],\n  \"next\": [\n    {\n      \"call\": \"sous answer mwuz0zb7-90hjfl--0 <red|blue> --json\",\n      \"does\": \"answers \\\"Which color?\\\"\"\n    },\n    {\n      \"call\": \"sous wait mwuz0zb7-90hjfl --timeout 540 --json\",\n      \"does\": \"waits again once the answer is in\"\n    }\n  ]\n}",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "sous answer mwuz0zb7-90hjfl--0 blue --json && sous wait mwuz0zb7-90hjfl --timeout 540 --json",
+    "background": false,
+    "error": false,
+    "output": "{\n  \"question\": \"mwuz0zb7-90hjfl--0\",\n  \"runId\": \"mwuz0zb7-90hjfl\",\n  \"answered\": true,\n  \"running\": true,\n  \"by\": \"agent\",\n  \"through\": {\n    \"kind\": \"agent\",\n    \"program\": \"claude\",\n    \"session\": \"d4c78512-570f-425a-b025-6243d6e62881\"\n  },\n  \"notes\": [],\n  \"next\": [\n    {\n      \"call\": \"sous wait mwuz0zb7-90hjfl --json\",\n      \"does\": \"waits for the run, which goes on with the answer\"\n    }\n  ]\n}\n{\n  \"runId\": \"mwuz0zb7-90hjfl\",\n  \"workflow\": \"asks-anyone\",\n  \"status\": \"completed\",\n  \"cwd\": \"/tmp/sous-proofs/feature-claude-skill-2026-11-24T17-28-39-073Z/3-r2/state/home/scratch/mwuz0zb7-90hjfl\",\n  \"result\": {\n    \"color\": \"blue\"\n  },\n  \"review\": {\n    \"result\": {\n      \"color\": \"blue\"\n    }\n  },\n  \"notes\": [],\n  \"next\": [\n    {\n      \"call\": \"sous show mwuz0zb7-90hjfl --json\",\n      \"does\": \"shows the run and its steps\"\n    }\n  ]\n}",
+    "turn": 0
+  }
+]

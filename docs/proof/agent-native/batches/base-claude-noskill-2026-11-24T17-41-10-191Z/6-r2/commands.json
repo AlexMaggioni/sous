@@ -1,0 +1,59 @@
+[
+  {
+    "tool": "Bash",
+    "command": "sous help",
+    "background": false,
+    "error": false,
+    "output": "sous runs saved workflows in the background.\n\n  sous run <workflow> [--name value ...] [-- --name value ...]\n        --place worktree|folder|none    where the run works (default: the workflow's, else config)\n        --model <spec>                  model for steps that name none, such as claude/haiku\n        --set <step>.<key>=<value>      change one step for this run, such as --set reviewer.model=claude/opus\n        --concurrency N                 steps at once in this run\n        --wait                          follow the run until it ends; in a terminal, answer here\n        --json                          machine-readable output\n  sous wait <run> [--json]              wait for a run to end, pause or ask (exit 0 done, 1 failed,\n                                        2 paused, 3 stopped, 4 waits for an answer)\n  sous list [--all]                     runs, newest first\n  sous show <run>                       one run: status, steps, questions, result\n  sous log <run> [-f]                   the run's log\n  sous inbox [run]                      questions waiting for you\n  sous answer <question> <text>         answer a question (a run id works when it asks one thing)\n  sous approve <question>               approve a breakpoint\n  sous send-back <question> <note>      send a breakpoint's step back with a note\n  sous pause <run>                      finish running steps, start nothing new\n  sous resume <run> [--wait]            go on from where the run paused, failed or was cut off\n        --latest | --same               after an edit: take the new version, or keep the run's own\n  sous stop <run>                       end the run; its worktree stays\n        --step <name>                   stop one running step instead; the run pauses on it\n  sous rerun <run> [--name value ...]   start the same workflow again with the same inputs\n        --reuse                         keep the results of the steps you did not edit, in the same place\n  sous workflows                        ",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "sous workflows; ls -la .sous .sous/* 2>/dev/null; ls -a; ls $SOUS_HOME /tmp/sous-proofs/base-claude-noskill-2026-11-24T17-41-10-191Z/6-r2/state/home 2>/dev/null",
+    "background": false,
+    "denied": true,
+    "error": true,
+    "output": "Permission for this tool use was denied. It requires approval, and this session has no approval surface — nobody can answer a permission prompt here — so it was denied automatically. The action was NOT performed; do not claim it succeeded, and do not retry it: this action, and anything else that requires approval, will be denied the same way for the rest of this session. Tell the user what was blocked and why you needed it, then continue with the parts of the task that do not require approval. What required approval: A variable in this command can't be checked before it runs",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "sous workflows",
+    "background": false,
+    "error": false,
+    "output": "asks  Ask a person to pick a color\nasks-anyone  Ask for a color that anyone may pick\ndeploy  Deploy the app\n  --env  string, optional, default \"staging\"  Where to deploy\nfails  Prepare, then run a check that fails\nhello  Say hello to someone\n  --name  string, required  Who to greet\nreview  Draft release notes, then stop for a person to approve them",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "sous check greet-approve --name Sam",
+    "background": false,
+    "error": false,
+    "output": "greet-approve  /tmp/sous-proofs/base-claude-noskill-2026-11-24T17-41-10-191Z/6-r2/project/.sous/workflows/greet-approve.js\nok",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "git add .sous/workflows/greet-approve.js && git commit -q -m \"Add greet-approve workflow\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\" && git log --oneline -1",
+    "background": false,
+    "error": false,
+    "output": "32825c2 Add greet-approve workflow",
+    "turn": 1
+  },
+  {
+    "tool": "Bash",
+    "command": "sous run greet-approve --name Ada",
+    "background": false,
+    "error": false,
+    "output": "started mwuzikpl-d4c6cr  greet-approve  in /tmp/sous-proofs/base-claude-noskill-2026-11-24T17-41-10-191Z/6-r2/state/home/scratch/mwuzikpl-d4c6cr\n  follow: sous wait mwuzikpl-d4c6cr    log: sous log mwuzikpl-d4c6cr -f",
+    "turn": 1
+  },
+  {
+    "tool": "Bash",
+    "command": "sous inbox mwuzikpl-d4c6cr",
+    "background": false,
+    "error": false,
+    "output": "mwuzikpl-d4c6cr--1  greet-approve  1s ago\n  Breakpoint: Approve the greeting\n  \n  hello Ada\n  \n  Reply approve, stop, or send back with a note.\n  sous approve mwuzikpl-d4c6cr--1  |  sous send-back mwuzikpl-d4c6cr--1 \"note\"  |  sous stop mwuzikpl-d4c6cr",
+    "turn": 1
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "runId": "mwuzbzv8-i9azba",
+  "step": "count",
+  "told": true,
+  "delivery": "delivered",
+  "calls": [
+    {
+      "step": "count",
+      "call": 1,
+      "delivery": "delivered"
+    }
+  ],
+  "notes": [],
+  "next": [
+    {
+      "call": "sous step mwuzbzv8-i9azba count --call 1 --json",
+      "does": "shows call 1 of the step, with the message once it reads it"
+    },
+    {
+      "call": "sous wait mwuzbzv8-i9azba --json",
+      "does": "waits until the run ends, pauses or asks"
+    }
+  ]
+}

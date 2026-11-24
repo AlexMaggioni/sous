@@ -1,0 +1,21 @@
+{
+  "runId": "mwuzcwo3-dv9nfy",
+  "workflow": "counts-codex",
+  "status": "completed",
+  "cwd": "<proof>/home/scratch/mwuzcwo3-dv9nfy",
+  "result": {
+    "counted": "1 2 3 4 5"
+  },
+  "review": {
+    "result": {
+      "counted": "1 2 3 4 5"
+    }
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous show mwuzcwo3-dv9nfy --json",
+      "does": "shows the run and its steps"
+    }
+  ]
+}

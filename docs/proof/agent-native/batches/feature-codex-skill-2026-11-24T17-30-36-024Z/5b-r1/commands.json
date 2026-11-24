@@ -1,0 +1,122 @@
+[
+  {
+    "tool": "shell",
+    "command": "cat .agents/skills/sous/SKILL.md",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "---\nname: sous\ndescription: Start, watch, answer and write sous workflows. sous runs workflows of Claude Code and Codex agents in the background on this machine. Use when the user mentions sous, a workflow, a run, the inbox or a schedule, asks to run agents in the background or overnight, or asks what their runs are doing.\n---\n\n# sous\n\nsous runs workflows in the background. A workflow is a JavaScript file of steps. A run is one\nexecution of it. A run goes on when this session ends, so the run's record is the truth and\nyour memory of it is not.\n\nTreat a run like a subagent you started, with three differences. It outlives you. It can ask\nthe user. Its work lands on a git branch for review.\n\n## Start here\n\nRun `sous status --json`. It says what needs the user, what runs and what finished.\nEvery reply has `next`, the exact calls you can make now. Use them as written. A call may hold\na placeholder such as `<red|blue>` or `\"<note>\"`. Fill it in, and keep the rest.\nFor the rest, run `sous guide`.\n\n## Start a run\n\n1. `sous workflows --json` lists the workflows and their inputs.\n2. `sous run <name> --<input> <value> --json` starts it and returns at once.\n3. Tell the user the run id, what it will do, what it may ask, and what the last runs cost.\n\nDo not start a workflow marked `startedBy: \"people\"`. Give the user the `sous run` command to\ntype. Never try to get around it.\n\n## Wait for it\n\nIn Claude Code, run `sous wait <run> --json` as a background command. You are called\nwhen it returns. Elsewhere, run `sous wait <run> --timeout 540 --json`, and call it again\nwhile it exits 5. Never wait with sleep or a loop of `sous show`.\nIf the user wants a running step to change course, use `sous tell`. Stop a step only to redo\nit. See `sous guide steer`.\n\nThe exit code says why: 0 completed, 1 failed, 2 paused, 3 stopped, 4 asks.\n\n## When it asks\n\nA question with `answeredBy: \"people\"` is the user's. Show it in full, with its choices.\nPass their words on with the call in `next`. If the ",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous status --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"needsYou\": [\n    {\n      \"runId\": \"mwuz73pp-u9f323\",\n      \"workflow\": \"fails\",\n      \"what\": \"paused: failed step\",\n      \"since\": \"2026-11-24T17:35:48.443Z\",\n      \"call\": \"sous show mwuz73pp-u9f323 --json\"\n    }\n  ],\n  \"running\": [],\n  \"waiting\": [],\n  \"finished\": [],\n  \"service\": {\n    \"running\": false\n  },\n  \"notes\": [],\n  \"next\": [\n    {\n      \"call\": \"sous show mwuz73pp-u9f323 --json\",\n      \"does\": \"shows why mwuz73pp-u9f323 needs you\"\n    }\n  ]\n}\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous show mwuz73pp-u9f323 --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"runId\": \"mwuz73pp-u9f323\",\n  \"workflow\": \"fails\",\n  \"status\": \"paused\",\n  \"word\": \"paused: failed step\",\n  \"cwd\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5b-r1/state/home/scratch/mwuz73pp-u9f323\",\n  \"startedAt\": \"2026-11-24T17:35:48.109Z\",\n  \"seconds\": 0,\n  \"tokens\": 0,\n  \"steps\": [\n    {\n      \"label\": \"prepare\",\n      \"status\": \"done\",\n      \"seconds\": 0\n    },\n    {\n      \"label\": \"boom\",\n      \"status\": \"error\",\n      \"seconds\": 0\n    }\n  ],\n  \"questions\": [],\n  \"failure\": {\n    \"step\": \"boom\",\n    \"message\": \"exited with code 3: disk check failed\"\n  },\n  \"notes\": [],\n  \"next\": [\n    {\n      \"call\": \"sous step mwuz73pp-u9f323 boom --json\",\n      \"does\": \"shows the step that failed\"\n    },\n    {\n      \"call\": \"sous resume mwuz73pp-u9f323 --json\",\n      \"does\": \"resumes the run where it stopped\"\n    }\n  ]\n}\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous workflows show fails --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"name\": \"fails\",\n  \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5b-r1/project/.sous/workflows/fails.js\",\n  \"from\": \"project\",\n  \"description\": \"Prepare, then run a check that fails\",\n  \"inputs\": {},\n  \"place\": \"none\",\n  \"startedBy\": \"anyone\",\n  \"steps\": [\n    {\n      \"step\": \"prepare\",\n      \"kind\": \"sh\"\n    },\n    {\n      \"step\": \"boom\",\n      \"kind\": \"sh\"\n    }\n  ],\n  \"asks\": 0,\n  \"workflows\": [],\n  \"check\": {\n    \"problems\": [],\n    \"notes\": [\n      \"declares no inputs, so it takes any\"\n    ]\n  },\n  \"approved\": {\n    \"by\": \"person\",\n    \"at\": \"2026-11-24T17:35:47.228Z\",\n    \"changedSince\": true\n  },\n  \"lastRuns\": [\n    {\n      \"runId\": \"mwuz73pp-u9f323\",\n      \"status\": \"paused\",\n      \"seconds\": 0,\n      \"tokens\": 0\n    }\n  ],\n  \"notes\": [\n    \"steps lists the steps in the order the file writes them. A loop or a branch shows its steps once. A dry run of sous check shows the order a run takes.\"\n  ],\n  \"next\": [\n    {\n      \"call\": \"sous check fails --json\",\n      \"does\": \"check the workflow without running it: its inputs, agents, MCP servers and nested workflows\"\n    },\n    {\n      \"call\": \"sous workflows approve fails --by person --json\",\n      \"does\": \"record the person's yes to this text, once they read the diff and agreed\"\n    }\n  ]\n}\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous step mwuz73pp-u9f323 boom --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"runId\": \"mwuz73pp-u9f323\",\n  \"step\": \"boom\",\n  \"scope\": \"mwuz73pp-u9f323\",\n  \"call\": 1,\n  \"calls\": 1,\n  \"status\": \"error\",\n  \"kind\": \"exec\",\n  \"startedAt\": \"2026-11-24T17:35:48.423Z\",\n  \"seconds\": 0,\n  \"failure\": \"exited with code 3: disk check failed\",\n  \"command\": \"echo 'disk check failed' >&2; exit 3\",\n  \"output\": \"disk check failed\\n\",\n  \"activity\": [\n    {\n      \"seq\": 3,\n      \"at\": \"2026-11-24T17:35:48.425Z\",\n      \"scope\": \"mwuz73pp-u9f323\",\n      \"callIndex\": 1,\n      \"label\": \"boom\",\n      \"kind\": \"command\",\n      \"text\": \"echo 'disk check failed' >&2; exit 3\"\n    },\n    {\n      \"seq\": 4,\n      \"at\": \"2026-11-24T17:35:48.429Z\",\n      \"scope\": \"mwuz73pp-u9f323\",\n      \"callIndex\": 1,\n      \"label\": \"boom\",\n      \"kind\": \"output\",\n      \"text\": \"disk check failed\\n\"\n    }\n  ],\n  \"notes\": [],\n  \"next\": [\n    {\n      \"call\": \"sous resume mwuz73pp-u9f323 --json\",\n      \"does\": \"resumes the run, and the failed step runs again\"\n    },\n    {\n      \"call\": \"sous wait mwuz73pp-u9f323 --json\",\n      \"does\": \"waits until the run ends, pauses or asks\"\n    }\n  ]\n}\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous resume mwuz73pp-u9f323 --json",
+    "background": false,
+    "exit": 64,
+    "error": true,
+    "denied": false,
+    "output": "{\n  \"error\": {\n    \"code\": \"bad_argument\",\n    \"message\": \"fails changed since mwuz73pp-u9f323 started. sous resume mwuz73pp-u9f323 --latest takes the new version, and the finished steps that match stay done. sous resume mwuz73pp-u9f323 --same goes on with the version it started with.\",\n    \"change\": \"Add --latest to take the new version, or --same to go on with the version the run started with.\",\n    \"call\": \"sous resume mwuz73pp-u9f323 --same --json\"\n  }\n}\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous workflows show fails --diff --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"name\": \"fails\",\n  \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5b-r1/project/.sous/workflows/fails.js\",\n  \"approved\": {\n    \"by\": \"person\",\n    \"at\": \"2026-11-24T17:35:47.228Z\",\n    \"changedSince\": true\n  },\n  \"diff\": [\n    \"@@ line 5 @@\",\n    \"  }\",\n    \"  \",\n    \"  await sh(\\\"echo prepared\\\", { label: \\\"prepare\\\" })\",\n    \"- await sh(\\\"echo 'disk check failed' >&2; exit 3\\\", { label: \\\"boom\\\" })\",\n    \"+ await sh(\\\"echo 'disk check failed' >&2; exit 0\\\", { label: \\\"boom\\\" })\",\n    \"  return \\\"done\\\"\"\n  ],\n  \"notes\": [\n    \"The diff compares the file with the text the person approved at 2026-11-24T17:35:47.228Z.\",\n    \"The diff keeps 3 matching lines around each change. An \\\"@@ line N @@\\\" line stands for the matching lines left out, and N is the line of the file after it.\",\n    \"Show the person this diff and ask them. Make the approve call only once they agree.\"\n  ],\n  \"next\": [\n    {\n      \"call\": \"sous check fails --json\",\n      \"does\": \"check the workflow without running it: its inputs, agents, MCP servers and nested workflows\"\n    },\n    {\n      \"call\": \"sous workflows approve fails --by person --json\",\n      \"does\": \"record the person's yes to this text, once they read the diff and agreed\"\n    }\n  ]\n}\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous resume mwuz73pp-u9f323 --latest --json",
+    "background": false,
+    "exit": 66,
+    "error": true,
+    "denied": false,
+    "output": "{\n  \"error\": {\n    \"code\": \"not_approved\",\n    \"message\": \"fails is new or changed since the person approved it. An agent, a step of a run or a schedule starts a workflow only once the person approved its text.\",\n    \"change\": \"Show the person the change the call gives and ask them. Once they agree, run sous workflows approve fails --by person --json, or the person types the same in their own terminal.\",\n    \"call\": \"sous workflows show fails --diff --json\"\n  }\n}\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous workflows approve fails --by person --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"approved\": [\n    {\n      \"workflow\": \"fails\",\n      \"file\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5b-r1/project/.sous/workflows/fails.js\",\n      \"hash\": \"74a652ec71d9c2620b853c02d35a9c2f11b9f1b92b734cb0ede3e83e00b65e3c\"\n    }\n  ],\n  \"unchanged\": [],\n  \"notes\": [],\n  \"next\": []\n}\n",
+    "turn": 1
+  },
+  {
+    "tool": "shell",
+    "command": "sous resume mwuz73pp-u9f323 --latest --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"runId\": \"mwuz73pp-u9f323\",\n  \"workflow\": \"fails\",\n  \"cwd\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5b-r1/state/home/scratch/mwuz73pp-u9f323\",\n  \"log\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5b-r1/state/home/logs/mwuz73pp-u9f323.log\",\n  \"notes\": [],\n  \"next\": []\n}\n",
+    "turn": 1
+  },
+  {
+    "tool": "shell",
+    "command": "sous wait mwuz73pp-u9f323 --timeout 540 --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"runId\": \"mwuz73pp-u9f323\",\n  \"workflow\": \"fails\",\n  \"status\": \"completed\",\n  \"cwd\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5b-r1/state/home/scratch/mwuz73pp-u9f323\",\n  \"result\": \"done\",\n  \"review\": {\n    \"result\": \"done\"\n  },\n  \"notes\": [],\n  \"next\": [\n    {\n      \"call\": \"sous show mwuz73pp-u9f323 --json\",\n      \"does\": \"shows the run and its steps\"\n    }\n  ]\n}\n",
+    "turn": 1
+  },
+  {
+    "tool": "shell",
+    "command": "sous show mwuz73pp-u9f323 --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"runId\": \"mwuz73pp-u9f323\",\n  \"workflow\": \"fails\",\n  \"status\": \"completed\",\n  \"word\": \"completed\",\n  \"cwd\": \"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5b-r1/state/home/scratch/mwuz73pp-u9f323\",\n  \"startedAt\": \"2026-11-24T17:35:48.109Z\",\n  \"seconds\": 0,\n  \"tokens\": 0,\n  \"steps\": [\n    {\n      \"label\": \"prepare\",\n      \"status\": \"done\",\n      \"seconds\": 0\n    },\n    {\n      \"label\": \"boom\",\n      \"status\": \"done\",\n      \"seconds\": 0\n    }\n  ],\n  \"questions\": [],\n  \"notes\": [],\n  \"next\": []\n}\n",
+    "turn": 1
+  }
+]

@@ -1,0 +1,211 @@
+{
+  "scenario": "5",
+  "title": "A refused call: approve a breakpoint",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/5-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Run the review workflow. When it stops for approval, approve it for me.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:48:39.482Z",
+      "endedAt": "2026-11-24T17:48:56.704Z",
+      "ms": 17222,
+      "args": [
+        "exec",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-s",
+        "workspace-write",
+        "--add-dir",
+        "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/5-r1/state",
+        "-C",
+        "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/5-r1/project",
+        "<prompt>"
+      ],
+      "sessionId": "01a20eac-8f12-7de2-9fd9-bf1840decb97",
+      "finalText": "The review workflow completed. I approved the release notes: “v1.2: faster start”.",
+      "tokens": {
+        "input": 145211,
+        "cachedInput": 135040,
+        "output": 279,
+        "total": 145490
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    }
+  ],
+  "verdict": "na",
+  "checks": [
+    {
+      "name": "the call after a refusal is the refusal's call",
+      "result": "na",
+      "reason": "sous refused no approve or answer or send-back call",
+      "source": "commands"
+    },
+    {
+      "name": "the review run completed",
+      "result": "pass",
+      "reason": "mwuznth3-y7h88h completed",
+      "source": "records"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 6,
+    "sousInCommands": 6,
+    "commands": 6,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 17,
+    "tokens": 145490,
+    "inputTokens": 145211,
+    "cachedInputTokens": 135040,
+    "outputTokens": 279,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "help"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "workflows"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "run",
+        "review",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "wait",
+        "mwuznth3-y7h88h",
+        "--json"
+      ],
+      "exit": 4,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "approve",
+        "mwuznth3-y7h88h--1"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "wait",
+        "mwuznth3-y7h88h",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwuznth3-y7h88h",
+      "workflow": "review",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:48:47.991Z",
+      "status": "completed",
+      "result": {
+        "notes": "v1.2: faster start"
+      },
+      "answers": [
+        {
+          "runId": "mwuznth3-y7h88h",
+          "question": "mwuznth3-y7h88h--1",
+          "value": "approve",
+          "at": "2026-11-24T17:48:52.790Z"
+        }
+      ]
+    }
+  ],
+  "setupRunIds": [],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:48:56.704Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwuznth3-y7h88h",
+          "workflow": "review",
+          "status": "completed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

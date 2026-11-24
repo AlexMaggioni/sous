@@ -1,0 +1,102 @@
+[
+  {
+    "tool": "shell",
+    "command": "sous help",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "sous runs saved workflows in the background.\n\n  sous run <workflow> [--name value ...] [-- --name value ...]\n        --place worktree|folder|none    where the run works (default: the workflow's, else config)\n        --model <spec>                  model for steps that name none, such as claude/haiku\n        --set <step>.<key>=<value>      change one step for this run, such as --set reviewer.model=claude/opus\n        --concurrency N                 steps at once in this run\n        --wait                          follow the run until it ends; in a terminal, answer here\n        --json                          machine-readable output\n  sous wait <run> [--json]              wait for a run to end, pause or ask (exit 0 done, 1 failed,\n                                        2 paused, 3 stopped, 4 waits for an answer)\n  sous list [--all]                     runs, newest first\n  sous show <run>                       one run: status, steps, questions, result\n  sous log <run> [-f]                   the run's log\n  sous inbox [run]                      questions waiting for you\n  sous answer <question> <text>         answer a question (a run id works when it asks one thing)\n  sous approve <question>               approve a breakpoint\n  sous send-back <question> <note>      send a breakpoint's step back with a note\n  sous pause <run>                      finish running steps, start nothing new\n  sous resume <run> [--wait]            go on from where the run paused, failed or was cut off\n        --latest | --same               after an edit: take the new version, or keep the run's own\n  sous stop <run>                       end the run; its worktree stays\n        --step <name>                   stop one running step instead; the run pauses on it\n  sous rerun <run> [--name value ...]   start the same workflow again with the same inputs\n        --reuse                         keep the results of the steps you did not edit, in the same place\n  sous workflows                        ",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "rg --files -g 'AGENTS.md' -g '*workflow*' -g 'README*' -g 'package.json'",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "AGENTS.md\nREADME.md\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "ls -la",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "total 24\ndrwxr-xr-x@  7 user  wheel  224 Nov 24 12:50 .\ndrwxr-xr-x@  5 user  wheel  160 Nov 24 12:50 ..\ndrwxr-xr-x@ 12 user  wheel  384 Nov 24 12:50 .git\ndrwxr-xr-x@  3 user  wheel   96 Nov 24 12:50 .sous\n-rw-r--r--@  1 user  wheel   91 Nov 24 12:50 AGENTS.md\n-rw-r--r--@  1 user  wheel   91 Nov 24 12:50 CLAUDE.md\n-rw-r--r--@  1 user  wheel   16 Nov 24 12:50 README.md\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "cat README.md; sous workflows",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "# proof project\nasks  Ask a person to pick a color\nasks-anyone  Ask for a color that anyone may pick\ndeploy  Deploy the app\n  --env  string, optional, default \"staging\"  Where to deploy\nfails  Prepare, then run a check that fails\nhello  Say hello to someone\n  --name  string, required  Who to greet\nreview  Draft release notes, then stop for a person to approve them\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "which sous",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/6-r2/bin/sous\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "rg --files --hidden .sous; ls -la /tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/6-r2/bin; rg --files --hidden /tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/6-r2/state/home",
+    "background": false,
+    "exit": 1,
+    "error": true,
+    "denied": false,
+    "output": ".sous/workflows/fails.js\n.sous/workflows/deploy.js\n.sous/workflows/hello.js\n.sous/workflows/asks-anyone.js\n.sous/workflows/asks.js\n.sous/workflows/review.js\ntotal 8\ndrwxr-xr-x@ 3 user  wheel   96 Nov 24 12:50 .\ndrwxr-xr-x@ 5 user  wheel  160 Nov 24 12:50 ..\n-rwxr-xr-x@ 1 user  wheel  458 Nov 24 12:50 sous\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "cat .sous/workflows/hello.js .sous/workflows/review.js .sous/workflows/asks.js /tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/6-r2/bin/sous",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\nexport const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\nexport const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n#!/bin/sh\nexport SOUS_HOME='/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/6-r2/state/home' SOUS_NOTIFY=0\nexec '/opt/homebrew/Cellar/node/24.2.0/bin/node' '<code>/orchestrator-agent-native/test/proofs/agent-native/sous-wrapper.mjs' '<code>/orchestrator-agent-native-base/packages/cli/dist/cli.js' '/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/6-r2/state/calls.jsonl' \"$@\"\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous check greet-and-approve --name <user>",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "greet-and-approve  /tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/6-r2/project/.sous/workflows/greet-and-approve.js\nok\n",
+    "turn": 0
+  },
+  {
+    "tool": "shell",
+    "command": "sous run greet-and-approve --name Ada --json",
+    "background": false,
+    "exit": 0,
+    "error": false,
+    "denied": false,
+    "output": "{\n  \"runId\": \"mwuzr5uj-x7o6d1\",\n  \"workflow\": \"greet-and-approve\",\n  \"cwd\": \"/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/6-r2/state/home/scratch/mwuzr5uj-x7o6d1\",\n  \"log\": \"/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/6-r2/state/home/logs/mwuzr5uj-x7o6d1.log\"\n}\n",
+    "turn": 1
+  },
+  {
+    "tool": "shell",
+    "command": "sous wait mwuzr5uj-x7o6d1 --json",
+    "background": false,
+    "exit": 4,
+    "error": true,
+    "denied": false,
+    "output": "{\n  \"runId\": \"mwuzr5uj-x7o6d1\",\n  \"workflow\": \"greet-and-approve\",\n  \"status\": \"running\",\n  \"questions\": [\n    {\n      \"id\": \"mwuzr5uj-x7o6d1--1\",\n      \"prompt\": \"Breakpoint: Approve the greeting\\n\\nhello Ada\\n\\nReply approve, stop, or send back with a note.\",\n      \"kind\": \"input\",\n      \"breakpoint\": true\n    }\n  ],\n  \"cwd\": \"/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/6-r2/state/home/scratch/mwuzr5uj-x7o6d1\"\n}\n",
+    "turn": 1
+  }
+]

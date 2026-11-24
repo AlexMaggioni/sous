@@ -1,0 +1,282 @@
+{
+  "scenario": "2",
+  "title": "A question for people",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/2-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Run the asks workflow.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:41:43.344Z",
+      "endedAt": "2026-11-24T17:41:56.009Z",
+      "ms": 12665,
+      "args": [
+        "exec",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-s",
+        "workspace-write",
+        "--add-dir",
+        "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/2-r1/state",
+        "-C",
+        "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/2-r1/project",
+        "<prompt>"
+      ],
+      "sessionId": "01a20ea6-3580-7d93-8232-27c4a26b2598",
+      "finalText": "The `asks` workflow is waiting for your answer: which color, **red** or **blue**?",
+      "tokens": {
+        "input": 85179,
+        "cachedInput": 75008,
+        "output": 170,
+        "total": 85349
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    },
+    {
+      "turn": 1,
+      "prompt": "Blue.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:41:56.011Z",
+      "endedAt": "2026-11-24T17:42:07.180Z",
+      "ms": 11169,
+      "args": [
+        "exec",
+        "resume",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-c",
+        "sandbox_mode=\"workspace-write\"",
+        "-c",
+        "sandbox_workspace_write.writable_roots=[\"/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/2-r1/state\"]",
+        "01a20ea6-3580-7d93-8232-27c4a26b2598",
+        "<prompt>"
+      ],
+      "sessionId": "01a20ea6-3580-7d93-8232-27c4a26b2598",
+      "finalText": "The `asks` workflow completed successfully with **blue**.",
+      "tokens": {
+        "input": 153931,
+        "cachedInput": 132608,
+        "output": 320,
+        "total": 154251
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    }
+  ],
+  "verdict": "pass",
+  "checks": [
+    {
+      "name": "turn 1 ends with the question open",
+      "result": "pass",
+      "reason": "mwuzeuml-gn6bz2--0 was open after turn 1",
+      "source": "records"
+    },
+    {
+      "name": "turn 1 made no answer",
+      "result": "pass",
+      "reason": "no answer call in turn 1",
+      "source": "commands"
+    },
+    {
+      "name": "turn 1 shows the question",
+      "result": "pass",
+      "reason": "turn 1 names red and blue",
+      "source": "answer"
+    },
+    {
+      "name": "one answer, blue, by person",
+      "result": "pass",
+      "reason": "mwuzeuml-gn6bz2--0 took blue by person",
+      "source": "records, by from commands"
+    },
+    {
+      "name": "the asks run completed",
+      "result": "pass",
+      "reason": "mwuzeuml-gn6bz2 completed",
+      "source": "records"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 5,
+    "sousInCommands": 5,
+    "commands": 5,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 24,
+    "tokens": 239600,
+    "inputTokens": 239110,
+    "cachedInputTokens": 207616,
+    "outputTokens": 490,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "help"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "run",
+        "asks",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "wait",
+        "mwuzeuml-gn6bz2",
+        "--json"
+      ],
+      "exit": 4,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "answer",
+        "mwuzeuml-gn6bz2--0",
+        "blue"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "wait",
+        "mwuzeuml-gn6bz2",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwuzeuml-gn6bz2",
+      "workflow": "asks",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:41:49.581Z",
+      "status": "completed",
+      "result": {
+        "color": "blue"
+      },
+      "answers": [
+        {
+          "runId": "mwuzeuml-gn6bz2",
+          "question": "mwuzeuml-gn6bz2--0",
+          "value": "blue",
+          "at": "2026-11-24T17:42:01.894Z"
+        }
+      ]
+    }
+  ],
+  "setupRunIds": [],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:41:56.010Z",
+      "questions": [
+        {
+          "id": "mwuzeuml-gn6bz2--0",
+          "runId": "mwuzeuml-gn6bz2",
+          "prompt": "Which color?"
+        }
+      ],
+      "runs": [
+        {
+          "runId": "mwuzeuml-gn6bz2",
+          "workflow": "asks",
+          "status": "running"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    },
+    {
+      "at": "2026-11-24T17:42:07.180Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwuzeuml-gn6bz2",
+          "workflow": "asks",
+          "status": "completed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

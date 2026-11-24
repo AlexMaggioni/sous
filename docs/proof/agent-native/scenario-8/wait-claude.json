@@ -1,0 +1,21 @@
+{
+  "runId": "mwuzbzv8-i9azba",
+  "workflow": "counts",
+  "status": "completed",
+  "cwd": "<proof>/home/scratch/mwuzbzv8-i9azba",
+  "result": {
+    "counted": "1 2 3 4 5"
+  },
+  "review": {
+    "result": {
+      "counted": "1 2 3 4 5"
+    }
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous show mwuzbzv8-i9azba --json",
+      "does": "shows the run and its steps"
+    }
+  ]
+}

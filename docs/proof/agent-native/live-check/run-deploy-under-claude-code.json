@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "started_by_people",
+    "message": "deploy is started by people only, so Claude Code cannot start it.",
+    "change": "Give the person the command to type in their own terminal. A person who typed it inside Claude Code or Codex types it again in a plain terminal.",
+    "call": null,
+    "forPerson": "sous run deploy"
+  }
+}
