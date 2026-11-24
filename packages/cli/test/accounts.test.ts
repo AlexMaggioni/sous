@@ -31,6 +31,7 @@ import {
   WorkflowError,
   WorkflowErrorCode,
   type InnerRunner,
+  PERSON,
 } from "@sous/engine/testing";
 import { cmdAccount } from "../src/account-cli.js";
 import { main } from "../src/cli.js";
@@ -129,9 +130,9 @@ describe("accounts", () => {
     assert.deepEqual(rows.map((row) => `${row.program}/${row.name}${row.current ? "*" : ""}`), ["claude/default*", "claude/spare", "claude/work", "codex/default*"]);
     assert.doesNotMatch(JSON.stringify(rows), /sk-ant/);
 
-    useAccount(paths, "work", () => assert.fail("nothing waits"));
+    useAccount(paths, "work", () => assert.fail("nothing waits"), PERSON);
     assert.equal(currentAccount(paths, "claude"), "work");
-    assert.throws(() => useAccount(paths, "nobody", quiet), /no account nobody/);
+    assert.throws(() => useAccount(paths, "nobody", quiet, PERSON), /no account nobody/);
 
     removeAccount(paths, "work");
     assert.equal(currentAccount(paths, "claude"), "default", "removing the current account goes back to default");
@@ -143,12 +144,12 @@ describe("accounts", () => {
   it("a run records sous's account, and its steps run on that login, as a named one whose API key the harness removes", async () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
-    useAccount(paths, "work", quiet);
+    useAccount(paths, "work", quiet, PERSON);
     process.env.ANTHROPIC_API_KEY = "sk-ant-api03-made-up";
     try {
       const { runner, seen } = loginRunner();
       const workers = inProcess({ inner: runner });
-      const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+      const record = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });
       assert.deepEqual(record.accounts, { claude: { name: "work", folder: process.env.CLAUDE_CONFIG_DIR }, codex: { name: "default", folder: process.env.CODEX_HOME } });
 
       const done = await workers.ended(record.runId);
@@ -170,19 +171,19 @@ describe("accounts", () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
     addAccount(paths, "spare", SPARE);
-    useAccount(paths, "spare", quiet);
+    useAccount(paths, "spare", quiet, PERSON);
 
     process.env.CLAUDE_CODE_OAUTH_TOKEN = WORK;
-    const known = createRun(paths, { workflow: "one", projectDir, inputs: {}, caller: true });
+    const known = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {}, caller: true });
     assert.equal(known.accounts?.claude?.name, "work", "a session on a login sous has gets that account");
 
     process.env.CLAUDE_CODE_OAUTH_TOKEN = AGENT;
-    const record = createRun(paths, { workflow: "one", projectDir, inputs: {}, caller: true });
+    const record = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {}, caller: true });
     assert.equal(record.accounts?.claude?.name, "caller");
     assert.ok(record.accounts?.claude?.kept);
     assert.doesNotMatch(readFileSync(join(paths.records, `${record.runId}.json`), "utf8"), /sk-ant/, "the run's record holds no token");
 
-    const plain = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    const plain = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     assert.equal(plain.accounts?.claude?.name, "spare", "without the session flag, a run uses sous's account");
 
     // The service starts the worker from its own environment, without the session's token. So
@@ -195,7 +196,7 @@ describe("accounts", () => {
     assert.equal(seen[0]?.token, AGENT);
 
     // A session on Claude Code's own login keeps no token, and its steps get none.
-    const own = createRun(paths, { workflow: "one", projectDir, inputs: {}, caller: true });
+    const own = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {}, caller: true });
     assert.deepEqual(own.accounts?.claude, { name: "caller", folder: process.env.CLAUDE_CONFIG_DIR });
     process.env.CLAUDE_CODE_OAUTH_TOKEN = WORK;
     try {
@@ -210,10 +211,10 @@ describe("accounts", () => {
   it("a run that an agent of another run starts takes that run's accounts", () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
-    useAccount(paths, "work", quiet);
-    const parent = createRun(paths, { workflow: "one", projectDir, inputs: {} });
-    useAccount(paths, "default", quiet);
-    const child = createRun(paths, { workflow: "one", projectDir, inputs: {}, startedByRun: parent.runId, caller: true });
+    useAccount(paths, "work", quiet, PERSON);
+    const parent = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {} });
+    useAccount(paths, "default", quiet, PERSON);
+    const child = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {}, startedByRun: parent.runId, caller: true });
     assert.deepEqual(child.accounts, parent.accounts);
   });
 
@@ -223,7 +224,7 @@ describe("accounts", () => {
     const { runner, seen } = loginRunner(() => limited);
     const lines: string[] = [];
     const workers = inProcess({ inner: runner, log: (line) => lines.push(line) });
-    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     const paused = await workers.ended(record.runId);
     assert.equal(paused?.status, "paused");
     assert.equal(readState(paths, record.runId)?.pauseReason, "usage_limit");
@@ -233,14 +234,14 @@ describe("accounts", () => {
 
     addAccount(paths, "spare", SPARE);
     const resumed: string[] = [];
-    const result = useAccount(paths, "spare", (_paths, runId) => resumed.push(runId));
+    const result = useAccount(paths, "spare", (_paths, runId) => resumed.push(runId), PERSON);
     assert.deepEqual(resumed, [record.runId]);
     assert.deepEqual(result.moved, [{ runId: record.runId, workflow: "one", from: "default" }]);
     assert.equal(loadRecord(paths, record.runId)?.accounts?.claude?.name, "spare");
     assert.equal(loadRecord(paths, record.runId)?.accounts?.claude?.folder, process.env.CLAUDE_CONFIG_DIR, "the run keeps its settings folder");
 
     // A run at the limit of the account sous uses now waits for the reset.
-    const second = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const second = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     await workers.ended(second.runId);
     const show = await withHome(paths, () => main(["show", second.runId]));
     assert.match(show.printed, /limit     Claude Code account spare hit its usage limit\. It resets at \d\d:\d\d\. sous account use <name> goes on now on another account\./);
@@ -250,7 +251,7 @@ describe("accounts", () => {
     writeFileSync(paths.accounts, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
     assert.equal(currentAccount(paths, "claude"), "default");
     assert.match(limitNotice(paths, loadRecord(paths, second.runId)!, undefined), /^Claude Code account spare hit its usage limit\. sous account use default moves it to the account sous uses now\.$/);
-    const again = useAccount(paths, "spare", (_paths, runId) => resumed.push(runId));
+    const again = useAccount(paths, "spare", (_paths, runId) => resumed.push(runId), PERSON);
     // The second run hit spare's limit, so it waits. The first is on spare too, but no worker ran
     // it there, so it still waits at default's limit, and spare resumes it again.
     assert.deepEqual(again.same, [{ runId: second.runId, workflow: "one", from: "spare" }]);
@@ -259,7 +260,7 @@ describe("accounts", () => {
 
     // The worker that resumes it runs the step on the new login, and the limit is gone from the record.
     limited = false;
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.equal(seen.at(-1)?.token, SPARE);
@@ -271,7 +272,7 @@ describe("accounts", () => {
     const resetAt = new Date(Date.now() + 2 * 3600_000);
     const lines: string[] = [];
     const workers = inProcess({ inner: typedLimitRunner(resetAt.toISOString()), log: (line) => lines.push(line) });
-    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     const paused = await workers.ended(record.runId);
     assert.equal(paused?.status, "paused");
     const hhmm = resetAt.toTimeString().slice(0, 5);
@@ -291,7 +292,7 @@ describe("accounts", () => {
   it("a limit with no reset time is tried again 30 minutes after the pause, whatever saves the state later", async () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP });
     const workers = inProcess({ inner: typedLimitRunner(undefined) });
-    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     await workers.ended(record.runId);
     const persistence = enginePersistence(paths);
     const first = persistence.load(record.runId)!;
@@ -316,12 +317,12 @@ describe("accounts", () => {
   it("sous account rm names every unfinished run on the account, waiting or not started, and exits 1", async () => {
     const { paths, projectDir } = testHome({ one: ONE_STEP });
     addAccount(paths, "work", WORK);
-    useAccount(paths, "work", quiet);
+    useAccount(paths, "work", quiet, PERSON);
     const workers = inProcess({ inner: loginRunner(() => true).runner });
-    const waiting = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const waiting = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     await workers.ended(waiting.runId);
     assert.equal(readState(paths, waiting.runId)?.pauseReason, "usage_limit");
-    const fresh = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    const fresh = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {} });
 
     /** sous account rm work, with what it prints to stdout and to stderr kept apart. */
     const rm = async () => {
@@ -405,7 +406,7 @@ describe("accounts", () => {
     assert.deepEqual(lines.splice(0), ["sous uses Claude Code account spare for new runs."]);
 
     const workers = inProcess({ inner: loginRunner(() => true).runner });
-    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     await workers.ended(record.runId);
     assert.equal(readState(paths, record.runId)?.pauseReason, "usage_limit");
 
@@ -445,7 +446,7 @@ describe("accounts", () => {
     const use = (name: string) => withHome(paths, () => cmdAccount(["use", name], { out, launch: workerProcess(() => NO_CLI) }));
 
     const workers = inProcess({ inner: loginRunner(() => true).runner });
-    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     await workers.ended(record.runId);
     assert.equal(readState(paths, record.runId)?.pauseReason, "usage_limit");
 

@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { resumeRun, runQuestions, startRun } from "@sous/engine";
-import { fakeRunner, inProcess, readState, testHome } from "@sous/engine/testing";
+import { PERSON, fakeRunner, inProcess, readState, testHome } from "@sous/engine/testing";
 import { sous, waitFor } from "./sous.js";
 
 // An answer file that holds no value. A person or a script may write one by hand, and the run
@@ -18,7 +18,7 @@ describe("an answer file with no value", () => {
     const { paths, projectDir } = testHome({ ship });
     const { runner, calls } = fakeRunner((call) => `ran ${call.prompt}`);
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "ship", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "ship", projectDir, inputs: {} });
     await waitFor(() => runQuestions(paths, record.runId).length === 1, "the run to ask");
     const [question] = runQuestions(paths, record.runId);
 
@@ -31,7 +31,7 @@ describe("an answer file with no value", () => {
     assert.match((await sous(paths, ["show", record.runId])).out, /^status {4}paused/m);
 
     // The file is gone, and a resume asks the question again, now to a real answer.
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     await waitFor(() => runQuestions(paths, record.runId).length === 1, "the resumed run to ask again");
     const [again] = runQuestions(paths, record.runId);
     assert.equal(again!.id, question!.id);

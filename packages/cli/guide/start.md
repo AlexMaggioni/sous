@@ -51,8 +51,9 @@ folder. `--model claude/haiku` sets the model for steps that name none.
 
 ## Workflows only a person starts
 
-Do not start a workflow with `startedBy: "people"`. Give the person the `sous run` command to
-type themselves. Never try to get around it.
+Do not start a workflow with `startedBy: "people"`. sous refuses it with `started_by_people`,
+exit 66, and the error's `forPerson` holds the command. Give it to the person to type in their own
+terminal. `--by person` does not change this. Never try to get around it.
 
 ## Codex
 

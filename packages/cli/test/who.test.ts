@@ -343,7 +343,9 @@ describe("piece 7: events.jsonl", () => {
       await waitFor(() => readRun(paths, second).status === "asks", "the resumed run to ask again");
       const { line: stop } = await write(CODEX, ["stop", second], "stop");
       assert.equal(stop.runId, second);
-      assert.equal((await workers.ended(second))?.status, "aborted");
+      // A stopped resume rejects in the engine, so its worker gives no result. The run's view says it stopped.
+      await workers.ended(second);
+      assert.equal(readRun(paths, second).status, "stopped");
 
       // A person approves a breakpoint.
       const { reply: reviewed } = await write(PERSON, ["run", "review", "--project", projectDir], "run");

@@ -34,6 +34,7 @@ import {
   WorkflowError,
   WorkflowErrorCode,
   type Call,
+  PERSON,
 } from "@sous/engine/testing";
 import { main } from "../src/cli.js";
 import { sous, waitFor } from "./sous.js";
@@ -75,7 +76,7 @@ return out`,
     });
     const { runner, calls } = fakeRunner((call) => (call.label === "worker" ? "QUESTION: Postgres or SQLite?" : `built with ${/answered: (\w+)/.exec(call.prompt)?.[1]}`));
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "asking", projectDir, inputs: { task: "the store" } });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "asking", projectDir, inputs: { task: "the store" } });
     const running = workers.ended(record.runId);
     const asked = await answerWhenAsked(paths, record.runId, () => "SQLite");
     const result = await running;
@@ -94,7 +95,7 @@ return draft`,
     });
     const { runner, calls } = fakeRunner((call) => (call.prompt.includes("Change: shorter") ? "short plan" : "long plan"));
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "checked", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "checked", projectDir, inputs: {} });
     const running = workers.ended(record.runId);
     const replies = [{ decision: "send back", note: "shorter" }, "approve"];
     const asked = await answerWhenAsked(paths, record.runId, () => replies.shift(), 2);
@@ -113,7 +114,7 @@ return await ask('Breakpoint: not one')`,
     });
     const { runner } = fakeRunner(() => "unused");
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "lookalike", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "lookalike", projectDir, inputs: {} });
     const running = workers.ended(record.runId);
     await waitFor(() => runQuestions(paths, record.runId).length > 0, "the question");
     const id = runQuestions(paths, record.runId)[0]!.id;
@@ -148,7 +149,7 @@ return { first, second }`,
       return `${call.label} done`;
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "flaky", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "flaky", projectDir, inputs: {} });
     const paused = await workers.ended(record.runId);
     assert.equal(paused?.status, "paused");
     const state = readState(paths, record.runId);
@@ -157,7 +158,7 @@ return { first, second }`,
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"]);
 
     broken = false;
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const resumed = await workers.ended(record.runId);
     assert.equal(resumed?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(resumed?.result)), { first: "first done", second: "second done" });
@@ -179,21 +180,21 @@ return { first, second }`,
       return `${call.label} done`;
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "login", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "login", projectDir, inputs: {} });
     await workers.ended(record.runId);
     assert.equal(readState(paths, record.runId)?.pauseReason, "auth_required");
     assert.deepEqual(calls.map((c) => c.label), ["first", "second"]);
 
     const lines: string[] = [];
     const watched = inProcess({ inner: runner, log: (line) => lines.push(line) });
-    resumeRun(paths, watched.launch, record.runId);
+    resumeRun(paths, watched.launch, record.runId, PERSON);
     await watched.ended(record.runId);
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"], "the step tries again, and first is not run again");
     assert.equal(readState(paths, record.runId)?.pauseReason, "auth_required");
     assert.match(lines.at(-1)!, /paused +login \(auth_required\): .*not logged in/, "the log says why the run paused again");
 
     loggedIn = true;
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), { first: "first done", second: "second done" });
@@ -218,7 +219,7 @@ return { first, second }`,
       return `${call.prompt} done`;
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     assert.equal((await workers.ended(record.runId))?.status, "paused");
     assert.deepEqual(calls.filter((c) => c.label === "build").map((c) => c.prompt), ["v1", "v1"], "the edit did not reach the run");
 
@@ -267,12 +268,12 @@ return { top, nested }`,
         : `${call.prompt} done`,
     );
     const workers = inProcess({ inner: runner, handleSignals: true });
-    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     const file = logFile(paths, record.runId);
     const running = workers.ended(record.runId);
     await waitFor(() => calls.length === 2);
 
-    assert.equal(stopStep(paths, record.runId, "build"), true);
+    assert.equal(stopStep(paths, record.runId, "build", PERSON), true);
     // The worker logs "stopping build" once it has aborted every step the request names.
     await waitFor(() => readFileSync(file, "utf8").includes("stopping   build\n"));
     assert.deepEqual(stopped, ["build top"], "the nested step named \"ticket A: build\" goes on");
@@ -284,7 +285,7 @@ return { top, nested }`,
     assert.equal(state?.status, "paused");
     assert.equal(state?.pauseReason, "step_stopped");
 
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), { top: "build top done", nested: "build nested done" });
@@ -299,7 +300,7 @@ return { top, nested }`,
       new Promise((_, reject) => (call.options.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new Error("aborted")))),
     );
     const workers = inProcess({ inner: runner, handleSignals: true });
-    const record = startRun(paths, workers.launch, { workflow: "one", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     const file = logFile(paths, record.runId);
     const running = workers.ended(record.runId);
     await waitFor(() => calls.some((c) => c.label === "build"), "the step to start");
@@ -307,7 +308,7 @@ return { top, nested }`,
     // The worker writes the record while it runs, for a nested run or a step's worktree. Here it
     // saves one it read just before `sous stop --step`, in the same tick, before the signal lands.
     const before = loadRecord(paths, record.runId)!;
-    assert.equal(stopStep(paths, record.runId, "build"), true);
+    assert.equal(stopStep(paths, record.runId, "build", PERSON), true);
     saveRecord(paths, before);
 
     const ended = await Promise.race([running.then(() => "ended"), new Promise((r) => setTimeout(() => r("waiting"), 3000))]);
@@ -329,7 +330,7 @@ return { top, nested }`,
     );
     // The request is left before the worker starts, so the test makes the record and starts the
     // worker itself, as startRun does.
-    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     requestStepStop(paths, record.runId, { step: "build", calls: [{ scope: record.runId, label: "build" }] });
     const file = logFile(paths, record.runId);
     const workers = inProcess({ inner: runner, handleSignals: true });
@@ -342,7 +343,7 @@ return { top, nested }`,
     process.kill(process.pid, "SIGUSR2");
     await handled;
     assert.doesNotMatch(readFileSync(file, "utf8"), /stopping|no step/);
-    assert.equal(stopStep(paths, record.runId, "build"), true);
+    assert.equal(stopStep(paths, record.runId, "build", PERSON), true);
     await running;
     assert.equal(readState(paths, record.runId)?.pauseReason, "step_stopped");
   });
@@ -355,12 +356,12 @@ const second = await agent('second', { label: 'second' })
 return { first, second }`,
       vague: `export const meta = { name: 'vague', description: 'vague', timeout: 'soon' }\nreturn 1`,
     });
-    assert.throws(() => createRun(paths, { workflow: "vague", projectDir, inputs: {} }), /meta.timeout must be a time such as "90s", "10m" or "2h", got "soon"/);
+    assert.throws(() => createRun(paths, { who: PERSON, workflow: "vague", projectDir, inputs: {} }), /meta.timeout must be a time such as "90s", "10m" or "2h", got "soon"/);
 
     let hang = true;
     const { runner, calls } = fakeRunner((call) => (call.label === "second" && hang ? new Promise(() => {}) : `${call.label} done`));
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "slow", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "slow", projectDir, inputs: {} });
     assert.equal(record.timeout, "200ms");
     await workers.ended(record.runId);
     const state = readState(paths, record.runId);
@@ -369,7 +370,7 @@ return { first, second }`,
     assert.match(String(state?.reason), /step "second" was stopped: the workflow's time limit of 200ms was reached/);
 
     hang = false;
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(calls.map((c) => c.label), ["first", "second", "second"]);
@@ -395,7 +396,7 @@ return await parallel([
       return "b done";
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "queue", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "queue", projectDir, inputs: {} });
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), ["a done", "b done"]);
@@ -409,7 +410,7 @@ return await agent('review', { label: 'reviewer' })`,
     });
     const { runner, calls } = fakeRunner(() => "ok");
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "changes", projectDir, inputs: {}, overrides: { reviewer: { model: "claude/opus" } } });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "changes", projectDir, inputs: {}, overrides: { reviewer: { model: "claude/opus" } } });
     await workers.ended(record.runId);
     assert.equal(calls[0]!.options.model, "claude/opus");
     // Each step keeps its own start and end time.
@@ -424,7 +425,7 @@ return await choose('Pick one', { label: 'picker', steps: { a: () => 'A', b: () 
     });
     const { runner, calls } = fakeRunner(() => ({ choice: "b", reason: "b fits" }));
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "picking", projectDir, inputs: {}, overrides: { picker: { model: "claude/opus" } } });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "picking", projectDir, inputs: {}, overrides: { picker: { model: "claude/opus" } } });
     const done = await workers.ended(record.runId);
     assert.equal(calls[0]!.options.model, "claude/opus");
     assert.equal((done?.result as { result?: unknown } | undefined)?.result, "B");
@@ -448,7 +449,7 @@ return await agent('second', { label: 'second' })`,
       return "ok";
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "slow", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "slow", projectDir, inputs: {} });
     const running = workers.ended(record.runId);
     await started;
     const before = process.env.SOUS_HOME;
@@ -477,7 +478,7 @@ return step.result`,
     });
     const { runner } = fakeRunner(() => "ok");
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "where", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "where", projectDir, inputs: {} });
     const result = await workers.ended(record.runId);
     const found = result!.result as { project: string; cwd: string };
     assert.equal(found.project, projectDir);
@@ -497,7 +498,7 @@ return { given, missing }`,
     });
     const { runner } = fakeRunner(() => "ok");
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     const result = await workers.ended(record.runId);
     const out = result!.result as { given: Record<string, unknown>; missing: string };
     assert.deepEqual(out.given, { task: "fix it", rounds: 2, test: "npm test" });
@@ -518,7 +519,7 @@ return await workflow('child', { task: 'B' })`,
     const { runner } = fakeRunner(() => "ok");
     const lines: string[] = [];
     const workers = inProcess({ inner: runner, log: (line) => lines.push(line.slice(9)) });
-    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     await workers.ended(record.runId);
     const kept = lines.filter((l) => /^(start|done|phase|log) /.test(l) && !l.includes("Logs persisted"));
     assert.deepEqual(kept.map((l) => l.replace(/, \d+ tokens$/, "")), [
@@ -557,7 +558,7 @@ await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness 
       return `${call.label} done`;
     });
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "both", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "both", projectDir, inputs: {} });
     const result = await workers.ended(record.runId);
     assert.equal(result?.status, "completed");
     const [claude, codex] = calls;
@@ -571,7 +572,7 @@ await agent('Fix it', { agentType: 'fixer', label: 'fixer', model: args.harness 
     assert.deepEqual(state?.agents.map((step) => [step.label, step.model]), [["on claude", "claude/haiku"], ["on codex", "codex/gpt-test"]]);
 
     const before = calls.length;
-    const wrong = startRun(paths, workers.launch, { workflow: "wrong", projectDir, inputs: { harness: "claude" } });
+    const wrong = startRun(paths, workers.launch, { who: PERSON, workflow: "wrong", projectDir, inputs: { harness: "claude" } });
     const stopped = await workers.ended(wrong.runId);
     assert.notEqual(stopped?.status, "completed");
     const wrongState = readState(paths, wrong.runId);
@@ -598,8 +599,8 @@ describe("places and reruns", () => {
       return "done";
     });
     // Both runs get their worktree before either worker starts. The workers run one after the other.
-    const reader = createRun(paths, { workflow: "look", projectDir, inputs: {} });
-    const writer = createRun(paths, { workflow: "write", projectDir, inputs: {} });
+    const reader = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {} });
+    const writer = createRun(paths, { who: PERSON, workflow: "write", projectDir, inputs: {} });
     assert.ok(existsSync(reader.worktree!) && existsSync(writer.worktree!));
     const workers = inProcess({ inner: runner });
     workers.launch(paths, reader.runId, "start");
@@ -612,7 +613,7 @@ describe("places and reruns", () => {
 
     // Cleanup keeps the worktree of a run that has not finished, even with no commit yet, and
     // removes a finished run's worktree once its branch is merged.
-    const waiting = createRun(paths, { workflow: "look", projectDir, inputs: {} });
+    const waiting = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {} });
     git(writer.worktree!, "add", "new.txt");
     commit(writer.worktree!, "commit", "-q", "-m", "work");
     git(projectDir, "merge", "-q", writer.branch!);
@@ -621,13 +622,13 @@ describe("places and reruns", () => {
     const dry = await sous(paths, ["gc", "--dry-run"]);
     assert.deepEqual(dry, { code: 0, out: `would remove ${realpathSync(writer.worktree!)} (${writer.branch}): merged\n${waitingLine}next: sous gc --json  (removes the merged worktrees)\n` });
     assert.equal(existsSync(writer.worktree!), true, "a dry run removes nothing");
-    const result = gcRuns(paths);
+    const result = gcRuns(paths, PERSON);
     assert.deepEqual(result.removed.map((r) => r.reason), ["merged"]);
     assert.equal(existsSync(writer.worktree!), false);
     assert.equal(existsSync(waiting.worktree!), true);
 
     // A finished run whose branch has nothing new is merged too, and sous gc removes its worktree.
-    const idle = createRun(paths, { workflow: "look", projectDir, inputs: {} });
+    const idle = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {} });
     const now = new Date().toISOString();
     plantState(paths, { runId: idle.runId, status: "completed", startedAt: now, updatedAt: now, agents: [], logs: [], phases: [] });
     const idleDir = realpathSync(idle.worktree!);
@@ -664,11 +665,11 @@ describe("places and reruns", () => {
       open: `export const meta = { name: 'open', description: 'anyone' }\nreturn 2`,
       picker: `export const meta = { name: 'picker', description: 'lets an agent pick' }\nreturn await choose('Pick one', { any: true })`,
     });
-    assert.throws(() => createRun(paths, { workflow: "private", projectDir, inputs: {}, startedByRun: "r1" }), /started by people only/);
-    assert.ok(createRun(paths, { workflow: "private", projectDir, inputs: {} }), "a person can");
+    assert.throws(() => createRun(paths, { who: { by: "agent", through: { kind: "run", runId: "r1" } }, workflow: "private", projectDir, inputs: {}, startedByRun: "r1" }), /started by people only/);
+    assert.ok(createRun(paths, { who: PERSON, workflow: "private", projectDir, inputs: {} }), "a person can");
     const { runner, calls } = fakeRunner(() => ({ choice: "open", reason: "it is open" }));
     const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { workflow: "picker", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "picker", projectDir, inputs: {} });
     const result = await workers.ended(record.runId);
     assert.match(calls[0]!.prompt, /- open: anyone/);
     assert.doesNotMatch(calls[0]!.prompt, /private/);
@@ -724,7 +725,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('ticket', { id }, { 
     let hang = true;
     const { runner, calls } = fakeRunner((call) => (call.prompt === "check A" && hang ? hangUntilAborted(call) : `${call.label} done`));
     const workers = inProcess({ inner: runner, handleSignals: true });
-    const record = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     const file = logFile(paths, record.runId);
     const running = workers.ended(record.runId);
     await waitFor(() => calls.some((c) => c.prompt === "check A") && calls.some((c) => c.prompt === "check B"));
@@ -753,7 +754,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('ticket', { id }, { 
     assert.equal(existsSync(stopRequestFile(paths, record.runId)), false, "the worker took the request");
 
     hang = false;
-    resumeRun(paths, workers.launch, record.runId);
+    resumeRun(paths, workers.launch, record.runId, PERSON);
     const done = await workers.ended(record.runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(JSON.parse(JSON.stringify(done?.result)), [
@@ -815,7 +816,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
       return "built";
     });
     const workers = inProcess({ inner: runner, handleSignals: true });
-    const { runId } = startRun(paths, workers.launch, { workflow: "parent", projectDir, inputs: {} });
+    const { runId } = startRun(paths, workers.launch, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     const file = logFile(paths, runId);
     const running = workers.ended(runId);
     await waitFor(() => calls.some((c) => c.prompt === "build A") && readFileSync(file, "utf8").includes("done       ticket B: builder"));
@@ -856,7 +857,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
     // A paused run keeps its nested worktrees, merged or not.
     git(projectDir, "merge", "-q", trees[1]!.branch);
     toOldShape();
-    const paused = gcRuns(paths);
+    const paused = gcRuns(paths, PERSON);
     assert.deepEqual(paused.removed, []);
     assert.deepEqual(
       paused.kept.filter((k) => k.branch.startsWith(`sous/${runId}-nested`)).map((k) => [k.branch, k.reason]),
@@ -865,7 +866,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
 
     toOldShape();
     hang = false;
-    resumeRun(paths, workers.launch, runId);
+    resumeRun(paths, workers.launch, runId, PERSON);
     const done = await workers.ended(runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(calls.map((c) => c.prompt).sort(), ["build A", "build A", "build B", "look"]);
@@ -874,7 +875,7 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
     // Once the run ended, gc removes each merged nested worktree.
     commit(projectDir, "merge", "-q", "--no-edit", trees[0]!.branch);
     toOldShape();
-    const ended = gcRuns(paths);
+    const ended = gcRuns(paths, PERSON);
     assert.deepEqual(
       ended.removed.filter((r) => r.branch.startsWith(`sous/${runId}-nested`)).map((r) => [r.branch, r.reason]),
       trees.map((tree) => [tree.branch, "merged"]),
@@ -915,7 +916,7 @@ describe("service", () => {
     tick(paths, launch, { now: new Date(2026, 10, 21, 3, 0), log: quiet });
     assert.equal(started.length, 0, "the service does not know the project yet");
 
-    createRun(paths, { workflow: "hand", projectDir, inputs: {} });
+    createRun(paths, { who: PERSON, workflow: "hand", projectDir, inputs: {} });
     assert.deepEqual(knownProjects(paths), [projectDir]);
     assert.deepEqual(fileSchedules(paths).map((schedule) => [schedule.name, schedule.cron]), [[file, "0 3 * * *"]]);
     tick(paths, launch, { now: new Date(2026, 10, 22, 2, 59), log: quiet });
@@ -952,8 +953,8 @@ describe("service", () => {
 
   it("tells the user once about a run cut off by a crash and leaves it for them to resume, while a limit pause resumes", () => {
     const { paths, projectDir } = testHome({ job: `export const meta = { name: 'job', description: 'j' }\nreturn 1` });
-    const cut = createRun(paths, { workflow: "job", projectDir, inputs: {} });
-    const limited = createRun(paths, { workflow: "job", projectDir, inputs: {} });
+    const cut = createRun(paths, { who: PERSON, workflow: "job", projectDir, inputs: {} });
+    const limited = createRun(paths, { who: PERSON, workflow: "job", projectDir, inputs: {} });
     const at = new Date(2026, 10, 21, 10, 0).toISOString();
     const base = { startedAt: at, updatedAt: at, agents: [], logs: [], phases: [] };
     plantState(paths, { ...base, runId: cut.runId, status: "paused", pauseReason: "interrupted" });
@@ -995,7 +996,7 @@ return { out: made.stdout.trim(), approved: verdict.approved, rounds: round, kep
   it("a dry run runs the code steps in a copy, gives stand-in answers, and leaves nothing behind", async () => {
     const { paths, projectDir } = gitProject({ review });
     const lines: string[] = [];
-    const dry = await dryRun(paths, { workflow: "review", projectDir, inputs: {}, log: (line) => lines.push(line.slice(9)) });
+    const dry = await dryRun(paths, { who: PERSON, workflow: "review", projectDir, inputs: {}, log: (line) => lines.push(line.slice(9)) });
     assert.equal(dry.status, "completed");
     assert.deepEqual(dry.result, { out: "hi", approved: true, rounds: 1, kept: "stand-in answer from writer" });
     assert.deepEqual(dry.agents, ["reviewer 1", "writer"]);
@@ -1014,7 +1015,7 @@ return { out: made.stdout.trim(), approved: verdict.approved, rounds: round, kep
   it("answers given by step label, in turn, drive a dry run through a loop", async () => {
     const { paths, projectDir } = gitProject({ review });
     const answers = { "reviewer *": [{ approved: false, review: "Add a test" }, { approved: true, review: "Good" }], writer: "the text" };
-    const dry = await dryRun(paths, { workflow: "review", projectDir, inputs: {}, answers });
+    const dry = await dryRun(paths, { who: PERSON, workflow: "review", projectDir, inputs: {}, answers });
     assert.equal(dry.status, "completed");
     assert.deepEqual(dry.result, { out: "hi", approved: true, rounds: 2, kept: "the text" });
   });
@@ -1025,7 +1026,7 @@ return { out: made.stdout.trim(), approved: verdict.approved, rounds: round, kep
 const verdict = await agent('Review', { label: 'reviewer', schema: { type: 'object', properties: { approved: { type: 'boolean' } }, required: ['approved'] } })
 return verdict.details.length`,
     });
-    const dry = await dryRun(paths, { workflow: "broken", projectDir, inputs: {} });
+    const dry = await dryRun(paths, { who: PERSON, workflow: "broken", projectDir, inputs: {} });
     assert.equal(dry.status, "failed");
     assert.match(dry.reason ?? "", /Cannot read properties of undefined \(reading 'length'\)/);
     assert.deepEqual(listRecords(paths), []);
@@ -1036,7 +1037,7 @@ return verdict.details.length`,
       scratch: `export const meta = { name: 'scratch', description: 'works in a scratch folder', place: 'none' }
 return (await sh('pwd', { label: 'where' })).stdout.trim()`,
     });
-    const dry = await dryRun(paths, { workflow: "scratch", projectDir, inputs: {} });
+    const dry = await dryRun(paths, { who: PERSON, workflow: "scratch", projectDir, inputs: {} });
     assert.equal(dry.status, "completed");
     assert.equal(String(dry.result).startsWith(realpathSync(paths.scratch)), true, String(dry.result));
     assert.equal(existsSync(String(dry.result)), false);
@@ -1184,7 +1185,7 @@ describe("control replies", () => {
    *  alive run: sous would signal the test process. */
   function planted(status?: Status, options: { alive?: boolean; state?: Record<string, unknown> } = {}) {
     const { paths, projectDir } = testHome({ one: ONE });
-    const record = createRun(paths, { workflow: "one", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {} });
     if (options.alive) saveRecord(paths, { ...record, pid: process.pid });
     const now = new Date().toISOString();
     if (status) plantState(paths, { runId: record.runId, status, startedAt: now, updatedAt: now, agents: [], logs: [], phases: [], ...options.state });

@@ -6,6 +6,7 @@ import { createRun } from "../../src/runs/launch.js";
 import { loadRecord, updateRecord } from "../../src/runs/records.js";
 import { tick } from "../../src/runs/service.js";
 import { plantState, setup } from "./fixture.js";
+import { PERSON } from "../../src/testing.js";
 
 // The service's chores that wait for a time: the retry of a resume at the usage limit, the
 // removal of old runs, and the removal of merged worktrees. Each test drives tick with its own
@@ -25,7 +26,7 @@ function state(runId: string, status: "completed" | "paused", extra: Record<stri
 describe("service chores", () => {
   it("resumes a run at the usage limit again only once 15 minutes passed since the last try", () => {
     const { paths, projectDir } = setup({ job });
-    const run = createRun(paths, { workflow: "job", projectDir, inputs: {} });
+    const run = createRun(paths, { who: PERSON, workflow: "job", projectDir, inputs: {} });
     const script = readFileSync(run.file, "utf8");
     plantState(paths, state(run.runId, "paused", { script, pauseReason: "usage_limit", resetHint: "Resets at 2026-11-21T10:30:00.000Z" }));
 
@@ -50,7 +51,7 @@ describe("service chores", () => {
     const { paths, projectDir } = setup({ job });
     const start = at("12:00:00");
     const run = (status: "completed" | "paused", createdAt: Date) => {
-      const record = createRun(paths, { workflow: "job", projectDir, inputs: {} });
+      const record = createRun(paths, { who: PERSON, workflow: "job", projectDir, inputs: {} });
       updateRecord(paths, record.runId, { createdAt: createdAt.toISOString() });
       plantState(paths, state(record.runId, status, status === "paused" ? { pauseReason: "requested" } : {}));
       return record.runId;
@@ -88,7 +89,7 @@ describe("service chores", () => {
     git("-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "start");
     // A finished run with no commit on its branch counts as merged.
     const finished = () => {
-      const record = createRun(paths, { workflow: "job", projectDir, inputs: {} });
+      const record = createRun(paths, { who: PERSON, workflow: "job", projectDir, inputs: {} });
       plantState(paths, state(record.runId, "completed"));
       return { worktree: record.worktree!, dir: realpathSync(record.worktree!) };
     };

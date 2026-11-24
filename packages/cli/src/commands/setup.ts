@@ -2,7 +2,7 @@
 // an agent that drives sous reads.
 
 import { join, resolve } from "node:path";
-import { installSkill, Refusal, skillPlaces } from "@sous/engine";
+import { installSkill, recordAction, Refusal, skillPlaces } from "@sous/engine";
 import { cmdAccount as accountCommand } from "../account-cli.js";
 import { str, Usage, type Parsed } from "../args.js";
 import { doctor } from "../doctor.js";
@@ -18,7 +18,7 @@ const asReply = async (result: Promise<number | Reply<object>>): Promise<Reply<o
 
 export function cmdAccount(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
   // The workers start through ctx.launch, read only when one starts, so a listing needs no build.
-  return asReply(accountCommand(args.positional, { json: ctx.json, usage: (message) => new Usage(message), launch: (...start) => ctx.launch(...start) }));
+  return asReply(accountCommand(args.positional, { json: ctx.json, usage: (message) => new Usage(message), launch: (...start) => ctx.launch(...start), who: ctx.who }));
 }
 
 export function cmdDoctor(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
@@ -65,6 +65,7 @@ export function cmdSkill(args: Parsed, ctx: Ctx): Reply<object> {
   if (action === "path") return reply({ path: folder }, { text: [folder] });
   if (action === "install") {
     const { programs, replaced } = installSkill(folder, ctx.env);
+    if (programs.some((program) => !program.already)) recordAction(ctx.paths, { act: "skill-install", ...ctx.who, value: programs.filter((program) => !program.already).map((program) => program.program) });
     const notes = replaced.map(({ place, target }) => `${place} linked to ${target}, which is gone. It now links to this skill.`);
     return reply(
       { programs },

@@ -31,6 +31,8 @@ export async function cmdRun(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
     ...(ctx.env.SOUS_RUN_ID ? { startedByRun: ctx.env.SOUS_RUN_ID, origin: "agent" as const } : {}),
     // Claude Code marks the shells of its sessions. A run one starts uses its login.
     caller: ctx.env.CLAUDECODE === "1",
+    who: ctx.who,
+    command: ctx.command,
   });
   return startedOrWait(ctx, record, "start", args);
 }
@@ -42,7 +44,7 @@ export async function cmdResume(args: Parsed, ctx: Ctx): Promise<Reply<object>> 
   if (args.flags.latest && args.flags.same && run.resume.ok) {
     throw new Usage("--latest or --same, not both", "bad_argument", "Keep one: --latest takes the new version, --same goes on with the version the run started with.", `sous resume ${run.runId} --same --json`);
   }
-  const resumed = resumeRun(paths, ctx.launch, run.runId, args.flags.latest ? "latest" : args.flags.same ? "same" : undefined);
+  const resumed = resumeRun(paths, ctx.launch, run.runId, ctx.who, args.flags.latest ? "latest" : args.flags.same ? "same" : undefined);
   if ("mustChoose" in resumed) {
     const change = "Add --latest to take the new version, or --same to go on with the version the run started with.";
     throw new Usage(resumed.message, "bad_argument", change, `sous resume ${run.runId} --same --json`);
@@ -70,6 +72,8 @@ export async function cmdRerun(args: Parsed, ctx: Ctx): Promise<Reply<object>> {
     ...(str(args.flags.model) !== undefined ? { defaultModel: str(args.flags.model)! } : {}),
     ...(ctx.env.SOUS_RUN_ID ? { startedByRun: ctx.env.SOUS_RUN_ID } : {}),
     caller: ctx.env.CLAUDECODE === "1",
+    who: ctx.who,
+    command: ctx.command,
   });
   return startedOrWait(ctx, record, "start", args);
 }

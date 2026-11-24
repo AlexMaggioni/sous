@@ -9,8 +9,10 @@ import { deleteAccount, DEFAULT, moveRunAccount, setCurrentAccount, type Account
 import type { HarnessId } from "@sous/harnesses";
 import { foldStep } from "../display.js";
 import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
-import type { HomePaths, Place } from "./home.js";
-import { listQuestions, readQuestion, removeRunQuestions, reply, type Misfit, type Question, type Reply } from "./inbox.js";
+import { recordAction, noticeOf, type Who } from "./actions.js";
+import { loadConfig, type HomePaths, type Place } from "./home.js";
+import { notify } from "./notify.js";
+import { decisionOf, listQuestions, readQuestion, removeRunQuestions, reply, type Misfit, type Question, type Reply } from "./inbox.js";
 import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
 import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestStepStop, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { olderSave } from "../older-save.js";
@@ -480,10 +482,11 @@ export function startRun(paths: HomePaths, launch: Launcher, request: CreateRunR
 export type StopOutcome = "stopping" | "stopped" | "already-ended" | "never-started" | "held-elsewhere";
 
 /** Stop a run. A running one gets SIGTERM. A paused one is marked stopped here. */
-export function stopRun(paths: HomePaths, runId: string): { outcome: StopOutcome; status?: RunStatus } {
+export function stopRun(paths: HomePaths, runId: string, who: Who): { outcome: StopOutcome; status?: RunStatus } {
   const record = needRecord(paths, runId);
   if (processAlive(record.pid)) {
     process.kill(record.pid!, "SIGTERM");
+    recordAction(paths, { act: "stop", ...who, runId: record.runId });
     return { outcome: "stopping" };
   }
   const result = stopColdRun(paths, record);
@@ -491,13 +494,14 @@ export function stopRun(paths: HomePaths, runId: string): { outcome: StopOutcome
   if (result.outcome === "already-terminal") return { outcome: "already-ended", ...(result.state?.status ? { status: result.state.status } : {}) };
   if (result.outcome === "missing") return { outcome: "never-started" };
   if (result.outcome === "owned-elsewhere") return { outcome: "held-elsewhere" };
+  recordAction(paths, { act: "stop", ...who, runId: record.runId });
   return { outcome: "stopped" };
 }
 
 /** Stop one running step by its name in the log. The run pauses on it, and resume runs it again.
  *  The worker gets the step's run or nested run and its call, so a step with the same label
  *  elsewhere goes on. Returns false when the run is not running, and refuses a name the run never had. */
-export function stopStep(paths: HomePaths, runId: string, step: string): boolean {
+export function stopStep(paths: HomePaths, runId: string, step: string, who: Who): boolean {
   const record = needRecord(paths, runId);
   const alive = processAlive(record.pid);
   const state = readState(paths, record.runId);
@@ -519,14 +523,16 @@ export function stopStep(paths: HomePaths, runId: string, step: string): boolean
   }
   requestStepStop(paths, record.runId, { step, calls });
   process.kill(record.pid!, "SIGUSR2");
+  recordAction(paths, { act: "stop-step", ...who, runId: record.runId, step });
   return true;
 }
 
 /** Pause a running run: steps already running finish, nothing new starts. False when it does not run. */
-export function pauseRun(paths: HomePaths, runId: string): boolean {
+export function pauseRun(paths: HomePaths, runId: string, who: Who): boolean {
   const record = needRecord(paths, runId);
   if (!processAlive(record.pid)) return false;
   process.kill(record.pid!, "SIGUSR1");
+  recordAction(paths, { act: "pause", ...who, runId: record.runId });
   return true;
 }
 
@@ -564,7 +570,7 @@ export type ResumeOutcome =
  * choice: "latest" takes the edits, and "same" goes on with the version it started with. With
  * no choice, an edit makes the caller choose. A run an older sous saved is refused.
  */
-export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, choice?: "latest" | "same"): ResumeOutcome {
+export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who: Who, choice?: "latest" | "same"): ResumeOutcome {
   const view = readRun(paths, runId);
   const { record, resume } = view;
   const why = resume.ok ? undefined : resume.why;
@@ -585,6 +591,7 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, cho
   }
   if (choice === "latest") updateRecord(paths, record.runId, { resumeLatest: true });
   launch(paths, record.runId, "resume");
+  recordAction(paths, { act: "resume", ...who, runId: record.runId });
   return { resumed: record };
 }
 
@@ -606,6 +613,9 @@ export interface RerunRequest {
   defaultModel?: string;
   startedByRun?: string;
   caller?: boolean;
+  /** Who starts it again, and the command the person types when a people workflow refuses it. */
+  who: Who;
+  command?: string;
 }
 
 /** Start an earlier run again as a new run, with its inputs, step changes and model. */
@@ -626,6 +636,8 @@ export function rerunRun(paths: HomePaths, launch: Launcher, runId: string, requ
     ...(old.concurrency ? { concurrency: old.concurrency } : {}),
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
     caller: request.caller === true,
+    who: request.who,
+    command: request.command ?? `sous rerun ${old.runId}`,
   });
 }
 
@@ -668,18 +680,23 @@ export type AnswerOutcome = { answered: true; running: boolean; notJson?: true }
 
 /** Answer a question with what a person typed. A reply that stops the run stops it as sous stop
  *  does. Only a reply typed at a prompt finds the question gone. */
-export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply & { via: Exclude<Reply["via"], "prompt"> }): Exclude<AnswerOutcome, { gone: true }>;
-export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply): AnswerOutcome;
-export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply): AnswerOutcome {
+export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply & { via: Exclude<Reply["via"], "prompt"> }, who: Who): Exclude<AnswerOutcome, { gone: true }>;
+export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply, who: Who): AnswerOutcome;
+export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply, who: Who): AnswerOutcome {
   const result = reply(paths, question, typed);
-  if ("stop" in result) return { stopped: stopRun(paths, question.runId) };
-  if ("answered" in result) return { answered: true, running: processAlive(findRecord(paths, question.runId)?.pid), ...(result.notJson ? { notJson: true as const } : {}) };
-  return result;
+  if ("stop" in result) return { stopped: stopRun(paths, question.runId, who) };
+  if (!("answered" in result)) return result;
+  // approve and send-back keep their name, and an answer at the prompt is an answer.
+  const act = typed.via === "approve" || typed.via === "send-back" ? typed.via : "answer";
+  const said = act === "send-back" ? { text: decisionOf(result.value).note ?? "" } : { value: result.value };
+  const notice = noticeOf(recordAction(paths, { act, ...who, runId: question.runId, question: question.id, ...said }));
+  if (notice) notify(notice.title, notice.message, loadConfig(paths).notify);
+  return { answered: true, running: processAlive(findRecord(paths, question.runId)?.pid), ...(result.notJson ? { notJson: true as const } : {}) };
 }
 
 /** A stopped run's worktrees. With `remove`, deletes each branch and folder and calls `deleted`
  *  after each. */
-export function discardRun(paths: HomePaths, runId: string, options: { remove?: boolean; deleted?: (tree: { dir: string; branch: string }) => void } = {}): Array<{ dir: string; branch: string }> {
+export function discardRun(paths: HomePaths, runId: string, who: Who, options: { remove?: boolean; deleted?: (tree: { dir: string; branch: string }) => void } = {}): Array<{ dir: string; branch: string }> {
   const record = needRecord(paths, runId);
   if (processAlive(record.pid)) throw new Refusal("run_is_running", `${record.runId} is running. sous stop ${record.runId} first.`, "Stop the run, then discard it.", `sous stop ${record.runId} --json`);
   const trees = runWorktrees(record);
@@ -688,6 +705,7 @@ export function discardRun(paths: HomePaths, runId: string, options: { remove?: 
       removeWorktree(record.projectDir, tree.dir, tree.branch);
       options.deleted?.(tree);
     }
+    recordAction(paths, { act: "discard", ...who, runId: record.runId, workflow: record.workflow });
   }
   return trees;
 }
@@ -712,8 +730,9 @@ export function workerRuns(run: RunView): boolean {
   return processAlive(run.record.pid) || (!run.resume.ok && run.resume.why === "running");
 }
 
-/** Remove finished runs older than `days`: the engine's state, sous's record and the log. Worktrees stay. */
-export function pruneRuns(paths: HomePaths, days: number, now = new Date()): string[] {
+/** Remove finished runs older than `days`: the engine's state, sous's record and the log. Worktrees
+ *  stay. `who` is null for the service's own clean up, which records nothing. */
+export function pruneRuns(paths: HomePaths, days: number, who: Who | null, now = new Date()): string[] {
   const cutoff = now.getTime() - days * 86_400_000;
   const removed: string[] = [];
   for (const run of listRuns(paths)) {
@@ -721,6 +740,7 @@ export function pruneRuns(paths: HomePaths, days: number, now = new Date()): str
     if (Date.parse(record.createdAt) > cutoff || workerRuns(run) || startedAndUnfinished(run)) continue;
     if (forgetRun(paths, record)) removed.push(record.runId);
   }
+  if (who && removed.length) recordAction(paths, { act: "prune", ...who, value: removed });
   return removed;
 }
 
@@ -737,12 +757,15 @@ export function busyWorktrees(paths: HomePaths, runs = listRuns(paths)): Set<str
 
 /**
  * Remove sous's merged worktrees in each project a run used, and keep those of the runs that have
- * not finished. The service passes the scan it already made as `runs`.
+ * not finished. The service passes the scan it already made as `runs`, and null as `who`, so its
+ * clean up records nothing. A dry run, or a gc that removes nothing, records nothing either.
  */
-export function gcRuns(paths: HomePaths, options: { dryRun?: boolean; runs?: RunView[] } = {}): GcResult {
+export function gcRuns(paths: HomePaths, who: Who | null, options: { dryRun?: boolean; runs?: RunView[] } = {}): GcResult {
   const runs = options.runs ?? listRuns(paths);
   const projects = [...new Set(runs.map((run) => run.record.projectDir))];
-  return gcWorktrees(paths, projects, { dryRun: options.dryRun, busy: busyWorktrees(paths, runs) });
+  const result = gcWorktrees(paths, projects, { dryRun: options.dryRun, busy: busyWorktrees(paths, runs) });
+  if (who && result.removed.length && !options.dryRun) recordAction(paths, { act: "gc", ...who, value: result.removed.map((tree) => tree.branch) });
+  return result;
 }
 
 // ── Accounts ──
@@ -765,8 +788,9 @@ export interface UseResult extends AccountName {
  * Make the account sous's current one for its program. Then each run waiting at that program's
  * usage limit moves to it and resumes now, also the runs that agents started.
  */
-export function useAccount(paths: HomePaths, spec: string, launch: Launcher): UseResult {
+export function useAccount(paths: HomePaths, spec: string, launch: Launcher, who: Who): UseResult {
   const { program, name } = setCurrentAccount(paths, spec);
+  recordAction(paths, { act: "account-use", ...who, value: `${program}/${name}` });
   const moved: Moved[] = [];
   const same: Moved[] = [];
   for (const run of waitingRuns(paths)) {

@@ -25,6 +25,8 @@ nearest folder up from where you run `sous` that has `.sous/` or `.git`, or the 
 | `secrets.env` | `KEY=value` lines. Code steps get them in their environment, and an MCP server's settings can use them as `${KEY}`. Agents don't get them. The shell environment works too. |
 | `config.json` | `maxAgents` (4), `defaultPlace` ("worktree"), `defaultModel`, `defaultHarness`, `rulesyncGlobal`, `notify` (true), `keepDays` (all kept), `retries` (2) |
 | `runs/`, `records/`, `inbox/`, `logs/` | run state, one record per run, open questions, one log per run |
+| `events.jsonl` | one line per write: who did it (`by`: person, agent or sous), through what (`through`: the person's terminal, Claude Code, Codex, a step of a run, or a schedule), and the run, question or value |
+| `calls.jsonl` | with `SOUS_TRACE_CALLS=1`, one line per call: its words, exit code, error code and where it came from |
 | `worktrees/`, `scratch/` | the places runs work in |
 
 Agents and MCP servers come from [rulesync](https://github.com/dyoshikawa/rulesync)'s folders and
@@ -331,7 +333,7 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous stop <run>` | end the run. Its worktree stays, unless the run changed no file. |
 | `sous stop <run> --step <name>` | stop one running step, by the name `sous log` gives it, such as `"ticket A: implementer"`. The run pauses on it, and `sous resume` runs it again. |
 | `sous rerun <run> [--reuse]` | the same workflow with the same inputs. `--reuse` keeps the results of the steps you did not edit and works in the same place. |
-| `sous wait <run> [--timeout N]` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer, 5 still running after `--timeout N` seconds. The run goes on after a timeout. In a terminal it asks the run's questions itself, so 4 comes only off a terminal or with `--json`. |
+| `sous wait <run> [--timeout N]` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer, 5 still running after `--timeout N` seconds. The run goes on after a timeout. An agent's wait, or a step's, has a timeout of 110 seconds when it gives none. A person's waits as long as it takes. In a terminal it asks the run's questions itself, so 4 comes only off a terminal or with `--json`. |
 | `sous status [--since 3d] [--line] [--all]` | what needs you, what runs, what waits to resume on its own, and what finished. Runs that ended show for the last 24 hours, or for the `--since` time. A failed or stopped run that ended before that counts only in a note, like a finished one. Each list shows 20 entries, or all with `--all`. `--line` prints one line for an agent's session start, or nothing when nothing needs you. |
 | `sous gc [--dry-run]` | remove worktrees whose branch is merged |
 | `sous discard <run> --yes` | delete the run's branches and worktrees, merged or not. Without `--yes` it lists them, deletes nothing and exits 0. A running run is refused: stop it first. |
@@ -487,7 +489,19 @@ sous run ticket --ticket "Fix the empty count" --wait --json
 ```
 
 Agents inside a run get `SOUS_RUN_ID` in their environment. A run they start records the run that
-started it, and `sous` refuses a workflow with `startedBy: "people"`. A run uses the account of the
+started it.
+
+sous knows who calls from the environment: `SOUS_RUN_ID` is a step of a run, `CODEX_THREAD_ID` is
+Codex, and `CLAUDECODE=1` is Claude Code, in that order. Anything else is the person. A write
+through an agent records `by: "agent"`. An agent that passes on the person's own decision adds
+`--by person`, and the line keeps both. A step of a run cannot give `--by person`: it exits 66 with
+`no_person_here`. On a read, `--by person` changes nothing and says so in a note. An answer,
+approval or send-back through an agent sends the person a notice.
+
+sous refuses to start a workflow with `startedBy: "people"` through an agent or a run, also with
+`--by person`, and also as a rerun, a dry run or a schedule. It exits 66 with
+`started_by_people`, and the error's `forPerson` holds the command for the person to type in a
+plain terminal. A schedule the person added starts it. A run uses the account of the
 session or the run that started it, as in [Accounts](#accounts).
 
 `sous guide` lists the topics an agent reads to drive sous for a person, and `sous guide <topic>`

@@ -1,6 +1,6 @@
 // The sous commands by name. A new command is one entry here and its function in a command file.
 
-import type { HomePaths, Launcher } from "@sous/engine";
+import type { HomePaths, Launcher, Who } from "@sous/engine";
 import { flagsNamed, RESERVED, type FlagSpec, type Parsed } from "../args.js";
 import type { Reply } from "../reply.js";
 import { cmdDiscard, cmdGc, cmdPause, cmdPrune, cmdStop } from "./control.js";
@@ -37,6 +37,10 @@ export interface Machine {
 
 /** What a command works with. Its parts that touch the machine are read only when it uses them. */
 export interface Ctx {
+  /** Who calls, from the env's markers and --by. The engine's writes record it. */
+  who: Who;
+  /** The command line as the person types it, for a refusal that hands it to them. */
+  command: string;
   /** The home, made on first use. */
   readonly paths: HomePaths;
   env: NodeJS.ProcessEnv;
@@ -57,7 +61,8 @@ export interface CommandSpec {
   inputs?: true;
 }
 
-/** A command's flags, by name. Each is a flag sous owns, so it never becomes an input. Every command takes --help. */
+/** A command's flags, by name. Each is a flag sous owns, so it never becomes an input. Every command takes --help.
+ *  A command that writes takes --by, and a read given --by person says in a note that it changes nothing. */
 function takes(...names: string[]): FlagSpec[] {
   const stray = names.filter((name) => !RESERVED.includes(name));
   if (stray.length) throw new Error(`add --${stray.join(", --")} to the flags of args.ts first`);
@@ -65,7 +70,7 @@ function takes(...names: string[]): FlagSpec[] {
 }
 
 export const COMMANDS: Record<string, CommandSpec> = {
-  run: { run: cmdRun, flags: takes("place", "model", "set", "concurrency", "project", "wait", "json"), inputs: true },
+  run: { run: cmdRun, flags: takes("place", "model", "set", "concurrency", "project", "wait", "by", "json"), inputs: true },
   wait: { run: cmdWait, flags: takes("timeout", "json") },
   status: { run: cmdStatus, flags: takes("since", "line", "all", "json") },
   list: { run: cmdList, flags: takes("all", "json") },
@@ -73,24 +78,24 @@ export const COMMANDS: Record<string, CommandSpec> = {
   step: { run: cmdStep, flags: takes("call", "tail", "full", "json") },
   log: { run: cmdLog, flags: takes("follow", "after", "json") },
   inbox: { run: cmdInbox, flags: takes("json") },
-  answer: { run: (args, ctx) => cmdAnswer(args, ctx, "answer"), flags: takes("value-json", "json") },
-  approve: { run: (args, ctx) => cmdAnswer(args, ctx, "approve"), flags: takes("json") },
-  "send-back": { run: (args, ctx) => cmdAnswer(args, ctx, "send-back"), flags: takes("json") },
-  pause: { run: cmdPause, flags: takes("json") },
-  resume: { run: cmdResume, flags: takes("latest", "same", "wait", "json") },
-  stop: { run: cmdStop, flags: takes("step", "json") },
-  rerun: { run: cmdRerun, flags: takes("place", "reuse", "set", "model", "wait", "json"), inputs: true },
+  answer: { run: (args, ctx) => cmdAnswer(args, ctx, "answer"), flags: takes("value-json", "by", "json") },
+  approve: { run: (args, ctx) => cmdAnswer(args, ctx, "approve"), flags: takes("by", "json") },
+  "send-back": { run: (args, ctx) => cmdAnswer(args, ctx, "send-back"), flags: takes("by", "json") },
+  pause: { run: cmdPause, flags: takes("by", "json") },
+  resume: { run: cmdResume, flags: takes("latest", "same", "wait", "by", "json") },
+  stop: { run: cmdStop, flags: takes("step", "by", "json") },
+  rerun: { run: cmdRerun, flags: takes("place", "reuse", "set", "model", "wait", "by", "json"), inputs: true },
   workflows: { run: cmdWorkflows, flags: takes("project", "json") },
   check: { run: cmdCheck, flags: takes("project", "dry-run", "answers", "json"), inputs: true },
-  schedule: { run: cmdSchedule, flags: takes("cron", "place", "project", "json"), inputs: true },
+  schedule: { run: cmdSchedule, flags: takes("cron", "place", "project", "by", "json"), inputs: true },
   daemon: { run: cmdDaemon, flags: takes("json") },
-  gc: { run: cmdGc, flags: takes("dry-run", "json") },
-  discard: { run: cmdDiscard, flags: takes("yes", "json") },
-  prune: { run: cmdPrune, flags: takes("days", "json") },
-  account: { run: cmdAccount, flags: takes("json") },
+  gc: { run: cmdGc, flags: takes("dry-run", "by", "json") },
+  discard: { run: cmdDiscard, flags: takes("yes", "by", "json") },
+  prune: { run: cmdPrune, flags: takes("days", "by", "json") },
+  account: { run: cmdAccount, flags: takes("by", "json") },
   doctor: { run: cmdDoctor, flags: takes("live", "model", "json") },
   guide: { run: cmdGuide, flags: takes("json") },
-  skill: { run: cmdSkill, flags: takes("json") },
+  skill: { run: cmdSkill, flags: takes("by", "json") },
 };
 
 /** The other names a command answers to. Help does not list them. */

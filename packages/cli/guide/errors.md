@@ -9,6 +9,7 @@ With `--json`, an error prints one object on stdout:
 - `message` says what went wrong.
 - `change` says what to change.
 - `call` is the call to make instead, or null when there is none.
+- `forPerson`, on `started_by_people` only, is the command the person types themselves.
 
 Make the call in `call`. Do not retry the refused one unchanged. When `call` is null, read
 `change`. If it needs the person, such as moving a folder, tell them. Without `--json`, the error
@@ -37,6 +38,8 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | `run_is_running` | Stop the run first, if the person wants that. |
 | `cannot_resume` | An older sous saved the run. Rerun it, after asking. |
 | `not_ours` | A skill place holds something sous did not put there. Tell the person. |
+| `started_by_people` | Only a person starts this workflow. Give them `forPerson` to type in their own terminal. |
+| `no_person_here` | A step of a run gave `--by person`. Leave it out: the step decides for itself. |
 | `broken_record` | A file sous keeps, such as a run's event log, does not parse. Tell the person. |
 
 ## Requests that change nothing

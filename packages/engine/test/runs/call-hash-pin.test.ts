@@ -12,6 +12,7 @@ import type { AgentRunner } from "../../src/steps/agent-runner.js";
 import { CALL_INPUTS_FORMAT } from "../../src/workflow.js";
 import { quiet, setup } from "./fixture.js";
 import { write } from "../helpers/files.js";
+import { PERSON } from "../../src/testing.js";
 
 // The call hash decides which steps replay when a run resumes. These pins hold the hash of each
 // kind of step, read from the saved journal of a whole run, so a change that moves one shows.
@@ -63,7 +64,7 @@ async function runOne(workflow: string, script: string, request: { defaultModel?
   const { paths, projectDir } = setup({ [workflow]: script });
   for (const [name, content] of Object.entries(AGENTS)) write(join(projectDir, ".rulesync", "subagents", `${name}.md`), content);
   const { runner, seen } = standIn();
-  const record = createRun(paths, { workflow, projectDir, inputs: {}, ...request });
+  const record = createRun(paths, { who: PERSON, workflow, projectDir, inputs: {}, ...request });
   const result = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
   return { paths, projectDir, record, result, seen };
 }
@@ -220,7 +221,7 @@ await checkpoint('Ship it?', { timeoutMs: 600000 })
 return 'done'`,
     });
     const { runner } = standIn();
-    const record = createRun(paths, { workflow: "asks", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "asks", projectDir, inputs: {} });
     const answered = answerInTurn(paths, record.runId, [true, "sous", "blue", true]);
     const result = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal((await answered).length, 4);

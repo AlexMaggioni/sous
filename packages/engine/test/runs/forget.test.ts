@@ -47,7 +47,7 @@ const later = new Date(Date.parse("2026-11-23T06:21:32.322Z") + 30 * 86_400_000)
 /** The two ways a run's files go, which remove the same files. */
 const removers = {
   forgetRun: (paths: HomePaths, record: RunRecord) => forgetRun(paths, record),
-  pruneRuns: (paths: HomePaths) => void pruneRuns(paths, 7, later),
+  pruneRuns: (paths: HomePaths) => void pruneRuns(paths, 7, null, later),
 };
 
 describe("forget and prune on today's files", () => {
@@ -61,7 +61,7 @@ describe("forget and prune on today's files", () => {
   it("pruneRuns removes the same files once the run is older than the days given", () => {
     const { paths } = setup({});
     const record = plantTodayRun(paths);
-    assert.deepEqual(pruneRuns(paths, 7, later), [TODAY_ID]);
+    assert.deepEqual(pruneRuns(paths, 7, null, later), [TODAY_ID]);
     assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept].sort());
   });
 
@@ -88,7 +88,7 @@ describe("forget and prune on today's files", () => {
     // resume that has just started.
     const { paths } = setup({});
     const record = plantTodayRun(paths, { liveLock: true });
-    assert.deepEqual(pruneRuns(paths, 7, later), []);
+    assert.deepEqual(pruneRuns(paths, 7, null, later), []);
     assert.deepEqual(layout(paths, record.runId, record.cwd), [...folders, ...kept, ...sousFiles, ...engineFiles, lock].sort());
   });
 

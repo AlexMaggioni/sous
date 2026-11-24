@@ -34,7 +34,7 @@ export function cmdAnswer(args: Parsed, ctx: Ctx, via: Exclude<Typed["via"], "pr
   const { id, runId } = question;
   const text = args.positional.slice(1).join(" ");
   const valueJson = args.flags["value-json"] === true;
-  const answer = answerQuestion(paths, question, { via, text, valueJson });
+  const answer = answerQuestion(paths, question, { via, text, valueJson }, ctx.who);
   if ("usage" in answer) {
     if (!answer.choices) throw new Usage(answer.usage);
     throw new Usage(answer.usage, "not_a_choice", "Answer with one of the choices.", answerCommand(question, "answer", `<${answer.choices.join("|")}>`, true));

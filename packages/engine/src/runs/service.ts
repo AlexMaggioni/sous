@@ -140,6 +140,8 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
         priority: "schedule",
         origin: "schedule",
         schedule: schedule.name,
+        // The person added the schedule, so sous starts it, whatever markers the service has.
+        who: { by: "sous", through: { kind: "schedule", schedule: schedule.name } },
       });
       launch(paths, record.runId, "start");
       log(`schedule ${schedule.name}: started run ${record.runId}`);
@@ -195,7 +197,7 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
   // Pruning.
   if (config.keepDays !== undefined && (!state.lastPrune || now.getTime() - Date.parse(state.lastPrune) > 3600_000)) {
     state.lastPrune = now.toISOString();
-    const removed = pruneRuns(paths, config.keepDays, now);
+    const removed = pruneRuns(paths, config.keepDays, null, now);
     if (removed.length) log(`pruned ${removed.length} finished runs older than ${config.keepDays} days`);
   }
 
@@ -203,7 +205,7 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
   if (!state.lastGc || now.getTime() - Date.parse(state.lastGc) > 3600_000) {
     state.lastGc = now.toISOString();
     try {
-      const { removed } = gcRuns(paths, { runs });
+      const { removed } = gcRuns(paths, null, { runs });
       for (const entry of removed) log(`removed worktree ${entry.dir} (${entry.reason})`);
     } catch (error) {
       log(`worktree cleanup failed: ${(error as Error).message}`);

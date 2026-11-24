@@ -13,6 +13,8 @@ import { saveRecord, updateRecord, type RunRecord } from "./records.js";
 import { logFile } from "./store.js";
 import type { Priority } from "./slots.js";
 import { Refusal } from "./refusal.js";
+import { recordAction, type Who } from "./actions.js";
+import { mayStart } from "./consent.js";
 
 export interface CreateRunRequest {
   workflow: string;
@@ -32,6 +34,10 @@ export interface CreateRunRequest {
   startedByRun?: string;
   /** Set when a Claude Code session starts the run. Its Claude Code steps then use that session's login. */
   caller?: boolean;
+  /** Who starts the run. A start is recorded as run, or rerun with rerunOf. A dry run records nothing. */
+  who: Who;
+  /** The command the person types to start the run, for a refusal. Default: sous run and the workflow. */
+  command?: string;
 }
 
 export class InputProblems extends Error {
@@ -52,9 +58,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
     throw new Refusal("workflow_invalid", message, `Fix the workflow file ${resolved.file}.`, `sous check ${resolved.name} --json`);
   }
   if (problems.length) throw new InputProblems(resolved.name, problems);
-  if (request.startedByRun && resolved.extras.startedBy === "people") {
-    throw new Error(`${resolved.name} is started by people only, so the agent in run ${request.startedByRun} cannot start it.`);
-  }
+  mayStart(resolved, request.who, request.command ?? `sous run ${resolved.name}`);
   const config = loadConfig(paths);
   const runId = generateRunId();
   const reuse = request.reuseFrom;
@@ -87,6 +91,7 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   };
   saveRecord(paths, record);
   rememberProject(paths, request.projectDir);
+  if (record.origin !== "check") recordAction(paths, { act: request.rerunOf ? "rerun" : "run", ...request.who, runId, workflow: resolved.name });
   return record;
 }
 

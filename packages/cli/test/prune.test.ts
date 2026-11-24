@@ -3,7 +3,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { loadRecord, type HomePaths } from "@sous/engine";
-import { createRun, plantState, testHome, updateRecord } from "@sous/engine/testing";
+import { PERSON, createRun, plantState, testHome, updateRecord } from "@sous/engine/testing";
 import { sous } from "./sous.js";
 
 // sous prune removes the finished runs older than a number of days.
@@ -13,7 +13,7 @@ const DAY = 86_400_000;
 
 /** A run made `age` days ago, finished or paused. */
 function run(paths: HomePaths, projectDir: string, age: number, status: "completed" | "paused" = "completed"): string {
-  const record = createRun(paths, { workflow: "job", projectDir, inputs: {} });
+  const record = createRun(paths, { who: PERSON, workflow: "job", projectDir, inputs: {} });
   updateRecord(paths, record.runId, { createdAt: new Date(Date.now() - age * DAY).toISOString() });
   const at = new Date().toISOString();
   plantState(paths, {

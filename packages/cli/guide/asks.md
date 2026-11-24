@@ -6,11 +6,14 @@ Every question belongs to the person. Its `answeredBy` is `"people"`.
 ## Show it, then pass on the answer
 
 Show the person the question in full, with its choices. When they answer, pass their words on
-unchanged:
+unchanged, with `--by person`:
 
 ```sh
-sous answer <question> "<their words>" --json
+sous answer <question> "<their words>" --by person --json
 ```
+
+`--by person` records that the person decided and you passed it on. `sous approve` and
+`sous send-back` take it too. sous tells the person in a notice each time an agent answers.
 
 Never answer with a choice you made yourself. If the person is not there, say that the run waits
 for them, and stop. A question waits as long as it takes. No timeout picks a default.

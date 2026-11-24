@@ -11,6 +11,9 @@ Run the wait as a background command. You are called again when it returns.
 sous wait <run> --json
 ```
 
+Without `--timeout`, an agent's wait ends after 110 seconds with exit 5, under the two minutes
+Claude Code gives a tool call. A note says so. Wait again.
+
 ## Elsewhere
 
 Give a timeout in seconds that fits your shell tool's limit, and call again while it exits 5.

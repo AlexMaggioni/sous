@@ -84,6 +84,11 @@ function shapeOf(error: unknown): { body: ErrorBody; exit: number; first: string
   return { body: { code: "internal", message, change, call: null }, exit: 1, first: `sous: ${message}` };
 }
 
+/** The code an error prints with, such as started_by_people, or internal when sous itself failed. */
+export function errorCode(error: unknown): string {
+  return shapeOf(error).body.code;
+}
+
 /** Print an error, as JSON or as text, and return its exit code: 64 for a usage error, 65 for a
  *  missing thing, 66 for any other refusal, 1 when sous itself failed. `adjust` changes the call,
  *  such as to keep the command's --project. */

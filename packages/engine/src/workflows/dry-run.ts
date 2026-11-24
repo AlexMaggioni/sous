@@ -10,6 +10,7 @@ import { dirname } from "node:path";
 import { fabricateFromSchema } from "../fabricate.js";
 import { isGitRepo, removeWorktree, runWorktrees } from "../places/places.js";
 import { loadConfig, type HomePaths } from "../runs/home.js";
+import type { Who } from "../runs/actions.js";
 import { createRun } from "../runs/launch.js";
 import { loadRecord } from "../runs/records.js";
 import { forgetRun } from "../runs/run.js";
@@ -70,13 +71,17 @@ export interface DryRunRequest {
   inputs: Record<string, unknown>;
   answers?: Answers;
   log?: (line: string) => void;
+  /** Who asks. A dry run runs the code steps, so an agent's dry run of a people workflow is refused as its run is. */
+  who: Who;
+  /** The command the person types, for that refusal. */
+  command?: string;
 }
 
 export async function dryRun(paths: HomePaths, request: DryRunRequest): Promise<DryRunResult> {
   // The workflow's own place, except the project folder itself: a worktree stands in for it.
   const own = resolveWorkflow(paths, request.projectDir, request.workflow).extras.place ?? loadConfig(paths).defaultPlace;
   const place = own !== "folder" ? own : isGitRepo(request.projectDir) ? "worktree" : "none";
-  const record = createRun(paths, { workflow: request.workflow, projectDir: request.projectDir, inputs: request.inputs, place, origin: "check" });
+  const record = createRun(paths, { workflow: request.workflow, projectDir: request.projectDir, inputs: request.inputs, place, origin: "check", who: request.who, ...(request.command ? { command: request.command } : {}) });
   const agents = standInAgents(request.answers);
   try {
     const result = await runWorker(record.runId, "start", { paths, inner: agents, log: request.log ?? (() => {}), dryRun: true });

@@ -6,10 +6,11 @@ import { describe, it } from "node:test";
 import { createRun } from "../../src/runs/launch.js";
 import { runWorker } from "../../src/runs/worker.js";
 import { heldRunner, setup } from "./fixture.js";
+import { PERSON } from "../../src/testing.js";
 
 async function lastLine(script: string, startsWith: string): Promise<{ line: string | undefined; status: string | undefined; lines: string[] }> {
   const { paths, projectDir } = setup({ flow: script });
-  const record = createRun(paths, { workflow: "flow", projectDir, inputs: {}, place: "folder" });
+  const record = createRun(paths, { who: PERSON, workflow: "flow", projectDir, inputs: {}, place: "folder" });
   const { runner } = heldRunner(() => "ok");
   const lines: string[] = [];
   const result = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: (line) => lines.push(line.slice(9)) });

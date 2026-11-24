@@ -14,6 +14,7 @@ import { runWorker } from "../../src/runs/worker.js";
 import type { AgentRunner } from "../../src/steps/agent-runner.js";
 import { WorkflowManager } from "../../src/workflow-manager.js";
 import { deadPid, heldRunner, plantState, quiet, settle, setup, until } from "./fixture.js";
+import { PERSON } from "../../src/testing.js";
 
 // The runs are planted with raw writes, the way the worker and the engine leave them.
 
@@ -234,7 +235,7 @@ describe("the steps that run now", () => {
   it("a top-level step goes by its label", async () => {
     const { paths, projectDir } = setup({ top: `export const meta = { name: 'top', description: 'top' }\nreturn await agent('build it', { label: 'build' })` });
     const { runner, calls, release } = heldRunner(() => "wait");
-    const record = createRun(paths, { workflow: "top", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "top", projectDir, inputs: {} });
     const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     // The step shows as running while it waits for its agent slot, before the runner has it.
     await until(() => calls.length === 1);
@@ -251,7 +252,7 @@ describe("the steps that run now", () => {
 return await Promise.all([workflow('child', {}, { label: 'ticket A' }), workflow('child', {}, { label: 'ticket B' })])`,
     });
     const { runner, calls, release } = heldRunner(() => "wait");
-    const record = createRun(paths, { workflow: "parent", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "parent", projectDir, inputs: {} });
     const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     const both = ["ticket A: build", "ticket B: build"];
     await until(() => calls.length === 2);
@@ -268,7 +269,7 @@ await agent('first', { label: 'first' })
 return await agent('second', { label: 'second' })`,
     });
     const { runner, calls, release } = heldRunner((call) => (call.label === "first" ? "first done" : "wait"));
-    const record = createRun(paths, { workflow: "two", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "two", projectDir, inputs: {} });
     const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     await until(() => calls.some((call) => call.label === "second"));
     assert.deepEqual(await settle(() => running(paths, record.runId), ["second"]), ["second"]);
@@ -282,7 +283,7 @@ return await agent('second', { label: 'second' })`,
 return await Promise.allSettled([agent('bad', { label: 'bad', retries: 0 }), agent('slow', { label: 'slow' })])`,
     });
     const { runner, calls, release } = heldRunner((call) => (call.label === "bad" ? new Error("the tests fail") : "wait"));
-    const record = createRun(paths, { workflow: "side", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "side", projectDir, inputs: {} });
     const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     await until(() => calls.some((call) => call.label === "bad") && calls.some((call) => call.label === "slow"));
     assert.deepEqual(await settle(() => running(paths, record.runId), ["slow"]), ["slow"]);
@@ -298,7 +299,7 @@ return await Promise.allSettled([agent('bad', { label: 'bad', retries: 0 }), age
     const { runner, calls, release } = heldRunner((_call, all) =>
       all.length === 1 ? new WorkflowError("the tests fail", WorkflowErrorCode.AGENT_EXECUTION_ERROR, { recoverable: true }) : "wait",
     );
-    const record = createRun(paths, { workflow: "flaky", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "flaky", projectDir, inputs: {} });
     const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     await until(() => calls.length === 2);
     assert.equal(calls.length, 2, "the step ran a second time");
@@ -316,7 +317,7 @@ await agent('again', { label: 'again' })
 await agent('bad', { label: 'bad', retries: 0 })
 return 1`;
     const { paths, projectDir } = setup({ three: script });
-    const record = createRun(paths, { workflow: "three", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "three", projectDir, inputs: {} });
     // A library caller's runner may report a replayed result. sous's never does, so this test runs
     // the manager itself.
     const runner = {
@@ -352,7 +353,7 @@ return 1`;
 try { await agent('refused', { label: 'refused', configOptions: { model: 'other' } }) } catch {}
 return await agent('next', { label: 'next' })`;
     const { paths, projectDir } = setup({ refused: script });
-    const record = createRun(paths, { workflow: "refused", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "refused", projectDir, inputs: {} });
     const runner = { async run(_prompt: string, options: { label?: string }) { return `${options.label} done`; } } as unknown as AgentRunner;
     const manager = new WorkflowManager({ ...managerStore(paths), agent: runner });
     assert.equal((await manager.runSync(script, {}, { runId: record.runId })).status, "completed");
@@ -371,7 +372,7 @@ describe("the steps after the worker was killed", () => {
 await agent('first', { label: 'first' })
 return await agent('second', { label: 'second' })`;
     const { paths, projectDir } = setup({ two: script });
-    const record = createRun(paths, { workflow: "two", projectDir, inputs: {} });
+    const record = createRun(paths, { who: PERSON, workflow: "two", projectDir, inputs: {} });
     const runner = { async run(_prompt: string, options: { label?: string }) { return `${options.label} done`; } } as unknown as AgentRunner;
     const manager = new WorkflowManager({ ...managerStore(paths), agent: runner });
     assert.equal((await manager.runSync(script, {}, { runId: record.runId })).status, "completed");
