@@ -17,7 +17,8 @@ export type RefusalCode =
   | "turn_not_steerable"
   | "run_is_running"
   | "cannot_resume"
-  | "not_ours";
+  | "not_ours"
+  | "workflow_invalid";
 
 /** The codes of a thing that is not there. */
 const MISSING: ReadonlySet<RefusalCode> = new Set(["no_such_run", "no_such_workflow", "no_such_question", "no_such_step", "step_not_running"]);

@@ -1151,12 +1151,12 @@ describe("sous schedule", () => {
     assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 9 * *"), { code: 1, out: 'sous: cron needs five fields (minute hour day month weekday), got "0 9 * *"\n' });
     assert.deepEqual(await schedule("add", "late", "nope", "--cron", "0 9 * * *"), {
       code: 65,
-      out: `no workflow "nope". Looked in ${join(projectDir, ".sous", "workflows")} and ${paths.workflows}. Saved workflows: daily, nightly.\n  change: Give the name of a saved workflow, or the path of a workflow file.\n  try: sous workflows --json\n`,
+      out: `no workflow "nope". Looked in ${join(projectDir, ".sous", "workflows")} and ${paths.workflows}. Saved workflows: daily, nightly.\n  change: Give the name of a saved workflow, or the path of a workflow file.\n  try: sous workflows --json --project ${projectDir}\n`,
     });
-    assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 9 * * *", "--place", "moon"), { code: 64, out: 'usage: --place is worktree, folder or none, got "moon"\n' });
+    assert.deepEqual(await schedule("add", "late", "daily", "--cron", "0 9 * * *", "--place", "moon"), { code: 64, out: 'usage: --place is worktree, folder or none, got "moon"\n  change: Fix the command line. sous help lists the commands and their flags.\n' });
     // With two mistakes, the name that exists comes before the bad place.
     assert.deepEqual(await schedule("add", "morning", "daily", "--cron", "0 9 * * *", "--place", "moon"), { code: 1, out: 'sous: a schedule "morning" exists. Remove it first.\n' });
-    assert.deepEqual(await schedule("add", "late", "daily"), { code: 64, out: 'usage: sous schedule add <name> <workflow> --cron "0 9 * * 1-5" [--name value ...]\n' });
+    assert.deepEqual(await schedule("add", "late", "daily"), { code: 64, out: 'usage: sous schedule add <name> <workflow> --cron "0 9 * * 1-5" [--name value ...]\n  change: Fix the command line. sous help lists the commands and their flags.\n' });
     assert.equal(readFileSync(paths.schedules, "utf8"), saved, "a refused add writes nothing");
 
     // Once sous schedule list has remembered the project, the schedule in nightly's meta is known,
@@ -1166,7 +1166,7 @@ describe("sous schedule", () => {
     const inMeta = `sous: the schedule of ${nightly} is set in its meta. Change or remove meta.schedule there.\n`;
     for (const action of ["remove", "disable", "enable"]) assert.deepEqual(await schedule(action, nightlyFile), { code: 1, out: inMeta }, action);
     for (const action of ["remove", "disable", "enable", "test"]) assert.deepEqual(await schedule(action, "nope"), { code: 1, out: 'sous: no schedule "nope". sous schedule list shows them.\n' }, action);
-    assert.deepEqual(await schedule("launch"), { code: 64, out: "usage: sous schedule add|list|remove|enable|disable|test\n" });
+    assert.deepEqual(await schedule("launch"), { code: 64, out: "usage: sous schedule add|list|remove|enable|disable|test\n  change: Fix the command line. sous help lists the commands and their flags.\n" });
     assert.equal(readFileSync(paths.schedules, "utf8"), saved, "a refused change writes nothing");
   });
 });

@@ -12,6 +12,7 @@ import type { PlaceNotes } from "../places/places.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
 import { recordFile, recordFiles, snapshotFile, stopRequestFile } from "./store.js";
+import { Refusal } from "./refusal.js";
 
 export interface RunRecord {
   runId: string;
@@ -208,7 +209,10 @@ export function findRecord(paths: HomePaths, idOrPrefix: string): RunRecord | un
   const exact = loadRecord(paths, idOrPrefix);
   if (exact) return exact;
   const matches = listRecords(paths).filter((record) => record.runId.startsWith(idOrPrefix));
-  if (matches.length > 1) throw new Error(`"${idOrPrefix}" matches ${matches.length} runs. Give more of the id.`);
+  if (matches.length > 1) {
+    const ids = matches.map((record) => record.runId).join(", ");
+    throw new Refusal("no_such_run", `"${idOrPrefix}" matches ${matches.length} runs: ${ids}. Give more of the id.`, "Give the id of a run, or a unique start of one.", "sous list --json");
+  }
   return matches[0];
 }
 

@@ -9,7 +9,7 @@ import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonLog, ensureHome, homePaths, workerMain, workerProcess, type HomePaths, type Launcher } from "@sous/engine";
-import { parseArgs, Usage } from "./args.js";
+import { parseArgs, str, Usage, type Parsed } from "./args.js";
 import { ALIASES, COMMANDS, type CommandSpec, type Ctx, type Machine } from "./commands/index.js";
 import { print, printError } from "./reply.js";
 
@@ -152,23 +152,35 @@ function commandNamed(name: string): CommandSpec | undefined {
 export async function main(argv: string[], options: MainOptions = {}): Promise<number> {
   const [command, ...rest] = argv;
   const host = options.machine ?? machine();
+  let json: boolean | undefined;
+  let parsed: Parsed | undefined;
   try {
     if (command === "_worker") return await workerMain(rest[0]!, rest[1] === "resume" ? "resume" : "start");
     const spec = command ? commandNamed(command) : undefined;
-    const parsed = parseArgs(rest, spec?.flags ?? [], spec?.inputs === true, command);
+    parsed = parseArgs(rest, spec?.flags ?? [], spec?.inputs === true, command);
+    json = parsed.flags.json === true;
     if (!command || command === "help" || command === "--help" || command === "-h" || parsed.flags.help || parsed.flags.h) {
       host.out(HELP);
       return 0;
     }
     if (!spec) throw new Usage(`unknown command "${command}". sous help lists them.`);
-    const json = parsed.flags.json === true;
     const result = await spec.run(parsed, contextOf(json, options, host));
     return typeof result === "number" ? result : print(result, json, (line) => host.out(line));
   } catch (error) {
     // A command line that does not parse is read again for --json, before any "--".
-    const json = (rest.includes("--") ? rest.slice(0, rest.indexOf("--")) : rest).includes("--json");
-    return printError(error, json, (line) => (json ? host.out(line) : host.err(line)));
+    const asJson = json ?? (rest.includes("--") ? rest.slice(0, rest.indexOf("--")) : rest).includes("--json");
+    return printError(error, asJson, (line) => (asJson ? host.out(line) : host.err(line)), withProject(str(parsed?.flags.project)));
   }
+}
+
+/** A call in an error keeps the command's --project, when the command it calls takes one. */
+function withProject(project: string | undefined): ((call: string) => string) | undefined {
+  if (!project) return undefined;
+  return (call) => {
+    const called = commandNamed(call.split(" ")[1] ?? "");
+    if (!called?.flags.some((flag) => flag.name === "project") || /(^| )--project( |$)/.test(call)) return call;
+    return `${call} --project ${/^[\w./~-]+$/.test(project) ? project : `'${project.replace(/'/g, "'\\''")}'`}`;
+  };
 }
 
 const invokedDirectly = (() => {

@@ -12,6 +12,7 @@ import { accountsForRun } from "../accounts.js";
 import { saveRecord, updateRecord, type RunRecord } from "./records.js";
 import { logFile } from "./store.js";
 import type { Priority } from "./slots.js";
+import { Refusal } from "./refusal.js";
 
 export interface CreateRunRequest {
   workflow: string;
@@ -45,6 +46,11 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   const checked = checkInputs(resolved.extras, request.inputs);
   const args = checked.args;
   const problems = [...(resolved.extras.metaProblems ?? []), ...checked.problems];
+  // A problem in the workflow's own meta is no wrong input, so the file must change.
+  if (resolved.extras.metaProblems?.length) {
+    const message = new InputProblems(resolved.name, problems).message;
+    throw new Refusal("workflow_invalid", message, `Fix the workflow file ${resolved.file}.`, `sous check ${resolved.name} --json`);
+  }
   if (problems.length) throw new InputProblems(resolved.name, problems);
   if (request.startedByRun && resolved.extras.startedBy === "people") {
     throw new Error(`${resolved.name} is started by people only, so the agent in run ${request.startedByRun} cannot start it.`);

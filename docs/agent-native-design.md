@@ -161,7 +161,7 @@ export function cut<T>(items: T[], max: number, flag: string, what: string): { i
 export type RefusalCode =
   | "no_such_run" | "no_such_workflow" | "no_such_question" | "no_such_step" | "step_not_running"
   | "started_by_people" | "not_approved" | "question_for_people" | "needs_person" | "no_person_here"
-  | "step_takes_no_message" | "turn_not_steerable" | "run_is_running" | "cannot_resume" | "not_ours";
+  | "step_takes_no_message" | "turn_not_steerable" | "run_is_running" | "cannot_resume" | "not_ours" | "workflow_invalid";
 export class Refusal extends Error {
   constructor(
     readonly code: RefusalCode,
@@ -209,6 +209,7 @@ export class Refusal extends Error {
 | `step_takes_no_message` | `tell` to a shell, js or py step | `sous stop <run> --step <step>` |
 | `turn_not_steerable` | Codex is in a compact or review turn | the same `tell` |
 | `run_is_running` | `discard` of a running run | `sous stop <run>` |
+| `workflow_invalid` | the workflow file does not parse, or its settings are wrong | `sous check <name> --json` |
 | `cannot_resume` | an older sous saved the run | `sous rerun <run>` |
 | `not_ours` | a skill or hook place holds something sous didn't put there | null |
 
@@ -483,9 +484,9 @@ export function statusLine(paths: HomePaths, now: Date): string; // "" when noth
 ```
 
 - `needsYou` holds open questions and runs that stopped for a person: failed, stopped, `paused: budget`, and a paused run with no limit to wait for. `waiting` holds runs paused until a usage limit resets, from `waitingRuns`. `finished` covers the last 24 hours, and `--since 3d` shows more. Each list is cut at 20 with a note.
-- `sous show <run> --json` gets short. It gives `{runId, workflow, status, word, cwd, branch, worktree, startedAt, seconds, tokens, steps, questions, error}`, with steps cut at 30. `--full` puts today's full detail under a `state` key.
+- `sous show <run> --json` gets short. It gives `{runId, workflow, status, word, cwd, branch, worktree, startedAt, seconds, tokens, steps, questions, failure}`, with steps cut at 30. `--full` puts today's full detail under a `state` key.
 - `sous wait <run> --timeout <seconds>` exits 5 with `status: "running"` and the same wait in `next`. Without `--timeout` a person waits as long as it takes. When `through` is an agent, wait uses 110 seconds by default, under Claude Code's two-minute tool limit, and says so in a note. The guide shows a longer timeout with the tool's own timeout.
-- The wait status and exit come from the rule verdict, so `asks` exits 4. Wait adds `questions` at a question, `review` (branch, worktree, result) at the end and `error` (step, message) on a failure, each with its next.
+- The wait status and exit come from the rule verdict, so `asks` exits 4. Wait adds `questions` at a question, `review` (branch, worktree, result) at the end and `failure` (step, message) on a failure. The key `error` stays reserved for the error shape, each with its next.
 - The `run` reply keeps today's `{runId, workflow, cwd, log}` and adds `status: "starting"`, `branch`, `asks` and `lastRuns: {count, seconds, tokens}`, with `wait` and `show` in next. `asks` counts the `ask` and `breakpoint` calls the parse finds.
 - Waiting on several runs stays out. A Claude Code background shell wakes the session on its own, and nested runs already live under one root.
 
@@ -617,7 +618,7 @@ Goldens are updated with `BASELINE_UPDATE=1`, and the diff is reviewed.
 
 ## 4. Wait, status, show and the run reply
 
-**Outcome.** `sous status`, the short `show`, `show --full`, `wait --timeout` with exit 5, the wait reply with questions, review and error, and the run reply with `next`. These cover start, wait and report.
+**Outcome.** `sous status`, the short `show`, `show --full`, `wait --timeout` with exit 5, the wait reply with questions, review and failure, and the run reply with `next`. These cover start, wait and report.
 
 **Files.** `engine/src/runs/status.ts`, `engine/src/runs/run.ts` (the short view), `cli/src/commands/reads.ts`, `runs.ts`, the goldens.
 
@@ -630,7 +631,7 @@ Goldens are updated with `BASELINE_UPDATE=1`, and the diff is reviewed.
 - `cli/test/reads.test.ts`, with the fake programs:
   - The hello fixture with `name=Ada` gives a run reply holding `next[0].call` `sous wait <id> --json`. That wait exits 0 with the result "hello Ada" under `review`.
   - The asks fixture's wait exits 4 with one question whose `answeredBy` is `people`.
-  - The fails fixture's wait exits 2 with `error.step` `boom` and next holding `sous step <id> boom --json` and `sous resume <id> --json`.
+  - The fails fixture's wait exits 2 with `failure.step` `boom` and next holding `sous step <id> boom --json` and `sous resume <id> --json`.
   - `wait --timeout 1` on a slow run exits 5 with the same wait in next.
   - `show --json` has no `state` key, and `show --full --json` has one.
 
@@ -650,7 +651,7 @@ Goldens are updated with `BASELINE_UPDATE=1`, and the diff is reviewed.
   - A label run three times shows call 3, and `calls: 3`.
   - `tail: 5` gives 5 entries and a note.
 - `cli/test/reads.test.ts`:
-  - The fails fixture's `sous step <id> boom --json` holds exit 3 in the error and the resume call in next.
+  - The fails fixture's `sous step <id> boom --json` holds exit 3 in its `failure` and the resume call in next.
   - `log --json --after 0` returns events with `after`, and a second call with that `after` returns only newer events.
   - `discard --remove` deletes the activity file.
 
