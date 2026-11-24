@@ -18,7 +18,7 @@ import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, reques
 import { olderSave } from "../older-save.js";
 import { readWorkflowScript } from "../workflows/script.js";
 import { resolveWorkflow } from "../workflows/dir.js";
-import { needApproval } from "./consent.js";
+import { needApproval } from "./approval-check.js";
 import { Refusal } from "./refusal.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
 import { logFile, readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";

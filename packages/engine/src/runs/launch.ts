@@ -14,7 +14,8 @@ import { logFile } from "./store.js";
 import type { Priority } from "./slots.js";
 import { Refusal } from "./refusal.js";
 import { recordAction, type Who } from "./actions.js";
-import { mayStart, needApproval } from "./consent.js";
+import { mayStart } from "./consent.js";
+import { needApproval } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 
 export interface CreateRunRequest {

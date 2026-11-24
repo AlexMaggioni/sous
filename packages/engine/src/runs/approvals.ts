@@ -5,6 +5,8 @@
 //
 // At first use, when approvals.json is absent, every workflow of every known project and of the
 // home is approved as it is, by sous, seeded. Each function here seeds first.
+//
+// approval-check.ts holds the check of a start, which reads these.
 
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
@@ -90,3 +92,4 @@ export function approveWorkflow(paths: HomePaths, file: string, text: string, wh
   writeJsonFileInDir(paths.approvals, approvals);
   return approval;
 }
+

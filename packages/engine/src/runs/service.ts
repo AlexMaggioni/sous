@@ -16,7 +16,7 @@ import { openWorkflowDir } from "../workflows/dir.js";
 import { recordAction, SERVICE } from "./actions.js";
 import { cronMatches, parseCron } from "./cron.js";
 import { ensureHome, knownProjects, loadConfig, type HomePaths, type Place } from "./home.js";
-import { NotApproved } from "./consent.js";
+import { NotApproved } from "./approval-check.js";
 import { createRun, type Launcher } from "./launch.js";
 import { notify } from "./notify.js";
 import { processAlive } from "./records.js";

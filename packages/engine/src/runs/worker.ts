@@ -14,7 +14,7 @@ import { dropUnchangedWorktrees, runPlaces, runWorktrees } from "../places/place
 import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
 import { ask, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
-import { nestedGuard } from "./consent.js";
+import { approvedLookup } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeStepStops, updateRecord, type RunRecord } from "./records.js";
 import { judge } from "./rule.js";
@@ -62,7 +62,7 @@ export function currentWorkflows(paths: HomePaths, projectDir: string): Record<s
  *  started finds no people workflow there. */
 function managerFor(paths: HomePaths, record: RunRecord, lookup?: (name: string) => string | undefined) {
   const dirs = projectWorkflows(paths, record.projectDir);
-  const guard = nestedGuard(paths, record, lookup ?? ((name) => dirs.resolve(name)));
+  const guard = approvedLookup(paths, record, lookup ?? ((name) => dirs.resolve(name)));
   return new WorkflowManager({
     ...managerStore(paths),
     defaultAgentRetries: loadConfig(paths).retries,
