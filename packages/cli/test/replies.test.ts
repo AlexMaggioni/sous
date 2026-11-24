@@ -354,6 +354,22 @@ describe("errors through sous", () => {
     }
   });
 
+  it("a file under a writable home that sous can't open exits 1 with error.code internal, not home_not_writable", async () => {
+    const { paths, projectDir } = testHome({ one: ONE });
+    plantDone(paths, projectDir, "run-locked");
+    const log = logFile(paths, "run-locked");
+    mkdirSync(dirname(log), { recursive: true });
+    writeFileSync(log, "a line\n");
+    chmodSync(log, 0o000);
+    try {
+      const read = await call(paths, ["log", "run-locked", "--json"]);
+      assert.equal(read.code, 1, read.stdout + read.stderr);
+      assert.equal(errorOf(read).code, "internal", read.stdout + read.stderr);
+    } finally {
+      chmodSync(log, 0o644);
+    }
+  });
+
   it("a run prefix that matches two runs exits 65 with no_such_run, names both runs and gives the call sous list --json", async () => {
     const { paths, projectDir } = testHome({ one: ONE });
     plantDone(paths, projectDir, "run-a1");

@@ -285,7 +285,12 @@ another version a step stops before its agent starts, and the message names the 
 `sous doctor` shows the program sous found for each harness, how it found it, its version, and the
 other copies it doesn't use. It opens a session on each and lists its models, which sends no
 prompt. `sous doctor --live` also runs one tiny step on each, and `--live --model
-codex/gpt-6.1-sol` checks one model. It exits 1 when a check fails.
+codex/gpt-6.1-sol` checks one model. It shows where each program finds the sous skill, as `sous
+skill check` does, and gives `sous skill install` as the next call when one is missing. It writes a
+probe file in the sous home and says when it can't. Under Codex, whose sandbox lets a command write
+only in its project, the note says to add the home to `sandbox_workspace_write.writable_roots` in
+the Codex config, or to start Codex with `--add-dir <home>`. It exits 1 when a check fails, a home
+sous can't write included. A missing skill is not a failed check.
 
 sous never updates the programs. Update them as you usually do, such as with `npm install -g` or
 Homebrew, and the next step runs the new version. When a machine has several copies of one
@@ -342,7 +347,10 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 A command with a wrong or missing argument exits 64. So does `sous resume` after an edit, with
 neither `--latest` nor `--same`. A run, workflow, question, step or schedule that is not there
 exits 65. So does `sous stop --step` with a name the run never had. Any other refusal exits 66,
-such as `sous discard` of a running run, or `sous resume` of a run an older sous saved.
+such as `sous discard` of a running run, or `sous resume` of a run an older sous saved. A write
+the system refuses under the sous home, with EACCES, EPERM or EROFS, exits 1 with
+`home_not_writable`. Its `change` says how to make the home writable, under Codex too, and its
+`call` is `sous doctor --json`.
 
 A request that changes nothing exits 0 with a note. That covers pausing a run that is not
 running, stopping a run that has ended, stopping a step when no worker runs, resuming a run that
@@ -509,6 +517,18 @@ prints one. The topics are in `packages/cli/guide/`. `sous skill install` links 
 into `<CLAUDE_CONFIG_DIR or ~/.claude>/skills/sous` and `~/.agents/skills/sous`, where Claude Code
 and Codex find it. It replaces a broken link that sous made from a checkout or worktree that is
 gone. It refuses with `not_ours` when either place holds anything else, and then writes nothing. `sous skill check` shows each place, and `sous skill path` prints the skill folder.
+
+`sous hook install` adds a SessionStart hook to Claude Code's `settings.json`, in
+`CLAUDE_CONFIG_DIR` or `~/.claude`. It runs `sous status --line 2>/dev/null || true`, so a new
+session hears what needs the person, and nothing when nothing does. sous finds its entry by that
+exact command. A second install changes nothing. Before it first changes a file that is there,
+install copies it to `settings.json.sous-backup`, and a later install keeps that first copy. When
+`settings.json` is a link, sous writes the file it points to, and the link stays. `sous hook remove`
+deletes only sous's entry, and the `SessionStart` list or `hooks` key when nothing else is left in
+it. When sous made the file and the remove leaves it empty, the file goes too. A `settings.json`
+that does not parse, has a shape sous can't edit, or is a broken link is refused with `not_ours`
+and stays as it is. The hook is off until you install it. Codex gets no hook yet, since its hook
+format is not checked.
 
 ## Status
 

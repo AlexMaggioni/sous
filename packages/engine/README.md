@@ -120,7 +120,8 @@ does not, such as `createRun` for a run that needs no worker.
 | `src/steps/` | One agent step. `agent-runner.ts` is the seam the engine calls, and `steps.ts` runs the step on a harness. |
 | `src/places/` | Where a run works: a worktree, the project folder or a scratch folder. `runPlaces(paths, notes)` gives the workflow core the places of one run tree. |
 | `src/workflows/`, `src/fabricate.ts` | Saved workflows: the folders that hold them, the check and the dry run. `fabricate.ts` makes a value that fits a JSON Schema, for the dry run's stand-in agents. |
-| `src/accounts.ts`, `src/agents.ts`, `src/programs.ts` | Accounts, the agent lookup and the installed programs. |
+| `src/accounts.ts`, `src/agents.ts`, `src/programs.ts` | Accounts, the agent lookup and the installed programs. `programs.ts` also links the sous skill, and reads and writes Claude Code's settings for the session-start hook. |
+| `src/hook-settings.ts` | The pure edit behind `sous hook install` and `remove`: Claude Code's settings with sous's SessionStart hook added or taken out. |
 | `src/json-file.ts`, `src/workflow-paths.ts` | The reads and writes of the home's JSON files. A write replaces a file whole. `workflow-paths.ts` names the engine's home, `~/.sous/engine`. |
 
 ## License

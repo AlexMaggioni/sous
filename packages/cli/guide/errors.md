@@ -22,7 +22,7 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | 64 | A wrong or missing argument: `bad_argument`, or `not_a_choice` for an answer outside the choices. |
 | 65 | The thing asked for is not there: a run, workflow, question, step, schedule or guide topic. |
 | 66 | sous refuses, such as `run_is_running` or `not_ours`, or a record is broken. |
-| 1 | sous itself failed. |
+| 1 | sous itself failed, or can't write to its home: `internal` or `home_not_writable`. |
 
 `sous wait` also uses 0 to 5 for the run's status. See `sous guide wait`.
 
@@ -37,7 +37,8 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | `step_not_running` | The step is not running now. Read `sous show <run> --json`. |
 | `run_is_running` | Stop the run first, if the person wants that. |
 | `cannot_resume` | An older sous saved the run. Rerun it, after asking. |
-| `not_ours` | A skill place holds something sous did not put there. Tell the person. |
+| `not_ours` | A skill place holds something sous did not put there, or Claude Code's `settings.json` does not parse, has a shape sous can't edit, or is a broken link. Tell the person. |
+| `home_not_writable` | sous can't write to its home. Under Codex the sandbox blocks it. Tell the person what `change` says. |
 | `started_by_people` | Only a person starts this workflow. Give them `forPerson` to type in their own terminal. |
 | `no_person_here` | A step of a run gave `--by person`. Leave it out: the step decides for itself. |
 | `broken_record` | A file sous keeps, such as a run's event log, does not parse. Tell the person. |
