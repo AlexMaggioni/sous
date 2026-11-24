@@ -1,10 +1,13 @@
 // What an agent may do for the person. A workflow with startedBy "people" starts only from the
-// person's own terminal, or from a schedule the person added.
+// person's own terminal, or from a schedule the person added. A question for people takes only
+// the person's answer, typed or passed on with --by person.
 
 import type { ResolvedWorkflow } from "../workflows/dir.js";
 import { workflowExtras } from "../workflows/meta.js";
 import { parseWorkflowScript } from "../workflows/script.js";
 import type { Through, Who } from "./actions.js";
+import { answerCalls, answerCommand, type Question } from "./inbox.js";
+import type { RunRecord } from "./records.js";
 import { Refusal } from "./refusal.js";
 
 /**
@@ -37,4 +40,34 @@ export function nestedLookup(through: Through | undefined, lookup: (name: string
     mayStart({ name, extras }, { by: "agent", through }, `sous run ${name}`);
     return script;
   };
+}
+
+/**
+ * Refuse an answer the caller may not give, with question_for_people. It allows, in this order:
+ * the person, typed or passed on with --by person; nothing else for a breakpoint; anyone for a
+ * question whose author set answeredBy "anyone"; anyone for a people question of a run started
+ * with --let-agent-answer. `record` is the root run's, so the consent covers its nested runs.
+ */
+export function mayAnswer(question: Question, record: Pick<RunRecord, "letAgentAnswer">, who: Who): void {
+  if (who.by === "person") return;
+  if (question.breakpoint) {
+    const change = `Give the person the breakpoint. Pass on their decision with --by person: ${answerCommand(question, "approve")}, ${answerCommand(question, "send-back", '"note"')} or sous stop ${question.runId}.`;
+    throw new Refusal("question_for_people", `${question.id} is a breakpoint, so only the person decides it.`, change, answerCalls(question, who)[0]!);
+  }
+  if (question.answeredBy === "anyone" || record.letAgentAnswer) return;
+  const change = "Ask the person, then pass on their answer with --by person.";
+  throw new Refusal("question_for_people", `${question.id} is for the person to answer.`, change, answerCalls(question, who)[0]!);
+}
+
+/**
+ * The person's consent that agents answer a run's people questions, as the record keeps it.
+ * Only the person gives it, typed or passed on with --by person: anything else is refused with
+ * needs_person and `command` with --by person.
+ */
+export function letAgentAnswerBy(who: Who, command: string): NonNullable<RunRecord["letAgentAnswer"]> {
+  if (who.by !== "person") {
+    const change = "Ask the person whether agents may answer this run's questions, then pass on their yes with --by person.";
+    throw new Refusal("needs_person", "Only the person lets agents answer a run's questions.", change, `${command} --by person --json`);
+  }
+  return { by: who.by, through: who.through, at: new Date().toISOString() };
 }

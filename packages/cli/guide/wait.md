@@ -39,8 +39,8 @@ sous wait <run> --timeout 540 --json
 - `runId`, `workflow` and `status`.
 - `pauseReason` on a paused run, and `reason` in words.
 - `resetHint`, the reset time the program gave at the usage limit, in its words.
-- `questions`, each with `id`, `prompt`, `kind`, `choices`, `breakpoint`, `askedAt` and
-  `answeredBy`.
+- `questions`, each with `id`, `step` for an agent's question, `prompt`, `kind`, `choices`,
+  `breakpoint`, `askedAt` and `answeredBy`, `"people"` or `"anyone"`. See `sous guide asks`.
 - `cwd` and `branch`.
 - `result` and `review`, once the run completed. `review` holds the branch, the worktree and the
   result.

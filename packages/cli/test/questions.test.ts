@@ -245,7 +245,7 @@ describe("what a reply writes", () => {
     const text = readFileSync(join(paths.inbox, "r1--0.answer.json"), "utf8");
     const answeredAt = (JSON.parse(text) as { answeredAt: string }).answeredAt;
     assert.ok(!Number.isNaN(Date.parse(answeredAt)), text);
-    assert.equal(text, `{\n  "hash": "h0",\n  "value": "blue",\n  "answeredAt": "${answeredAt}"\n}\n`);
+    assert.equal(text, `{\n  "hash": "h0",\n  "value": "blue",\n  "answeredAt": "${answeredAt}",\n  "by": "person",\n  "through": {\n    "kind": "person"\n  }\n}\n`);
   });
 });
 

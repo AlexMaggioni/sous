@@ -41,6 +41,8 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | `home_not_writable` | sous can't write to its home. Under Codex the sandbox blocks it. Tell the person what `change` says. |
 | `started_by_people` | Only a person starts this workflow. Give them `forPerson` to type in their own terminal. |
 | `no_person_here` | A step of a run gave `--by person`. Leave it out: the step decides for itself. |
+| `question_for_people` | The question is the person's. Show it to them, then make `call` with their answer. |
+| `needs_person` | Only the person decides this. Ask them, then make `call`, which adds `--by person`. |
 | `broken_record` | A file sous keeps, such as a run's event log, does not parse. Tell the person. |
 
 ## Requests that change nothing

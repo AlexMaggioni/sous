@@ -13,7 +13,7 @@ export {
   type Place,
 } from "./runs/home.js";
 export { listRecords, loadRecord, scopePath, type RunRecord } from "./runs/records.js";
-export { answerCalls, answerCommand, hint, type Reply } from "./runs/inbox.js";
+export { answerCalls, answerCommand, answeredByFor, hint, questionView, type Reply } from "./runs/inbox.js";
 export { Refusal } from "./runs/refusal.js";
 export { recordAction, traceCall, type Through, type Who } from "./runs/actions.js";
 export { mayStart } from "./runs/consent.js";

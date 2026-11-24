@@ -12,7 +12,8 @@ import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../pla
 import { recordAction, noticeOf, type Who } from "./actions.js";
 import { loadConfig, type HomePaths, type Place } from "./home.js";
 import { notify } from "./notify.js";
-import { decisionOf, listQuestions, readQuestion, removeRunQuestions, reply, type Misfit, type Question, type Reply } from "./inbox.js";
+import { decisionOf, listQuestions, questionView, readQuestion, removeRunQuestions, reply, type Misfit, type Question, type QuestionView, type Reply } from "./inbox.js";
+import { letAgentAnswerBy, mayAnswer } from "./consent.js";
 import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
 import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestStepStop, scopePrefix, updateRecord, type RunRecord } from "./records.js";
 import { olderSave } from "../older-save.js";
@@ -75,16 +76,7 @@ export interface Failure {
   message: string;
 }
 
-/** A question as a reply shows it. Who may answer it comes in piece 8; today only people do. */
-export interface QuestionView {
-  id: string;
-  prompt: string;
-  kind: RunQuestion["kind"];
-  choices?: string[];
-  breakpoint: boolean;
-  askedAt: string;
-  answeredBy: "people";
-}
+export type { QuestionView };
 
 /** The short view of a run, what sous show --json prints. */
 export interface ShortRun {
@@ -126,12 +118,6 @@ function failureOf(state: PersistedRunState | undefined, steps: readonly Step[])
   const ours = step?.error !== undefined && (reason === undefined || reason.includes(step.error) || step.error.includes(reason) || reason.includes(`"${step.label}"`));
   if (ours) return { step: step.label, message: step.error! };
   return { message: reason ?? step?.error ?? "the run failed" };
-}
-
-/** A question as a reply shows it. */
-function questionView(question: RunQuestion): QuestionView {
-  const { id, prompt, kind, choices, breakpoint, askedAt } = question;
-  return { id, prompt, kind, ...(choices ? { choices } : {}), breakpoint, askedAt, answeredBy: "people" };
 }
 
 const secondsOf = (ms: number) => Math.round(ms / 1000);
@@ -238,7 +224,7 @@ export function shortRun(run: RunDetail, now: Date): ShortRun {
     ...(Number.isNaN(seconds) ? {} : { seconds }),
     tokens: run.tokens ?? 0,
     steps,
-    questions: run.questions.map(questionView),
+    questions: run.questions.map((question) => questionView(question, Boolean(record.letAgentAnswer))),
     ...withFailure(run.failure),
     ...(run.pause?.resumeAt ? { resumesAt: run.pause.resumeAt.toISOString() } : {}),
   };
@@ -347,7 +333,7 @@ function runSummary(record: RunRecord, state: PersistedRunState | undefined, vie
     ...(state?.pauseReason ? { pauseReason: state.pauseReason } : {}),
     ...(state?.resetHint ? { resetHint: state.resetHint } : {}),
     ...(state?.reason && !done ? { reason: state.reason } : {}),
-    ...(questions.length ? { questions: questions.map(questionView) } : {}),
+    ...(questions.length ? { questions: questions.map((question) => questionView(question, Boolean(record.letAgentAnswer))) } : {}),
     cwd: record.cwd,
     ...(record.branch ? { branch: record.branch } : {}),
     ...(done ? { result: state.result, review: { ...placeOf(record), result: state.result } } : {}),
@@ -568,11 +554,14 @@ export type ResumeOutcome =
 /**
  * Resume a run in a new worker. A workflow edited since the run started reaches it only by
  * choice: "latest" takes the edits, and "same" goes on with the version it started with. With
- * no choice, an edit makes the caller choose. A run an older sous saved is refused.
+ * no choice, an edit makes the caller choose. A run an older sous saved is refused. With
+ * `letAgentAnswer`, the person lets agents answer the run's people questions; `command` is the
+ * resume the person types, for needs_person.
  */
-export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who: Who, choice?: "latest" | "same"): ResumeOutcome {
+export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who: Who, choice?: "latest" | "same", letAgentAnswer?: { command: string }): ResumeOutcome {
   const view = readRun(paths, runId);
   const { record, resume } = view;
+  const consent = letAgentAnswer ? letAgentAnswerBy(who, letAgentAnswer.command) : undefined;
   const why = resume.ok ? undefined : resume.why;
   if (why === "older") {
     const message = `${record.runId} was saved by an older sous, and this sous cannot resume it. sous rerun ${record.runId} starts it again, and sous stop ${record.runId} ends it.`;
@@ -589,9 +578,10 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
       `sous resume ${record.runId} --same goes on with the version it started with.`;
     return { mustChoose: changed, message };
   }
-  if (choice === "latest") updateRecord(paths, record.runId, { resumeLatest: true });
+  if (choice === "latest" || consent) updateRecord(paths, record.runId, { ...(choice === "latest" ? { resumeLatest: true } : {}), ...(consent ? { letAgentAnswer: consent } : {}) });
   launch(paths, record.runId, "resume");
   recordAction(paths, { act: "resume", ...who, runId: record.runId });
+  if (consent) recordAction(paths, { act: "let-agent-answer", ...who, runId: record.runId, workflow: record.workflow });
   return { resumed: record };
 }
 
@@ -616,6 +606,8 @@ export interface RerunRequest {
   /** Who starts it again, and the command the person types when a people workflow refuses it. */
   who: Who;
   command?: string;
+  /** --let-agent-answer. The earlier run's consent never carries over. */
+  letAgentAnswer?: boolean;
 }
 
 /** Start an earlier run again as a new run, with its inputs, step changes and model. */
@@ -637,7 +629,8 @@ export function rerunRun(paths: HomePaths, launch: Launcher, runId: string, requ
     ...(request.startedByRun ? { startedByRun: request.startedByRun } : {}),
     caller: request.caller === true,
     who: request.who,
-    command: request.command ?? `sous rerun ${old.runId}`,
+    command: request.command ?? `sous rerun ${old.runId}${request.letAgentAnswer ? " --let-agent-answer" : ""}`,
+    ...(request.letAgentAnswer ? { letAgentAnswer: true } : {}),
   });
 }
 
@@ -678,12 +671,14 @@ function ownRun(paths: HomePaths, scope: string): RunRecord | undefined {
  *  not fit the command, or the prompt's question was already closed. */
 export type AnswerOutcome = { answered: true; running: boolean; notJson?: true } | { stopped: ReturnType<typeof stopRun> } | Misfit | { gone: true };
 
-/** Answer a question with what a person typed. A reply that stops the run stops it as sous stop
- *  does. Only a reply typed at a prompt finds the question gone. */
+/** Answer a question with what a person typed, or refuse a caller that may not answer it, before
+ *  anything is written. The answer keeps who gave it. A reply that stops the run stops it as sous
+ *  stop does. Only a reply typed at a prompt finds the question gone. */
 export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply & { via: Exclude<Reply["via"], "prompt"> }, who: Who): Exclude<AnswerOutcome, { gone: true }>;
 export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply, who: Who): AnswerOutcome;
 export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: Reply, who: Who): AnswerOutcome {
-  const result = reply(paths, question, typed);
+  mayAnswer(question, loadRecord(paths, question.runId) ?? {}, who);
+  const result = reply(paths, question, typed, who);
   if ("stop" in result) return { stopped: stopRun(paths, question.runId, who) };
   if (!("answered" in result)) return result;
   // approve and send-back keep their name, and an answer at the prompt is an answer.

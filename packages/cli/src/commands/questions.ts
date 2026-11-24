@@ -1,10 +1,10 @@
 // sous inbox, answer, approve and send-back: the questions runs ask.
 
-import { answerCommand, answerQuestion, findQuestion, hint, runQuestions, type HomePaths, type Reply as Typed, type RunQuestion } from "@sous/engine";
+import { answerCommand, answerQuestion, answeredByFor, findQuestion, hint, loadRecord, questionView, runQuestions, type HomePaths, type Reply as Typed, type RunQuestion } from "@sous/engine";
 import { Usage, type Parsed } from "../args.js";
 import { reply, type Reply } from "../reply.js";
 import { age, needRun, stopReply } from "./common.js";
-import { resumeNext, waitNext } from "./next.js";
+import { answerNext, resumeNext, waitNext } from "./next.js";
 import type { Ctx } from "./index.js";
 
 function needQuestion(paths: HomePaths, id: string | undefined): RunQuestion {
@@ -12,10 +12,17 @@ function needQuestion(paths: HomePaths, id: string | undefined): RunQuestion {
   return findQuestion(paths, id);
 }
 
+/** Whether the run that asks a question was started with --let-agent-answer. */
+const lets = (paths: HomePaths, question: RunQuestion) => Boolean(loadRecord(paths, question.runId)?.letAgentAnswer);
+
 export function cmdInbox(args: Parsed, ctx: Ctx): Reply<object> {
   const { paths } = ctx;
   const questions = args.positional[0] ? needRun(paths, args.positional[0]).questions : runQuestions(paths);
-  if (ctx.json) return reply({ questions });
+  if (ctx.json) {
+    // Each question as wait shows it, with who may answer it for its run, and the caller's answer calls.
+    const views = questions.map((question) => ({ ...questionView(question, lets(paths, question)), runId: question.runId, workflow: question.workflow }));
+    return reply({ questions: views }, { next: views.flatMap((view) => answerNext(view, ctx.who)) });
+  }
   if (!questions.length) return reply({}, { text: ["nothing waits for you"] });
   const text = questions.flatMap((question) => [
     `${question.id}  ${question.workflow}  ${age(question.askedAt, ctx.now())} ago`,
@@ -37,7 +44,8 @@ export function cmdAnswer(args: Parsed, ctx: Ctx, via: Exclude<Typed["via"], "pr
   const answer = answerQuestion(paths, question, { via, text, valueJson }, ctx.who);
   if ("usage" in answer) {
     if (!answer.choices) throw new Usage(answer.usage);
-    throw new Usage(answer.usage, "not_a_choice", "Answer with one of the choices.", answerCommand(question, "answer", `<${answer.choices.join("|")}>`, true));
+    const byPerson = ctx.who.through.kind !== "person" && answeredByFor(question, lets(paths, question)) === "people";
+    throw new Usage(answer.usage, "not_a_choice", "Answer with one of the choices.", answerCommand(question, "answer", `<${answer.choices.join("|")}>`, true, byPerson));
   }
   if ("stopped" in answer) return stopReply(runId, answer.stopped, { question: id, runId, answered: true, outcome: answer.stopped.outcome });
   const notes: string[] = [];
@@ -47,7 +55,7 @@ export function cmdAnswer(args: Parsed, ctx: Ctx, via: Exclude<Typed["via"], "pr
     ? [waitNext(runId, "waits for the run, which goes on with the answer")]
     : [resumeNext(runId, "resumes the run, which uses the answer")];
   return reply(
-    { question: id, runId, answered: true, running: answer.running },
+    { question: id, runId, answered: true, running: answer.running, by: ctx.who.by, through: ctx.who.through },
     { text: [`answered ${id}${answer.running ? "" : `. The run is not running: sous resume ${runId} uses the answer.`}`], notes, next },
   );
 }

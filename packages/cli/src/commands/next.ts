@@ -1,13 +1,14 @@
 // The calls that come next after sous wait and sous show, from where the run is.
 
-import { answerCalls, type Failure, type RunQuestion } from "@sous/engine";
+import { answerCalls, type Failure, type RunQuestion, type Who } from "@sous/engine";
 import type { Next } from "../reply.js";
 
 /** Where a run is, as wait and show give it. */
 interface RunAt {
   runId: string;
   status: string;
-  questions?: ReadonlyArray<Pick<RunQuestion, "id" | "kind" | "choices" | "breakpoint" | "prompt">>;
+  /** The questions as a reply shows them, with who may answer each as it stands for the run. */
+  questions?: ReadonlyArray<Pick<RunQuestion, "id" | "kind" | "choices" | "breakpoint" | "prompt" | "answeredBy">>;
   failure?: Failure;
   /** When the service resumes a run paused at a usage limit. */
   resumesAt?: string;
@@ -44,17 +45,18 @@ export function promptLine(prompt: string): string {
   return line.length > 80 ? `${line.slice(0, 77)}...` : line;
 }
 
-/** The calls that answer a question, each with what it does. */
-function answerNext(question: Pick<RunQuestion, "id" | "kind" | "choices" | "breakpoint" | "prompt">): Next[] {
-  const [first, sendBack] = answerCalls(question);
+/** The calls that answer a question, each with what it does, for the caller. */
+export function answerNext(question: Pick<RunQuestion, "id" | "kind" | "choices" | "breakpoint" | "prompt" | "answeredBy">, who: Who): Next[] {
+  const [first, sendBack] = answerCalls(question, who);
   const calls: Next[] = [{ call: first!, does: `${question.breakpoint ? "approves" : "answers"} "${promptLine(question.prompt)}"` }];
   if (sendBack) calls.push({ call: sendBack, does: "sends the run back with a note" });
   return calls;
 }
 
 /** The calls after a wait or a show, and a note when the run waits for its own time. Show leaves
- *  out the call to itself. A wait with a timeout suggests the same timeout again. */
-export function nextCalls(run: RunAt, from: "wait" | "show", timeout?: number): { next: Next[]; notes: string[] } {
+ *  out the call to itself. A wait with a timeout suggests the same timeout again. The answer
+ *  calls are for `who`, the caller. */
+export function nextCalls(run: RunAt, from: "wait" | "show", who: Who, timeout?: number): { next: Next[]; notes: string[] } {
   const id = run.runId;
   const wait = waitNext(id, "waits until the run ends, pauses or asks", timeout);
   const show = { call: `sous show ${id} --json`, does: "shows the run and its steps" };
@@ -62,7 +64,7 @@ export function nextCalls(run: RunAt, from: "wait" | "show", timeout?: number): 
   const calls: Next[] = [];
   const notes: string[] = [];
   if (run.status === "asks") {
-    for (const q of run.questions ?? []) calls.push(...answerNext(q));
+    for (const q of run.questions ?? []) calls.push(...answerNext(q, who));
     calls.push({ ...wait, does: "waits again once the answer is in" });
   } else if (run.status === "running" || run.status === "pending" || run.status === "starting") {
     calls.push(wait);

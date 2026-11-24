@@ -173,7 +173,9 @@ async function runOnAccounts(
       prompt,
       kind: checkpoint.kind ?? "confirm",
       ...(checkpoint.choices ? { choices: [...checkpoint.choices] } : {}),
-      breakpoint: context?.purpose === "breakpoint",
+      breakpoint: context?.purpose?.breakpoint === true,
+      answeredBy: context?.purpose?.answeredBy === "anyone" && !context.purpose.breakpoint ? "anyone" : "people",
+      ...(context?.purpose?.step ? { step: context.purpose.step } : {}),
       askedAt: new Date().toISOString(),
     };
     if (options.dryRun) {

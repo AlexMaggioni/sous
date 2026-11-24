@@ -4,6 +4,7 @@
 
 import { unlinkSync } from "node:fs";
 import { readJsonFile, writeJsonFile } from "../json-file.js";
+import type { By, Through, Who } from "./actions.js";
 import type { HomePaths } from "./home.js";
 import { answerFile, questionFile, questionFiles } from "./store.js";
 
@@ -21,6 +22,12 @@ export interface Question {
   choices?: string[];
   /** A breakpoint expects approve, stop, or send back with a note. */
   breakpoint: boolean;
+  /** Who may answer, as the author said: people, or anyone, an agent too. A breakpoint is always
+   *  for people. sous writes it on each question and fills it when it reads an older file, so
+   *  only a question built by hand lacks it, and then it is for people. */
+  answeredBy?: "people" | "anyone";
+  /** The label of the agent step that asks, for an agent's question. */
+  step?: string;
   askedAt: string;
 }
 
@@ -28,6 +35,9 @@ export interface Answer {
   hash: string;
   value: unknown;
   answeredAt: string;
+  /** Who answered and through what. An answer written before these fields has neither. */
+  by?: By;
+  through?: Through;
 }
 
 export function questionId(scope: string, callIndex: number): string {
@@ -38,16 +48,23 @@ function writeQuestion(paths: HomePaths, question: Question): void {
   writeJsonFile(questionFile(paths, question.id), question);
 }
 
+/** A question file as it reads today: an old file, or a breakpoint that says anyone, is for people. */
+function asRead(question: Question | undefined): Question | undefined {
+  if (!question) return question;
+  return { ...question, answeredBy: question.answeredBy === "anyone" && !question.breakpoint ? "anyone" : "people" };
+}
+
 export function readQuestion(paths: HomePaths, id: string): Question | undefined {
-  return readJsonFile<Question>(questionFile(paths, id));
+  return asRead(readJsonFile<Question>(questionFile(paths, id)));
 }
 
 function readAnswer(paths: HomePaths, id: string): Answer | undefined {
   return readJsonFile<Answer>(answerFile(paths, id));
 }
 
-export function writeAnswer(paths: HomePaths, question: Question, value: unknown): void {
-  writeJsonFile(answerFile(paths, question.id), { hash: question.hash, value, answeredAt: new Date().toISOString() } satisfies Answer);
+export function writeAnswer(paths: HomePaths, question: Question, value: unknown, who?: Who): void {
+  const answer: Answer = { hash: question.hash, value, answeredAt: new Date().toISOString(), ...(who ? { by: who.by, through: who.through } : {}) };
+  writeJsonFile(answerFile(paths, question.id), answer);
 }
 
 function removeQuestion(paths: HomePaths, id: string): void {
@@ -115,7 +132,7 @@ export function standIn(question: Pick<Question, "kind" | "choices" | "breakpoin
 export function listQuestions(paths: HomePaths, runId?: string): Question[] {
   const out: Question[] = [];
   for (const file of questionFiles(paths)) {
-    const question = readJsonFile<Question>(file);
+    const question = asRead(readJsonFile<Question>(file));
     if (!question || (runId && question.runId !== runId)) continue;
     if (readAnswer(paths, question.id)?.hash === question.hash) continue;
     out.push(question);
@@ -205,11 +222,11 @@ export interface Reply {
  * answer as from the prompt. A choice that is not listed, or a confirm that is not yes or no,
  * throws. A reply typed at a prompt counts only while the question's file is there.
  */
-export function reply(paths: HomePaths, question: Question, typed: Reply): Answered | { stop: true } | Misfit | { gone: true } {
+export function reply(paths: HomePaths, question: Question, typed: Reply, who?: Who): Answered | { stop: true } | Misfit | { gone: true } {
   if (typed.via === "prompt" && !readQuestion(paths, question.id)) return { gone: true };
   const meaning = meaningOf(question, typed);
   if (!("value" in meaning)) return meaning;
-  writeAnswer(paths, question, meaning.value);
+  writeAnswer(paths, question, meaning.value, who);
   return meaning.notJson ? { answered: true, value: meaning.value, notJson: true } : { answered: true, value: meaning.value };
 }
 
@@ -271,17 +288,47 @@ function meaningOf(question: Question, { via, text, valueJson }: Reply): { value
 }
 
 /** A sous command that answers a question: `answer` with a value, `approve`, or `send-back` with
- *  a note. Every answer call sous prints is built here. */
-export function answerCommand(question: Pick<Question, "id">, verb: "answer" | "approve" | "send-back", value?: string, json = false): string {
-  return `sous ${verb} ${question.id}${value === undefined ? "" : ` ${value}`}${json ? " --json" : ""}`;
+ *  a note. `byPerson` passes on the person's answer. Every answer call sous prints is built here. */
+export function answerCommand(question: Pick<Question, "id">, verb: "answer" | "approve" | "send-back", value?: string, json = false, byPerson = false): string {
+  return `sous ${verb} ${question.id}${value === undefined ? "" : ` ${value}`}${byPerson ? " --by person" : ""}${json ? " --json" : ""}`;
 }
 
-/** The --json calls an agent makes to answer a question. A breakpoint has two: approve and send back. */
-export function answerCalls(question: Pick<Question, "id" | "kind" | "choices" | "breakpoint">): string[] {
-  if (question.breakpoint) return [answerCommand(question, "approve", undefined, true), answerCommand(question, "send-back", '"<note>"', true)];
-  if (question.kind === "confirm") return [answerCommand(question, "answer", "<yes|no>", true)];
-  if (question.kind === "select") return [answerCommand(question, "answer", `<${(question.choices ?? []).join("|")}>`, true)];
-  return [answerCommand(question, "answer", '"<answer>"', true)];
+/** Who may answer a question as it stands for its run. A run started with --let-agent-answer
+ *  opens its people questions to anyone, never its breakpoints. */
+export function answeredByFor(question: Pick<Question, "breakpoint" | "answeredBy">, letAgentAnswer: boolean): "people" | "anyone" {
+  if (question.breakpoint) return "people";
+  return question.answeredBy === "anyone" || letAgentAnswer ? "anyone" : "people";
+}
+
+/**
+ * The --json calls that answer a question. A breakpoint has two: approve and send back. A caller
+ * that is not the person gets --by person on a question it may not answer alone, so it passes on
+ * the person's answer. With no caller, the calls are the person's.
+ */
+export function answerCalls(question: Pick<Question, "id" | "kind" | "choices" | "breakpoint" | "answeredBy">, who?: Who, letAgentAnswer = false): string[] {
+  const by = who !== undefined && who.through.kind !== "person" && answeredByFor(question, letAgentAnswer) === "people";
+  if (question.breakpoint) return [answerCommand(question, "approve", undefined, true, by), answerCommand(question, "send-back", '"<note>"', true, by)];
+  if (question.kind === "confirm") return [answerCommand(question, "answer", "<yes|no>", true, by)];
+  if (question.kind === "select") return [answerCommand(question, "answer", `<${(question.choices ?? []).join("|")}>`, true, by)];
+  return [answerCommand(question, "answer", '"<answer>"', true, by)];
+}
+
+/** A question as a reply shows it, with who may answer it as it stands for its run. */
+export interface QuestionView {
+  id: string;
+  step?: string;
+  prompt: string;
+  kind: Question["kind"];
+  choices?: string[];
+  breakpoint: boolean;
+  askedAt: string;
+  answeredBy: "people" | "anyone";
+}
+
+/** The view of a question, for a run started with --let-agent-answer or not. */
+export function questionView(question: Question, letAgentAnswer: boolean): QuestionView {
+  const { id, step, prompt, kind, choices, breakpoint, askedAt } = question;
+  return { id, ...(step ? { step } : {}), prompt, kind, ...(choices ? { choices } : {}), breakpoint, askedAt, answeredBy: answeredByFor(question, letAgentAnswer) };
 }
 
 /**

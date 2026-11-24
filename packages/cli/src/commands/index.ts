@@ -70,7 +70,7 @@ function takes(...names: string[]): FlagSpec[] {
 }
 
 export const COMMANDS: Record<string, CommandSpec> = {
-  run: { run: cmdRun, flags: takes("place", "model", "set", "concurrency", "project", "wait", "by", "json"), inputs: true },
+  run: { run: cmdRun, flags: takes("place", "model", "set", "concurrency", "project", "wait", "let-agent-answer", "by", "json"), inputs: true },
   wait: { run: cmdWait, flags: takes("timeout", "json") },
   status: { run: cmdStatus, flags: takes("since", "line", "all", "json") },
   list: { run: cmdList, flags: takes("all", "json") },
@@ -82,9 +82,9 @@ export const COMMANDS: Record<string, CommandSpec> = {
   approve: { run: (args, ctx) => cmdAnswer(args, ctx, "approve"), flags: takes("by", "json") },
   "send-back": { run: (args, ctx) => cmdAnswer(args, ctx, "send-back"), flags: takes("by", "json") },
   pause: { run: cmdPause, flags: takes("by", "json") },
-  resume: { run: cmdResume, flags: takes("latest", "same", "wait", "by", "json") },
+  resume: { run: cmdResume, flags: takes("latest", "same", "wait", "let-agent-answer", "by", "json") },
   stop: { run: cmdStop, flags: takes("step", "by", "json") },
-  rerun: { run: cmdRerun, flags: takes("place", "reuse", "set", "model", "wait", "by", "json"), inputs: true },
+  rerun: { run: cmdRerun, flags: takes("place", "reuse", "set", "model", "wait", "let-agent-answer", "by", "json"), inputs: true },
   workflows: { run: cmdWorkflows, flags: takes("project", "json") },
   check: { run: cmdCheck, flags: takes("project", "dry-run", "answers", "json"), inputs: true },
   schedule: { run: cmdSchedule, flags: takes("cron", "place", "project", "by", "json"), inputs: true },
