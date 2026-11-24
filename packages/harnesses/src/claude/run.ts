@@ -17,6 +17,7 @@ import { toAnthropicJsonSchema } from "../schema.js";
 import { refusal, toolName } from "../tools.js";
 import type { Failure, HistoryEntry, McpServer, Step, StepEvents, StepResult, Usage } from "../types.js";
 import { claudeEnv } from "./program.js";
+import { Tells } from "./tells.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"];
 const EFFORTS: EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
@@ -93,6 +94,13 @@ function userMessage(step: Step): SDKUserMessage {
   };
 }
 
+/** A frame on the way of a user message that carries a uuid. The SDK's types leave it out. */
+interface Lifecycle {
+  type: "command_lifecycle";
+  command_uuid: string;
+  state: "queued" | "started" | "completed" | "cancelled";
+}
+
 const LIMIT_ERRORS = new Set(["rate_limit", "billing_error"]);
 
 /** The stop reasons that end a turn without a whole answer. */
@@ -112,22 +120,31 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
   const stop = () => abort.abort();
   step.signal?.addEventListener("abort", stop, { once: true });
 
-  // The prompt stays open until the result, so the SDK keeps answering permission requests.
-  let release!: () => void;
-  const done = new Promise<void>((resolve) => (release = resolve));
-  let q: Query | undefined;
+  const history = (entry: Omit<HistoryEntry, "at">) => events.history?.({ ...entry, at: Date.now() });
+  history({ role: "user", kind: "text", text: step.prompt });
+
+  // The prompt stays open until the first result, so the SDK keeps answering permission requests
+  // and the step's tells reach the turn. The result closes it.
+  const tells = new Tells((told) => history({ role: "user", kind: "text", text: told }));
+  /** Closes the seam. True when a tell was still unread, so the query must end now. */
+  const release = () => {
+    const { open, unread } = tells.close();
+    if (open) events.steer?.(undefined);
+    return unread;
+  };
+  let started!: (query: Query) => void;
+  const ready = new Promise<Query>((resolve) => (started = resolve));
   async function* prompt(): AsyncGenerator<SDKUserMessage> {
-    if (!step.mode && q) {
+    // The SDK may ask for the first message before query() returns, so this waits for it.
+    const q = await ready;
+    if (!step.mode) {
       // "auto" only when the session offers it. Otherwise the user's own default mode stays.
       const models = await q.supportedModels().catch(() => undefined);
       if (models && offersAuto(models, step.model)) await q.setPermissionMode("auto").catch(() => undefined);
     }
     yield userMessage(step);
-    await done;
+    yield* tells.messages();
   }
-
-  const history = (entry: Omit<HistoryEntry, "at">) => events.history?.({ ...entry, at: Date.now() });
-  history({ role: "user", kind: "text", text: step.prompt });
 
   // Usage per assistant message, since the SDK repeats a message once per content block.
   const perMessage = new Map<string, Usage>();
@@ -143,21 +160,32 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
   let answer: StepResult | undefined;
   let failure: Failure | undefined;
   let failureText = "";
+  let resulted = false;
+  let unreadTell = false;
 
   const fail = (message: string, failure: Failure): never => {
     throw new StepFailure(message, failure, { usage: total(), ...(opened ? { sessionId } : {}), notes });
   };
 
+  let q: Query | undefined;
   try {
     q = query({ prompt: prompt(), options });
-    for await (const message of q as AsyncIterable<SDKMessage>) {
+    started(q);
+    for await (const message of q as AsyncIterable<SDKMessage | Lifecycle>) {
+      // The step ends at the first result. A later frame belongs to no turn of this step.
+      if (resulted) continue;
       switch (message.type) {
+        case "command_lifecycle":
+          tells.lifecycle(message.command_uuid, message.state);
+          break;
         case "system":
           if (message.subtype === "init") {
             opened = true;
             model = message.model;
             events.session?.(message.session_id);
             events.model?.(message.model);
+            const send = tells.open();
+            if (send) events.steer?.(send);
           }
           break;
         case "rate_limit_event":
@@ -222,10 +250,15 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
           } else {
             failureText = message.errors.join("\n");
           }
-          release();
+          tells.consumed(message.user_message_uuids);
+          resulted = true;
+          // Claude Code would run a tell it never read as a turn of its own, unseen and unpaid
+          // for here. Closing the query stops it.
+          unreadTell = release();
           break;
         }
       }
+      if (unreadTell) break;
     }
   } catch (error) {
     if (!abort.signal.aborted) failureText ||= stderr.trim() || (error instanceof Error ? error.message : String(error));
@@ -235,8 +268,9 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
     q?.close();
   }
 
-  if (step.signal?.aborted) fail("The step was stopped.", { kind: "stopped" });
+  // A stop after the result keeps the answer.
   if (answer) return answer;
+  if (step.signal?.aborted) fail("The step was stopped.", { kind: "stopped" });
   if (failure) fail(failureText, failure);
   if (/No conversation found/i.test(stderr)) fail(`No Claude Code session ${sessionId} to resume.`, { kind: "no_session", sessionId });
   if (limit || limitSeen) fail(failureText || "Claude Code hit its usage limit.", { kind: "usage_limit", ...limit });

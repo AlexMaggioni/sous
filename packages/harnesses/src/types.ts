@@ -1,5 +1,7 @@
 // The one interface the engine runs a step through, on Claude Code or on Codex.
 
+import type { Steer } from "./seam.js";
+
 export type HarnessId = "claude" | "codex";
 
 /** The installed program an adapter found, or why it found none. */
@@ -129,6 +131,11 @@ export interface StepEvents {
   /** The step's running total. */
   usage?(usage: Usage): void;
   history?(entry: HistoryEntry): void;
+  /**
+   * The adapter gives a Steer when the turn starts, and undefined when the turn ends. A message
+   * goes into the step's history once it is delivered.
+   */
+  steer?(send: Steer | undefined): void;
 }
 
 export interface Harness {
