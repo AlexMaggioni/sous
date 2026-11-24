@@ -617,3 +617,19 @@ describe("the login variables", () => {
     assert.equal(base.CLAUDE_CONFIG_DIR, "/old");
   });
 });
+
+describe("the skill places", () => {
+  const claude = createHarness("claude", { env: {} });
+  const codex = createHarness("codex", { env: {} });
+  const home = process.env.HOME!;
+
+  test("Claude keeps its skills and settings in its folder, which CLAUDE_CONFIG_DIR moves", () => {
+    assert.deepEqual(claude.places({}), { skills: join(home, ".claude", "skills"), settings: join(home, ".claude", "settings.json") });
+    assert.deepEqual(claude.places({ CLAUDE_CONFIG_DIR: "/a" }), { skills: join("/a", "skills"), settings: join("/a", "settings.json") });
+  });
+
+  test("Codex reads skills from ~/.agents/skills, whatever CODEX_HOME says", () => {
+    assert.deepEqual(codex.places({}), { skills: join(home, ".agents", "skills") });
+    assert.deepEqual(codex.places({ CODEX_HOME: "/b" }), { skills: join(home, ".agents", "skills") });
+  });
+});
