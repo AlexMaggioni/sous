@@ -98,11 +98,13 @@ function refusal(printed: { code: number; out: string }, code: string, what: str
   return error;
 }
 
-/** The not_approved refusal for `name`: its call shows the change, and its change gives the approve call. */
-function notApproved(printed: { code: number; out: string }, name: string, what: string): void {
+/** The not_approved refusal for `name`: its call shows the change, and its change gives the approve call.
+ *  A command given --project keeps it in the call, as every call in an error does. */
+function notApproved(printed: { code: number; out: string }, name: string, what: string, projectDir?: string): void {
   const error = refusal(printed, "not_approved", what);
   assert.match(error.message, new RegExp(`\\b${name}\\b`), `${what}: the message names ${name}`);
-  assert.equal(error.call, `sous workflows show ${name} --diff --json`, `${what}: the call shows the change`);
+  const project = projectDir === undefined ? "" : ` --project ${projectDir}`;
+  assert.equal(error.call, `sous workflows show ${name} --diff --json${project}`, `${what}: the call shows the change`);
   assert.ok(error.change.includes(`sous workflows approve ${name} --by person`), `${what}: the change gives the approve call: ${error.change}`);
 }
 
@@ -174,7 +176,7 @@ describe("piece 9: an agent runs a new workflow", () => {
         [RUN_STEP, []],
       ] as const) {
         const refused = await sous(paths, ["run", "greet", ...extra, "--json", "--project", projectDir], { env, launch: workers.launch });
-        notApproved(refused, "greet", `${JSON.stringify(env)} run greet ${extra.join(" ")}`);
+        notApproved(refused, "greet", `${JSON.stringify(env)} run greet ${extra.join(" ")}`, projectDir);
       }
 
       assert.equal(workers.launched.length, launched, "no worker starts");
@@ -196,7 +198,7 @@ describe("piece 9: an agent runs a new workflow", () => {
       await firstUse(paths, projectDir, workers);
       writeFileSync(workflowFile(projectDir, "hello"), HELLO.replace("Say hello", "Say hi"));
       const refused = await sous(paths, ["run", "hello", "--name", "Ada", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch });
-      notApproved(refused, "hello", "run of the edited hello");
+      notApproved(refused, "hello", "run of the edited hello", projectDir);
     } finally {
       await settle(workers);
     }
@@ -209,7 +211,7 @@ describe("piece 9: an agent runs a new workflow", () => {
     const workers = inProcess({ inner: runner });
     try {
       const refused = await sous(paths, ["run", "greet", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch });
-      notApproved(refused, "greet", "an agent's run in an unknown project");
+      notApproved(refused, "greet", "an agent's run in an unknown project", projectDir);
       assert.deepEqual(workers.launched, []);
     } finally {
       await settle(workers);
@@ -225,7 +227,7 @@ describe("piece 9: an agent runs a new workflow", () => {
       writeFileSync(loose, plain("loose"));
       const refused = await sous(paths, ["run", loose, "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch });
       const error = refusal(refused, "not_approved", "run by path");
-      assert.match(String(error.call), /^sous workflows show .*--diff --json$/, refused.out);
+      assert.equal(error.call, `sous workflows show ${loose} --diff --json --project ${projectDir}`, refused.out);
     } finally {
       await settle(workers);
     }
@@ -237,7 +239,7 @@ describe("piece 9: an agent runs a new workflow", () => {
     try {
       await firstUse(paths, projectDir, workers);
       writeFileSync(workflowFile(projectDir, "greet"), plain("greet"));
-      notApproved(await sous(paths, ["run", "greet", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch }), "greet", "before the person's run");
+      notApproved(await sous(paths, ["run", "greet", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch }), "greet", "before the person's run", projectDir);
 
       const before = actions(paths).length;
       const runId = await ran(paths, PERSON, ["run", "greet", "--project", projectDir], workers);
@@ -268,7 +270,7 @@ describe("piece 9: sous workflows approve", () => {
       const error = refusal(refused, "needs_person", "an agent's approve without --by person");
       assert.match(String(error.call), /^sous workflows approve greet .*--by person/, refused.out);
       assert.equal(actions(paths).length, before, "the refused approve adds no line");
-      notApproved(await sous(paths, ["run", "greet", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch }), "greet", "the run after the refused approve");
+      notApproved(await sous(paths, ["run", "greet", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch }), "greet", "the run after the refused approve", projectDir);
 
       const approved = await sous(paths, ["workflows", "approve", "greet", "--by", "person", "--json", "--project", projectDir], { env: CLAUDE });
       assert.equal(approved.code, 0, approved.out);
@@ -349,7 +351,7 @@ describe("piece 9: the dry run", () => {
       assert.equal(json(checked).dryRun?.status, "completed", checked.out);
       assert.equal(actions(paths).length, before, "a dry run records no line");
 
-      notApproved(await sous(paths, ["run", "greet", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch }), "greet", "the run after the dry run");
+      notApproved(await sous(paths, ["run", "greet", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch }), "greet", "the run after the dry run", projectDir);
     } finally {
       await settle(workers);
     }
@@ -366,7 +368,7 @@ describe("piece 9: nested workflows", () => {
       const launched = workers.launched.length;
 
       const refused = await sous(paths, ["run", "outer", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch });
-      notApproved(refused, "other", "an agent's run of outer, which starts the new other");
+      notApproved(refused, "other", "an agent's run of outer, which starts the new other", projectDir);
       assert.equal(workers.launched.length, launched, "no worker starts");
       assert.deepEqual(actions(paths).filter((line) => line.workflow === "outer"), []);
     } finally {
@@ -381,7 +383,7 @@ describe("piece 9: nested workflows", () => {
       await firstUse(paths, projectDir, workers);
       writeFileSync(workflowFile(projectDir, "outer"), OUTER.replace("Run other", "Run the other one"));
       writeFileSync(workflowFile(projectDir, "other"), plain("other"));
-      notApproved(await sous(paths, ["run", "outer", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch }), "outer", "the agent's run before the person's");
+      notApproved(await sous(paths, ["run", "outer", "--json", "--project", projectDir], { env: CLAUDE, launch: workers.launch }), "outer", "the agent's run before the person's", projectDir);
       const mine = await ran(paths, PERSON, ["run", "outer", "--project", projectDir], workers);
       assert.equal(readRun(paths, mine).status, "completed");
 
