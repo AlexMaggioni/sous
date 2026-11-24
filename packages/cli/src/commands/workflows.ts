@@ -2,7 +2,7 @@
 
 import { resolve } from "node:path";
 import { checkWorkflow, dryRun, projectWorkflows, rememberProject, type Answers } from "@sous/engine";
-import { str, Usage, type Parsed } from "../args.js";
+import { RESERVED, str, Usage, type Parsed } from "../args.js";
 import { projectDir } from "./common.js";
 import type { Ctx } from "./index.js";
 
@@ -29,7 +29,8 @@ export function cmdWorkflows(args: Parsed, ctx: Ctx): number {
     for (const [name, spec] of Object.entries(extras.inputs)) {
       const bits = [spec.type ?? "string", spec.required === false || spec.default !== undefined ? "optional" : "required"];
       if (spec.default !== undefined) bits.push(`default ${JSON.stringify(spec.default)}`);
-      out(`  --${name}  ${bits.join(", ")}${spec.description ? `  ${spec.description}` : ""}`);
+      // A sous flag of the same name takes the place of the input before --.
+      out(`  ${RESERVED.includes(name) ? "-- " : ""}--${name}  ${bits.join(", ")}${spec.description ? `  ${spec.description}` : ""}`);
     }
   }
   return 0;
@@ -51,6 +52,9 @@ export async function cmdCheck(args: Parsed, ctx: Ctx): Promise<number> {
   if (!name) throw new Usage("sous check <workflow> [--name value ...] [--dry-run [--answers file.json]]");
   const inputs = Object.keys(args.inputs).length ? args.inputs : undefined;
   const result = checkWorkflow(paths, dir, name, inputs);
+  for (const input of Object.keys(result.inputs).filter((key) => RESERVED.includes(key))) {
+    result.notes.push(`the input ${input} has the name of a sous flag, so give it after --: sous run ${name} -- --${input} value`);
+  }
   // The service reads this project's workflow files for a schedule from now on.
   rememberProject(paths, dir);
   const json = ctx.json;

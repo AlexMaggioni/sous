@@ -2,7 +2,6 @@
 
 import type { HomePaths, Launcher } from "@sous/engine";
 import { flagsNamed, RESERVED, type FlagSpec, type Parsed } from "../args.js";
-import type { Machine } from "../cli.js";
 import { cmdDiscard, cmdGc, cmdPause, cmdPrune, cmdStop } from "./control.js";
 import { cmdAnswer, cmdInbox } from "./questions.js";
 import { cmdList, cmdLog, cmdShow, cmdWait } from "./reads.js";
@@ -10,6 +9,29 @@ import { cmdRerun, cmdResume, cmdRun } from "./runs.js";
 import { cmdDaemon, cmdSchedule } from "./service.js";
 import { cmdAccount, cmdDoctor } from "./setup.js";
 import { cmdCheck, cmdWorkflows } from "./workflows.js";
+
+/** What the commands do on the machine. Only cli.ts makes the real one. */
+export interface Machine {
+  /** Input files, such as the answers of a dry run. */
+  readText(file: string): string;
+  exists(file: string): boolean;
+  /** The guide topics and the skill, next to dist/cli.js. */
+  guideDir: string;
+  skillDir: string;
+  /** Start the service in the background, and give its pid. */
+  spawnDaemon(paths: HomePaths): number | undefined;
+  /** End the service. */
+  kill(pid: number): void;
+  sleep(ms: number): Promise<void>;
+  /** stdin and stdout are both a terminal. */
+  readonly isTerminal: boolean;
+  /** Ask in the terminal and give the line typed. */
+  ask(prompt: string): Promise<string>;
+  out(line: string): void;
+  /** Text as it comes, such as a log, with no line end added. */
+  write(text: string): void;
+  err(line: string): void;
+}
 
 /** What a command works with. Its parts that touch the machine are read only when it uses them. */
 export interface Ctx {
@@ -30,7 +52,6 @@ export interface CommandSpec {
   flags: FlagSpec[];
   /** An unknown --name value is a workflow input. */
   inputs?: true;
-  usage: string;
 }
 
 /** A command's flags, by name. Each is a flag sous owns, so it never becomes an input. Every command takes --help. */
@@ -41,28 +62,28 @@ function takes(...names: string[]): FlagSpec[] {
 }
 
 export const COMMANDS: Record<string, CommandSpec> = {
-  run: { run: cmdRun, flags: takes("place", "model", "set", "concurrency", "project", "wait", "json"), inputs: true, usage: "sous run <workflow> [--name value ...] [-- --name value ...]" },
-  wait: { run: cmdWait, flags: takes("json"), usage: "sous wait <run> [--json]" },
-  list: { run: cmdList, flags: takes("all", "json"), usage: "sous list [--all]" },
-  show: { run: cmdShow, flags: takes("json"), usage: "sous show <run>" },
-  log: { run: cmdLog, flags: takes("follow"), usage: "sous log <run> [-f]" },
-  inbox: { run: cmdInbox, flags: takes("json"), usage: "sous inbox [run]" },
-  answer: { run: (args, ctx) => cmdAnswer(args, ctx, "answer"), flags: takes("json"), usage: "sous answer <question> <text>" },
-  approve: { run: (args, ctx) => cmdAnswer(args, ctx, "approve"), flags: takes("json"), usage: "sous approve <question>" },
-  "send-back": { run: (args, ctx) => cmdAnswer(args, ctx, "send-back"), flags: takes("json"), usage: "sous send-back <question> <note>" },
-  pause: { run: cmdPause, flags: takes(), usage: "sous pause <run>" },
-  resume: { run: cmdResume, flags: takes("latest", "same", "wait", "json"), usage: "sous resume <run> [--wait]" },
-  stop: { run: cmdStop, flags: takes("step"), usage: "sous stop <run>" },
-  rerun: { run: cmdRerun, flags: takes("place", "reuse", "set", "model", "wait", "json"), inputs: true, usage: "sous rerun <run> [--name value ...]" },
-  workflows: { run: cmdWorkflows, flags: takes("project", "json"), usage: "sous workflows" },
-  check: { run: cmdCheck, flags: takes("project", "dry-run", "answers", "json"), inputs: true, usage: "sous check <workflow> [--name value]" },
-  schedule: { run: cmdSchedule, flags: takes("cron", "place", "project", "json"), inputs: true, usage: "sous schedule add|list|remove|enable|disable|test" },
-  daemon: { run: cmdDaemon, flags: takes(), usage: "sous daemon start|stop|status" },
-  gc: { run: cmdGc, flags: takes("dry-run"), usage: "sous gc [--dry-run]" },
-  discard: { run: cmdDiscard, flags: takes("yes"), usage: "sous discard <run> [--yes]" },
-  prune: { run: cmdPrune, flags: takes("days"), usage: "sous prune --days N" },
-  account: { run: cmdAccount, flags: takes("json"), usage: "sous account [add|use|remove <name>]" },
-  doctor: { run: cmdDoctor, flags: takes("live", "model", "json"), usage: "sous doctor [--live]" },
+  run: { run: cmdRun, flags: takes("place", "model", "set", "concurrency", "project", "wait", "json"), inputs: true },
+  wait: { run: cmdWait, flags: takes("json") },
+  list: { run: cmdList, flags: takes("all", "json") },
+  show: { run: cmdShow, flags: takes("json") },
+  log: { run: cmdLog, flags: takes("follow") },
+  inbox: { run: cmdInbox, flags: takes("json") },
+  answer: { run: (args, ctx) => cmdAnswer(args, ctx, "answer"), flags: takes("json") },
+  approve: { run: (args, ctx) => cmdAnswer(args, ctx, "approve"), flags: takes("json") },
+  "send-back": { run: (args, ctx) => cmdAnswer(args, ctx, "send-back"), flags: takes("json") },
+  pause: { run: cmdPause, flags: takes() },
+  resume: { run: cmdResume, flags: takes("latest", "same", "wait", "json") },
+  stop: { run: cmdStop, flags: takes("step") },
+  rerun: { run: cmdRerun, flags: takes("place", "reuse", "set", "model", "wait", "json"), inputs: true },
+  workflows: { run: cmdWorkflows, flags: takes("project", "json") },
+  check: { run: cmdCheck, flags: takes("project", "dry-run", "answers", "json"), inputs: true },
+  schedule: { run: cmdSchedule, flags: takes("cron", "place", "project", "json"), inputs: true },
+  daemon: { run: cmdDaemon, flags: takes() },
+  gc: { run: cmdGc, flags: takes("dry-run") },
+  discard: { run: cmdDiscard, flags: takes("yes") },
+  prune: { run: cmdPrune, flags: takes("days") },
+  account: { run: cmdAccount, flags: takes("json") },
+  doctor: { run: cmdDoctor, flags: takes("live", "model", "json") },
 };
 
 /** The other names a command answers to. Help does not list them. */

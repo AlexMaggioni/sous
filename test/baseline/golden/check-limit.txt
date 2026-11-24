@@ -1,6 +1,7 @@
 $ sous check limit --dry-run
 exit 0
 limit  <tmp>/check-limit/project/.sous/workflows/limit.js
+  note: the input model has the name of a sous flag, so give it after --: sous run limit -- --model value
 ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
   (log lines sorted)

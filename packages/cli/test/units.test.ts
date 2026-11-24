@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { parseArgs, parseSets } from "../src/args.js";
@@ -102,6 +105,58 @@ describe("split command line", () => {
       const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       assert.match(help, new RegExp(`^\\s*sous ${escaped}(\\s|$)`, "m"), `sous help does not list sous ${name}`);
     }
+  });
+});
+
+/** A machine that keeps what sous prints, and fails on anything else. */
+function printer() {
+  const out: string[] = [];
+  const err: string[] = [];
+  const no = () => {
+    throw new Error("the fake machine does only out and err");
+  };
+  const machine = { readText: no, exists: no, guideDir: "", skillDir: "", spawnDaemon: no, kill: no, sleep: no, isTerminal: false, ask: no, out: (line: string) => out.push(line), write: (text: string) => out.push(text), err: (line: string) => err.push(line) };
+  return { machine, out, err };
+}
+
+/** Runs main with SOUS_HOME on a folder that does not exist yet, and says if main made it. */
+async function onNoHome(argv: string[]) {
+  const { main } = await import("../src/cli.js");
+  const home = join(mkdtempSync(join(tmpdir(), "sous-refuse-")), "home");
+  const before = process.env.SOUS_HOME;
+  process.env.SOUS_HOME = home;
+  const printed = printer();
+  try {
+    const code = await main(argv, { machine: printed.machine });
+    return { code, out: printed.out, err: printed.err, madeHome: existsSync(home) };
+  } finally {
+    if (before === undefined) delete process.env.SOUS_HOME;
+    else process.env.SOUS_HOME = before;
+  }
+}
+
+describe("refused flags", () => {
+  it("sous run refuses a sous flag it does not take, prints usage and makes no home", async () => {
+    const result = await onNoHome(["run", "wf", "--days", "3"]);
+    assert.equal(result.code, 64);
+    assert.ok(result.err.some((line) => line.startsWith("usage:")), `no usage line on stderr: ${JSON.stringify(result.err)}`);
+    const message = result.err.join("\n");
+    assert.match(message, /sous run does not take --days/);
+    assert.match(message, /--place/);
+    assert.match(message, /sous run wf -- --days 3/);
+    assert.equal(result.madeHome, false);
+  });
+
+  it("takes the same name as an input after --", () => {
+    assert.deepEqual(parseArgs(["wf", "--", "--days", "3"], COMMANDS.run!.flags, true).inputs, { days: "3" });
+  });
+
+  it("prints help before it refuses a flag", async () => {
+    const result = await onNoHome(["run", "--help", "--yes"]);
+    assert.equal(result.code, 0);
+    assert.match(result.out.join(""), /^\s*sous run(\s|$)/m);
+    assert.deepEqual(result.err, []);
+    assert.equal(result.madeHome, false);
   });
 });
 

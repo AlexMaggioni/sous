@@ -36,19 +36,19 @@ export function needRun(paths: HomePaths, id: string | undefined): RunView {
  * wait goes on. Elsewhere, such as from an agent's shell, the wait returns at the question
  * with exit code 4, so the caller can answer with `sous answer` and wait again.
  */
-export async function waitFor(ctx: Ctx, runId: string, options: { json: boolean; quiet?: boolean }): Promise<number> {
+export async function waitFor(ctx: Ctx, runId: string, json: boolean): Promise<number> {
   const { paths, machine } = ctx;
-  const interactive = machine.isTerminal && !options.json;
+  const interactive = machine.isTerminal && !json;
   const end = await waitForRun(paths, runId, {
-    ...(options.json || options.quiet ? {} : { log: (text: string) => machine.write(text) }),
+    ...(json ? {} : { log: (text: string) => machine.write(text) }),
     ...(interactive ? { asks: (questions: RunQuestion[]) => askHere(ctx, questions) } : {}),
   });
   if (end.questions) {
-    if (options.json) machine.out(JSON.stringify(end.summary, null, 2));
+    if (json) machine.out(JSON.stringify(end.summary, null, 2));
     else for (const q of end.questions) machine.out(`\nwaiting for an answer to ${q.id}:\n  ${q.prompt}\n  ${hint(q)}\n  then: sous wait ${runId}`);
     return end.code;
   }
-  if (options.json) machine.out(JSON.stringify(end.summary, null, 2));
+  if (json) machine.out(JSON.stringify(end.summary, null, 2));
   else if (end.summary.status === "completed" && end.summary.result !== undefined) {
     machine.out("result:");
     machine.out(typeof end.summary.result === "string" ? end.summary.result : JSON.stringify(end.summary.result, null, 2));
@@ -75,7 +75,7 @@ export async function startedOrWait(ctx: Ctx, record: RunRecord, mode: "start" |
     }
     return 0;
   }
-  return waitFor(ctx, record.runId, { json: ctx.json });
+  return waitFor(ctx, record.runId, ctx.json);
 }
 
 /** What `sous stop` prints, and `sous answer` when a breakpoint's reply stops the run. */

@@ -27,19 +27,20 @@ const OWN: FlagSpec[] = [
 
 export const RESERVED: readonly string[] = OWN.map((flag) => flag.name);
 
-/** The specs of the flags with these names. A name sous does not own has none. */
+/** The specs of the flags with these names, in their order. A name sous does not own has none. */
 export function flagsNamed(names: string[]): FlagSpec[] {
-  return OWN.filter((flag) => names.includes(flag.name));
+  return names.flatMap((name) => OWN.filter((flag) => flag.name === name));
 }
 
 /**
  * Read one command's argv, the command name left out. The command's own flags go to `flags`. With
  * `takesInputs`, any other --name value is a workflow input, and so is everything after `--`. A
- * flag sous owns that this command does not take is refused there, so it never becomes an input.
- * Without `takesInputs`, other flags are read and dropped.
+ * flag sous owns that this command does not take is refused there, so it never becomes an input,
+ * unless --help asks for the help. Without `takesInputs`, other flags are read and dropped.
  */
-export function parseArgs(argv: string[], flags: FlagSpec[], takesInputs: boolean): Parsed {
+export function parseArgs(argv: string[], flags: FlagSpec[], takesInputs: boolean, command?: string): Parsed {
   const parsed: Parsed = { positional: [], flags: {}, inputs: {} };
+  let refused: { name: string; value: string | true } | undefined;
   const split = argv.indexOf("--");
   const head = split === -1 ? argv : argv.slice(0, split);
   const tail = split === -1 ? [] : argv.slice(split + 1);
@@ -67,11 +68,10 @@ export function parseArgs(argv: string[], flags: FlagSpec[], takesInputs: boolea
       };
       const mine = own ? flags.find((flag) => flag.name === name) : undefined;
       const sous = own && !mine ? OWN.find((flag) => flag.name === name) : undefined;
-      if (sous && takesInputs) {
-        throw new Usage(`this command does not take --${name}. To give the workflow an input named ${name}, put it after --, as in -- --${name} value`);
-      }
       const spec = mine ?? sous;
-      if (!spec) {
+      if (sous && takesInputs) {
+        refused ??= { name, value: sous.takes === "none" ? true : takeValue() };
+      } else if (!spec) {
         const value = takeValue();
         if (takesInputs) parsed.inputs[name] = value;
       } else if (spec.takes === "none") {
@@ -86,7 +86,17 @@ export function parseArgs(argv: string[], flags: FlagSpec[], takesInputs: boolea
   };
   read(head, true);
   read(tail, false);
+  if (refused && !parsed.flags.help && !parsed.flags.h) throw notTaken(command, flags, parsed.positional, refused);
   return parsed;
+}
+
+/** The refusal of a sous flag the command does not take, with the call that gives it as an input. */
+function notTaken(command: string | undefined, flags: FlagSpec[], positional: string[], refused: { name: string; value: string | true }): Usage {
+  const who = command ? `sous ${command}` : "this command";
+  const names = flags.map((flag) => `--${flag.name}`).filter((name) => name !== "--help" && name !== "--h");
+  const takes = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "no flag");
+  const call = [who === "this command" ? "" : who, ...positional, "--", `--${refused.name}`, refused.value === true ? "" : refused.value].filter(Boolean).join(" ");
+  return new Usage(`${who} does not take --${refused.name}. It takes ${takes}. For a workflow input named ${refused.name}: ${call}`);
 }
 
 /** The value of a flag that takes one. */

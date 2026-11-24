@@ -8,7 +8,7 @@ import type { Ctx } from "./index.js";
 type Step = RunDetail["steps"][number];
 
 export function cmdWait(args: Parsed, ctx: Ctx): Promise<number> {
-  return waitFor(ctx, needRun(ctx.paths, args.positional[0]).runId, { json: ctx.json });
+  return waitFor(ctx, needRun(ctx.paths, args.positional[0]).runId, ctx.json);
 }
 
 export function cmdList(args: Parsed, ctx: Ctx): number {

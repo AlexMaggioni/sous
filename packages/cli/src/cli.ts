@@ -10,7 +10,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonLog, ensureHome, homePaths, InputProblems, workerMain, workerProcess, type HomePaths, type Launcher } from "@sous/engine";
 import { parseArgs, Usage } from "./args.js";
-import { ALIASES, COMMANDS, type CommandSpec, type Ctx } from "./commands/index.js";
+import { ALIASES, COMMANDS, type CommandSpec, type Ctx, type Machine } from "./commands/index.js";
 
 /** The built command-line file, which also runs the worker. */
 export function cliFile(): string {
@@ -33,32 +33,12 @@ export interface MainOptions {
   /** Starts the workers of the runs a command starts or resumes. By default each worker is a
    *  process of its own. Tests pass one that runs the worker in their process. */
   launch?: Launcher;
-  /** The environment sous reads. Default: process.env. */
+  /** The environment the commands read: today SOUS_RUN_ID and CLAUDECODE in run and rerun, and
+   *  HOME in schedule. The home, account and doctor still read process.env. Default: process.env. */
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
-}
-
-/** What the commands do on the machine. Only this file makes one. */
-export interface Machine {
-  /** Input files, such as the answers of a dry run. */
-  readText(file: string): string;
-  exists(file: string): boolean;
-  /** The guide topics and the skill, next to dist/cli.js. */
-  guideDir: string;
-  skillDir: string;
-  /** Start the service in the background, and give its pid. */
-  spawnDaemon(paths: HomePaths): number | undefined;
-  /** End the service. */
-  kill(pid: number): void;
-  sleep(ms: number): Promise<void>;
-  /** stdin and stdout are both a terminal. */
-  readonly isTerminal: boolean;
-  /** Ask in the terminal and give the line typed. */
-  ask(prompt: string): Promise<string>;
-  out(line: string): void;
-  /** Text as it comes, such as a log, with no line end added. */
-  write(text: string): void;
-  err(line: string): void;
+  /** What the commands do on the machine. Tests pass one to fake a terminal. */
+  machine?: Machine;
 }
 
 function machine(): Machine {
@@ -170,11 +150,11 @@ function commandNamed(name: string): CommandSpec | undefined {
 
 export async function main(argv: string[], options: MainOptions = {}): Promise<number> {
   const [command, ...rest] = argv;
-  const host = machine();
+  const host = options.machine ?? machine();
   try {
     if (command === "_worker") return await workerMain(rest[0]!, rest[1] === "resume" ? "resume" : "start");
     const spec = command ? commandNamed(command) : undefined;
-    const parsed = parseArgs(rest, spec?.flags ?? [], spec?.inputs === true);
+    const parsed = parseArgs(rest, spec?.flags ?? [], spec?.inputs === true, command);
     if (!command || command === "help" || command === "--help" || command === "-h" || parsed.flags.help || parsed.flags.h) {
       host.out(HELP);
       return 0;
