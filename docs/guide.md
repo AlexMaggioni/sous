@@ -385,8 +385,10 @@ paused at a usage limit has `resumesAt`, the time the service resumes it.
 `sous wait --json` gives a run's status with three new words. `stopped` was `aborted`.
 `interrupted` is a run whose worker died. `not started` is a run with no state and no worker. A
 wait that times out gives `running`. An error
-prints `{"error": {code, message, change, call}}` on stdout. Without `--json`, the error goes to
-stderr: the message, then `change:`, then `try:` with the command to run instead. A reply without
+prints `{"error": {code, message, change, call}}` on stdout. An error that offers more than one
+call adds `next`, the calls as `{call, does}` in the order to try them, and `call` is the first.
+Without `--json`, the error goes to stderr: the message, then `change:`, then a `try:` line for
+each command to run instead. A reply without
 `--json` prints its text, then a `note:` line for each note, then a `next:` line for each call.
 
 `sous answer --json` used to mean the text is JSON. Now `--json` asks for the JSON reply, as on every
@@ -434,7 +436,10 @@ the notices off.
   finished ones.
 - A run keeps the workflows as they were when it started, nested ones included. After an edit,
   `sous resume` refuses and names the two ways on: `--latest` takes the new version and keeps the
-  finished steps that match, and `--same` goes on with the run's own version. The service doesn't
+  finished steps that match, and `--same` goes on with the run's own version. The error's `next`
+  lists `--latest` first, then `--same`. An agent's `--latest` needs the person's yes to the new
+  text, so until then the error offers `sous workflows show <name> --diff --json` in its place.
+  The service doesn't
   resume such a run at the limit either. It tells you once.
 - A run saved by an older sous in a format this one no longer reads still shows in `sous list` and
   `sous show`, and does not resume. `sous resume` says so and names `sous rerun <run>`, which starts

@@ -78,7 +78,8 @@ sous resume <run> --same --json
 ```
 
 `--latest` takes the new version and keeps the finished steps that match. `--same` goes on with
-the run's own version.
+the run's own version. Before the person's yes to the new text, an agent gets the diff to show
+them in place of `--latest`.
 
 ## The usage limit
 

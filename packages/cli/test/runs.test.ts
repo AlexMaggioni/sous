@@ -230,7 +230,7 @@ return { first, second }`,
     assert.equal(choose.code, 64, choose.out);
     const error = (JSON.parse(choose.out) as { error: { code: string; change: string; call: string | null } }).error;
     assert.equal(error.code, "bad_argument");
-    assert.match(error.call ?? "", new RegExp(`^sous resume ${record.runId} --same --json$`), "its call is --same");
+    assert.match(error.call ?? "", new RegExp(`^sous resume ${record.runId} --latest --json$`), "its call is --latest, which the person's resume takes");
     assert.match(error.change, /--latest/, "its change names --latest");
     assert.match(error.change, /--same/, "its change names --same");
     assert.equal(workers.launched.length, 1, "a resume that asks starts no worker");

@@ -10,6 +10,8 @@ With `--json`, an error prints one object on stdout:
 - `change` says what to change.
 - `call` is the call to make instead, or null when there is none.
 - `forPerson`, on `started_by_people` only, is the command the person types themselves.
+- `next`, on an error that offers more than one call, lists them as `{call, does}` in the order to
+  try them. Its first is `call`.
 
 Make the call in `call`. Do not retry the refused one unchanged. When `call` is null, read
 `change`. If it needs the person, such as moving a folder, tell them. Without `--json`, the error

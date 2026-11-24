@@ -569,11 +569,12 @@ const WRONG_STATE: Record<ResumeWrongState, (runId: string) => string> = {
 };
 
 /** How a resume went: it started a worker, or the run is in a state that has nothing to resume,
- *  or the workflow changed and the caller must choose a version. Nothing changes in the last two. */
+ *  or the workflow changed and the caller must choose a version. Nothing changes in the last two.
+ *  `refused` is the refusal this caller's --latest would get, such as not_approved. */
 export type ResumeOutcome =
   | { resumed: RunRecord }
   | { wrongState: ResumeWrongState; view: RunView; message: string }
-  | { mustChoose: string[]; message: string };
+  | { mustChoose: string[]; message: string; refused?: Refusal };
 
 export interface ResumeOptions {
   choice?: "latest" | "same";
@@ -620,7 +621,7 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
       `${changed.join(", ")} changed since ${record.runId} started. ` +
       `sous resume ${record.runId} --latest takes the new version, and the finished steps that match stay done. ` +
       `sous resume ${record.runId} --same goes on with the version it started with.`;
-    return { mustChoose: changed, message };
+    return { mustChoose: changed, message, ...latestRefusal(paths, record, who) };
   }
   // The edits reach a run that an agent resumes only once the person approved them.
   // The worker resumes only the text checked here, by its hash.
@@ -635,6 +636,19 @@ export function resumeRun(paths: HomePaths, launch: Launcher, runId: string, who
   recordAction(paths, { act: "resume", ...who, runId: record.runId, ...budget, ...(note ? { text: note.text, ...(note.step ? { step: note.step.name } : {}) } : {}) });
   if (consent) recordAndTell(paths, { act: "let-agent-answer", ...who, runId: record.runId, workflow: record.workflow }, options.tell);
   return { resumed: record };
+}
+
+/** The refusal a resume with --latest would get from this caller, checked as --latest checks it
+ *  but with no write: a person's yes is recorded only when they resume. */
+function latestRefusal(paths: HomePaths, record: RunRecord, who: Who): { refused?: Refusal } {
+  try {
+    const latest = existsSync(record.file) ? resolveWorkflow(paths, record.projectDir, record.file) : undefined;
+    if (latest && who.through.kind !== "person") needApproval(paths, record.projectDir, latest, who);
+    return {};
+  } catch (error) {
+    if (error instanceof Refusal) return { refused: error };
+    throw error;
+  }
 }
 
 /** What rerun --reuse says when the rule refuses it. */

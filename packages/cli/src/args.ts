@@ -1,14 +1,18 @@
 // The command line of one sous command: its words, its flags and the workflow's inputs.
 
+import type { Next } from "./reply.js";
+
 /** A wrong command line. sous prints it after "usage:" and exits with 64. `not_a_choice` is an
  *  answer that is not one of the question's choices. A usage error with a change prints it, and
- *  its call, under the message. */
+ *  its call, under the message. `next`, when the error offers more than one call, lists them in
+ *  the order to try them, and its first is `call`. */
 export class Usage extends Error {
   constructor(
     message: string,
     readonly code: "bad_argument" | "not_a_choice" = "bad_argument",
     readonly change?: string,
     readonly call: string | null = null,
+    readonly next: Next[] = [],
   ) {
     super(message);
   }

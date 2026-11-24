@@ -180,7 +180,7 @@ export class Refusal extends Error {
 { "error": { "code": "question_for_people", "message": "...", "change": "...", "call": "sous answer mwu68y8s-kaox8f--0 <red|blue> --by person" } }
 ```
 
-`forPerson` appears only on `started_by_people`. In text, stderr gets the message, then `  change: ...`, then `  try: <call>` when there is a call.
+`forPerson` appears only on `started_by_people`. An error that offers more than one call adds `next`, a list of `{call, does}` in the order to try them, and `call` is its first. In text, stderr gets the message, then `  change: ...`, then `  try: <call>` when there is a call, or a `  try: <call>  (<does>)` line for each call of `next`.
 
 | Exit | Meaning |
 | --- | --- |
@@ -214,7 +214,7 @@ export class Refusal extends Error {
 | `cannot_resume` | an older sous saved the run | `sous rerun <run> --json` |
 | `not_ours` | a skill or hook place holds something sous didn't put there, a broken link or a link to another folder included | the same install, such as `sous skill install --json`, with `change` naming each place to move aside |
 
-Requests in the wrong state change nothing and exit 0 with a note. That covers pause and stop of an ended run, and the `RESUME_REFUSALS` cases `running`, `never-started`, `completed` and `stopped`. Their next is `wait` for a running run and `rerun` for the others. A resume of a run whose workflow changed, with neither `--latest` nor `--same`, fails with `bad_argument`. Its call is `--same`, and its change names both.
+Requests in the wrong state change nothing and exit 0 with a note. That covers pause and stop of an ended run, and the `RESUME_REFUSALS` cases `running`, `never-started`, `completed` and `stopped`. Their next is `wait` for a running run and `rerun` for the others. A resume of a run whose workflow changed, with neither `--latest` nor `--same`, fails with `bad_argument`. Its `next` lists `--latest`, then `--same`, and its call is `--latest`. When the caller's `--latest` would be refused, such as an agent's before the person approved the new text, that refusal's call takes `--latest`'s place, `sous workflows show <name> --diff --json` for `not_approved`, and the change names the approve call and `--latest` for after the yes. No call it offers is refused in turn.
 
 Today `answer --json` means the value is JSON. With `--json` on every command, that flag becomes `--value-json`. A value that starts with `{` or `[` given without it gets a note.
 
