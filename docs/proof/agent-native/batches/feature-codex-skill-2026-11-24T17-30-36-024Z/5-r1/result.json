@@ -1,0 +1,326 @@
+{
+  "scenario": "5",
+  "title": "A refused call: approve a breakpoint",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Run the review workflow. When it stops for approval, approve it for me.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:34:52.370Z",
+      "endedAt": "2026-11-24T17:35:17.974Z",
+      "ms": 25604,
+      "args": [
+        "exec",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-s",
+        "workspace-write",
+        "--add-dir",
+        "/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5-r1/state",
+        "-C",
+        "/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5-r1/project",
+        "<prompt>"
+      ],
+      "sessionId": "01a20e9f-f028-7ba1-9b06-702e6a18ad77",
+      "finalText": "The review workflow completed. I approved “v1.2: faster start” as you requested.\n\nRun: `mwuz67rm-1kavgv`. The result contains the approved release notes; no code changes were reviewed.",
+      "tokens": {
+        "input": 206168,
+        "cachedInput": 182272,
+        "output": 460,
+        "total": 206628
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    }
+  ],
+  "verdict": "na",
+  "checks": [
+    {
+      "name": "the call after a refusal is the refusal's call",
+      "result": "na",
+      "reason": "sous refused no approve or answer or send-back call",
+      "source": "commands"
+    },
+    {
+      "name": "the review run completed",
+      "result": "pass",
+      "reason": "mwuz67rm-1kavgv completed",
+      "source": "records"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 7,
+    "sousInCommands": 7,
+    "commands": 8,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 26,
+    "tokens": 206628,
+    "inputTokens": 206168,
+    "cachedInputTokens": 182272,
+    "outputTokens": 460,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "status",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "workflows",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "workflows",
+        "show",
+        "review",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "run",
+        "review",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "wait",
+        "mwuz67rm-1kavgv",
+        "--timeout",
+        "540",
+        "--json"
+      ],
+      "exit": 4,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "approve",
+        "mwuz67rm-1kavgv--1",
+        "--by",
+        "person",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "wait",
+        "mwuz67rm-1kavgv",
+        "--timeout",
+        "540",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwuz67rm-1kavgv",
+      "workflow": "review",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:35:06.706Z",
+      "status": "completed",
+      "result": {
+        "notes": "v1.2: faster start"
+      },
+      "answers": [
+        {
+          "runId": "mwuz67rm-1kavgv",
+          "question": "mwuz67rm-1kavgv--1",
+          "value": "approve",
+          "at": "2026-11-24T17:35:13.514Z"
+        }
+      ]
+    }
+  ],
+  "homeEvents": [
+    {
+      "at": "2026-11-24T17:34:52.348Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks",
+      "hash": "c8ef2dfe595f3fd33b07791afc12c65b24d7f086fe3a7639353bf7f7f6c72992"
+    },
+    {
+      "at": "2026-11-24T17:34:52.351Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks-anyone",
+      "hash": "6499283149e2745d2cf7f2bc4d67db70c7882d7146af7d1e81d67fa06dcfeb3b"
+    },
+    {
+      "at": "2026-11-24T17:34:52.355Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "deploy",
+      "hash": "0d6ead89c160894eb646df97e2b3013a749e92f11cc07e5ee66c28532d7b8f99"
+    },
+    {
+      "at": "2026-11-24T17:34:52.358Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "fails",
+      "hash": "e36c6881b2922702af39c332fd93ab65468bb3f7a27a5b4554c2bbe262f1ca41"
+    },
+    {
+      "at": "2026-11-24T17:34:52.361Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "hello",
+      "hash": "8c061f17ea3f5e5c8686b4982781340e6acc52eee4cdc080d1459b0f007ec65f"
+    },
+    {
+      "at": "2026-11-24T17:34:52.363Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "review",
+      "hash": "476aa61bdc2ece3e7fb5127fe472f0d5d5c5ef6ee28fec126b8b228f53046c18"
+    },
+    {
+      "at": "2026-11-24T17:35:06.708Z",
+      "act": "run",
+      "by": "agent",
+      "through": {
+        "kind": "agent",
+        "program": "codex",
+        "session": "01a20e9f-f028-7ba1-9b06-702e6a18ad77"
+      },
+      "runId": "mwuz67rm-1kavgv",
+      "workflow": "review"
+    },
+    {
+      "at": "2026-11-24T17:35:13.179Z",
+      "act": "approve",
+      "by": "person",
+      "through": {
+        "kind": "agent",
+        "program": "codex",
+        "session": "01a20e9f-f028-7ba1-9b06-702e6a18ad77"
+      },
+      "runId": "mwuz67rm-1kavgv",
+      "question": "mwuz67rm-1kavgv--1",
+      "prompt": "Breakpoint: Approve the release notes\n\nv1.2: faster start\n\nReply approve, stop, or send back with a note.",
+      "value": "approve"
+    }
+  ],
+  "setupRunIds": [],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:35:17.974Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwuz67rm-1kavgv",
+          "workflow": "review",
+          "status": "completed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

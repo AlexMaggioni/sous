@@ -1,0 +1,258 @@
+{
+  "scenario": "7",
+  "title": "What is going on",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/7-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "What is going on with my runs?",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:51:31.196Z",
+      "endedAt": "2026-11-24T17:51:46.616Z",
+      "ms": 15420,
+      "args": [
+        "exec",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-s",
+        "workspace-write",
+        "--add-dir",
+        "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/7-r1/state",
+        "-C",
+        "/tmp/sous-proofs/base-codex-noskill-2026-11-24T17-41-11-849Z/7-r1/project",
+        "<prompt>"
+      ],
+      "sessionId": "01a20eaf-2dfd-77e2-84f6-c6d2acfcc653",
+      "finalText": "Both runs are waiting:\n\n- **`asks`** (`mwuzrau0-lf1sqf`) needs your answer to “Which color?” Choose `red` or `blue`:\n  `sous answer mwuzrau0-lf1sqf--0 red`\n- **`fails`** (`mwuzra24-pyeolm`) paused after step `boom` exited with code 3: `disk check failed`. Step `prepare` succeeded. Fix the cause, then run:\n  `sous resume mwuzra24-pyeolm`\n\nThe background daemon is also stopped, so scheduled starts and automatic resumes after usage limits aren’t running. Nothing has been changed.",
+      "tokens": {
+        "input": 85942,
+        "cachedInput": 75136,
+        "output": 374,
+        "total": 86316
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    }
+  ],
+  "verdict": "fail",
+  "checks": [
+    {
+      "name": "the first sous call is status",
+      "result": "fail",
+      "reason": "the first call was \"help\"",
+      "source": "commands"
+    },
+    {
+      "name": "the answer names the paused run",
+      "result": "pass",
+      "reason": "it names fails",
+      "source": "answer"
+    },
+    {
+      "name": "the answer names the open question",
+      "result": "pass",
+      "reason": "it names asks",
+      "source": "answer"
+    },
+    {
+      "name": "nothing changed",
+      "result": "pass",
+      "reason": "no run changed",
+      "source": "records"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 7,
+    "sousInCommands": 7,
+    "commands": 7,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 15,
+    "tokens": 86316,
+    "inputTokens": 85942,
+    "cachedInputTokens": 75136,
+    "outputTokens": 374,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [
+    {
+      "sub": "daemon status",
+      "call": "daemon status",
+      "exit": 1,
+      "named": [],
+      "from": "text",
+      "next": "show mwuzrau0-lf1sqf"
+    }
+  ],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "help"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "list",
+        "--all"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "inbox"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "daemon",
+        "status"
+      ],
+      "exit": 1,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "show",
+        "mwuzrau0-lf1sqf"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "show",
+        "mwuzra24-pyeolm"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "log",
+        "mwuzra24-pyeolm"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwuzra24-pyeolm",
+      "workflow": "fails",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:51:29.452Z",
+      "status": "paused",
+      "pauseReason": "step_failed",
+      "reason": "step \"boom\" failed after 1 try: exited with code 3: disk check failed",
+      "answers": []
+    },
+    {
+      "runId": "mwuzrau0-lf1sqf",
+      "workflow": "asks",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:51:30.456Z",
+      "status": "running",
+      "answers": []
+    }
+  ],
+  "setupRunIds": [
+    "mwuzra24-pyeolm",
+    "mwuzrau0-lf1sqf"
+  ],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:51:46.616Z",
+      "questions": [
+        {
+          "id": "mwuzrau0-lf1sqf--0",
+          "runId": "mwuzrau0-lf1sqf",
+          "prompt": "Which color?"
+        }
+      ],
+      "runs": [
+        {
+          "runId": "mwuzra24-pyeolm",
+          "workflow": "fails",
+          "status": "paused",
+          "pauseReason": "step_failed"
+        },
+        {
+          "runId": "mwuzrau0-lf1sqf",
+          "workflow": "asks",
+          "status": "running"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "tool": "Bash",
+    "command": "sous help",
+    "background": false,
+    "error": false,
+    "output": "sous runs saved workflows in the background.\n\n  sous run <workflow> [--name value ...] [-- --name value ...]\n        --place worktree|folder|none    where the run works (default: the workflow's, else config)\n        --model <spec>                  model for steps that name none, such as claude/haiku\n        --set <step>.<key>=<value>      change one step for this run, such as --set reviewer.model=claude/opus\n        --concurrency N                 steps at once in this run\n        --wait                          follow the run until it ends; in a terminal, answer here\n        --json                          machine-readable output\n  sous wait <run> [--json]              wait for a run to end, pause or ask (exit 0 done, 1 failed,\n                                        2 paused, 3 stopped, 4 waits for an answer)\n  sous list [--all]                     runs, newest first\n  sous show <run>                       one run: status, steps, questions, result\n  sous log <run> [-f]                   the run's log\n  sous inbox [run]                      questions waiting for you\n  sous answer <question> <text>         answer a question (a run id works when it asks one thing)\n  sous approve <question>               approve a breakpoint\n  sous send-back <question> <note>      send a breakpoint's step back with a note\n  sous pause <run>                      finish running steps, start nothing new\n  sous resume <run> [--wait]            go on from where the run paused, failed or was cut off\n        --latest | --same               after an edit: take the new version, or keep the run's own\n  sous stop <run>                       end the run; its worktree stays\n        --step <name>                   stop one running step instead; the run pauses on it\n  sous rerun <run> [--name value ...]   start the same workflow again with the same inputs\n        --reuse                         keep the results of the steps you did not edit, in the same place\n  sous workflows                        ",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "sous workflows",
+    "background": false,
+    "error": false,
+    "output": "asks  Ask a person to pick a color\nasks-anyone  Ask for a color that anyone may pick\ndeploy  Deploy the app\n  --env  string, optional, default \"staging\"  Where to deploy\nfails  Prepare, then run a check that fails\nhello  Say hello to someone\n  --name  string, required  Who to greet\nreview  Draft release notes, then stop for a person to approve them",
+    "turn": 0
+  },
+  {
+    "tool": "Bash",
+    "command": "sous run deploy --wait",
+    "background": false,
+    "error": false,
+    "output": "17:45:28 run        deploy in /tmp/sous-proofs/base-claude-noskill-2026-11-24T17-41-10-191Z/9-r2/state/home/scratch/mwuzjjbg-rpmt50\n17:45:28 start      deploy (exec)\n17:45:28 done       deploy\n17:45:28 log        Logs persisted to /tmp/sous-proofs/base-claude-noskill-2026-11-24T17-41-10-191Z/9-r2/state/home/runs/projects/mwuzjjbg-rpmt50-20e20293e31b/runs/mwuzjjbg-rpmt50.log\n17:45:28 completed  deploy\nresult:\ndeployed to staging",
+    "turn": 0
+  }
+]

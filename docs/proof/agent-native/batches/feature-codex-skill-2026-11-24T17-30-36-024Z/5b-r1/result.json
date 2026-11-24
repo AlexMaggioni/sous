@@ -1,0 +1,481 @@
+{
+  "scenario": "5b",
+  "title": "A refused call: resume after an edit",
+  "rep": 1,
+  "dir": "/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5b-r1",
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "I fixed the fails workflow. Resume my paused run of it so it finishes.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:35:48.923Z",
+      "endedAt": "2026-11-24T17:36:12.557Z",
+      "ms": 23634,
+      "args": [
+        "exec",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-s",
+        "workspace-write",
+        "--add-dir",
+        "/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5b-r1/state",
+        "-C",
+        "/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5b-r1/project",
+        "<prompt>"
+      ],
+      "sessionId": "01a20ea0-cd0f-7382-bbdd-3fe7fc850e7d",
+      "finalText": "The run is still paused because sous requires approval of the changed workflow:\n\n```diff\n- await sh(\"echo 'disk check failed' >&2; exit 3\", { label: \"boom\" })\n+ await sh(\"echo 'disk check failed' >&2; exit 0\", { label: \"boom\" })\n```\n\nApprove this change so I can resume with the fixed version?\n\nThe [sous skill](.agents/skills/sous/SKILL.md) requires: “Show them the diff since their last yes” and “Never approve without their yes.” The CLI also rejected resuming until this approval is recorded.",
+      "tokens": {
+        "input": 152784,
+        "cachedInput": 140672,
+        "output": 484,
+        "total": 153268
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    },
+    {
+      "turn": 1,
+      "prompt": "Yes, I approve that change. Go on.",
+      "exit": 0,
+      "timedOut": false,
+      "startedAt": "2026-11-24T17:36:12.560Z",
+      "endedAt": "2026-11-24T17:36:25.697Z",
+      "ms": 13137,
+      "args": [
+        "exec",
+        "resume",
+        "--json",
+        "--ignore-user-config",
+        "-m",
+        "gpt-6.1-sol",
+        "-c",
+        "model_reasoning_effort=\"medium\"",
+        "-c",
+        "approval_policy=\"never\"",
+        "-c",
+        "sandbox_mode=\"workspace-write\"",
+        "-c",
+        "sandbox_workspace_write.writable_roots=[\"/tmp/sous-proofs/feature-codex-skill-2026-11-24T17-30-36-024Z/5b-r1/state\"]",
+        "01a20ea0-cd0f-7382-bbdd-3fe7fc850e7d",
+        "<prompt>"
+      ],
+      "sessionId": "01a20ea0-cd0f-7382-bbdd-3fe7fc850e7d",
+      "finalText": "Resumed `mwuz73pp-u9f323` with your approved fix. It completed successfully with result `done`; both `prepare` and `boom` are marked done.",
+      "tokens": {
+        "input": 275890,
+        "cachedInput": 255744,
+        "output": 707,
+        "total": 276597
+      },
+      "tools": [
+        "agent_message",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "command_execution",
+        "agent_message"
+      ],
+      "skills": []
+    }
+  ],
+  "verdict": "fail",
+  "checks": [
+    {
+      "name": "the call after a refusal is the refusal's call",
+      "result": "fail",
+      "reason": "\"resume mwuz73pp-u9f323 --json\" was refused and named \"sous resume mwuz73pp-u9f323 --same --json\" or \"sous resume mwuz73pp-u9f323 --latest\" or \"sous resume mwuz73pp-u9f323 --same\", the next call was \"workflows show fails --diff --json\"; \"resume mwuz73pp-u9f323 --latest --json\" was refused and named \"sous workflows show fails --diff --json\", the next call was \"workflows approve fails --by person --json\"",
+      "source": "commands"
+    },
+    {
+      "name": "the paused run finished",
+      "result": "pass",
+      "reason": "mwuz73pp-u9f323 completed",
+      "source": "records"
+    },
+    {
+      "name": "no new run",
+      "result": "pass",
+      "reason": "no new fails run",
+      "source": "records"
+    }
+  ],
+  "metrics": {
+    "sousCalls": 11,
+    "sousInCommands": 11,
+    "commands": 12,
+    "denied": 0,
+    "background": 0,
+    "sleeps": 0,
+    "loops": 0,
+    "repeatedReads": 0,
+    "polled": false,
+    "seconds": 37,
+    "tokens": 429865,
+    "inputTokens": 428674,
+    "cachedInputTokens": 396416,
+    "outputTokens": 1191,
+    "skillListed": false,
+    "timedOut": false
+  },
+  "refusals": [
+    {
+      "sub": "resume",
+      "call": "resume mwuz73pp-u9f323 --json",
+      "exit": 64,
+      "named": [
+        "sous resume mwuz73pp-u9f323 --same --json",
+        "sous resume mwuz73pp-u9f323 --latest",
+        "sous resume mwuz73pp-u9f323 --same"
+      ],
+      "from": "error.call",
+      "next": "workflows show fails --diff --json",
+      "followed": false
+    },
+    {
+      "sub": "resume",
+      "call": "resume mwuz73pp-u9f323 --latest --json",
+      "exit": 66,
+      "named": [
+        "sous workflows show fails --diff --json"
+      ],
+      "from": "error.call",
+      "next": "workflows approve fails --by person --json",
+      "followed": false
+    }
+  ],
+  "calls": [
+    {
+      "turn": 0,
+      "args": [
+        "status",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "show",
+        "mwuz73pp-u9f323",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "workflows",
+        "show",
+        "fails",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "step",
+        "mwuz73pp-u9f323",
+        "boom",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "resume",
+        "mwuz73pp-u9f323",
+        "--json"
+      ],
+      "exit": 64,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "workflows",
+        "show",
+        "fails",
+        "--diff",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 0,
+      "args": [
+        "resume",
+        "mwuz73pp-u9f323",
+        "--latest",
+        "--json"
+      ],
+      "exit": 66,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "workflows",
+        "approve",
+        "fails",
+        "--by",
+        "person",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "resume",
+        "mwuz73pp-u9f323",
+        "--latest",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "wait",
+        "mwuz73pp-u9f323",
+        "--timeout",
+        "540",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    },
+    {
+      "turn": 1,
+      "args": [
+        "show",
+        "mwuz73pp-u9f323",
+        "--json"
+      ],
+      "exit": 0,
+      "markers": [
+        "CODEX_SANDBOX",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "runId": "mwuz73pp-u9f323",
+      "workflow": "fails",
+      "origin": "cli",
+      "createdAt": "2026-11-24T17:35:48.109Z",
+      "status": "completed",
+      "result": "done",
+      "answers": []
+    }
+  ],
+  "homeEvents": [
+    {
+      "at": "2026-11-24T17:35:47.215Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks",
+      "hash": "c8ef2dfe595f3fd33b07791afc12c65b24d7f086fe3a7639353bf7f7f6c72992"
+    },
+    {
+      "at": "2026-11-24T17:35:47.218Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "asks-anyone",
+      "hash": "6499283149e2745d2cf7f2bc4d67db70c7882d7146af7d1e81d67fa06dcfeb3b"
+    },
+    {
+      "at": "2026-11-24T17:35:47.226Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "deploy",
+      "hash": "0d6ead89c160894eb646df97e2b3013a749e92f11cc07e5ee66c28532d7b8f99"
+    },
+    {
+      "at": "2026-11-24T17:35:47.229Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "fails",
+      "hash": "e36c6881b2922702af39c332fd93ab65468bb3f7a27a5b4554c2bbe262f1ca41"
+    },
+    {
+      "at": "2026-11-24T17:35:47.233Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "hello",
+      "hash": "8c061f17ea3f5e5c8686b4982781340e6acc52eee4cdc080d1459b0f007ec65f"
+    },
+    {
+      "at": "2026-11-24T17:35:47.450Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "workflow": "review",
+      "hash": "476aa61bdc2ece3e7fb5127fe472f0d5d5c5ef6ee28fec126b8b228f53046c18"
+    },
+    {
+      "at": "2026-11-24T17:35:48.111Z",
+      "act": "run",
+      "by": "person",
+      "through": {
+        "kind": "person"
+      },
+      "runId": "mwuz73pp-u9f323",
+      "workflow": "fails"
+    },
+    {
+      "at": "2026-11-24T17:36:17.676Z",
+      "act": "approve-workflow",
+      "by": "person",
+      "through": {
+        "kind": "agent",
+        "program": "codex",
+        "session": "01a20ea0-cd0f-7382-bbdd-3fe7fc850e7d"
+      },
+      "workflow": "fails",
+      "hash": "74a652ec71d9c2620b853c02d35a9c2f11b9f1b92b734cb0ede3e83e00b65e3c"
+    },
+    {
+      "at": "2026-11-24T17:36:18.045Z",
+      "act": "resume",
+      "by": "agent",
+      "through": {
+        "kind": "agent",
+        "program": "codex",
+        "session": "01a20ea0-cd0f-7382-bbdd-3fe7fc850e7d"
+      },
+      "runId": "mwuz73pp-u9f323"
+    }
+  ],
+  "setupRunIds": [
+    "mwuz73pp-u9f323"
+  ],
+  "snapshots": [
+    {
+      "at": "2026-11-24T17:36:12.557Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwuz73pp-u9f323",
+          "workflow": "fails",
+          "status": "paused",
+          "pauseReason": "step_failed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 0\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    },
+    {
+      "at": "2026-11-24T17:36:25.697Z",
+      "questions": [],
+      "runs": [
+        {
+          "runId": "mwuz73pp-u9f323",
+          "workflow": "fails",
+          "status": "completed"
+        }
+      ],
+      "workflows": {
+        "project/asks-anyone.js": "export const meta = {\n  name: \"asks-anyone\",\n  description: \"Ask for a color that anyone may pick\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"], answeredBy: \"anyone\" })\nreturn { color }\n",
+        "project/asks.js": "export const meta = {\n  name: \"asks\",\n  description: \"Ask a person to pick a color\",\n  place: \"none\",\n}\n\nconst color = await ask(\"Which color?\", { choices: [\"red\", \"blue\"] })\nreturn { color }\n",
+        "project/deploy.js": "export const meta = {\n  name: \"deploy\",\n  description: \"Deploy the app\",\n  inputs: { env: { type: \"string\", description: \"Where to deploy\", default: \"staging\" } },\n  place: \"none\",\n  startedBy: \"people\",\n}\n\nconst out = await sh(`echo deployed to ${args.env}`, { label: \"deploy\" })\nreturn out.stdout.trim()\n",
+        "project/fails.js": "export const meta = {\n  name: \"fails\",\n  description: \"Prepare, then run a check that fails\",\n  place: \"none\",\n}\n\nawait sh(\"echo prepared\", { label: \"prepare\" })\nawait sh(\"echo 'disk check failed' >&2; exit 0\", { label: \"boom\" })\nreturn \"done\"\n",
+        "project/hello.js": "export const meta = {\n  name: \"hello\",\n  description: \"Say hello to someone\",\n  inputs: { name: { type: \"string\", description: \"Who to greet\", required: true } },\n  place: \"none\",\n}\n\nconst greeting = await js(\"return `hello ${input.name}`\", { name: args.name }, { label: \"greet\" })\nreturn greeting.result\n",
+        "project/review.js": "export const meta = {\n  name: \"review\",\n  description: \"Draft release notes, then stop for a person to approve them\",\n  place: \"none\",\n}\n\nconst draft = await breakpoint(\n  \"Approve the release notes\",\n  () => js(\"return 'v1.2: faster start'\", null, { label: \"draft\" }),\n  { show: (step) => step.result },\n)\nreturn { notes: draft.result }\n"
+      }
+    }
+  ]
+}
