@@ -91,6 +91,26 @@ export function isApproved(paths: HomePaths, file: string, text: string): boolea
   return (readApprovals(paths)?.[resolve(file)] ?? []).some((approval) => approval.hash === hash);
 }
 
+/**
+ * The approval that speaks for this text of this file: the one of this text, with changedSince
+ * false, else the newest, with changedSince true. Null when the file has none.
+ */
+export function approvalFor(paths: HomePaths, file: string, text: string): { approval: Approval; changedSince: boolean } | null {
+  seedApprovals(paths);
+  const hash = workflowHash(text);
+  const list = readApprovals(paths)?.[resolve(file)] ?? [];
+  const same = list.find((approval) => approval.hash === hash);
+  if (same) return { approval: same, changedSince: false };
+  const newest = list.at(-1);
+  return newest ? { approval: newest, changedSince: true } : null;
+}
+
+/** The text an approval kept, or undefined when its copy is gone. */
+export function approvedText(paths: HomePaths, hash: string): string | undefined {
+  const kept = readJsonFile<{ text?: unknown }>(join(paths.approved, `${hash}.json`));
+  return typeof kept?.text === "string" ? kept.text : undefined;
+}
+
 /** Record a yes to this text of this file and keep the text. A text already the newest yes is
  *  left as it is. An older one moves to the end. Returns the approval that holds. */
 export function approveWorkflow(paths: HomePaths, file: string, text: string, who: Who): Approval {

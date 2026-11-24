@@ -4,23 +4,23 @@ Write or change a workflow only with the person's yes. Show them what you will s
 only after they agree. Save in the project's `.sous/workflows/<name>.js`. Change
 `~/.sous/workflows/`, a schedule, or `startedBy` only when the person asked for that.
 
-Start from a workflow that exists. `sous workflows --json` gives each one's `file`.
+Start from a workflow that exists. `sous workflows --json` lists them. Before you change or run
+one you don't know, read `sous workflows show <name> --json`: its steps, inputs, approval and
+last runs. `sous agents --json` lists the agents a step can name.
 
 ## The person approves it
 
 sous keeps the person's yes for each workflow's exact text. A new or changed workflow does not
 start from an agent, a step of a run or a schedule until the person approves it. A scheduled run of
-it is skipped, and the person gets a notice. Once you saved it and the check passes, tell them:
-
-- its name and file, and what you changed;
-- that sous starts it from you, a run or a schedule only after they approve it;
-- that they approve it by saying yes to you, or with `sous workflows approve <name>` in their own
-  terminal.
+it is skipped, and the person gets a notice. Once you saved it and the check passes, show them
+`sous workflows show <name> --diff --json`, what changed since their last yes. Tell them sous
+starts it from you, a run or a schedule only after they approve it, by saying yes to you or with
+`sous workflows approve <name>` in their own terminal.
 
 When they say yes to you, run `sous workflows approve <name> --by person --json`. Without
 `--by person` an agent's approve is refused with `needs_person`. Never approve without their yes.
 A person's own `sous run <name>` approves the text it runs. Never edit, move or delete
-`approvals.json` or `approved/` in sous's home. Without them no workflow counts as approved.
+`approvals.json` or `approved/` in sous's home.
 
 ## The file
 

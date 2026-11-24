@@ -58,15 +58,17 @@ usage limit needs nothing. The service resumes it.
 
 ## Write or change a workflow
 
-Read `sous guide writing` first. Show the user what you will save, and save only after their
-yes. Save in the project's `.sous/workflows/`. Run `sous check <name> --dry-run --json` until
+Before you change or run a workflow you don't know, read `sous workflows show <name> --json`:
+its steps, inputs, approval and last runs. To write one, read `sous guide writing` first. Show
+the user what you will save, and save only after their yes. Save in the project's `.sous/workflows/`. Run `sous check <name> --dry-run --json` until
 it passes. A dry run spends no tokens. Add a schedule, save into `~/.sous/workflows/`, or change
 who may start a workflow only when the user asked for that.
 
 sous starts a new or changed workflow from you, a run or a schedule only after the user
-approves its text. Tell them its name, what changed, and that it waits for their yes. When they
-agree, run `sous workflows approve <name> --by person --json`, or they type
-`sous workflows approve <name>` themselves. Never approve without their yes.
+approves its text. Show them `sous workflows show <name> --diff --json`, what changed since
+their last yes, and say it waits for their yes. When they agree, run
+`sous workflows approve <name> --by person --json`, or they type `sous workflows approve <name>`
+themselves. Never approve without their yes.
 
 ## Errors
 

@@ -335,7 +335,10 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous list [--all]`, `sous show <run>`, `sous log <run> -f` | the last 20 runs, or every run with `--all`; one run's steps with the time and tokens of each, its questions and result; its log |
 | `sous step <run> <label> [--call N] [--tail N] [--full]` | one step of a run: its status, time and tokens, its prompt or its command, its failure, and the last 20 entries of what it did. A step that ran more than once shows its last call, and `--call N` shows another. A label only nested runs have shows the first nested run that has it, and a note names the others. `--tail N` shows N entries, and `--full` shows the whole prompt and every entry. A label the run never had exits 65. |
 | `sous workflows` | the saved workflows and their inputs |
+| `sous workflows show <name> [--full]` | one workflow's outline: its inputs, its steps in the order the file writes them, its nested workflows, the check's problems, the approval that speaks for its text, and its last 3 runs with their time and tokens. A long workflow's steps are cut to keep the reply under 8,000 characters, and `--full` shows them all. `next` gives the run and the check for an approved text, and the check and the approve call for a new or changed one. |
+| `sous workflows show <name> --diff` | what changed in the file since the person's yes, as `- `, `+ ` and matching lines, with 3 matching lines around each change. A new file shows in full. The diff is cut at 200 lines with a note. |
 | `sous workflows approve <name>`, `--all` | approve a workflow's text as it is now, as in [Approving workflows](#approving-workflows) |
+| `sous agents` | the agents a step can name with `agentType`, from the project's folders and the home's, with each one's harness, model and file |
 | `sous inbox`, `sous answer <q> <text>` | questions waiting for you, and answering one. `--value-json` reads the text as JSON, such as `'{"a": 1}'`. Without it the text is the answer, and text that starts with `{` or `[` gets a note. The answer file keeps `by` and `through`. |
 | `sous approve <q>`, `sous send-back <q> <note>` | answer a breakpoint. `sous answer <q> stop` stops the run. |
 | `sous pause <run>`, `sous resume <run> [--latest \| --same]` | finish the running steps and start nothing new; go on from there |
@@ -554,7 +557,11 @@ approved ones.
 - When the edited workflow has a schedule, the service skips it each time it comes due, logs why,
   and sends the person one notice per edit with the approve command.
 - An agent that writes or edits a workflow tells the person its name, what changed, and that sous
-  waits for their yes.
+  waits for their yes. `sous workflows show <name> --diff` gives what changed since their last
+  yes, and the not_approved refusal's call is that command.
+- `sous workflows show <name>` gives `approved`: the approval of the text as it is, with
+  `changedSince` false, else the newest one, with `changedSince` true. A text put back to one the
+  person approved before starts again. The seed shows as `{by: "sous", seeded: true}`.
 
 At the first command, or when the service starts, sous approves every workflow of every project
 where sous ran, of each project a schedule names, and of the home, as they are. It does this once

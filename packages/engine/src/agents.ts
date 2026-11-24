@@ -372,6 +372,26 @@ function settingsFor(agent: FoundAgent, harness: HarnessId): HarnessSettings {
   return { ...agent.common, ...(agent.blocks[harness] ?? {}) };
 }
 
+/** An agent as `sous agents` lists it. `model` is the spec its file sets on its own harness, if any. */
+export interface ListedAgent {
+  name: string;
+  description?: string;
+  harness: HarnessId;
+  model?: string;
+  file: string;
+}
+
+/** The agents a step of this project can name, by name, as lookupAgents finds them. */
+export function listAgents(paths: HomePaths, projectDir: string, env: Record<string, string | undefined> = process.env): ListedAgent[] {
+  const { agents } = lookupAgents(lookupSettings(paths, projectDir, loadConfig(paths), env));
+  return [...agents.values()]
+    .map((agent) => {
+      const model = settingsFor(agent, agent.harness).model;
+      return { name: agent.name, ...(agent.description ? { description: agent.description } : {}), harness: agent.harness, ...(model ? { model: withHarness(agent.harness, model) } : {}), file: agent.file };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** The model spec for a harness: the block's model, else the run's model when it is on that
  *  harness, else the harness alone, which runs the harness's own default model. */
 function modelFor(harness: HarnessId, model: string | undefined, fallback?: string): string {

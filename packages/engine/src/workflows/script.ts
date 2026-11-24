@@ -39,7 +39,37 @@ export interface ScriptRefs {
   choosesAnyWorkflow: boolean;
   /** The ask(), breakpoint() and checkpoint() calls the script writes. One in a loop counts once. */
   asks: number;
+  /** The step calls the script writes, in order. One in a loop shows once, and one on an object is none. */
+  calls: ScriptCall[];
 }
+
+/** One step call as the script writes it. Only literal values are read. */
+export interface ScriptCall {
+  kind: "agent" | "sh" | "js" | "py" | "ask" | "breakpoint" | "workflow";
+  /** The literal label option. A label made at run time is left out. */
+  label?: string;
+  /** The literal first argument of an ask() or a breakpoint(). */
+  title?: string;
+  /** The literal agentType of an agent call. */
+  agent?: string;
+  /** The literal model of an agent call. */
+  model?: string;
+  /** True when an agent call keeps its session. */
+  keepsSession?: boolean;
+  /** The literal name a workflow call starts. */
+  workflow?: string;
+}
+
+/** Where each step call takes its options, by the index of its argument. ask and breakpoint take none here. */
+const OPTIONS_AT: Record<ScriptCall["kind"], number | undefined> = {
+  agent: 1,
+  sh: 1,
+  js: 2,
+  py: 2,
+  workflow: 2,
+  ask: undefined,
+  breakpoint: undefined,
+};
 
 /** A name workflow() looks up as a saved workflow. Other text is an inline script. */
 const SAVED_WORKFLOW_NAME = /^[A-Za-z0-9_.-]+$/;
@@ -277,6 +307,35 @@ function ownProperty(object: AnyNode, key: string): AnyNode | undefined {
   return (object.properties as AnyNode[]).find((property) => keyOf(property) === key);
 }
 
+/** The step a call writes, or nothing when the callee is not a step. */
+function scriptCall(node: AnyNode): ScriptCall | undefined {
+  const kind = node.callee.name as ScriptCall["kind"];
+  if (!Object.hasOwn(OPTIONS_AT, kind)) return undefined;
+  const call: ScriptCall = { kind };
+  const at = OPTIONS_AT[kind];
+  const options = at === undefined ? undefined : (node.arguments[at] as AnyNode | undefined);
+  const option = (key: string) => (options?.type === "ObjectExpression" ? ownProperty(options, key)?.value : undefined);
+  const label = staticString(option("label"));
+  if (label !== undefined) call.label = label;
+  if (kind === "ask" || kind === "breakpoint") {
+    const title = staticString(node.arguments[0]);
+    if (title !== undefined) call.title = title;
+  }
+  if (kind === "agent") {
+    const agent = staticString(option("agentType"));
+    const model = staticString(option("model"));
+    if (agent !== undefined) call.agent = agent;
+    if (model !== undefined) call.model = model;
+    const keep = option("keepSession");
+    if (keep?.type === "Literal" && keep.value === true) call.keepsSession = true;
+  }
+  if (kind === "workflow") {
+    const name = staticString(node.arguments[0]);
+    if (name !== undefined && SAVED_WORKFLOW_NAME.test(name)) call.workflow = name;
+  }
+  return call;
+}
+
 function scriptRefs(ast: AnyNode): ScriptRefs {
   const workflows = new Set<string>();
   const models = new Set<string>();
@@ -284,12 +343,15 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
   const steps: StepRefs[] = [];
   let choosesAnyWorkflow = false;
   let asks = 0;
+  const calls: ScriptCall[] = [];
   const pending = [ast];
   while (pending.length > 0) {
     const node = pending.pop()!;
     if (node.type === "CallExpression" && node.callee?.type === "Identifier") {
       const first = staticString(node.arguments[0]);
       const callee = node.callee.name;
+      const call = scriptCall(node);
+      if (call) calls.push(call);
       if (callee === "workflow" && first && SAVED_WORKFLOW_NAME.test(first)) workflows.add(first);
       if (callee === "run" && first) scripts.add(first);
       if (callee === "ask" || callee === "breakpoint" || callee === "checkpoint") asks++;
@@ -323,5 +385,5 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
     }
     pushAstChildren(node, pending);
   }
-  return { workflows: [...workflows], models: [...models], steps, scripts: [...scripts], choosesAnyWorkflow, asks };
+  return { workflows: [...workflows], models: [...models], steps, scripts: [...scripts], choosesAnyWorkflow, asks, calls };
 }

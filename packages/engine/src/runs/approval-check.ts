@@ -26,13 +26,25 @@ export interface Unapproved {
 export class NotApproved extends Refusal {
   readonly workflow: string;
   constructor(readonly texts: Unapproved[], message: string) {
-    const approve = texts.map(({ workflow }) => `sous workflows approve ${workflow} --by person --json`).join(", then ");
+    const approve = texts.map(({ workflow }) => approveCall(workflow)).join(", then ");
     const change =
       `Show the person the change the call gives${texts.length > 1 ? ", and the same call for each other workflow named," : ""} and ask them. ` +
       `Once they agree, run ${approve}, or the person types the same in their own terminal.`;
     super("not_approved", message, change, `sous workflows show ${texts[0]!.workflow} --diff --json`);
     this.workflow = texts[0]!.workflow;
   }
+}
+
+/** The call that records the person's yes to a workflow's text, by the name `approvalName` gives.
+ *  The not_approved refusal and `sous workflows show` both give it. */
+export function approveCall(workflow: string): string {
+  return `sous workflows approve ${workflow} --by person --json`;
+}
+
+/** The name the person gives `sous workflows approve`: the workflow's name, or its file when that
+ *  name finds another file of the project. */
+export function approvalName(entries: WorkflowDirEntry[], resolved: Pick<ResolvedWorkflow, "name" | "file">): string {
+  return entries.find((entry) => entry.name === resolved.name)?.file === resolved.file ? resolved.name : resolved.file;
 }
 
 /** The message of a refusal: the start names `root`, and these texts have no yes. */
@@ -72,7 +84,7 @@ export function needApproval(paths: HomePaths, projectDir: string, resolved: Pic
   seedApprovals(paths);
   const view = projectWorkflows(paths, projectDir);
   const entries = view.list();
-  const root = entries.find((entry) => entry.name === resolved.name)?.file === resolved.file ? resolved.name : resolved.file;
+  const root = approvalName(entries, resolved);
   const missing: Unapproved[] = [];
   for (const { name, file, text } of [{ name: root, file: resolved.file, text: resolved.script }, ...namedWorkflows(view, entries, resolved.refs.workflows)]) {
     if (who.through.kind === "person") approveWorkflow(paths, file, text, who);
@@ -108,7 +120,7 @@ export function approveWorkflows(paths: HomePaths, projectDir: string, target: s
     const what = target ?? "--all";
     const message = `Only the person approves a workflow. sous does not approve ${target ?? "the changed workflows"} on an agent's word alone.`;
     const change = `Show the person each change with sous workflows show ${target ?? "<name>"} --diff and ask them. Once they agree, make the call. Or they type sous workflows approve ${what} in their own terminal.`;
-    throw new Refusal("needs_person", message, change, `sous workflows approve ${what} --by person --json`);
+    throw new Refusal("needs_person", message, change, approveCall(what));
   }
   const approved: ApprovedText[] = [];
   const unchanged: ApprovedText[] = [];

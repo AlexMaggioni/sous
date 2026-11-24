@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonLog, ensureHome, homePaths, seedApprovals, traceCall, workerMain, workerProcess, type HomePaths, type Launcher, type Who } from "@sous/engine";
 import { parseArgs, str, Usage, type Parsed } from "./args.js";
+import { atProject } from "./commands/common.js";
 import { ALIASES, COMMANDS, type CommandSpec, type Ctx, type Machine } from "./commands/index.js";
 import { errorCode, print, printError } from "./reply.js";
 import { personCommand, whoIsCalling } from "./through.js";
@@ -118,6 +119,9 @@ sous runs saved workflows in the background.
         --line                          one line for a new agent session, or nothing
   sous list [--all]                     runs, newest first
   sous show <run> [--full]              one run: status, steps, questions, result
+  sous workflows [show <name> [--diff] [--full]]  the saved workflows, or one: its steps, its
+                                        approval, its last runs; --diff shows what changed
+  sous agents                           the agents a step can name
   sous log <run> [-f]                   the run's log
         --json --after <seq>            the run's events after a seq, 100 at most
   sous step <run> <label>               one step: status, prompt or command, failure, what it did
@@ -234,8 +238,7 @@ function withProject(project: string | undefined): ((call: string) => string) | 
   if (!project) return undefined;
   return (call) => {
     const called = commandNamed(call.split(" ")[1] ?? "");
-    if (!called?.flags.some((flag) => flag.name === "project") || /(^| )--project( |$)/.test(call)) return call;
-    return `${call} --project ${/^[\w./~-]+$/.test(project) ? project : `'${project.replace(/'/g, "'\\''")}'`}`;
+    return called?.flags.some((flag) => flag.name === "project") ? atProject(call, project) : call;
   };
 }
 
