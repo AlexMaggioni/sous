@@ -179,6 +179,13 @@ export interface PersistedRunState {
   phases: string[];
   currentPhase?: string;
   agents: PersistedAgentState[];
+  /** Private, ephemeral bindings owned by this execution's lease. Never part of a public view
+   *  or event log, and never restored as continuation input by a later execution. */
+  activeAgentSessions?: {
+    leaseToken: string;
+    pid: number;
+    entries: Array<{ scope: string; attempt: number; session: AgentSessionRecord }>;
+  };
   logs: string[];
   result?: unknown;
   startedAt: string;

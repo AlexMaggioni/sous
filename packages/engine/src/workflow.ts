@@ -305,6 +305,16 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
     path?: string;
     scope: string;
   }) => void;
+  /** Private host publication of the session selected by the current backend attempt.
+   *  This is not an event-log entry. A starting/closed notification invalidates the binding. */
+  onAgentSession?: (event: {
+    state: "starting" | "open" | "closed";
+    attempt: number;
+    label: string;
+    scope: string;
+    callIndex: number;
+    session?: AgentSessionRecord;
+  }) => void;
   onAgentEnd?: (event: {
     label: string;
     phase?: string;
@@ -1113,6 +1123,7 @@ async function runLevel<T>(
 
       interface AttemptSlots {
         sealed: boolean;
+        attempt: number;
         usage?: AgentUsage;
         sessionRef?: AgentSessionRef;
         /** The session's cumulative cost gauge at release; folded into the recorded ref. */
@@ -1142,6 +1153,9 @@ async function runLevel<T>(
         if (slot.sealed) return;
         slot.sealed = true;
         if (slot.usage) sealedUsage.push(slot.usage);
+        if (!codeSpec) options.onAgentSession?.({
+          state: "closed", attempt: slot.attempt, label, scope: runId, callIndex,
+        });
       };
 
       const sessionRecord = (slot: AttemptSlots, keptOpen: boolean): AgentSessionRecord | undefined =>
@@ -1269,7 +1283,7 @@ async function runLevel<T>(
         }
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          const slot: AttemptSlots = { sealed: false };
+          const slot: AttemptSlots = { sealed: false, attempt };
           const resumingTurn = attempt === 1 && continuationCandidate !== undefined && !continuationSkipReason;
           const continueFromSession = (resumingTurn ? continuationCandidate.sessionRef : undefined)
             ?? sessionForLabel(agentOptions.continue);
@@ -1278,6 +1292,10 @@ async function runLevel<T>(
           let hostAttemptRegistered = false;
           try {
             throwIfAborted();
+            // A fresh attempt must durably invalidate its predecessor before a runner opens.
+            if (!codeSpec) options.onAgentSession?.({
+              state: "starting", attempt, label, scope: runId, callIndex,
+            });
             attemptController = new AbortController();
             const attemptSignal = AbortSignal.any([signal, attemptController.signal]);
             attemptsRan++;
@@ -1334,7 +1352,13 @@ async function runLevel<T>(
                   onSessionOpen: (ref: AgentSessionRef) => {
                     if (slot.sealed) return;
                     const copied = cloneTelemetry(ref);
-                    if (copied) slot.sessionRef = copied;
+                    if (copied) {
+                      slot.sessionRef = copied;
+                      options.onAgentSession?.({
+                        state: "open", attempt, label, scope: runId, callIndex,
+                        session: sessionRecord(slot, agentOptions.keepSession === true),
+                      });
+                    }
                   },
                   onSessionCostGauge: (amount: number) => {
                     if (slot.sealed) return;

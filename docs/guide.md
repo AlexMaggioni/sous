@@ -382,6 +382,14 @@ note says how many earlier steps `--full` shows. `--full` adds `record` and `sta
 `show --json` printed before, and gives each question with every field the inbox keeps. A run
 paused at a usage limit has `resumesAt`, the time the service resumes it.
 
+With `--full`, a running agent step also has `session` once its backend reports the session it
+actually opened. A retry invalidates the previous attempt's live binding before it starts.
+The identity is absent when the worker or its execution lease cannot be verified; it is never
+inferred from an earlier step. Finished steps keep their historical session records. The private
+lease ownership used for this check is not included in the reply or the event log.
+Use the same sous version for workers and readers of one home folder. Older readers do not
+know how to remove the new private ownership field from a full reply.
+
 `sous wait --json` gives a run's status with three new words. `stopped` was `aborted`.
 `interrupted` is a run whose worker died. `not started` is a run with no state and no worker. A
 wait that times out gives `running`. An error

@@ -16,6 +16,7 @@ import { type AgentSessionRecord, type AgentSessionRef } from "../src/workflow-r
 import type { JournalEntry } from "../src/workflow.js";
 import { isStepFailedPause, runWorkflow } from "../src/workflow.js";
 import { journalResume } from "./helpers/journal-resume.js";
+import { deferred } from "./helpers/async.js";
 
 interface SeenCall {
   prompt: string;
@@ -52,6 +53,45 @@ const b = await agent('second', { label: 'helper' })
 return [a, b]`;
 
 describe("agent session records (result.agentSessions)", () => {
+  it("reports a continuation's actual opened session, never its historical candidate", async () => {
+    const opened = deferred();
+    const release = deferred();
+    const observed: Array<{ state: string; attempt: number; id?: string }> = [];
+    let previousOpen: ((ref: AgentSessionRef) => void) | undefined;
+    let calls = 0;
+    const work = runWorkflow(`export const meta = { name: 'live', description: 'session lifecycle' }
+await agent('first', { label: 'first', keepSession: true })
+return await agent('continue', { label: 'continued', continue: 'first' })`, {
+      persistLogs: false,
+      onAgentSession(event) {
+        observed.push({ state: event.state, attempt: event.attempt,
+          ...(event.session ? { id: event.session.sessionId } : {}) });
+      },
+      agent: { async run(_prompt, request) {
+        calls++;
+        if (calls === 1) {
+          previousOpen = request.onSessionOpen;
+          request.onSessionOpen?.({ sessionId: "original", backendId: "claude", cwd: "/work",
+            reopen: { load: true, resume: true, list: true } });
+          return "first";
+        }
+        assert.equal(request.continueFromSession?.sessionId, "original");
+        assert.deepEqual(observed.at(-1), { state: "starting", attempt: 1 });
+        previousOpen?.({ sessionId: "stale-kept-session", backendId: "claude", cwd: "/work",
+          reopen: { load: true, resume: true, list: true } });
+        assert.deepEqual(observed.at(-1), { state: "starting", attempt: 1 });
+        request.onSessionOpen?.({ sessionId: "actually-reopened", backendId: "claude", cwd: "/work",
+          reopen: { load: true, resume: true, list: true } });
+        opened.resolve(); await release.promise; return "continued";
+      } },
+    });
+    try {
+      await opened.promise;
+      assert.deepEqual(observed.at(-1), { state: "open", attempt: 1, id: "actually-reopened" });
+    } finally { release.resolve(); await work; }
+    assert.deepEqual(observed.at(-1), { state: "closed", attempt: 1 });
+  });
+
   it("lands one record per live agent() call, with call context and keptOpen", async () => {
     const runner = sessionRunner();
     const run = await runWorkflow(twoCalls, { agent: runner, persistLogs: false });

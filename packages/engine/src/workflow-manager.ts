@@ -142,6 +142,12 @@ export interface ManagedRun {
   eventStreamId?: string;
   eventSeq?: number;
   eventLogIncomplete?: true;
+  /** Current attempts only. A new execution never restores these private bindings. */
+  activeAgentSessions?: Map<string, {
+    scope: string;
+    attempt: number;
+    session?: AgentSessionRecord;
+  }>;
 }
 
 /** What a publish needs from a run: its lease and its event watermark. A live run is one. */
@@ -551,6 +557,7 @@ export class WorkflowManager extends EventEmitter {
         pauseReason: "interrupted",
         reason: interruptedReason(lease.recoveredOwnerPid),
       };
+      delete reconciled.activeAgentSessions;
       this.persistence.save(reconciled);
       return reconciled;
     } catch {
@@ -1216,6 +1223,7 @@ export class WorkflowManager extends EventEmitter {
           foldStep(managed.snapshot.agents, { type: "agentStart", ...event }, new Date().toISOString());
           publish(this.createRunEvent("agentStart", { runId: managed.runId, ...event }));
         },
+        onAgentSession: (event) => this.recordActiveAgentSession(managed, event),
         onAgentEnd: (event) => {
           if (this.dropPostTerminal(managed, "agentEnd")) return;
           foldStep(managed.snapshot.agents, { type: "agentEnd", ...event, resultPreview: event.result == null ? undefined : preview(event.result) }, new Date().toISOString());
@@ -1326,9 +1334,59 @@ export class WorkflowManager extends EventEmitter {
   }
 
   private releaseRunLease(managed: ManagedRun): void {
+    managed.activeAgentSessions?.clear();
     if (!managed.lease) return;
     this.persistence.releaseRunLease(managed.lease);
     managed.lease = undefined;
+  }
+
+  /** Unlike ordinary observability, a session binding must be invalidated durably before
+   *  another attempt runs. Publication errors must reach the runner, not leave stale proof. */
+  private recordActiveAgentSession(
+    managed: ManagedRun,
+    event: Parameters<NonNullable<WorkflowRunOptions["onAgentSession"]>>[0],
+  ): void {
+    try {
+      this.persistActiveAgentSession(managed, event);
+    } catch (error) {
+      // An adapter may turn a callback failure into its own error or keep running. Revoke
+      // the lease first: even the last durable snapshot can no longer prove ownership.
+      this.releaseRunLease(managed);
+      managed.controller.abort(error);
+      throw error;
+    }
+  }
+
+  private persistActiveAgentSession(
+    managed: ManagedRun,
+    event: Parameters<NonNullable<WorkflowRunOptions["onAgentSession"]>>[0],
+  ): void {
+    const key = JSON.stringify([event.scope, event.callIndex]);
+    const current = managed.activeAgentSessions?.get(key);
+    if (event.state === "closed") {
+      if (current?.attempt !== event.attempt) return;
+      managed.activeAgentSessions!.delete(key);
+      if (managed.status === "running" && managed.lease) this.persistRunOrThrow(managed);
+      return;
+    }
+    if (managed.status !== "running" || managed.controller.signal.aborted) return;
+    const step = managed.snapshot.agents.find(candidate => candidate.scope === event.scope
+      && candidate.callIndex === event.callIndex && candidate.status === "running");
+    if (!step || step.label !== event.label) return;
+    const bindings = managed.activeAgentSessions ??= new Map();
+    if (event.state === "starting") {
+      bindings.set(key, { scope: event.scope, attempt: event.attempt });
+      this.persistRunOrThrow(managed);
+      return;
+    }
+    if (current?.attempt !== event.attempt || !event.session) return;
+    // If a backend changes its reported session, first remove the previously published one.
+    if (current.session) {
+      delete current.session;
+      this.persistRunOrThrow(managed);
+    }
+    current.session = event.session;
+    this.persistRunOrThrow(managed);
   }
 
   private recordJournalEntry(managed: ManagedRun, entry: JournalEntry): void {
@@ -1566,6 +1624,14 @@ export class WorkflowManager extends EventEmitter {
         startedAt: a.startedAt ?? managed.startedAt.toISOString(),
         ...(a.endedAt ? { endedAt: a.endedAt } : {}),
       })),
+      ...(managed.status === "running" && managed.lease && managed.activeAgentSessions?.size
+        ? { activeAgentSessions: {
+            leaseToken: managed.lease.token,
+            pid: process.pid,
+            entries: [...managed.activeAgentSessions.values()].flatMap(entry => entry.session
+              ? [{ scope: entry.scope, attempt: entry.attempt, session: entry.session }] : []),
+          } }
+        : {}),
       logs: managed.snapshot.logs,
       result: managed.result?.result,
       tokenUsage: managed.snapshot.tokenUsage
@@ -1936,6 +2002,7 @@ export class WorkflowManager extends EventEmitter {
     managed.status = "aborted";
     if (pausedSnapshot) {
       Object.assign(pausedSnapshot, STOPPED_STATE);
+      delete pausedSnapshot.activeAgentSessions;
     }
     const saveStopped = () => {
       if (!managed.lease) return;
@@ -2011,6 +2078,7 @@ export class WorkflowManager extends EventEmitter {
         }
       }
       Object.assign(current, STOPPED_STATE);
+      delete current.activeAgentSessions;
 
       const saveStopped = () => this.saveWithWatermark(current, publication);
       if (stoppedEventAlreadyDurable) {
