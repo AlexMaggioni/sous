@@ -63,9 +63,11 @@ describe("agent session records (result.agentSessions)", () => {
 await agent('first', { label: 'first', keepSession: true })
 return await agent('continue', { label: 'continued', continue: 'first' })`, {
       persistLogs: false,
-      onAgentSession(event) {
-        observed.push({ state: event.state, attempt: event.attempt,
-          ...(event.session ? { id: event.session.sessionId } : {}) });
+      onAgentAttempt(attempt) {
+        attempt.sessions?.observe(event => {
+          observed.push({ state: event.state, attempt: event.attempt,
+            ...(event.session ? { id: event.session.sessionId } : {}) });
+        });
       },
       agent: { async run(_prompt, request) {
         calls++;

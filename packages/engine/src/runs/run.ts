@@ -5,6 +5,7 @@
 
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { interruptedReason, type PersistedRunState, type RunStatus } from "./persistence/run-persistence.js";
+import { currentSessionSteps, publicSessionState, stepKey, validatedActiveSessions } from "./session-view.js";
 import { foldStep } from "../display.js";
 import type { AgentSessionRecord } from "../workflow-result.js";
 import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
@@ -192,19 +193,9 @@ export function runDetail(paths: HomePaths, id: string): RunDetail {
   const rawSteps = live?.steps ?? shown?.agents ?? [];
   const bindings = alive && live?.steps && state && !state.eventLogIncomplete
     ? activeSessions(paths, record, state) : new Map<string, AgentSessionRecord>();
-  const steps = rawSteps.map(step => {
-    if (step.status !== "running") return step;
-    // Historical state is never evidence for the identity of a current attempt.
-    const { session: _historical, ...current } = step;
-    const session = bindings.get(stepKey(record, step.scope, step.callIndex));
-    return session?.label === step.label ? { ...current, session } : current;
-  });
-  let engineState: RunDetail["engineState"];
-  if (shown) {
-    const { script: _script, journal: _journal, nestedJournal: _nested, calls: _calls,
-      activeAgentSessions: _active, ...rest } = shown;
-    engineState = { ...rest, agents: steps };
-  }
+  const steps = currentSessionSteps(rawSteps, bindings,
+    (scope, callIndex) => stepKey(record, scope, callIndex));
+  const engineState = shown ? publicSessionState(shown, steps) : undefined;
   return {
     ...view,
     steps,
@@ -228,54 +219,13 @@ function activeSessions(paths: HomePaths, record: RunRecord,
     // but cannot attest which session a current attempt owns.
     primary = JSON.parse(readFileSync(engineRunFiles(paths, record.runId).state, "utf8"));
   } catch { return sessions; }
-  if (primary?.runId !== record.runId || primary.status !== "running") return sessions;
-  const owner = primary.activeAgentSessions;
-  if (state.status !== "running" || !owner || owner.pid !== record.pid
-    || !Number.isSafeInteger(owner.pid) || owner.pid <= 0
-    || typeof owner.leaseToken !== "string" || !owner.leaseToken
-    || !Array.isArray(owner.entries) || owner.entries.length > 1_000) return sessions;
-  try {
-    // EPERM preserves a lock, but cannot establish that this reader observed a live owner.
-    process.kill(owner.pid, 0);
-    if (!enginePersistence(paths).validateRunLease({ runId: record.runId,
-      token: owner.leaseToken })) return sessions;
-  } catch { return sessions; }
-  for (const entry of owner.entries) {
-    if (!entry || typeof entry.scope !== "string" || !entry.scope
-      || !Number.isSafeInteger(entry.attempt) || entry.attempt < 1
-      || !validActiveSession(entry.session)) continue;
-    const key = stepKey(record, entry.scope, entry.session.callIndex);
-    // Ambiguous bindings are not evidence, even when each row looks valid on its own.
-    if (sessions.has(key)) return new Map();
-    const ref = entry.session;
-    sessions.set(key, {
-      sessionId: ref.sessionId, backendId: ref.backendId, cwd: ref.cwd,
-      callIndex: ref.callIndex, label: ref.label, keptOpen: ref.keptOpen,
-      reopen: { load: ref.reopen.load, resume: ref.reopen.resume, list: ref.reopen.list,
-        ...(typeof ref.reopen.fork === "boolean" ? { fork: ref.reopen.fork } : {}) },
-      ...(typeof ref.poolKey === "string" ? { poolKey: ref.poolKey } : {}),
-      ...(typeof ref.phase === "string" ? { phase: ref.phase } : {}),
-      ...(typeof ref.model === "string" ? { model: ref.model } : {}),
-      ...(typeof ref.costGauge === "number" && Number.isFinite(ref.costGauge)
-        ? { costGauge: ref.costGauge } : {}),
-      ...(ref.initializeMeta && typeof ref.initializeMeta === "object"
-        && !Array.isArray(ref.initializeMeta) ? { initializeMeta: ref.initializeMeta } : {}),
-    });
-  }
-  return sessions;
-}
-
-function validActiveSession(value: unknown): value is AgentSessionRecord {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const ref = value as Partial<AgentSessionRecord>;
-  return typeof ref.sessionId === "string" && ref.sessionId.length > 0
-    && typeof ref.backendId === "string" && ref.backendId.length > 0
-    && typeof ref.cwd === "string" && ref.cwd.length > 0
-    && Number.isSafeInteger(ref.callIndex) && ref.callIndex! >= 0
-    && typeof ref.label === "string" && typeof ref.keptOpen === "boolean"
-    && ref.reopen !== null && typeof ref.reopen === "object"
-    && typeof ref.reopen.load === "boolean" && typeof ref.reopen.resume === "boolean"
-    && typeof ref.reopen.list === "boolean";
+  return validatedActiveSessions(primary, record, state, owner => {
+    try {
+      // EPERM cannot establish that this reader observed a live owner.
+      process.kill(owner.pid, 0);
+      return enginePersistence(paths).validateRunLease({ runId: record.runId, token: owner.leaseToken });
+    } catch { return false; }
+  }, (scope, callIndex) => stepKey(record, scope, callIndex));
 }
 
 const withFailure = (failure: Failure | undefined) => (failure ? { failure } : {});
@@ -345,11 +295,6 @@ export function runPreview(paths: HomePaths, record: RunRecord): RunPreview {
 /** The open questions, oldest first: every run's, or one run's. */
 export function runQuestions(paths: HomePaths, runId?: string): RunQuestion[] {
   return listQuestions(paths, runId);
-}
-
-/** A step's key: its scope and its call. Retries of a step happen inside the one call. */
-function stepKey(record: RunRecord, scope: unknown, callIndex: unknown): string {
-  return `${typeof scope === "string" ? scope : record.runId}#${String(callIndex)}`;
 }
 
 /** Events after which no step of the run runs. */

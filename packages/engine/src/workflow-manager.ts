@@ -11,6 +11,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
+import { isContinuationSession, persistedSessionBindings, recordSessionBinding, releaseSessionLease }
+  from "./steps/session-bindings.js";
 import type { AgentRunner } from "./steps/agent-runner.js";
 import type {
   AgentSessionRecord,
@@ -330,33 +332,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonNegativeSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isOptionalString(value: Record<string, unknown>, key: string): boolean {
-  return value[key] === undefined || typeof value[key] === "string";
-}
-
-function isContinuationSession(
-  value: unknown,
-): value is AgentSessionRecord & { cwd?: string } {
-  if (!isRecord(value) || !isRecord(value.reopen)) return false;
-  return (
-    typeof value.sessionId === "string" &&
-    typeof value.backendId === "string" &&
-    (value.cwd === undefined || typeof value.cwd === "string") &&
-    isOptionalString(value, "poolKey") &&
-    isOptionalString(value, "model") &&
-    (value.costGauge === undefined ||
-      (typeof value.costGauge === "number" && Number.isFinite(value.costGauge) && value.costGauge >= 0)) &&
-    typeof value.reopen.load === "boolean" &&
-    typeof value.reopen.resume === "boolean" &&
-    typeof value.reopen.list === "boolean" &&
-    (value.reopen.fork === undefined || typeof value.reopen.fork === "boolean") &&
-    isNonNegativeSafeInteger(value.callIndex) &&
-    typeof value.label === "string" &&
-    isOptionalString(value, "phase") &&
-    typeof value.keptOpen === "boolean"
-  );
 }
 
 function hashScriptText(script: string): string {
@@ -1203,7 +1178,12 @@ export class WorkflowManager extends EventEmitter {
           this.persistRun(managed);
         },
         onCallRecord: (record) => this.recordCallRecord(managed, record),
-        onAgentAttempt: (attempt) => this.registerAgentAttempt(managed, attempt),
+        onAgentAttempt: (attempt) => {
+          attempt.sessions?.observe(event => recordSessionBinding(managed, event,
+            this.onLeaseRevocationFailure !== undefined, () => this.persistRunOrThrow(managed),
+            () => this.releaseRunLease(managed)));
+          return this.registerAgentAttempt(managed, attempt);
+        },
         onLog: (message, context) => {
           managed.snapshot.logs.push(message);
           publish(this.createRunEvent("log", {
@@ -1228,7 +1208,6 @@ export class WorkflowManager extends EventEmitter {
           foldStep(managed.snapshot.agents, { type: "agentStart", ...event }, new Date().toISOString());
           publish(this.createRunEvent("agentStart", { runId: managed.runId, ...event }));
         },
-        onAgentSession: (event) => this.recordActiveAgentSession(managed, event),
         onAgentEnd: (event) => {
           if (this.dropPostTerminal(managed, "agentEnd")) return;
           foldStep(managed.snapshot.agents, { type: "agentEnd", ...event, resultPreview: event.result == null ? undefined : preview(event.result) }, new Date().toISOString());
@@ -1339,70 +1318,7 @@ export class WorkflowManager extends EventEmitter {
   }
 
   private releaseRunLease(managed: ManagedRun): void {
-    managed.activeAgentSessions?.clear();
-    const lease = managed.lease;
-    managed.lease = undefined;
-    if (!lease) return;
-    try {
-      this.persistence.releaseRunLease(lease);
-      if (!this.onLeaseRevocationFailure || !this.persistence.validateRunLease(lease)) return;
-      throw new Error(`lease for ${managed.runId} remains owned after release`);
-    } catch (error) {
-      const failure = error instanceof Error ? error : new Error(String(error));
-      managed.controller.abort(failure);
-      if (this.onLeaseRevocationFailure) this.onLeaseRevocationFailure(failure);
-      throw failure;
-    }
-  }
-
-  /** Unlike ordinary observability, a session binding must be invalidated durably before
-   *  another attempt runs. Publication errors must reach the runner, not leave stale proof. */
-  private recordActiveAgentSession(
-    managed: ManagedRun,
-    event: Parameters<NonNullable<WorkflowRunOptions["onAgentSession"]>>[0],
-  ): void {
-    if (!this.onLeaseRevocationFailure) return;
-    try {
-      this.persistActiveAgentSession(managed, event);
-    } catch (error) {
-      // An adapter may turn a callback failure into its own error or keep running. Revoke
-      // the lease first: even the last durable snapshot can no longer prove ownership.
-      try { this.releaseRunLease(managed); }
-      finally { managed.controller.abort(error); }
-      throw error;
-    }
-  }
-
-  private persistActiveAgentSession(
-    managed: ManagedRun,
-    event: Parameters<NonNullable<WorkflowRunOptions["onAgentSession"]>>[0],
-  ): void {
-    const key = JSON.stringify([event.scope, event.callIndex]);
-    const current = managed.activeAgentSessions?.get(key);
-    if (event.state === "closed") {
-      if (current?.attempt !== event.attempt) return;
-      managed.activeAgentSessions!.delete(key);
-      if (managed.status === "running" && managed.lease) this.persistRunOrThrow(managed);
-      return;
-    }
-    if (managed.status !== "running" || managed.controller.signal.aborted) return;
-    const step = managed.snapshot.agents.find(candidate => candidate.scope === event.scope
-      && candidate.callIndex === event.callIndex && candidate.status === "running");
-    if (!step || step.label !== event.label) return;
-    const bindings = managed.activeAgentSessions ??= new Map();
-    if (event.state === "starting") {
-      bindings.set(key, { scope: event.scope, attempt: event.attempt });
-      this.persistRunOrThrow(managed);
-      return;
-    }
-    if (current?.attempt !== event.attempt || !event.session) return;
-    // If a backend changes its reported session, first remove the previously published one.
-    if (current.session) {
-      delete current.session;
-      this.persistRunOrThrow(managed);
-    }
-    current.session = event.session;
-    this.persistRunOrThrow(managed);
+    releaseSessionLease(managed, this.persistence, this.onLeaseRevocationFailure);
   }
 
   private recordJournalEntry(managed: ManagedRun, entry: JournalEntry): void {
@@ -1640,14 +1556,7 @@ export class WorkflowManager extends EventEmitter {
         startedAt: a.startedAt ?? managed.startedAt.toISOString(),
         ...(a.endedAt ? { endedAt: a.endedAt } : {}),
       })),
-      ...(managed.status === "running" && managed.lease && managed.activeAgentSessions?.size
-        ? { activeAgentSessions: {
-            leaseToken: managed.lease.token,
-            pid: process.pid,
-            entries: [...managed.activeAgentSessions.values()].flatMap(entry => entry.session
-              ? [{ scope: entry.scope, attempt: entry.attempt, session: entry.session }] : []),
-          } }
-        : {}),
+      ...persistedSessionBindings(managed, process.pid),
       logs: managed.snapshot.logs,
       result: managed.result?.result,
       tokenUsage: managed.snapshot.tokenUsage
