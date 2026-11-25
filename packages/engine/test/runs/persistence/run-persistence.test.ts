@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -607,6 +607,90 @@ test(
     assert.equal(existsSync(join(workflowProjectPaths(cwd).runsDir, "lease-1.lock")), false, "owner token releases");
   }),
 );
+
+test("lease revocation uses the owned file when the directory refuses save and unlink",
+  withTempCwd(async (cwd) => {
+    let directoryReadOnly = false;
+    const denied = () => Object.assign(new Error("directory is read-only"), { code: "EACCES" });
+    const rp = createRunPersistence(cwd, {
+      writeFileSync: ((...args: Parameters<typeof writeFileSync>) => {
+        if (directoryReadOnly) throw denied();
+        return writeFileSync(...args);
+      }) as typeof writeFileSync,
+      unlinkSync(path) {
+        if (directoryReadOnly) throw denied();
+        return unlinkSync(path);
+      },
+    });
+    const id = "directory-read-only";
+    rp.save(persistedRun(id, "running"));
+    const lease = rp.acquireRunLease(id)!;
+    const lock = join(workflowProjectPaths(cwd).runsDir, `${id}.lock`);
+    const before = readFileSync(lock);
+    directoryReadOnly = true;
+    assert.throws(() => rp.save(persistedRun(id, "paused")), /read-only/);
+    rp.releaseRunLease(lease);
+    assert.equal(rp.validateRunLease(lease), false);
+    process.kill(process.pid, 0);
+    const revoked = JSON.parse(readFileSync(lock, "utf8"));
+    assert.notEqual(revoked.token, lease.token);
+    assert.equal(revoked.pid, process.pid);
+    assert.equal(readFileSync(lock).byteLength, before.byteLength);
+    assert.equal(rp.load(id)?.status, "running", "failed save did not replace the snapshot");
+    directoryReadOnly = false;
+    // After that owner exits, the ordinary stale-owner recovery accepts the valid JSON.
+    writeFileSync(lock, JSON.stringify({ ...revoked, pid: 2147483647 }));
+    const resumed = rp.acquireRunLease(id)!;
+    assert.ok(resumed);
+    assert.equal(resumed.recoveredOwnerPid, 2147483647);
+    assert.equal(rp.validateRunLease(resumed), true);
+    rp.releaseRunLease(resumed);
+  }));
+
+test("an unreadable lock cannot be mistaken for a verified revocation",
+  withTempCwd(async (cwd) => {
+    let unreadable = false;
+    const rp = createRunPersistence(cwd, {
+      readFileSync: ((...args: Parameters<typeof readFileSync>) => {
+        if (unreadable && String(args[0]).endsWith(".lock")) {
+          throw Object.assign(new Error("cannot verify lock"), { code: "EIO" });
+        }
+        return readFileSync(...args);
+      }) as typeof readFileSync,
+    });
+    const lease = rp.acquireRunLease("unreadable-lock")!;
+    unreadable = true;
+    assert.throws(() => rp.releaseRunLease(lease), /cannot verify lock/);
+    unreadable = false;
+    assert.equal(rp.validateRunLease(lease), true);
+    rp.releaseRunLease(lease);
+  }));
+
+test("revocation through an old descriptor leaves a replacement inode and token intact",
+  withTempCwd(async (cwd) => {
+    const id = "replacement-owner";
+    const lock = join(workflowProjectPaths(cwd).runsDir, `${id}.lock`);
+    let replace = false;
+    const rp = createRunPersistence(cwd, {
+      unlinkSync() { throw Object.assign(new Error("denied"), { code: "EACCES" }); },
+      statSync: ((path: Parameters<typeof statSync>[0]) => {
+        if (replace) {
+          replace = false;
+          const original = JSON.parse(readFileSync(lock, "utf8"));
+          renameSync(lock, `${lock}.previous`);
+          writeFileSync(lock, JSON.stringify({ ...original, token: "replacement-token" }));
+        }
+        return statSync(path);
+      }) as typeof statSync,
+    });
+    rp.save(persistedRun(id, "running"));
+    const lease = rp.acquireRunLease(id)!;
+    replace = true;
+    rp.releaseRunLease(lease);
+    assert.equal(JSON.parse(readFileSync(lock, "utf8")).token, "replacement-token");
+    assert.equal(JSON.parse(readFileSync(`${lock}.previous`, "utf8")).token, lease.token);
+    assert.equal(rp.validateRunLease(lease), false);
+  }));
 
 test(
   "run lease steals a stale lock whose pid is dead",

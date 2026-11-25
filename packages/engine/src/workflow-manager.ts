@@ -273,6 +273,9 @@ export interface WorkflowManagerOptions {
    * a run's events only when the store has `appendEvent` and `readEvents`.
    */
   persistence?: RunPersistence;
+  /** Host-owned fail-stop policy. Live session proofs are published only with this policy.
+   *  It must synchronously end the owning process if its lease cannot be revoked. */
+  onLeaseRevocationFailure?: (error: Error) => never;
 }
 
 type ArgsSnapshot = { ok: true; clone: unknown } | { ok: false };
@@ -490,6 +493,7 @@ export class WorkflowManager extends EventEmitter {
   private agent?: AgentRunner;
   private defaultAgentRetries: number;
   private persistenceRoot: string;
+  private onLeaseRevocationFailure?: (error: Error) => never;
 
   constructor(options: WorkflowManagerOptions = {}) {
     super();
@@ -500,6 +504,7 @@ export class WorkflowManager extends EventEmitter {
     this.agent = options.agent;
     this.defaultAgentRetries = options.defaultAgentRetries ?? 0;
     this.persistenceRoot = workflowHomeDir({ persistenceRoot: options.persistenceRoot });
+    this.onLeaseRevocationFailure = options.onLeaseRevocationFailure;
     this.persistence = options.persistence
       ?? createRunPersistence(this.cwd, undefined, { persistenceRoot: this.persistenceRoot });
     if (hasEventLog(this.persistence)) this.eventLog = this.persistence;
@@ -1335,9 +1340,19 @@ export class WorkflowManager extends EventEmitter {
 
   private releaseRunLease(managed: ManagedRun): void {
     managed.activeAgentSessions?.clear();
-    if (!managed.lease) return;
-    this.persistence.releaseRunLease(managed.lease);
+    const lease = managed.lease;
     managed.lease = undefined;
+    if (!lease) return;
+    try {
+      this.persistence.releaseRunLease(lease);
+      if (!this.onLeaseRevocationFailure || !this.persistence.validateRunLease(lease)) return;
+      throw new Error(`lease for ${managed.runId} remains owned after release`);
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      managed.controller.abort(failure);
+      if (this.onLeaseRevocationFailure) this.onLeaseRevocationFailure(failure);
+      throw failure;
+    }
   }
 
   /** Unlike ordinary observability, a session binding must be invalidated durably before
@@ -1346,13 +1361,14 @@ export class WorkflowManager extends EventEmitter {
     managed: ManagedRun,
     event: Parameters<NonNullable<WorkflowRunOptions["onAgentSession"]>>[0],
   ): void {
+    if (!this.onLeaseRevocationFailure) return;
     try {
       this.persistActiveAgentSession(managed, event);
     } catch (error) {
       // An adapter may turn a callback failure into its own error or keep running. Revoke
       // the lease first: even the last durable snapshot can no longer prove ownership.
-      this.releaseRunLease(managed);
-      managed.controller.abort(error);
+      try { this.releaseRunLease(managed); }
+      finally { managed.controller.abort(error); }
       throw error;
     }
   }

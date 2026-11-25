@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { chmodSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { describe, it } from "node:test";
 import { WorkflowError, WorkflowErrorCode } from "../../src/errors.js";
 import { createRun } from "../../src/runs/launch.js";
+import { createRunPersistence } from "../../src/runs/persistence/run-persistence.js";
 import { updateRecord } from "../../src/runs/records.js";
 import { runDetail } from "../../src/runs/run.js";
 import { engineRunFiles, managerStore, readState } from "../../src/runs/store.js";
@@ -14,6 +17,8 @@ import { WorkflowManager } from "../../src/workflow-manager.js";
 import { deferred } from "../helpers/async.js";
 import { deadPid, quiet, setup } from "./fixture.js";
 
+const HOST = { onLeaseRevocationFailure(error: Error): never { throw error; } };
+
 const SCRIPT = `export const meta = { name: 'live', description: 'Live session identity' }
 return await agent('work', { label: 'work', keepSession: true })`;
 
@@ -23,12 +28,32 @@ function session(id: string, cwd: string) {
 }
 
 describe("the session of a running agent call", () => {
-  it("shows the actual session before completion, hides ownership, and keeps terminal history", async () => {
+  it("publishes no live proof without an explicit host fail-stop policy", async () => {
     const { paths, projectDir } = setup({ live: SCRIPT });
     const record = createRun(paths, { who: PERSON, workflow: "live", projectDir, inputs: {} });
     const opened = deferred();
     const release = deferred();
     const worker = runWorker(record.runId, "start", { paths, log: quiet, inner: {
+      async run(_prompt, request) {
+        request.onSessionOpen?.(session("unfenced-library-session", projectDir));
+        opened.resolve(); await release.promise; return "done";
+      },
+    } });
+    try {
+      await opened.promise;
+      assert.equal(readState(paths, record.runId)?.activeAgentSessions, undefined);
+      assert.equal(runDetail(paths, record.runId).steps[0]?.session, undefined);
+    } finally { release.resolve(); await worker; }
+    assert.equal(runDetail(paths, record.runId).steps[0]?.session?.sessionId,
+      "unfenced-library-session", "terminal history remains available to embedded callers");
+  });
+
+  it("shows the actual session before completion, hides ownership, and keeps terminal history", async () => {
+    const { paths, projectDir } = setup({ live: SCRIPT });
+    const record = createRun(paths, { who: PERSON, workflow: "live", projectDir, inputs: {} });
+    const opened = deferred();
+    const release = deferred();
+    const worker = runWorker(record.runId, "start", { ...HOST, paths, log: quiet, inner: {
       async run(_prompt, request) {
         request.onSessionOpen?.(session("live-session", projectDir));
         opened.resolve();
@@ -71,7 +96,7 @@ return await agent('next', { label: 'next', continue: 'first' })`;
     const opened = deferred();
     const release = deferred();
     let previous: PlannedRequest | undefined;
-    const worker = runWorker(record.runId, "start", { paths, log: quiet, inner: {
+    const worker = runWorker(record.runId, "start", { ...HOST, paths, log: quiet, inner: {
       async run(_prompt, request) {
         if (!previous) {
           previous = request;
@@ -106,7 +131,7 @@ return await agent('next', { label: 'next', continue: 'first' })`;
     const record = createRun(paths, { who: PERSON, workflow: "live", projectDir, inputs: {} });
     const opened = deferred();
     const release = deferred();
-    const worker = runWorker(record.runId, "start", { paths, log: quiet, inner: {
+    const worker = runWorker(record.runId, "start", { ...HOST, paths, log: quiet, inner: {
       async run(_prompt, request) {
         request.onSessionOpen?.(session("private-session", projectDir));
         opened.resolve(); await release.promise; return "done";
@@ -169,7 +194,7 @@ return await agent('next', { label: 'next', continue: 'first' })`;
       second.resolve(); await release.promise; return "done";
     } };
     updateRecord(paths, record.runId, { pid: process.pid });
-    const manager = new WorkflowManager({ ...managerStore(paths), agent: runner });
+    const manager = new WorkflowManager({ ...HOST, ...managerStore(paths), agent: runner });
     const work = manager.runSync(script, {}, { runId: record.runId, cwd: projectDir });
     try {
       await second.promise;
@@ -187,7 +212,7 @@ return await agent('next', { label: 'next', continue: 'first' })`;
       if (state.activeAgentSessions) throw new Error("session save refused");
       store.persistence.save(state);
     } };
-    const manager = new WorkflowManager({ ...store, persistence,
+    const manager = new WorkflowManager({ ...HOST, ...store, persistence,
       agent: { async run() { calls++; return "must not start"; } } });
     const result = await manager.runSync(SCRIPT, {}, { runId: record.runId, cwd: projectDir });
     assert.equal(calls, 0);
@@ -199,7 +224,7 @@ return await agent('next', { label: 'next', continue: 'first' })`;
     const { paths, projectDir } = setup({ live: SCRIPT });
     const record = createRun(paths, { who: PERSON, workflow: "live", projectDir, inputs: {} });
     const store = managerStore(paths);
-    const first = new WorkflowManager({ ...store, agent: {
+    const first = new WorkflowManager({ ...HOST, ...store, agent: {
       async run(_prompt, request) {
         request.onSessionOpen?.(session("failed-execution", projectDir));
         throw new WorkflowError("needs repair", WorkflowErrorCode.AGENT_EXECUTION_ERROR,
@@ -216,7 +241,7 @@ return await agent('next', { label: 'next', continue: 'first' })`;
       if (state.activeAgentSessions) throw new Error("resume invalidation refused");
       store.persistence.save(state);
     } };
-    const resumed = new WorkflowManager({ ...store, persistence, agent: {
+    const resumed = new WorkflowManager({ ...HOST, ...store, persistence, agent: {
       async run() { calls++; return "must not start"; },
     } });
     const continuation = await resumed.resumeInBackground(record.runId);
@@ -240,7 +265,7 @@ return await agent('next', { label: 'next', continue: 'first' })`;
       }
       store.persistence.save(state);
     } };
-    const manager = new WorkflowManager({ ...store, persistence, agent: {
+    const manager = new WorkflowManager({ ...HOST, ...store, persistence, agent: {
       async run(_prompt, request) {
         calls++;
         request.onSessionOpen?.(session("first-attempt", projectDir));
@@ -267,7 +292,7 @@ return await agent('next', { label: 'next', continue: 'first' })`;
       store.persistence.save(state);
     } };
     updateRecord(paths, record.runId, { pid: process.pid });
-    const manager = new WorkflowManager({ ...store, persistence, agent: {
+    const manager = new WorkflowManager({ ...HOST, ...store, persistence, agent: {
       async run(_prompt, request) {
         request.onSessionOpen?.(session("previously-visible", projectDir));
         assert.equal(runDetail(paths, record.runId).steps[0]?.session?.sessionId,
@@ -287,6 +312,115 @@ return await agent('next', { label: 'next', continue: 'first' })`;
     } finally { refuse = false; release.resolve(); await work; }
   });
 
+  it("fences an old snapshot while its PID lives when save and unlink both fail", async () => {
+    const { paths, projectDir } = setup({ live: SCRIPT });
+    const record = createRun(paths, { who: PERSON, workflow: "live", projectDir, inputs: {} });
+    const store = managerStore(paths);
+    let directory: string | undefined;
+    let permissions: number | undefined;
+    let directoryReadOnly = false;
+    const denied = () => Object.assign(new Error("directory read-only"), { code: "EACCES" });
+    const persistence = createRunPersistence(store.cwd, {
+      writeFileSync: ((...args: Parameters<typeof writeFileSync>) => {
+        if (directoryReadOnly) throw denied();
+        return writeFileSync(...args);
+      }) as typeof writeFileSync,
+      unlinkSync(path) {
+        if (directoryReadOnly) throw denied();
+        return unlinkSync(path);
+      },
+    }, { persistenceRoot: store.persistenceRoot });
+    const fenced = deferred();
+    const release = deferred();
+    updateRecord(paths, record.runId, { pid: process.pid });
+    const manager = new WorkflowManager({ ...HOST, ...store, persistence, agent: {
+      async run(_prompt, request) {
+        request.onSessionOpen?.(session("before-read-only", projectDir));
+        assert.equal(runDetail(paths, record.runId).steps[0]?.session?.sessionId,
+          "before-read-only");
+        directory = dirname(engineRunFiles(paths, record.runId).state);
+        permissions = statSync(directory).mode & 0o777;
+        chmodSync(directory, 0o500);
+        directoryReadOnly = true;
+        assert.throws(() => request.onSessionOpen?.(session("after-read-only", projectDir)));
+        assert.equal(request.signal?.aborted, true);
+        fenced.resolve(); await release.promise; return "backend swallowed the failure";
+      },
+    } });
+    const work = manager.runSync(SCRIPT, {}, { runId: record.runId, cwd: projectDir });
+    try {
+      await fenced.promise;
+      process.kill(process.pid, 0);
+      assert.ok(readState(paths, record.runId)?.activeAgentSessions,
+        "the old snapshot remains on disk");
+      assert.equal(runDetail(paths, record.runId).steps[0]?.session, undefined);
+    } finally {
+      if (directory !== undefined && permissions !== undefined) chmodSync(directory, permissions);
+      directoryReadOnly = false;
+      release.resolve();
+      await work;
+    }
+  });
+
+  it("workerMain exits 70 before a backend can swallow an unrevocable lease", { timeout: 15_000 }, async () => {
+    const { paths, projectDir } = setup({ live: SCRIPT });
+    const record = createRun(paths, { who: PERSON, workflow: "live", projectDir, inputs: {} });
+    const source = `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const { workerMain } = await import(${JSON.stringify(new URL("../../src/runs/worker.ts", import.meta.url).href)});
+const paths = ${JSON.stringify(paths)};
+let fail = false;
+const write = fs.writeFileSync, unlink = fs.unlinkSync, open = fs.openSync;
+const denied = () => Object.assign(new Error('read-only filesystem'), { code: 'EROFS' });
+fs.writeFileSync = (...args) => { if (fail && String(args[0]).startsWith(paths.runs)) throw denied(); return write(...args); };
+fs.unlinkSync = (...args) => { if (fail && String(args[0]).endsWith('.lock')) throw denied(); return unlink(...args); };
+fs.openSync = (...args) => { if (fail && args[1] === 'r+' && String(args[0]).endsWith('.lock')) throw denied(); return open(...args); };
+syncBuiltinESMExports();
+const result = await workerMain(${JSON.stringify(record.runId)}, 'start', {
+  paths, log() {},
+  onLeaseRevocationFailure() { process.send?.('override-called'); throw new Error('must not override'); },
+  inner: { async run(_prompt, request) {
+    request.onSessionOpen?.(${JSON.stringify(session("fatal-owner-session", projectDir))});
+    process.send?.('ready');
+    await new Promise(resolve => process.once('message', resolve));
+    fail = true;
+    try { request.onSessionOpen?.(${JSON.stringify(session("never-accepted", projectDir))}); }
+    catch { process.send?.('swallowed'); }
+    process.send?.('continued');
+    return 'must never finish';
+  } },
+});
+process.send?.('returned');
+process.exit(result);
+`;
+    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", source], {
+      cwd: new URL("../..", import.meta.url),
+      stdio: ["ignore", "ignore", "pipe", "ipc"],
+    });
+    const ready = deferred();
+    const messages: unknown[] = [];
+    let stderr = "";
+    child.stderr!.on("data", chunk => { stderr += String(chunk); });
+    child.on("message", message => { messages.push(message); if (message === "ready") ready.resolve(); });
+    child.once("error", ready.reject);
+    const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => {
+      child.once("exit", (code, signal) => resolve({ code, signal }));
+    });
+    try {
+      await Promise.race([ready.promise, exited.then(() => assert.fail(stderr || "worker exited before opening"))]);
+      assert.equal(runDetail(paths, record.runId).steps[0]?.session?.sessionId,
+        "fatal-owner-session");
+      child.send("fail");
+      assert.deepEqual(await exited, { code: 70, signal: null }, stderr);
+      assert.deepEqual(messages, ["ready"]);
+      assert.ok(readState(paths, record.runId)?.activeAgentSessions,
+        "total I/O failure leaves the old snapshot unchanged");
+      assert.equal(runDetail(paths, record.runId).steps[0]?.session, undefined,
+        "the dead owning process cannot attest the old identity");
+    } finally { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }
+  });
+
   it("keeps parallel nested scopes apart", async () => {
     const parent = `export const meta = { name: 'parent', description: 'parallel sessions' }
 return await parallel([() => workflow('child'), () => workflow('child')])`;
@@ -296,7 +430,7 @@ return await parallel([() => workflow('child'), () => workflow('child')])`;
     const opened = deferred();
     const release = deferred();
     let count = 0;
-    const worker = runWorker(record.runId, "start", { paths, log: quiet, inner: {
+    const worker = runWorker(record.runId, "start", { ...HOST, paths, log: quiet, inner: {
       async run(_prompt, request) {
         request.onSessionOpen?.(session(`session-${request.runId}`, projectDir));
         if (++count === 2) opened.resolve();
@@ -321,7 +455,7 @@ return await parallel([() => workflow('child'), () => workflow('child')])`;
     const release = deferred();
     let captured: StepRequest | undefined;
     updateRecord(paths, record.runId, { pid: process.pid });
-    const manager = new WorkflowManager({ ...managerStore(paths), agent: {
+    const manager = new WorkflowManager({ ...HOST, ...managerStore(paths), agent: {
       async run(_prompt, request) {
         captured = request;
         request.onSessionOpen?.(session("aborted-session", projectDir));

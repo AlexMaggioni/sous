@@ -39,6 +39,9 @@ export interface WorkerOptions {
   /** A dry run (`sous check --dry-run`): each question gets a stand-in answer at once, agents take
    *  no slot, and nothing notifies. */
   dryRun?: boolean;
+  /** Explicit lifecycle policy for hosts that publish live session proofs. Never implicit
+   *  when runWorker is embedded in another process. */
+  onLeaseRevocationFailure?: (error: Error) => never;
 }
 
 function stamp(): string {
@@ -107,11 +110,13 @@ function holdSteerSignal(): () => void {
 /** The engine's manager for a run's project. Only this file builds one. A nested workflow() or
  *  choose() finds its workflow by `lookup`, the project's live ones by default, and a run an agent
  *  started finds no people workflow there. */
-function managerFor(paths: HomePaths, record: RunRecord, lookup?: (name: string) => string | undefined) {
+function managerFor(paths: HomePaths, record: RunRecord, lookup?: (name: string) => string | undefined,
+  onLeaseRevocationFailure?: (error: Error) => never) {
   const dirs = projectWorkflows(paths, record.projectDir);
   const guard = approvedLookup(paths, record, lookup ?? ((name) => dirs.resolve(name)));
   return new WorkflowManager({
     ...managerStore(paths),
+    onLeaseRevocationFailure,
     defaultAgentRetries: loadConfig(paths).retries,
     loadSavedWorkflow: guard.lookup,
     sous: {
@@ -258,7 +263,8 @@ async function runOnAccounts(
   if (takeLatest) updateRecord(paths, runId, { resumeLatest: undefined, latestHash: undefined });
   const snapshot = loadSnapshot(paths, runId);
   const live = projectWorkflows(paths, record.projectDir);
-  const manager = managerFor(paths, record, (name) => snapshot[name] ?? live.resolve(name));
+  const manager = managerFor(paths, record, (name) => snapshot[name] ?? live.resolve(name),
+    options.onLeaseRevocationFailure);
 
   const waits = new AbortController();
   const pollMs = options.pollMs ?? 500;
@@ -437,14 +443,19 @@ async function runOnAccounts(
 }
 
 /** The detached process: `sous _worker <runId> start|resume`. */
-export async function workerMain(runId: string, mode: "start" | "resume"): Promise<number> {
+export async function workerMain(runId: string, mode: "start" | "resume",
+  options: WorkerOptions = {}): Promise<number> {
   // The agents' shells inherit it, so `sous run` knows when an agent starts a workflow.
   process.env.SOUS_RUN_ID = runId;
   // The record names this process from its launch, so `sous tell` and `sous stop --step` may signal
   // it before the steps start or after they end. The handler stays until the pid clears.
   const release = holdSteerSignal();
   try {
-    const result = await runWorker(runId, mode, { handleSignals: true });
+    const result = await runWorker(runId, mode, { ...options, handleSignals: true,
+      // Only this entry owns the process. This synchronous exit cannot be swallowed by a
+      // backend catching the session callback's error, or await uncooperative cleanup.
+      onLeaseRevocationFailure: () => process.exit(70),
+    });
     return result?.status === "failed" ? 1 : 0;
   } catch (error) {
     // A refusal says why in one line, and the record keeps it for sous show.
