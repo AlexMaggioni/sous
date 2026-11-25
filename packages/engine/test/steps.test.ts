@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { MessageChannel } from "node:worker_threads";
 import { Type } from "typebox";
 import type { Account } from "@sous/harnesses";
 import type { AgentResultProvenance, AgentUsage, StepRequest } from "../src/steps/agent-run.js";
@@ -475,6 +476,10 @@ describe("steps with a runner of their own", () => {
   });
 
   it("times out an agent step as a failure a retry can fix", async () => {
+    // AbortSignal.timeout uses an unref'ed timer. A real backend owns live I/O; this fake
+    // needs a referenced resource too, so the process remains alive until its abort arrives.
+    const { port1, port2 } = new MessageChannel();
+    port1.on("message", () => {});
     const steps = createSteps({
       cwd: temp("runner-timeout"),
       inner: {
@@ -482,12 +487,18 @@ describe("steps with a runner of their own", () => {
           new Promise((_resolve, reject) => options.signal?.addEventListener("abort", () => reject(new Error("aborted")))),
       },
     });
-    await assert.rejects(steps.run("slow", routed(steps, { label: "slow", timeout: "100ms" })), (error: unknown) => {
-      assert.ok(error instanceof WorkflowError);
-      assert.match(error.message, /timed out after 0s/);
-      assert.equal(error.recoverable, true);
-      return true;
-    });
+    try {
+      await assert.rejects(steps.run("slow", routed(steps, { label: "slow", timeout: "100ms" })), (error: unknown) => {
+        assert.ok(error instanceof WorkflowError);
+        assert.match(error.message, /timed out after 0s/);
+        assert.equal(error.recoverable, true);
+        return true;
+      });
+    } finally {
+      port1.close();
+      port2.close();
+      await steps.dispose();
+    }
   });
 
   it("refuses a step whose model names Pi or OpenCode instead of running it on Claude Code", async () => {

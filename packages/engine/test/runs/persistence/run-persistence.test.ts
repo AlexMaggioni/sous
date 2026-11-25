@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import type { AgentSessionRecord, AgentSessionRef } from "../../../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../../../src/errors.js";
-import { createRunPersistence, generateRunId, type PersistedRunState, type RunPersistence } from "../../../src/runs/persistence/run-persistence.js";
+import { createRunPersistence, generateRunId, type PersistedRunState, type RunLease, type RunPersistence } from "../../../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../../../src/workflow-manager.js";
 import { workflowProjectPaths } from "../../../src/runs/persistence/project-paths.js";
 import { memoryPersistence } from "../../helpers/memory-persistence.js";
@@ -1210,6 +1210,7 @@ test("clears a failed execution and refuses a resumed runner if invalidation can
   const { paths, projectDir } = setup({ live: LIVE_SESSION_SCRIPT });
   const record = createRun(paths, { who: PERSON, workflow: "live", projectDir, inputs: {} });
   const store = managerStore(paths);
+  updateRecord(paths, record.runId, { pid: process.pid });
   const first = new WorkflowManager({ ...LIVE_SESSION_HOST, ...store, agent: {
     async run(_prompt, request) {
       request.onSessionOpen?.(liveSession("failed-execution", projectDir));
@@ -1223,7 +1224,12 @@ test("clears a failed execution and refuses a resumed runner if invalidation can
   assert.equal(runDetail(paths, record.runId).steps[0]?.session?.sessionId,
     "failed-execution", "the ended failure keeps its history");
   let calls = 0;
-  const persistence = { ...store.persistence, save(state: Parameters<typeof store.persistence.save>[0]) {
+  const leases: RunLease[] = [];
+  const persistence = { ...store.persistence, acquireRunLease(runId: string) {
+    const lease = store.persistence.acquireRunLease(runId);
+    if (lease) leases.push(lease);
+    return lease;
+  }, save(state: Parameters<typeof store.persistence.save>[0]) {
     if (state.activeAgentSessions) throw new Error("resume invalidation refused");
     store.persistence.save(state);
   } };
@@ -1232,8 +1238,18 @@ test("clears a failed execution and refuses a resumed runner if invalidation can
   } });
   const continuation = await resumed.resumeInBackground(record.runId);
   assert.equal(continuation.accepted, true);
-  await continuation.promise;
+  assert.ok(continuation.promise);
+  await assert.rejects(continuation.promise, (error: unknown) => {
+    assert.ok(error instanceof WorkflowError);
+    assert.equal(error.code, WorkflowErrorCode.PERSISTENCE_ERROR);
+    assert.equal(error.message,
+      `failed to persist resume state for ${record.runId}: resume invalidation refused`);
+    return true;
+  });
   assert.equal(calls, 0);
+  assert.equal(leases.length, 1);
+  assert.ok(leases[0]);
+  assert.equal(store.persistence.validateRunLease(leases[0]), false);
   assert.equal(runDetail(paths, record.runId).steps.filter(step =>
     step.status === "running").some(step => step.session), false);
 });
@@ -1369,7 +1385,13 @@ test("invalidates an aborted call before late backend callbacks can publish agai
   const work = manager.runSync(LIVE_SESSION_SCRIPT, {}, { runId: record.runId, cwd: projectDir });
   try {
     await opened.promise;
-    manager.stop(record.runId);
+    assert.equal(manager.stop(record.runId), true);
+    captured?.onSessionOpen?.(liveSession("late-before-release", projectDir));
+    assert.equal(readState(paths, record.runId)?.activeAgentSessions, undefined);
+    assert.equal(runDetail(paths, record.runId).steps.some(step =>
+      step.session?.sessionId === "late-before-release"), false);
+    assert.deepEqual(runDetail(paths, record.runId).running, []);
+    release.resolve();
     const result = await work;
     assert.equal(result.status, "aborted");
     captured?.onSessionOpen?.(liveSession("too-late", projectDir));
