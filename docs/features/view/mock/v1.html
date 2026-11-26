@@ -1,0 +1,2117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sous view mock</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%237A3A16' d='M11 5 L14 5 L14 6 L11 6 Z M5 2 L5 7 L2 7 L2 5 Z M11 7 L14 10 L14 12 L11 12 Z M5 15 L2 12 L2 11 L5 11 Z'/%3E%3Cpath fill='%23B5602A' d='M5 2 L11 2 L14 5 L5 5 Z M2 7 L11 7 L11 10 L5 10 Z M11 12 L14 12 L11 15 L5 15 L5 12 Z'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #FBF8F2;
+  --rail: #EFE9DE;
+  --col: #F5F0E7;
+  --surface: #FFFFFF;
+  --surface-2: #F7F3EC;
+  --line: #E6DFD2;
+  --line-strong: #D6CDBC;
+  --text: #1D1A16;
+  --muted: #6B6357;
+  --faint: #9A9183;
+  --accent: #B5602A;
+  --accent-deep: #7A3A16;
+  --accent-soft: rgba(181, 96, 42, 0.10);
+  --accent-line: rgba(181, 96, 42, 0.38);
+  --run: #2E7A68;
+  --run-soft: rgba(46, 122, 104, 0.10);
+  --fail: #B03A2E;
+  --fail-soft: rgba(176, 58, 46, 0.08);
+  --done: #5C7A4A;
+  --pause: #8A8174;
+  --add: rgba(92, 122, 74, 0.14);
+  --del: rgba(176, 58, 46, 0.11);
+  --sel: rgba(29, 26, 22, 0.065);
+  --hover: rgba(29, 26, 22, 0.04);
+  --shadow: 0 1px 2px rgba(29, 26, 22, 0.05), 0 4px 16px rgba(29, 26, 22, 0.05);
+  --code: #F4EFE6;
+  --syn-kw: #7A3A16;
+  --syn-str: #4E6E3E;
+  --syn-com: #9A9183;
+  --syn-fn: #8B4A9C;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16130F; --rail: #100E0B; --col: #1A1713; --surface: #1F1B16; --surface-2: #24201A;
+    --line: #2D2821; --line-strong: #3A342B; --text: #F2EBDD; --muted: #A89E8E; --faint: #7A7163;
+    --accent: #DB8550; --accent-deep: #9C4F25; --accent-soft: rgba(219, 133, 80, 0.12); --accent-line: rgba(219, 133, 80, 0.42);
+    --run: #63BBA5; --run-soft: rgba(99, 187, 165, 0.12); --fail: #E3725F; --fail-soft: rgba(227, 114, 95, 0.10);
+    --done: #93B07E; --pause: #8F8678; --add: rgba(147, 176, 126, 0.14); --del: rgba(227, 114, 95, 0.13);
+    --sel: rgba(242, 235, 221, 0.08); --hover: rgba(242, 235, 221, 0.045);
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.25);
+    --code: #1B1813; --syn-kw: #DB8550; --syn-str: #A7C291; --syn-com: #7A7163; --syn-fn: #C9A0D8;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16130F; --rail: #100E0B; --col: #1A1713; --surface: #1F1B16; --surface-2: #24201A;
+  --line: #2D2821; --line-strong: #3A342B; --text: #F2EBDD; --muted: #A89E8E; --faint: #7A7163;
+  --accent: #DB8550; --accent-deep: #9C4F25; --accent-soft: rgba(219, 133, 80, 0.12); --accent-line: rgba(219, 133, 80, 0.42);
+  --run: #63BBA5; --run-soft: rgba(99, 187, 165, 0.12); --fail: #E3725F; --fail-soft: rgba(227, 114, 95, 0.10);
+  --done: #93B07E; --pause: #8F8678; --add: rgba(147, 176, 126, 0.14); --del: rgba(227, 114, 95, 0.13);
+  --sel: rgba(242, 235, 221, 0.08); --hover: rgba(242, 235, 221, 0.045);
+  --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.25);
+  --code: #1B1813; --syn-kw: #DB8550; --syn-str: #A7C291; --syn-com: #7A7163; --syn-fn: #C9A0D8;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+.mono, code, pre, kbd { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+code { font-size: 0.92em; background: var(--code); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+a { color: inherit; }
+button { font: inherit; color: inherit; }
+input, textarea, select { font: inherit; color: var(--text); }
+
+.app { display: grid; grid-template-columns: 56px 292px minmax(0, 1fr); height: 100vh; }
+
+/* rail */
+.rail { background: var(--rail); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 12px 0 10px; gap: 4px; }
+.rail .brand { width: 32px; height: 32px; display: grid; place-items: center; margin-bottom: 10px; }
+.rail .brand svg { width: 22px; height: 22px; }
+.rail-btn { position: relative; width: 38px; height: 38px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
+.rail-btn:hover { background: var(--hover); color: var(--text); }
+.rail-btn.on { background: var(--sel); color: var(--text); }
+.rail-btn.on::before { content: ""; position: absolute; left: -9px; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
+.rail-btn svg { width: 19px; height: 19px; }
+.rail-btn .count { position: absolute; top: 3px; right: 2px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 9.5px; font-weight: 650; line-height: 15px; text-align: center; }
+.rail .spacer { flex: 1; }
+.tip { position: fixed; z-index: 50; pointer-events: none; background: var(--text); color: var(--bg); font-size: 12px; padding: 3px 8px; border-radius: 5px; white-space: nowrap; opacity: 0; transition: opacity .1s; }
+.service { width: 8px; height: 8px; border-radius: 50%; background: var(--run); box-shadow: 0 0 0 3px var(--run-soft); margin: 10px 0 6px; }
+
+/* column */
+.col { background: var(--col); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.col-head { padding: 14px 14px 10px; display: flex; align-items: center; gap: 8px; }
+.col-head h2 { margin: 0; font-size: 13px; font-weight: 650; flex: 1; letter-spacing: -0.005em; }
+.col-head .n { color: var(--faint); font-weight: 500; margin-left: 4px; }
+.col-tools { padding: 0 10px 8px; display: flex; flex-direction: column; gap: 8px; }
+.col-body { overflow-y: auto; flex: 1; padding: 0 6px 16px; }
+.new-entry { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; cursor: pointer; text-align: left; font-weight: 550; box-shadow: var(--shadow); }
+.new-entry:hover { border-color: var(--line-strong); }
+.new-entry.on { border-color: var(--accent-line); background: var(--accent-soft); box-shadow: none; }
+.new-entry svg { width: 15px; height: 15px; color: var(--accent); }
+.new-entry .kbd { margin-left: auto; color: var(--faint); font-size: 11px; font-weight: 450; }
+.seg { display: flex; background: var(--hover); border: 1px solid var(--line); border-radius: 7px; padding: 2px; }
+.seg button { flex: 1; border: 0; background: transparent; padding: 3px 8px; border-radius: 5px; cursor: pointer; color: var(--muted); font-size: 12px; }
+.seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); font-weight: 550; }
+.seg-row { display: flex; align-items: center; gap: 8px; }
+.seg-row .lbl { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.scope { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--faint); }
+.scope select { flex: 1; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font-size: 12px; }
+
+.group { margin-top: 10px; }
+.group-h { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 11.5px; font-weight: 600; color: var(--muted); position: sticky; top: 0; background: var(--col); z-index: 1; }
+.group-h .n { color: var(--faint); font-weight: 500; }
+.group-h .sub { color: var(--faint); font-weight: 450; font-size: 11px; margin-left: auto; }
+.item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 7px; cursor: pointer; min-height: 30px; text-decoration: none; }
+.item:hover { background: var(--hover); }
+.item.on { background: var(--sel); }
+.item .main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; overflow: hidden; white-space: nowrap; }
+.item .name { font-weight: 550; flex-shrink: 0; }
+.item .label { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.item .side { color: var(--faint); font-size: 11.5px; flex-shrink: 0; }
+.item.two .main { flex-direction: column; align-items: stretch; gap: 0; }
+.item.two .label { font-size: 12px; }
+
+.badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 0 7px; height: 18px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-line); flex-shrink: 0; }
+.badge.fail { background: var(--fail-soft); color: var(--fail); border-color: color-mix(in srgb, var(--fail) 40%, transparent); }
+.badge.quiet { background: transparent; color: var(--faint); border-color: var(--line-strong); font-weight: 500; }
+.badge.run { background: var(--run-soft); color: var(--run); border-color: color-mix(in srgb, var(--run) 40%, transparent); }
+.chip { display: inline-flex; align-items: center; font-size: 11px; padding: 0 6px; height: 18px; border-radius: 4px; background: var(--hover); border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+
+/* marks */
+.mark { width: 14px; height: 14px; flex-shrink: 0; display: inline-block; vertical-align: -2px; }
+.spin { animation: spin 1.1s linear infinite; transform-origin: 50% 50%; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.pulse { animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .45; } }
+
+/* main */
+.mainpane { overflow-y: auto; min-width: 0; }
+.page { max-width: 1180px; margin: 0 auto; padding: 22px 32px 64px; }
+.crumbs { color: var(--faint); font-size: 12px; display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.crumbs a { text-decoration: none; color: var(--muted); }
+.crumbs a:hover { color: var(--text); }
+.head { display: flex; align-items: flex-start; gap: 16px; }
+.head h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -0.015em; line-height: 1.3; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.head h1 .sub { color: var(--muted); font-weight: 450; }
+.head h1 a { text-decoration: none; }
+.head h1 a:hover { text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.head .grow { flex: 1; min-width: 0; }
+.desc { color: var(--muted); margin: 4px 0 0; }
+.actions { display: flex; gap: 6px; flex-shrink: 0; padding-top: 2px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-weight: 550; white-space: nowrap; }
+.btn:hover { border-color: var(--faint); }
+.btn svg { width: 14px; height: 14px; }
+.btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+.btn.primary:hover { opacity: .9; }
+.btn.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.accent:hover { filter: brightness(1.06); }
+.btn.danger { color: var(--fail); }
+.btn.danger.arm { background: var(--fail); color: #fff; border-color: var(--fail); }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+.btn.ghost:hover { background: var(--hover); color: var(--text); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.sm { height: 26px; padding: 0 10px; font-size: 12px; }
+
+.facts { display: flex; flex-wrap: wrap; gap: 0; margin: 16px 0 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.fact { padding: 8px 14px; border-right: 1px solid var(--line); min-width: 0; }
+.fact:last-child { border-right: 0; }
+.fact .k { font-size: 11px; color: var(--faint); }
+.fact .v { font-weight: 550; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.fact .v a { text-decoration: none; }
+.fact .v a:hover { text-decoration: underline; }
+.fact .v .mono { font-size: 12px; font-weight: 500; }
+
+.state { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12.5px; }
+.state.needs { color: var(--accent); }
+.state.running { color: var(--run); }
+.state.failed { color: var(--fail); }
+.state.paused, .state.stopped { color: var(--muted); }
+.state.done { color: var(--done); }
+
+h3 { font-size: 12.5px; font-weight: 650; margin: 28px 0 10px; display: flex; align-items: center; gap: 8px; }
+h3 .n { color: var(--faint); font-weight: 500; }
+h3 .r { margin-left: auto; font-weight: 450; color: var(--faint); font-size: 12px; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.card.pad { padding: 14px 16px; }
+
+/* needs-you card */
+.ask { margin-top: 18px; border: 1px solid var(--accent-line); background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--surface); border-radius: 12px; padding: 16px 18px; }
+.ask.fail { border-color: color-mix(in srgb, var(--fail) 38%, transparent); background: linear-gradient(var(--fail-soft), var(--fail-soft)), var(--surface); }
+.ask.quiet { border-color: var(--line); background: var(--surface); }
+.ask-top { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.ask-top .what { font-weight: 650; color: var(--accent); }
+.ask.fail .ask-top .what { color: var(--fail); }
+.ask.quiet .ask-top .what { color: var(--muted); }
+.ask-top .when { margin-left: auto; color: var(--faint); }
+.ask-q { font-size: 15px; font-weight: 550; margin: 8px 0 0; line-height: 1.45; }
+.ask-detail { margin: 10px 0 0; color: var(--muted); }
+.ask-detail ul { margin: 4px 0 0; padding-left: 18px; }
+.ask-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
+.ask-controls .hint { color: var(--faint); font-size: 12px; margin-left: auto; }
+.choice { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-weight: 550; }
+.choice:hover { border-color: var(--accent); color: var(--accent); }
+.field { display: flex; gap: 8px; width: 100%; }
+.field input, .field textarea, .input { flex: 1; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 10px; outline: none; min-width: 0; }
+.field textarea { resize: vertical; min-height: 64px; }
+.field input:focus, .field textarea:focus, .input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
+.shown { margin-top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; max-height: 300px; overflow: auto; }
+.errbox { margin-top: 12px; background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 12px; white-space: pre-wrap; color: var(--text); max-height: 220px; overflow: auto; }
+
+/* run body */
+.runbody { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 18px; margin-top: 24px; align-items: start; }
+@media (max-width: 1180px) { .runbody { grid-template-columns: 1fr; } }
+.steps { padding: 6px; }
+.steps-h, .feed-h { display: flex; align-items: center; gap: 8px; padding: 6px 8px 8px; font-size: 12px; font-weight: 650; }
+.steps-h .r, .feed-h .r { margin-left: auto; font-weight: 450; color: var(--faint); }
+.step { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; padding: 6px 8px; border-radius: 7px; cursor: pointer; }
+.step:hover { background: var(--hover); }
+.step.on { background: var(--sel); }
+.step .lab { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step .lab .k { color: var(--faint); font-weight: 450; margin-left: 4px; font-size: 12px; }
+.step .num { color: var(--faint); font-size: 11.5px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.step .meta { grid-column: 2 / 4; color: var(--faint); font-size: 11.5px; display: flex; gap: 8px; overflow: hidden; white-space: nowrap; }
+.step .meta a { color: var(--muted); text-decoration: none; }
+.step .meta a:hover { color: var(--accent); text-decoration: underline; }
+.step.pending { opacity: .55; }
+.step-group { margin: 4px 0 4px 15px; padding-left: 8px; border-left: 1px solid var(--line); }
+.step-group-h { padding: 4px 8px 2px 0; color: var(--faint); font-size: 11.5px; display: flex; gap: 6px; align-items: center; margin-left: -8px; padding-left: 8px; }
+.step-group-h a { color: var(--muted); text-decoration: none; font-weight: 550; }
+.step-group-h a:hover { text-decoration: underline; }
+
+.feed { display: flex; flex-direction: column; min-height: 420px; }
+.feed-h .agentlink { color: var(--muted); font-weight: 450; text-decoration: none; }
+.feed-h .agentlink:hover { color: var(--accent); text-decoration: underline; }
+.entries { flex: 1; overflow-y: auto; max-height: 560px; padding: 2px 6px 8px; border-top: 1px solid var(--line); }
+.entry { display: grid; grid-template-columns: 44px 52px minmax(0, 1fr); gap: 10px; padding: 6px 6px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); align-items: baseline; }
+.entry:last-child { border-bottom: 0; }
+.entry .t { color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.entry .kind { font-size: 10.5px; font-weight: 650; text-transform: lowercase; color: var(--faint); letter-spacing: .02em; }
+.entry .body { min-width: 0; overflow-wrap: anywhere; }
+.entry.tool .kind { color: var(--muted); }
+.entry.tool .body .tn { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; font-weight: 600; }
+.entry.tool .body .ta { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: var(--muted); margin-left: 6px; }
+.entry.tool .body .tr { color: var(--faint); font-size: 11.5px; margin-left: 8px; }
+.entry.tool.open .res { display: block; }
+.entry .res { display: none; margin-top: 6px; background: var(--code); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 11.5px; white-space: pre-wrap; color: var(--muted); }
+.entry.tool { cursor: pointer; }
+.entry.text .body { color: var(--text); }
+.entry.prompt .body { color: var(--muted); white-space: pre-wrap; }
+.entry.tell { background: var(--accent-soft); border-radius: 7px; border-bottom-color: transparent; margin: 3px 0; }
+.entry.tell .kind, .entry.answer .kind { color: var(--accent); }
+.entry.tell .who { font-weight: 600; }
+.entry.tell .dl { color: var(--faint); font-size: 11px; margin-left: 6px; }
+.entry.answer { background: var(--accent-soft); border-radius: 7px; margin: 3px 0; }
+.entry.asks .kind { color: var(--accent); }
+.entry.asks .body { font-weight: 550; }
+.entry.error .kind, .entry.error .body { color: var(--fail); }
+.entry.note .kind { color: var(--muted); }
+.entry.note .body { color: var(--muted); font-style: italic; }
+.entry.command .body, .entry.output .body { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; white-space: pre-wrap; }
+.entry.output .body { color: var(--muted); }
+.entry.fresh { animation: fresh 1.2s ease-out; }
+@keyframes fresh { from { background: var(--run-soft); } }
+.typing { padding: 8px 12px; color: var(--faint); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+.dots span { display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: var(--run); margin-right: 3px; animation: pulse 1.2s infinite; }
+.dots span:nth-child(2) { animation-delay: .2s; } .dots span:nth-child(3) { animation-delay: .4s; }
+.tellbox { border-top: 1px solid var(--line); padding: 10px; display: flex; gap: 8px; align-items: center; }
+.tellbox input { flex: 1; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; outline: none; }
+.tellbox input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.tellbox .to { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.feed-empty { padding: 28px 16px; color: var(--faint); text-align: center; }
+.result { margin-top: 18px; }
+.result .card { padding: 12px 16px; }
+.result .k { font-size: 11px; color: var(--faint); margin-bottom: 4px; }
+
+/* tables */
+.tbl { width: 100%; border-collapse: collapse; }
+.tbl th { text-align: left; font-size: 11px; font-weight: 550; color: var(--faint); padding: 8px 14px; border-bottom: 1px solid var(--line); }
+.tbl td { padding: 8px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+.tbl tr.link { cursor: pointer; }
+.tbl tr.link:hover td { background: var(--hover); }
+.tbl a { text-decoration: none; font-weight: 550; }
+.tbl a:hover { text-decoration: underline; }
+
+/* outline */
+.outline { padding: 6px 0; }
+.ol { display: grid; grid-template-columns: 26px 84px minmax(0, 1fr) auto; gap: 10px; padding: 7px 14px; align-items: baseline; }
+.ol + .ol { border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.ol .i { color: var(--faint); font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
+.ol .kd { font-size: 11px; font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
+.ol .what { min-width: 0; }
+.ol .what b { font-weight: 600; }
+.ol .what .x { color: var(--muted); margin-left: 6px; }
+.ol .what a { color: var(--accent); text-decoration: none; font-weight: 550; }
+.ol .what a:hover { text-decoration: underline; }
+.ol .r { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.ol.nest { padding-left: 38px; }
+.ol.nest2 { padding-left: 62px; }
+
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-top: 20px; }
+.tab { border: 0; background: transparent; padding: 8px 12px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 550; display: inline-flex; gap: 6px; align-items: center; }
+.tab:hover { color: var(--text); }
+.tab.on { color: var(--text); border-bottom-color: var(--accent); }
+
+.codeblock { background: var(--code); border: 1px solid var(--line); border-radius: 10px; overflow: auto; font-size: 12px; line-height: 1.6; }
+.codeblock .ln { display: grid; grid-template-columns: 42px minmax(0, 1fr); }
+.codeblock .ln .no { color: var(--faint); text-align: right; padding-right: 12px; user-select: none; font-size: 11px; }
+.codeblock .ln .tx { white-space: pre; padding-right: 16px; }
+.codeblock .ln.add { background: var(--add); }
+.codeblock .ln.del { background: var(--del); }
+.codeblock .ln.gap { color: var(--faint); background: var(--hover); }
+.codeblock .ln.gap .tx { font-style: italic; font-family: -apple-system, system-ui, sans-serif; font-size: 11.5px; }
+.codeblock .path { padding: 8px 14px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11.5px; display: flex; justify-content: space-between; background: var(--surface-2); }
+.codeblock .inner { padding: 8px 0; }
+.syn-kw { color: var(--syn-kw); } .syn-str { color: var(--syn-str); } .syn-com { color: var(--syn-com); font-style: italic; } .syn-fn { color: var(--syn-fn); }
+
+.note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+.note.warn { border-color: var(--accent-line); background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--surface); color: var(--text); }
+.note.bad { border-color: color-mix(in srgb, var(--fail) 38%, transparent); background: linear-gradient(var(--fail-soft), var(--fail-soft)), var(--surface); color: var(--text); }
+.note.good { color: var(--muted); }
+.note svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 2px; }
+.note + .note { margin-top: 8px; }
+.note .t { font-weight: 600; }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 980px) { .grid2 { grid-template-columns: 1fr; } }
+.kv { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 0; }
+.kv > div { padding: 8px 14px; border-bottom: 1px solid var(--line); }
+.kv > div:nth-last-child(-n+2) { border-bottom: 0; }
+.kv .k { color: var(--faint); font-size: 12px; }
+.kv .v a { color: var(--accent); text-decoration: none; font-weight: 550; }
+.kv .v a:hover { text-decoration: underline; }
+.kv .v .from { color: var(--faint); font-size: 11.5px; margin-left: 6px; }
+.harness-h { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; font-weight: 650; }
+.harness-h .r { margin-left: auto; font-weight: 450; color: var(--faint); font-size: 12px; }
+.empty-h { padding: 22px 16px; color: var(--muted); }
+.links { display: flex; flex-wrap: wrap; gap: 6px; }
+.links a { color: var(--accent); text-decoration: none; font-weight: 550; }
+.links a:hover { text-decoration: underline; }
+.pillink { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-2); text-decoration: none; font-size: 12px; font-weight: 550; }
+.pillink:hover { border-color: var(--accent-line); color: var(--accent); }
+.order { padding: 4px 0; }
+.order .row { display: grid; grid-template-columns: 22px 150px minmax(0, 1fr) auto; gap: 10px; padding: 7px 14px; align-items: center; }
+.order .row + .row { border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.order .row .i { color: var(--faint); font-size: 11.5px; }
+.order .row .w { color: var(--muted); font-size: 12px; }
+.order .row .p { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); }
+.order .row.hit .p, .order .row.hidden .p { color: var(--text); }
+.order .row.miss { opacity: .6; }
+.order .row .file-toggle { cursor: pointer; }
+.order .peek { grid-column: 1 / -1; }
+.prose { padding: 14px 18px; white-space: pre-wrap; line-height: 1.6; }
+.md h1, .md h2, .md h3 { font-size: 13.5px; margin: 12px 0 4px; }
+.md h1:first-child, .md h2:first-child { margin-top: 0; }
+.md p { margin: 6px 0; }
+.md ul { margin: 4px 0; padding-left: 20px; }
+.md li { margin: 2px 0; }
+
+.form { display: grid; gap: 14px; }
+.frow label { display: block; font-weight: 600; margin-bottom: 2px; }
+.frow .help { color: var(--faint); font-size: 12px; margin-bottom: 6px; }
+.frow .input, .frow select { width: 100%; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; padding: 7px 10px; }
+.frow textarea.input { min-height: 70px; resize: vertical; }
+.frow .req { color: var(--accent); font-weight: 500; font-size: 11.5px; margin-left: 6px; }
+.wfpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.wfcard { text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.wfcard:hover { border-color: var(--line-strong); box-shadow: var(--shadow); }
+.wfcard.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.wfcard .t { font-weight: 650; display: flex; align-items: center; gap: 6px; }
+.wfcard .d { color: var(--muted); font-size: 12px; }
+.wfcard .w { color: var(--faint); font-size: 11.5px; margin-top: auto; padding-top: 6px; }
+.cmd { background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 12px; color: var(--muted); overflow-x: auto; white-space: nowrap; }
+.cmd b { color: var(--text); font-weight: 500; }
+.confirm { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; cursor: pointer; }
+.confirm input { margin-top: 3px; accent-color: var(--accent); }
+
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translate(-50%, 20px); opacity: 0; background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 10px; font-size: 12.5px; box-shadow: 0 8px 24px rgba(0,0,0,.2); transition: all .2s; z-index: 60; max-width: 80vw; display: flex; gap: 10px; align-items: center; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast .mono { opacity: .75; font-size: 12px; }
+.mockflag { position: fixed; right: 12px; bottom: 10px; font-size: 11px; color: var(--faint); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; z-index: 5; }
+.muted { color: var(--muted); } .faint { color: var(--faint); }
+.row-flex { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mt8 { margin-top: 8px; } .mt12 { margin-top: 12px; } .mt16 { margin-top: 16px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="rail" id="rail"></nav>
+  <aside class="col" id="col"></aside>
+  <main class="mainpane" id="main"></main>
+</div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+<div class="mockflag">Mock with fake data. Nothing runs.</div>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ helpers */
+const NOW = Date.now();
+const S = 1000, M = 60 * S, H = 60 * M, D = 24 * H;
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const fmtTok = (n) => n == null ? "" : n < 1000 ? String(n) : n < 100000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : n < 1e6 ? Math.round(n / 1000) + "k" : (n / 1e6).toFixed(2) + "M";
+const fmtDur = (ms) => {
+  if (ms == null) return "";
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + "s";
+  const m = Math.floor(s / 60), r = s % 60;
+  if (m < 60) return m + "m " + String(r).padStart(2, "0") + "s";
+  const h = Math.floor(m / 60);
+  return h + "h " + String(m % 60).padStart(2, "0") + "m";
+};
+const fmtAgo = (t) => {
+  const d = Date.now() - t;
+  if (d < 45 * S) return "now";
+  if (d < H) return Math.round(d / M) + "m ago";
+  if (d < D) return Math.round(d / H) + "h ago";
+  if (d < 2 * D) return "yesterday";
+  return Math.round(d / D) + "d ago";
+};
+const fmtClock = (t) => { const d = new Date(t); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+const fmtDay = (t) => {
+  const d = new Date(t), today = new Date();
+  if (d.toDateString() === today.toDateString()) return "today " + fmtClock(t);
+  const y = new Date(Date.now() - D);
+  if (d.toDateString() === y.toDateString()) return "yesterday " + fmtClock(t);
+  return d.toLocaleDateString("en", { month: "short", day: "numeric" }) + ", " + fmtClock(t);
+};
+const store = {
+  get(k, f) { try { const v = localStorage.getItem("sous-mock-" + k); return v == null ? f : JSON.parse(v); } catch (e) { return f; } },
+  set(k, v) { try { localStorage.setItem("sous-mock-" + k, JSON.stringify(v)); } catch (e) { /* storage may be off */ } },
+};
+const runId = (t) => "run-" + Math.floor(t).toString(36);
+
+/* ------------------------------------------------------------------ icons */
+const I = {
+  runs: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7.2"/><path d="M8.3 7.2v5.6l4.4-2.8z"/></svg>',
+  workflows: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="5" height="5" rx="1.2"/><rect x="12" y="12" width="5" height="5" rx="1.2"/><path d="M5.5 8v3.5a2 2 0 0 0 2 2H12"/><path d="M10.5 5.5H15v4"/></svg>',
+  agents: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="12" height="10" rx="3"/><path d="M10 6V3.5"/><circle cx="10" cy="3" r=".6" fill="currentColor"/><circle cx="7.8" cy="11" r=".9" fill="currentColor" stroke="none"/><circle cx="12.2" cy="11" r=".9" fill="currentColor" stroke="none"/></svg>',
+  skills: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H15v12H5.5A1.5 1.5 0 0 0 4 16.5z"/><path d="M4 16.5A1.5 1.5 0 0 0 5.5 18H15v-3"/><path d="M7.5 7h4.5M7.5 9.8h3"/></svg>',
+  mcp: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v3.5M13 3v3.5"/><path d="M5 6.5h10v3a5 5 0 0 1-10 0z"/><path d="M10 14.5V17"/></svg>',
+  plus: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>',
+  sun: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10" cy="10" r="3.2"/><path d="M10 2.5v1.8M10 15.7v1.8M2.5 10h1.8M15.7 10h1.8M4.7 4.7l1.3 1.3M14 14l1.3 1.3M4.7 15.3 6 14M14 6l1.3-1.3"/></svg>',
+  moon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.5 12.4A6.5 6.5 0 0 1 7.6 4.5a6.5 6.5 0 1 0 7.9 7.9z"/></svg>',
+  auto: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v13a6.5 6.5 0 0 0 0-13z" fill="currentColor"/></svg>',
+  stop: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>',
+  play: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5v9l7.5-4.5z"/></svg>',
+  pause: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3.5" width="2.8" height="9" rx="1"/><rect x="9.2" y="3.5" width="2.8" height="9" rx="1"/></svg>',
+  tell: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></svg>',
+  file: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M4 2h5.5L12.5 5v9h-8.5z"/><path d="M9.5 2v3h3"/></svg>',
+  warn: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 2 14.5 13.5h-13z"/><path d="M8 6.5v3.2M8 11.6v.1" stroke-linecap="round"/></svg>',
+  ok: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 8.5 3 3 6-7"/></svg>',
+  info: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 7.3v3.7M8 5v.1"/></svg>',
+  send: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg>',
+  back: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4 3 7.5 6.5 11"/><path d="M3.5 7.5h6a3.5 3.5 0 0 1 0 7H8"/></svg>',
+};
+const SOUS_MARK = '<svg viewBox="0 0 16 16"><path style="fill:var(--accent-deep)" d="M11 5 L14 5 L14 6 L11 6 Z M5 2 L5 7 L2 7 L2 5 Z M11 7 L14 10 L14 12 L11 12 Z M5 15 L2 12 L2 11 L5 11 Z"/><path style="fill:var(--accent)" d="M5 2 L11 2 L14 5 L5 5 Z M2 7 L11 7 L11 10 L5 10 Z M11 12 L14 12 L11 15 L5 15 L5 12 Z"/></svg>';
+
+function mark(kind) {
+  switch (kind) {
+    case "running": return '<svg class="mark spin" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.3" stroke="var(--run)" stroke-opacity=".25" stroke-width="1.8"/><path d="M7 1.7a5.3 5.3 0 0 1 5.3 5.3" stroke="var(--run)" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    case "question": case "breakpoint": case "waiting": return '<svg class="mark pulse" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6" fill="var(--accent)" fill-opacity=".18"/><circle cx="7" cy="7" r="3.3" fill="var(--accent)"/></svg>';
+    case "failed": return '<svg class="mark" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6" fill="var(--fail)"/><path d="m4.9 4.9 4.2 4.2M9.1 4.9 4.9 9.1" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>';
+    case "paused": return '<svg class="mark" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.8" fill="none" stroke="var(--pause)" stroke-width="1.4"/><path d="M5.6 4.8v4.4M8.4 4.8v4.4" stroke="var(--pause)" stroke-width="1.5" stroke-linecap="round"/></svg>';
+    case "done": return '<svg class="mark" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6" fill="var(--done)" fill-opacity=".16"/><path d="m4.3 7.2 1.9 1.9 3.6-4" fill="none" stroke="var(--done)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    case "stopped": return '<svg class="mark" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.8" fill="none" stroke="var(--pause)" stroke-width="1.4"/><rect x="4.9" y="4.9" width="4.2" height="4.2" rx=".8" fill="var(--pause)"/></svg>';
+    case "skipped": return '<svg class="mark" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.8" fill="none" stroke="var(--pause)" stroke-width="1.3"/><path d="M4.6 7h4.8" stroke="var(--pause)" stroke-width="1.4" stroke-linecap="round"/></svg>';
+    default: return '<svg class="mark" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--faint)" stroke-width="1.3" stroke-dasharray="2.2 2"/></svg>';
+  }
+}
+
+/* ------------------------------------------------------------------ fake data */
+const PROJECTS = ["orchestrator", "site", "docs", "billing"];
+const PROJECT_PATH = { orchestrator: "~/code/orchestrator", site: "~/code/site", docs: "~/code/docs", billing: "~/code/billing" };
+
+const WF_TEXT = {};
+WF_TEXT.ticket = `export const meta = {
+  name: "ticket",
+  description: "Implement a ticket, review it, verify it",
+  inputs: {
+    ticket: { type: "string", description: "What to build", required: true },
+    rounds: { type: "number", description: "Review rounds at most", default: 3 },
+  },
+  outputs: { summary: "What was built" },
+  place: "worktree",
+}
+
+const built = await agent(\`Implement this ticket:\\n\${args.ticket}\`, {
+  agentType: "implementer", label: "implementer", keepSession: true,
+})
+
+for (let round = 1; round <= args.rounds; round++) {
+  const review = await agent(\`Review the change for: \${args.ticket}\`, {
+    agentType: "reviewer", label: "reviewer",
+    schema: { approved: "boolean", review: "string" },
+  })
+  if (review.approved) break
+  await agent(\`Address this review:\\n\${review.review}\`, { continue: "implementer", label: "address review" })
+}
+
+await sh("pnpm test", { label: "tests" })
+
+await breakpoint("Ready to commit?", () =>
+  sh(\`git add -A && git commit -m "\${args.ticket}"\`, { label: "commit" }))
+
+return { summary: built }
+`;
+WF_TEXT.factory_approved = `export const meta = {
+  name: "factory",
+  description: "Triage the team's new tickets and build the clear ones",
+  inputs: {
+    team: { type: "string", description: "Linear team key", required: true },
+  },
+  place: "worktree",
+  startedBy: "people",
+  schedule: { cron: "0 2 * * *", inputs: { team: "BILL" } },
+}
+
+const tickets = await sh(\`node scripts/tickets.js \${args.team}\`, { label: "fetch" })
+
+const triage = await agent(\`Sort these tickets into clear and vague:\\n\${tickets.stdout}\`, {
+  agentType: "triager", label: "triager",
+  schema: { clear: "string[]", vague: "string[]" },
+})
+
+const pick = await ask(\`The triager found \${triage.clear.length} clear tickets. Build these?\`, {
+  choices: ["Build all", "Build none"],
+})
+if (pick === "Build none") return { built: [] }
+
+const built = await pipeline(triage.clear, (id, _, i) =>
+  workflow("ticket", { ticket: id }, { label: \`ticket \${"ABCDEFGH"[i]}\` }))
+
+return { built }
+`;
+WF_TEXT.factory = `export const meta = {
+  name: "factory",
+  description: "Triage the team's new tickets and build the clear ones",
+  inputs: {
+    team: { type: "string", description: "Linear team key", required: true },
+    limit: { type: "number", description: "Tickets to build at most", default: 3 },
+  },
+  place: "worktree",
+  startedBy: "people",
+  schedule: { cron: "0 2 * * *", inputs: { team: "BILL" } },
+}
+
+const tickets = await sh(\`node scripts/tickets.js \${args.team}\`, { label: "fetch" })
+
+const triage = await agent(\`Sort these tickets into clear and vague:\\n\${tickets.stdout}\`, {
+  agentType: "triager", label: "triager", model: "codex",
+  schema: { clear: "string[]", vague: "string[]" },
+})
+
+const clear = triage.clear.slice(0, args.limit)
+const pick = await ask(\`The triager found \${clear.length} clear tickets. Build these?\`, {
+  choices: ["Build all", ...clear.map((id) => \`Only \${id}\`), "Build none"],
+})
+if (pick === "Build none") return { built: [] }
+
+const chosen = pick === "Build all" ? clear : [pick.replace("Only ", "")]
+const built = await pipeline(chosen, (id, _, i) =>
+  workflow("ticket", { ticket: id }, { label: \`ticket \${"ABCDEFGH"[i]}\` }))
+
+return { built }
+`;
+WF_TEXT["review-pr"] = `export const meta = {
+  name: "review-pr",
+  description: "Review a pull request for bugs and security, then post it",
+  inputs: {
+    pr: { type: "number", description: "The pull request number", required: true },
+  },
+  place: "folder",
+}
+
+const diff = await sh(\`gh pr diff \${args.pr}\`, { label: "diff" })
+
+const [review, security] = await parallel([
+  () => agent(\`Review this diff:\\n\${diff.stdout}\`, { agentType: "reviewer", label: "reviewer" }),
+  () => agent(\`Look for security problems in:\\n\${diff.stdout}\`, {
+    agentType: "security-reviewer", label: "security",
+  }),
+])
+
+await breakpoint("Post this review?", () =>
+  sh(\`gh pr comment \${args.pr} --body-file -\`, { label: "post", input: review + "\\n\\n" + security }),
+  { show: review + "\\n\\n" + security })
+`;
+WF_TEXT["release-notes_approved"] = `export const meta = {
+  name: "release-notes",
+  description: "Write release notes from the merged pull requests",
+  inputs: {
+    since: { type: "string", description: "The last release tag", required: true },
+  },
+  place: "worktree",
+}
+
+const log = await sh(\`git log \${args.since}..HEAD --merges --oneline\`, { label: "log" })
+
+const notes = await breakpoint("Notes look right?", () =>
+  agent(\`Write release notes from these merges:\\n\${log.stdout}\`, {
+    agentType: "writer", label: "draft",
+  }))
+
+await js("fs.appendFileSync('CHANGELOG.md', input)", notes, { label: "changelog" })
+`;
+WF_TEXT["release-notes"] = `export const meta = {
+  name: "release-notes",
+  description: "Write release notes from the merged pull requests",
+  inputs: {
+    since: { type: "string", description: "The last release tag", required: true },
+    audience: { type: "string", description: "Who reads them", default: "users" },
+  },
+  place: "worktree",
+}
+
+const log = await sh(\`git log \${args.since}..HEAD --merges --oneline\`, { label: "log" })
+
+const notes = await breakpoint("Notes look right?", () =>
+  agent(\`Write release notes for \${args.audience} from these merges:\\n\${log.stdout}\`, {
+    agentType: "writer", label: "draft",
+  }))
+
+await js("fs.appendFileSync('CHANGELOG.md', input)", notes, { label: "changelog" })
+await workflow("docs-sync", { ref: "HEAD" }, { label: "docs" })
+`;
+WF_TEXT["fix-flaky"] = `export const meta = {
+  name: "fix-flaky",
+  description: "Find why a test fails now and then, and fix it",
+  inputs: {
+    test: { type: "string", description: "The test's name or file", required: true },
+    tries: { type: "number", description: "Runs to call it fixed", default: 20 },
+  },
+  place: "worktree",
+  timeout: "2h",
+}
+
+const repro = await run("scripts/flaky.sh", { label: "reproduce", args: [args.test, args.tries] })
+
+const cause = await agent(\`This test fails now and then:\\n\${args.test}\\n\\n\${repro.stdout}\`, {
+  agentType: "investigator", label: "investigate", ask: true,
+})
+
+await agent(\`Fix the cause:\\n\${cause}\`, { agentType: "implementer", label: "fix" })
+
+await sh(\`pnpm vitest run \${args.test} --repeat \${args.tries}\`, { label: "verify", retries: 1 })
+`;
+WF_TEXT["docs-sync"] = `export const meta = {
+  name: "docs-sync",
+  description: "Update the docs after a change",
+  inputs: {
+    ref: { type: "string", description: "Compare the docs against this ref", default: "main" },
+  },
+  place: "worktree",
+}
+
+const changes = await sh(\`git diff \${args.ref}...HEAD --stat\`, { label: "changes" })
+
+await agent(\`Update the docs for these changes:\\n\${changes.stdout}\`, {
+  agentType: "docs-writer", label: "update docs",
+})
+
+await agent("Check the docs read well and match the code", { agentType: "reviewer", label: "review" })
+`;
+WF_TEXT["deps-update"] = `export const meta = {
+  name: "deps-update",
+  description: "Update dependencies one package at a time",
+  inputs: {
+    scope: { type: "string", description: "patch, minor or major", default: "minor" },
+  },
+  place: "worktree",
+  concurrency: 1,
+}
+
+const outdated = await sh(\`pnpm outdated --json --\${args.scope}\`, { label: "outdated", allowFail: true })
+const packages = Object.keys(JSON.parse(outdated.stdout || "{}"))
+
+await pipeline(packages, (name) =>
+  agent(\`Update \${name} and fix what breaks\`, {
+    agentType: "codex-fixer", label: \`upgrade \${name}\`, model: "codex",
+  }))
+
+await sh("pnpm test", { label: "tests" })
+`;
+WF_TEXT["triage-bugs"] = `export const meta = {
+  name: "triage-bugs",
+  description: "Label the new bugs, then plan the urgent ones",
+  inputs: {
+    team: { type: "string", description: "Linear team key", required: true },
+  },
+  place: "none",
+  schedule: "0 8 * * 1-5",
+}
+
+const triage = await agent(\`Label the new bugs of team \${args.team}\`, {
+  agentType: "triager", label: "triage", mcp: ["linear", "sentry"],
+})
+
+const go = await ask("Plan the urgent ones now?", { choices: ["Yes", "No"], answeredBy: "anyone" })
+if (go === "No") return
+
+await agent(\`Plan a fix for each urgent bug:\\n\${triage}\`, {
+  agentType: "planner", label: "plan", mcp: ["linear", "postgres"],
+})
+`;
+
+const WORKFLOWS = [
+  { name: "ticket", where: "home", description: "Implement a ticket, review it, verify it", startedBy: "anyone", place: "worktree",
+    inputs: [{ name: "ticket", type: "string", required: true, description: "What to build" }, { name: "rounds", type: "number", def: 3, description: "Review rounds at most" }],
+    approved: { at: NOW - 3 * D, by: "you" },
+    outline: [
+      { kind: "agent", label: "implementer", agent: "implementer", x: "keeps its session" },
+      { kind: "loop", label: "for each round, up to rounds", children: [
+        { kind: "agent", label: "reviewer", agent: "reviewer", x: "returns approved and review" },
+        { kind: "agent", label: "address review", agent: "implementer", x: "continues implementer" },
+      ] },
+      { kind: "sh", label: "tests", cmd: "pnpm test" },
+      { kind: "breakpoint", label: "Ready to commit?", children: [{ kind: "sh", label: "commit", cmd: "git add -A && git commit" }] },
+    ],
+  },
+  { name: "factory", where: "billing", description: "Triage the team's new tickets and build the clear ones", startedBy: "people", place: "worktree", schedule: "0 2 * * *  with team BILL",
+    inputs: [{ name: "team", type: "string", required: true, description: "Linear team key" }, { name: "limit", type: "number", def: 3, description: "Tickets to build at most", isNew: true }],
+    approved: { at: NOW - 6 * D, by: "you", changedSince: true, editedBy: "Claude Code", editedAt: NOW - 50 * M },
+    problems: [{ step: "triager", text: "Step \"triager\" sends agent triager to Codex, but triager is in ~/.claude/agents and runs only on Claude Code. Move it to .rulesync/subagents to run it on both." }],
+    outline: [
+      { kind: "sh", label: "fetch", cmd: "node scripts/tickets.js $team" },
+      { kind: "agent", label: "triager", agent: "triager", x: "model codex", bad: true },
+      { kind: "ask", label: "Build these?", x: "choices from the triage" },
+      { kind: "pipeline", label: "for each chosen ticket", children: [{ kind: "workflow", label: "ticket A, B, ...", wf: "ticket" }] },
+    ],
+  },
+  { name: "review-pr", where: "home", description: "Review a pull request for bugs and security, then post it", startedBy: "anyone", place: "folder",
+    inputs: [{ name: "pr", type: "number", required: true, description: "The pull request number" }],
+    approved: { at: NOW - 12 * D, by: "you" },
+    outline: [
+      { kind: "sh", label: "diff", cmd: "gh pr diff $pr" },
+      { kind: "parallel", label: "at once", children: [
+        { kind: "agent", label: "reviewer", agent: "reviewer" },
+        { kind: "agent", label: "security", agent: "security-reviewer" },
+      ] },
+      { kind: "breakpoint", label: "Post this review?", children: [{ kind: "sh", label: "post", cmd: "gh pr comment $pr" }] },
+    ],
+  },
+  { name: "release-notes", where: "home", description: "Write release notes from the merged pull requests", startedBy: "anyone", place: "worktree",
+    inputs: [{ name: "since", type: "string", required: true, description: "The last release tag" }, { name: "audience", type: "string", def: "users", description: "Who reads them", isNew: true }],
+    approved: { at: NOW - 9 * D, by: "you", changedSince: true, editedBy: "you", editedAt: NOW - 2 * D },
+    outline: [
+      { kind: "sh", label: "log", cmd: "git log $since..HEAD --merges" },
+      { kind: "breakpoint", label: "Notes look right?", children: [{ kind: "agent", label: "draft", agent: "writer" }] },
+      { kind: "js", label: "changelog", cmd: "append to CHANGELOG.md" },
+      { kind: "workflow", label: "docs", wf: "docs-sync" },
+    ],
+  },
+  { name: "fix-flaky", where: "home", description: "Find why a test fails now and then, and fix it", startedBy: "anyone", place: "worktree", timeout: "2h",
+    inputs: [{ name: "test", type: "string", required: true, description: "The test's name or file" }, { name: "tries", type: "number", def: 20, description: "Runs to call it fixed" }],
+    approved: { at: NOW - 20 * D, by: "sous", seeded: true },
+    notes: ["run(\"scripts/flaky.sh\") is not in this folder. It must exist where the run works."],
+    outline: [
+      { kind: "run", label: "reproduce", cmd: "scripts/flaky.sh" },
+      { kind: "agent", label: "investigate", agent: "investigator", x: "may ask you" },
+      { kind: "agent", label: "fix", agent: "implementer" },
+      { kind: "sh", label: "verify", cmd: "pnpm vitest run $test --repeat $tries" },
+    ],
+  },
+  { name: "docs-sync", where: "home", description: "Update the docs after a change", startedBy: "anyone", place: "worktree",
+    inputs: [{ name: "ref", type: "string", def: "main", description: "Compare the docs against this ref" }],
+    approved: { at: NOW - 15 * D, by: "you" },
+    outline: [
+      { kind: "sh", label: "changes", cmd: "git diff $ref...HEAD --stat" },
+      { kind: "agent", label: "update docs", agent: "docs-writer" },
+      { kind: "agent", label: "review", agent: "reviewer" },
+    ],
+  },
+  { name: "deps-update", where: "site", description: "Update dependencies one package at a time", startedBy: "anyone", place: "worktree",
+    inputs: [{ name: "scope", type: "string", def: "minor", description: "patch, minor or major" }],
+    approved: { at: NOW - 4 * D, by: "you" },
+    outline: [
+      { kind: "sh", label: "outdated", cmd: "pnpm outdated --json" },
+      { kind: "pipeline", label: "for each package, one at a time", children: [{ kind: "agent", label: "upgrade <name>", agent: "codex-fixer", x: "model codex" }] },
+      { kind: "sh", label: "tests", cmd: "pnpm test" },
+    ],
+  },
+  { name: "triage-bugs", where: "billing", description: "Label the new bugs, then plan the urgent ones", startedBy: "anyone", place: "none", schedule: "0 8 * * 1-5",
+    inputs: [{ name: "team", type: "string", required: true, description: "Linear team key" }],
+    approved: { at: NOW - 30 * D, by: "you" },
+    problems: [{ step: "triage", text: "MCP server \"sentry\" is in neither .rulesync/mcp.jsonc, the global rulesync folder, nor the Claude Code config." }],
+    outline: [
+      { kind: "agent", label: "triage", agent: "triager", x: "mcp linear, sentry", bad: true },
+      { kind: "ask", label: "Plan the urgent ones now?", x: "anyone may answer" },
+      { kind: "agent", label: "plan", agent: "planner", x: "mcp linear, postgres" },
+    ],
+  },
+];
+const WF = Object.fromEntries(WORKFLOWS.map((w) => [w.name, w]));
+WORKFLOWS.forEach((w) => {
+  w.path = w.where === "home" ? "~/.sous/workflows/" + w.name + ".js" : PROJECT_PATH[w.where] + "/.sous/workflows/" + w.name + ".js";
+  w.text = WF_TEXT[w.name];
+  w.approvedText = WF_TEXT[w.name + "_approved"] || w.text;
+});
+
+/* agents: each name has copies in folders. sous takes the first in lookup order. */
+const FOLDERS = [
+  { id: "p-rulesync", tier: 1, label: "project rulesync", dir: ".rulesync/subagents/", ext: ".md", project: true },
+  { id: "g-rulesync", tier: 2, label: "global rulesync", dir: "~/rulesync/.rulesync/subagents/", ext: ".md" },
+  { id: "p-claude", tier: 3, label: "project Claude Code", dir: ".claude/agents/", ext: ".md", project: true, harness: "Claude Code" },
+  { id: "p-codex", tier: 3, label: "project Codex", dir: ".codex/agents/", ext: ".toml", project: true, harness: "Codex" },
+  { id: "h-claude", tier: 4, label: "home Claude Code", dir: "~/.claude/agents/", ext: ".md", harness: "Claude Code" },
+  { id: "h-codex", tier: 4, label: "home Codex", dir: "~/.codex/agents/", ext: ".toml", harness: "Codex" },
+];
+const FOLDER = Object.fromEntries(FOLDERS.map((f) => [f.id, f]));
+
+const AGENT_DEFS = {
+  implementer: { description: "Implements one ticket, tests first", copies: [{ at: "g-rulesync" }],
+    top: { tools: ["Read", "Edit", "Write", "Bash", "Grep", "Glob"] },
+    claudecode: { model: "opus", effort: "high", skills: ["tdd", "git-commit"] },
+    codexcli: { model: "gpt-6.1-sol", effort: "high" }, harness: "claude",
+    body: "You implement one ticket in the repository you are in.\n\nWrite a failing test first, then the smallest change that passes it. Run the whole test suite before you finish. Commit nothing: the workflow commits.\n\nEnd with a short summary of what you changed and why, file by file." },
+  reviewer: { description: "Reviews one change and says what blocks it", copies: [
+      { at: "p-rulesync", project: "orchestrator" },
+      { at: "h-claude", alt: { model: "sonnet", body: "Review the diff. Be brief." } },
+      { at: "h-codex", alt: { model: "gpt-6-luna", body: "Review the diff. Be brief." } },
+    ],
+    top: { tools: ["Read", "Grep", "Glob"] },
+    claudecode: { model: "haiku", effort: "high", skills: ["code-review"] },
+    codexcli: { model: "gpt-6-luna", effort: "high" }, harness: "claude",
+    body: "You review one change. Read the diff and the code around it.\n\nReport what blocks the change first: bugs, missing tests, broken contracts. Then what could be better, in a separate list.\n\nReturn approved: true only when nothing blocks." },
+  "security-reviewer": { description: "Looks for security problems in a diff", copies: [{ at: "g-rulesync" }],
+    top: { tools: ["Read", "Grep", "Glob", "WebFetch"], mcpServers: ["github"] },
+    claudecode: { model: "opus", effort: "max", skills: ["security-review"] },
+    codexcli: { model: "gpt-6.1-sol", effort: "high" }, harness: "claude",
+    body: "You look for security problems in one diff: injection, secrets in code, unsafe deserialization, missing auth checks.\n\nName the file and line for each finding, how bad it is, and the fix. Say plainly when you find nothing." },
+  triager: { description: "Sorts tickets and bugs into clear and vague", copies: [{ at: "h-claude" }], claudeOnly: true,
+    claudecode: { model: "sonnet", tools: ["Read", "Grep"], skills: ["linear-triage"], mcpServers: ["linear", "sentry"] },
+    body: "You sort tickets. A clear ticket says what to change and how to check it. Anything else is vague.\n\nFor each vague ticket, write the one question that would make it clear." },
+  "docs-writer": { description: "Updates the docs to match the code", copies: [{ at: "g-rulesync" }],
+    top: { tools: ["Read", "Edit", "Grep", "Glob"], mcpServers: ["docs"] },
+    claudecode: { model: "sonnet", skills: ["write-docs"] },
+    codexcli: { model: "gpt-6-luna", effort: "medium" }, harness: "claude",
+    body: "You update the docs after a change. Change only what the code change makes wrong or missing. Keep the voice of the page you edit.\n\nPlain, short sentences." },
+  investigator: { description: "Finds the cause of a failure before anyone fixes it", copies: [{ at: "g-rulesync" }],
+    top: { tools: ["Read", "Grep", "Glob", "Bash"] },
+    claudecode: { model: "opus", effort: "high", skills: ["flaky-tests"] },
+    codexcli: { model: "gpt-6.1-sol", effort: "xhigh" }, harness: "codex",
+    body: "You find why something fails. Change no code.\n\nReproduce it, then narrow it down. When two causes fit, ask with a line starting QUESTION: and wait.\n\nEnd with the cause, the evidence, and the smallest fix you would make." },
+  writer: { description: "Writes release notes and short prose", copies: [{ at: "g-rulesync" }],
+    top: { tools: ["Read", "Grep"] },
+    claudecode: { model: "sonnet", skills: ["release-notes"] },
+    codexcli: { model: "gpt-6-luna" }, harness: "claude",
+    body: "You write for the people who use the product. Group the changes by what they let people do. Leave out internal changes unless they change behaviour.\n\nNo marketing words." },
+  verifier: { description: "Proves a change works on the running result", copies: [{ at: "g-rulesync" }],
+    top: { tools: ["Read", "Bash", "Grep"] },
+    claudecode: { model: "haiku", skills: ["tdd"] },
+    codexcli: { model: "gpt-6-luna", effort: "low" }, harness: "claude",
+    body: "You prove that a change works by running it. Write the steps as a script someone can rerun. Change no code." },
+  planner: { description: "Plans a fix as small steps", copies: [{ at: "h-claude" }], claudeOnly: true,
+    claudecode: { model: "opus", effort: "high", tools: ["Read", "Grep", "Glob"], mcpServers: ["linear"] },
+    body: "You plan a fix as a short list of steps, each one small enough to review alone. Name the files each step touches and the test that proves it." },
+  "codex-fixer": { description: "Updates one package and fixes what breaks", copies: [{ at: "h-codex" }], codexOnly: true,
+    codexcli: { model: "gpt-6.1-sol", effort: "medium", sandbox: "workspace-write" },
+    body: "Update the one package you are given. Run the tests. Fix what breaks, in the smallest way. If a fix needs a design choice, stop and say so." },
+};
+
+const SKILLS = {
+  "code-review": { description: "How to review a diff: what blocks, what could be better, and how to say it.", where: ["g-rulesync", "h-claude", "h-codex"],
+    text: "---\nname: code-review\ndescription: How to review a diff\n---\n# Code review\n\nRead the diff, then the code around each change.\n\n- List what blocks first: bugs, missing tests, broken contracts.\n- Then what could be better, as suggestions.\n- Quote the line you mean.\n- Say plainly when nothing blocks." },
+  tdd: { description: "Write the failing test first, then the smallest change that passes it.", where: ["g-rulesync", "h-claude", "h-codex"],
+    text: "---\nname: tdd\ndescription: Test first\n---\n# Test first\n\n1. Write one test that fails for the right reason.\n2. Make the smallest change that passes it.\n3. Run the whole suite.\n4. Clean up while the tests stay green." },
+  "git-commit": { description: "Commit messages in this house style: a short subject and a why.", where: ["g-rulesync", "h-claude", "h-codex"],
+    text: "---\nname: git-commit\ndescription: Commit messages\n---\n# Commits\n\n- A subject under 60 characters, in the imperative.\n- A blank line, then why the change is needed.\n- One logical change per commit." },
+  "security-review": { description: "A checklist for injection, secrets, auth and unsafe input.", where: ["g-rulesync", "h-claude"],
+    text: "---\nname: security-review\ndescription: Security checklist\n---\n# Security review\n\n- Input that reaches a shell, a query or a template.\n- Secrets in code, logs or test fixtures.\n- Routes that skip the auth check.\n- Deserialization of data from outside." },
+  "write-docs": { description: "How the docs read: plain words, short sentences, one idea each.", where: ["g-rulesync", "h-claude", "h-codex"],
+    text: "---\nname: write-docs\ndescription: How the docs read\n---\n# Writing docs\n\n- Plain, short sentences. One idea each.\n- Say what a command does, then show it.\n- Keep examples runnable." },
+  "release-notes": { description: "Release notes grouped by what people can now do.", where: ["g-rulesync", "h-claude", "h-codex"],
+    text: "---\nname: release-notes\ndescription: Release notes\n---\n# Release notes\n\nGroup by what people can do now, then fixes. Leave out internal changes. One line per change, with the pull request number." },
+  "flaky-tests": { description: "Find why a test fails sometimes: timing, order, shared state.", where: ["g-rulesync", "h-claude", "h-codex"],
+    text: "---\nname: flaky-tests\ndescription: Flaky tests\n---\n# Flaky tests\n\nRun it many times, alone and with the suite. Look for:\n\n- timers and real clocks,\n- tests that share files or globals,\n- order between async steps." },
+  "linear-triage": { description: "How to label Linear issues and when a ticket counts as clear.", where: ["h-claude"],
+    text: "---\nname: linear-triage\ndescription: Triage in Linear\n---\n# Triage\n\nA clear ticket names what to change and how to check it. Label bugs by area and urgency. Ask one question on each vague ticket." },
+};
+const SKILL_FOLDERS = {
+  "g-rulesync": { label: "global rulesync", dir: "~/rulesync/.rulesync/skills/", note: "the source rulesync generate copies from" },
+  "h-claude": { label: "Claude Code", dir: "~/.claude/skills/", note: "Claude Code agents see the skills their list names" },
+  "h-codex": { label: "Codex", dir: "~/.codex/skills/", note: "Codex agents see every skill here" },
+};
+
+const MCPS = {
+  linear: { type: "stdio", command: "npx", args: ["-y", "linear-mcp"], env: [["KEY", "${LINEAR_API_KEY}"]], from: "~/rulesync/.rulesync/mcp.jsonc", source: "global rulesync",
+    also: "~/.codex/config.toml also has a server named linear. On Codex steps this one runs as linear_step and the configured one is off for the step." },
+  github: { type: "http", url: "https://mcp.github.example/v1", headers: [["Authorization", "Bearer ${GITHUB_TOKEN}"]], from: "~/rulesync/.rulesync/mcp.jsonc", source: "global rulesync" },
+  docs: { type: "http", url: "https://docs.example.com/mcp", headers: [], from: "~/rulesync/.rulesync/mcp.jsonc", source: "global rulesync" },
+  postgres: { type: "stdio", command: "npx", args: ["-y", "pg-mcp", "--read-only"], env: [["DATABASE_URL", "${BILLING_DB_URL}"], ["PGSSLMODE", "require"]], from: "~/code/billing/.rulesync/mcp.jsonc", source: "billing rulesync", project: "billing" },
+};
+
+/* runs */
+function act(kind, text, extra) { return Object.assign({ kind, text }, extra || {}); }
+function doneActs(label, kind) {
+  if (kind === "sh" || kind === "js" || kind === "run") return [act("command", label), act("output", "exit 0")];
+  return [act("prompt", "Prompt sent to the agent for " + label + "."), act("tool", "Read", { arg: "README.md", res: "142 lines" }), act("tool", "Grep", { arg: '"' + label + '"', res: "6 matches in 3 files" }), act("text", "Done. The summary is in the step's result.")];
+}
+function step(label, kind, o) {
+  const s = Object.assign({ label, kind, status: "done", dur: 60 * S, tokens: kind === "agent" ? 12000 : 0 }, o || {});
+  if (!s.acts) s.acts = s.status === "pending" ? [] : doneActs(s.cmd || label, kind);
+  return s;
+}
+
+const RUNS = [];
+function addRun(r) {
+  r.id = r.id || runId(r.startedAt);
+  r.steps.forEach((s, i) => { s.i = i; });
+  RUNS.push(r);
+  return r;
+}
+
+addRun({ wf: "ticket", project: "orchestrator", label: "Add a --json flag to sous list", inputs: { ticket: "Add a --json flag to sous list", rounds: 3 },
+  state: "question", startedBy: "Claude Code, for you", startedAt: NOW - 42 * M, tokens: 96400, model: "claude/opus",
+  steps: [
+    step("implementer", "agent", { agent: "implementer", model: "claude/opus", status: "waiting", dur: 9 * M + 12 * S, tokens: 61200, acts: [
+      act("prompt", "Implement this ticket:\nAdd a --json flag to sous list"),
+      act("tool", "Read", { arg: "packages/cli/src/commands/list.ts", res: "212 lines" }),
+      act("tool", "Grep", { arg: '"--json"  packages/cli/src', res: "14 matches in 9 files" }),
+      act("text", "Every other command prints one object with notes and next. sous list should do the same, holding the rows under runs."),
+      act("tool", "Read", { arg: "packages/cli/src/format.ts", res: "88 lines" }),
+      act("tool", "Edit", { arg: "packages/cli/test/list.test.ts", res: "+34 -0" }),
+      act("tool", "Bash", { arg: "pnpm vitest run list", res: "1 failed | 11 passed" }),
+      act("text", "The new test fails as it should. One choice is left before the change."),
+      act("asks", "Should sous list --json show nested runs as rows of their own, or only under their parent run?"),
+    ] }),
+    step("reviewer", "agent", { agent: "reviewer", status: "pending", dur: null, tokens: null }),
+    step("address review", "agent", { agent: "implementer", status: "pending", dur: null, tokens: null }),
+    step("tests", "sh", { cmd: "pnpm test", status: "pending", dur: null }),
+    step("commit", "sh", { cmd: "git add -A && git commit", status: "pending", dur: null, bp: "Ready to commit?" }),
+  ],
+  waiting: { kind: "question", id: "q-4e1c", step: "implementer", at: NOW - 3 * M, input: "text", answeredBy: "people",
+    text: "Should sous list --json show nested runs as rows of their own, or only under their parent run?",
+    detail: "The agent asked this and waits in its session. Your answer goes back to the same session." } });
+
+addRun({ wf: "factory", project: "billing", label: "team BILL", inputs: { team: "BILL", limit: 3 }, state: "question", startedBy: "you, from the terminal", startedAt: NOW - 25 * M, tokens: 23900, model: "claude/sonnet",
+  steps: [
+    step("fetch", "sh", { cmd: "node scripts/tickets.js BILL", dur: 2 * S, acts: [act("command", "node scripts/tickets.js BILL"), act("output", "BILL-212  Round invoice totals to cents\nBILL-219  Retry failed webhooks with backoff\nBILL-220  Make billing faster")] }),
+    step("triager", "agent", { agent: "triager", model: "claude/sonnet", dur: 3 * M + 10 * S, tokens: 22100, acts: [
+      act("prompt", "Sort these tickets into clear and vague:\nBILL-212 ...\nBILL-219 ...\nBILL-220 ..."),
+      act("tool", "mcp linear get_issue", { arg: "BILL-212", res: "Round invoice totals to cents. Totals show 3 decimals on PDF invoices." }),
+      act("tool", "mcp linear get_issue", { arg: "BILL-219", res: "Retry failed webhooks with backoff, 5 tries, then alert." }),
+      act("tool", "mcp linear get_issue", { arg: "BILL-220", res: "Make billing faster." }),
+      act("text", "BILL-212 and BILL-219 say what to change and how to check it. BILL-220 names no page and no target time."),
+    ] }),
+    step("ask", "ask", { status: "waiting", dur: 3 * M, acts: [act("asks", "The triager found 2 clear tickets. Build these?")] }),
+    step("ticket A", "workflow", { wf: "ticket", status: "pending", dur: null }),
+  ],
+  waiting: { kind: "question", id: "q-91b0", step: "ask", at: NOW - 3 * M, input: "select", answeredBy: "people",
+    text: "The triager found 2 clear tickets. Build these?",
+    list: ["BILL-212  Round invoice totals to cents", "BILL-219  Retry failed webhooks with backoff", "BILL-220  Make billing faster  (vague, left out: it names no page and no target time)"],
+    choices: ["Build all", "Only BILL-212", "Only BILL-219", "Build none"] } });
+
+addRun({ wf: "release-notes", project: "site", label: "since v2.3.0", inputs: { since: "v2.3.0" }, state: "breakpoint", startedBy: "you, from the terminal", startedAt: NOW - 14 * M, tokens: 15600, model: "claude/sonnet",
+  steps: [
+    step("log", "sh", { cmd: "git log v2.3.0..HEAD --merges --oneline", dur: 1 * S, acts: [act("command", "git log v2.3.0..HEAD --merges --oneline"), act("output", "a41c2e0 Merge #388 pricing toggle\n9be1f70 Merge #391 faster search\n55d02aa Merge #394 fix footer links\n... 9 more")] }),
+    step("draft", "agent", { agent: "writer", model: "claude/sonnet", status: "waiting", dur: 1 * M + 52 * S, tokens: 14800, bp: "Notes look right?", acts: [
+      act("prompt", "Write release notes from these merges:\na41c2e0 Merge #388 pricing toggle ..."),
+      act("tool", "Bash", { arg: "gh pr view 388 --json title,body", res: "Monthly and yearly prices on one page" }),
+      act("tool", "Bash", { arg: "gh pr view 391 --json title,body", res: "Search answers in under 100 ms" }),
+      act("text", "Draft ready. 3 changes people will notice, 4 fixes, 5 internal changes left out."),
+    ] }),
+    step("changelog", "js", { cmd: "append to CHANGELOG.md", status: "pending", dur: null }),
+    step("docs", "workflow", { wf: "docs-sync", status: "pending", dur: null }),
+  ],
+  waiting: { kind: "breakpoint", id: "q-2c77", step: "draft", at: NOW - 6 * M, title: "Notes look right?", tries: 1, max: 5,
+    show: "## What's new in 2.4\n\n- **Monthly or yearly.** The pricing page has a toggle, and the yearly price shows what you save. (#388)\n- **Faster search.** Results show as you type, in under 100 ms. (#391)\n- **Team invites by link.** Send one link instead of one email per person. (#402)\n\n## Fixes\n\n- The footer links on the blog work again. (#394)\n- Dark mode keeps code blocks readable. (#397)\n- The sign-up form remembers what you typed after an error. (#399)\n- Prices round to cents on every page. (#405)" } });
+
+addRun({ wf: "fix-flaky", project: "orchestrator", label: "engine: parallel resumes after a pause", inputs: { test: "packages/engine/test/parallel.test.ts", tries: 20 }, state: "failed", startedBy: "you, from the terminal", startedAt: NOW - 2 * H - 10 * M, endedAt: NOW - 1 * H - 22 * M, tokens: 89300, model: "claude/opus",
+  steps: [
+    step("reproduce", "run", { cmd: "scripts/flaky.sh packages/engine/test/parallel.test.ts 20", dur: 48 * S, acts: [act("command", "scripts/flaky.sh packages/engine/test/parallel.test.ts 20"), act("output", "failed 3 of 20\nresumes after a pause: expected 'paused' to be 'running'")] }),
+    step("investigate", "agent", { agent: "investigator", model: "codex/gpt-6.1-sol", dur: 7 * M + 3 * S, tokens: 48200, acts: [
+      act("prompt", "This test fails now and then:\npackages/engine/test/parallel.test.ts"),
+      act("tool", "Read", { arg: "packages/engine/src/parallel.ts", res: "301 lines" }),
+      act("tool", "Bash", { arg: "pnpm vitest run parallel --repeat 50", res: "6 failed | 44 passed" }),
+      act("text", "The resume reads the step state before the pause has written it. A slow disk makes the window wider."),
+      act("text", "Cause: resume() does not await the pause's final write. Smallest fix: await pausing before reading the state."),
+    ] }),
+    step("fix", "agent", { agent: "implementer", model: "claude/opus", dur: 5 * M + 40 * S, tokens: 41100, acts: [
+      act("prompt", "Fix the cause:\nresume() does not await the pause's final write."),
+      act("tool", "Edit", { arg: "packages/engine/src/parallel.ts", res: "+4 -1" }),
+      act("tool", "Bash", { arg: "pnpm vitest run parallel", res: "20 passed" }),
+      act("text", "resume() now awaits the pending pause write."),
+    ] }),
+    step("verify", "sh", { cmd: "pnpm vitest run packages/engine/test/parallel.test.ts --repeat 20", status: "failed", dur: 1 * M + 4 * S, tries: 2, acts: [
+      act("command", "pnpm vitest run packages/engine/test/parallel.test.ts --repeat 20"),
+      act("output", "19 passed, 1 failed"),
+      act("note", "Try 1 of 2 failed. Trying again."),
+      act("command", "pnpm vitest run packages/engine/test/parallel.test.ts --repeat 20"),
+      act("error", "exit 1: 1 failed | 19 passed (20)"),
+    ] }),
+  ],
+  failure: { step: "verify", tries: 2, message: "The command exited with 1 on both tries.",
+    stderr: "FAIL  packages/engine/test/parallel.test.ts > parallel > resumes after a pause\nAssertionError: expected 'paused' to be 'running'\n  at test/parallel.test.ts:212:31\n\n Test Files  1 failed (1)\n      Tests  1 failed | 19 passed (20)" } });
+
+const r5start = NOW - 18 * M;
+addRun({ wf: "ticket", project: "site", label: "Dark mode for the pricing page", inputs: { ticket: "Dark mode for the pricing page", rounds: 3 }, state: "running", startedBy: "you, from the terminal", startedAt: r5start, tokens: 38200, model: "claude/opus",
+  steps: [
+    step("implementer", "agent", { agent: "implementer", model: "claude/opus", status: "running", startedAt: NOW - 17 * M, tokens: 38200, live: "darkmode", acts: [
+      act("prompt", "Implement this ticket:\nDark mode for the pricing page"),
+      act("tool", "Read", { arg: "src/pages/pricing.tsx", res: "184 lines" }),
+      act("tool", "Grep", { arg: '"#fff"  src/pages src/components/pricing', res: "23 matches in 6 files" }),
+      act("text", "The pricing cards use hard-coded colors. I'll move them to the theme tokens the rest of the site uses."),
+      act("tool", "Edit", { arg: "src/styles/tokens.css", res: "+18 -2" }),
+      act("tell", "Keep the light colors exactly as they are today.", { who: "you", delivery: "delivered" }),
+      act("text", "Understood. Light mode keeps its values. Only the dark tokens are new."),
+      act("tool", "Edit", { arg: "src/components/pricing/Card.tsx", res: "+9 -9" }),
+    ] }),
+    step("reviewer", "agent", { agent: "reviewer", status: "pending", dur: null, tokens: null }),
+    step("address review", "agent", { agent: "implementer", status: "pending", dur: null, tokens: null }),
+    step("tests", "sh", { cmd: "pnpm test", status: "pending", dur: null }),
+    step("commit", "sh", { cmd: "git add -A && git commit", status: "pending", dur: null, bp: "Ready to commit?" }),
+  ] });
+
+addRun({ wf: "review-pr", project: "billing", label: "PR 418", inputs: { pr: 418 }, state: "running", startedBy: "Codex, for you", startedAt: NOW - 6 * M, tokens: 21400, model: "claude/haiku",
+  steps: [
+    step("diff", "sh", { cmd: "gh pr diff 418", dur: 3 * S, acts: [act("command", "gh pr diff 418"), act("output", " src/invoices/total.ts   | 41 ++++---\n src/webhooks/retry.ts   | 88 +++++++++++\n 2 files changed")] }),
+    step("reviewer", "agent", { agent: "reviewer", model: "claude/haiku", status: "running", startedAt: NOW - 5 * M - 50 * S, tokens: 9800, live: "review", acts: [
+      act("prompt", "Review this diff:\n src/invoices/total.ts | 41 ++++---\n ..."),
+      act("tool", "Read", { arg: "src/invoices/total.ts", res: "96 lines" }),
+      act("text", "Rounding now happens once, at the end. That fixes the 3-decimal totals."),
+      act("tool", "Read", { arg: "test/invoices/total.test.ts", res: "140 lines" }),
+    ] }),
+    step("security", "agent", { agent: "security-reviewer", model: "claude/opus", status: "running", startedAt: NOW - 5 * M - 50 * S, tokens: 11600, live: "security", acts: [
+      act("prompt", "Look for security problems in:\n src/webhooks/retry.ts ..."),
+      act("tool", "Read", { arg: "src/webhooks/retry.ts", res: "88 lines" }),
+      act("tool", "mcp github search_code", { arg: "verifySignature repo:billing", res: "2 results" }),
+    ] }),
+    step("post", "sh", { cmd: "gh pr comment 418 --body-file -", status: "pending", dur: null, bp: "Post this review?" }),
+  ] });
+RUNS[RUNS.length - 1].steps[1].group = "at once";
+RUNS[RUNS.length - 1].steps[2].group = "at once";
+
+addRun({ wf: "docs-sync", project: "docs", label: "ref main", inputs: { ref: "main" }, state: "paused", pause: "usage_limit", resumesAt: NOW + 34 * M, startedBy: "Claude Code, for you", startedAt: NOW - 1 * H - 5 * M, tokens: 54100, model: "claude/sonnet",
+  steps: [
+    step("changes", "sh", { cmd: "git diff main...HEAD --stat", dur: 1 * S }),
+    step("update docs", "agent", { agent: "docs-writer", model: "claude/sonnet", status: "paused", dur: 22 * M, tokens: 54100, acts: [
+      act("prompt", "Update the docs for these changes:\n packages/cli/src/commands/tell.ts | 120 ++++"),
+      act("tool", "Read", { arg: "guide/steer.md", res: "64 lines" }),
+      act("tool", "Edit", { arg: "guide/steer.md", res: "+12 -3" }),
+      act("error", "The account default reached its usage limit. It resets at " + fmtClock(NOW + 34 * M) + "."),
+    ] }),
+    step("review", "agent", { agent: "reviewer", status: "pending", dur: null, tokens: null }),
+  ] });
+
+addRun({ wf: "deps-update", project: "site", label: "scope minor", inputs: { scope: "minor" }, state: "paused", pause: "budget", budget: 200000, startedBy: "you, from the terminal", startedAt: NOW - 3 * H, tokens: 201800, model: "codex/gpt-6.1-sol",
+  steps: [
+    step("outdated", "sh", { cmd: "pnpm outdated --json --minor", dur: 4 * S }),
+    step("upgrade react-router", "agent", { agent: "codex-fixer", model: "codex/gpt-6.1-sol", dur: 12 * M, tokens: 88200, group: "for each package" }),
+    step("upgrade vite", "agent", { agent: "codex-fixer", model: "codex/gpt-6.1-sol", dur: 19 * M, tokens: 104100, group: "for each package" }),
+    step("upgrade zod", "agent", { agent: "codex-fixer", model: "codex/gpt-6.1-sol", status: "paused", dur: 2 * M, tokens: 9500, group: "for each package", acts: [act("prompt", "Update zod and fix what breaks"), act("tool", "shell", { arg: "pnpm add zod@^4.3", res: "done" }), act("note", "The run reached its budget of 200k tokens. The step stopped.")] }),
+    step("tests", "sh", { cmd: "pnpm test", status: "pending", dur: null }),
+  ] });
+
+addRun({ wf: "triage-bugs", project: "billing", label: "team BILL", inputs: { team: "BILL" }, state: "paused", pause: "auth_required", startedBy: "schedule, weekdays 08:00", startedAt: NOW - 7 * H, tokens: 0, model: "claude/sonnet",
+  steps: [
+    step("triage", "agent", { agent: "triager", model: "claude/sonnet", status: "paused", dur: 4 * S, tokens: 0, acts: [act("prompt", "Label the new bugs of team BILL"), act("error", "Claude Code is not logged in. Run claude and log in, then resume.")] }),
+    step("ask", "ask", { status: "pending", dur: null }),
+    step("plan", "agent", { agent: "planner", status: "pending", dur: null, tokens: null }),
+  ] });
+
+addRun({ wf: "ticket", project: "docs", label: "Fix broken links in the guide", inputs: { ticket: "Fix broken links in the guide" }, state: "done", startedBy: "you, from the terminal", startedAt: NOW - 2 * H - 40 * M, endedAt: NOW - 2 * H - 9 * M, tokens: 141200, model: "claude/opus",
+  result: "Fixed 14 broken links in the guide: 9 pointed at renamed sections, 5 at the old docs site. Added a link check to pnpm test.",
+  steps: [
+    step("implementer", "agent", { agent: "implementer", dur: 14 * M, tokens: 72000 }),
+    step("reviewer", "agent", { agent: "reviewer", dur: 3 * M, tokens: 18400 }),
+    step("address review", "agent", { agent: "implementer", dur: 6 * M, tokens: 39100 }),
+    step("reviewer", "agent", { agent: "reviewer", dur: 2 * M, tokens: 11700, call: 2 }),
+    step("tests", "sh", { cmd: "pnpm test", dur: 48 * S }),
+    step("commit", "sh", { cmd: "git add -A && git commit", dur: 1 * S, bp: "Ready to commit?" }),
+  ] });
+
+addRun({ wf: "review-pr", project: "orchestrator", label: "PR 512", inputs: { pr: 512 }, state: "done", startedBy: "Claude Code, for you", startedAt: NOW - 5 * H - 20 * M, endedAt: NOW - 5 * H - 8 * M, tokens: 33800, model: "claude/haiku",
+  result: "Posted the review on PR 512: one blocker (a missing test for --call), two suggestions.",
+  steps: [
+    step("diff", "sh", { cmd: "gh pr diff 512", dur: 2 * S }),
+    step("reviewer", "agent", { agent: "reviewer", dur: 4 * M, tokens: 14100, group: "at once" }),
+    step("security", "agent", { agent: "security-reviewer", dur: 6 * M, tokens: 19700, group: "at once" }),
+    step("post", "sh", { cmd: "gh pr comment 512 --body-file -", dur: 2 * S, bp: "Post this review?" }),
+  ] });
+
+addRun({ wf: "factory", project: "billing", label: "team BILL", inputs: { team: "BILL" }, state: "done", startedBy: "schedule, daily 02:00", startedAt: NOW - 1 * D - 12 * H, endedAt: NOW - 1 * D - 10 * H - 30 * M, tokens: 268400, model: "claude/sonnet",
+  result: "Built BILL-207 and BILL-209 on branches sous/run-... Skipped BILL-210, which was vague.",
+  steps: [
+    step("fetch", "sh", { cmd: "node scripts/tickets.js BILL", dur: 2 * S }),
+    step("triager", "agent", { agent: "triager", dur: 2 * M, tokens: 19800 }),
+    step("ask", "ask", { dur: 9 * M, acts: [act("asks", "The triager found 2 clear tickets. Build these?"), act("answer", "Build all", { who: "you" })] }),
+    step("implementer", "agent", { agent: "implementer", dur: 21 * M, tokens: 98200, nest: "ticket A" }),
+    step("reviewer", "agent", { agent: "reviewer", dur: 3 * M, tokens: 12400, nest: "ticket A" }),
+    step("tests", "sh", { cmd: "pnpm test", dur: 55 * S, nest: "ticket A" }),
+    step("implementer", "agent", { agent: "implementer", dur: 26 * M, tokens: 121700, nest: "ticket B" }),
+    step("reviewer", "agent", { agent: "reviewer", dur: 4 * M, tokens: 16300, nest: "ticket B" }),
+    step("tests", "sh", { cmd: "pnpm test", dur: 58 * S, nest: "ticket B" }),
+  ] });
+
+addRun({ wf: "release-notes", project: "billing", label: "since v1.8.0", inputs: { since: "v1.8.0" }, state: "stopped", startedBy: "you, from the terminal", startedAt: NOW - 2 * D - 3 * H, endedAt: NOW - 2 * D - 2 * H - 40 * M, tokens: 12900, model: "claude/sonnet",
+  result: "You stopped it at the breakpoint \"Notes look right?\".",
+  steps: [
+    step("log", "sh", { cmd: "git log v1.8.0..HEAD --merges --oneline", dur: 1 * S }),
+    step("draft", "agent", { agent: "writer", dur: 2 * M, tokens: 12900, status: "stopped", bp: "Notes look right?" }),
+    step("changelog", "js", { cmd: "append to CHANGELOG.md", status: "skipped", dur: null }),
+  ] });
+
+addRun({ wf: "docs-sync", project: "site", label: "ref main", inputs: { ref: "main" }, state: "done", startedBy: "run run-mhy2k0", startedAt: NOW - 3 * D - 2 * H, endedAt: NOW - 3 * D - 1 * H - 40 * M, tokens: 47300, model: "claude/sonnet",
+  result: "Updated 3 pages for the new pricing toggle.",
+  steps: [
+    step("changes", "sh", { cmd: "git diff main...HEAD --stat", dur: 1 * S }),
+    step("update docs", "agent", { agent: "docs-writer", dur: 11 * M, tokens: 31200 }),
+    step("review", "agent", { agent: "reviewer", dur: 4 * M, tokens: 16100 }),
+  ] });
+
+addRun({ wf: "ticket", project: "billing", label: "Round invoice totals to cents", inputs: { ticket: "Round invoice totals to cents" }, state: "done", startedBy: "Claude Code, for you", startedAt: NOW - 4 * H - 30 * M, endedAt: NOW - 3 * H - 51 * M, tokens: 118900, model: "claude/opus",
+  result: "Totals round once, at the end, to cents. Added tests for 3-decimal line items.",
+  steps: [
+    step("implementer", "agent", { agent: "implementer", dur: 19 * M, tokens: 81000 }),
+    step("reviewer", "agent", { agent: "reviewer", dur: 3 * M, tokens: 14400 }),
+    step("address review", "agent", { agent: "implementer", dur: 8 * M, tokens: 23500 }),
+    step("tests", "sh", { cmd: "pnpm test", dur: 1 * M }),
+    step("commit", "sh", { cmd: "git add -A && git commit", dur: 1 * S, bp: "Ready to commit?" }),
+  ] });
+
+addRun({ wf: "fix-flaky", project: "site", label: "checkout e2e: coupon field", inputs: { test: "e2e/checkout.spec.ts", tries: 20 }, state: "done", startedBy: "you, from the terminal", startedAt: NOW - 1 * D - 5 * H, endedAt: NOW - 1 * D - 4 * H - 20 * M, tokens: 77600, model: "claude/opus",
+  result: "The coupon field raced the price fetch. The test now waits for the price. 20 of 20 passed.",
+  steps: [
+    step("reproduce", "run", { cmd: "scripts/flaky.sh e2e/checkout.spec.ts 20", dur: 2 * M }),
+    step("investigate", "agent", { agent: "investigator", dur: 14 * M, tokens: 44900 }),
+    step("fix", "agent", { agent: "implementer", dur: 9 * M, tokens: 32700 }),
+    step("verify", "sh", { cmd: "pnpm playwright test e2e/checkout.spec.ts --repeat-each 20", dur: 6 * M }),
+  ] });
+
+RUNS.forEach((r) => {
+  if (!r.endedAt && r.state !== "running") r.lastAt = r.waiting ? r.waiting.at : r.startedAt + 20 * M;
+  r.steps.forEach((s) => { if (s.status === "running" && !s.ticksLeft) s.ticksLeft = 1e9; });
+});
+
+/* live activity pools */
+const POOLS = {
+  darkmode: [
+    ["tool", "Read", "src/components/pricing/Toggle.tsx", "77 lines"],
+    ["text", "The toggle's track color comes from a prop. I'll read it from the tokens instead."],
+    ["tool", "Edit", "src/components/pricing/Toggle.tsx", "+6 -4"],
+    ["tool", "Bash", "pnpm vitest run pricing", "14 passed"],
+    ["tool", "Grep", '"bg-white"  src/components/pricing', "3 matches in 2 files"],
+    ["tool", "Edit", "src/components/pricing/FeatureList.tsx", "+3 -3"],
+    ["text", "Checking contrast for the muted text on the dark card background."],
+    ["tool", "Bash", "pnpm exec contrast-check src/styles/tokens.css", "all pairs pass AA"],
+    ["tool", "Edit", "test/pricing.dark.test.tsx", "+41 -0"],
+    ["tool", "Bash", "pnpm vitest run pricing", "17 passed"],
+    ["text", "Dark mode now covers the cards, the toggle and the feature list. Light values are unchanged."],
+  ],
+  review: [
+    ["tool", "Grep", '"roundCents"  src', "4 matches in 3 files"],
+    ["text", "roundCents still runs per line in credit notes. That keeps the old 3-decimal bug there."],
+    ["tool", "Read", "src/invoices/credit.ts", "61 lines"],
+    ["text", "Blocker: credit notes round per line. Suggest calling the new total() there too."],
+    ["tool", "Read", "test/webhooks/retry.test.ts", "0 lines"],
+    ["text", "No test covers retry.ts. That blocks too."],
+  ],
+  security: [
+    ["text", "The retry handler replays the original request body. Checking that the signature is verified again."],
+    ["tool", "Read", "src/webhooks/verify.ts", "44 lines"],
+    ["text", "verifySignature runs before the first try only. A replay after a key rotation would skip it."],
+    ["tool", "Grep", '"WEBHOOK_SECRET"  src', "2 matches in 2 files"],
+    ["text", "The secret is read from the environment. Nothing is logged."],
+  ],
+  generic: [
+    ["tool", "Read", "src/index.ts", "120 lines"],
+    ["text", "Reading the code around the change."],
+    ["tool", "Grep", '"TODO"  src', "5 matches in 4 files"],
+    ["tool", "Edit", "src/index.ts", "+8 -2"],
+    ["tool", "Bash", "pnpm test", "48 passed"],
+    ["text", "The change is in. The tests pass."],
+  ],
+};
+
+/* ------------------------------------------------------------------ state */
+const state = {
+  feature: "runs",
+  sel: { runs: null, workflows: "ticket", agents: "reviewer", skills: "code-review", mcp: "linear" },
+  groupBy: store.get("groupBy", "status"),
+  scope: store.get("scope", "orchestrator"),
+  stepSel: {},
+  wfTab: {},
+  startWf: null,
+  startProject: null,
+  theme: store.get("theme", "auto"),
+  peek: {},
+  sendBack: false,
+  resumeNote: false,
+};
+const STATUS_GROUPS = [
+  { id: "needs", label: "Needs you", states: ["question", "breakpoint", "failed"] },
+  { id: "running", label: "Running", states: ["running"] },
+  { id: "paused", label: "Paused", states: ["paused"] },
+  { id: "done", label: "Done", states: ["done", "stopped"] },
+];
+const groupOf = (r) => STATUS_GROUPS.find((g) => g.states.includes(r.state)).id;
+const runById = (id) => RUNS.find((r) => r.id === id);
+const lastTouch = (r) => r.endedAt || r.lastAt || Date.now();
+const needsCount = () => RUNS.filter((r) => groupOf(r) === "needs").length;
+
+const PAUSE_TEXT = {
+  usage_limit: (r) => ["usage limit", "The account default reached its usage limit. The service resumes the run at " + fmtClock(r.resumesAt) + ", in " + fmtDur(r.resumesAt - Date.now()).replace(/ \d+s$/, "") + "."],
+  budget: (r) => ["budget", "This go spent the run's budget of " + fmtTok(r.budget) + " tokens. Resume gives it the same budget again."],
+  auth_required: () => ["login", "Claude Code lost its login. Log in again in a terminal, then resume. The service does not resume it on its own."],
+  requested: () => ["by you", "You paused it. The running steps finished and nothing new started."],
+  time_limit: () => ["time limit", "The workflow's timeout ran out. Resume gives it the whole limit again."],
+};
+function stateLabel(r) {
+  switch (r.state) {
+    case "question": return "asks";
+    case "breakpoint": return "at a breakpoint";
+    case "failed": return "failed";
+    case "running": return "running";
+    case "paused": return "paused: " + PAUSE_TEXT[r.pause](r)[0];
+    case "done": return "completed";
+    case "stopped": return "stopped";
+  }
+  return r.state;
+}
+const stateClass = (r) => ({ question: "needs", breakpoint: "needs", failed: "failed", running: "running", paused: "paused", done: "done", stopped: "stopped" })[r.state];
+const runMark = (r) => mark(r.state === "done" ? "done" : r.state);
+function runBadge(r) {
+  if (r.state === "question") return '<span class="badge">question</span>';
+  if (r.state === "breakpoint") return '<span class="badge">breakpoint</span>';
+  if (r.state === "failed") return '<span class="badge fail">failed</span>';
+  return "";
+}
+function runTokens(r) { return r.steps.reduce((a, s) => a + (s.tokens || 0), 0) || r.tokens || 0; }
+function runElapsed(r) { return (r.endedAt || (r.state === "running" ? Date.now() : r.lastAt || Date.now())) - r.startedAt; }
+function stepDur(s) { return s.status === "running" && s.startedAt ? Date.now() - s.startedAt : s.dur; }
+
+/* agents resolved from a project */
+function resolveAgent(name, project) {
+  const def = AGENT_DEFS[name];
+  const present = FOLDERS.map((f) => {
+    const c = def.copies.find((c) => c.at === f.id && (!f.project || c.project === project));
+    return { folder: f, copy: c };
+  });
+  const found = present.filter((p) => p.copy);
+  let winner = found[0];
+  // in the harness folders of one tier, the default harness (Claude Code) wins
+  return { def, present, winner, hidden: found.filter((p) => p !== winner) };
+}
+function agentHarness(def) {
+  if (def.claudeOnly) return "Claude Code";
+  if (def.codexOnly) return "Codex";
+  return "both";
+}
+function agentPath(folder, name, project) {
+  const base = folder.project ? PROJECT_PATH[project] + "/" : "";
+  return base + folder.dir + name + folder.ext;
+}
+function agentUsers(name) {
+  const out = [];
+  WORKFLOWS.forEach((w) => walkOutline(w.outline, (n) => { if (n.agent === name) out.push({ wf: w.name, label: n.label }); }));
+  return out;
+}
+function walkOutline(nodes, fn) { nodes.forEach((n) => { fn(n); if (n.children) walkOutline(n.children, fn); }); }
+function visibleMcp() { return Object.keys(MCPS).filter((k) => !MCPS[k].project || MCPS[k].project === state.scope); }
+function agentField(def, harness, field) {
+  const blk = harness === "claude" ? def.claudecode : def.codexcli;
+  if (!blk) return null;
+  if (blk[field] != null) return { v: blk[field], from: harness === "claude" ? "claudecode" : "codexcli" };
+  if (def.top && def.top[field] != null) return { v: def.top[field], from: "top" };
+  return null;
+}
+
+/* ------------------------------------------------------------------ routing */
+function go(hash) { if (location.hash !== "#" + hash) location.hash = hash; else route(); }
+function route() {
+  const h = decodeURIComponent(location.hash.slice(1));
+  const [feature, ...rest] = h.split("/");
+  const id = rest.join("/");
+  const features = ["runs", "workflows", "agents", "skills", "mcp"];
+  state.feature = features.includes(feature) ? feature : "runs";
+  if (state.feature === "runs") {
+    if (id.startsWith("new")) { state.sel.runs = "new"; const q = id.split("?")[1]; const wf = q && new URLSearchParams(q).get("wf"); state.startWf = wf && WF[wf] ? wf : state.startWf; }
+    else if (id && runById(id)) state.sel.runs = id;
+    else if (!state.sel.runs || (state.sel.runs !== "new" && !runById(state.sel.runs))) state.sel.runs = sortedRuns()[0].id;
+  } else if (id) {
+    state.sel[state.feature] = id;
+  }
+  state.sendBack = false; state.resumeNote = false;
+  render();
+}
+function sortedRuns() {
+  const order = { needs: 0, running: 1, paused: 2, done: 3 };
+  return [...RUNS].sort((a, b) => order[groupOf(a)] - order[groupOf(b)] || lastTouch(b) - lastTouch(a));
+}
+
+/* ------------------------------------------------------------------ render: rail */
+const RAIL = [
+  { id: "runs", label: "Runs", icon: I.runs },
+  { id: "workflows", label: "Workflows", icon: I.workflows },
+  { id: "agents", label: "Agents", icon: I.agents },
+  { id: "skills", label: "Skills", icon: I.skills },
+  { id: "mcp", label: "MCP servers", icon: I.mcp },
+];
+function renderRail() {
+  const n = needsCount();
+  const themeIcon = state.theme === "light" ? I.sun : state.theme === "dark" ? I.moon : I.auto;
+  const themeTip = state.theme === "auto" ? "Theme: follows the system" : "Theme: " + state.theme;
+  $("#rail").innerHTML =
+    '<div class="brand" data-tip="sous">' + SOUS_MARK + "</div>" +
+    RAIL.map((f) => '<button class="rail-btn' + (state.feature === f.id ? " on" : "") + '" data-go="' + f.id + '" data-tip="' + f.label + '" aria-label="' + f.label + '">' + f.icon +
+      (f.id === "runs" && n ? '<span class="count">' + n + "</span>" : "") + "</button>").join("") +
+    '<div class="spacer"></div>' +
+    '<button class="rail-btn" id="theme" data-tip="' + themeTip + '" aria-label="' + themeTip + '">' + themeIcon + "</button>" +
+    '<div class="service" data-tip="The service runs. It resumes paused runs and starts schedules."></div>';
+}
+
+/* ------------------------------------------------------------------ render: column */
+function renderCol() {
+  const f = state.feature;
+  let html = "";
+  if (f === "runs") {
+    html += '<div class="col-head"><h2>Runs<span class="n">' + RUNS.length + "</span></h2></div>";
+    html += '<div class="col-tools"><button class="new-entry' + (state.sel.runs === "new" ? " on" : "") + '" data-go="runs/new">' + I.plus + 'Start a workflow</button>';
+    html += '<div class="seg-row"><span class="lbl">Group by</span><div class="seg"><button data-group="status" class="' + (state.groupBy === "status" ? "on" : "") + '">Status</button><button data-group="project" class="' + (state.groupBy === "project" ? "on" : "") + '">Project</button></div></div></div>';
+    html += '<div class="col-body">';
+    if (state.groupBy === "status") {
+      STATUS_GROUPS.forEach((g) => {
+        const rs = sortedRuns().filter((r) => groupOf(r) === g.id);
+        if (!rs.length) return;
+        html += '<div class="group"><div class="group-h">' + g.label + ' <span class="n">' + rs.length + "</span></div>" + rs.map((r) => runLine(r, true)).join("") + "</div>";
+      });
+    } else {
+      PROJECTS.forEach((p) => {
+        const rs = sortedRuns().filter((r) => r.project === p);
+        if (!rs.length) return;
+        const nn = rs.filter((r) => groupOf(r) === "needs").length;
+        html += '<div class="group"><div class="group-h">' + p + ' <span class="n">' + rs.length + "</span>" + (nn ? '<span class="sub" style="color:var(--accent)">' + nn + " need you</span>" : "") + "</div>" + rs.map((r) => runLine(r, false)).join("") + "</div>";
+      });
+    }
+    html += "</div>";
+  } else if (f === "workflows") {
+    html += '<div class="col-head"><h2>Workflows<span class="n">' + WORKFLOWS.length + "</span></h2></div>";
+    html += '<div class="col-body">';
+    ["home", ...PROJECTS].forEach((where) => {
+      const ws = WORKFLOWS.filter((w) => w.where === where);
+      if (!ws.length) return;
+      html += '<div class="group"><div class="group-h">' + (where === "home" ? "Home" : where) + '<span class="sub mono">' + (where === "home" ? "~/.sous" : ".sous") + "</span></div>" +
+        ws.map((w) => '<a class="item two' + (state.sel.workflows === w.name ? " on" : "") + '" href="#workflows/' + w.name + '"><div class="main"><span class="name">' + esc(w.name) + '</span><span class="label">' + esc(w.description) + "</span></div>" +
+          (w.problems ? '<span class="badge fail">problem</span>' : w.approved.changedSince ? '<span class="badge">changed</span>' : "") + "</a>").join("") + "</div>";
+    });
+    html += "</div>";
+  } else {
+    const titles = { agents: "Agents", skills: "Skills", mcp: "MCP servers" };
+    const names = f === "agents" ? Object.keys(AGENT_DEFS) : f === "skills" ? Object.keys(SKILLS) : visibleMcp();
+    html += '<div class="col-head"><h2>' + titles[f] + '<span class="n">' + names.length + "</span></h2></div>";
+    html += '<div class="col-tools"><label class="scope">Seen from <select id="scope">' + PROJECTS.map((p) => "<option" + (p === state.scope ? " selected" : "") + ">" + p + "</option>").join("") + "</select></label></div>";
+    html += '<div class="col-body">';
+    if (f === "agents") {
+      const groups = [["Rulesync", (d) => !d.claudeOnly && !d.codexOnly], ["Claude Code only", (d) => d.claudeOnly], ["Codex only", (d) => d.codexOnly]];
+      groups.forEach(([g, pred]) => {
+        const ns = names.filter((n) => pred(AGENT_DEFS[n]));
+        if (!ns.length) return;
+        html += '<div class="group"><div class="group-h">' + g + ' <span class="n">' + ns.length + "</span></div>" + ns.map((n) => {
+          const res = resolveAgent(n, state.scope), d = res.def;
+          const model = d.claudecode && !d.codexOnly ? d.claudecode.model : d.codexcli.model;
+          return '<a class="item two' + (state.sel.agents === n ? " on" : "") + '" href="#agents/' + n + '"><div class="main"><span class="name">' + n + '</span><span class="label">' + esc(d.description) + "</span></div>" +
+            (res.hidden.length ? '<span class="badge quiet" title="Other files with this name that sous does not use">hides ' + res.hidden.length + "</span>" : '<span class="side mono">' + model + "</span>") + "</a>";
+        }).join("") + "</div>";
+      });
+    } else if (f === "skills") {
+      html += '<div class="group">' + names.map((n) => {
+        const users = Object.keys(AGENT_DEFS).filter((a) => (agentField(AGENT_DEFS[a], "claude", "skills") || { v: [] }).v.includes(n));
+        return '<a class="item two' + (state.sel.skills === n ? " on" : "") + '" href="#skills/' + n + '"><div class="main"><span class="name">' + n + '</span><span class="label">' + esc(SKILLS[n].description) + '</span></div><span class="side">' + users.length + (users.length === 1 ? " agent" : " agents") + "</span></a>";
+      }).join("") + "</div>";
+    } else {
+      html += '<div class="group">' + names.map((n) => {
+        const m = MCPS[n];
+        return '<a class="item two' + (state.sel.mcp === n ? " on" : "") + '" href="#mcp/' + n + '"><div class="main"><span class="name">' + n + '</span><span class="label mono" style="font-size:11.5px">' + esc(m.type === "http" ? m.url : m.command + " " + m.args.join(" ")) + '</span></div><span class="chip">' + m.type + "</span></a>";
+      }).join("") + "</div>";
+      const hid = Object.keys(MCPS).filter((k) => !names.includes(k));
+      if (hid.length) html += '<div class="group-h" style="font-weight:450;color:var(--faint)">' + hid.length + " more in other projects</div>";
+    }
+    html += "</div>";
+  }
+  $("#col").innerHTML = html;
+}
+function runLine(r, withProject) {
+  const right = runBadge(r) || '<span class="side">' + (r.state === "running" ? '<span data-live="elapsed" data-run="' + r.id + '">' + fmtDur(runElapsed(r)) + "</span>" : fmtAgo(lastTouch(r))) + "</span>";
+  return '<a class="item' + (state.sel.runs === r.id ? " on" : "") + '" href="#runs/' + r.id + '" title="' + esc(r.wf + " · " + r.label + " · " + r.project + " · " + stateLabel(r)) + '">' + runMark(r) +
+    '<div class="main"><span class="name">' + esc(r.wf) + '</span><span class="label">' + esc(r.label) + "</span></div>" + right + "</a>";
+}
+
+/* ------------------------------------------------------------------ render: main */
+function renderMain() {
+  const f = state.feature;
+  let html = "";
+  if (f === "runs") html = state.sel.runs === "new" ? renderStart() : renderRun(runById(state.sel.runs));
+  else if (f === "workflows") html = renderWorkflow(WF[state.sel.workflows] || WORKFLOWS[0]);
+  else if (f === "agents") html = renderAgent(AGENT_DEFS[state.sel.agents] ? state.sel.agents : "reviewer");
+  else if (f === "skills") html = renderSkill(SKILLS[state.sel.skills] ? state.sel.skills : "code-review");
+  else html = renderMcp(visibleMcp().includes(state.sel.mcp) ? state.sel.mcp : visibleMcp()[0]);
+  $("#main").innerHTML = '<div class="page">' + html + "</div>";
+  const ent = $(".entries");
+  if (ent) ent.scrollTop = ent.scrollHeight;
+}
+
+function wfLink(name) { return '<a href="#workflows/' + name + '">' + esc(name) + "</a>"; }
+function agentLink(name) { return AGENT_DEFS[name] ? '<a href="#agents/' + name + '">' + esc(name) + "</a>" : esc(name); }
+
+/* run page */
+function defaultStep(r) {
+  if (state.stepSel[r.id] != null && r.steps[state.stepSel[r.id]]) return r.steps[state.stepSel[r.id]];
+  return r.steps.find((s) => s.status === "running") || r.steps.find((s) => s.status === "waiting" || s.status === "failed" || s.status === "paused") ||
+    [...r.steps].reverse().find((s) => s.status !== "pending" && s.status !== "skipped") || r.steps[0];
+}
+function renderRun(r) {
+  const cls = stateClass(r);
+  const running = r.state === "running";
+  const ended = r.state === "done" || r.state === "stopped";
+  let actions = "";
+  if (running) actions = '<button class="btn" data-act="tell-focus">' + I.tell + 'Tell</button><button class="btn" data-act="pause">' + I.pause + 'Pause</button><button class="btn danger" data-act="stop">' + I.stop + "Stop</button>";
+  else if (r.state === "paused" || r.state === "failed") actions = '<button class="btn primary" data-act="resume">' + I.play + 'Resume</button><button class="btn danger" data-act="stop">' + I.stop + "Stop</button>";
+  else if (r.state === "question" || r.state === "breakpoint") actions = '<button class="btn danger" data-act="stop">' + I.stop + "Stop</button>";
+  else actions = '<button class="btn" data-act="rerun">' + I.play + "Run again</button>";
+
+  let html = '<div class="crumbs"><a href="#runs">Runs</a><span>/</span><span>' + r.project + '</span><span>/</span><span class="mono">' + r.id + "</span></div>";
+  html += '<div class="head"><div class="grow"><h1><a href="#workflows/' + r.wf + '" title="Open the workflow">' + esc(r.wf) + '</a><span class="sub">' + esc(r.label) + "</span></h1></div><div class=\"actions\">" + actions + "</div></div>";
+  html += '<div class="facts">' +
+    fact("State", '<span class="state ' + cls + '">' + runMark(r) + stateLabel(r) + "</span>") +
+    fact("Project", esc(r.project)) +
+    fact("Started by", esc(r.startedBy)) +
+    fact("Started", fmtDay(r.startedAt)) +
+    fact("Time", '<span data-live="elapsed" data-run="' + r.id + '">' + fmtDur(runElapsed(r)) + "</span>") +
+    fact("Tokens", '<span data-live="tokens" data-run="' + r.id + '">' + fmtTok(runTokens(r)) + "</span>") +
+    fact("Place", '<span class="mono">' + (WF[r.wf].place === "worktree" ? "sous/" + r.id : WF[r.wf].place === "folder" ? "project folder" : "scratch folder") + "</span>") +
+    "</div>";
+
+  html += renderWaiting(r);
+  if (r.result && ended) html += '<div class="result"><div class="card"><div class="k">' + (r.state === "stopped" ? "Why it ended" : "Result") + "</div>" + esc(r.result) + "</div></div>";
+
+  const sel = defaultStep(r);
+  html += '<div class="runbody"><div class="card steps"><div class="steps-h">Steps<span class="r">' + r.steps.filter((s) => s.status === "done").length + " of " + r.steps.length + " done</span></div>" + renderSteps(r, sel) + "</div>";
+  html += '<div class="card feed">' + renderFeed(r, sel) + "</div></div>";
+  return html;
+}
+function fact(k, v) { return '<div class="fact"><div class="k">' + k + '</div><div class="v">' + v + "</div></div>"; }
+
+function renderWaiting(r) {
+  const w = r.waiting;
+  if (r.state === "question" && w) {
+    let c = '<div class="ask"><div class="ask-top">' + mark("question") + '<span class="what">The run asks you</span><span>step <b>' + esc(w.step) + "</b></span>" + '<span class="when">' + fmtAgo(w.at) + "</span></div>";
+    c += '<p class="ask-q">' + esc(w.text) + "</p>";
+    if (w.list) c += '<div class="ask-detail"><ul>' + w.list.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul></div>";
+    if (w.detail) c += '<div class="ask-detail">' + esc(w.detail) + "</div>";
+    if (w.input === "select") c += '<div class="ask-controls">' + w.choices.map((ch) => '<button class="choice" data-act="answer" data-val="' + esc(ch) + '">' + esc(ch) + "</button>").join("") + '<span class="hint">Only you may answer</span></div>';
+    else c += '<div class="ask-controls"><div class="field"><input id="answer-text" placeholder="Your answer" autocomplete="off"><button class="btn accent" data-act="answer-text">' + I.send + 'Send</button></div></div>';
+    return c + "</div>";
+  }
+  if (r.state === "breakpoint" && w) {
+    let c = '<div class="ask"><div class="ask-top">' + mark("breakpoint") + '<span class="what">Breakpoint</span><span>after step <b>' + esc(w.step) + "</b>, try " + w.tries + " of " + w.max + '</span><span class="when">' + fmtAgo(w.at) + "</span></div>";
+    c += '<p class="ask-q">' + esc(w.title) + "</p>";
+    c += '<div class="shown md">' + md(w.show) + "</div>";
+    if (state.sendBack) {
+      c += '<div class="ask-controls"><div class="field"><textarea id="sendback-note" placeholder="What should the step change? The step runs again with this note."></textarea></div>' +
+        '<button class="btn accent" data-act="sendback-go">' + I.back + 'Send back</button><button class="btn ghost" data-act="sendback-cancel">Cancel</button></div>';
+    } else {
+      c += '<div class="ask-controls"><button class="btn accent" data-act="approve">' + I.ok + 'Approve</button><button class="btn" data-act="sendback">' + I.back + 'Send back</button><button class="btn danger" data-act="stop">' + I.stop + 'Stop the run</button><span class="hint">A breakpoint is always for you</span></div>';
+    }
+    return c + "</div>";
+  }
+  if (r.state === "failed" && r.failure) {
+    const f = r.failure;
+    let c = '<div class="ask fail"><div class="ask-top">' + mark("failed") + '<span class="what">Step failed</span><span>step <b>' + esc(f.step) + "</b>, " + f.tries + " tries</span>" + '<span class="when">' + fmtAgo(r.endedAt) + "</span></div>";
+    c += '<p class="ask-q">' + esc(f.message) + " The run paused on it.</p>";
+    c += '<div class="errbox mono">' + esc(f.stderr) + "</div>";
+    if (state.resumeNote) {
+      const agentSteps = r.steps.filter((s) => s.kind === "agent").map((s) => s.label);
+      c += '<div class="ask-controls" style="flex-direction:column;align-items:stretch"><div class="field"><textarea id="resume-note" placeholder="A note for the agent, such as: the pause write is async on Linux too."></textarea></div>' +
+        '<div class="row-flex"><span class="faint">Give it to</span><select id="resume-step" class="input" style="flex:0 0 auto;width:auto"><option value="">the first agent call that runs</option>' + agentSteps.map((l) => "<option>" + esc(l) + "</option>").join("") + "</select>" +
+        '<span style="flex:1"></span><button class="btn ghost" data-act="resumenote-cancel">Cancel</button><button class="btn primary" data-act="resumenote-go">' + I.play + "Resume with note</button></div></div>";
+    } else {
+      c += '<div class="ask-controls"><button class="btn primary" data-act="resume">' + I.play + 'Resume</button><button class="btn" data-act="resumenote">Resume with note</button><span class="hint">Resume runs the failed step again and keeps the finished ones</span></div>';
+    }
+    return c + "</div>";
+  }
+  if (r.state === "paused") {
+    const [, text] = PAUSE_TEXT[r.pause](r);
+    return '<div class="ask quiet"><div class="ask-top">' + mark("paused") + '<span class="what">' + esc(stateLabel(r)) + '</span><span class="when">' + fmtAgo(r.lastAt) + "</span></div><p class=\"ask-q\" style=\"font-size:13.5px;font-weight:450\">" + esc(text) + "</p></div>";
+  }
+  return "";
+}
+
+function renderSteps(r, sel) {
+  let html = "", openGroup = null, openNest = null;
+  const close = () => { if (openGroup || openNest) html += "</div>"; openGroup = null; openNest = null; };
+  r.steps.forEach((s) => {
+    const g = s.group || null, n = s.nest || null;
+    if (g !== openGroup || n !== openNest) {
+      close();
+      if (g) { html += '<div class="step-group"><div class="step-group-h">' + esc(g) + "</div>"; openGroup = g; }
+      if (n) { html += '<div class="step-group"><div class="step-group-h"><a href="#workflows/ticket">' + esc(n) + '</a><span>nested run of ticket</span></div>'; openNest = n; }
+    }
+    const st = s.status === "waiting" ? (s.bp ? "breakpoint" : "question") : s.status;
+    let kind = "";
+    if (s.kind === "agent") kind = 'agent <a href="#agents/' + s.agent + '">' + esc(s.agent) + "</a>" + (s.model ? "<span>" + esc(s.model) + "</span>" : "");
+    else if (s.kind === "workflow") kind = 'workflow <a href="#workflows/' + s.wf + '">' + esc(s.wf) + "</a>";
+    else if (s.kind === "ask") kind = "question";
+    else kind = '<span class="mono">' + esc(s.kind) + "</span><span class=\"mono\" style=\"overflow:hidden;text-overflow:ellipsis\">" + esc(s.cmd || "") + "</span>";
+    if (s.bp) kind += "<span>breakpoint</span>";
+    const nums = s.status === "pending" ? "" : '<span data-live="stepdur" data-run="' + r.id + '" data-step="' + s.i + '">' + fmtDur(stepDur(s)) + "</span>" + (s.tokens ? ' · <span data-live="steptok" data-run="' + r.id + '" data-step="' + s.i + '">' + fmtTok(s.tokens) + "</span>" : "");
+    html += '<div class="step' + (s === sel ? " on" : "") + (s.status === "pending" || s.status === "skipped" ? " pending" : "") + '" data-step="' + s.i + '">' + mark(st) +
+      '<div class="lab">' + esc(s.label) + (s.call ? '<span class="k">call ' + s.call + "</span>" : "") + '</div><div class="num">' + nums + '</div><div class="meta">' + kind + "</div></div>";
+  });
+  close();
+  return html;
+}
+
+function renderEntry(e, fresh) {
+  const t = e.at ? fmtClock(e.at) : "";
+  const cls = "entry " + e.kind + (fresh ? " fresh" : "");
+  if (e.kind === "tool") return '<div class="' + cls + '" data-toggle><span class="t">' + t + '</span><span class="kind">tool</span><div class="body"><span class="tn">' + esc(e.text) + '</span><span class="ta">' + esc(e.arg || "") + '</span><span class="tr">' + esc(e.res || "") + '</span><div class="res mono">' + esc(e.full || e.res || "") + "</div></div></div>";
+  if (e.kind === "tell") return '<div class="' + cls + '"><span class="t">' + t + '</span><span class="kind">tell</span><div class="body"><span class="who">you</span> ' + esc(e.text) + '<span class="dl" data-delivery>' + esc(e.delivery || "") + "</span></div></div>";
+  if (e.kind === "answer") return '<div class="' + cls + '"><span class="t">' + t + '</span><span class="kind">answer</span><div class="body"><b>you</b> ' + esc(e.text) + "</div></div>";
+  const label = { prompt: "prompt", text: "says", asks: "asks", error: "error", note: "note", command: "runs", output: "output" }[e.kind] || e.kind;
+  return '<div class="' + cls + '"><span class="t">' + t + '</span><span class="kind">' + label + '</span><div class="body">' + esc(e.text) + "</div></div>";
+}
+function renderFeed(r, s) {
+  let h = '<div class="feed-h">' + mark(s.status === "waiting" ? "question" : s.status) + "<span>" + esc(s.label) + "</span>";
+  if (s.kind === "agent") h += '<span class="faint" style="font-weight:450">agent <a class="agentlink" href="#agents/' + s.agent + '">' + esc(s.agent) + "</a></span>";
+  h += '<span class="r">' + (s.kind === "agent" ? "activity" : "command and output") + "</span></div>";
+  h += '<div class="entries" data-feed="' + r.id + ":" + s.i + '">';
+  if (!s.acts.length) h += '<div class="feed-empty">' + (s.status === "pending" ? "This step has not started." : "Nothing yet.") + "</div>";
+  // give entries times spread over the step
+  const start = s.startedAt || (r.startedAt + 1000);
+  const end = s.status === "running" ? Date.now() - 30 * S : start + (s.dur || 0);
+  const gap = Math.max(4 * S, Math.min(37 * S, (end - start) / Math.max(1, s.acts.length)));
+  s.acts.forEach((e, i) => { if (!e.at) e.at = start + i * gap; });
+  h += s.acts.map((e) => renderEntry(e)).join("");
+  h += "</div>";
+  if (s.status === "running" && s.kind === "agent") {
+    h += '<div class="typing"><span class="dots"><span></span><span></span><span></span></span>working</div>';
+    h += '<div class="tellbox"><span class="to">Tell ' + esc(s.label) + '</span><input id="tell-input" placeholder="A message the step reads after its current tool call" autocomplete="off"><button class="btn sm accent" data-act="tell">' + I.send + "Send</button></div>";
+  }
+  return h;
+}
+
+/* start a workflow */
+function renderStart() {
+  let html = '<div class="crumbs"><a href="#runs">Runs</a><span>/</span><span>Start a workflow</span></div>';
+  html += '<div class="head"><div class="grow"><h1>Start a workflow</h1><p class="desc">It runs in the background, as your own <code>sous run</code> does.</p></div></div>';
+  html += "<h3>Workflow</h3><div class=\"wfpick\">" + WORKFLOWS.map((w) =>
+    '<button class="wfcard' + (state.startWf === w.name ? " on" : "") + '" data-startwf="' + w.name + '"><span class="t">' + esc(w.name) + (w.approved.changedSince ? '<span class="badge">changed</span>' : "") + (w.startedBy === "people" ? '<span class="chip">people only</span>' : "") + '</span><span class="d">' + esc(w.description) + '</span><span class="w">' + (w.where === "home" ? "home" : w.where) + "</span></button>").join("") + "</div>";
+  const w = WF[state.startWf];
+  if (!w) return html + '<p class="faint mt16">Pick a workflow to see its inputs.</p>';
+  const projects = w.where === "home" ? PROJECTS : [w.where];
+  if (!state.startProject || !projects.includes(state.startProject)) state.startProject = projects[0];
+  html += "<h3>Inputs</h3><div class=\"card pad\"><div class=\"form\" id=\"startform\">";
+  html += '<div class="frow"><label>Project</label><div class="help">Where the run works. ' + (w.place === "worktree" ? "It gets its own worktree and branch." : w.place === "folder" ? "It works in the project folder itself." : "It works in a scratch folder.") + '</div><select id="start-project" class="input">' + projects.map((p) => "<option" + (p === state.startProject ? " selected" : "") + ">" + p + "</option>").join("") + "</select></div>";
+  w.inputs.forEach((inp) => {
+    html += '<div class="frow"><label>' + esc(inp.name) + (inp.required ? '<span class="req">required</span>' : "") + '</label><div class="help">' + esc(inp.description) + (inp.def != null ? ". Default " + esc(inp.def) : "") + "</div>";
+    if (inp.type === "number") html += '<input class="input" type="number" data-input="' + inp.name + '" value="' + (inp.def != null ? inp.def : "") + '">';
+    else if (inp.name === "ticket") html += '<textarea class="input" data-input="' + inp.name + '" placeholder="What to build"></textarea>';
+    else html += '<input class="input" data-input="' + inp.name + '" value="' + esc(inp.def != null ? inp.def : "") + '" placeholder="' + esc(inp.description) + '">';
+    html += "</div>";
+  });
+  html += '<div class="frow"><label>Command</label><div class="help">What the view runs for you.</div><div class="cmd mono" id="start-cmd"></div></div>';
+  html += "</div></div>";
+  if (w.approved.changedSince) {
+    html += '<h3>Changed since your yes<span class="r">approved ' + fmtDay(w.approved.at) + ", edited by " + esc(w.approved.editedBy) + " " + fmtAgo(w.approved.editedAt) + "</span></h3>";
+    html += diffBlock(w.approvedText, w.text, w.path, true);
+    if (w.problems) html += '<div class="note bad mt12">' + I.warn + "<div><span class=\"t\">sous check finds a problem in the new text.</span> " + esc(w.problems[0].text) + " The run would stop at that step.</div></div>";
+    html += '<label class="confirm"><input type="checkbox" id="start-confirm"><span>I read the changes. Starting approves this text, as my own <code>sous run</code> does.</span></label>';
+  }
+  html += '<div class="row-flex mt16"><button class="btn accent" id="start-go" data-act="start">' + I.play + (w.approved.changedSince ? "Approve and start" : "Start") + '</button><span class="faint" id="start-why"></span></div>';
+  return html;
+}
+function startCmd() {
+  const w = WF[state.startWf];
+  if (!w) return "";
+  let c = "sous run <b>" + w.name + "</b>";
+  $$("[data-input]").forEach((el) => {
+    const v = el.value.trim();
+    const inp = w.inputs.find((i) => i.name === el.dataset.input);
+    if (!v || (inp.def != null && String(inp.def) === v)) return;
+    c += " --" + el.dataset.input + " " + (/^[\w.-]+$/.test(v) ? esc(v) : '"' + esc(v.replace(/"/g, '\\"')) + '"');
+  });
+  return c + " --project " + PROJECT_PATH[state.startProject];
+}
+function updateStart() {
+  const w = WF[state.startWf];
+  if (!w || !$("#start-cmd")) return;
+  $("#start-cmd").innerHTML = startCmd();
+  const missing = w.inputs.filter((i) => i.required && !($('[data-input="' + i.name + '"]').value || "").trim()).map((i) => i.name);
+  const needConfirm = w.approved.changedSince && !($("#start-confirm") || {}).checked;
+  $("#start-go").disabled = !!missing.length || needConfirm;
+  $("#start-why").textContent = missing.length ? "Fill in " + missing.join(", ") + "." : needConfirm ? "Confirm you read the changes." : "";
+}
+
+/* workflow page */
+function renderWorkflow(w) {
+  const tab = state.wfTab[w.name] || "outline";
+  let html = '<div class="crumbs"><a href="#workflows">Workflows</a><span>/</span><span>' + (w.where === "home" ? "home" : w.where) + "</span></div>";
+  html += '<div class="head"><div class="grow"><h1>' + esc(w.name) + "</h1><p class=\"desc\">" + esc(w.description) + '</p></div><div class="actions"><button class="btn" data-act="wf-file">' + I.file + 'Show the file</button><button class="btn accent" data-act="wf-start">' + I.play + "Start</button></div></div>";
+  const ap = w.approved;
+  const apText = ap.changedSince ? '<span class="state needs">changed since your yes</span>' : ap.seeded ? '<span class="state done">' + mark("done") + "approved by sous at setup</span>" : '<span class="state done">' + mark("done") + "approved</span>";
+  html += '<div class="facts">' + fact("Approval", apText) + fact("Who may start it", w.startedBy === "people" ? "people only" : "anyone") + fact("Place", w.place) + (w.schedule ? fact("Schedule", '<span class="mono">' + esc(w.schedule) + "</span>") : "") + (w.timeout ? fact("Timeout", w.timeout) : "") + fact("File", '<span class="mono">' + esc(w.path) + "</span>") + "</div>";
+  html += '<div class="tabs"><button class="tab' + (tab === "outline" ? " on" : "") + '" data-wftab="outline">Outline</button><button class="tab' + (tab === "file" ? " on" : "") + '" data-wftab="file">File</button>' +
+    (ap.changedSince ? '<button class="tab' + (tab === "diff" ? " on" : "") + '" data-wftab="diff">Changes <span class="badge">' + diffCount(w) + "</span></button>" : "") + "</div>";
+  if (tab === "file") return html + '<div class="mt16">' + codeBlock(w.text, w.path) + "</div>";
+  if (tab === "diff") return html + '<div class="mt16">' + approvalNote(w) + '<div class="mt12">' + diffBlock(w.approvedText, w.text, w.path, false) + "</div></div>";
+
+  html += '<div class="mt16">' + approvalNote(w);
+  if (w.problems) w.problems.forEach((p) => { html += '<div class="note bad">' + I.warn + '<div><span class="t">sous check:</span> ' + esc(p.text) + "</div></div>"; });
+  else html += '<div class="note good">' + I.ok + "<div>sous check finds no problems.</div></div>";
+  (w.notes || []).forEach((n) => { html += '<div class="note">' + I.info + "<div>" + esc(n) + "</div></div>"; });
+  html += "</div>";
+
+  html += '<h3>Inputs<span class="n">' + w.inputs.length + '</span></h3><div class="card"><table class="tbl"><tr><th>Name</th><th>Type</th><th>Default</th><th>What it is</th></tr>' +
+    w.inputs.map((i) => '<tr><td class="mono">' + esc(i.name) + (i.isNew && ap.changedSince ? ' <span class="badge">new</span>' : "") + '</td><td class="muted">' + i.type + "</td><td>" + (i.required ? '<span style="color:var(--accent)">required</span>' : '<span class="mono">' + esc(i.def) + "</span>") + '</td><td class="muted">' + esc(i.description) + "</td></tr>").join("") + "</table></div>";
+
+  html += '<h3>Steps<span class="r">in the order the file writes them</span></h3><div class="card outline">';
+  let n = 0;
+  const line = (s, depth) => {
+    n++;
+    let what = "";
+    if (s.kind === "agent") what = "<b>" + esc(s.label) + '</b><span class="x">agent ' + agentLink(s.agent) + "</span>";
+    else if (s.kind === "workflow") what = "<b>" + esc(s.label) + '</b><span class="x">runs ' + wfLink(s.wf) + "</span>";
+    else if (s.kind === "ask") what = "<b>" + esc(s.label) + "</b>";
+    else if (s.kind === "breakpoint") what = "<b>" + esc(s.label) + '</b><span class="x">waits for your approve after the step below</span>';
+    else if (s.children) what = '<span class="muted">' + esc(s.label) + "</span>";
+    else what = "<b>" + esc(s.label) + '</b><span class="x mono" style="font-size:12px">' + esc(s.cmd || "") + "</span>";
+    const kd = s.kind === "loop" ? "for" : s.kind;
+    let out = '<div class="ol' + (depth === 1 ? " nest" : depth === 2 ? " nest2" : "") + '"><span class="i">' + n + '</span><span class="kd">' + kd + '</span><span class="what">' + what + '</span><span class="r">' + (s.bad ? '<span style="color:var(--fail)">problem</span>' : esc(s.x || "")) + "</span></div>";
+    if (s.children) s.children.forEach((c) => { out += line(c, depth + 1); });
+    return out;
+  };
+  html += w.outline.map((s) => line(s, 0)).join("") + "</div>";
+
+  const nested = []; walkOutline(w.outline, (s) => { if (s.kind === "workflow") nested.push(s.wf); });
+  if (nested.length) html += '<h3>Nested workflows</h3><div class="links">' + nested.map((x) => '<a class="pillink" href="#workflows/' + x + '">' + I.workflows.replace("<svg", '<svg width="13" height="13"') + esc(x) + "</a>").join("") + "</div>";
+
+  const last = RUNS.filter((r) => r.wf === w.name).sort((a, b) => b.startedAt - a.startedAt).slice(0, 3);
+  html += '<h3>Last runs<span class="n">' + last.length + "</span></h3>";
+  if (!last.length) html += '<p class="faint">No runs yet.</p>';
+  else html += '<div class="card"><table class="tbl"><tr><th>Run</th><th>Project</th><th>State</th><th>Started</th><th style="text-align:right">Time</th><th style="text-align:right">Tokens</th></tr>' +
+    last.map((r) => '<tr class="link" data-href="#runs/' + r.id + '"><td><a href="#runs/' + r.id + '">' + esc(r.label) + '</a> <span class="faint mono" style="font-size:11px">' + r.id + "</span></td><td>" + r.project + '</td><td><span class="state ' + stateClass(r) + '">' + runMark(r) + stateLabel(r) + "</span></td><td class=\"muted\">" + fmtAgo(r.startedAt) + '</td><td class="num">' + fmtDur(runElapsed(r)) + '</td><td class="num">' + fmtTok(runTokens(r)) + "</td></tr>").join("") + "</table></div>";
+  return html;
+}
+function approvalNote(w) {
+  const ap = w.approved;
+  if (ap.changedSince) return '<div class="note warn">' + I.warn + '<div><span class="t">Changed since your yes on ' + fmtDay(ap.at) + ".</span> " + esc(ap.editedBy === "you" ? "You edited it" : ap.editedBy + " edited it") + " " + fmtAgo(ap.editedAt) + ". Agents, runs and schedules can't start it until you approve the new text. Starting it yourself approves it." + (w.schedule ? " The service skips its schedule until then." : "") + "</div></div>";
+  if (ap.seeded) return '<div class="note">' + I.ok + "<div>sous approved this text when it first set up, as it was then. Nobody changed it since.</div></div>";
+  return '<div class="note">' + I.ok + "<div>You approved this exact text on " + fmtDay(ap.at) + ".</div></div>";
+}
+
+/* code + diff */
+function highlight(line) {
+  const re = /(\/\/.*$)|(`(?:\\.|[^`])*`?|"(?:\\.|[^"])*"|'(?:\\.|[^'])*')|\b(export|const|await|return|async|for|of|if|let|break|true|false)\b|\b(agent|sh|js|py|run|ask|breakpoint|workflow|parallel|pipeline|gate|choose|log)(?=\()/g;
+  let out = "", last = 0, m;
+  while ((m = re.exec(line))) {
+    out += esc(line.slice(last, m.index));
+    const cls = m[1] ? "syn-com" : m[2] ? "syn-str" : m[3] ? "syn-kw" : "syn-fn";
+    out += '<span class="' + cls + '">' + esc(m[0]) + "</span>";
+    last = m.index + m[0].length;
+    if (m[0].length === 0) re.lastIndex++;
+  }
+  return out + esc(line.slice(last));
+}
+function codeBlock(text, path, plain) {
+  const lines = text.replace(/\n$/, "").split("\n");
+  return '<div class="codeblock mono">' + (path ? '<div class="path"><span>' + esc(path) + "</span><span>" + lines.length + " lines</span></div>" : "") + '<div class="inner">' +
+    lines.map((l, i) => '<div class="ln"><span class="no">' + (i + 1) + '</span><span class="tx">' + (plain ? esc(l) : highlight(l)) + "</span></div>").join("") + "</div></div>";
+}
+function diffOps(a, b) {
+  const A = a.replace(/\n$/, "").split("\n"), B = b.replace(/\n$/, "").split("\n");
+  const n = A.length, m = B.length;
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const ops = []; let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { ops.push([" ", A[i], j + 1]); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push(["-", A[i], null]); i++; }
+    else { ops.push(["+", B[j], j + 1]); j++; }
+  }
+  while (i < n) ops.push(["-", A[i++], null]);
+  while (j < m) { ops.push(["+", B[j], j + 1]); j++; }
+  return ops;
+}
+function diffCount(w) { return diffOps(w.approvedText, w.text).filter((o) => o[0] !== " ").length; }
+function diffBlock(a, b, path) {
+  const ops = diffOps(a, b);
+  const keep = ops.map(() => false);
+  ops.forEach((o, i) => { if (o[0] !== " ") for (let k = Math.max(0, i - 3); k <= Math.min(ops.length - 1, i + 3); k++) keep[k] = true; });
+  let out = "", skipped = 0;
+  const adds = ops.filter((o) => o[0] === "+").length, dels = ops.filter((o) => o[0] === "-").length;
+  ops.forEach((o, i) => {
+    if (!keep[i]) { skipped++; return; }
+    if (skipped) { out += '<div class="ln gap"><span class="no"></span><span class="tx">' + skipped + " matching lines</span></div>"; skipped = 0; }
+    const cls = o[0] === "+" ? " add" : o[0] === "-" ? " del" : "";
+    out += '<div class="ln' + cls + '"><span class="no">' + (o[2] || "") + '</span><span class="tx">' + esc(o[0]) + " " + highlight(o[1]) + "</span></div>";
+  });
+  if (skipped) out += '<div class="ln gap"><span class="no"></span><span class="tx">' + skipped + " matching lines</span></div>";
+  return '<div class="codeblock mono"><div class="path"><span>' + esc(path) + '</span><span><span style="color:var(--done)">+' + adds + '</span>  <span style="color:var(--fail)">-' + dels + "</span></span></div><div class=\"inner\">" + out + "</div></div>";
+}
+function md(text) {
+  const lines = text.split("\n");
+  let out = "", inList = false;
+  const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`(.+?)`/g, "<code>$1</code>");
+  lines.forEach((l) => {
+    if (/^\s*[-*] /.test(l) || /^\d+\. /.test(l)) { if (!inList) { out += "<ul>"; inList = true; } out += "<li>" + inline(l.replace(/^\s*([-*]|\d+\.) /, "")) + "</li>"; return; }
+    if (inList) { out += "</ul>"; inList = false; }
+    if (/^#{1,3} /.test(l)) out += "<h2>" + inline(l.replace(/^#+ /, "")) + "</h2>";
+    else if (l.trim()) out += "<p>" + inline(l) + "</p>";
+  });
+  if (inList) out += "</ul>";
+  return out;
+}
+
+/* agent page */
+function agentFileText(name, def, harnessFile) {
+  if (harnessFile === "codex") {
+    const b = def.codexcli || {};
+    return 'name = "' + name + '"\ndescription = "' + def.description + '"\nmodel = "' + b.model + '"\nmodel_reasoning_effort = "' + b.effort + '"\n' + (b.sandbox ? 'sandbox_mode = "' + b.sandbox + '"\n' : "") + 'developer_instructions = """\n' + def.body + '\n"""';
+  }
+  if (def.claudeOnly) {
+    const b = def.claudecode;
+    return "---\nname: " + name + "\ndescription: " + def.description + "\nmodel: " + b.model + (b.effort ? "\neffort: " + b.effort : "") + (b.tools ? "\ntools: " + b.tools.join(", ") : "") + (b.skills ? "\nskills: [" + b.skills.join(", ") + "]" : "") + (b.mcpServers ? "\nmcpServers: [" + b.mcpServers.join(", ") + "]" : "") + "\n---\n" + def.body;
+  }
+  const y = (o, ind) => Object.entries(o).filter(([k, v]) => v != null).map(([k, v]) => ind + (k === "effort" && ind && o === def.codexcli ? "model_reasoning_effort" : k) + ": " + (Array.isArray(v) ? "[" + v.join(", ") + "]" : v)).join("\n");
+  let t = "---\nname: " + name + "\ndescription: " + def.description + '\ntargets: ["*"]\n';
+  if (def.top) t += y(def.top, "") + "\n";
+  t += "claudecode:\n" + y(def.claudecode, "  ") + "\ncodexcli:\n" + y(def.codexcli, "  ") + "\nsous:\n  harness: " + def.harness + "\n---\n" + def.body;
+  return t;
+}
+function renderAgent(name) {
+  const res = resolveAgent(name, state.scope);
+  const def = res.def;
+  let html = '<div class="crumbs"><a href="#agents">Agents</a><span>/</span><span>seen from ' + esc(state.scope) + "</span></div>";
+  html += '<div class="head"><div class="grow"><h1>' + esc(name) + '</h1><p class="desc">' + esc(def.description) + "</p></div></div>";
+  const w = res.winner;
+  const runsOn = def.claudeOnly ? "Claude Code only" : def.codexOnly ? "Codex only" : "both, Claude Code by default" + (def.harness === "codex" ? "" : "");
+  html += '<div class="facts">' + fact("File sous uses", '<span class="mono">' + esc(agentPath(w.folder, name, state.scope)) + "</span>") + fact("From", esc(w.folder.label)) +
+    fact("Runs on", def.claudeOnly || def.codexOnly ? runsOn : "both, " + (def.harness === "codex" ? "Codex" : "Claude Code") + " by default") + "</div>";
+
+  html += '<h3>Where sous looks<span class="r">in this order, first one wins</span></h3><div class="card order">';
+  FOLDERS.forEach((f) => {
+    const p = res.present.find((x) => x.folder === f);
+    const isHit = p.copy && p === w, isHidden = p.copy && p !== w;
+    const status = isHit ? '<span class="badge run">used</span>' : isHidden ? '<span class="badge quiet">hidden</span>' : '<span class="faint" style="font-size:12px">none</span>';
+    const path = f.project ? PROJECT_PATH[state.scope] + "/" + f.dir : f.dir;
+    html += '<div class="row ' + (isHit ? "hit" : isHidden ? "hidden" : "miss") + '"><span class="i">' + f.tier + '</span><span class="w">' + f.label + '</span><span class="p mono">' + esc(p.copy ? agentPath(f, name, state.scope) : path) + "</span><span>" + status + "</span>";
+    if (isHidden) {
+      const key = name + ":" + f.id;
+      html += "</div>";
+      const altDef = Object.assign({}, def, { body: p.copy.alt.body, claudeOnly: f.harness === "Claude Code", claudecode: Object.assign({}, def.claudecode, { model: p.copy.alt.model, tools: (def.top || {}).tools }), codexcli: Object.assign({}, def.codexcli, { model: p.copy.alt.model }) });
+      html += '<div class="row hidden" style="padding-top:0"><span></span><span></span><span class="faint" style="font-size:12px">' + esc((f.harness || "") + " copy with model " + p.copy.alt.model + ". sous does not use it from " + state.scope + ".") + ' <a href="#" data-peek="' + key + '" style="color:var(--accent)">' + (state.peek[key] ? "Hide the file" : "Show the file") + "</a></span><span></span></div>";
+      if (state.peek[key]) html += '<div style="padding:0 14px 12px">' + codeBlock(agentFileText(name, altDef, f.harness === "Codex" ? "codex" : null), agentPath(f, name, state.scope), true) + "</div>";
+      return;
+    }
+    html += "</div>";
+  });
+  html += "</div>";
+  if (res.hidden.length && w.folder.tier === 1) html += '<p class="faint mt8">From another project, without this project\'s .rulesync copy, the home Claude Code copy wins. Change "Seen from" to see it.</p>';
+  if (!res.hidden.length && name === "reviewer") html += '<p class="faint mt8">This project has no .rulesync copy, so the home folders decide. In one tier, the default harness wins: the Claude Code copy.</p>';
+
+  html += '<h3>Per harness<span class="r">sous reads the block of the harness the step runs on</span></h3><div class="grid2">';
+  html += harnessCard(def, "claude") + harnessCard(def, "codex") + "</div>";
+
+  html += '<h3>Prompt</h3><div class="card"><div class="prose">' + esc(def.body) + "</div></div>";
+
+  const users = agentUsers(name);
+  html += '<h3>Used by<span class="n">' + users.length + "</span></h3>";
+  if (!users.length) html += '<p class="faint">No workflow step names this agent.</p>';
+  else html += '<div class="card"><table class="tbl"><tr><th>Workflow</th><th>Step</th></tr>' + users.map((u) => '<tr class="link" data-href="#workflows/' + u.wf + '"><td><a href="#workflows/' + u.wf + '">' + esc(u.wf) + '</a></td><td class="muted">' + esc(u.label) + "</td></tr>").join("") + "</table></div>";
+
+  html += '<h3>File</h3>' + codeBlock(agentFileText(name, def, def.codexOnly ? "codex" : null), agentPath(w.folder, name, state.scope), true);
+  return html;
+}
+function harnessCard(def, h) {
+  const title = h === "claude" ? "Claude Code" : "Codex";
+  const blockName = h === "claude" ? "claudecode" : "codexcli";
+  const isDefault = (h === "claude" && (def.claudeOnly || (!def.codexOnly && def.harness !== "codex"))) || (h === "codex" && (def.codexOnly || def.harness === "codex"));
+  let c = '<div class="card"><div class="harness-h">' + title + (isDefault ? ' <span class="chip">default</span>' : "") + '<span class="r mono">' + (def.claudeOnly || def.codexOnly ? "" : blockName) + "</span></div>";
+  if ((h === "codex" && def.claudeOnly) || (h === "claude" && def.codexOnly)) {
+    return c + '<div class="empty-h">This agent lives in ' + (def.claudeOnly ? "Claude Code's" : "Codex's") + " own folder, so it runs only on " + (def.claudeOnly ? "Claude Code" : "Codex") + ". A step that sends it to " + title + " makes the workflow invalid. Move it to <code>.rulesync/subagents</code> to run it on both.</div></div>";
+  }
+  const row = (k, field, fmt) => {
+    const f = agentField(def, h, field);
+    let v = f ? fmt(f.v) : '<span class="faint">' + (field === "model" ? "the run's model" : "none") + "</span>";
+    if (h === "codex" && field === "tools") v = f ? fmt(f.v) + (f.from === "top" ? '<span class="from">from the top</span>' : "") + '<div class="faint" style="font-size:11.5px">Codex has no allow list. sous declines the approvals the list doesn\'t cover.</div>' : '<span class="faint">every tool</span>';
+    if (h === "codex" && field === "skills") v = '<span class="faint">Codex has no skills list. It sees every skill in its folders.</span>';
+    if (h === "claude" && field === "tools" && !f) v = '<span class="faint">every tool</span>';
+    return '<div class="k">' + k + '</div><div class="v">' + v + (f && f.from === "top" && !(h === "codex" && (field === "skills" || field === "tools")) ? '<span class="from">from the top</span>' : "") + "</div>";
+  };
+  const list = (arr) => arr.join(", ");
+  const links = (kind) => (arr) => arr.map((x) => (kind === "skills" ? (SKILLS[x] ? '<a href="#skills/' + x + '">' + x + "</a>" : x) : MCPS[x] ? '<a href="#mcp/' + x + '">' + x + "</a>" : '<span style="color:var(--fail)" title="No MCP server with this name">' + x + " (missing)</span>")).join(", ");
+  c += '<div class="kv">' + row("Model", "model", (v) => '<span class="mono">' + esc(v) + "</span>") + row("Effort", "effort", esc) + row("Tools", "tools", list) + row("Skills", "skills", links("skills")) + row("MCP servers", "mcpServers", links("mcp")) + "</div></div>";
+  return c;
+}
+
+/* skill page */
+function renderSkill(name) {
+  const s = SKILLS[name];
+  let html = '<div class="crumbs"><a href="#skills">Skills</a><span>/</span><span>seen from ' + esc(state.scope) + "</span></div>";
+  html += '<div class="head"><div class="grow"><h1>' + esc(name) + '</h1><p class="desc">' + esc(s.description) + "</p></div></div>";
+  html += '<h3>Where it lives</h3><div class="card order">';
+  Object.entries(SKILL_FOLDERS).forEach(([id, f], i) => {
+    const has = s.where.includes(id);
+    html += '<div class="row ' + (has ? "hit" : "miss") + '"><span class="i">' + (i + 1) + '</span><span class="w">' + f.label + '</span><span class="p mono">' + esc(f.dir + (has ? name + "/SKILL.md" : "")) + "</span><span>" + (has ? '<span class="badge run">here</span>' : '<span class="faint" style="font-size:12px">none</span>') + "</span></div>";
+  });
+  html += "</div>";
+  if (!s.where.includes("h-codex")) html += '<div class="note warn mt12">' + I.warn + "<div>Not in Codex's folders. A step on Codex that asks for it runs without it, and <code>sous log</code> shows a note.</div></div>";
+  if (!s.where.includes("g-rulesync")) html += '<div class="note mt8">' + I.info + "<div>Not in rulesync, so <code>rulesync generate</code> won't copy it to the other harness.</div></div>";
+  const users = Object.keys(AGENT_DEFS).filter((a) => (agentField(AGENT_DEFS[a], "claude", "skills") || { v: [] }).v.includes(name));
+  html += '<h3>Agents that list it<span class="n">' + users.length + '</span><span class="r">on Claude Code, an agent sees only the skills it lists</span></h3>';
+  html += users.length ? '<div class="links">' + users.map((u) => '<a class="pillink" href="#agents/' + u + '">' + I.agents.replace("<svg", '<svg width="13" height="13"') + u + "</a>").join("") + "</div>" : '<p class="faint">No agent lists it.</p>';
+  html += "<h3>SKILL.md</h3>" + codeBlock(s.text, (s.where.includes("g-rulesync") ? SKILL_FOLDERS["g-rulesync"].dir : SKILL_FOLDERS[s.where[0]].dir) + name + "/SKILL.md", true);
+  return html;
+}
+
+/* mcp page */
+function renderMcp(name) {
+  const m = MCPS[name];
+  let html = '<div class="crumbs"><a href="#mcp">MCP servers</a><span>/</span><span>seen from ' + esc(state.scope) + "</span></div>";
+  html += '<div class="head"><div class="grow"><h1>' + esc(name) + '</h1><p class="desc">' + (m.type === "http" ? "A remote server over HTTP." : "A local server sous starts for each step that names it.") + "</p></div></div>";
+  html += '<div class="facts">' + fact("Type", m.type) + fact(m.type === "http" ? "URL" : "Command", '<span class="mono">' + esc(m.type === "http" ? m.url : m.command + " " + m.args.join(" ")) + "</span>") + fact("Defined in", '<span class="mono">' + esc(m.from) + "</span>") + "</div>";
+  const vars = m.type === "http" ? m.headers : m.env;
+  html += "<h3>" + (m.type === "http" ? "Headers" : "Environment") + '<span class="r">values hidden</span></h3>';
+  if (!vars.length) html += '<p class="faint">None.</p>';
+  else html += '<div class="card"><table class="tbl"><tr><th>Name</th><th>Value</th><th>Comes from</th></tr>' + vars.map(([k, v]) => {
+    const ref = (v.match(/\$\{(\w+)\}/) || [])[1];
+    return '<tr><td class="mono">' + esc(k) + '</td><td class="mono faint">' + (ref ? (v.startsWith("Bearer") ? "Bearer " : "") + "••••••••" : "••••") + '</td><td class="muted">' + (ref ? '<span class="mono">' + ref + "</span> in ~/.sous/secrets.env" : "written in the file") + "</td></tr>";
+  }).join("") + "</table></div>";
+  if (m.also) html += '<div class="note mt12">' + I.info + "<div>" + esc(m.also) + "</div></div>";
+  const agents = Object.keys(AGENT_DEFS).filter((a) => ["claude", "codex"].some((h) => (agentField(AGENT_DEFS[a], h, "mcpServers") || { v: [] }).v.includes(name)));
+  const steps = []; WORKFLOWS.forEach((w) => walkOutline(w.outline, (s) => { if (s.x && s.x.includes("mcp") && s.x.includes(name)) steps.push({ wf: w.name, label: s.label }); }));
+  html += '<h3>Agents that use it<span class="n">' + agents.length + "</span></h3>";
+  html += agents.length ? '<div class="links">' + agents.map((u) => '<a class="pillink" href="#agents/' + u + '">' + I.agents.replace("<svg", '<svg width="13" height="13"') + u + "</a>").join("") + "</div>" : '<p class="faint">No agent lists it.</p>';
+  if (steps.length) html += '<h3>Steps that name it<span class="n">' + steps.length + '</span></h3><div class="links">' + steps.map((s) => '<a class="pillink" href="#workflows/' + s.wf + '">' + esc(s.wf) + " / " + esc(s.label) + "</a>").join("") + "</div>";
+  const cfg = m.type === "http" ? '"' + name + '": { "type": "http", "url": "' + m.url + '"' + (m.headers.length ? ', "headers": { ' + m.headers.map(([k]) => '"' + k + '": "••••"').join(", ") + " }" : "") + " }"
+    : '"' + name + '": {\n  "command": "' + m.command + '",\n  "args": [' + m.args.map((a) => '"' + a + '"').join(", ") + "],\n  \"env\": { " + m.env.map(([k]) => '"' + k + '": "••••"').join(", ") + " }\n}";
+  html += "<h3>Entry</h3>" + codeBlock(cfg, m.from, true);
+  return html;
+}
+
+/* ------------------------------------------------------------------ render all */
+function render() {
+  renderRail(); renderCol(); renderMain();
+  if (state.feature === "runs" && state.sel.runs === "new") updateStart();
+  const on = $(".col .item.on"); if (on) on.scrollIntoView({ block: "nearest" });
+  labelFields();
+}
+function labelFields() {
+  document.querySelectorAll("input, select, textarea").forEach((el, i) => {
+    if (!el.name) el.name = el.id || "field-" + i;
+    if (el.labels && el.labels.length) return;
+    if (!el.getAttribute("aria-label")) el.setAttribute("aria-label", el.placeholder || el.closest("[data-label]")?.dataset.label || (el.previousElementSibling ? el.previousElementSibling.textContent.trim() : "") || el.name);
+  });
+}
+
+/* ------------------------------------------------------------------ actions */
+let toastTimer;
+function toast(msg, cmd) {
+  const t = $("#toast");
+  t.innerHTML = "<span>" + esc(msg) + "</span>" + (cmd ? '<span class="mono">' + esc(cmd) + "</span>" : "");
+  t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 4200);
+}
+function currentRun() { return state.feature === "runs" ? runById(state.sel.runs) : null; }
+function startNext(r) {
+  const next = r.steps.find((s) => s.status === "pending");
+  if (!next) { r.state = "done"; r.endedAt = Date.now(); r.result = r.result || "Every step finished."; return; }
+  if (next.kind === "ask") {
+    next.status = "waiting"; next.acts.push(act("asks", "Go on with the next step?", { at: Date.now() }));
+    r.state = "question"; r.waiting = { kind: "question", id: "q-" + Math.random().toString(16).slice(2, 6), step: next.label, at: Date.now(), input: "select", text: "Go on with the next step?", choices: ["Yes", "No"] };
+    return;
+  }
+  next.status = "running"; next.startedAt = Date.now(); next.dur = 0; next.tokens = next.kind === "agent" ? 0 : null;
+  next.ticksLeft = next.kind === "agent" ? 8 : 2; next.live = next.live || "generic"; next.poolI = 0;
+  next.acts = [next.kind === "agent" ? act("prompt", "Prompt for " + next.label + ".", { at: Date.now() }) : act("command", next.cmd || next.label, { at: Date.now() })];
+  delete state.stepSel[r.id];
+}
+function finishStep(r, s) {
+  s.status = "done"; s.dur = Date.now() - s.startedAt;
+  if (s.kind !== "agent") s.acts.push(act("output", "exit 0", { at: Date.now() }));
+  else s.acts.push(act("text", "Done.", { at: Date.now() }));
+  if (s.bp) {
+    s.status = "waiting";
+    r.state = "breakpoint";
+    r.waiting = { kind: "breakpoint", id: "q-" + Math.random().toString(16).slice(2, 6), step: s.label, at: Date.now(), title: s.bp, tries: 1, max: 5, show: "The step finished. Its result:\n\n- " + s.label + " is done.\n- Nothing failed." };
+    return;
+  }
+  if (!r.steps.some((x) => x.status === "running")) startNext(r);
+}
+function doAction(a, el) {
+  const r = currentRun();
+  switch (a) {
+    case "answer": case "answer-text": {
+      const val = a === "answer" ? el.dataset.val : ($("#answer-text").value || "").trim();
+      if (!val) { $("#answer-text").focus(); return; }
+      const w = r.waiting, s = r.steps.find((x) => x.label === w.step && x.status === "waiting");
+      s.acts.push(act("answer", val, { at: Date.now() }));
+      if (s.kind === "ask") { s.status = "done"; r.state = "running"; r.waiting = null; startNext(r); }
+      else { s.status = "running"; s.startedAt = Date.now() - (s.dur || 0); s.ticksLeft = 10; s.live = "generic"; s.poolI = 0; r.state = "running"; r.waiting = null; }
+      toast("Answered.", "sous answer " + w.id + ' "' + val + '"');
+      break;
+    }
+    case "approve": {
+      const w = r.waiting, s = r.steps.find((x) => x.label === w.step);
+      s.status = "done"; s.acts.push(act("answer", "Approved", { at: Date.now() }));
+      r.state = "running"; r.waiting = null; startNext(r);
+      toast("Approved.", "sous approve " + w.id);
+      break;
+    }
+    case "sendback": state.sendBack = true; renderMain(); setTimeout(() => $("#sendback-note") && $("#sendback-note").focus()); return;
+    case "sendback-cancel": state.sendBack = false; renderMain(); return;
+    case "sendback-go": {
+      const note = ($("#sendback-note").value || "").trim();
+      if (!note) { $("#sendback-note").focus(); return; }
+      const w = r.waiting, s = r.steps.find((x) => x.label === w.step);
+      s.acts.push(act("answer", "Sent back: " + note, { at: Date.now() }));
+      s.status = "running"; s.startedAt = Date.now(); s.ticksLeft = 8; s.live = "generic"; s.poolI = 0; s.call = (s.call || 1) + 1;
+      s.acts.push(act("note", "The step runs again with your note. Try 2 of 5.", { at: Date.now() }));
+      r.state = "running"; r.waiting = null; state.sendBack = false;
+      toast("Sent back with your note.", "sous send-back " + w.id + ' "' + note + '"');
+      break;
+    }
+    case "stop": {
+      if (!el.classList.contains("arm")) { el.classList.add("arm"); el.lastChild.textContent = "Click again to stop"; setTimeout(() => { if (el.isConnected) { el.classList.remove("arm"); el.lastChild.textContent = el.closest(".ask") ? "Stop the run" : "Stop"; } }, 3000); return; }
+      r.steps.forEach((s) => { if (s.status === "running" || s.status === "waiting" || s.status === "paused") s.status = "stopped"; if (s.status === "pending") s.status = "skipped"; });
+      r.state = "stopped"; r.endedAt = Date.now(); r.waiting = null; r.result = "You stopped it from the view." + (WF[r.wf].place === "worktree" ? " Its worktree stays for review." : "");
+      toast("Stopped.", "sous stop " + r.id);
+      break;
+    }
+    case "pause": {
+      r.steps.forEach((s) => { if (s.status === "running") { s.status = "done"; s.dur = Date.now() - s.startedAt; } });
+      r.state = "paused"; r.pause = "requested"; r.lastAt = Date.now();
+      toast("Paused. The running steps finish first.", "sous pause " + r.id);
+      break;
+    }
+    case "resume": case "resumenote-go": {
+      let note = "", stepName = "";
+      if (a === "resumenote-go") { note = ($("#resume-note").value || "").trim(); stepName = $("#resume-step").value; if (!note) { $("#resume-note").focus(); return; } }
+      const s = r.steps.find((x) => x.status === "failed" || x.status === "paused");
+      if (s) { s.status = "running"; s.startedAt = Date.now(); s.ticksLeft = s.kind === "agent" ? 8 : 3; s.live = s.live || "generic"; s.poolI = 0; s.acts.push(act("note", note ? "Resumed with your note: " + note : "Resumed.", { at: Date.now() })); }
+      else startNext(r);
+      if (note && stepName) { const t = r.steps.find((x) => x.label === stepName); if (t && t !== s) t.acts.push(act("note", "Your note waits for this step: " + note, { at: Date.now() })); }
+      r.state = "running"; r.failure = null; r.endedAt = null; r.pause = null; state.resumeNote = false;
+      toast("Resumed.", "sous resume " + r.id + (note ? ' --note "' + note + '"' + (stepName ? ' --step "' + stepName + '"' : "") : ""));
+      break;
+    }
+    case "resumenote": state.resumeNote = true; renderMain(); setTimeout(() => $("#resume-note") && $("#resume-note").focus()); return;
+    case "resumenote-cancel": state.resumeNote = false; renderMain(); return;
+    case "tell-focus": { const i = $("#tell-input"); if (i) { i.scrollIntoView({ block: "center", behavior: "smooth" }); i.focus(); } else toast("Pick a running agent step to tell it something."); return; }
+    case "tell": {
+      const i = $("#tell-input"), msg = (i.value || "").trim();
+      if (!msg) { i.focus(); return; }
+      const s = defaultStep(r);
+      const e = act("tell", msg, { at: Date.now(), delivery: "pending" });
+      s.acts.push(e);
+      i.value = "";
+      appendEntries(r, s);
+      setTimeout(() => { e.delivery = "delivered"; const last = $$('.entries[data-feed="' + r.id + ":" + s.i + '"] .entry.tell [data-delivery]').pop(); if (last) last.textContent = "delivered"; }, 1300);
+      setTimeout(() => { if (s.status === "running") { s.acts.push(act("text", "Noted. I'll do that next.", { at: Date.now() })); appendEntries(r, s); } }, 3200);
+      toast("Told " + s.label + ".", "sous tell " + r.id + ' --step "' + s.label + '" "' + msg + '"');
+      return;
+    }
+    case "rerun": {
+      const w = WF[r.wf];
+      state.startWf = w.name; state.startProject = r.project;
+      go("runs/new?wf=" + w.name);
+      setTimeout(() => { Object.entries(r.inputs || {}).forEach(([k, v]) => { const f = $('[data-input="' + k + '"]'); if (f) f.value = v; }); updateStart(); });
+      return;
+    }
+    case "wf-file": state.wfTab[state.sel.workflows] = "file"; renderMain(); return;
+    case "wf-start": state.startWf = state.sel.workflows; const ww = WF[state.startWf]; state.startProject = ww.where === "home" ? null : ww.where; go("runs/new?wf=" + state.startWf); return;
+    case "start": {
+      const w = WF[state.startWf];
+      const inputs = {};
+      $$("[data-input]").forEach((f) => { inputs[f.dataset.input] = f.value.trim(); });
+      const label = String(inputs[w.inputs[0].name] || w.inputs[0].def || w.name);
+      const t = Date.now();
+      const steps = [];
+      const flat = (nodes, bp) => nodes.forEach((n) => {
+        if (n.kind === "breakpoint") return flat(n.children, n.label);
+        if (n.children) return flat(n.children);
+        steps.push(step(n.label.replace("<name>", "react"), n.kind === "loop" ? "agent" : n.kind, { agent: n.agent, wf: n.wf, cmd: n.cmd, status: "pending", dur: null, tokens: null, bp }));
+      });
+      flat(w.outline);
+      const wasChanged = !!w.approved.changedSince;
+      const r2 = addRun({ id: runId(t), wf: w.name, project: state.startProject, label: label.length > 48 ? label.slice(0, 46) + "..." : label, inputs, state: "running", startedBy: "you, from the view", startedAt: t, tokens: 0, model: "claude/opus", steps });
+      startNext(r2);
+      if (w.approved.changedSince) { w.approved = { at: t, by: "you" }; w.approvedText = w.text; }
+      toast(wasChanged ? "Approved and started." : "Started.", startCmd().replace(/<\/?b>/g, ""));
+      go("runs/" + r2.id);
+      return;
+    }
+  }
+  render();
+}
+
+function appendEntries(r, s) {
+  const box = $('.entries[data-feed="' + r.id + ":" + s.i + '"]');
+  if (!box) return;
+  const have = box.querySelectorAll(".entry").length;
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  if (have === 0) box.innerHTML = "";
+  s.acts.slice(have).forEach((e) => box.insertAdjacentHTML("beforeend", renderEntry(e, true)));
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+/* ------------------------------------------------------------------ live tick */
+let tickN = 0;
+function tick() {
+  tickN++;
+  let changed = false;
+  RUNS.forEach((r) => {
+    if (r.state !== "running") return;
+    r.steps.forEach((s) => {
+      if (s.status !== "running") return;
+      if (s.kind === "agent") {
+        s.tokens = (s.tokens || 0) + 180 + Math.floor(Math.random() * 900);
+        if (Math.random() < 0.55) {
+          const pool = POOLS[s.live] || POOLS.generic;
+          s.poolI = s.poolI || 0;
+          const p = pool[s.poolI % pool.length]; s.poolI++;
+          s.acts.push(p[0] === "tool" ? act("tool", p[1], { arg: p[2], res: p[3], at: Date.now() }) : act("text", p[1], { at: Date.now() }));
+          appendEntries(r, s);
+        }
+      }
+      s.ticksLeft--;
+      if (s.ticksLeft <= 0) { finishStep(r, s); changed = true; }
+    });
+  });
+  if (changed) {
+    renderCol(); renderRail();
+    const r = currentRun();
+    if (r && !document.activeElement.matches("input, textarea")) renderMain();
+  }
+  updateLive();
+}
+function updateLive() {
+  $$("[data-live]").forEach((el) => {
+    const r = runById(el.dataset.run); if (!r) return;
+    const k = el.dataset.live;
+    if (k === "elapsed") el.textContent = fmtDur(runElapsed(r));
+    else if (k === "tokens") el.textContent = fmtTok(runTokens(r));
+    else if (k === "stepdur") el.textContent = fmtDur(stepDur(r.steps[+el.dataset.step]));
+    else if (k === "steptok") el.textContent = fmtTok(r.steps[+el.dataset.step].tokens);
+  });
+}
+
+/* ------------------------------------------------------------------ events */
+function applyTheme() {
+  if (state.theme === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", state.theme);
+}
+document.addEventListener("click", (ev) => {
+  const t = ev.target;
+  const goEl = t.closest("[data-go]");
+  if (goEl) { const f = goEl.dataset.go; if (f.includes("/")) go(f); else { const s = state.sel[f]; go(f + (s ? "/" + s : "")); } return; }
+  if (t.closest("#theme")) { state.theme = { auto: "light", light: "dark", dark: "auto" }[state.theme]; store.set("theme", state.theme); applyTheme(); renderRail(); return; }
+  const grp = t.closest("[data-group]");
+  if (grp) { state.groupBy = grp.dataset.group; store.set("groupBy", state.groupBy); renderCol(); return; }
+  const actEl = t.closest("[data-act]");
+  if (actEl) { ev.preventDefault(); doAction(actEl.dataset.act, actEl); return; }
+  const stepEl = t.closest(".step[data-step]");
+  if (stepEl && !t.closest("a")) { state.stepSel[state.sel.runs] = +stepEl.dataset.step; renderMain(); return; }
+  const tool = t.closest(".entry[data-toggle]");
+  if (tool) { tool.classList.toggle("open"); return; }
+  const tab = t.closest("[data-wftab]");
+  if (tab) { state.wfTab[state.sel.workflows] = tab.dataset.wftab; renderMain(); return; }
+  const sw = t.closest("[data-startwf]");
+  if (sw) { state.startWf = sw.dataset.startwf; history.replaceState(null, "", "#runs/new?wf=" + state.startWf); renderMain(); updateStart(); return; }
+  const pk = t.closest("[data-peek]");
+  if (pk) { ev.preventDefault(); state.peek[pk.dataset.peek] = !state.peek[pk.dataset.peek]; renderMain(); return; }
+  const row = t.closest("tr[data-href]");
+  if (row && !t.closest("a")) { location.hash = row.dataset.href.slice(1); return; }
+});
+document.addEventListener("input", (ev) => {
+  if (ev.target.closest("#startform") || ev.target.id === "start-confirm") updateStart();
+});
+document.addEventListener("change", (ev) => {
+  if (ev.target.id === "scope") { state.scope = ev.target.value; store.set("scope", state.scope); render(); }
+  if (ev.target.id === "start-project") { state.startProject = ev.target.value; updateStart(); }
+  if (ev.target.id === "start-confirm") updateStart();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter" || ev.shiftKey) return;
+  if (ev.target.id === "tell-input") { ev.preventDefault(); doAction("tell"); }
+  if (ev.target.id === "answer-text") { ev.preventDefault(); doAction("answer-text"); }
+});
+// rail tooltips
+document.addEventListener("mouseover", (ev) => {
+  const el = ev.target.closest("[data-tip]"), tip = $("#tip");
+  if (!el) { tip.style.opacity = 0; return; }
+  const b = el.getBoundingClientRect();
+  tip.textContent = el.dataset.tip;
+  tip.style.left = b.right + 10 + "px"; tip.style.top = b.top + b.height / 2 - 11 + "px"; tip.style.opacity = 1;
+});
+window.addEventListener("hashchange", route);
+
+applyTheme();
+route();
+setInterval(tick, 2200);
+setInterval(() => { if (state.feature === "runs") $$(".col .side").forEach(() => {}); }, 60000);
+</script>
+</body>
+</html>

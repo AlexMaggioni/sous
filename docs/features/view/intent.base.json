@@ -1,0 +1,196 @@
+{
+  "feature": "View",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "title": "A live view of sous runs",
+      "origin": "user",
+      "status": "agreed",
+      "what": [
+        {
+          "id": "W1",
+          "text": "Given: the person opens the view on demand with a command such as `sous serve`, which opens a page in their browser."
+        },
+        {
+          "id": "W2",
+          "text": "From the view the person can answer questions, approve or send back breakpoints, stop and resume runs, and start workflows."
+        },
+        {
+          "id": "W3",
+          "text": "Later: other forms than a browser page, such as a native app, once the view is mature."
+        },
+        {
+          "id": "W4",
+          "text": "Given: a mock of the page aligns the experience before the design starts."
+        },
+        {
+          "id": "W5",
+          "text": "The page has a two-tier sidebar, like Paradev. The leftmost rail picks the feature, such as runs, workflows or agents. The second column lists that feature's items, and the central area shows the one picked."
+        },
+        {
+          "id": "W6",
+          "text": "The person can see the saved workflows and inspect one in detail."
+        },
+        {
+          "id": "W7",
+          "text": "The person can see the agents, loaded from rulesync or directly from the Claude Code and Codex folders, with their building blocks: prompt, skills and MCP servers."
+        },
+        {
+          "id": "W8",
+          "text": "The second column lists the runs one line each, grouped by project or by status, as the person chooses."
+        },
+        {
+          "id": "W9",
+          "text": "Given: the page follows the minimalist-ui guidelines and takes inspiration from the Paradev design."
+        },
+        {
+          "id": "W10",
+          "text": "Wherever a workflow shows, it shows as a graph of its steps, with where the run is at."
+        },
+        {
+          "id": "W11",
+          "text": "Each page is decluttered and visually pleasing, and still gives all the information."
+        },
+        {
+          "id": "W12",
+          "text": "An agent shows as its building blocks: its prompt, its skills, its MCP servers and its settings, such as model and effort."
+        },
+        {
+          "id": "W13",
+          "text": "Every .md file can be read rendered or raw."
+        },
+        {
+          "id": "W14",
+          "text": "The person can search agents, skills and MCP servers."
+        },
+        {
+          "id": "W15",
+          "text": "The person can delete old workflows with an x button or similar."
+        },
+        {
+          "id": "W16",
+          "text": "The view follows the system theme, light or dark, and both themes get the same care."
+        },
+        {
+          "id": "W17",
+          "text": "Page titles are serif; everything else is sans, with mono for code and ids."
+        },
+        {
+          "id": "W18",
+          "text": "The references that set the bar: Paradev, Vercel Workflows, Linear and GitHub Actions (docs/features/view/references/)."
+        },
+        {
+          "id": "W19",
+          "text": "A workflow or run has a detailed view in the style of Vercel Workflows (step rows with durations and time bars) and a graph view for the overview, like GitHub Actions. Details in the style of Inngest and Trigger.dev, such as attempts, tokens and errors, open as dropdowns on the steps of the detailed view."
+        }
+      ],
+      "gates": [],
+      "open": [
+        {
+          "id": "Q1",
+          "text": "What moment makes the person open the view, and what do they want to know or do then?",
+          "asked": true
+        },
+        {
+          "id": "Q5",
+          "text": "Which moments the first version serves: coming back after time away, watching a run live, a run that waits on the person, a failed run, what runs cost.",
+          "asked": true
+        },
+        {
+          "id": "Q6",
+          "text": "How fresh the page is: live within seconds, or on refresh.",
+          "asked": true
+        },
+        {
+          "id": "Q7",
+          "text": "Which runs it shows: every run in the sous home across projects, or only the project where sous serve started.",
+          "asked": true
+        },
+        {
+          "id": "Q8",
+          "text": "Who must not reach it: other processes on this Mac, such as agents, could call the page to answer as the person. Does only the person's browser get in?",
+          "asked": true
+        },
+        {
+          "id": "Q9",
+          "text": "Starting a workflow from the view: does it count as the person's own sous run, which approves the text it runs, and does the page show what changed since the last yes first?",
+          "asked": true
+        },
+        {
+          "id": "Q10",
+          "text": "What is on the page: a needs-you area with inline answers, a list of runs, a run page with its steps and the live step's activity, and a way to start a workflow. What waits."
+        },
+        {
+          "id": "Q12",
+          "text": "Workflows, agents, skills and MCP servers: read only in the first version, or editable from the page.",
+          "asked": true
+        },
+        {
+          "id": "Q13",
+          "text": "MCP server configs can hold tokens in env or headers. Does the page hide those values?",
+          "asked": true
+        },
+        {
+          "id": "Q14",
+          "text": "When the same agent name exists in several places, does the page show which one wins and which are hidden?",
+          "asked": true
+        },
+        {
+          "id": "Q15",
+          "text": "Reading to confirm: one line per run, so a workflow that ran five times has five lines, as Paradev has one line per workspace.",
+          "asked": true
+        },
+        {
+          "id": "Q16",
+          "text": "Agents depend on the project they are seen from. Which project does the agents page use by default?"
+        },
+        {
+          "id": "Q17",
+          "text": "Reading to confirm: delete removes one finished run from the list and from the sous home, not the saved workflow file. sous today only has prune --days N for all runs older than N days."
+        },
+        {
+          "id": "Q18",
+          "text": "A workflow is code, and sous today knows its steps only as a flat list in file order. The graph of a saved workflow needs the file read for parallel, pipeline, gate, retry and nested workflows; ifs and loops are only known once it runs. Is a graph of the file structure, with a run's graph built from what ran, what the person wants?"
+        },
+        {
+          "id": "Q19",
+          "text": "Deleting a saved workflow file: a move to a trash folder with undo, or a real delete."
+        }
+      ],
+      "sources": [
+        {
+          "id": "S1",
+          "text": "Clickable mock with fake data: docs/features/view/mock/index.html, with screenshots in the same folder."
+        },
+        {
+          "id": "S2",
+          "text": "Design flow for the view: docs/features/view/design-flow.md"
+        },
+        {
+          "id": "S3",
+          "text": "docs/features/view/DESIGN.md: the look, layout and review rules for the view, from the owner-picked references"
+        },
+        {
+          "id": "S4",
+          "text": "docs/features/view/mock/index.html: mock v3, after three review rounds, with every state in its States menu"
+        }
+      ],
+      "why": "Today sous is seen only through the CLI (status, show, log, step, inbox) and macOS notices. A person following several runs has no place to see them at a glance. Event-driven workflows, next on the roadmap, will add more runs nobody watches.",
+      "ids": {
+        "open": 19,
+        "what": 19,
+        "sources": 4
+      }
+    }
+  ],
+  "comments": [],
+  "dropped": [
+    {
+      "title": "Is it the same app as the monitor planned for agent-workflow, which reads the handoff events.jsonl, or a sous view only?",
+      "under": "root",
+      "kind": "open"
+    }
+  ],
+  "next": "Mock v4 has the owner first round of changes: agent page with prompt, tools and MCP on the left, Graph as the default run view, Newsreader titles. Wait for their next comments."
+}
