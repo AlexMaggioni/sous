@@ -76,6 +76,9 @@ sous runs saved workflows in the background.
                                         sous status --line; it keeps a backup of settings.json
   sous serve [--port N] [--no-open]     the page of the runs in the browser, on this machine only;
                                         prints a link with a token and serves until Ctrl-C
+  sous version                          the version of sous (also sous --version)
+  sous update [--check]                 install the latest sous with the package manager that
+                                        installed this one; --check only says whether one is out
 
 With --json, a command prints one JSON object, with its notes and the calls to make next. A
 request that changes nothing, such as pausing a paused run, exits 0 with a note.
