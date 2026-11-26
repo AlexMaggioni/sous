@@ -345,6 +345,17 @@ async function captureChecks(root, out, wanted) {
     4,
     async ([name, inputs]) => {
       const own = makeWorld(root, `check-${name}`);
+      if (name === "factory") {
+        // This golden covers failed verification with the default `npm test`. Keep the
+        // original missing-command outcome even on hosts that install npm in /usr/bin.
+        // check-ticket separately covers success with its explicit node test command.
+        const bin = join(own.fakeDir, "bin");
+        mkdirSync(bin);
+        writeFileSync(join(bin, "npm"),
+          "#!/bin/sh\nprintf '%s\\n' 'bash: line 1: npm: command not found' >&2\nexit 127\n",
+          { mode: 0o755 });
+        own.env.PATH = `${bin}:${own.env.PATH}`;
+      }
       const result = await sous(own, ["check", name, "--dry-run", ...inputs]);
       const text = sortDryRunLog(normalizer(root, [])(transcriptEntry(result)));
       writeFileSync(join(out, `check-${name}.txt`), `${text}\n`);
