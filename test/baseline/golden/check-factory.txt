@@ -5,21 +5,24 @@ ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
   (log lines sorted)
   <hh:mm:ss> completed  factory
+  <hh:mm:ss> done       TK-1: commit
   <hh:mm:ss> done       TK-1: diff 1
   <hh:mm:ss> done       TK-1: implementer, 85 tokens
   <hh:mm:ss> done       TK-1: reviewer 1, 91 tokens
   <hh:mm:ss> done       TK-1: tests
-  <hh:mm:ss> done       TK-1: verifier, 110 tokens
+  <hh:mm:ss> done       TK-1: verifier, 119 tokens
+  <hh:mm:ss> done       TK-2: commit
   <hh:mm:ss> done       TK-2: diff 1
   <hh:mm:ss> done       TK-2: implementer, 81 tokens
   <hh:mm:ss> done       TK-2: reviewer 1, 87 tokens
   <hh:mm:ss> done       TK-2: tests
-  <hh:mm:ss> done       TK-2: verifier, 107 tokens
+  <hh:mm:ss> done       TK-2: verifier, 115 tokens
+  <hh:mm:ss> done       TK-3: commit
   <hh:mm:ss> done       TK-3: diff 1
   <hh:mm:ss> done       TK-3: implementer, 41 tokens
   <hh:mm:ss> done       TK-3: reviewer 1, 47 tokens
   <hh:mm:ss> done       TK-3: tests
-  <hh:mm:ss> done       TK-3: verifier, 66 tokens
+  <hh:mm:ss> done       TK-3: verifier, 75 tokens
   <hh:mm:ss> done       fetch tickets
   <hh:mm:ss> done       triage TK-1, 129 tokens
   <hh:mm:ss> done       triage TK-2, 125 tokens
@@ -43,16 +46,19 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> removed    <tmp>/check-factory/sous-home/worktrees/<run-1>-nested2, which changed no file
   <hh:mm:ss> removed    <tmp>/check-factory/sous-home/worktrees/<run-1>-nested3, which changed no file
   <hh:mm:ss> run        factory in <tmp>/check-factory/sous-home/worktrees/<run-1>
+  <hh:mm:ss> start      TK-1: commit (exec)
   <hh:mm:ss> start      TK-1: diff 1 (exec)
   <hh:mm:ss> start      TK-1: implementer (claude/haiku)
   <hh:mm:ss> start      TK-1: reviewer 1 (claude/haiku)
   <hh:mm:ss> start      TK-1: tests (exec)
   <hh:mm:ss> start      TK-1: verifier (claude/haiku)
+  <hh:mm:ss> start      TK-2: commit (exec)
   <hh:mm:ss> start      TK-2: diff 1 (exec)
   <hh:mm:ss> start      TK-2: implementer (claude/haiku)
   <hh:mm:ss> start      TK-2: reviewer 1 (claude/haiku)
   <hh:mm:ss> start      TK-2: tests (exec)
   <hh:mm:ss> start      TK-2: verifier (claude/haiku)
+  <hh:mm:ss> start      TK-3: commit (exec)
   <hh:mm:ss> start      TK-3: diff 1 (exec)
   <hh:mm:ss> start      TK-3: implementer (claude/haiku)
   <hh:mm:ss> start      TK-3: reviewer 1 (claude/haiku)
@@ -72,7 +78,7 @@ dry run completed, with 12 agent steps answered by stand-ins
       "reason": "mock-reason",
       "result": {
         "approved": true,
-        "verified": false,
+        "verified": true,
         "rounds": 1,
         "evidence": "mock-evidence"
       }
@@ -84,7 +90,7 @@ dry run completed, with 12 agent steps answered by stand-ins
       "reason": "mock-reason",
       "result": {
         "approved": true,
-        "verified": false,
+        "verified": true,
         "rounds": 1,
         "evidence": "mock-evidence"
       }
@@ -96,7 +102,7 @@ dry run completed, with 12 agent steps answered by stand-ins
       "reason": "mock-reason",
       "result": {
         "approved": true,
-        "verified": false,
+        "verified": true,
         "rounds": 1,
         "evidence": "mock-evidence"
       }

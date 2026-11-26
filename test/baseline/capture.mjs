@@ -38,8 +38,13 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 function setupRoot() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "sous-baseline-")));
   for (const dir of ["home", "bin", "tmp"]) mkdirSync(join(root, dir));
-  // A PATH with node and the system folders only, so no real claude or codex is found.
+  // A PATH with node, npm and the system folders only, so no real claude or codex is found. With
+  // npm missing, a workflow that runs npm test would get the shell's "command not found", and its
+  // wording changes with the bash version: macOS and Linux would print different golden files.
   symlinkSync(process.execPath, join(root, "bin", "node"));
+  const npm = join(dirname(process.execPath), "npm");
+  if (!existsSync(npm)) throw new Error(`${npm} is missing. The baseline needs the npm that comes with node.`);
+  symlinkSync(realpathSync(npm), join(root, "bin", "npm"));
   return root;
 }
 
@@ -66,6 +71,8 @@ function worldEnv(root, sousHome, fakeDir, debug) {
     GIT_AUTHOR_DATE: date,
     GIT_COMMITTER_DATE: date,
     GIT_CONFIG_NOSYSTEM: "1",
+    // npm checks the registry for a newer npm and prints a notice when it finds one.
+    npm_config_update_notifier: "false",
   };
 }
 
@@ -85,6 +92,12 @@ function makeWorld(root, name, { config = { notify: false }, rules = [], debug =
   cpSync(TEXTKIT, project, { recursive: true });
   cpSync(join(here, "project"), project, { recursive: true });
   cpSync(join(here, "workflows"), join(project, ".sous", "workflows"), { recursive: true });
+  // npm test prints no timings with the dot reporter. A workflow that runs npm test, such as ticket
+  // inside factory, puts the output in the verifier's prompt, and a timing would change its token count.
+  const manifest = join(project, "package.json");
+  const pkg = JSON.parse(readFileSync(manifest, "utf8"));
+  pkg.scripts.test = "node --test --test-reporter=dot";
+  writeFileSync(manifest, `${JSON.stringify(pkg, null, 2)}\n`);
   const git = (...args) => execFileSync("git", args, { cwd: project, env, stdio: "ignore" });
   git("init", "-q", "-b", "main");
   git("add", "-A");
