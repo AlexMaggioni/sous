@@ -4,7 +4,6 @@
 //   node scripts/release.mjs bump <version>     set the version, date the changelog, commit, tag
 //   node scripts/release.mjs check <tag>        refuse a tag that does not match the packages
 //   node scripts/release.mjs notes <version>    print the changelog section of a version
-//   node scripts/release.mjs formula <version> <sha256>   print the Homebrew formula
 //
 // `pnpm release <version>` runs bump. Pushing the tag starts .github/workflows/release.yml.
 
@@ -73,12 +72,6 @@ function check(tag) {
   process.stdout.write(`${version}\n`);
 }
 
-function formula(version, sha256) {
-  if (!version || !/^[0-9a-f]{64}$/.test(sha256 ?? "")) fail("give a version and the sha256 of its npm tarball");
-  const template = readFileSync(join(ROOT, "packaging", "homebrew", "sous.rb"), "utf8");
-  process.stdout.write(template.replaceAll("{{version}}", version).replaceAll("{{sha256}}", sha256));
-}
-
 const [command, ...args] = process.argv.slice(2);
 if (command === "bump") bump(args[0]);
 else if (command === "check") check(args[0]);
@@ -86,5 +79,4 @@ else if (command === "notes") {
   const text = notes(args[0]);
   if (!text) fail(`CHANGELOG.md has no section for ${args[0]}`);
   process.stdout.write(`${text}\n`);
-} else if (command === "formula") formula(args[0], args[1]);
-else fail("use bump <version>, check <tag>, notes <version> or formula <version> <sha256>");
+} else fail("use bump <version>, check <tag> or notes <version>");

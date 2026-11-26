@@ -63,13 +63,7 @@ You need git and at least one of the two programs:
 - Claude Code 2.1.330 or newer, logged in
 - Codex 0.169.x, logged in
 
-On macOS or Linux, with Homebrew:
-
-```sh
-brew install alexmaggioni/tap/sous
-```
-
-On any system with Node.js 22 or newer, Windows included:
+On macOS, Linux or Windows, with Node.js 22 or newer:
 
 ```sh
 npm install --global @sous/cli --omit=optional
@@ -297,9 +291,8 @@ programs, by hand.
 A release is one version for the three published packages. Write its section in
 `CHANGELOG.md` as `## 0.2.0 (unreleased)`, then run `pnpm release 0.2.0` on `main`. That dates the
 section, sets the version, commits and tags `v0.2.0`. Pushing the tag starts
-`.github/workflows/release.yml`, which runs the tests, publishes to npm, makes the GitHub release
-and updates the Homebrew formula. A version such as `0.2.0-rc.1` goes to npm's `next` tag, with no
-formula.
+`.github/workflows/release.yml`, which runs the tests, publishes to npm, makes the GitHub release.
+A version such as `0.2.0-rc.1` goes to npm's `next` tag.
 
 `pnpm install` points git at the hooks in `.githooks`. The pre-push hook runs `pnpm test` and stops
 the push when it fails. After a change to what sous prints, `BASELINE_UPDATE=1 node --test

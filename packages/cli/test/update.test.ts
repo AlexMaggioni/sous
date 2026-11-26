@@ -73,8 +73,6 @@ async function check(options: Fake) {
 describe("how sous was installed", () => {
   it("reads the package manager from the path of cli.js, and upgrades through it", async () => {
     const cases: Array<[string, string, string | null]> = [
-      ["/opt/homebrew/Cellar/sous/0.1.0/libexec/lib/node_modules/@sous/cli/dist/cli.js", "brew", "brew upgrade alexmaggioni/tap/sous"],
-      ["/home/linuxbrew/.linuxbrew/Cellar/sous/0.1.0/libexec/lib/node_modules/@sous/cli/dist/cli.js", "brew", "brew upgrade alexmaggioni/tap/sous"],
       ["/usr/local/lib/node_modules/@sous/cli/dist/cli.js", "npm", "npm install --global @sous/cli@latest"],
       ["C:\\Users\\a\\AppData\\Roaming\\npm\\node_modules\\@sous\\cli\\dist\\cli.js", "npm", "npm install --global @sous/cli@latest"],
       ["/Users/a/Library/pnpm/global/5/.pnpm/@sous+cli@0.1.0/node_modules/@sous/cli/dist/cli.js", "pnpm", "pnpm add --global @sous/cli@latest"],
@@ -138,9 +136,9 @@ describe("sous update", () => {
   });
 
   it("installs the newer one with the package manager that installed this one", async () => {
-    const result = await sous(["update"], { version: "0.1.0", latest: "0.2.0", cliPath: "/opt/homebrew/Cellar/sous/0.1.0/libexec/lib/node_modules/@sous/cli/dist/cli.js" });
+    const result = await sous(["update"], { version: "0.1.0", latest: "0.2.0", cliPath: "/Users/a/Library/pnpm/global/5/.pnpm/@sous+cli@0.1.0/node_modules/@sous/cli/dist/cli.js" });
     assert.equal(result.code, 0);
-    assert.deepEqual(result.ran, [["brew", "upgrade", "alexmaggioni/tap/sous"]]);
+    assert.deepEqual(result.ran, [["pnpm", "add", "--global", "@sous/cli@latest"]]);
     assert.equal(result.out, "sous 0.1.0 is now 0.2.0.");
   });
 

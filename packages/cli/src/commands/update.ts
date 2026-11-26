@@ -9,17 +9,13 @@ import type { Ctx } from "./index.js";
 /** The name sous is published under on npm. */
 const PACKAGE = "@sous/cli";
 
-/** The Homebrew formula, in the tap the release workflow updates. */
-const FORMULA = "alexmaggioni/tap/sous";
-
 /** How this sous was installed, read from the path of its cli.js. */
-type Install = "brew" | "npm" | "pnpm" | "bun" | "yarn" | "source";
+type Install = "npm" | "pnpm" | "bun" | "yarn" | "source";
 
 /** The way an installed cli.js was put on the machine. A cli.js outside node_modules is a build
  *  of the repository. */
 function installOf(cliPath: string): Install {
   const path = cliPath.replaceAll("\\", "/").toLowerCase();
-  if (path.includes("/cellar/sous/")) return "brew";
   if (!path.includes("/node_modules/")) return "source";
   if (path.includes("/.bun/")) return "bun";
   if (path.includes("/pnpm/") || path.includes("/.pnpm/")) return "pnpm";
@@ -30,8 +26,6 @@ function installOf(cliPath: string): Install {
 /** The command that installs the latest sous, or undefined for a build of the repository. */
 function upgradeCommand(install: Install): string[] | undefined {
   switch (install) {
-    case "brew":
-      return ["brew", "upgrade", FORMULA];
     case "npm":
       return ["npm", "install", "--global", `${PACKAGE}@latest`];
     case "pnpm":

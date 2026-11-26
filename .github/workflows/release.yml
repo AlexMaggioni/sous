@@ -1,12 +1,10 @@
 name: Release
 
 # Pushing a tag such as v0.2.0, made by `pnpm release 0.2.0`, publishes that version: the npm
-# packages, the GitHub release, and the Homebrew formula.
+# packages and the GitHub release.
 #
 # Secrets:
-#   NPM_TOKEN           an npm automation token that can publish to the @sous scope
-#   HOMEBREW_TAP_TOKEN  a token that can push to AlexMaggioni/homebrew-tap. Without it the
-#                       formula step is skipped.
+#   NPM_TOKEN  an npm automation token that can publish to the @sous scope
 on:
   push:
     tags: ["v*"]
@@ -20,9 +18,6 @@ jobs:
     name: Publish
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -57,34 +52,3 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-  homebrew:
-    name: Homebrew formula
-    needs: publish
-    if: needs.publish.outputs.prerelease == 'false'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-        if: env.HOMEBREW_TAP_TOKEN != ''
-      - name: Write and push the formula
-        if: env.HOMEBREW_TAP_TOKEN != ''
-        run: |
-          version="${{ needs.publish.outputs.version }}"
-          url="https://registry.npmjs.org/@sous/cli/-/cli-$version.tgz"
-          # The registry can take a minute to serve a new version.
-          for i in 1 2 3 4 5 6 7 8 9 10; do curl -fsSL -o cli.tgz "$url" && break; sleep 15; done
-          sha=$(sha256sum cli.tgz | cut -d' ' -f1)
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/AlexMaggioni/homebrew-tap.git" tap
-          mkdir -p tap/Formula
-          node scripts/release.mjs formula "$version" "$sha" > tap/Formula/sous.rb
-          cd tap
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/sous.rb
-          git commit -m "sous $version"
-          git push
-      - name: No tap token
-        if: env.HOMEBREW_TAP_TOKEN == ''
-        run: echo "::warning::HOMEBREW_TAP_TOKEN is not set, so the Homebrew formula was not updated."
