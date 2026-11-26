@@ -72,6 +72,22 @@ function machine(): Machine {
       rl.close();
       return text;
     },
+    open(url) {
+      const [command, args] = process.platform === "darwin" ? ["open", [url]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : ["xdg-open", [url]];
+      const child = spawn(command as string, args as string[], { detached: true, stdio: "ignore" });
+      child.on("error", () => process.stderr.write("sous: no browser opened. Open the link above.\n"));
+      child.unref();
+    },
+    untilStopped: () =>
+      new Promise((done) => {
+        const stop = () => {
+          process.off("SIGINT", stop);
+          process.off("SIGTERM", stop);
+          done();
+        };
+        process.on("SIGINT", stop);
+        process.on("SIGTERM", stop);
+      }),
     out: (line) => process.stdout.write(`${line}\n`),
     write: (text) => process.stdout.write(text),
     err: (line) => process.stderr.write(`${line}\n`),
@@ -179,6 +195,8 @@ sous runs saved workflows in the background.
                                         folder, or show where each program finds it
   sous hook install|remove              add or remove the Claude Code session-start hook that runs
                                         sous status --line; it keeps a backup of settings.json
+  sous serve [--port N] [--no-open]     the page of the runs in the browser, on this machine only;
+                                        prints a link with a token and serves until Ctrl-C
 
 With --json, a command prints one JSON object, with its notes and the calls to make next. A
 request that changes nothing, such as pausing a paused run, exits 0 with a note.

@@ -7,9 +7,10 @@ import { redactText, truncateUtf8 } from "../redact.js";
 import type { HomePaths } from "./home.js";
 
 /** How a call reached sous: from the person's terminal, an agent's shell, a step of a run, a
- *  schedule, or the service's own chores (an automatic resume, a prune or a gc). */
+ *  schedule, or the service's own chores (an automatic resume, a prune or a gc). The person's
+ *  writes from the page `sous serve` opens have `via: "view"`. */
 export type Through =
-  | { kind: "person" }
+  | { kind: "person"; via?: "view" }
   | { kind: "agent"; program: "claude" | "codex"; session?: string }
   | { kind: "run"; runId: string }
   | { kind: "schedule"; schedule: string }
@@ -30,7 +31,8 @@ export const SERVICE: Who = { by: "sous", through: { kind: "service" } };
 export type ActionKind =
   | "run" | "rerun" | "resume" | "pause" | "stop" | "stop-step" | "discard" | "prune" | "gc"
   | "answer" | "approve" | "send-back" | "let-agent-answer" | "approve-workflow" | "tell"
-  | "schedule-add" | "schedule-remove" | "schedule-enable" | "schedule-disable" | "account-use" | "skill-install" | "hook-install" | "hook-remove";
+  | "schedule-add" | "schedule-remove" | "schedule-enable" | "schedule-disable" | "account-use" | "skill-install" | "hook-install" | "hook-remove"
+  | "remove-run" | "trash-workflow";
 
 /** One line of events.jsonl. */
 export interface Action {

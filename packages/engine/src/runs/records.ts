@@ -5,7 +5,7 @@
 // notes as the worker starts. A command writes a record only when no worker runs it. A save
 // replaces the whole file, so two writers at once would lose one's change.
 
-import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import type { HarnessId, SteerOutcome } from "@sous/harnesses";
 import { appendJsonLine, readJsonFile, readJsonLines, writeJsonFile } from "../json-file.js";
 import { redactText } from "../redact.js";
@@ -14,7 +14,7 @@ import type { PlaceNotes } from "../places/places.js";
 import type { By, Through } from "./actions.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
-import { activityFile, noteFile, recordFile, recordFiles, snapshotFile, stopRequestFile, tellRequestFile } from "./store.js";
+import { activityFile, noteFile, pauseRequestFile, recordFile, recordFiles, snapshotFile, stopRequestFile, tellRequestFile } from "./store.js";
 import { Refusal } from "./refusal.js";
 
 export interface RunRecord {
@@ -37,6 +37,12 @@ export interface RunRecord {
   schedule?: string;
   /** The worker process, while one runs the run. */
   pid?: number;
+  /** The worker's pid while it listens for `sous pause`. Until then, and once it stops, a pause
+   *  only leaves its file. */
+  listening?: number;
+  /** Set with the pid by this sous's launcher and worker: the worker takes `sous pause` from its
+   *  file. A worker an older sous started has none, and takes only SIGUSR1. */
+  pauseFile?: true;
   createdAt: string;
   /** Per-run changes to steps, by label. */
   overrides?: Record<string, Record<string, unknown>>;
@@ -165,7 +171,13 @@ function readRecord(file: string): RunRecord {
   return record;
 }
 
+/** What a run id may hold. An id with anything else, such as "../", names no record. */
+const RUN_ID = /^[A-Za-z0-9_-]+$/;
+
+export const isRunId = (text: string) => RUN_ID.test(text);
+
 export function loadRecord(paths: HomePaths, runId: string): RunRecord | undefined {
+  if (!RUN_ID.test(runId)) return undefined;
   const file = recordFile(paths, runId);
   if (!existsSync(file)) return undefined;
   return readRecord(file);
@@ -184,6 +196,47 @@ export interface StepStop {
  */
 export function requestStepStop(paths: HomePaths, runId: string, stop: StepStop): void {
   appendFileSync(stopRequestFile(paths, runId), `${JSON.stringify(stop)}\n`);
+}
+
+/** Ask the run's worker to pause: the file first, then SIGUSR1, and only to a worker that listens. A
+ *  worker still loading would take SIGUSR1 as Node's call to start its inspector, and the pause would
+ *  be lost. The worker marks itself listening before it looks for the file, so one of the two always
+ *  sees the other, and a worker that starts later still takes the file. A worker an older sous
+ *  started never reads the file, so it gets SIGUSR1 alone, as that sous sent it. */
+export function requestPause(paths: HomePaths, runId: string): void {
+  const before = loadRecord(paths, runId);
+  if (before?.pid && before.pauseFile !== true && before.listening === undefined) return pauseSignal(before.pid);
+  writeFileSync(pauseRequestFile(paths, runId), "");
+  const record = loadRecord(paths, runId);
+  // A worker that ended since the first read took no file, so the pause goes with it.
+  if (!record?.pid) takePause(paths, runId);
+  else if (record.listening === record.pid) pauseSignal(record.pid);
+}
+
+function pauseSignal(pid: number): void {
+  try {
+    process.kill(pid, "SIGUSR1");
+  } catch {
+    // The worker ended since the check. The next one takes the file.
+  }
+}
+
+/** The worker of the run is gone: clear its pid, and drop a pause asked of it, so the next worker
+ *  does not pause on it. The pid clears first, so a pause after the take finds no worker. */
+export function endWorker(paths: HomePaths, runId: string): void {
+  if (!loadRecord(paths, runId)) return;
+  updateRecord(paths, runId, { pid: undefined, listening: undefined, pauseFile: undefined });
+  takePause(paths, runId);
+}
+
+/** True when a pause was asked since the last take. */
+export function takePause(paths: HomePaths, runId: string): boolean {
+  try {
+    unlinkSync(pauseRequestFile(paths, runId));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** The steps asked to stop since the last take. The file moves aside before the read, so a request
@@ -322,6 +375,10 @@ export function listRecords(paths: HomePaths): RunRecord[] {
 
 /** Find a run by its full id or a unique start of it. */
 export function findRecord(paths: HomePaths, idOrPrefix: string): RunRecord | undefined {
+  if (!RUN_ID.test(idOrPrefix)) {
+    const message = `"${idOrPrefix}" is not a run id. A run id holds only letters, digits, "-" and "_".`;
+    throw new Refusal("no_such_run", message, "Give the id of a run, or a unique start of one.", "sous list --json");
+  }
   const exact = loadRecord(paths, idOrPrefix);
   if (exact) return exact;
   const matches = listRecords(paths).filter((record) => record.runId.startsWith(idOrPrefix));

@@ -3,12 +3,13 @@
 // removeEngineRun and removeRunFiles write, apart from the folders the slot pool makes, and no
 // manager is built.
 
-import { existsSync, readdirSync, readFileSync, rmdirSync, unlinkSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { workflowProjectPaths } from "./persistence/project-paths.js";
 import { createRunPersistence, loadRunState, type FsLayer, type PersistedRunState } from "./persistence/run-persistence.js";
 import type { RunEventPersistence } from "./persistence/run-event-persistence.js";
 import type { PersistedRunEvent } from "../run-events.js";
+import { rootRunId } from "../resume-identity.js";
 import type { HomePaths } from "./home.js";
 import type { RunRecord } from "./records.js";
 import { SlotPool, type Priority } from "./slots.js";
@@ -44,6 +45,11 @@ export function snapshotFile(paths: HomePaths, runId: string): string {
 /** The steps `sous stop --step` asked a running run to stop, one per line, until the worker takes them. */
 export function stopRequestFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.stop`);
+}
+
+/** Marks a `sous pause` the worker has not taken yet, so a worker still starting pauses once it listens. */
+export function pauseRequestFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.pause`);
 }
 
 /** The messages `sous tell` sent a running run's steps, one per line, until the worker takes them. */
@@ -154,6 +160,42 @@ export function readStates(paths: HomePaths, runIds: Iterable<string>, fs: Store
   return states;
 }
 
+/** A stamp of each run's files, and of each run's question files, both by root run id. A stamp
+ *  changes when a file of it changes, comes or goes. It reads only folder lists and file stats. */
+export interface RunStamps {
+  runs: Map<string, string>;
+  questions: Map<string, string>;
+}
+
+/**
+ * The stamps of the runs' records and engine files, and of the open questions. A watcher that
+ * reads them again and compares sees which runs changed without reading any of their files. A
+ * nested run's files count for its root run.
+ */
+export function runStamps(paths: HomePaths): RunStamps {
+  const stamps = (dir: string, key: (name: string) => string, into: Map<string, string>) => {
+    if (!existsSync(dir)) return;
+    for (const name of readdirSync(dir)) {
+      const stat = statSync(join(dir, name), { throwIfNoEntry: false });
+      if (!stat?.isFile()) continue;
+      const id = key(name);
+      into.set(id, `${into.get(id) ?? ""}${name}:${stat.mtimeMs}:${stat.size};`);
+    }
+  };
+  // A question file is named after its id, its run or nested run, "--" and its call.
+  const askedBy = (name: string) => {
+    const id = name.replace(/(\.answer)?\.json$/, "");
+    const at = id.lastIndexOf("--");
+    return rootRunId(at > 0 ? id.slice(0, at) : id);
+  };
+  const runs = new Map<string, string>();
+  const questions = new Map<string, string>();
+  stamps(paths.records, (name) => rootRunId(name.split(".")[0]!), runs);
+  stamps(engineFolders(paths).runsDir, (name) => rootRunId(name.split(".")[0]!), runs);
+  stamps(paths.inbox, askedBy, questions);
+  return { runs, questions };
+}
+
 /** An event the engine saved, with when it saved it and its number in the run's log. */
 export interface SavedEvent {
   event: PersistedRunEvent;
@@ -199,7 +241,7 @@ export function removeEngineRun(paths: HomePaths, runId: string): boolean {
 export function removeRunFiles(paths: HomePaths, record: RunRecord): void {
   // The engine keeps its own copy of the log, in a folder named after where the run worked.
   const engineLogs = workflowProjectPaths(record.cwd, { persistenceRoot: paths.runs });
-  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), tellRequestFile(paths, record.runId), noteFile(paths, record.runId), activityFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
+  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), pauseRequestFile(paths, record.runId), tellRequestFile(paths, record.runId), noteFile(paths, record.runId), activityFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
   for (const file of files) {
     try {
       unlinkSync(file);

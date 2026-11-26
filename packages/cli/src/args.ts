@@ -38,9 +38,9 @@ export interface Parsed {
 
 /** Every flag a sous command owns, today's and the ones planned. None of them is a workflow input. */
 const OWN: FlagSpec[] = [
-  ...["place", "model", "project", "concurrency", "priority", "cron", "days", "lines", "step", "answers", "by", "budget", "timeout", "note", "since", "after", "tail", "call"].map((name) => ({ name, takes: "one" as const })),
+  ...["place", "model", "project", "concurrency", "priority", "cron", "days", "lines", "step", "answers", "by", "budget", "timeout", "note", "since", "after", "tail", "call", "port"].map((name) => ({ name, takes: "one" as const })),
   { name: "set", takes: "many", value: "label.key=value" },
-  ...["wait", "json", "all", "follow", "f", "dry-run", "yes", "reuse", "latest", "same", "live", "help", "h", "let-agent-answer", "value-json", "full", "line", "diff"].map((name) => ({ name, takes: "none" as const })),
+  ...["wait", "json", "all", "follow", "f", "dry-run", "yes", "reuse", "latest", "same", "live", "help", "h", "let-agent-answer", "value-json", "full", "line", "diff", "no-open"].map((name) => ({ name, takes: "none" as const })),
 ];
 
 export const RESERVED: readonly string[] = OWN.map((flag) => flag.name);

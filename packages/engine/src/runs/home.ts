@@ -1,9 +1,9 @@
 // The sous home folder (~/.sous, or $SOUS_HOME) and a project's .sous folder.
 // A project's workflows win over the home folder's.
 
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { constants, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { readStrictJsonFile, writeJsonFile } from "../json-file.js";
 import { runFolders } from "./store.js";
 
@@ -65,6 +65,8 @@ export function homePaths(home = sousHome()) {
     actions: join(home, "events.jsonl"),
     /** Each call of the cli, with SOUS_TRACE_CALLS=1. */
     calls: join(home, "calls.jsonl"),
+    /** The saved workflows the person removed from the page sous serve opens. */
+    trash: join(home, "trash"),
   };
 }
 
@@ -125,6 +127,42 @@ export function rememberProject(paths: HomePaths, projectDir: string): void {
 
 export function workflowDirs(projectDir: string, paths: HomePaths = homePaths()): string[] {
   return [join(projectDir, ".sous", "workflows"), paths.workflows];
+}
+
+/**
+ * Move a file into the home's trash folder, under its own name, or with -2, -3 and on before its
+ * extension when the trash has that name. A file in the trash is never replaced. Returns where the
+ * file went.
+ */
+export function moveToTrash(paths: HomePaths, file: string): string {
+  mkdirSync(paths.trash, { recursive: true });
+  const name = basename(file);
+  const dot = name.indexOf(".", 1);
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+  for (let n = 1; ; n++) {
+    const target = join(paths.trash, n === 1 ? name : `${stem}-${n}${ext}`);
+    if (!placeNew(file, target)) continue;
+    unlinkSync(file);
+    return target;
+  }
+}
+
+/** Put a copy of the file at target, or return false when target exists. A hard link fails on
+ *  another disk, and a copy that refuses an existing target takes over. */
+function placeNew(file: string, target: string): boolean {
+  try {
+    linkSync(file, target);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+  }
+  try {
+    copyFileSync(file, target, constants.COPYFILE_EXCL);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  }
 }
 
 /** KEY=VALUE lines from secrets.env. Lines starting with # are skipped. Quotes are removed. */

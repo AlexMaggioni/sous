@@ -18,6 +18,8 @@ export type RefusalCode =
   | "step_takes_no_message"
   | "turn_not_steerable"
   | "run_is_running"
+  /** A run that has not completed, failed or stopped, which only an ended run's removal refuses. */
+  | "run_not_ended"
   | "cannot_resume"
   | "not_ours"
   | "workflow_invalid"

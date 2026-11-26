@@ -142,7 +142,7 @@ export type Launcher = (paths: HomePaths, runId: string, mode: "start" | "resume
 /** The worker as a process of its own, in the background, as sous starts it. `cliFile` gives sous's
  *  built cli.js. It is read only when a worker starts. */
 export function workerProcess(cliFile: () => string): Launcher {
-  return (paths, runId, mode) => updateRecord(paths, runId, { pid: spawnWorker(paths, cliFile(), runId, mode) });
+  return (paths, runId, mode) => updateRecord(paths, runId, { pid: spawnWorker(paths, cliFile(), runId, mode), pauseFile: true });
 }
 
 /** Start the run's worker in the background. Its output goes to logs/<run id>.log. */

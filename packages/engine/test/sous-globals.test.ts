@@ -270,12 +270,12 @@ describe("piece 8: who may answer a question", () => {
     assert.equal(asked.length, 0);
   });
 
-  it("breakpoint() asks through markedCheckpoint with { breakpoint: true }", async () => {
+  it("breakpoint() asks through markedCheckpoint with { breakpoint: true }, its title and the text it shows", async () => {
     const { breakpoint, asked } = globals("approve");
     await breakpoint("Check the plan", { show: "all good?" });
     assert.equal(asked.length, 1, JSON.stringify(asked));
     assert.equal(asked[0]!.via, "markedCheckpoint");
-    assert.deepEqual(plain(asked[0]!.purpose), { breakpoint: true });
+    assert.deepEqual(plain(asked[0]!.purpose), { breakpoint: true, title: "Check the plan", show: "all good?" });
   });
 
   it("agent(..., { ask: true, answeredBy }) keeps answeredBy from the agent, and its question carries the step's label", async () => {
@@ -315,7 +315,7 @@ return await agent('Build it', { label: 'builder', ask: true })`;
         return purposes.length === 1 ? "blue" : purposes.length === 2 ? "approve" : "dark";
       },
     });
-    assert.deepEqual(purposes, [{ answeredBy: "anyone" }, { breakpoint: true }, { step: "builder" }]);
+    assert.deepEqual(purposes, [{ answeredBy: "anyone" }, { breakpoint: true, title: "Check", show: "blue" }, { step: "builder" }]);
   });
 });
 

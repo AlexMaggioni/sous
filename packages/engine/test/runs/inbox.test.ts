@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { HomePaths } from "../../src/runs/home.js";
-import { ask, breakpointValue, decisionOf, hint, readQuestion, reply, standIn, type Question } from "../../src/runs/inbox.js";
+import { ask, breakpointValue, decisionOf, hint, questionView, readQuestion, reply, standIn, type Question } from "../../src/runs/inbox.js";
 import { createRun } from "../../src/runs/launch.js";
 import { updateRecord } from "../../src/runs/records.js";
 import { runQuestions } from "../../src/runs/run.js";
@@ -332,5 +332,37 @@ return await agent('Build it', { label: 'builder', ask: true })`,
         await new Promise((r) => setTimeout(r, 20));
       }
     }
+  });
+});
+
+describe("a breakpoint's title and the text it shows", () => {
+  it("come apart from the prompt that packs them for the terminal", async () => {
+    const { paths, projectDir } = setup({
+      plan: `export const meta = { name: 'plan', description: 'two breakpoints' }
+await breakpoint('Check the plan', { show: 'Step one.\\nStep two.' })
+await breakpoint('Ship it')
+return 'shipped'`,
+    });
+    const record = createRun(paths, { who: PERSON, workflow: "plan", projectDir, inputs: {} });
+    const worker = runWorker(record.runId, "start", { paths, inner: heldRunner(() => "ok").runner, pollMs: 20, log: () => {} });
+
+    const [plan] = await asked(paths, record.runId, 1);
+    assert.equal(plan!.prompt, "Breakpoint: Check the plan\n\nStep one.\nStep two.\n\nReply approve, stop, or send back with a note.");
+    const shown = questionView(plan!);
+    assert.equal(shown.title, "Check the plan");
+    assert.equal(shown.show, "Step one.\nStep two.");
+    writeAnswer(paths, plan!.id, plan!.hash, "approve");
+
+    await until(() => runQuestions(paths, record.runId).some((q) => q.id !== plan!.id));
+    const [ship] = await asked(paths, record.runId, 1);
+    assert.deepEqual([questionView(ship!).title, questionView(ship!).show], ["Ship it", undefined]);
+    writeAnswer(paths, ship!.id, ship!.hash, "approve");
+    assert.equal((await worker)?.status, "completed");
+
+    // A question an older sous wrote has them only in its prompt, so they come from there.
+    const older: Question = { ...plan!, title: undefined, show: undefined };
+    assert.deepEqual([questionView(older).title, questionView(older).show], ["Check the plan", "Step one.\nStep two."]);
+    const notBreakpoint: Question = { ...plan!, breakpoint: false, prompt: "Ship it?" };
+    assert.deepEqual([questionView(notBreakpoint).title, questionView(notBreakpoint).show], [undefined, undefined]);
   });
 });

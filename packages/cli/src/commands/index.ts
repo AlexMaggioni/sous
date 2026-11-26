@@ -7,6 +7,7 @@ import { cmdDiscard, cmdGc, cmdPause, cmdPrune, cmdStop, cmdTell } from "./contr
 import { cmdAnswer, cmdInbox } from "./questions.js";
 import { cmdList, cmdLog, cmdShow, cmdStatus, cmdWait } from "./reads.js";
 import { cmdRerun, cmdResume, cmdRun } from "./runs.js";
+import { cmdServe } from "./serve.js";
 import { cmdStep } from "./step.js";
 import { cmdDaemon, cmdSchedule } from "./service.js";
 import { cmdAccount, cmdDoctor, cmdGuide, cmdHook, cmdSkill } from "./setup.js";
@@ -29,6 +30,10 @@ export interface Machine {
   readonly isTerminal: boolean;
   /** Ask in the terminal and give the line typed. */
   ask(prompt: string): Promise<string>;
+  /** Open a link in the person's browser. */
+  open(url: string): void;
+  /** Wait for Ctrl-C, or the signal that ends the process. */
+  untilStopped(): Promise<void>;
   out(line: string): void;
   /** Text as it comes, such as a log, with no line end added. */
   write(text: string): void;
@@ -101,6 +106,7 @@ export const COMMANDS: Record<string, CommandSpec> = {
   guide: { run: cmdGuide, flags: takes("json") },
   skill: { run: cmdSkill, flags: takes("by", "json") },
   hook: { run: cmdHook, flags: takes("by", "json") },
+  serve: { run: (args, ctx) => cmdServe(args, ctx, COMMANDS), flags: takes("port", "no-open", "project", "by") },
 };
 
 /** The other names a command answers to. Help does not list them. */

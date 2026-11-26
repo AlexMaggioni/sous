@@ -23,6 +23,7 @@ export interface StepView {
   kind: "agent" | "exec";
   model?: string;
   startedAt?: string;
+  endedAt?: string;
   seconds?: number;
   tokens?: number;
   /** An agent step's prompt, cut to 2,000 characters unless full is asked. */
@@ -155,6 +156,7 @@ export function stepView(paths: HomePaths, runId: string, name: string, options:
     kind: exec ? "exec" : "agent",
     ...(exec || !step.model ? {} : { model: step.model }),
     ...(step.startedAt ? { startedAt: step.startedAt } : {}),
+    ...(step.endedAt ? { endedAt: step.endedAt } : {}),
     ...(step.startedAt && step.endedAt ? { seconds: secondsOf(step.startedAt, step.endedAt) } : {}),
     ...(tokens ? { tokens } : {}),
     ...(prompt === undefined ? {} : { prompt }),

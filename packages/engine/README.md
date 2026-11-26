@@ -14,7 +14,7 @@ ESM only, Node 22 or later.
 
 ## The entry
 
-The names come in three groups, in the same order as `src/index.ts`.
+The names come in four groups, in the same order as `src/index.ts`.
 
 - **Runs.** The home and its config (`homePaths`, `ensureHome`, `loadConfig`), the run requests
   (`startRun`, `resumeRun`, `rerunRun`, `stopRun`, `stopStep`, `pauseRun`, `answerQuestion`), the
@@ -25,6 +25,10 @@ The names come in three groups, in the same order as `src/index.ts`.
   one without running it, and `dryRun` runs one with stand-in agents.
 - **Accounts, agents and the installed programs.** What `sous account`, `sous doctor` and the agent
   lookup need.
+- **The catalog and the removals.** What the page `sous serve` opens reads and does beyond the
+  runs: the agents, skills and MCP servers a project sees (`agentPage`, `listSkills`, `skillPage`,
+  `listMcpServers`, `mcpPage`), and the removal of one ended run (`removeRun`) or one saved
+  workflow (`trashWorkflow`, which moves its file to `<home>/trash/`).
 
 Each operation takes the home's paths first, so a test can point it at a temp folder. A request
 that starts a worker also takes a launcher (see below):
@@ -105,7 +109,7 @@ does not, such as `createRun` for a run that needs no worker.
 | Path | What it holds |
 | --- | --- |
 | `src/index.ts`, `src/testing.ts` | The two entries. `index.ts` exports only the names sous imports. `testing.ts` is the test kit above. |
-| `src/runs/` | The sous home, run records, the worker, the inbox, schedules and the service. `run.ts` has one function per sous command. `rule.ts` decides what a run's state means. `limits.ts` holds one go's time limit and token budget. `actions.ts` records who did each write, and `consent.ts` says what an agent may start. |
+| `src/runs/` | The sous home, run records, the worker, the inbox, schedules and the service. `run.ts` has one function per sous command. `rule.ts` decides what a run's state means. `limits.ts` holds one go's time limit and token budget. `actions.ts` records who did each write, and `consent.ts` says what an agent may start. `remove.ts` removes one ended run, or moves one saved workflow to the home's trash. |
 | `src/workflow.ts`, `src/checkpoint-call.ts`, `src/failed-attempt.ts` | Runs one workflow script in its realm: the globals, the journal and the limits. `checkpoint-call.ts` asks one `checkpoint()` question and records its answer. `failed-attempt.ts` says what a step does after an attempt fails: retry, pause the run, return null or throw. |
 | `src/sous-globals.ts`, `src/code-steps.ts` | The script functions added on top of `agent()` and `checkpoint()`. `code-steps.ts` runs the code steps, `sh`, `js`, `py`, a script file and `wait`, in a child process in the step's folder. |
 | `src/call-path.ts`, `src/strict-json.ts`, `src/rejection-tripwire.ts` | Guards on the script's realm. `call-path.ts` keys an `agent()` or `checkpoint()` call by the script frames on its stack. `strict-json.ts` checks and freezes a step's result or a checkpoint's reply as strict JSON. `rejection-tripwire.ts` turns a script promise that rejects with no handler into a failed run. |
@@ -120,6 +124,7 @@ does not, such as `createRun` for a run that needs no worker.
 | `src/steps/` | One agent step. `agent-runner.ts` is the seam the engine calls, and `steps.ts` runs the step on a harness. |
 | `src/places/` | Where a run works: a worktree, the project folder or a scratch folder. `runPlaces(paths, notes)` gives the workflow core the places of one run tree. |
 | `src/workflows/`, `src/fabricate.ts` | Saved workflows: the folders that hold them, the check and the dry run. `fabricate.ts` makes a value that fits a JSON Schema, for the dry run's stand-in agents. |
+| `src/catalog/` | The agents, skills and MCP servers a project sees, one page each, for the page `sous serve` opens. `files.ts` is its only read of the disk. An MCP page masks each env and header value. |
 | `src/accounts.ts`, `src/agents.ts`, `src/programs.ts` | Accounts, the agent lookup and the installed programs. `programs.ts` also links the sous skill, and reads and writes Claude Code's settings for the session-start hook. |
 | `src/hook-settings.ts` | The pure edit behind `sous hook install` and `remove`: Claude Code's settings with sous's SessionStart hook added or taken out. |
 | `src/json-file.ts`, `src/workflow-paths.ts` | The reads and writes of the home's JSON files. A write replaces a file whole. `workflow-paths.ts` names the engine's home, `~/.sous/engine`. |

@@ -24,6 +24,10 @@ export interface Question {
   choices?: string[];
   /** A breakpoint expects approve, stop, or send back with a note. */
   breakpoint: boolean;
+  /** A breakpoint's title, and the text it shows when it shows one, apart from the prompt that
+   *  packs both for the terminal. A question an older sous wrote has neither. */
+  title?: string;
+  show?: string;
   /** Who may answer, as the author said: people, or anyone, an agent too. A breakpoint is always
    *  for people. sous writes it on each question and fills it when it reads an older file, so
    *  only a question built by hand lacks it, and then it is for people. */
@@ -307,14 +311,27 @@ export interface QuestionView {
   kind: Question["kind"];
   choices?: string[];
   breakpoint: boolean;
+  /** A breakpoint's title, the prompt's first line when an older sous asked it, and the text it shows. */
+  title?: string;
+  show?: string;
   askedAt: string;
   answeredBy: "people" | "anyone";
+}
+
+/** A breakpoint's title and shown text. A question an older sous asked has them only in its prompt:
+ *  "Breakpoint: <title>", then the shown text, then the reply hint. */
+function shownOf(question: Question): { title: string; show?: string } {
+  if (question.title !== undefined) return { title: question.title, ...(question.show ? { show: question.show } : {}) };
+  const [first = "", ...rest] = question.prompt.replace(/\n*Reply approve, stop, or send back with a note\.?\s*$/, "").split("\n");
+  const show = rest.join("\n").trim();
+  return { title: first.replace(/^Breakpoint: /, ""), ...(show ? { show } : {}) };
 }
 
 /** The view of a question, for its root run's record: one started with --let-agent-answer or not. */
 export function questionView(question: Question, record?: Pick<RunRecord, "letAgentAnswer">): QuestionView {
   const { id, step, prompt, kind, choices, breakpoint, askedAt } = question;
-  return { id, ...(step ? { step } : {}), prompt, kind, ...(choices ? { choices } : {}), breakpoint, askedAt, answeredBy: answeredByFor(question, record) };
+  const shown = breakpoint ? shownOf(question) : {};
+  return { id, ...(step ? { step } : {}), prompt, kind, ...(choices ? { choices } : {}), breakpoint, ...shown, askedAt, answeredBy: answeredByFor(question, record) };
 }
 
 /**

@@ -5,7 +5,6 @@
 
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { interruptedReason, type PersistedRunState, type RunStatus } from "./persistence/run-persistence.js";
-import { foldStep } from "../display.js";
 import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
 import { recordAction, type Who } from "./actions.js";
 import { recordAndTell, type Tell } from "./notify.js";
@@ -13,7 +12,8 @@ import type { HomePaths, Place } from "./home.js";
 import { decisionOf, listQuestions, questionView, readQuestion, removeRunQuestions, reply, triedOf, type Misfit, type Question, type QuestionView, type Reply } from "./inbox.js";
 import { answerCalls, letAgentAnswerBy, mayAnswer } from "./consent.js";
 import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
-import { findRecord, listRecords, loadRecord, loadSnapshot, processAlive, requestNote, requestStepStop, scopePrefix, updateRecord, type NoteRequest, type RunRecord } from "./records.js";
+import { findRecord, isRunId, listRecords, loadRecord, loadSnapshot, processAlive, requestNote, requestPause, requestStepStop, scopePrefix, updateRecord, type NoteRequest, type RunRecord } from "./records.js";
+import { liveSteps, withTries, type RunningStep, type Step } from "./live-steps.js";
 import { olderSave } from "../older-save.js";
 import { readWorkflowScript } from "../workflows/script.js";
 import { resolveWorkflow } from "../workflows/dir.js";
@@ -21,7 +21,7 @@ import { needApproval, NotApproved } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 import { Refusal } from "./refusal.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
-import { logFile, readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
+import { logFile, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
 import { currentWorkflows, stopColdRun } from "./worker.js";
 
 /** A question a run asks, as the inbox holds it. */
@@ -35,6 +35,10 @@ export interface SavedFacts {
   resetHint?: string;
   /** The engine's text for a failure, a pause or a lost worker. */
   reason?: string;
+  /** The run's tokens and cost so far, and how long it ran, as the state saved them. */
+  tokens?: number;
+  cost?: number;
+  durationMs?: number;
 }
 
 /** A run as sous's readers see it: its record, what the pause rule says of it, and its open
@@ -49,8 +53,6 @@ export interface RunView extends Verdict {
    *  run has no state. */
   changedAt?: string;
 }
-
-type Step = PersistedRunState["agents"][number];
 
 /** A run with its steps, for sous show. */
 export interface RunDetail extends RunView {
@@ -137,8 +139,16 @@ function shownState(record: RunRecord, state: PersistedRunState | undefined, ver
 }
 
 function savedFacts(shown: PersistedRunState): SavedFacts {
-  const { status, pauseReason, resetHint, reason } = shown;
-  return { status, ...(pauseReason === undefined ? {} : { pauseReason }), ...(resetHint === undefined ? {} : { resetHint }), ...(reason === undefined ? {} : { reason }) };
+  const { status, pauseReason, resetHint, reason, tokenUsage, durationMs } = shown;
+  return {
+    status,
+    ...(pauseReason === undefined ? {} : { pauseReason }),
+    ...(resetHint === undefined ? {} : { resetHint }),
+    ...(reason === undefined ? {} : { reason }),
+    ...(tokenUsage?.total === undefined ? {} : { tokens: tokenUsage.total }),
+    ...(tokenUsage?.cost === undefined ? {} : { cost: tokenUsage.cost }),
+    ...(durationMs === undefined ? {} : { durationMs }),
+  };
 }
 
 /** The view of one run. The rule counts the questions only while the worker runs. */
@@ -187,7 +197,7 @@ export function runDetail(paths: HomePaths, id: string): RunDetail {
   const { view, shown } = viewOf(record, state, listQuestions(paths, record.runId), alive);
   // The event log has the steps the worker did not save yet, and a killed worker never saves them.
   const live = state ? liveSteps(paths, record, state) : undefined;
-  const steps = live?.steps ?? shown?.agents ?? [];
+  const steps = withTries(live?.steps ?? shown?.agents ?? [], shown?.calls, record.runId);
   let engineState: RunDetail["engineState"];
   if (shown) {
     const { script: _script, journal: _journal, nestedJournal: _nested, calls: _calls, ...rest } = shown;
@@ -272,64 +282,6 @@ export function runPreview(paths: HomePaths, record: RunRecord): RunPreview {
 /** The open questions, oldest first: every run's, or one run's. */
 export function runQuestions(paths: HomePaths, runId?: string): RunQuestion[] {
   return listQuestions(paths, runId);
-}
-
-/** A step's key: its scope and its call. Retries of a step happen inside the one call. */
-function stepKey(record: RunRecord, scope: unknown, callIndex: unknown): string {
-  return `${typeof scope === "string" ? scope : record.runId}#${String(callIndex)}`;
-}
-
-/** Events after which no step of the run runs. */
-const ENDS_STEPS = new Set(["complete", "paused", "error", "stopped", "resumed"]);
-
-/** A step that runs now: the name the log gives it, the run or nested run it runs in, its label
- *  there, and its call index when known. */
-export interface RunningStep {
-  name: string;
-  scope: string;
-  label: string;
-  callIndex?: number;
-}
-
-/**
- * A run's steps and the steps that run now, if its worker runs. The saved state lags
- * the run: it is saved when a step ends. The event log has every step that started or ended since.
- * The steps are left unset when the run has no state or its event log cannot be read.
- */
-function liveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): { steps?: Step[]; running: RunningStep[] } {
-  const agents: Step[] = (state?.agents ?? []).map((agent) => ({ ...agent }));
-  const running = new Map<string, Omit<RunningStep, "name">>();
-  const start = (scope: string | undefined, label: string, callIndex: number | undefined) => {
-    const step = { scope: typeof scope === "string" ? scope : record.runId, label, ...(callIndex === undefined ? {} : { callIndex }) };
-    running.set(stepKey(record, step.scope, callIndex), step);
-  };
-  const runningInState = () => {
-    for (const agent of state?.agents ?? []) if (agent.status === "running") start(agent.scope, agent.label, agent.callIndex);
-  };
-  runningInState();
-  const named = (): RunningStep[] => {
-    // A nested run notes its label on the record when it starts, so the record is read again.
-    const nested = loadRecord(paths, record.runId)?.nested ?? record.nested;
-    return [...running.values()].map((step) => ({ name: `${scopePrefix(record.runId, step.scope, nested)}${step.label}`, ...step }));
-  };
-  try {
-    readEventsAfter(paths, record.runId, state?.eventSeq ?? 0, ({ event, timestamp }) => {
-      if (event.type === "agentStart" || event.type === "agentEnd") {
-        foldStep(agents, event, timestamp);
-        // A step that starts again keeps one name, at the end.
-        running.delete(stepKey(record, event.scope, event.callIndex));
-        if (event.type === "agentStart") start(event.scope, event.label, event.callIndex);
-      } else if (ENDS_STEPS.has(event.type) && event.scope === record.runId) {
-        running.clear();
-      }
-    });
-  } catch {
-    // The steps stay as the state saved them, and so do the ones that run.
-    running.clear();
-    runningInState();
-    return { running: named() };
-  }
-  return { ...(state ? { steps: agents } : {}), running: named() };
 }
 
 /** What `sous wait --json` prints. Its status is the rule's, so a run at a question "asks". A
@@ -541,7 +493,7 @@ export function runningCalls(paths: HomePaths, runId: string): RunningStep[] {
 export function pauseRun(paths: HomePaths, runId: string, who: Who): boolean {
   const record = needRecord(paths, runId);
   if (!processAlive(record.pid)) return false;
-  process.kill(record.pid!, "SIGUSR1");
+  requestPause(paths, record.runId);
   recordAction(paths, { act: "pause", ...who, runId: record.runId });
   return true;
 }
@@ -726,7 +678,7 @@ export function findQuestion(paths: HomePaths, id: string): RunQuestion {
   const all = listQuestions(paths);
   const byPrefix = all.filter((q) => q.id.startsWith(id));
   if (byPrefix.length === 1) return byPrefix[0]!;
-  const record = findRecord(paths, id);
+  const record = isRunId(id) ? findRecord(paths, id) : undefined;
   if (record) {
     const forRun = all.filter((q) => q.runId === record.runId);
     if (forRun.length === 1) return forRun[0]!;
@@ -807,6 +759,27 @@ export function startedAndUnfinished(verdict: Verdict): boolean {
 /** A worker runs the run now, or ran it when its view was read. Its view may be out of date. */
 export function workerRuns(run: RunView): boolean {
   return processAlive(run.record.pid) || (!run.resume.ok && run.resume.why === "running");
+}
+
+/** What a person may do with a run now, from the checks its requests refuse with. */
+export interface RunActions {
+  stop: boolean;
+  pause: boolean;
+  resume: boolean;
+  remove: boolean;
+}
+
+export function runActions(run: RunView): RunActions {
+  const working = workerRuns(run);
+  return {
+    // stopRun signals a worker, or stops a run that started and has not ended.
+    stop: working || startedAndUnfinished(run),
+    // pauseRun reaches only a worker.
+    pause: working,
+    resume: run.resume.ok,
+    // removeRun refuses a run a worker runs, and one that started and has not ended.
+    remove: !working && !startedAndUnfinished(run),
+  };
 }
 
 /** Remove finished runs older than `days`: the engine's state, sous's record and the log. Worktrees

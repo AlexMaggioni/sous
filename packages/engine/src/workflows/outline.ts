@@ -81,7 +81,7 @@ function approvalView(found: { approval: Approval; changedSince: boolean } | nul
 }
 
 function stepOf(call: ScriptCall): OutlineStep {
-  const { kind, label, ...rest } = call;
+  const { kind, label, skills: _skills, mcp: _mcp, ...rest } = call;
   return { ...(label === undefined ? {} : { step: label }), kind, ...rest };
 }
 

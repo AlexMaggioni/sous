@@ -1,12 +1,9 @@
 // A workflow script, parsed once with acorn: its meta, its body, and the names it refers to.
 // The parser refuses a script that is not deterministic or whose meta is not a literal.
 
-import type { Node } from "acorn";
-import { parse } from "acorn";
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
 import type { WorkflowMeta, WorkflowMetaPhase } from "../workflow-result.js";
-
-type AnyNode = Node & { [key: string]: any; start: number; end: number };
+import { childrenOf, keyOf, parseWorkflowText, property, SAVED_WORKFLOW_NAME, staticString, type AnyNode } from "./syntax.js";
 
 /** The options of one step as the script writes them: an object that names an agent or MCP servers. */
 export interface StepRefs {
@@ -56,6 +53,9 @@ export interface ScriptCall {
   model?: string;
   /** True when an agent call keeps its session. */
   keepsSession?: boolean;
+  /** The skills and the MCP servers an agent call lists with strings, when it lists any. */
+  skills?: string[];
+  mcp?: string[];
   /** The literal name a workflow call starts. */
   workflow?: string;
 }
@@ -72,20 +72,6 @@ const OPTIONS_AT: Record<ScriptCall["kind"], number | undefined> = {
   checkpoint: undefined,
 };
 
-/** A name workflow() looks up as a saved workflow. Other text is an inline script. */
-const SAVED_WORKFLOW_NAME = /^[A-Za-z0-9_.-]+$/;
-
-function parseWorkflowAst(script: string): AnyNode {
-  return parse(script, {
-    ecmaVersion: "latest",
-    sourceType: "module",
-    allowAwaitOutsideFunction: true,
-    allowReturnOutsideFunction: true,
-    locations: true,
-    ranges: false,
-  }) as AnyNode;
-}
-
 export function parseWorkflowScript(script: string): { meta: WorkflowMeta; body: string } {
   const { meta, body } = parseScript(script);
   return { meta, body };
@@ -98,7 +84,7 @@ export function readWorkflowScript(script: string): { meta: WorkflowMeta; body: 
 }
 
 function parseScript(script: string): { meta: WorkflowMeta; body: string; ast: AnyNode } {
-  const ast = parseWorkflowAst(script);
+  const ast = parseWorkflowText(script);
 
   // This direct-syntax check provides fast author feedback without chasing aliases.
   // DETERMINISM_PRELUDE remains the authoritative runtime enforcement for aliases,
@@ -160,18 +146,9 @@ function parseScript(script: string): { meta: WorkflowMeta; body: string; ast: A
   };
 }
 
+/** Push a node's children so that the first in the text pops first. */
 function pushAstChildren(node: AnyNode, pending: AnyNode[]): void {
-  const children: AnyNode[] = [];
-  for (const value of Object.values(node)) {
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item && typeof item === "object" && typeof (item as AnyNode).type === "string") children.push(item as AnyNode);
-      }
-    } else if (value && typeof value === "object" && typeof (value as AnyNode).type === "string") {
-      children.push(value as AnyNode);
-    }
-  }
-  for (let index = children.length - 1; index >= 0; index--) pending.push(children[index]);
+  pending.push(...childrenOf(node).reverse());
 }
 
 function findDeterminismViolation(ast: AnyNode): { api: string; node: AnyNode } | undefined {
@@ -288,26 +265,6 @@ function validateMeta(meta: unknown): asserts meta is WorkflowMeta {
   }
 }
 
-/** The string a node always holds: a string literal or a template with no ${}. */
-function staticString(node: AnyNode | null | undefined): string | undefined {
-  if (node?.type === "Literal" && typeof node.value === "string") return node.value;
-  if (node?.type === "TemplateLiteral" && node.expressions.length === 0) {
-    return node.quasis.map((quasi: AnyNode) => quasi.value.cooked ?? quasi.value.raw).join("");
-  }
-  return undefined;
-}
-
-/** The key of a property written as a name or a string, not a computed one. */
-function keyOf(property: AnyNode): string | undefined {
-  if (property.type !== "Property" || property.computed) return undefined;
-  if (property.key?.type === "Identifier") return property.key.name;
-  return typeof property.key?.value === "string" ? property.key.value : undefined;
-}
-
-function ownProperty(object: AnyNode, key: string): AnyNode | undefined {
-  return (object.properties as AnyNode[]).find((property) => keyOf(property) === key);
-}
-
 /** The step a call writes, or nothing when the callee is not a step. */
 function scriptCall(node: AnyNode): ScriptCall | undefined {
   const kind = node.callee.name as ScriptCall["kind"];
@@ -315,7 +272,7 @@ function scriptCall(node: AnyNode): ScriptCall | undefined {
   const call: ScriptCall = { kind };
   const at = OPTIONS_AT[kind];
   const options = at === undefined ? undefined : (node.arguments[at] as AnyNode | undefined);
-  const option = (key: string) => (options?.type === "ObjectExpression" ? ownProperty(options, key)?.value : undefined);
+  const option = (key: string) => (options?.type === "ObjectExpression" ? property(options, key) : undefined);
   const label = staticString(option("label"));
   if (label !== undefined) call.label = label;
   if (kind === "ask" || kind === "breakpoint" || kind === "checkpoint") {
@@ -327,6 +284,11 @@ function scriptCall(node: AnyNode): ScriptCall | undefined {
     const model = staticString(option("model"));
     if (agent !== undefined) call.agent = agent;
     if (model !== undefined) call.model = model;
+    for (const key of ["skills", "mcp"] as const) {
+      const list = option(key);
+      const names = list?.type === "ArrayExpression" ? (list.elements as AnyNode[]).map(staticString).filter((name): name is string => Boolean(name)) : [];
+      if (names.length) call[key] = [...new Set(names)];
+    }
     const keep = option("keepSession");
     if (keep?.type === "Literal" && keep.value === true) call.keepsSession = true;
   }
@@ -358,8 +320,8 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
       if (callee === "ask" || callee === "breakpoint" || callee === "checkpoint") asks++;
       if (callee === "choose") {
         for (const argument of node.arguments as AnyNode[]) {
-          const any = argument.type === "ObjectExpression" ? ownProperty(argument, "any") : undefined;
-          if (any?.value?.type === "Literal" && any.value.value === true) choosesAnyWorkflow = true;
+          const any = argument.type === "ObjectExpression" ? property(argument, "any") : undefined;
+          if (any?.type === "Literal" && any.value === true) choosesAnyWorkflow = true;
         }
       }
     }
@@ -368,13 +330,13 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
       if (model) models.add(model);
     }
     if (node.type === "ObjectExpression") {
-      const agentType = ownProperty(node, "agentType");
-      const mcp = ownProperty(node, "mcp");
+      const agentType = property(node, "agentType");
+      const mcp = property(node, "mcp");
       if (agentType || mcp) {
-        const model = ownProperty(node, "model");
-        const agentName = staticString(agentType?.value);
-        const modelName = staticString(model?.value);
-        const servers = mcp?.value?.type === "ArrayExpression" ? (mcp.value.elements as AnyNode[]).map(staticString) : [];
+        const model = property(node, "model");
+        const agentName = staticString(agentType);
+        const modelName = staticString(model);
+        const servers = mcp?.type === "ArrayExpression" ? (mcp.elements as AnyNode[]).map(staticString) : [];
         steps.push({
           ...(agentName ? { agentType: agentName } : {}),
           setsAgentType: agentType !== undefined,

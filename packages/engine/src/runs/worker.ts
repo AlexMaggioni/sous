@@ -17,7 +17,7 @@ import { approvedLookup } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 import { authorAnsweredBy } from "./consent.js";
 import { Refusal } from "./refusal.js";
-import { activityWriter, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeNote, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type NoteRequest, type RunRecord, type TellOutcome } from "./records.js";
+import { activityWriter, endWorker, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeNote, takePause, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type NoteRequest, type RunRecord, type TellOutcome } from "./records.js";
 import { goLimits } from "./limits.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
@@ -101,6 +101,33 @@ function holdSteerSignal(): () => void {
     if (!held) return;
     held = false;
     if (--steerHolders === 0) process.off("SIGUSR2", onSteerSignal);
+  };
+}
+
+/** Pause the run on each `sous pause` until the call it returns, also one asked before. `sous pause`
+ *  leaves a file, and sends SIGUSR1 once the record says the worker listens. Each run takes only its
+ *  own file, so runs that share a process, as in tests, pause one at a time. */
+function answerPause(paths: HomePaths, runId: string, manager: { pause(runId: string): boolean }, log: (line: string) => void): () => void {
+  let ended = false;
+  const onSignal = () => {
+    if (!takePause(paths, runId)) return;
+    log(`${stamp()} pausing`);
+    if (manager.pause(runId)) return;
+    // A pause that came before the manager runs the run waits for it, until the run ends.
+    const retry = setInterval(() => {
+      if (ended || manager.pause(runId)) clearInterval(retry);
+    }, 50);
+  };
+  process.on("SIGUSR1", onSignal);
+  updateRecord(paths, runId, { listening: process.pid });
+  onSignal();
+  return () => {
+    ended = true;
+    // The record stops naming the worker as listening before the handler goes, so no SIGUSR1
+    // comes without one. A pause asked as the worker ends is for this worker, not the next.
+    updateRecord(paths, runId, { listening: undefined });
+    process.off("SIGUSR1", onSignal);
+    takePause(paths, runId);
   };
 }
 
@@ -202,7 +229,7 @@ async function runOnAccounts(
   const runId = record.runId;
   const config = loadConfig(paths);
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
-  updateRecord(paths, runId, { pid: process.pid, limit: undefined, refused: undefined });
+  updateRecord(paths, runId, { pid: process.pid, pauseFile: true, limit: undefined, refused: undefined });
   // A step stop the last worker never took names a step of that worker, not this one.
   takeStepStops(paths, runId);
   const goNote = noteForGo(note, log);
@@ -277,6 +304,8 @@ async function runOnAccounts(
       kind: checkpoint.kind ?? "confirm",
       ...(checkpoint.choices ? { choices: [...checkpoint.choices] } : {}),
       breakpoint: context?.purpose?.breakpoint === true,
+      ...(context?.purpose?.title ? { title: context.purpose.title } : {}),
+      ...(context?.purpose?.show ? { show: context.purpose.show } : {}),
       answeredBy: authorAnsweredBy({ answeredBy: context?.purpose?.answeredBy, breakpoint: context?.purpose?.breakpoint }),
       ...(context?.purpose?.step ? { step: context.purpose.step } : {}),
       askedAt: new Date().toISOString(),
@@ -319,10 +348,6 @@ async function runOnAccounts(
   manager.on("phase", (event) => log(`${stamp()} phase      ${from(event.scope)}${event.title}`));
 
   let stopping = false;
-  const onPause = () => {
-    log(`${stamp()} pausing`);
-    manager.pause(runId);
-  };
   // `sous stop --step` writes its request, with each call to stop, then sends SIGUSR2.
   const onStopSteps = () => {
     for (const { step, calls } of takeStepStops(paths, runId)) {
@@ -343,8 +368,8 @@ async function runOnAccounts(
     manager.stop(runId);
   };
   const releaseSteer = options.handleSignals ? holdSteerSignal() : undefined;
+  const releasePause = options.handleSignals ? answerPause(paths, runId, manager, log) : undefined;
   if (options.handleSignals) {
-    process.on("SIGUSR1", onPause);
     steerHandlers.add(onSteer);
     process.on("SIGTERM", onStop);
     process.on("SIGINT", onStop);
@@ -396,12 +421,12 @@ async function runOnAccounts(
     limits.end();
     waits.abort();
     if (options.handleSignals) {
-      process.off("SIGUSR1", onPause);
       steerHandlers.delete(onSteer);
       process.off("SIGTERM", onStop);
       process.off("SIGINT", onStop);
     }
     releaseSteer?.();
+    releasePause?.();
     await runner.dispose().catch(() => {});
   }
 
@@ -411,7 +436,7 @@ async function runOnAccounts(
   // The worker ends, so it judges its run as gone. The run's result wins over the saved status.
   const { pause } = judge({ state: status === "unknown" ? undefined : { updatedAt: "", ...state, status }, alive: false, openQuestions: 0 });
   if (!pause || stopping) removeRunQuestions(paths, runId);
-  updateRecord(paths, runId, { pid: undefined });
+  endWorker(paths, runId);
   const reason = state?.pauseReason ? ` (${state.pauseReason}${state.resetHint ? `, ${state.resetHint}` : ""})` : "";
   // A paused resume rejects with its error. A paused start resolves, and the state saves the
   // error's message as its reason when the message says more than the pause reason does.
@@ -451,8 +476,7 @@ export async function workerMain(runId: string, mode: "start" | "resume"): Promi
     // A refusal says why in one line, and the record keeps it for sous show.
     const why = error instanceof Refusal ? error.message : ((error as Error).stack ?? String(error));
     process.stderr.write(`${stamp()} ${error instanceof Refusal ? "refused   " : "error     "} ${why}\n`);
-    const paths = homePaths();
-    if (loadRecord(paths, runId)) updateRecord(paths, runId, { pid: undefined });
+    endWorker(homePaths(), runId);
     return 1;
   } finally {
     release();

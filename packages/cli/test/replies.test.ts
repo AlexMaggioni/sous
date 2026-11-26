@@ -46,6 +46,8 @@ function printer(stdout: string[], stderr: string[]): Machine {
     sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
     isTerminal: false,
     ask: no,
+    open: no,
+    untilStopped: no,
     out: (line) => stdout.push(`${line}\n`),
     write: (text) => stdout.push(text),
     err: (line) => stderr.push(`${line}\n`),

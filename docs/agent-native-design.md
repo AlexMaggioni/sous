@@ -368,7 +368,7 @@ export function lineDiff(before: string, after: string): string[]; // "+ line", 
 - The proposal says the outline comes from the parse `sous check` already does. That parse (`ScriptRefs`) reads agent names, models, workflows and script files, but no labels and no shell steps. Piece 10 extends `readWorkflowScript` with `calls`, each `agent`, `sh`, `js`, `py`, `ask`, `breakpoint` and `workflow` call in the order written, with its literal label. A note says the order is the order written, and that loops and branches show once.
 - `check` comes from `checkWorkflow`. `lastRuns` lists the last three runs of that workflow.
 - `--diff` compares the last approved text with the file. A new file shows in full. The diff is cut at 200 lines with a note. The reply's next is the `approve` call.
-- `sous agents --json` lists `lookupAgents` as `{name, description, harness, model, file}`.
+- `sous agents --json` lists `lookupAgents` as `{name, description, harness, only, model, file}`. `only` names the harness whose own folder holds the file.
 
 ## Step activity, step and log
 

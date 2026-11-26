@@ -34,7 +34,7 @@
 // - lastRuns lists the last 3 runs of the workflow's file, newest first, whatever their status,
 //   as {runId, status, seconds, tokens}. A dry run of `sous check` is left out: it ran stand-in
 //   agents, so its cost says nothing about a real run.
-// - `sous agents --json` gives {agents: [{name, description, harness, model, file}]}, for the
+// - `sous agents --json` gives {agents: [{name, description, harness, only, model, file}]}, for the
 //   project's folders and the home's, as lookupAgents finds them. `model` is the model on the
 //   agent's own harness, where its file names one.
 // - A show adds no line to events.jsonl. It only reads.
@@ -479,7 +479,7 @@ describe("piece 10: the call of the not_approved refusal works", () => {
 });
 
 describe("piece 10: sous agents", () => {
-  it("lists the agents of the project's folders and of the home, with name, description, harness, model and file", async () => {
+  it("lists the agents of the project's folders and of the home, with name, description, harness, the harness it runs only on, model and file", async () => {
     const { paths, projectDir } = testHome();
     const implementer = join(projectDir, ".rulesync", "subagents", "implementer.md");
     const fixer = join(projectDir, ".codex", "agents", "fixer.toml");
@@ -517,6 +517,11 @@ describe("piece 10: sous agents", () => {
       assert.equal(byName.get("helper")!.harness, "claude");
       assert.match(String(byName.get("helper")!.model), /sonnet/);
       assert.equal(byName.get("helper")!.file, helper);
+
+      // A harness's own folder runs its agent on that harness only. A rulesync file runs on both.
+      assert.equal(byName.get("implementer")!.only, undefined);
+      assert.equal(byName.get("fixer")!.only, "codex");
+      assert.equal(byName.get("helper")!.only, "claude");
 
       const text = await sous(paths, ["agents", "--project", projectDir], { env: { ...process.env } });
       assert.equal(text.code, 0, text.out);

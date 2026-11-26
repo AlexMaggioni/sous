@@ -74,6 +74,8 @@ sous runs saved workflows in the background.
                                         folder, or show where each program finds it
   sous hook install|remove              add or remove the Claude Code session-start hook that runs
                                         sous status --line; it keeps a backup of settings.json
+  sous serve [--port N] [--no-open]     the page of the runs in the browser, on this machine only;
+                                        prints a link with a token and serves until Ctrl-C
 
 With --json, a command prints one JSON object, with its notes and the calls to make next. A
 request that changes nothing, such as pausing a paused run, exits 0 with a note.

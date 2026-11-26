@@ -124,6 +124,8 @@ exit 4
       "prompt": "Breakpoint: Check the draft\n\nDraft: Fake claude answer.\n\nReply approve, stop, or send back with a note.",
       "kind": "input",
       "breakpoint": true,
+      "title": "Check the draft",
+      "show": "Draft: Fake claude answer.",
       "askedAt": "<time>",
       "answeredBy": "people"
     }
@@ -163,6 +165,8 @@ exit 4
       "prompt": "Breakpoint: Check the draft\n\nDraft: Fake claude answer.\n\nReply approve, stop, or send back with a note.",
       "kind": "input",
       "breakpoint": true,
+      "title": "Check the draft",
+      "show": "Draft: Fake claude answer.",
       "askedAt": "<time>",
       "answeredBy": "people"
     }

@@ -1,0 +1,857 @@
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { basename, join, relative } from "node:path";
+import test from "node:test";
+import vm from "node:vm";
+import { workflowFlow, type FlowNode, type FlowStep } from "../src/workflows/flow.js";
+
+const ROOT = join(import.meta.dirname, "..", "..", "..");
+
+/** A workflow text whose body starts on line 2. */
+const wf = (body: string) => `export const meta = { name: "demo", description: "A demo" }\n${body.trim()}\n`;
+
+/** The flow as indented lines, so a test reads like the graph. */
+function outline(nodes: FlowNode[], depth = 0): string[] {
+  const pad = "  ".repeat(depth);
+  return nodes.flatMap((node): string[] => {
+    switch (node.t) {
+      case "step": {
+        const extras = [
+          node.agent && `@${node.agent}`,
+          node.model && `model ${node.model}`,
+          node.retries !== undefined && `retries ${node.retries}`,
+          node.workflow && `runs ${node.workflow}`,
+          node.dynamic && "dynamic",
+        ].filter(Boolean);
+        return [`${pad}${node.kind} ${node.label}${extras.length ? ` (${extras.join(", ")})` : ""}`, ...outline(node.body ?? [], depth + 1)];
+      }
+      case "loop":
+        return [`${pad}${node.loop}${node.label ? ` ${node.label}` : ""}${node.limit ? ` limit ${node.limit}` : ""}`, ...outline(node.body, depth + 1)];
+      case "if":
+        return [`${pad}if ${node.cond}`, ...outline(node.then, depth + 1), ...(node.else ? [`${pad}else`, ...outline(node.else, depth + 1)] : [])];
+      case "end":
+        return [`${pad}end`];
+      case "parallel":
+        return [`${pad}parallel`, ...node.branches.flatMap((branch) => [`${pad}  branch`, ...outline(branch, depth + 2)])];
+      case "pipeline":
+        return [`${pad}pipeline over ${node.over}`, ...node.stages.flatMap((stage) => [`${pad}  stage`, ...outline(stage, depth + 2)])];
+    }
+  });
+}
+
+/** Every node of a flow, nested ones too, in order. */
+function allNodes(nodes: FlowNode[]): FlowNode[] {
+  return nodes.flatMap((node) => {
+    const inner =
+      node.t === "step" ? [node.body ?? []] : node.t === "loop" ? [node.body] : node.t === "if" ? [node.then, node.else ?? []] : node.t === "parallel" ? node.branches : node.t === "pipeline" ? node.stages : [];
+    return [node, ...inner.flatMap(allNodes)];
+  });
+}
+
+const steps = (nodes: FlowNode[]) => allNodes(nodes).filter((node): node is FlowStep => node.t === "step");
+
+/** One field of each step, next to its label. */
+const each = <K extends keyof FlowStep>(nodes: FlowNode[], field: K) => steps(nodes).map((step) => [step.label, step[field]]);
+
+test("reads each kind of step, in the order they run", () => {
+  const flow = workflowFlow(
+    wf(`
+const plan = await agent("plan", { label: "plan", agentType: "planner", model: "claude/opus", retries: 2, keepSession: true })
+await agent("more", { label: "plan again", continue: "plan" })
+await sh("pnpm test", { label: "tests", retries: 1 })
+await js("return 1", null, { label: "count" })
+await py("print(1)", null, { label: "python" })
+await run("scripts/x.sh", { label: "script" })
+await waitUntil("curl -f localhost", { label: "server up", every: "5s" })
+const color = await ask("Pick a color", { choices: ["red"] })
+const ok = await checkpoint("Go on?", { kind: "confirm" })
+await breakpoint("Look at it")
+await workflow("ticket", { ticket: "x" }, { label: "child" })
+await choose("Pick one", { workflows: ["ticket"], label: "pick", agentType: "triager" })
+return plan
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), [
+    "agent plan (@planner, model claude/opus, retries 2)",
+    "agent plan again (@planner)",
+    "sh tests (retries 1)",
+    "js count",
+    "py python",
+    "run script",
+    "wait server up",
+    "ask Pick a color",
+    "checkpoint Go on?",
+    "breakpoint Look at it",
+    "workflow child (runs ticket)",
+    "choose pick (@triager)",
+  ]);
+  assert.deepEqual(flow.notes, []);
+});
+
+test("reads a step anywhere in an expression, after the steps of its arguments", () => {
+  const flow = workflowFlow(
+    wf(`
+const r = (await agent("a", { label: "first" })).trim()
+const s = \`x \${(await sh("ls", { label: "inside a template" })).stdout}\`
+await agent(\`use \${await js("return 1", null, { label: "argument" })}\`, { label: "after its argument" })
+log(JSON.stringify(await py("1", null, { label: "deep" })))
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["agent first", "sh inside a template", "js argument", "agent after its argument", "py deep"]);
+});
+
+test("a label falls back to the title of an ask, a checkpoint or a breakpoint, then to the kind", () => {
+  const flow = workflowFlow(
+    wf(`
+await agent("a")
+await sh("ls")
+await ask("Which one?")
+await checkpoint(\`Ready?\`)
+await breakpoint("Check", () => agent("b"))
+await workflow("ticket")
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["agent agent", "sh sh", "ask Which one?", "checkpoint Ready?", "breakpoint Check", "  agent agent", "workflow workflow (runs ticket)"]);
+});
+
+test("a label made at run time is dynamic, with each expression as its source", () => {
+  const flow = workflowFlow(
+    wf(`
+await agent("x", { label: \`ticket \${t.id}\` })
+await sh("ls", { label: name })
+await ask(\`Build \${list.length} tickets?\`)
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["agent ticket {t.id} (dynamic)", "sh {name} (dynamic)", "ask Build {list.length} tickets? (dynamic)"]);
+  assert.deepEqual(flow.notes, ["The label of the sh step on line 3 is made at run time."]);
+});
+
+test("a label joined with + reads like a template", () => {
+  const flow = workflowFlow(wf(`await sh("ls", { label: "check " + part + " now" })\nawait sh("ls", { label: a + b })\n`));
+  assert.deepEqual(outline(flow.nodes), ["sh check {part} now (dynamic)", "sh {a + b} (dynamic)"]);
+  assert.deepEqual(flow.notes, ["The label of the sh step on line 3 is made at run time."]);
+});
+
+test("options the text does not write in place leave the label unknown, with a note", () => {
+  const flow = workflowFlow(
+    wf(`
+await agent("x", opts)
+await sh("ls", { ...common, allowFail: true })
+await sh("ls", { ...common, label: "own" })
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["agent agent", "sh sh", "sh own"]);
+  assert.deepEqual(flow.notes, [
+    "The agent step on line 2 takes options from opts, so its label is not known.",
+    "The sh step on line 3 takes options from common, so its label is not known.",
+  ]);
+});
+
+test("workflow() names the saved workflow it starts, and only a literal name", () => {
+  const flow = workflowFlow(
+    wf(`
+await workflow("docs-sync", { ref: "HEAD" }, { label: "docs" })
+await workflow(\`export const meta = { name: "inline", description: "x" }\nreturn 1\`)
+await workflow(args.next)
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["workflow docs (runs docs-sync)", "workflow workflow", "workflow workflow"]);
+  assert.deepEqual(flow.notes, ["The workflow step on line 5 starts a workflow named at run time."]);
+});
+
+test("a breakpoint's step is its body", () => {
+  const flow = workflowFlow(
+    wf(`
+const notes = await breakpoint("Notes look right?", (note) => agent(\`write \${note}\`, { label: "draft", agentType: "writer" }), { show: (x) => x })
+const draft = () => sh("make docs", { label: "docs" })
+await breakpoint("Docs look right?", draft)
+await breakpoint("Just stop", { show: notes })
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["breakpoint Notes look right?", "  agent draft (@writer)", "breakpoint Docs look right?", "  sh docs", "breakpoint Just stop"]);
+  assert.equal((flow.nodes[2] as FlowStep).body, undefined);
+});
+
+test("parallel() and Promise.all() give one branch per element", () => {
+  const flow = workflowFlow(
+    wf(`
+const [a, b] = await parallel([
+  () => agent("a", { label: "left" }),
+  async () => {
+    await sh("ls", { label: "right 1" })
+    await sh("ls", { label: "right 2" })
+  },
+  () => "no step",
+])
+const [c, d] = await Promise.all([agent("c", { label: "one" }), sh("ls", { label: "two" })])
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), [
+    "parallel",
+    "  branch",
+    "    agent left",
+    "  branch",
+    "    sh right 1",
+    "    sh right 2",
+    "parallel",
+    "  branch",
+    "    agent one",
+    "  branch",
+    "    sh two",
+  ]);
+});
+
+test("a .map() over items inside parallel() or Promise.all() is a pipeline of one stage", () => {
+  const flow = workflowFlow(
+    wf(`
+await parallel(files.map((f) => () => agent(f, { label: "read" })))
+await Promise.all(tickets.map(async (t) => {
+  await workflow("ticket", { t }, { label: \`ticket \${t.id}\` })
+}))
+await parallel([() => sh("ls", { label: "list" }), ...docs.map((d) => () => agent(d, { label: "doc" }))])
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), [
+    "pipeline over files",
+    "  stage",
+    "    agent read",
+    "pipeline over tickets",
+    "  stage",
+    "    workflow ticket {t.id} (runs ticket, dynamic)",
+    "parallel",
+    "  branch",
+    "    sh list",
+    "  branch",
+    "    pipeline over docs",
+    "      stage",
+    "        agent doc",
+  ]);
+  assert.deepEqual(flow.notes, []);
+});
+
+test("pipeline() gives one stage per function, over the source of its items", () => {
+  const flow = workflowFlow(
+    wf(`
+const check = (built, item) => sh(\`test \${item}\`, { label: "test" })
+await pipeline(args.items, (item) => agent(item, { label: "build" }), check, () => "no step")
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["pipeline over args.items", "  stage", "    agent build", "  stage", "    sh test"]);
+});
+
+test("gate() and retry() are loops with their attempts as the limit", () => {
+  const flow = workflowFlow(
+    wf(`
+const review = await gate(async (feedback) => {
+  if (feedback) await agent(feedback, { label: "fix" })
+  return agent("review", { label: "review" })
+}, (r) => ({ ok: r.approved }), { attempts: args.rounds })
+await gate(() => agent("w", { label: "work" }), (v) => agent("good?", { label: "check" }), { attempts: 2 })
+await retry(() => sh("flaky", { label: "flaky" }), { attempts: 3, until: (r) => r.code === 0 })
+await retry(() => sh("again", { label: "no limit" }))
+await gate(() => 1 + 1, (v) => v > 1)
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), [
+    "gate limit args.rounds",
+    "  if feedback",
+    "    agent fix",
+    "  agent review",
+    "gate limit 2",
+    "  agent work",
+    "  agent check",
+    "retry limit 3",
+    "  sh flaky",
+    "retry",
+    "  sh no limit",
+  ]);
+});
+
+test("for and while loops are labeled with what they go over or their condition", () => {
+  const flow = workflowFlow(
+    wf(`
+for (const t of tickets) await agent(t, { label: "each" })
+for (const k in groups) await sh(k, { label: "group" })
+for (let i = 0; i < args.n; i++) await sh("x", { label: "count" })
+while (!done) {
+  done = (await agent("again?", { label: "again" })).done
+}
+do {
+  await sh("poll", { label: "poll" })
+} while (busy)
+for (const x of xs) log(x)
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), [
+    "for tickets",
+    "  agent each",
+    "for groups",
+    "  sh group",
+    "for i < args.n",
+    "  sh count",
+    "while !done",
+    "  agent again",
+    "while busy",
+    "  sh poll",
+  ]);
+});
+
+test("if, else and a conditional expression branch, and a return before the end is an end", () => {
+  const flow = workflowFlow(
+    wf(`
+const plan = await agent("plan", { label: "plan" })
+if (!plan.ok) return { failed: true }
+if (plan.big) {
+  await agent("split", { label: "split" })
+} else if (plan.small) {
+  await sh("quick", { label: "quick" })
+} else {
+  log("medium")
+}
+const out = plan.fast ? await sh("fast", { label: "fast" }) : await agent("slow", { label: "slow" })
+if (plan.debug) log("debug")
+plan.ship && (await sh("ship", { label: "ship" }))
+return out
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), [
+    "agent plan",
+    "if !plan.ok",
+    "  end",
+    "if plan.big",
+    "  agent split",
+    "else",
+    "  if plan.small",
+    "    sh quick",
+    "if plan.fast",
+    "  sh fast",
+    "else",
+    "  agent slow",
+    "if plan.ship",
+    "  sh ship",
+  ]);
+});
+
+test("the last top-level return is no end, even with functions after it", () => {
+  const flow = workflowFlow(
+    wf(`
+const done = await helper()
+return done
+async function helper() {
+  return agent("go", { label: "go" })
+}
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["agent go"]);
+});
+
+test("try and catch: the try block's steps, then the catch block's as an if on error", () => {
+  const flow = workflowFlow(
+    wf(`
+try {
+  await sh("build", { label: "build" })
+} catch (error) {
+  await agent(\`fix \${error}\`, { label: "fix build" })
+} finally {
+  await sh("clean", { label: "clean" })
+}
+await sh("deploy", { label: "deploy" }).catch(() => agent("roll back", { label: "roll back" }))
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["sh build", "if error", "  agent fix build", "sh clean", "sh deploy", "if error", "  agent roll back"]);
+});
+
+test("a function the text declares is inlined where it is called", () => {
+  const flow = workflowFlow(
+    wf(`
+async function review(topic) {
+  return agent(topic, { label: "review" })
+}
+const build = async (what) => {
+  await sh(what, { label: "build" })
+  await review(what)
+}
+await build("a")
+await review("b")
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["sh build", "agent review", "agent review"]);
+  const ids = steps(flow.nodes).map((step) => step.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(
+    steps(flow.nodes).map((step) => step.line),
+    [6, 3, 3],
+  );
+});
+
+test("inlining stops at recursion and three functions deep, with a note", () => {
+  const flow = workflowFlow(
+    wf(`
+async function again(n) {
+  await agent("try", { label: "try" })
+  if (n > 0) await again(n - 1)
+}
+await again(3)
+const one = () => agent("deep", { label: "deep" })
+const two = () => one()
+const three = () => two()
+const four = () => three()
+await four()
+await three()
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["agent try", "agent deep"]);
+  assert.deepEqual(flow.notes, [
+    "again() calls itself on line 4, so the graph stops there.",
+    "The call to one() on line 8 is more than 3 functions deep, so the graph leaves it out.",
+  ]);
+});
+
+test("a step in a function sous can't follow is a note", () => {
+  const flow = workflowFlow(
+    wf(`
+const judged = items.filter(async (x) => (await agent(x, { label: "judge" })).ok)
+onDone(() => sh("late", { label: "late" }))
+await choose("pick", { steps: { build: { description: "b", run: () => workflow("ticket") } } })
+const tasks = items.map((x) => () => agent(x))
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["choose choose"]);
+  assert.deepEqual(flow.notes, [
+    "The step on line 2 is inside a function sous can't follow, so the graph leaves it out.",
+    "The step on line 3 is inside a function sous can't follow, so the graph leaves it out.",
+    "The step on line 4 runs only when choose() picks it, so the graph leaves it out.",
+    "The step on line 5 is inside a function sous can't follow, so the graph leaves it out.",
+  ]);
+});
+
+test("each node has the 1-based line it starts on and an id unique in the flow", () => {
+  const text = wf(`
+await sh("a", { label: "a" })
+if (x) {
+  await parallel([() => sh("b", { label: "b" })])
+}
+`);
+  const flow = workflowFlow(text);
+  assert.deepEqual(
+    allNodes(flow.nodes).map((node) => [node.t, node.line]),
+    [
+      ["step", 2],
+      ["if", 3],
+      ["parallel", 4],
+      ["step", 4],
+    ],
+  );
+  const ids = allNodes(flow.nodes).map((node) => node.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(workflowFlow(text), flow);
+});
+
+test("ids stay the same when a line is added after the node", () => {
+  const before = `await sh("a", { label: "a" })\nconst r = await gate(() => agent("w", { label: "w" }), (v) => v.ok)\nif (!r.ok) return\n`;
+  const after = "await sh(\"z\", { label: \"added\" })\n";
+  const one = workflowFlow(wf(before + `await sh("c", { label: "c" })`));
+  const two = workflowFlow(wf(before + after + `await sh("c", { label: "c" })`));
+  const ids = (nodes: FlowNode[]) => allNodes(nodes).map((node) => node.id);
+  assert.deepEqual(ids(two.nodes).slice(0, 5), ids(one.nodes).slice(0, 5));
+  assert.equal(outline(two.nodes).length, outline(one.nodes).length + 1);
+});
+
+test("a step's phase is its own phase option, else the last phase() call before it", () => {
+  const flow = workflowFlow(
+    wf(`
+await agent("a", { label: "before" })
+phase("plan")
+await agent("b", { label: "planner" })
+if (big) {
+  phase("build")
+  await sh("make", { label: "make" })
+}
+await sh("test", { label: "after the branch" })
+await agent("c", { label: "own", phase: "review" })
+const ship = async () => {
+  phase("ship")
+  await sh("deploy", { label: "deploy" })
+}
+await sh("x", { label: "before the call" })
+await ship()
+await sh("y", { label: "after the call" })
+phase(\`round \${n}\`)
+await sh("z", { label: "made" })
+`),
+  );
+  assert.deepEqual(each(flow.nodes, "phase"), [
+    ["before", undefined],
+    ["planner", "plan"],
+    ["make", "build"],
+    ["after the branch", "build"],
+    ["own", "review"],
+    ["before the call", "build"],
+    ["deploy", "ship"],
+    ["after the call", "ship"],
+    ["made", "round {n}"],
+  ]);
+});
+
+test("an agent's prompt and a code step's code read as the text writes them, with each expression as {source}", () => {
+  const flow = workflowFlow(
+    wf(`
+await agent(\`Review \${args.ticket} now\`, { label: "template" })
+await agent("Check " + part + \` with \${tool}\`, { label: "joined" })
+await agent(feedback, { label: "variable" })
+await choose("Pick one", { workflows: ["ticket"], label: "pick" })
+await sh(\`pnpm test \${filter}\`, { label: "sh" })
+await js("return input + 1", 2, { label: "js" })
+await py(\`print(\${n})\`, null, { label: "py" })
+await run("scripts/x.sh", { label: "run" })
+await waitUntil("curl -f localhost", { label: "wait" })
+await ask("Which one?")
+`),
+  );
+  assert.deepEqual(each(flow.nodes, "prompt"), [
+    ["template", "Review {args.ticket} now"],
+    ["joined", "Check {part} with {tool}"],
+    ["variable", "{feedback}"],
+    ["pick", "Pick one"],
+    ["sh", undefined],
+    ["js", undefined],
+    ["py", undefined],
+    ["run", undefined],
+    ["wait", undefined],
+    ["Which one?", undefined],
+  ]);
+  assert.deepEqual(each(flow.nodes, "code"), [
+    ["template", undefined],
+    ["joined", undefined],
+    ["variable", undefined],
+    ["pick", undefined],
+    ["sh", "pnpm test {filter}"],
+    ["js", "return input + 1"],
+    ["py", "print({n})"],
+    ["run", "scripts/x.sh"],
+    ["wait", "curl -f localhost"],
+    ["Which one?", undefined],
+  ]);
+});
+
+test("a step's result is the name the text keeps it under, and each name of a destructured parallel", () => {
+  const flow = workflowFlow(
+    wf(`
+const review = await agent("r", { label: "review" })
+let out = await sh("ls", { label: "let" })
+out = await sh("ls", { label: "assigned" })
+const [left, right] = await parallel([
+  () => agent("a", { label: "left" }),
+  async () => {
+    await sh("x", { label: "unnamed" })
+    return sh("y", { label: "right" })
+  },
+])
+const [one, two] = await Promise.all([agent("c", { label: "one" }), sh("d", { label: "two" })])
+const text = (await agent("t", { label: "derived" })).trim()
+const { stdout } = await sh("ls", { label: "destructured" })
+await agent("z", { label: "not kept" })
+`),
+  );
+  assert.deepEqual(each(flow.nodes, "result"), [
+    ["review", "review"],
+    ["let", "out"],
+    ["assigned", "out"],
+    ["left", "left"],
+    ["unnamed", undefined],
+    ["right", "right"],
+    ["one", "one"],
+    ["two", "two"],
+    ["derived", undefined],
+    ["destructured", undefined],
+    ["not kept", undefined],
+  ]);
+});
+
+test("a step reads earlier results, inputs as args.<name> and the names of its callbacks, in order and once", () => {
+  const flow = workflowFlow(
+    wf(`
+const plan = await agent("plan", { label: "plan" })
+await agent(\`Build \${plan.summary} for \${args.ticket}, see \${plan.notes} and \${args["ticket"]}\`, { label: "build", agentType: args.agent })
+await gate(async (feedback, attempt) => agent(\`fix \${feedback}\`, { label: "fix" }), (r) => r.ok)
+await pipeline(args.items, (item) => sh(\`test \${item}\`, { label: "test" }))
+await pipeline(items, async (item) => {
+  const inner = () => agent(\`build \${item}\`, { label: "inner" })
+  await inner()
+})
+for (const { id } of tickets) await workflow("ticket", { id, plan }, { label: "ticket" })
+try {
+  await sh("build", { label: "try" })
+} catch (error) {
+  await agent(\`fix \${error}\`, { label: "catch" })
+}
+await agent(\`\${cwd} \${other} \${later} \${args}\`, { label: "globals", show: (plan) => plan })
+const later = await sh("x", { label: "later" })
+`),
+  );
+  assert.deepEqual(each(flow.nodes, "reads"), [
+    ["plan", undefined],
+    ["build", ["plan", "args.ticket", "args.agent"]],
+    ["fix", ["feedback"]],
+    ["test", ["item"]],
+    ["inner", ["item"]],
+    ["ticket", ["id", "plan"]],
+    ["try", undefined],
+    ["catch", ["error"]],
+    ["globals", undefined],
+    ["later", undefined],
+  ]);
+});
+
+test("an agent's options as the text writes them", () => {
+  const flow = workflowFlow(
+    wf(`
+await agent("a", { label: "full", timeout: "10m", effort: "high", mode: "plan", isolation: "worktree", skills: ["tdd", "review"], mcp: ["github"], keepSession: true })
+await agent("b", { label: "asks", continue: "full", ask: true, answeredBy: "anyone", timeout: 600 })
+await sh("make", { label: "code", timeout: "5m", allowFail: true, effort: "high" })
+await agent("c", { label: "none", model: "x", retries: 2 })
+`),
+  );
+  assert.deepEqual(each(flow.nodes, "options"), [
+    ["full", { timeout: "10m", effort: "high", mode: "plan", isolation: "worktree", skills: ["tdd", "review"], mcp: ["github"], keepSession: true }],
+    ["asks", { timeout: "600", continues: "full", asks: true, answeredBy: "anyone" }],
+    ["code", { timeout: "5m", allowFail: true }],
+    ["none", undefined],
+  ]);
+});
+
+test("the options of ask, checkpoint and breakpoint", () => {
+  const flow = workflowFlow(
+    wf(`
+await ask("Which?", { choices: ["a", "b"], answeredBy: "people" })
+await checkpoint("Pick", { kind: "select", choices: ["x", "y"] })
+await checkpoint("Go on?", { kind: "confirm" })
+await breakpoint("Check", () => agent("b", { label: "draft" }), { max: 3 })
+await breakpoint("Stop here", { max: 2 })
+`),
+  );
+  assert.deepEqual(each(flow.nodes, "options"), [
+    ["Which?", { choices: ["a", "b"], answeredBy: "people" }],
+    ["Pick", { choices: ["x", "y"], answer: "select" }],
+    ["Go on?", { answer: "confirm" }],
+    ["Check", { max: 3 }],
+    ["draft", undefined],
+    ["Stop here", { max: 2 }],
+  ]);
+});
+
+test("workflow() gives its inputs and place, choose what it may pick, waitUntil how often it checks", () => {
+  const flow = workflowFlow(
+    wf(`
+await workflow("ticket", { ticket: args.ticket, rounds: 2, "dry-run": true, plan }, { label: "child", place: "worktree" })
+await workflow("ticket", { ...args, x: 1 }, { label: "spread" })
+await choose("Pick", { steps: { build: () => 1, "skip it": { description: "s", run: () => 1 } }, workflows: ["ticket", { name: "docs", description: "d" }], any: true, label: "pick" })
+await waitUntil("curl -f localhost", { label: "server", every: "5s", timeout: "2m" })
+await waitUntil("curl -f localhost", { label: "seconds", every: 10 })
+`),
+  );
+  assert.deepEqual(each(flow.nodes, "options"), [
+    ["child", { inputs: { ticket: "args.ticket", rounds: "2", "dry-run": "true", plan: "plan" }, place: "worktree" }],
+    ["spread", undefined],
+    ["pick", { steps: ["build", "skip it"], workflows: ["ticket", "docs"], any: true }],
+    ["server", { timeout: "2m", every: "5s" }],
+    ["seconds", { every: "10" }],
+  ]);
+});
+
+test("a schema's field names, from an object, from Type.Object, or from a const that holds one", () => {
+  const flow = workflowFlow(
+    wf(`
+const Verdict = Type.Object({ approved: Type.Boolean(), review: Type.String() })
+const shape = { type: "object", properties: { passed: { type: "boolean" } } }
+await agent("a", { label: "object", schema: { type: "object", properties: { a: {}, "b-c": {} }, required: ["a"] } })
+await agent("b", { label: "typebox", schema: Type.Object({ x: Type.Number() }) })
+await agent("c", { label: "named typebox", schema: Verdict })
+await agent("d", { label: "named object", schema: shape })
+await agent("e", { label: "made", schema: makeSchema() })
+`),
+  );
+  assert.deepEqual(
+    steps(flow.nodes).map((step) => [step.label, step.options?.schema]),
+    [
+      ["object", ["a", "b-c"]],
+      ["typebox", ["x"]],
+      ["named typebox", ["approved", "review"]],
+      ["named object", ["passed"]],
+      ["made", undefined],
+    ],
+  );
+});
+
+test("an option the text makes at run time is left out, with no note", () => {
+  const flow = workflowFlow(
+    wf(`
+let level = "high"
+await agent("a", { label: "made", timeout: limit, effort: level, skills: [first, "b"], keepSession: keep, isolation: where, schema: { properties: { ...base } } })
+await agent("b", opts)
+await ask("Which?", { choices: list })
+await breakpoint("Check", { max: args.max })
+await workflow("ticket", inputs, { place: args.place, label: "child" })
+`),
+  );
+  assert.deepEqual(each(flow.nodes, "options"), [
+    ["made", undefined],
+    ["agent", undefined],
+    ["Which?", undefined],
+    ["Check", undefined],
+    ["child", undefined],
+  ]);
+  assert.deepEqual(flow.notes, ["The agent step on line 4 takes options from opts, so its label is not known."]);
+});
+
+test("a gate's check and a retry's until, as the text writes them", () => {
+  const flow = workflowFlow(
+    wf(`
+await gate(() => agent("w", { label: "work" }), (r) => r.ok, { attempts: 2 })
+await gate(() => agent("w", { label: "work 2" }), check)
+await retry(() => sh("flaky", { label: "flaky" }), { attempts: 3, until: (r) =>
+  r.code === 0 })
+await retry(() => sh("again", { label: "again" }))
+`),
+  );
+  assert.deepEqual(
+    allNodes(flow.nodes).flatMap((node) => (node.t === "loop" ? [[node.loop, node.until]] : [])),
+    [
+      ["gate", "(r) => r.ok"],
+      ["gate", "check"],
+      ["retry", "(r) =>\n  r.code === 0"],
+      ["retry", undefined],
+    ],
+  );
+});
+
+test("a text that does not parse gives no node and a note with the reason", () => {
+  const flow = workflowFlow(wf(`await agent("a", { label: "a" }`));
+  assert.deepEqual(flow.nodes, []);
+  assert.equal(flow.notes.length, 1);
+  assert.match(flow.notes[0], /^The text does not parse: Unexpected token \(\d+:\d+\)$/);
+});
+
+test("never throws, whatever the string", () => {
+  const odd = ["", " ", "}", "return", "export const meta = {}", "\u0000", "a".repeat(10_000), "[".repeat(50_000), `${"[".repeat(3_000)}agent()${"]".repeat(3_000)}`, "agent(".repeat(2_000)];
+  for (const text of odd) {
+    const flow = workflowFlow(text);
+    assert.ok(Array.isArray(flow.nodes) && Array.isArray(flow.notes));
+  }
+  assert.deepEqual(workflowFlow(undefined as unknown as string).nodes, []);
+});
+
+// The mock's graphs, written by hand from the same texts, that the owner accepted.
+
+interface MockNode {
+  t: string;
+  kind?: string;
+  label?: string;
+  title?: string;
+  agent?: string;
+  model?: string;
+  wf?: string;
+  cond?: string;
+  find?: string;
+  max?: number;
+  maxArg?: string;
+  body?: MockNode[];
+  branches?: MockNode[][];
+}
+
+/** Labels the mock shortened by hand, and the label the text gives. */
+const MOCK_LABELS: Record<string, string> = {
+  "Build these?": "The triager found {clear.length} clear tickets. Build these?",
+  "ticket {letter}": 'ticket {"ABCDEFGH"[i]}',
+  "pick what to run": "choose",
+};
+
+function mockShape(node: MockNode): unknown {
+  switch (node.t) {
+    case "step":
+      return { step: `${node.kind} ${MOCK_LABELS[node.label!] ?? node.label}`, agent: node.agent, model: node.model, workflow: node.wf };
+    case "bp":
+      return { step: `breakpoint ${node.title}`, body: node.body!.map(mockShape) };
+    case "gate":
+    case "retry":
+      return { loop: node.t, limit: node.maxArg ? `args.${node.maxArg}` : String(node.max), body: node.body!.map(mockShape) };
+    case "if":
+      return { if: node.cond, then: node.body!.map(mockShape) };
+    case "dec":
+      return { if: node.find!.slice("if (".length, -1), then: ["end"] };
+    case "par":
+      return { parallel: node.branches!.map((branch) => branch.map(mockShape)) };
+    case "pipe":
+      return { pipeline: node.body!.map((stage) => [mockShape(stage)]) };
+    default:
+      throw new Error(`a mock node of type ${node.t}`);
+  }
+}
+
+function flowShape(node: FlowNode): unknown {
+  switch (node.t) {
+    case "step": {
+      const shape = { step: `${node.kind} ${node.label}`, agent: node.agent, model: node.model, workflow: node.workflow };
+      return node.body ? { step: shape.step, body: node.body.map(flowShape) } : shape;
+    }
+    case "loop":
+      return { loop: node.loop, limit: node.limit, body: node.body.map(flowShape) };
+    case "if":
+      return { if: node.cond, then: node.then.map(flowShape) };
+    case "end":
+      return "end";
+    case "parallel":
+      return { parallel: node.branches.map((branch) => branch.map(flowShape)) };
+    case "pipeline":
+      return { pipeline: node.stages.map((stage) => stage.map(flowShape)) };
+  }
+}
+
+// The mock is a browser script. Its values come back through JSON, so their arrays are this realm's.
+const mock = JSON.parse(vm.runInNewContext(`${readFileSync(join(ROOT, "docs/features/view/mock/data.js"), "utf8")}\n;JSON.stringify({ WF_TEXT, G })`, {})) as {
+  WF_TEXT: Record<string, string>;
+  G: Record<string, MockNode[]>;
+};
+
+for (const name of Object.keys(mock.G)) {
+  test(`the mock's ${name} reads as its hand-written graph`, () => {
+    const flow = workflowFlow(mock.WF_TEXT[name]);
+    assert.deepEqual(flow.nodes.map(flowShape), mock.G[name].map(mockShape));
+    const ids = allNodes(flow.nodes).map((node) => node.id);
+    assert.equal(new Set(ids).size, ids.length);
+  });
+}
+
+test("the mock's pipelines go over the items as the text writes them", () => {
+  const over = (name: string) => allNodes(workflowFlow(mock.WF_TEXT[name]).nodes).flatMap((node) => (node.t === "pipeline" ? [node.over] : []));
+  assert.deepEqual(over("deps-update"), ["packages"]);
+  assert.deepEqual(over("factory"), ["chosen"]);
+  assert.match(over("release-train")[0], /^\[ "@sous\/engine", "@sous\/cli", .* "@sous\/mcp-proxy", \]$/);
+});
+
+// Every workflow file in the repo, each also cut short at every line.
+
+function workflowFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    if (["node_modules", "dist", ".git"].includes(entry.name)) return [];
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return workflowFiles(path);
+    return entry.name.endsWith(".js") && basename(dir) === "workflows" ? [path] : [];
+  });
+}
+
+test("every workflow file in the repo reads, whole and cut short", () => {
+  const files = workflowFiles(ROOT);
+  assert.ok(files.length >= 20, `found only ${files.length} workflow files`);
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    const flow = workflowFlow(text);
+    assert.ok(steps(flow.nodes).length > 0, `${relative(ROOT, file)} has no step`);
+    assert.ok(!flow.notes.some((note) => note.startsWith("The text does not parse")), `${relative(ROOT, file)}: ${flow.notes.join(" ")}`);
+    const lines = text.split("\n");
+    for (let cut = 1; cut < lines.length; cut++) {
+      const part = workflowFlow(lines.slice(0, cut).join("\n"));
+      assert.ok(Array.isArray(part.nodes) && Array.isArray(part.notes));
+    }
+  }
+});

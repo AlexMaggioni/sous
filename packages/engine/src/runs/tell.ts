@@ -7,7 +7,8 @@ import { recordAction, type Who } from "./actions.js";
 import type { HomePaths } from "./home.js";
 import { readActivity, requestTell, TELL_RECEIPTS, type TellOutcome } from "./records.js";
 import { Refusal, word } from "./refusal.js";
-import { runDetail, runningCalls, type RunningStep } from "./run.js";
+import type { RunningStep } from "./live-steps.js";
+import { runDetail, runningCalls } from "./run.js";
 import { isAgentCall, stepCalls } from "./step-view.js";
 
 /** One call a tell went to: the step's name in the log, the call's number as sous step --call

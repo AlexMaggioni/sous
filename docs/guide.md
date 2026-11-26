@@ -516,6 +516,28 @@ scheduled runs work in a scratch folder. `sous schedule list` shows these schedu
 of the file they come from. To stop one, change or remove `schedule` in the file. `sous check`
 refuses a bad cron, and a schedule whose inputs miss a required one.
 
+## The page
+
+```sh
+pnpm --filter @sous/view build
+sous serve
+```
+
+`sous serve` shows the runs, the questions, the workflows, the agents, the skills and the MCP
+servers in the browser. It listens on 127.0.0.1 only, on port 4317 or the next free one. `--port`
+picks another. It prints a link that holds a token, and opens it unless you give `--no-open` or
+there is no terminal. The link sets a cookie, and every request needs that cookie or the header
+`Authorization: Bearer <token>`. `SOUS_SERVE_TOKEN` sets the token. Ctrl-C stops the server.
+
+The page reads the home through the API under `/api`, and `/api/live` tells it within a second
+what changed. An answer, a stop or any other action on the page runs the `sous` command in the
+server, as the person through the page. It follows the same rules as at the terminal, and the
+action's line records `through: { kind: "person", via: "view" }`. The workflows, agents, skills
+and MCP servers are those of the project `sous serve` started in, and `--project` names another.
+
+A step of a run cannot start `sous serve`, since no person is there to read the page. An agent
+starts it only once the person asked for the page, with `--by person`.
+
 ## From a session
 
 A Claude Code session starts a workflow like a subagent, through its shell:

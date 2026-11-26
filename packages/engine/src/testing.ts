@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { ensureHome, homePaths, type HomePaths } from "./runs/home.js";
 import type { Launcher } from "./runs/launch.js";
-import { loadRecord, updateRecord } from "./runs/records.js";
+import { endWorker } from "./runs/records.js";
 import { engineRunFiles, logFile } from "./runs/store.js";
 import { runWorker } from "./runs/worker.js";
 import type { PersistedRunState } from "./runs/persistence/run-persistence.js";
@@ -120,7 +120,7 @@ export function inProcess(options: InProcessOptions): InProcessWorkers {
     const worker = runWorker(runId, mode, { paths, inner, pollMs, log, handleSignals });
     worker.catch((error: unknown) => {
       toFile(`${new Date().toISOString().slice(11, 19)} error      ${(error as Error).stack ?? String(error)}`);
-      if (loadRecord(paths, runId)) updateRecord(paths, runId, { pid: undefined });
+      endWorker(paths, runId);
     });
     workers.set(runId, worker);
   };

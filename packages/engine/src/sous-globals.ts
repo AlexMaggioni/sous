@@ -156,11 +156,13 @@ export function createSousGlobals(deps: SousGlobalDeps) {
     if (typeof title !== "string" || !title.trim()) fail("breakpoint(title) needs a title");
     const marked = (options: unknown) => typeof options === "object" && options !== null && (options as { answeredBy?: unknown }).answeredBy !== undefined;
     if (marked(stepOrOptions) || marked(maybeOptions)) fail("breakpoint() takes no answeredBy: a breakpoint is always for people");
-    const render = (value: unknown) => (value === undefined ? "" : typeof value === "string" ? value : JSON.stringify(value, null, 2));
+    // JSON.stringify gives undefined for a function or a symbol, which shows as its String.
+    const render = (value: unknown) => (value === undefined ? "" : typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? String(value)));
     const prompt = (shown: unknown) =>
       `Breakpoint: ${title}\n${shown === undefined ? "" : `\n${render(shown)}\n`}\nReply approve, stop, or send back with a note.`;
     const decide = async (shown: unknown) => {
-      const decision = decisionOf(await deps.markedCheckpoint(prompt(shown), { kind: "input" }, { breakpoint: true }));
+      const show = render(shown).trim();
+      const decision = decisionOf(await deps.markedCheckpoint(prompt(shown), { kind: "input" }, { breakpoint: true, title, ...(show ? { show } : {}) }));
       if (decision.decision === "stop") {
         throw new WorkflowError(`Stopped at breakpoint "${title}"${decision.note ? `: ${decision.note}` : ""}`, WorkflowErrorCode.WORKFLOW_ABORTED, {
           recoverable: false,

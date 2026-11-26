@@ -25,6 +25,10 @@ export interface CheckpointOptions {
  *  existed keeps its hash, and a script's checkpoint() cannot set it. */
 export interface CheckpointPurpose {
   breakpoint?: true;
+  /** A breakpoint's title, and the text it shows when it shows one. The prompt packs both, with a
+   *  hint for the terminal. */
+  title?: string;
+  show?: string;
   answeredBy?: "anyone";
   step?: string;
 }

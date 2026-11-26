@@ -157,6 +157,22 @@ export interface ResolvedWorkflow {
   refs: ScriptRefs;
 }
 
+/** A saved workflow by name, the project's first, also when its file does not parse. A name no
+ *  folder has is refused with the names they have. */
+export function findSavedWorkflow(paths: HomePaths, projectDir: string, name: string): WorkflowDirEntry {
+  const view = projectWorkflows(paths, projectDir);
+  const entries = view.list();
+  const entry = entries.find((candidate) => candidate.name === name);
+  if (entry) return entry;
+  const names = entries.map((candidate) => candidate.name);
+  throw new Refusal(
+    "no_such_workflow",
+    `no workflow "${name}". Looked in ${view.dirs.join(" and ")}.${names.length ? ` Saved workflows: ${names.join(", ")}.` : ""}`,
+    "Give the name of a saved workflow, or the path of a workflow file.",
+    "sous workflows --json",
+  );
+}
+
 /** A saved workflow by name (project first, then home), or a script file by path. */
 export function resolveWorkflow(paths: HomePaths, projectDir: string, nameOrPath: string): ResolvedWorkflow {
   let file: string | undefined;
@@ -164,18 +180,7 @@ export function resolveWorkflow(paths: HomePaths, projectDir: string, nameOrPath
   if ((nameOrPath.includes("/") || nameOrPath.endsWith(".js") || nameOrPath.endsWith(".mjs")) && existsSync(asPath)) {
     file = asPath;
   } else {
-    const view = projectWorkflows(paths, projectDir);
-    const entries = view.list();
-    const entry = entries.find((candidate) => candidate.name === nameOrPath);
-    if (!entry) {
-      const names = entries.map((candidate) => candidate.name);
-      throw new Refusal(
-        "no_such_workflow",
-        `no workflow "${nameOrPath}". Looked in ${view.dirs.join(" and ")}.${names.length ? ` Saved workflows: ${names.join(", ")}.` : ""}`,
-        "Give the name of a saved workflow, or the path of a workflow file.",
-        "sous workflows --json",
-      );
-    }
+    const entry = findSavedWorkflow(paths, projectDir, nameOrPath);
     if (entry.error) {
       throw new Refusal("workflow_invalid", `${entry.file} does not parse: ${entry.error}`, `Fix the workflow file ${entry.file}.`, `sous check ${entry.name} --json`);
     }

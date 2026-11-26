@@ -89,6 +89,8 @@ export interface AgentLookup {
   agents: Map<string, FoundAgent>;
   /** Names that can't be used as they are, with what to change. */
   problems: Map<string, AgentProblem>;
+  /** Every agent file that parses, in the order sous looks, the ones that lose included. */
+  files: Array<Pick<FoundAgent, "name" | "file" | "from" | "scope">>;
 }
 
 /** A harness's login in env. Only its adapter names the variables. */
@@ -156,7 +158,9 @@ function looseFrontmatter(yaml: string): Record<string, unknown> {
   return out;
 }
 
-function splitFrontmatter(content: string, file: string, loose = false): { data: Record<string, unknown>; body: string } {
+/** A markdown file's frontmatter and its body. With `loose`, a frontmatter strict YAML rejects
+ *  gives its top-level `key: value` lines. */
+export function splitFrontmatter(content: string, file: string, loose = false): { data: Record<string, unknown>; body: string } {
   const match = /^﻿?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n([\s\S]*))?$/.exec(content);
   if (!match) return { data: {}, body: content.trim() };
   let data: unknown;
@@ -274,12 +278,14 @@ function readCodexAgent(file: string): Parsed {
   };
 }
 
-/** The agents in one folder, by name. A file that doesn't parse is a problem for its name. */
-function readFolder(paths: string[], read: (file: string) => Parsed, problems: Map<string, AgentProblem>): Map<string, Parsed> {
+/** The agents in one folder, by name. A file that doesn't parse is a problem for its name.
+ *  `seen` gets each agent that parses, a second file of a name included. */
+function readFolder(paths: string[], read: (file: string) => Parsed, problems: Map<string, AgentProblem>, seen: (agent: Parsed) => void): Map<string, Parsed> {
   const out = new Map<string, Parsed>();
   for (const file of paths) {
     try {
       const agent = read(file);
+      seen(agent);
       if (!out.has(agent.name)) out.set(agent.name, agent);
     } catch (error) {
       const name = basename(file, extname(file));
@@ -304,6 +310,8 @@ export function lookupAgents(settings: LookupSettings): AgentLookup {
   const homes = harnessHomes(env);
   const problems = new Map<string, AgentProblem>();
   const agents = new Map<string, FoundAgent>();
+  const read: AgentLookup["files"] = [];
+  const seen = (scope: FoundAgent["scope"]) => (agent: Parsed) => read.push({ name: agent.name, file: agent.file, from: agent.from, scope });
   const rulesync = rulesyncFolders(settings);
 
   const rulesyncLevels: Array<[FoundAgent["scope"], string | undefined]> = [
@@ -312,7 +320,7 @@ export function lookupAgents(settings: LookupSettings): AgentLookup {
   ];
   for (const [scope, root] of rulesyncLevels) {
     if (!root) continue;
-    const found = readFolder(files(join(root, "subagents"), ".md"), (file) => readRulesyncAgent(file, settings.defaultHarness), problems);
+    const found = readFolder(files(join(root, "subagents"), ".md"), (file) => readRulesyncAgent(file, settings.defaultHarness), problems, seen(scope));
     for (const [name, agent] of found) if (!agents.has(name) && !problems.has(name)) agents.set(name, { ...agent, scope });
   }
 
@@ -332,8 +340,8 @@ export function lookupAgents(settings: LookupSettings): AgentLookup {
   const settled = new Set([...agents.keys(), ...problems.keys()]);
   for (const [scope, folders] of levels) {
     const byName = new Map<string, Parsed[]>();
-    for (const [, paths, read] of folders) {
-      for (const [name, agent] of readFolder(paths, read, problems)) {
+    for (const [, paths, reader] of folders) {
+      for (const [name, agent] of readFolder(paths, reader, problems, seen(scope))) {
         if (settled.has(name)) continue;
         byName.set(name, [...(byName.get(name) ?? []), agent]);
       }
@@ -345,7 +353,7 @@ export function lookupAgents(settings: LookupSettings): AgentLookup {
     }
     for (const name of byName.keys()) settled.add(name);
   }
-  return { settings, agents, problems };
+  return { settings, agents, problems, files: read };
 }
 
 // ---- harness choice ----
@@ -368,7 +376,7 @@ export function routeHarness(spec: string | undefined): HarnessId | undefined {
 }
 
 /** The settings an agent runs with on a harness: its own block over its common settings. */
-function settingsFor(agent: FoundAgent, harness: HarnessId): HarnessSettings {
+export function settingsFor(agent: FoundAgent, harness: HarnessId): HarnessSettings {
   return { ...agent.common, ...(agent.blocks[harness] ?? {}) };
 }
 
@@ -377,6 +385,8 @@ export interface ListedAgent {
   name: string;
   description?: string;
   harness: HarnessId;
+  /** Set when the file sits in one harness's own folder, so the agent runs only there. */
+  only?: HarnessId;
   model?: string;
   file: string;
 }
@@ -388,7 +398,7 @@ export function listAgents(paths: HomePaths, projectDir: string, env: Record<str
   const listed = [...agents.values()]
     .map((agent) => {
       const model = settingsFor(agent, agent.harness).model;
-      return { name: agent.name, ...(agent.description ? { description: agent.description } : {}), harness: agent.harness, ...(model ? { model: withHarness(agent.harness, model) } : {}), file: agent.file };
+      return { name: agent.name, ...(agent.description ? { description: agent.description } : {}), harness: agent.harness, ...(agent.from === "rulesync" ? {} : { only: agent.from }), ...(model ? { model: withHarness(agent.harness, model) } : {}), file: agent.file };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
   return { agents: listed, problems: [...problems.values()].sort((a, b) => a.name.localeCompare(b.name)) };
@@ -648,12 +658,13 @@ function parseJsonc(source: string): unknown {
   return JSON.parse(out.replace(/,(\s*[}\]])/g, "$1"));
 }
 
-function readConfig(file: string, parse: (source: string) => unknown): Record<string, unknown> | undefined {
+/** A config file's value, or why it does not parse. A missing file gives undefined. */
+function readConfig(file: string, parse: (source: string) => unknown): { config: Record<string, unknown> } | { error: string } | undefined {
   if (!existsSync(file)) return undefined;
   try {
-    return record(parse(readFileSync(file, "utf8")));
+    return { config: record(parse(readFileSync(file, "utf8"))) };
   } catch (error) {
-    throw new Error(`${file} does not parse: ${(error as Error).message}`);
+    return { error: `${file} does not parse: ${(error as Error).message}` };
   }
 }
 
@@ -686,9 +697,51 @@ function serverOf(name: string, entry: Record<string, unknown>, vars: Record<str
   };
 }
 
-interface ServerSource {
+/** One file that defines MCP servers. */
+export interface McpSource {
+  /** The file as sous names it, such as "~/.claude.json (this project)" for a project's entry
+   *  in Claude Code's own file. */
   file: string;
+  /** The file on disk. */
+  path: string;
+  from: "rulesync" | HarnessId;
+  scope: "project" | "global";
+  /** Its entries by name, as the file writes them. */
   servers: Record<string, unknown>;
+  /** Why the file does not parse. It then has no servers. */
+  error?: string;
+}
+
+/**
+ * The files that define MCP servers for a project, in the order sous looks: rulesync's mcp.jsonc,
+ * the project's then the global one, then Claude Code's own (the project's entry in
+ * ~/.claude.json, .mcp.json, then ~/.claude.json), then Codex's config.toml, the project's then
+ * the home's. A missing file is left out.
+ */
+export function mcpSources(settings: LookupSettings): McpSource[] {
+  const homes = harnessHomes(settings.env ?? process.env);
+  const rulesync = rulesyncFolders(settings);
+  const p = settings.projectDir;
+  const json = (source: string) => JSON.parse(source) as unknown;
+  const sources: McpSource[] = [];
+  const add = (from: McpSource["from"], scope: McpSource["scope"], path: string, read: ReturnType<typeof readConfig>, servers: (config: Record<string, unknown>) => unknown, file = path) => {
+    if (!read) return;
+    if ("error" in read) sources.push({ file, path, from, scope, servers: {}, error: read.error });
+    else sources.push({ file, path, from, scope, servers: record(servers(read.config)) });
+  };
+  for (const [scope, root] of [["project", rulesync.project], ["global", rulesync.global]] as const) {
+    if (!root) continue;
+    const name = ["mcp.jsonc", ".mcp.json"].find((candidate) => existsSync(join(root, candidate)));
+    if (name) add("rulesync", scope, join(root, name), readConfig(join(root, name), parseJsonc), (config) => config.mcpServers);
+  }
+  const claudeJson = readConfig(homes.claudeJson, json);
+  add("claude", "project", homes.claudeJson, claudeJson, (config) => record(record(config.projects)[resolve(p)]).mcpServers, `${homes.claudeJson} (this project)`);
+  add("claude", "project", join(p, ".mcp.json"), readConfig(join(p, ".mcp.json"), json), (config) => config.mcpServers);
+  add("claude", "global", homes.claudeJson, claudeJson, (config) => config.mcpServers);
+  for (const [scope, file] of [["project", join(p, ".codex", "config.toml")], ["global", join(homes.codex, "config.toml")]] as const) {
+    add("codex", scope, file, readConfig(file, parseToml), (config) => config.mcp_servers);
+  }
+  return sources;
 }
 
 export interface FoundServer {
@@ -705,42 +758,13 @@ export interface McpLookup {
 
 /** rulesync's mcp.jsonc, the project's then the global one, then each harness's own config. */
 export function lookupMcpServers(settings: LookupSettings, vars: Record<string, string | undefined> = process.env): McpLookup {
-  const env = settings.env ?? process.env;
-  const homes = harnessHomes(env);
+  const homes = harnessHomes(settings.env ?? process.env);
   const rulesync = rulesyncFolders(settings);
   const p = settings.projectDir;
-  const json = (source: string) => JSON.parse(source) as unknown;
-
-  const rulesyncSources: ServerSource[] = [];
-  for (const root of [rulesync.project, rulesync.global]) {
-    if (!root) continue;
-    for (const name of ["mcp.jsonc", ".mcp.json"]) {
-      const file = join(root, name);
-      const config = readConfig(file, parseJsonc);
-      if (config) {
-        rulesyncSources.push({ file, servers: record(config.mcpServers) });
-        break;
-      }
-    }
-  }
-
-  const own = new Map<HarnessId, ServerSource[]>();
-  const claude: ServerSource[] = [];
-  const claudeJson = readConfig(homes.claudeJson, json);
-  if (claudeJson) claude.push({ file: `${homes.claudeJson} (this project)`, servers: record(record(record(claudeJson.projects)[resolve(p)]).mcpServers) });
-  const projectMcp = readConfig(join(p, ".mcp.json"), json);
-  if (projectMcp) claude.push({ file: join(p, ".mcp.json"), servers: record(projectMcp.mcpServers) });
-  if (claudeJson) claude.push({ file: homes.claudeJson, servers: record(claudeJson.mcpServers) });
-  own.set("claude", claude);
-
-  const codex: ServerSource[] = [];
-  for (const file of [join(p, ".codex", "config.toml"), join(homes.codex, "config.toml")]) {
-    const config = readConfig(file, parseToml);
-    if (config) codex.push({ file, servers: record(config.mcp_servers) });
-  }
-  own.set("codex", codex);
-
-  const search = (harness: HarnessId) => [...rulesyncSources, ...(own.get(harness) ?? [])];
+  const sources = mcpSources(settings);
+  const broken = sources.find((source) => source.error);
+  if (broken) throw new Error(broken.error);
+  const search = (harness: HarnessId) => sources.filter((source) => source.from === "rulesync" || source.from === harness);
   return {
     find(name, harness) {
       for (const source of search(harness)) {

@@ -9,6 +9,11 @@ export function nestedRunId(parentRunId: string, ordinal: number): string {
   return `${parentRunId}-nested${ordinal}`;
 }
 
+/** The root run of a run or nested run id: the id without its nested endings. */
+export function rootRunId(scope: string): string {
+  return scope.replace(/(-nested[1-9]\d*)+$/, "");
+}
+
 /** True when `scope` is the id of a run nested, at any depth, inside `runId`. */
 export function isNestedScope(scope: unknown, runId: string): scope is string {
   return typeof scope === "string" && scope.startsWith(runId) && /^(-nested[1-9]\d*)+$/.test(scope.slice(runId.length));
