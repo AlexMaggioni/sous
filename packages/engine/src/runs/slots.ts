@@ -1,10 +1,12 @@
 // The machine-wide cap on agents running at once. Each running agent holds a slot file.
 // Waiting agents queue by priority, then by arrival: a person's run goes before a scheduled one.
-// A slot or a ticket whose process has died is removed by the next one that looks.
+// A slot or a ticket whose process has died, or ran in an earlier boot, is removed by the next one
+// that looks.
 
 import { closeSync, mkdirSync, openSync, readdirSync, unlinkSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { readJsonFile } from "../json-file.js";
+import { bootId, processAlive } from "../process-alive.js";
 
 export type Priority = "user" | "schedule";
 
@@ -13,23 +15,15 @@ export interface SlotInfo {
   label?: string;
 }
 
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-function readPid(file: string): number | undefined {
-  const pid = readJsonFile<{ pid?: unknown }>(file)?.pid;
-  return typeof pid === "number" ? pid : undefined;
+/** True while the process that wrote the file runs, in this boot. */
+function holderAlive(file: string): boolean {
+  const holder = readJsonFile<{ pid?: unknown; boot?: unknown }>(file);
+  if (typeof holder?.pid !== "number") return false;
+  return processAlive(holder.pid, typeof holder.boot === "string" ? holder.boot : undefined);
 }
 
 function removeIfDead(file: string): boolean {
-  const pid = readPid(file);
-  if (pid !== undefined && alive(pid)) return false;
+  if (holderAlive(file)) return false;
   try {
     unlinkSync(file);
   } catch {
@@ -87,7 +81,7 @@ export class SlotPool {
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           const fd = openSync(file, "wx");
-          writeSync(fd, JSON.stringify({ pid: process.pid, ...info, since: new Date().toISOString() }));
+          writeSync(fd, JSON.stringify({ pid: process.pid, boot: bootId(), ...info, since: new Date().toISOString() }));
           closeSync(fd);
           return file;
         } catch (error) {
@@ -105,7 +99,7 @@ export class SlotPool {
     const ticket = `${rank}-${String(Date.now()).padStart(15, "0")}-${String(process.pid).padStart(8, "0")}-${String(++ticketSeq).padStart(6, "0")}.json`;
     const ticketFile = join(this.queueDir, ticket);
     const fd = openSync(ticketFile, "wx");
-    writeSync(fd, JSON.stringify({ pid: process.pid, ...info }));
+    writeSync(fd, JSON.stringify({ pid: process.pid, boot: bootId(), ...info }));
     closeSync(fd);
     try {
       for (;;) {

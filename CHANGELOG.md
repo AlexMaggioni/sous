@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.1 (unreleased)
+
+### Fixed
+
+- After a reboot, a pid that sous saved before it may name another process. sous saved the pid
+  alone, so it could show a dead worker as running, keep an agent slot taken, refuse to resume a
+  run, or send `sous stop`'s SIGTERM to that other process. sous now saves the boot id with each
+  pid, and a pid from another boot counts as gone.
+- A service that died just after it started a scheduled run, and came back within the same minute,
+  could start the schedule a second time. The service now writes the minute to the disk, and waits
+  for the disk, before it starts the run.
+- A run started from inside a run's worktree made that worktree a known project, so the service
+  started the schedules of its workflow files once more for each such worktree. A folder in the
+  home's `worktrees/` is no longer a project, and those an older sous noted are skipped.
+
 ## 0.1.0 (2026-11-26)
 
 The first version named sous. The same code shipped before as `orc`, from this repository.

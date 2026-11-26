@@ -7,7 +7,7 @@ import type { HarnessId } from "@sous-run/harnesses";
 import { recordAction, type Who } from "./actions.js";
 import type { HomePaths } from "./home.js";
 import type { Launcher } from "./launch.js";
-import { processAlive, type RunRecord } from "./records.js";
+import { workerAlive, type RunRecord } from "./records.js";
 import { listRuns } from "./run.js";
 
 /** A run that `sous account use` moved, or left waiting. */
@@ -63,7 +63,7 @@ export interface WaitingRun {
 export function waitingRuns(paths: HomePaths): WaitingRun[] {
   const waiting: WaitingRun[] = [];
   for (const { record, pause } of listRuns(paths)) {
-    if (processAlive(record.pid) || pause?.reason !== "usage_limit") continue;
+    if (workerAlive(record) || pause?.reason !== "usage_limit") continue;
     // A run from before accounts, or one whose program is unknown, counts as waiting on Claude Code.
     const program = record.limit?.program ?? "claude";
     const account = record.limit?.account ?? record.accounts?.[program]?.name ?? DEFAULT;

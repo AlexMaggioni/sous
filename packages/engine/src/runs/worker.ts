@@ -24,6 +24,7 @@ import { agentSlots, managerStore } from "./store.js";
 import { createSteps, type InnerRunner, type StepsNote } from "../steps/steps.js";
 import { SteeringBoard } from "../steps/steering.js";
 import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";
+import { bootId } from "../process-alive.js";
 import { programLookup } from "../programs.js";
 
 export interface WorkerOptions {
@@ -229,7 +230,7 @@ async function runOnAccounts(
   const runId = record.runId;
   const config = loadConfig(paths);
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
-  updateRecord(paths, runId, { pid: process.pid, pauseFile: true, limit: undefined, refused: undefined });
+  updateRecord(paths, runId, { pid: process.pid, boot: bootId(), pauseFile: true, limit: undefined, refused: undefined });
   // A step stop the last worker never took names a step of that worker, not this one.
   takeStepStops(paths, runId);
   const goNote = noteForGo(note, log);

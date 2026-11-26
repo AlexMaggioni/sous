@@ -3,9 +3,13 @@
  * file. The value goes to a temporary file next to the target, then a rename replaces the target.
  * The temporary name carries the process id, so two processes writing the same file never share
  * one. A JSON lines file only grows, a line at a time, and its reader skips a torn last line.
+ *
+ * A rename alone can still be lost to a power cut: the system may not have put the file, or the
+ * rename, on the disk yet. writeJsonFileDurably waits for both, for a file whose loss would make
+ * sous do a thing twice.
  */
 
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, existsSync, fchmodSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 /** A JSON file's value, or undefined when the file is missing or does not parse. */
@@ -38,6 +42,40 @@ export function writeJsonFile(file: string, value: unknown, mode?: number): void
   // writeFileSync applies the mode only when it creates the file, and the umask can narrow it.
   if (mode !== undefined) chmodSync(temp, mode);
   renameSync(temp, file);
+}
+
+/**
+ * writeJsonFile that a power cut cannot undo once it returns. The temporary file reaches the disk
+ * before the rename, and the rename reaches the disk before the return. On macOS, Node's fsync is
+ * a full flush (F_FULLFSYNC), which also empties the drive's own cache.
+ */
+export function writeJsonFileDurably(file: string, value: unknown, mode?: number): void {
+  const temp = `${file}.${process.pid}.tmp`;
+  const fd = openSync(temp, "w", mode);
+  try {
+    writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`);
+    if (mode !== undefined) fchmodSync(fd, mode);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(temp, file);
+  syncFolder(dirname(file));
+}
+
+/** Put a folder's entries on the disk, so a rename in it outlasts a power cut. Windows cannot open
+ *  a folder this way. A file system that cannot sync a folder leaves the rename to the system. */
+function syncFolder(folder: string): void {
+  if (process.platform === "win32") return;
+  let fd: number | undefined;
+  try {
+    fd = openSync(folder, "r");
+    fsyncSync(fd);
+  } catch {
+    // Some file systems refuse to sync a folder. The file itself is on the disk.
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 
 /** writeJsonFile, making the file's folder first when it is missing. */

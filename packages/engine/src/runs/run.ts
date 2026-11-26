@@ -12,7 +12,7 @@ import type { HomePaths, Place } from "./home.js";
 import { decisionOf, listQuestions, questionView, readQuestion, removeRunQuestions, reply, triedOf, type Misfit, type Question, type QuestionView, type Reply } from "./inbox.js";
 import { answerCalls, letAgentAnswerBy, mayAnswer } from "./consent.js";
 import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
-import { findRecord, isRunId, listRecords, loadRecord, loadSnapshot, processAlive, requestNote, requestPause, requestStepStop, scopePrefix, updateRecord, type NoteRequest, type RunRecord } from "./records.js";
+import { findRecord, isRunId, listRecords, loadRecord, loadSnapshot, requestNote, requestPause, requestStepStop, scopePrefix, updateRecord, workerAlive, type NoteRequest, type RunRecord } from "./records.js";
 import { liveSteps, withTries, type RunningStep, type Step } from "./live-steps.js";
 import { olderSave } from "../older-save.js";
 import { readWorkflowScript } from "../workflows/script.js";
@@ -152,7 +152,7 @@ function savedFacts(shown: PersistedRunState): SavedFacts {
 }
 
 /** The view of one run. The rule counts the questions only while the worker runs. */
-function viewOf(record: RunRecord, state: PersistedRunState | undefined, questions: RunQuestion[], alive = processAlive(record.pid)): { view: RunView; shown: PersistedRunState | undefined } {
+function viewOf(record: RunRecord, state: PersistedRunState | undefined, questions: RunQuestion[], alive = workerAlive(record)): { view: RunView; shown: PersistedRunState | undefined } {
   const verdict = judge({ state, alive, openQuestions: alive ? questions.length : 0, older: state !== undefined && olderSave(state) !== undefined, dryRun: record.origin === "check" });
   const shown = shownState(record, state, verdict);
   return { view: { runId: record.runId, record, ...verdict, questions, ...(shown ? { saved: savedFacts(shown), changedAt: shown.completedAt ?? shown.pausedAt ?? shown.updatedAt } : {}) }, shown };
@@ -193,7 +193,7 @@ export function readRun(paths: HomePaths, id: string): RunView {
 export function runDetail(paths: HomePaths, id: string): RunDetail {
   const record = needRecord(paths, id);
   const state = readState(paths, record.runId);
-  const alive = processAlive(record.pid);
+  const alive = workerAlive(record);
   const { view, shown } = viewOf(record, state, listQuestions(paths, record.runId), alive);
   // The event log has the steps the worker did not save yet, and a killed worker never saves them.
   const live = state ? liveSteps(paths, record, state) : undefined;
@@ -345,7 +345,7 @@ export interface LogRead {
  *  has it. It looks at the worker before it reads, so a read that says it ended is complete. */
 export function readLog(paths: HomePaths, id: string, from = 0): LogRead {
   const record = needRecord(paths, id);
-  const running = processAlive(record.pid);
+  const running = workerAlive(record);
   let text = "";
   const end = readLogFrom(logFile(paths, record.runId), from, (chunk) => (text = chunk));
   return { runId: record.runId, text, end, running };
@@ -398,7 +398,7 @@ export async function waitForRun(paths: HomePaths, runId: string, hooks: WaitHoo
     follow();
     const record = findRecord(paths, runId);
     if (!record) throw new Error(`run ${runId} is gone`);
-    if (!processAlive(record.pid)) {
+    if (!workerAlive(record)) {
       await new Promise((r) => setTimeout(r, 150));
       follow();
       const { view, shown } = viewOf(record, readState(paths, runId), listQuestions(paths, runId), false);
@@ -439,7 +439,7 @@ export type StopOutcome = "stopping" | "stopped" | "already-ended" | "never-star
 /** Stop a run. A running one gets SIGTERM. A paused one is marked stopped here. */
 export function stopRun(paths: HomePaths, runId: string, who: Who): { outcome: StopOutcome; status?: RunStatus } {
   const record = needRecord(paths, runId);
-  if (processAlive(record.pid)) {
+  if (workerAlive(record)) {
     process.kill(record.pid!, "SIGTERM");
     recordAction(paths, { act: "stop", ...who, runId: record.runId });
     return { outcome: "stopping" };
@@ -458,7 +458,7 @@ export function stopRun(paths: HomePaths, runId: string, who: Who): { outcome: S
  *  elsewhere goes on. Returns false when the run is not running, and refuses a name the run never had. */
 export function stopStep(paths: HomePaths, runId: string, step: string, who: Who): boolean {
   const record = needRecord(paths, runId);
-  const alive = processAlive(record.pid);
+  const alive = workerAlive(record);
   const state = readState(paths, record.runId);
   const live = state ? liveSteps(paths, record, state) : { running: [] };
   // With no event log to read, the steps are the ones the state saved.
@@ -486,13 +486,13 @@ export function stopStep(paths: HomePaths, runId: string, step: string, who: Who
 export function runningCalls(paths: HomePaths, runId: string): RunningStep[] {
   const record = needRecord(paths, runId);
   const state = readState(paths, record.runId);
-  return processAlive(record.pid) && state ? liveSteps(paths, record, state).running : [];
+  return workerAlive(record) && state ? liveSteps(paths, record, state).running : [];
 }
 
 /** Pause a running run: steps already running finish, nothing new starts. False when it does not run. */
 export function pauseRun(paths: HomePaths, runId: string, who: Who): boolean {
   const record = needRecord(paths, runId);
-  if (!processAlive(record.pid)) return false;
+  if (!workerAlive(record)) return false;
   requestPause(paths, record.runId);
   recordAction(paths, { act: "pause", ...who, runId: record.runId });
   return true;
@@ -722,14 +722,14 @@ export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: R
   const act = typed.via === "approve" || typed.via === "send-back" ? typed.via : "answer";
   const said = act === "send-back" ? { text: decisionOf(result.value).note ?? "" } : { value: result.value };
   recordAndTell(paths, { act, ...who, runId: question.runId, question: question.id, prompt: question.prompt, ...said }, tell);
-  return { answered: true, running: processAlive(findRecord(paths, question.runId)?.pid), ...(result.notJson ? { notJson: true as const } : {}) };
+  return { answered: true, running: workerAlive(findRecord(paths, question.runId)), ...(result.notJson ? { notJson: true as const } : {}) };
 }
 
 /** A stopped run's worktrees. With `remove`, deletes each branch and folder and calls `deleted`
  *  after each. A discard that removed something records it. */
 export function discardRun(paths: HomePaths, runId: string, who: Who, options: { remove?: boolean; deleted?: (tree: { dir: string; branch: string }) => void } = {}): Array<{ dir: string; branch: string }> {
   const record = needRecord(paths, runId);
-  if (processAlive(record.pid)) throw new Refusal("run_is_running", `${record.runId} is running. sous stop ${record.runId} first.`, "Stop the run, then discard it.", `sous stop ${record.runId} --json`);
+  if (workerAlive(record)) throw new Refusal("run_is_running", `${record.runId} is running. sous stop ${record.runId} first.`, "Stop the run, then discard it.", `sous stop ${record.runId} --json`);
   const trees = runWorktrees(record);
   if (options.remove) {
     for (const tree of trees) {
@@ -758,7 +758,7 @@ export function startedAndUnfinished(verdict: Verdict): boolean {
 
 /** A worker runs the run now, or ran it when its view was read. Its view may be out of date. */
 export function workerRuns(run: RunView): boolean {
-  return processAlive(run.record.pid) || (!run.resume.ok && run.resume.why === "running");
+  return workerAlive(run.record) || (!run.resume.ok && run.resume.why === "running");
 }
 
 /** What a person may do with a run now, from the checks its requests refuse with. */
