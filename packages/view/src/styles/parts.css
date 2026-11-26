@@ -1,0 +1,216 @@
+/*
+ * The styles of src/ui that Tailwind classes say badly: the toast stack, rendered markdown, the
+ * scroll bars of a scroll box, and the syntax grays. Tokens only, like the rest.
+ */
+
+/* The shiki theme reads these. Code is gray: strings and comments muted, the rest in text. */
+:root {
+  --syn-foreground: var(--text);
+  --syn-background: transparent;
+  --syn-token-keyword: var(--text);
+  --syn-token-constant: var(--text);
+  --syn-token-function: var(--text);
+  --syn-token-parameter: var(--text);
+  --syn-token-punctuation: var(--text);
+  --syn-token-link: var(--text);
+  --syn-token-string: var(--text-muted);
+  --syn-token-string-expression: var(--text-muted);
+  --syn-token-comment: var(--text-muted);
+}
+
+@layer components {
+  /* Toasts sit centered at the bottom, newest nearest the edge, at most three at once. */
+  [data-slot="toast-region"] {
+    bottom: calc(20px + var(--keyboard-inset, 0px));
+    width: max-content;
+    max-width: calc(100vw - 32px);
+  }
+  [data-slot="toast-list"] {
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
+    gap: 8px;
+  }
+  /* A toast arrives like the rest: up 4px with a fade over --base. It leaves with a fade over --quick. */
+  [data-slot="toast"] {
+    transition:
+      opacity var(--base) var(--ease-arrive),
+      translate var(--base) var(--ease-arrive);
+  }
+  [data-slot="toast"][data-starting-style] {
+    opacity: 0;
+    translate: 0 var(--rise);
+  }
+  [data-slot="toast"][data-ending-style] {
+    opacity: 0;
+    transition-duration: var(--quick);
+    transition-timing-function: var(--ease-leave);
+  }
+  [data-slot="toast"][data-swiping] {
+    translate: var(--toast-swipe-x, 0px) var(--toast-swipe-y, 0px);
+    transition: none;
+  }
+
+  /* Rendered markdown: prompts, results and skill bodies. 14px on 1.6, at most 72 characters a line. */
+  .prose {
+    font-size: 14px;
+    line-height: 1.6;
+    max-width: 34em;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  .prose > :first-child {
+    margin-top: 0;
+  }
+  .prose > :last-child {
+    margin-bottom: 0;
+  }
+  .prose p,
+  .prose ul,
+  .prose ol,
+  .prose blockquote,
+  .prose table {
+    margin: 8px 0;
+  }
+  .prose h1,
+  .prose h2,
+  .prose h3,
+  .prose h4,
+  .prose h5,
+  .prose h6 {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    margin: 20px 0 6px;
+  }
+  .prose h1 {
+    font-size: 16px;
+  }
+  .prose h2 {
+    font-size: 15px;
+  }
+  .prose strong,
+  .prose b {
+    font-weight: 500;
+  }
+  .prose ul,
+  .prose ol {
+    padding-left: 22px;
+  }
+  .prose ul {
+    list-style: disc;
+  }
+  .prose ol {
+    list-style: decimal;
+  }
+  .prose li {
+    margin: 2px 0;
+  }
+  .prose li::marker {
+    color: var(--text-muted);
+  }
+  .prose li > ul,
+  .prose li > ol {
+    margin: 2px 0;
+  }
+  .prose ul.contains-task-list {
+    padding-left: 4px;
+    list-style: none;
+  }
+  .prose input[type="checkbox"] {
+    margin: 0 6px 0 0;
+    accent-color: var(--ink);
+    vertical-align: -2px;
+  }
+  .prose a {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+  .prose :not(pre) > code {
+    background: var(--bg-hover);
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
+  .prose blockquote {
+    padding-left: 12px;
+    border-left: 2px solid var(--border-strong);
+    color: var(--text-muted);
+  }
+  .prose hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 16px 0;
+  }
+  .prose img {
+    max-width: 100%;
+  }
+  .prose table {
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .prose th,
+  .prose td {
+    text-align: left;
+    vertical-align: top;
+    padding: 4px 16px 4px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .prose th {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  /* An agent's or a skill's frontmatter: muted keys, mono values, no lines. */
+  .prose table.frontmatter {
+    margin: 4px 0 12px;
+    font-size: 12px;
+  }
+  .prose table.frontmatter th,
+  .prose table.frontmatter td {
+    border: 0;
+    padding: 2px 16px 2px 0;
+  }
+  .prose table.frontmatter th {
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  .prose table.frontmatter td {
+    font-family: var(--mono);
+  }
+
+  /* The letters a search matched. */
+  mark {
+    background: var(--bg-selected);
+    color: inherit;
+    border-radius: 2px;
+  }
+
+  /* A scroll box shows its bars, thin and gray, so wide content says it scrolls. */
+  [data-slot="scroll-area-scrollbar"] {
+    display: flex;
+    padding: 2px;
+    visibility: hidden;
+    touch-action: none;
+    user-select: none;
+  }
+  [data-slot="scroll-area-scrollbar"][data-visible] {
+    visibility: visible;
+  }
+  [data-slot="scroll-area-scrollbar"][data-orientation="horizontal"] {
+    height: 10px;
+  }
+  [data-slot="scroll-area-scrollbar"][data-orientation="vertical"] {
+    width: 10px;
+    flex-direction: column;
+  }
+  [data-slot="scroll-area-thumb"] {
+    position: relative;
+    border-radius: 4px;
+    background: var(--border-strong);
+  }
+  [data-slot="scroll-area-thumb"]:hover,
+  [data-slot="scroll-area-thumb"][data-dragging] {
+    background: var(--edge);
+  }
+}

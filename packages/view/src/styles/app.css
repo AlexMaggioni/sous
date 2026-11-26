@@ -1,0 +1,303 @@
+/* UI SDK puts its few base rules in this layer. Declared first, so every rule below wins over it. */
+@layer ui-sdk;
+@import "tailwindcss";
+@import "./tokens.css";
+@import "./parts.css";
+
+/*
+ * Tailwind knows only the DESIGN.md tokens. Its default colors, fonts, sizes, radii and shadows
+ * are cleared, so a class such as bg-blue-500 or text-2xl does not exist and fails to style.
+ * Spacing is the 4px scale: p-1 is 4px, p-2 8px, p-3 12px, p-4 16px, p-6 24px, p-8 32px, p-12 48px.
+ */
+@theme inline {
+  --color-*: initial;
+  --color-base: var(--bg);
+  --color-side: var(--bg-side);
+  --color-rail: var(--bg-rail);
+  --color-raised: var(--bg-raised);
+  --color-hover: var(--bg-hover);
+  --color-selected: var(--bg-selected);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-edge: var(--edge);
+  --color-fg: var(--text);
+  --color-muted: var(--text-muted);
+  --color-icon: var(--icon-muted);
+  --color-needs: var(--needs);
+  --color-needs-text: var(--needs-text);
+  --color-needs-tint: var(--needs-tint);
+  --color-run: var(--run);
+  --color-run-tint: var(--run-tint);
+  --color-done: var(--done);
+  --color-done-tint: var(--done-tint);
+  --color-fail: var(--fail);
+  --color-fail-tint: var(--fail-tint);
+  --color-pause: var(--pause);
+  --color-pause-tint: var(--pause-tint);
+  --color-ink: var(--ink);
+  --color-on-ink: var(--on-ink);
+  --color-skel: var(--skel);
+  --color-scrim: var(--scrim);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --font-*: initial;
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+  --font-serif: var(--serif);
+
+  --text-*: initial;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 1.45;
+  --text-md: 14px;
+  --text-md--line-height: 1.6;
+  --text-title: 24px;
+  --text-title--line-height: 1.2;
+
+  --font-weight-*: initial;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+
+  --radius-*: initial;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 9999px;
+
+  --shadow-*: initial;
+  --shadow-pop: var(--pop-shadow);
+
+  /*
+   * Motion, as DESIGN.md says under Motion. Everything that comes, opens, moves or changes eases on
+   * --ease-arrive: fast, then settling. Only the fade of what goes away eases on --ease-leave. A
+   * transition class with no duration takes 120ms on --ease-arrive, so feedback needs no numbers.
+   */
+  --ease-arrive: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-leave: cubic-bezier(0.4, 0, 1, 1);
+  --default-transition-duration: 120ms;
+  --default-transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-arrive: arrive var(--base) var(--ease-arrive);
+  --animate-arrive-late: arrive var(--base) var(--ease-arrive) calc(80ms * var(--move)) backwards;
+  --animate-swap: swap var(--base) var(--ease-arrive);
+  --animate-fade-in: fade-in var(--base) var(--ease-arrive);
+  --animate-fade-out: fade-out var(--quick) var(--ease-leave) forwards;
+  --animate-wash-fail: wash-fail var(--wash) ease-out;
+  --animate-wash-needs: wash-needs var(--wash) ease-out;
+
+  --spacing: 4px;
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  html,
+  body,
+  #root {
+    margin: 0;
+    height: 100%;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 400 13px/1.45 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  p {
+    margin: 0;
+  }
+  h2,
+  h3 {
+    font-size: 13px;
+    font-weight: 500;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+  button {
+    cursor: pointer;
+    background: none;
+    border: 0;
+    padding: 0;
+  }
+  a {
+    color: inherit;
+  }
+  code,
+  kbd,
+  .mono {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  :focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  /* One page title per page, in the serif. */
+  .page-title {
+    font: 500 24px/1.2 var(--serif);
+    font-optical-sizing: auto;
+    letter-spacing: -0.005em;
+    overflow-wrap: anywhere;
+  }
+  /* A long name fades at its right edge instead of ending in an ellipsis. Its tooltip holds all of it. */
+  .fade-end {
+    white-space: nowrap;
+    overflow: hidden;
+    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  }
+  .skel {
+    display: block;
+    height: 10px;
+    border-radius: 4px;
+    background: var(--skel);
+  }
+}
+
+/*
+ * Motion, as DESIGN.md says under Motion. Two durations: --base to open, arrive, swap or move, either
+ * way, and --quick to fade away, and for feedback. --draw strokes a status icon, and --wash fades a tint.
+ * --rise is how far what arrives in place comes up. --move is 1, or 0 when the person asks for less
+ * motion: each keyframe below scales its distance by it, so with less motion things fade but don't move.
+ */
+:root {
+  --base: 200ms;
+  --quick: 120ms;
+  --draw: 360ms;
+  --wash: 900ms;
+  --rise: 4px;
+  --move: 1;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* A running icon turns once per 1.2s. */
+.spin {
+  animation: spin 1.2s linear infinite;
+}
+
+/* What arrives, such as a new page, a view, an activity line, a question or the step panel: up 4px, with a fade. */
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--rise) * var(--move)));
+  }
+}
+
+/* What replaces text the person was reading, such as another step in the panel: it brightens from
+   half, so the panel never shows empty. */
+@keyframes swap {
+  from {
+    opacity: 0.5;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* A line drawn along its length. The shape sets pathLength to 1, or its dash array to its length. */
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+@keyframes draw-check {
+  from {
+    stroke-dashoffset: 24;
+  }
+}
+
+/* The dot of "needs you", grown from its center. */
+@keyframes grow {
+  from {
+    opacity: 0;
+    transform: scale(calc(1 - 0.6 * var(--move)));
+  }
+}
+
+/* A node or row that just failed or just needs the person, washed in its tint once. */
+@keyframes wash-fail {
+  from {
+    background-color: var(--fail-tint);
+  }
+}
+@keyframes wash-needs {
+  from {
+    background-color: var(--needs-tint);
+  }
+}
+
+/* A status that changes while it shows draws its new shape once. Running only fades in, as it turns:
+   its shapes have no pathLength, so a dash of 1 would leave it dotted. */
+.status-in:not([data-status="running"]) > :is(path, rect, circle[stroke]) {
+  stroke-dasharray: 1;
+  animation: draw var(--draw) var(--ease-arrive) both;
+}
+.status-in > circle:not([stroke]) {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: grow var(--base) var(--ease-arrive) both;
+}
+.status-in[data-status="running"] > * {
+  animation: fade-in var(--base) var(--ease-arrive) both;
+}
+
+/* The copy button's check, drawn as the copy lands. */
+[data-copied] svg path {
+  stroke-dasharray: 24;
+  animation: draw-check var(--draw) var(--ease-arrive) both;
+}
+
+/* The theme cross-fades as it changes. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--base);
+  animation-timing-function: var(--ease-arrive);
+}
+
+/* Less motion: nothing moves, turns or draws. Fades and color changes stay, so each change still shows. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --move: 0;
+  }
+  .spin {
+    animation: none;
+  }
+  [data-starting-style],
+  [data-ending-style] {
+    translate: none !important;
+  }
+  .status-in > *,
+  [data-copied] svg path {
+    stroke-dasharray: none !important;
+    animation: fade-in var(--base) var(--ease-arrive) both !important;
+  }
+}

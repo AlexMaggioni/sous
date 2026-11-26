@@ -13,8 +13,9 @@ The code and its tests are the current state. When prose and code disagree, fix 
 
 ## Rules
 
-- The repository has three packages: `cli` (the `sous` command), `engine` and `harnesses`. The
-  architecture test keeps their imports, outside libraries and exports in line.
+- The repository has four packages: `cli` (the `sous` command), `engine`, `harnesses` and `view`
+  (the page `sous serve` opens). The architecture test keeps their imports, outside libraries and
+  exports in line.
 - The architecture test lives in `test/architecture.test.mjs`. Change its tables only in a commit
   of their own, and never to turn a red test green.
 - Keep the default tests deterministic and free of credentials. Live tests stay behind their

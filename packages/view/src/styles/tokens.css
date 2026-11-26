@@ -1,0 +1,109 @@
+/*
+ * The view's tokens, from docs/features/view/DESIGN.md. This is the only file that holds raw
+ * colors. Everything else uses these variables, or the Tailwind names app.css maps to them.
+ * The page follows the system theme. data-theme="light" or "dark" on <html> overrides it.
+ */
+:root {
+  --bg: #fafaf8;
+  --bg-side: #eceae8;
+  --bg-rail: #e3e0dd;
+  --bg-raised: #ffffff;
+  --bg-hover: rgba(44, 42, 40, 0.05);
+  --bg-selected: rgba(44, 42, 40, 0.09);
+  --border: #e2e0de;
+  --border-strong: #d8d6d4;
+  --edge: #a19e9b;
+  --text: #2c2a28;
+  --text-muted: #625f5d;
+  --icon-muted: #7a7774;
+  --needs: #b5602a;
+  --needs-text: #9a4a1e;
+  --needs-tint: #f6ece4;
+  --run: #3580c2;
+  --run-tint: #e8f1fa;
+  --done: #7a7774;
+  --done-tint: rgba(44, 42, 40, 0.06);
+  --fail: #9f2f2d;
+  --fail-tint: #fbedec;
+  --pause: #7a7774;
+  --pause-tint: rgba(44, 42, 40, 0.06);
+  --ink: #2c2a28;
+  --on-ink: #fafaf8;
+  --skel: rgba(44, 42, 40, 0.07);
+  --pop-shadow: 0 8px 24px rgba(28, 25, 23, 0.1), 0 1px 2px rgba(28, 25, 23, 0.06);
+  --scrim: rgba(28, 25, 23, 0.2);
+
+  --sans: "IBM Plex Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --serif: "Newsreader Variable", "Newsreader", Georgia, "Times New Roman", serif;
+
+  --rail: 52px;
+  --colw: 280px;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #151110;
+  --bg-side: #1a1716;
+  --bg-rail: #2f2b2a;
+  --bg-raised: #201e1c;
+  --bg-hover: rgba(234, 232, 230, 0.05);
+  --bg-selected: rgba(234, 232, 230, 0.08);
+  --border: #2a2827;
+  --border-strong: #3a3837;
+  --edge: #5a5754;
+  --text: #eae8e6;
+  --text-muted: #a8a5a3;
+  --icon-muted: #8a8683;
+  --needs: #db8550;
+  --needs-text: #db8550;
+  --needs-tint: rgba(219, 133, 80, 0.12);
+  --run: #8ec5f0;
+  --run-tint: rgba(142, 197, 240, 0.12);
+  --done: #8a8683;
+  --done-tint: rgba(234, 232, 230, 0.06);
+  --fail: #ec7d78;
+  --fail-tint: rgba(236, 125, 120, 0.12);
+  --pause: #8a8683;
+  --pause-tint: rgba(234, 232, 230, 0.06);
+  --ink: #eae8e6;
+  --on-ink: #151110;
+  --skel: rgba(234, 232, 230, 0.07);
+  --pop-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(234, 232, 230, 0.04);
+  --scrim: rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151110;
+    --bg-side: #1a1716;
+    --bg-rail: #2f2b2a;
+    --bg-raised: #201e1c;
+    --bg-hover: rgba(234, 232, 230, 0.05);
+    --bg-selected: rgba(234, 232, 230, 0.08);
+    --border: #2a2827;
+    --border-strong: #3a3837;
+    --edge: #5a5754;
+    --text: #eae8e6;
+    --text-muted: #a8a5a3;
+    --icon-muted: #8a8683;
+    --needs: #db8550;
+    --needs-text: #db8550;
+    --needs-tint: rgba(219, 133, 80, 0.12);
+    --run: #8ec5f0;
+    --run-tint: rgba(142, 197, 240, 0.12);
+    --done: #8a8683;
+    --done-tint: rgba(234, 232, 230, 0.06);
+    --fail: #ec7d78;
+    --fail-tint: rgba(236, 125, 120, 0.12);
+    --pause: #8a8683;
+    --pause-tint: rgba(234, 232, 230, 0.06);
+    --ink: #eae8e6;
+    --on-ink: #151110;
+    --skel: rgba(234, 232, 230, 0.07);
+    --pop-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(234, 232, 230, 0.04);
+    --scrim: rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
