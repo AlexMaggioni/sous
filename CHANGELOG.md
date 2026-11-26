@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-11-26)
 
 The first version named sous. The same code shipped before as `orc`, from this repository.
 
