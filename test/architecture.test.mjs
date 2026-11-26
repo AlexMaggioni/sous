@@ -214,6 +214,7 @@ const TOUCHES_MACHINE = [
 /** The rule modules decide from what they are given. They read no file and start no process. */
 const RULE_MODULES = [
   "packages/engine/src/checkpoint-call.ts",
+  "packages/engine/src/continuation-candidates.ts",
   "packages/engine/src/failed-attempt.ts",
   "packages/engine/src/resume-matcher.ts",
   "packages/engine/src/resume-pairing.ts",
@@ -221,13 +222,23 @@ const RULE_MODULES = [
   "packages/engine/src/resume-rows.ts",
   "packages/engine/src/run-rows.ts",
   "packages/engine/src/runs/cron.ts",
+  "packages/engine/src/room/order.ts",
+  "packages/engine/src/room/prompt.ts",
   "packages/engine/src/runs/rule.ts",
   "packages/engine/src/step-ledger.ts",
   "packages/engine/src/steps/answer.ts",
+  "packages/engine/src/turns/status.ts",
 ];
 
 /** The workflow core. It runs one workflow, and the worker around it handles the run. */
-const CORE = ["packages/engine/src/workflow.ts", "packages/engine/src/workflow-manager.ts", "packages/engine/src/sous-globals.ts", "packages/engine/src/steps/"];
+const CORE = [
+  "packages/engine/src/workflow.ts",
+  "packages/engine/src/workflow-manager.ts",
+  "packages/engine/src/sous-globals.ts",
+  "packages/engine/src/steps/",
+  "packages/engine/src/turns/",
+  "packages/engine/src/room/",
+];
 
 /**
  * Files that never reach certain files of their package at run time, through their own imports
