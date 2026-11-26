@@ -26,6 +26,7 @@ importers:
       '@sous/engine':
         specifier: workspace:*
         version: link:../engine
+    devDependencies:
       '@sous/view':
         specifier: workspace:*
         version: link:../view

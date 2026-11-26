@@ -2,7 +2,6 @@
   "name": "@sous/cli",
   "version": "0.1.0",
   "description": "Run workflows of Claude Code and Codex agents in the background, on your own machine.",
-  "private": true,
   "license": "Apache-2.0",
   "keywords": [
     "agents",
@@ -27,13 +26,29 @@
   "bin": {
     "sous": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "guide",
+    "skill",
+    "view",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.test.json",
-    "test": "node ../../test/with-temp-home.mjs tsx --test \"test/**/*.test.ts\""
+    "test": "node ../../test/with-temp-home.mjs tsx --test \"test/**/*.test.ts\"",
+    "prepack": "node scripts/pack.mjs",
+    "postpack": "node scripts/pack.mjs clean"
   },
   "dependencies": {
-    "@sous/engine": "workspace:*",
+    "@sous/engine": "workspace:*"
+  },
+  "devDependencies": {
     "@sous/view": "workspace:*"
   }
 }

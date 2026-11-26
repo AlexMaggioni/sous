@@ -103,10 +103,13 @@ function cookieOf(header: string | undefined, name: string): string | undefined 
   return undefined;
 }
 
-/** The built page's folder, or undefined when sous can't find packages/view. */
+/** The built page's folder, or undefined when sous can't find it. A published sous carries the
+ *  page in its own view/ folder. A build of the repository takes it from packages/view. */
 function viewFolder(options: ServeOptions, env: NodeJS.ProcessEnv): string | undefined {
   if (options.viewDir) return resolve(options.viewDir);
   if (env.SOUS_VIEW_DIR) return resolve(env.SOUS_VIEW_DIR);
+  const carried = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "view");
+  if (existsSync(join(carried, "index.html"))) return carried;
   try {
     return join(dirname(createRequire(import.meta.url).resolve("@sous/view/package.json")), "dist");
   } catch {
