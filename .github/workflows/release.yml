@@ -54,7 +54,8 @@ jobs:
               continue
             fi
             (cd "packages/$name" && pnpm pack --pack-destination ../../packed)
-            npm publish "packed/sous-run-$name-$version.tgz" --access public --provenance --tag "$tag"
+            # The ./ matters: npm reads packed/x.tgz as a GitHub repository.
+            npm publish "./packed/sous-run-$name-$version.tgz" --access public --provenance --tag "$tag"
           done
       - name: GitHub release
         run: |
