@@ -32,6 +32,30 @@ sous inbox                  # questions from the agents
 sous show <run>             # steps, time and tokens, the result
 ```
 
+## Install
+
+You need git, Node.js 22 or newer, and at least one of these, logged in:
+
+- Claude Code 2.1.330 or newer
+- Codex 0.169.x
+
+```sh
+npm install --global @sous-run/cli
+sous doctor          # the Claude Code and Codex it found, their versions, their models
+```
+
+`pnpm add --global @sous-run/cli` and `bun add --global @sous-run/cli` work too.
+`sous doctor --live` also runs one tiny step on each program. `sous update` installs the latest
+version with the package manager that installed sous, and `sous update --check` only says whether
+a newer one is out.
+
+The install takes about 440 MB. Most of it is a copy of Claude Code that the Agent SDK brings
+along. sous never runs that copy. It runs the Claude Code and Codex already on your machine.
+
+sous runs on macOS, Linux and Windows. It is developed on macOS, where it also sends
+notifications, and CI runs the tests on Linux. To build it from source, see
+[Development](#development).
+
 ## Features
 
 - **Workflows as code.** Agent steps, shell, JavaScript and Python steps, loops, parallel steps,
@@ -56,58 +80,15 @@ sous show <run>             # steps, time and tokens, the result
 - **Tool lists that hold.** On Claude Code, an agent gets only the tools its `tools` list names,
   even when your own settings bypass permissions.
 
-## Install
-
-You need git and at least one of the two programs:
-
-- Claude Code 2.1.330 or newer, logged in
-- Codex 0.169.x, logged in
-
-On macOS, Linux or Windows, with Node.js 22 or newer:
-
-```sh
-npm install --global @sous-run/cli --omit=optional
-```
-
-`--omit=optional` skips the 350 MB copy of Claude Code that the Agent SDK fetches by default.
-sous runs the Claude Code installed on your machine, so it never uses that copy. pnpm and bun
-work too: `pnpm add --global @sous-run/cli`, `bun add --global @sous-run/cli`.
-
-Then check that sous finds your programs:
-
-```sh
-sous --version
-sous doctor          # the Claude Code and Codex it found, their versions, their models
-sous doctor --live   # also runs one tiny step on each
-```
-
-`sous update` installs the latest version with the package manager that installed sous.
-`sous update --check` only says whether a newer one is out.
-
-To build it from source instead, you need Node.js 22 or newer and pnpm 10:
-
-```sh
-git clone https://github.com/AlexMaggioni/sous.git
-cd sous
-pnpm install
-pnpm build
-cd packages/cli && pnpm link --global
-```
-
-`pnpm link --global` puts `sous` on your PATH. If pnpm asks for a global bin folder, run
-`pnpm setup` once and open a new shell. To update a build from source, run `git pull`, then
-`pnpm install` and `pnpm build`.
-
-sous is developed on macOS, where it also sends notifications. CI runs the tests on Linux.
-
 ## Quick start
 
 The repository has an example project, `textkit`: a small Node library with two known bugs, three
-tickets and three workflows. From the repository root, copy it somewhere, since the ticket workflow
-needs a git repository to branch from:
+tickets and three workflows. Copy it to a folder of its own, since the ticket workflow needs a git
+repository to branch from:
 
 ```sh
-examples/setup-textkit.sh ~/textkit
+git clone https://github.com/AlexMaggioni/sous.git
+sous/examples/setup-textkit.sh ~/textkit
 cd ~/textkit
 ```
 
@@ -278,13 +259,22 @@ uses and what it exports.
 
 ## Development
 
+You need Node.js 22 or newer and pnpm 10:
+
 ```sh
+git clone https://github.com/AlexMaggioni/sous.git
+cd sous
 pnpm install
-pnpm test
+pnpm build
+cd packages/cli && pnpm link --global
 ```
 
-`pnpm test` builds every package, type-checks them, then runs the architecture test, every
-package's tests and the golden files of `test/baseline`. It needs no credentials and starts no real
+`pnpm link --global` puts this build's `sous` on your PATH. If pnpm asks for a global bin folder,
+run `pnpm setup` once and open a new shell. To update the build, run `git pull`, then
+`pnpm install` and `pnpm build`.
+
+Run `pnpm test` from the repository root. It builds every package, type-checks them, then runs
+the architecture test, every package's tests and the golden files of `test/baseline`. It needs no credentials and starts no real
 agent. The steps run on fake programs in `test/fakes`. The proofs in `test/proofs` run on the real
 programs, by hand.
 
