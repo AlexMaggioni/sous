@@ -7,7 +7,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
-import { createHarness, type Account, type HarnessId } from "@sous/harnesses";
+import { createHarness, type Account, type HarnessId } from "@sous-run/harnesses";
 import type { McpServerConfig } from "./steps/mcp-config.js";
 import { parseDurationSeconds } from "./duration.js";
 import type { StepAsk, StepRoute } from "./steps/agent-runner.js";

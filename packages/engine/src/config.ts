@@ -1,5 +1,5 @@
 /**
- * Configuration constants for @sous/engine.
+ * Configuration constants for @sous-run/engine.
  */
 
 /** Maximum number of agents allowed per workflow run. */

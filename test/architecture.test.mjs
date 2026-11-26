@@ -24,8 +24,9 @@ const ts = createRequire(import.meta.url)("typescript");
 
 // ── The tables ──────────────────────────────────────────────────────────────────────────────────
 
-/** Our npm scope. The fork's scope, @automatalabs, must be gone. */
-const SCOPE = "@sous";
+/** Our npm scope. The npm org "sous" belongs to someone else, so the packages publish under
+ *  @sous-run. The fork's scope, @automatalabs, must be gone. */
+const SCOPE = "@sous-run";
 
 /** The only packages. cli is the sous command, engine the backend, harnesses the programs, and
  *  view the page `sous serve` opens in the browser. */
@@ -586,7 +587,7 @@ function npmName(spec) {
 
 /** Our package a specifier names, without the scope, or undefined. */
 function oursName(spec) {
-  const match = /^@(sous|automatalabs)\/([^/]+)/.exec(spec);
+  const match = /^@(sous-run|automatalabs)\/([^/]+)/.exec(spec);
   if (!match) return undefined;
   const name = match[2];
   if (name === "workflow-engine") return "engine";
@@ -648,7 +649,7 @@ function importBreaks({ files, dirs, tests }) {
     }
   }
   // A test takes another package's parts from its entries, such as the engine's test kit at
-  // @sous/engine/testing, never by a path into that package's src or dist.
+  // @sous-run/engine/testing, never by a path into that package's src or dist.
   for (const { dir, file, path } of tests) {
     for (const { spec } of importsOf(file)) {
       if (spec.startsWith(".") && !resolve(dirname(file), spec).startsWith(join(ROOT, "packages", dir) + sep)) found.add(`${path} reaches outside its package with ${spec}`);

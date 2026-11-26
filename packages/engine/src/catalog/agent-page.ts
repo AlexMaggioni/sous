@@ -3,7 +3,7 @@
 // steps name it.
 
 import { resolve, sep } from "node:path";
-import type { HarnessId } from "@sous/harnesses";
+import type { HarnessId } from "@sous-run/harnesses";
 import { HARNESSES, lookupAgents, lookupSettings, settingsFor, splitFrontmatter, type AgentLookup, type FoundAgent } from "../agents.js";
 import { loadConfig, type HomePaths } from "../runs/home.js";
 import { readText } from "./files.js";

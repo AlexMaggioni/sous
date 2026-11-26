@@ -2,8 +2,8 @@
 // command gets the same consent rules, refusals and events.jsonl lines as at the terminal. Its
 // reply is JSON, and nothing reaches the server's terminal.
 
-import { traceCall, type HomePaths, type Launcher, type Who } from "@sous/engine";
-import type { CallCommand, CallReply } from "@sous/view";
+import { traceCall, type HomePaths, type Launcher, type Who } from "@sous-run/engine";
+import type { CallCommand, CallReply } from "@sous-run/view";
 import { parseArgs, str, Usage, type Parsed } from "../args.js";
 import { atProject } from "../commands/common.js";
 import type { CommandSpec, Ctx, Machine } from "../commands/index.js";
@@ -74,6 +74,10 @@ function quietMachine(): Machine {
     spawnDaemon: no("start the service"),
     kill: no("end a process"),
     sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+    version: "unknown",
+    cliPath: "",
+    latestVersion: no("check for a new sous"),
+    run: no("install a program"),
     isTerminal: false,
     ask: no("ask in a terminal"),
     open: no("open a browser"),

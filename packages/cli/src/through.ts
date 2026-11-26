@@ -3,7 +3,7 @@
 // started from a Claude Code shell has both programs' markers, so Codex comes before Claude Code.
 // No marker means the person at their own terminal.
 
-import { Refusal, type Through, type Who } from "@sous/engine";
+import { Refusal, type Through, type Who } from "@sous-run/engine";
 import { Usage } from "./args.js";
 
 const MARKERS: Array<(env: NodeJS.ProcessEnv) => Through | undefined> = [

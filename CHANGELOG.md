@@ -18,10 +18,13 @@ The first version named sous. The same code shipped before as `orc`, from this r
 - Starts workflows on a cron schedule, from `sous schedule add` or from a workflow's own meta.
 - Checks a workflow without running it, and dry-runs it with stand-in agents.
 - Switches the Claude Code account for new runs and for the runs waiting at the limit.
+- Installs from npm as `@sous-run/cli`. `sous --version`
+  prints the version, and `sous update` installs the latest one with the package manager that
+  installed sous.
 
 ### Changed since orc
 
-- The command is `sous`. The packages are `@sous/cli`, `@sous/engine` and `@sous/harnesses`, and
+- The command is `sous`. The packages are `@sous-run/cli`, `@sous-run/engine` and `@sous-run/harnesses`, and
   the command line package lives in `packages/cli`.
 - The home folder is `~/.sous`, and a project keeps its workflows in `.sous/workflows/`.
 - The environment variables start with `SOUS_`: `SOUS_HOME`, `SOUS_PROJECT`, `SOUS_RUN_ID` and

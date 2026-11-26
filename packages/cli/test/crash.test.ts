@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { PERSON, createRun, fakeRunner, inProcess, readState, testHome } from "@sous/engine/testing";
+import { PERSON, createRun, fakeRunner, inProcess, readState, testHome } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 
 // A run whose worker process dies mid-step, saved by today's code, and resumed through sous.

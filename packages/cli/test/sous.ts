@@ -1,7 +1,7 @@
 // Run sous's main in this process, on a test's home, and keep what it prints.
 
 import assert from "node:assert/strict";
-import type { HomePaths } from "@sous/engine";
+import type { HomePaths } from "@sous-run/engine";
 import { main, type MainOptions } from "../src/cli.js";
 
 /**

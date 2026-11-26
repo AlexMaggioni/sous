@@ -26,7 +26,7 @@ The code and its tests are the current state. When prose and code disagree, fix 
   `test/with-temp-home.mjs` shows how.
 - A helper that two test files of a package need goes in that package's `test/helpers/`. A test
   never imports a path in another package. The cli tests take the engine's parts through
-  `@sous/engine/testing`.
+  `@sous-run/engine/testing`.
 - Never weaken a test to make a change pass.
 - Keep docs plain and short. No emojis.
 - `docs/proof/` and `docs/history/` record past runs. Leave their old names as they are.
@@ -35,13 +35,16 @@ The code and its tests are the current state. When prose and code disagree, fix 
 
 - Node.js 22 or newer and pnpm 10. Run commands from the repository root.
 - `pnpm install`, then `pnpm build`.
-- While iterating, run one package's tests, for example `pnpm --filter @sous/engine test`. That
+- While iterating, run one package's tests, for example `pnpm --filter @sous-run/engine test`. That
   does not type-check. `pnpm typecheck` does.
 - Before pushing, run `pnpm test`. It builds every package, type-checks them, then runs every
   test.
 - `pnpm install` sets `core.hooksPath` to `.githooks`. The pre-push hook there runs `pnpm test`
   and stops the push when it fails. It skips deleted branches and pushes with no new commit.
   `git push --no-verify` skips it.
+- A release is `pnpm release <version>` on `main`, after a `## <version> (unreleased)` section in
+  `CHANGELOG.md`. Pushing the tag it makes publishes. The README's Development section has the
+  rest. Never publish by hand.
 - `pnpm test` ends with the golden files in `test/baseline/golden`. After a change to what sous
   prints, `BASELINE_UPDATE=1 node --test test/baseline.test.mjs` rewrites them. Read the diff
   before you commit it.

@@ -4,8 +4,8 @@
 // and every other write goes through POST /api/call. /api/live is the server's, since it streams.
 
 import { isAbsolute, resolve } from "node:path";
-import { agentPage, listMcpServers, listSkills, mcpPage, removeRun, skillPage, trashWorkflow, type HomePaths, type Launcher } from "@sous/engine";
-import type { AgentPage, AgentRow, McpPage, McpRow, Overview, Question, Removed, RunPage, RunRow, Settings, SkillPage, SkillRow, StepDetail, WorkflowDiff, WorkflowPage, WorkflowRow } from "@sous/view";
+import { agentPage, listMcpServers, listSkills, mcpPage, removeRun, skillPage, trashWorkflow, type HomePaths, type Launcher } from "@sous-run/engine";
+import type { AgentPage, AgentRow, McpPage, McpRow, Overview, Question, Removed, RunPage, RunRow, Settings, SkillPage, SkillRow, StepDetail, WorkflowDiff, WorkflowPage, WorkflowRow } from "@sous-run/view";
 import type { CommandSpec } from "../commands/index.js";
 import { runCall, VIEW } from "./call.js";
 import { agentRows, overview, settings } from "./catalog.js";

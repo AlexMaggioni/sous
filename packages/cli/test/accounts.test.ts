@@ -17,7 +17,7 @@ import {
   workerProcess,
   type HomePaths,
   type RunRecord,
-} from "@sous/engine";
+} from "@sous-run/engine";
 import {
   createRun,
   enginePersistence,
@@ -32,7 +32,7 @@ import {
   WorkflowErrorCode,
   type InnerRunner,
   PERSON,
-} from "@sous/engine/testing";
+} from "@sous-run/engine/testing";
 import { cmdAccount } from "../src/account-cli.js";
 import { main } from "../src/cli.js";
 import { sous, waitFor } from "./sous.js";

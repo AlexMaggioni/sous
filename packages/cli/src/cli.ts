@@ -4,11 +4,12 @@
 // holds the only machine access of the cli.
 
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, realpathSync } from "node:fs";
+import { createRequire } from "node:module";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { daemonLog, ensureHome, homePaths, seedApprovals, traceCall, workerMain, workerProcess, type HomePaths, type Launcher, type Who } from "@sous/engine";
+import { daemonLog, ensureHome, homePaths, seedApprovals, traceCall, workerMain, workerProcess, type HomePaths, type Launcher, type Who } from "@sous-run/engine";
 import { flagList, parseArgs, str, Usage, type Parsed } from "./args.js";
 import { atProject } from "./commands/common.js";
 import { ALIASES, COMMANDS, type CommandSpec, type Ctx, type Machine } from "./commands/index.js";
@@ -47,9 +48,49 @@ export interface MainOptions {
   tellWaitMs?: number;
 }
 
+/** The version in sous's package.json, the same from src and dist. */
+function ownVersion(): string {
+  try {
+    return (createRequire(import.meta.url)("../package.json") as { version?: string }).version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** The latest @sous-run/cli on the npm registry, or undefined after 5 seconds or on any failure.
+ *  npm_config_registry, which npm sets for the scripts it runs, names another registry. */
+async function latestOnNpm(env: NodeJS.ProcessEnv): Promise<string | undefined> {
+  const registry = (env.npm_config_registry ?? "https://registry.npmjs.org/").replace(/\/?$/, "/");
+  try {
+    const response = await fetch(`${registry}@sous-run%2fcli/latest`, { signal: AbortSignal.timeout(5000), headers: { accept: "application/json" } });
+    if (!response.ok) return undefined;
+    const body = (await response.json()) as { version?: unknown };
+    return typeof body.version === "string" ? body.version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function machine(): Machine {
   const here = fileURLToPath(new URL(".", import.meta.url));
   return {
+    version: ownVersion(),
+    get cliPath() {
+      const file = fileURLToPath(import.meta.url);
+      try {
+        return realpathSync(file);
+      } catch {
+        return file;
+      }
+    },
+    latestVersion: () => latestOnNpm(process.env),
+    run: (command) =>
+      new Promise((done) => {
+        // npm, pnpm and the rest are .cmd files on Windows, which only a shell starts.
+        const child = spawn(command[0]!, command.slice(1), { stdio: ["inherit", process.stderr, process.stderr], shell: process.platform === "win32" });
+        child.on("error", () => done(127));
+        child.on("exit", (code) => done(code ?? 1));
+      }),
     readText: (file) => readFileSync(file, "utf8"),
     exists: (file) => existsSync(file),
     guideDir: join(here, "..", "guide"),
@@ -197,6 +238,9 @@ sous runs saved workflows in the background.
                                         sous status --line; it keeps a backup of settings.json
   sous serve [--port N] [--no-open]     the page of the runs in the browser, on this machine only;
                                         prints a link with a token and serves until Ctrl-C
+  sous version                          the version of sous (also sous --version)
+  sous update [--check]                 install the latest sous with the package manager that
+                                        installed this one; --check only says whether one is out
 
 With --json, a command prints one JSON object, with its notes and the calls to make next. A
 request that changes nothing, such as pausing a paused run, exits 0 with a note.
@@ -237,6 +281,10 @@ async function call(argv: string[], options: MainOptions, failed: (error: unknow
     const spec = command ? commandNamed(command) : undefined;
     parsed = parseArgs(rest, spec?.flags ?? [], spec?.inputs === true, command);
     json = parsed.flags.json === true;
+    if (command === "--version" || command === "-v") {
+      host.out(`sous ${host.version}`);
+      return 0;
+    }
     if (!command || command === "help" || command === "--help" || command === "-h" || parsed.flags.help || parsed.flags.h) {
       host.out(HELP);
       return 0;
@@ -273,7 +321,7 @@ function withProject(project: string | undefined): ((call: string) => string) | 
 
 const invokedDirectly = (() => {
   try {
-    const self = new URL(import.meta.url).pathname;
+    const self = fileURLToPath(import.meta.url);
     const argv1 = process.argv[1] ? resolve(process.argv[1]) : "";
     return argv1 === self || argv1.replace(/\.ts$/, ".js") === self.replace(/\.ts$/, ".js") || /[\\/]sous$/.test(argv1);
   } catch {

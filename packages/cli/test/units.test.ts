@@ -115,7 +115,7 @@ function printer() {
   const no = () => {
     throw new Error("the fake machine does only out and err");
   };
-  const machine = { readText: no, exists: no, guideDir: "", skillDir: "", spawnDaemon: no, kill: no, sleep: no, isTerminal: false, ask: no, open: no, untilStopped: no, out: (line: string) => out.push(line), write: (text: string) => out.push(text), err: (line: string) => err.push(line) };
+  const machine = { readText: no, exists: no, guideDir: "", skillDir: "", spawnDaemon: no, kill: no, sleep: no, version: "0.0.0", cliPath: "", latestVersion: no, run: no, isTerminal: false, ask: no, open: no, untilStopped: no, out: (line: string) => out.push(line), write: (text: string) => out.push(text), err: (line: string) => err.push(line) };
   return { machine, out, err };
 }
 

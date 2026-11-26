@@ -1,6 +1,6 @@
 // sous run, rerun and resume: the commands that start a worker.
 
-import { isPlace, rerunRun, resumeRun, resumeWithNote, startRun, word, type Place, type Refusal } from "@sous/engine";
+import { isPlace, rerunRun, resumeRun, resumeWithNote, startRun, word, type Place, type Refusal } from "@sous-run/engine";
 import { parseSets, str, Usage, type Parsed } from "../args.js";
 import { reply, type Next, type Reply } from "../reply.js";
 import { atProject, needRun, projectDir, startedOrWait, wholeFlag } from "./common.js";

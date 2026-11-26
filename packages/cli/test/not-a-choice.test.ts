@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { type HomePaths, type RunQuestion } from "@sous/engine";
-import { testHome } from "@sous/engine/testing";
+import { type HomePaths, type RunQuestion } from "@sous-run/engine";
+import { testHome } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 
 const PERSON_ENV: NodeJS.ProcessEnv = {};

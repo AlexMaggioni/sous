@@ -18,8 +18,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { listRecords, loadRecord, readRun, rememberProject, type HomePaths, type Launcher } from "@sous/engine";
-import { fakeRunner, inProcess, testHome, tick, type InnerRunner, type InProcessWorkers } from "@sous/engine/testing";
+import { listRecords, loadRecord, readRun, rememberProject, type HomePaths, type Launcher } from "@sous-run/engine";
+import { fakeRunner, inProcess, testHome, tick, type InnerRunner, type InProcessWorkers } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 
 type Through =

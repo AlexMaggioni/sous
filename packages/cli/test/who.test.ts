@@ -16,8 +16,8 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, mock } from "node:test";
-import { addAccount, listRecords, loadRecord, logFile, readRun, rememberProject, runQuestions, type HomePaths } from "@sous/engine";
-import { createRun, fakeRunner, inProcess, plantState, testHome, tick, updateRecord, PERSON as PERSON_WHO, type InnerRunner } from "@sous/engine/testing";
+import { addAccount, listRecords, loadRecord, logFile, readRun, rememberProject, runQuestions, type HomePaths } from "@sous-run/engine";
+import { createRun, fakeRunner, inProcess, plantState, testHome, tick, updateRecord, PERSON as PERSON_WHO, type InnerRunner } from "@sous-run/engine/testing";
 import { sous, waitFor } from "./sous.js";
 import { deadPid } from "./helpers/process.js";
 

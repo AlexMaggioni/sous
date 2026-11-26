@@ -1,5 +1,5 @@
 // What `sous serve` sends the page, and what the page sends back. The server in packages/cli
-// imports these types from "@sous/view", so a change here fails the server's typecheck until the
+// imports these types from "@sous-run/view", so a change here fails the server's typecheck until the
 // server follows. Types only: this file has no imports and no values.
 //
 // Every read is a GET under /api that answers JSON. Every write is a POST, except the removal of a

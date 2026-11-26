@@ -8,8 +8,8 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import type { HomePaths } from "@sous/engine";
-import { readState } from "@sous/engine/testing";
+import type { HomePaths } from "@sous-run/engine";
+import { readState } from "@sous-run/engine/testing";
 import { heldHome, inToolCall, json, until } from "./helpers/held.js";
 import { sous } from "./sous.js";
 

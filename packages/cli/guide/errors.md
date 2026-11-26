@@ -47,6 +47,8 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | `question_for_people` | The question is the person's. Show it to them, then make `call` with their answer. A step of a run gets no `call`: the run waits for the person. |
 | `needs_person` | Only the person decides this, such as approving a workflow. Ask them, then make `call`, which adds `--by person`. |
 | `broken_record` | A file sous keeps, such as a run's event log or `approvals.json`, does not parse. Tell the person. Do not fix, move or delete it yourself. |
+| `no_registry` | `sous update` could not reach the npm registry. Tell the person. |
+| `update_failed` | The package manager that `sous update` ran failed. Its output is on stderr. Show it to the person. |
 
 ## Requests that change nothing
 

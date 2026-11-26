@@ -24,7 +24,11 @@ export type RefusalCode =
   | "not_ours"
   | "workflow_invalid"
   /** A record sous keeps is broken, such as an event log that does not parse. */
-  | "broken_record";
+  | "broken_record"
+  /** sous update could not read the latest version from the npm registry. */
+  | "no_registry"
+  /** The package manager that sous update ran failed. */
+  | "update_failed";
 
 /** The codes of a thing that is not there. */
 const MISSING: ReadonlySet<RefusalCode> = new Set(["no_such_run", "no_such_workflow", "no_such_question", "no_such_step", "no_such_schedule", "no_such_topic", "step_not_running"]);

@@ -1,7 +1,7 @@
 // What several commands share: the run a command names, the wait, and the start line.
 
 import { resolve } from "node:path";
-import { answerQuestion, findProjectDir, hint, logFile, readRun, runPreview, stopRun, waitForRun, word, type HomePaths, type RunQuestion, type RunRecord, type RunView } from "@sous/engine";
+import { answerQuestion, findProjectDir, hint, logFile, readRun, runPreview, stopRun, waitForRun, word, type HomePaths, type RunQuestion, type RunRecord, type RunView } from "@sous-run/engine";
 import { str, Usage, type Parsed } from "../args.js";
 import { reply, type Next, type Reply } from "../reply.js";
 import type { Ctx } from "./index.js";

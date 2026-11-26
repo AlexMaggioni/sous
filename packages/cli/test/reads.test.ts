@@ -3,8 +3,8 @@ import { appendFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFil
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import { ensureHome, homePaths, runQuestions, seedApprovals, type HomePaths } from "@sous/engine";
-import { inProcess, plantState, readState, testHome, tick, workflowProjectPaths, type InnerRunner } from "@sous/engine/testing";
+import { ensureHome, homePaths, runQuestions, seedApprovals, type HomePaths } from "@sous-run/engine";
+import { inProcess, plantState, readState, testHome, tick, workflowProjectPaths, type InnerRunner } from "@sous-run/engine/testing";
 import { main } from "../src/cli.js";
 import { capture, sous, waitFor } from "./sous.js";
 import { deadPid } from "./helpers/process.js";

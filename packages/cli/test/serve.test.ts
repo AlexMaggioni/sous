@@ -4,9 +4,9 @@ import { request, type IncomingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, type TestContext } from "node:test";
-import { listRuns, runQuestions, startRun, type HomePaths } from "@sous/engine";
-import { PERSON, WorkflowError, WorkflowErrorCode, fakeRunner, inProcess, readActions, testHome, type InProcessWorkers } from "@sous/engine/testing";
-import type { ApiError, CallReply, LiveEvent, RunPage, RunRow, StepDetail, WorkflowDiff, WorkflowPage, WorkflowRow } from "@sous/view";
+import { listRuns, runQuestions, startRun, type HomePaths } from "@sous-run/engine";
+import { PERSON, WorkflowError, WorkflowErrorCode, fakeRunner, inProcess, readActions, testHome, type InProcessWorkers } from "@sous-run/engine/testing";
+import type { ApiError, CallReply, LiveEvent, RunPage, RunRow, StepDetail, WorkflowDiff, WorkflowPage, WorkflowRow } from "@sous-run/view";
 import { COMMANDS } from "../src/commands/index.js";
 import { LiveFeed } from "../src/serve/live.js";
 import { startServer, type Served, type ServeOptions } from "../src/serve/server.js";
@@ -162,7 +162,7 @@ describe("who sous serve lets in", () => {
     const { server } = await served(t, { viewDir: mkdtempSync(join(tmpdir(), "sous-view-")) });
     const page = await call(server, "/");
     assert.equal(page.status, 503);
-    assert.match(page.text, /pnpm --filter @sous\/view build/);
+    assert.match(page.text, /pnpm --filter @sous-run\/view build/);
   });
 
   it("refuses a Host that is not its own, and a write with the cookie from another origin", async (t) => {

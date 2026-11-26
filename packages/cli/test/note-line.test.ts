@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { listRecords, logFile } from "@sous/engine";
-import { testHome } from "@sous/engine/testing";
+import { listRecords, logFile } from "@sous-run/engine";
+import { testHome } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 
 // The note line in a run's log: a step asks for something its program cannot do, and the log

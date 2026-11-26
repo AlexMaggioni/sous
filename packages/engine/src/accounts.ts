@@ -8,7 +8,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import type { Account, HarnessId } from "@sous/harnesses";
+import type { Account, HarnessId } from "@sous-run/harnesses";
 import { HARNESSES, harnessName, isHarness, loginOf } from "./agents.js";
 import { readStrictJsonFile, writeJsonFile } from "./json-file.js";
 import type { HomePaths } from "./runs/home.js";

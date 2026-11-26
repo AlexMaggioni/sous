@@ -1,5 +1,5 @@
-// @sous/engine runs saved workflows. It runs each agent step through the steps module,
-// which uses @sous/harnesses. This entry exports only the names sous imports.
+// @sous-run/engine runs saved workflows. It runs each agent step through the steps module,
+// which uses @sous-run/harnesses. This entry exports only the names sous imports.
 
 // ── Runs: the sous home, run records, questions, schedules, the reads and the requests ──
 export {

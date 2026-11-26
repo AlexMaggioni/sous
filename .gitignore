@@ -5,3 +5,9 @@ dist/
 # Local-only files (never commit)
 CLAUDE.local.md
 .mcp.json
+
+# Copied in when @sous-run/cli is packed (packages/cli/scripts/pack.mjs)
+packages/cli/view/
+packages/cli/README.md
+packages/cli/LICENSE
+packages/cli/NOTICE

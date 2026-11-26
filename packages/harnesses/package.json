@@ -1,5 +1,5 @@
 {
-  "name": "@sous/harnesses",
+  "name": "@sous-run/harnesses",
   "version": "0.1.0",
   "description": "Runs the agent steps of sous on the installed Claude Code and Codex.",
   "license": "Apache-2.0",

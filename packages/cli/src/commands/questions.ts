@@ -1,6 +1,6 @@
 // sous inbox, answer, approve and send-back: the questions runs ask.
 
-import { answerCallsFor, answerQuestion, findQuestion, hint, loadRecord, questionView, runQuestions, type HomePaths, type Reply as Typed, type RunQuestion } from "@sous/engine";
+import { answerCallsFor, answerQuestion, findQuestion, hint, loadRecord, questionView, runQuestions, type HomePaths, type Reply as Typed, type RunQuestion } from "@sous-run/engine";
 import { Usage, type Parsed } from "../args.js";
 import { reply, type Reply } from "../reply.js";
 import { age, needRun, stopReply } from "./common.js";

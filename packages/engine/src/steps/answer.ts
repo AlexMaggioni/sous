@@ -4,7 +4,7 @@
 
 import type { TSchema } from "typebox";
 import { Check, Convert } from "typebox/value";
-import type { Image, McpServer } from "@sous/harnesses";
+import type { Image, McpServer } from "@sous-run/harnesses";
 import type { McpServerConfig } from "./mcp-config.js";
 import type { PromptImage } from "./agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";

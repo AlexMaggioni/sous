@@ -1,6 +1,6 @@
 // The sous commands by name. A new command is one entry here and its function in a command file.
 
-import type { HomePaths, Launcher, Who } from "@sous/engine";
+import type { HomePaths, Launcher, Who } from "@sous-run/engine";
 import { flagsNamed, RESERVED, type FlagSpec, type Parsed } from "../args.js";
 import type { Reply } from "../reply.js";
 import { cmdDiscard, cmdGc, cmdPause, cmdPrune, cmdStop, cmdTell } from "./control.js";
@@ -11,6 +11,7 @@ import { cmdServe } from "./serve.js";
 import { cmdStep } from "./step.js";
 import { cmdDaemon, cmdSchedule } from "./service.js";
 import { cmdAccount, cmdDoctor, cmdGuide, cmdHook, cmdSkill } from "./setup.js";
+import { cmdUpdate, cmdVersion } from "./update.js";
 import { cmdAgents, cmdCheck, cmdWorkflows } from "./workflows.js";
 
 /** What the commands do on the machine. Only cli.ts makes the real one. */
@@ -26,6 +27,14 @@ export interface Machine {
   /** End the service. */
   kill(pid: number): void;
   sleep(ms: number): Promise<void>;
+  /** The version of this sous, from its package.json. */
+  version: string;
+  /** The real path of the cli.js that runs, which tells how sous was installed. */
+  cliPath: string;
+  /** The latest version of sous on the npm registry, or undefined when sous can't reach it. */
+  latestVersion(): Promise<string | undefined>;
+  /** Run a command, its output to stderr, and give its exit code. */
+  run(command: string[]): Promise<number>;
   /** stdin and stdout are both a terminal. */
   readonly isTerminal: boolean;
   /** Ask in the terminal and give the line typed. */
@@ -107,6 +116,8 @@ export const COMMANDS: Record<string, CommandSpec> = {
   skill: { run: cmdSkill, flags: takes("by", "json") },
   hook: { run: cmdHook, flags: takes("by", "json") },
   serve: { run: (args, ctx) => cmdServe(args, ctx, COMMANDS), flags: takes("port", "no-open", "project", "by") },
+  version: { run: cmdVersion, flags: takes("json") },
+  update: { run: cmdUpdate, flags: takes("check", "json") },
 };
 
 /** The other names a command answers to. Help does not list them. */

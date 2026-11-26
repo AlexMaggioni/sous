@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { logFile, saveSchedules, type HomePaths, type RunQuestion } from "@sous/engine";
-import { fakeRunner, inProcess, plantState, testHome } from "@sous/engine/testing";
+import { logFile, saveSchedules, type HomePaths, type RunQuestion } from "@sous-run/engine";
+import { fakeRunner, inProcess, plantState, testHome } from "@sous-run/engine/testing";
 import { Usage } from "../src/args.js";
 import { main, type MainOptions } from "../src/cli.js";
 import type { Machine } from "../src/commands/index.js";
@@ -19,9 +19,9 @@ const replyModule = () => import("../src/reply.js");
 
 /** The engine index, with the Refusal it must export. */
 async function engineRefusal() {
-  const engine = (await import("@sous/engine")) as Record<string, unknown>;
+  const engine = (await import("@sous-run/engine")) as Record<string, unknown>;
   assert.equal(typeof engine.Refusal, "function", "the engine index exports Refusal");
-  return engine as unknown as typeof import("@sous/engine");
+  return engine as unknown as typeof import("@sous-run/engine");
 }
 
 /** What one sous command printed, apart: stdout and stderr. */
@@ -44,6 +44,10 @@ function printer(stdout: string[], stderr: string[]): Machine {
     spawnDaemon: no,
     kill: no,
     sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+    version: "0.0.0",
+    cliPath: "",
+    latestVersion: no,
+    run: no,
     isTerminal: false,
     ask: no,
     open: no,

@@ -16,8 +16,8 @@ import {
   type HomePaths,
   type InputSpec,
   type RunRecord,
-} from "@sous/engine";
-import type { Input, WorkflowDiff, WorkflowPage, WorkflowRow } from "@sous/view";
+} from "@sous-run/engine";
+import type { Input, WorkflowDiff, WorkflowPage, WorkflowRow } from "@sous-run/view";
 import { runRow, statusOf } from "./runs.js";
 
 /** The most lines a diff gives, and the matching lines it keeps around each change once it is

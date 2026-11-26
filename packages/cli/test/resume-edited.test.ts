@@ -8,8 +8,8 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { startRun, type HomePaths } from "@sous/engine";
-import { fakeRunner, inProcess, testHome, WorkflowError, WorkflowErrorCode, PERSON } from "@sous/engine/testing";
+import { startRun, type HomePaths } from "@sous-run/engine";
+import { fakeRunner, inProcess, testHome, WorkflowError, WorkflowErrorCode, PERSON } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 
 const PERSON_ENV: NodeJS.ProcessEnv = {};
