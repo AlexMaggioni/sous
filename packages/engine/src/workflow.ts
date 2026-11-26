@@ -45,6 +45,8 @@ import {
   WorkflowErrorCode,
   wrapError,
 } from "./errors.js";
+import { createAttemptSlot, sealAttempt, sessionRecord,
+  type AttemptSlots, type AttemptSessionControl } from "./steps/attempt-sessions.js";
 import { afterFailedAttempt } from "./failed-attempt.js";
 import { pauseRequestError } from "./host-pause.js";
 import { createWorkflowLogger } from "./runs/persistence/logger.js";
@@ -191,6 +193,8 @@ export interface WorkflowAgentAttemptControl {
   label: string;
   scope: string;
   controller: AbortController;
+  /** Observe this attempt's strict session lifecycle through the existing control seam. */
+  sessions?: AttemptSessionControl;
 }
 
 /**
@@ -1111,17 +1115,6 @@ async function runLevel<T>(
         ? undefined
         : preparedContinuation?.candidatesByIndex.get(continuationIndex);
 
-      interface AttemptSlots {
-        sealed: boolean;
-        usage?: AgentUsage;
-        sessionRef?: AgentSessionRef;
-        /** The session's cumulative cost gauge at release; folded into the recorded ref. */
-        sessionCostGauge?: number;
-        modelResolved?: string;
-        provenance?: AgentResultProvenance;
-        history?: AgentHistoryEntry[];
-      }
-
       const recordTokens = (value: unknown, usage: AgentUsage | undefined): number => {
         // A code step uses no model, so it counts no tokens.
         const tokens = codeSpec ? 0 : usage && usage.total > 0 ? usage.total : estimateTokens(value) + estimateTokens(prompt);
@@ -1137,26 +1130,6 @@ async function runLevel<T>(
         options.onTokenUsage?.({ ...shared.tokenUsage }, callbackContext);
         return tokens;
       };
-
-      const sealAttempt = (slot: AttemptSlots) => {
-        if (slot.sealed) return;
-        slot.sealed = true;
-        if (slot.usage) sealedUsage.push(slot.usage);
-      };
-
-      const sessionRecord = (slot: AttemptSlots, keptOpen: boolean): AgentSessionRecord | undefined =>
-        slot.sessionRef
-          ? deepFreeze({
-              ...slot.sessionRef,
-              // `onSessionOpen` fires before the first prompt; the release-time gauge is what a
-              // later continuation must baseline.
-              ...(slot.sessionCostGauge === undefined ? {} : { costGauge: slot.sessionCostGauge }),
-              callIndex,
-              label,
-              phase: assignedPhase,
-              keptOpen,
-            })
-          : undefined;
 
       const emitContinuationNotice = (
         continuation: NonNullable<WorkflowRunFallback["continuation"]>,
@@ -1269,7 +1242,10 @@ async function runLevel<T>(
         }
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          const slot: AttemptSlots = { sealed: false };
+          const slot = createAttemptSlot(attempt, {
+            label, scope: runId, callIndex, phase: assignedPhase,
+            keptOpen: agentOptions.keepSession === true,
+          });
           const resumingTurn = attempt === 1 && continuationCandidate !== undefined && !continuationSkipReason;
           const continueFromSession = (resumingTurn ? continuationCandidate.sessionRef : undefined)
             ?? sessionForLabel(agentOptions.continue);
@@ -1280,7 +1256,6 @@ async function runLevel<T>(
             throwIfAborted();
             attemptController = new AbortController();
             const attemptSignal = AbortSignal.any([signal, attemptController.signal]);
-            attemptsRan++;
             const registerAttempt = options.onAgentAttempt;
             if (registerAttempt) {
               hostAttemptRegistered = true;
@@ -1290,12 +1265,15 @@ async function runLevel<T>(
                   label,
                   scope: runId,
                   controller: attemptController,
+                  sessions: codeSpec ? undefined : slot.sessions,
                 });
                 if (typeof cleanup === "function") unregisterAttempt = cleanup;
               } catch (error) {
                 bestEffortDebug(`agent ${label}: host attempt registration failed: ${errorMessage(error)}`);
               }
             }
+            slot.sessions.start();
+            attemptsRan++;
             let result: unknown;
             try {
               let rawRunnerPromise: Promise<unknown>;
@@ -1331,11 +1309,7 @@ async function runLevel<T>(
                   callHash,
                   callPath,
                   callInputsHash,
-                  onSessionOpen: (ref: AgentSessionRef) => {
-                    if (slot.sealed) return;
-                    const copied = cloneTelemetry(ref);
-                    if (copied) slot.sessionRef = copied;
-                  },
+                  onSessionOpen: slot.sessions.open,
                   onSessionCostGauge: (amount: number) => {
                     if (slot.sealed) return;
                     if (Number.isFinite(amount) && amount >= 0) slot.sessionCostGauge = amount;
@@ -1382,7 +1356,7 @@ async function runLevel<T>(
                 ? await withAgentCancellation(rawRunnerPromise, attemptController.signal)
                 : await rawRunnerPromise;
             } finally {
-              sealAttempt(slot);
+              sealAttempt(slot, sealedUsage);
               if (continueFromSession !== undefined && !signal.aborted) {
                 const continuation = slot.provenance?.source === "live"
                   ? slot.provenance.continuation
@@ -1456,7 +1430,7 @@ async function runLevel<T>(
             });
             return result;
           } catch (error) {
-            if (!slot.sealed) sealAttempt(slot);
+            if (!slot.sealed) sealAttempt(slot, sealedUsage);
             const failed = afterFailedAttempt({
               hostStop: attemptController ? agentCancellationReason(attemptController.signal) : undefined,
               runStopped: signal.aborted,

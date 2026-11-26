@@ -11,6 +11,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
+import { isContinuationSession, persistedSessionBindings, recordSessionBinding, releaseSessionLease }
+  from "./steps/session-bindings.js";
 import type { AgentRunner } from "./steps/agent-runner.js";
 import type {
   AgentSessionRecord,
@@ -142,6 +144,12 @@ export interface ManagedRun {
   eventStreamId?: string;
   eventSeq?: number;
   eventLogIncomplete?: true;
+  /** Current attempts only. A new execution never restores these private bindings. */
+  activeAgentSessions?: Map<string, {
+    scope: string;
+    attempt: number;
+    session?: AgentSessionRecord;
+  }>;
 }
 
 /** What a publish needs from a run: its lease and its event watermark. A live run is one. */
@@ -267,6 +275,9 @@ export interface WorkflowManagerOptions {
    * a run's events only when the store has `appendEvent` and `readEvents`.
    */
   persistence?: RunPersistence;
+  /** Host-owned fail-stop policy. Live session proofs are published only with this policy.
+   *  It must synchronously end the owning process if its lease cannot be revoked. */
+  onLeaseRevocationFailure?: (error: Error) => never;
 }
 
 type ArgsSnapshot = { ok: true; clone: unknown } | { ok: false };
@@ -321,33 +332,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonNegativeSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isOptionalString(value: Record<string, unknown>, key: string): boolean {
-  return value[key] === undefined || typeof value[key] === "string";
-}
-
-function isContinuationSession(
-  value: unknown,
-): value is AgentSessionRecord & { cwd?: string } {
-  if (!isRecord(value) || !isRecord(value.reopen)) return false;
-  return (
-    typeof value.sessionId === "string" &&
-    typeof value.backendId === "string" &&
-    (value.cwd === undefined || typeof value.cwd === "string") &&
-    isOptionalString(value, "poolKey") &&
-    isOptionalString(value, "model") &&
-    (value.costGauge === undefined ||
-      (typeof value.costGauge === "number" && Number.isFinite(value.costGauge) && value.costGauge >= 0)) &&
-    typeof value.reopen.load === "boolean" &&
-    typeof value.reopen.resume === "boolean" &&
-    typeof value.reopen.list === "boolean" &&
-    (value.reopen.fork === undefined || typeof value.reopen.fork === "boolean") &&
-    isNonNegativeSafeInteger(value.callIndex) &&
-    typeof value.label === "string" &&
-    isOptionalString(value, "phase") &&
-    typeof value.keptOpen === "boolean"
-  );
 }
 
 function hashScriptText(script: string): string {
@@ -484,6 +468,7 @@ export class WorkflowManager extends EventEmitter {
   private agent?: AgentRunner;
   private defaultAgentRetries: number;
   private persistenceRoot: string;
+  private onLeaseRevocationFailure?: (error: Error) => never;
 
   constructor(options: WorkflowManagerOptions = {}) {
     super();
@@ -494,6 +479,7 @@ export class WorkflowManager extends EventEmitter {
     this.agent = options.agent;
     this.defaultAgentRetries = options.defaultAgentRetries ?? 0;
     this.persistenceRoot = workflowHomeDir({ persistenceRoot: options.persistenceRoot });
+    this.onLeaseRevocationFailure = options.onLeaseRevocationFailure;
     this.persistence = options.persistence
       ?? createRunPersistence(this.cwd, undefined, { persistenceRoot: this.persistenceRoot });
     if (hasEventLog(this.persistence)) this.eventLog = this.persistence;
@@ -551,6 +537,7 @@ export class WorkflowManager extends EventEmitter {
         pauseReason: "interrupted",
         reason: interruptedReason(lease.recoveredOwnerPid),
       };
+      delete reconciled.activeAgentSessions;
       this.persistence.save(reconciled);
       return reconciled;
     } catch {
@@ -1191,7 +1178,12 @@ export class WorkflowManager extends EventEmitter {
           this.persistRun(managed);
         },
         onCallRecord: (record) => this.recordCallRecord(managed, record),
-        onAgentAttempt: (attempt) => this.registerAgentAttempt(managed, attempt),
+        onAgentAttempt: (attempt) => {
+          attempt.sessions?.observe(event => recordSessionBinding(managed, event,
+            this.onLeaseRevocationFailure !== undefined, () => this.persistRunOrThrow(managed),
+            () => this.releaseRunLease(managed)));
+          return this.registerAgentAttempt(managed, attempt);
+        },
         onLog: (message, context) => {
           managed.snapshot.logs.push(message);
           publish(this.createRunEvent("log", {
@@ -1326,9 +1318,7 @@ export class WorkflowManager extends EventEmitter {
   }
 
   private releaseRunLease(managed: ManagedRun): void {
-    if (!managed.lease) return;
-    this.persistence.releaseRunLease(managed.lease);
-    managed.lease = undefined;
+    releaseSessionLease(managed, this.persistence, this.onLeaseRevocationFailure);
   }
 
   private recordJournalEntry(managed: ManagedRun, entry: JournalEntry): void {
@@ -1566,6 +1556,7 @@ export class WorkflowManager extends EventEmitter {
         startedAt: a.startedAt ?? managed.startedAt.toISOString(),
         ...(a.endedAt ? { endedAt: a.endedAt } : {}),
       })),
+      ...persistedSessionBindings(managed, process.pid),
       logs: managed.snapshot.logs,
       result: managed.result?.result,
       tokenUsage: managed.snapshot.tokenUsage
@@ -1936,6 +1927,7 @@ export class WorkflowManager extends EventEmitter {
     managed.status = "aborted";
     if (pausedSnapshot) {
       Object.assign(pausedSnapshot, STOPPED_STATE);
+      delete pausedSnapshot.activeAgentSessions;
     }
     const saveStopped = () => {
       if (!managed.lease) return;
@@ -2011,6 +2003,7 @@ export class WorkflowManager extends EventEmitter {
         }
       }
       Object.assign(current, STOPPED_STATE);
+      delete current.activeAgentSessions;
 
       const saveStopped = () => this.saveWithWatermark(current, publication);
       if (stoppedEventAlreadyDurable) {

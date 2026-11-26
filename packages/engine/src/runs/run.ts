@@ -5,7 +5,9 @@
 
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { interruptedReason, type PersistedRunState, type RunStatus } from "./persistence/run-persistence.js";
+import { currentSessionSteps, publicSessionState, stepKey, validatedActiveSessions } from "./session-view.js";
 import { foldStep } from "../display.js";
+import type { AgentSessionRecord } from "../workflow-result.js";
 import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
 import { recordAction, type Who } from "./actions.js";
 import { recordAndTell, type Tell } from "./notify.js";
@@ -21,7 +23,7 @@ import { needApproval } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 import { Refusal } from "./refusal.js";
 import { judge, type ResumeRefusal, type ReuseRefusal, type Verdict } from "./rule.js";
-import { logFile, readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
+import { enginePersistence, engineRunFiles, logFile, readEventsAfter, readState, readStates, removeEngineRun, removeRunFiles, type StoreFs } from "./store.js";
 import { currentWorkflows, stopColdRun } from "./worker.js";
 
 /** A question a run asks, as the inbox holds it. */
@@ -67,7 +69,8 @@ export interface RunDetail extends RunView {
   durationMs?: number;
   /** The saved state with the steps above, without the script and the journals. sous show
    *  --full --json prints it. */
-  engineState?: Omit<PersistedRunState, "script" | "journal" | "nestedJournal" | "calls">;
+  engineState?: Omit<PersistedRunState,
+    "script" | "journal" | "nestedJournal" | "calls" | "activeAgentSessions">;
   failure?: Failure;
 }
 
@@ -187,12 +190,12 @@ export function runDetail(paths: HomePaths, id: string): RunDetail {
   const { view, shown } = viewOf(record, state, listQuestions(paths, record.runId), alive);
   // The event log has the steps the worker did not save yet, and a killed worker never saves them.
   const live = state ? liveSteps(paths, record, state) : undefined;
-  const steps = live?.steps ?? shown?.agents ?? [];
-  let engineState: RunDetail["engineState"];
-  if (shown) {
-    const { script: _script, journal: _journal, nestedJournal: _nested, calls: _calls, ...rest } = shown;
-    engineState = { ...rest, agents: steps };
-  }
+  const rawSteps = live?.steps ?? shown?.agents ?? [];
+  const bindings = alive && live?.steps && state && !state.eventLogIncomplete
+    ? activeSessions(paths, record, state) : new Map<string, AgentSessionRecord>();
+  const steps = currentSessionSteps(rawSteps, bindings,
+    (scope, callIndex) => stepKey(record, scope, callIndex));
+  const engineState = shown ? publicSessionState(shown, steps) : undefined;
   return {
     ...view,
     steps,
@@ -203,6 +206,26 @@ export function runDetail(paths: HomePaths, id: string): RunDetail {
     ...(engineState ? { engineState } : {}),
     ...withFailure(failureOf(record, shown, steps)),
   };
+}
+
+/** Only the worker's private snapshot and current lease together can establish an active
+ *  identity. Missing, corrupt or stale metadata gives no binding, without changing run state. */
+function activeSessions(paths: HomePaths, record: RunRecord,
+  state: PersistedRunState): Map<string, AgentSessionRecord> {
+  const sessions = new Map<string, AgentSessionRecord>();
+  let primary: PersistedRunState;
+  try {
+    // The ordinary state reader may recover an older .bak. Historical data is useful there,
+    // but cannot attest which session a current attempt owns.
+    primary = JSON.parse(readFileSync(engineRunFiles(paths, record.runId).state, "utf8"));
+  } catch { return sessions; }
+  return validatedActiveSessions(primary, record, state, owner => {
+    try {
+      // EPERM cannot establish that this reader observed a live owner.
+      process.kill(owner.pid, 0);
+      return enginePersistence(paths).validateRunLease({ runId: record.runId, token: owner.leaseToken });
+    } catch { return false; }
+  }, (scope, callIndex) => stepKey(record, scope, callIndex));
 }
 
 const withFailure = (failure: Failure | undefined) => (failure ? { failure } : {});
@@ -272,11 +295,6 @@ export function runPreview(paths: HomePaths, record: RunRecord): RunPreview {
 /** The open questions, oldest first: every run's, or one run's. */
 export function runQuestions(paths: HomePaths, runId?: string): RunQuestion[] {
   return listQuestions(paths, runId);
-}
-
-/** A step's key: its scope and its call. Retries of a step happen inside the one call. */
-function stepKey(record: RunRecord, scope: unknown, callIndex: unknown): string {
-  return `${typeof scope === "string" ? scope : record.runId}#${String(callIndex)}`;
 }
 
 /** Events after which no step of the run runs. */

@@ -23,6 +23,9 @@ function pauseFixture() {
     journal,
     logs,
     options: {
+      // The slow runner waits for the failing runner's pause log, so both need a slot.
+      // This barrier must not depend on the host CPU count's default concurrency.
+      concurrency: 2,
       agent: {
         async run(prompt: string) {
           calls.push(prompt);

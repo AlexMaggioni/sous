@@ -5,11 +5,14 @@
 import {
   closeSync,
   existsSync,
+  fstatSync,
+  fsyncSync,
   mkdirSync,
   openSync,
   readdirSync,
   readFileSync,
   renameSync,
+  statSync,
   truncateSync,
   unlinkSync,
   writeFileSync,
@@ -179,6 +182,13 @@ export interface PersistedRunState {
   phases: string[];
   currentPhase?: string;
   agents: PersistedAgentState[];
+  /** Private, ephemeral bindings owned by this execution's lease. Never part of a public view
+   *  or event log, and never restored as continuation input by a later execution. */
+  activeAgentSessions?: {
+    leaseToken: string;
+    pid: number;
+    entries: Array<{ scope: string; attempt: number; session: AgentSessionRecord }>;
+  };
   logs: string[];
   result?: unknown;
   startedAt: string;
@@ -278,6 +288,9 @@ export type FsLayer = {
   writeSync?: typeof writeSync;
   closeSync?: typeof closeSync;
   truncateSync?: typeof truncateSync;
+  fstatSync?: typeof fstatSync;
+  statSync?: typeof statSync;
+  fsyncSync?: typeof fsyncSync;
 };
 
 export interface RunPersistenceOptions {
@@ -363,6 +376,20 @@ export function createRunPersistence(
   };
 
   const readLock = (runId: string): LockFile | null => readLockAt(primaryLockPath(runId));
+  // A failed read is not proof of revocation. Only absence, invalid JSON, or a different
+  // token establishes that this lease no longer owns the file.
+  const leaseStillOwned = (lease: RunLease): boolean => {
+    let text: string;
+    try { text = _readFileSync(primaryLockPath(lease.runId), "utf8"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+    let owner: LockFile | null;
+    try { owner = JSON.parse(text) as LockFile | null; }
+    catch { return false; }
+    return owner?.token === lease.token;
+  };
 
   const validLockOwner = (
     value: LockFile | null,
@@ -497,11 +524,44 @@ export function createRunPersistence(
 
     releaseRunLease(lease: RunLease): void {
       events.forget(lease.runId);
+      const lock = primaryLockPath(lease.runId);
+      if (!leaseStillOwned(lease)) return;
       try {
-        const existing = readLock(lease.runId);
-        if (existing?.token === lease.token) _unlinkSync(primaryLockPath(lease.runId));
+        _unlinkSync(lock);
+        return;
       } catch {
-        // Best-effort cleanup only.
+        // A read-only directory can still contain a writable lock. Revoke through its
+        // existing inode without creating a file or touching a replacement owner's lock.
+      }
+      let fd: number | undefined;
+      try {
+        fd = (fsOverride?.openSync ?? openSync)(lock, "r+");
+        const text = _readFileSync(fd, "utf8");
+        const owner = JSON.parse(text) as LockFile;
+        if (owner.token !== lease.token) return;
+        const opened = (fsOverride?.fstatSync ?? fstatSync)(fd);
+        const current = (fsOverride?.statSync ?? statSync)(lock);
+        if (opened.dev !== current.dev || opened.ino !== current.ino) return;
+        const encoded = JSON.stringify(lease.token);
+        const field = /"token"\s*:\s*/.exec(text);
+        if (!field || text.slice(field.index + field[0].length,
+          field.index + field[0].length + encoded.length) !== encoded) {
+          throw new Error("cannot locate the lease token");
+        }
+        // Keep JSON valid and its byte length unchanged. A later process can recover the
+        // dead owner through the ordinary lease acquisition path.
+        const revoked = Buffer.from(`"!${"r".repeat(Buffer.byteLength(encoded) - 3)}"`);
+        const offset = Buffer.byteLength(text.slice(0, field.index + field[0].length));
+        const written = (fsOverride?.writeSync ?? writeSync)(fd, revoked, 0, revoked.length, offset);
+        if (written !== revoked.length) throw new Error("incomplete lease revocation");
+        (fsOverride?.fsyncSync ?? fsyncSync)(fd);
+        if (leaseStillOwned(lease)) throw new Error("lease remains owned");
+      } catch (error) {
+        if (leaseStillOwned(lease)) {
+          throw new Error(`cannot revoke lease for ${lease.runId}`, { cause: error });
+        }
+      } finally {
+        if (fd !== undefined) (fsOverride?.closeSync ?? closeSync)(fd);
       }
     },
 
