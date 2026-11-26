@@ -27,8 +27,9 @@ const ts = createRequire(import.meta.url)("typescript");
 /** Our npm scope. The fork's scope, @automatalabs, must be gone. */
 const SCOPE = "@sous";
 
-/** The only packages. cli is the sous command, engine the backend, harnesses the programs. */
-const PACKAGES = ["cli", "engine", "harnesses"];
+/** The only packages. cli is the sous command, engine the backend, harnesses the programs, and
+ *  view the page `sous serve` opens in the browser. */
+const PACKAGES = ["cli", "engine", "harnesses", "view"];
 
 /** Old folder names of the table's packages, while the refactor moves them. Empty at the end. */
 const OLD_NAMES = {};
@@ -39,9 +40,30 @@ const OLD_NAMES = {};
  * the harnesses' public entry, and the harnesses import nothing of ours.
  */
 const MAY_IMPORT = {
-  cli: { ours: ["engine"], outside: [] },
+  cli: { ours: ["engine", "view"], outside: [] },
   engine: { ours: ["harnesses"], outside: ["typebox", "acorn", "yaml", "smol-toml"] },
   harnesses: { ours: [], outside: ["@anthropic-ai/claude-agent-sdk", "typebox", "yaml", "smol-toml"] },
+  // The page runs in the browser and reaches sous only through sous serve's HTTP API. The cli
+  // takes its contract types and its built files from it.
+  view: {
+    ours: [],
+    outside: [
+      "react",
+      "react-dom",
+      "@ui-sdk/react",
+      "@ui-sdk/core",
+      "@tanstack/react-router",
+      "@tanstack/react-query",
+      "@tanstack/react-virtual",
+      "react-markdown",
+      "remark-gfm",
+      "shiki",
+      "lucide-react",
+      "@fontsource/ibm-plex-sans",
+      "@fontsource/ibm-plex-mono",
+      "@fontsource-variable/newsreader",
+    ],
+  },
 };
 
 /** No file of any package imports these. */
@@ -182,8 +204,10 @@ const TOUCHES_MACHINE = [
   "packages/harnesses/src/codex/rpc.ts",
   "packages/harnesses/src/codex/run.ts",
   "packages/harnesses/src/lookup.ts",
+  "packages/engine/src/catalog/files.ts",
   "packages/cli/src/account-cli.ts",
   "packages/cli/src/cli.ts",
+  "packages/cli/src/serve/server.ts",
 ];
 
 /** The rule modules decide from what they are given. They read no file and start no process. */
@@ -467,6 +491,8 @@ const BREAKS = {
     "packages/engine/src/workflow-paths.ts: WORKFLOW_HOME_RELATIVE_DIR",
     "packages/engine/src/workflow.ts: sanitizeVmName",
     "packages/harnesses/src/tools.ts: matches",
+    "packages/view/src/api/live.ts: LOST_AFTER_MS",
+    "packages/view/src/ui/motion.ts: wentPast",
   ],
 };
 
