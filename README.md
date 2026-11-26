@@ -66,12 +66,12 @@ You need git and at least one of the two programs:
 On macOS, Linux or Windows, with Node.js 22 or newer:
 
 ```sh
-npm install --global @sous/cli --omit=optional
+npm install --global @sous-run/cli --omit=optional
 ```
 
 `--omit=optional` skips the 350 MB copy of Claude Code that the Agent SDK fetches by default.
 sous runs the Claude Code installed on your machine, so it never uses that copy. pnpm and bun
-work too: `pnpm add --global @sous/cli`, `bun add --global @sous/cli`.
+work too: `pnpm add --global @sous-run/cli`, `bun add --global @sous-run/cli`.
 
 Then check that sous finds your programs:
 
@@ -293,6 +293,22 @@ A release is one version for the three published packages. Write its section in
 section, sets the version, commits and tags `v0.2.0`. Pushing the tag starts
 `.github/workflows/release.yml`, which runs the tests, publishes to npm, makes the GitHub release.
 A version such as `0.2.0-rc.1` goes to npm's `next` tag.
+
+The workflow publishes through npm's trusted publishing, so the repository stores no npm token.
+npm only lets a package that exists name its trusted publisher, so the first version goes out by
+hand, once, from a machine logged in to npm with an account in the `sous-run` org:
+
+```sh
+pnpm install && pnpm build
+pnpm release 0.1.0
+for name in harnesses engine cli; do (cd packages/$name && pnpm publish --access public); done
+git push origin main v0.1.0
+```
+
+Then, on npmjs.com, open each of `@sous-run/harnesses`, `@sous-run/engine` and `@sous-run/cli`.
+Under Settings, add a trusted publisher: GitHub Actions, the repository `AlexMaggioni/sous`, the
+workflow `release.yml`. The workflow run that the tag starts finds 0.1.0 on npm already, skips
+it, and makes the GitHub release. Every later version goes out through the tag alone.
 
 `pnpm install` points git at the hooks in `.githooks`. The pre-push hook runs `pnpm test` and stops
 the push when it fails. After a change to what sous prints, `BASELINE_UPDATE=1 node --test

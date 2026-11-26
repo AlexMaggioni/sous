@@ -3,8 +3,11 @@ name: Release
 # Pushing a tag such as v0.2.0, made by `pnpm release 0.2.0`, publishes that version: the npm
 # packages and the GitHub release.
 #
-# Secrets:
-#   NPM_TOKEN  an npm automation token that can publish to the @sous scope
+# npm takes the packages through trusted publishing: GitHub's OIDC token proves the run is this
+# workflow of this repository, so no npm token is stored. Each of @sous-run/harnesses, engine and
+# cli names this repository and release.yml as its trusted publisher on npmjs.com. npm only lets a
+# package that exists have one, so the first version is published by hand. The README's
+# Development section has the steps.
 on:
   push:
     tags: ["v*"]
@@ -37,12 +40,22 @@ jobs:
           if [[ "$version" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
       - run: pnpm test
       - name: Publish to npm
-        # pnpm publishes harnesses, engine and cli, skips the private view, and skips a version
-        # already on the registry, so a rerun of this job is safe.
-        run: pnpm -r publish --access public --no-git-checks --tag "${{ steps.version.outputs.prerelease == 'true' && 'next' || 'latest' }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: "true"
+        # pnpm pack turns workspace:* into the version. npm publishes, since trusted publishing
+        # needs npm 11.5.1 or newer. A version already on the registry is skipped, so a rerun of
+        # this job is safe.
+        run: |
+          npm install --global npm@11
+          tag="${{ steps.version.outputs.prerelease == 'true' && 'next' || 'latest' }}"
+          version="${{ steps.version.outputs.version }}"
+          mkdir -p packed
+          for name in harnesses engine cli; do
+            if npm view "@sous-run/$name@$version" version >/dev/null 2>&1; then
+              echo "@sous-run/$name@$version is on npm already"
+              continue
+            fi
+            (cd "packages/$name" && pnpm pack --pack-destination ../../packed)
+            npm publish "packed/sous-run-$name-$version.tgz" --access public --provenance --tag "$tag"
+          done
       - name: GitHub release
         run: |
           node scripts/release.mjs notes "${{ steps.version.outputs.version }}" > notes.md
