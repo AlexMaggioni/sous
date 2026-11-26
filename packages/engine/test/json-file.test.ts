@@ -1,11 +1,11 @@
 // The two ways the engine reads a JSON file under the sous home.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { readJsonFile, readStrictJsonFile, writeJsonFile } from "../src/json-file.js";
+import { readJsonFile, readStrictJsonFile, writeJsonFile, writeJsonFileDurably } from "../src/json-file.js";
 import { ensureHome, homePaths, loadConfig } from "../src/runs/home.js";
 
 const folder = () => mkdtempSync(join(tmpdir(), "engine-json-file-"));
@@ -16,6 +16,17 @@ describe("JSON files", () => {
     writeJsonFile(file, { a: 1 });
     assert.deepEqual(readJsonFile(file), { a: 1 });
     assert.deepEqual(readStrictJsonFile(file, {}), { a: 1 });
+  });
+
+  it("write durably: the value replaces the file with its mode, and no temporary file stays", () => {
+    const dir = folder();
+    const file = join(dir, "state.json");
+    writeJsonFileDurably(file, { fired: { n: "2026-11-21T03:00" } }, 0o600);
+    assert.deepEqual(readJsonFile(file), { fired: { n: "2026-11-21T03:00" } });
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+    writeJsonFileDurably(file, { fired: {} });
+    assert.equal(readFileSync(file, "utf8"), '{\n  "fired": {}\n}\n', "the same text writeJsonFile writes");
+    assert.deepEqual(readdirSync(dir), ["state.json"]);
   });
 
   it("count a missing file as missing in both readers", () => {

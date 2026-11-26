@@ -13,7 +13,8 @@
 
 import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { readJsonFile, writeJsonFile } from "../json-file.js";
+import { readJsonFile, writeJsonFile, writeJsonFileDurably } from "../json-file.js";
+import { bootId, processAlive } from "../process-alive.js";
 import { openWorkflowDir } from "../workflows/dir.js";
 import { recordAction, SERVICE } from "./actions.js";
 import { cronMatches, parseCron } from "./cron.js";
@@ -22,7 +23,6 @@ import { approveCall, NotApproved } from "./approval-check.js";
 import { seedApprovals } from "./approvals.js";
 import { createRun, type Launcher } from "./launch.js";
 import { notify } from "./notify.js";
-import { processAlive } from "./records.js";
 import { word } from "./refusal.js";
 import { readState } from "./store.js";
 import { changedWorkflows, gcRuns, listRuns, pruneRuns, startedAndUnfinished, workerRuns } from "./run.js";
@@ -133,7 +133,10 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
       continue;
     }
     if (!cronMatches(cron, now)) continue;
+    // The minute goes on the disk before the run starts. A service that dies after the start and
+    // comes back within the minute finds it, and does not start the schedule twice.
     state.fired[schedule.name] = key;
+    writeJsonFileDurably(paths.daemonState, state);
     const last = runs.find((run) => run.record.schedule === schedule.name);
     // The log names the status sous list shows: a run its worker left running reads paused.
     if (last && startedAndUnfinished(last)) {
@@ -234,12 +237,14 @@ export function tick(paths: HomePaths, launch: Launcher, deps: TickDeps = {}): v
     }
   }
 
-  writeJsonFile(paths.daemonState, state);
+  writeJsonFileDurably(paths.daemonState, state);
 }
 
+/** The service's pid while it runs. A pid file from before a reboot names no service. */
 export function daemonPid(paths: HomePaths): number | undefined {
-  const pid = Number(readJsonFile<{ pid?: number }>(paths.daemonPid)?.pid);
-  return Number.isInteger(pid) && processAlive(pid) ? pid : undefined;
+  const file = readJsonFile<{ pid?: number; boot?: string }>(paths.daemonPid);
+  const pid = Number(file?.pid);
+  return processAlive(pid, file?.boot) ? pid : undefined;
 }
 
 /** The service loop, run by `sous daemon run`. */
@@ -253,7 +258,7 @@ export async function daemonMain(paths: HomePaths, launch: Launcher, everyMs = 2
   }
   const existing = daemonPid(paths);
   if (existing && existing !== process.pid) throw new Error(`the service already runs (pid ${existing})`);
-  writeJsonFile(paths.daemonPid, { pid: process.pid, since: new Date().toISOString() });
+  writeJsonFile(paths.daemonPid, { pid: process.pid, boot: bootId(), since: new Date().toISOString() });
   let running = true;
   const stop = () => {
     running = false;
