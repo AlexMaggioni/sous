@@ -26,7 +26,7 @@ The code and its tests are the current state. When prose and code disagree, fix 
   `test/with-temp-home.mjs` shows how.
 - A helper that two test files of a package need goes in that package's `test/helpers/`. A test
   never imports a path in another package. The cli tests take the engine's parts through
-  `@sous/engine/testing`.
+  `@sous-run/engine/testing`.
 - Never weaken a test to make a change pass.
 - Keep docs plain and short. No emojis.
 - `docs/proof/` and `docs/history/` record past runs. Leave their old names as they are.
@@ -35,7 +35,7 @@ The code and its tests are the current state. When prose and code disagree, fix 
 
 - Node.js 22 or newer and pnpm 10. Run commands from the repository root.
 - `pnpm install`, then `pnpm build`.
-- While iterating, run one package's tests, for example `pnpm --filter @sous/engine test`. That
+- While iterating, run one package's tests, for example `pnpm --filter @sous-run/engine test`. That
   does not type-check. `pnpm typecheck` does.
 - Before pushing, run `pnpm test`. It builds every package, type-checks them, then runs every
   test.

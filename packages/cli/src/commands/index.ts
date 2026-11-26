@@ -1,6 +1,6 @@
 // The sous commands by name. A new command is one entry here and its function in a command file.
 
-import type { HomePaths, Launcher, Who } from "@sous/engine";
+import type { HomePaths, Launcher, Who } from "@sous-run/engine";
 import { flagsNamed, RESERVED, type FlagSpec, type Parsed } from "../args.js";
 import type { Reply } from "../reply.js";
 import { cmdDiscard, cmdGc, cmdPause, cmdPrune, cmdStop, cmdTell } from "./control.js";

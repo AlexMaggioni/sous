@@ -1,7 +1,7 @@
 // The API's errors: every non-2xx answer has {error: ApiError} as its body, the shape sous prints
 // with --json, with an HTTP status that fits it.
 
-import type { ApiError } from "@sous/view";
+import type { ApiError } from "@sous-run/view";
 import { printError } from "../reply.js";
 
 /** A failure the server itself answers, such as a route that does not exist. */

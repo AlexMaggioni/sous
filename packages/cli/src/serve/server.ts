@@ -9,8 +9,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { createRequire } from "node:module";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { knownProjects, projectWorkflows, workerProcess, type HomePaths, type Launcher } from "@sous/engine";
-import type { ApiError, LiveEvent } from "@sous/view";
+import { knownProjects, projectWorkflows, workerProcess, type HomePaths, type Launcher } from "@sous-run/engine";
+import type { ApiError, LiveEvent } from "@sous-run/view";
 import type { CommandSpec } from "../commands/index.js";
 import { catalogPrint } from "./catalog.js";
 import { LiveFeed, type LiveTimes } from "./live.js";
@@ -84,7 +84,7 @@ function note(title: string, text: string): string {
 }
 
 const NO_TOKEN_PAGE = note("Open the link sous serve printed", "This page needs the token in the link <code>sous serve</code> printed in its terminal. Open that link, and the page remembers it.");
-const NOT_BUILT_PAGE = note("The page is not built", "Run <code>pnpm --filter @sous/view build</code> in the sous repository, then reload.");
+const NOT_BUILT_PAGE = note("The page is not built", "Run <code>pnpm --filter @sous-run/view build</code> in the sous repository, then reload.");
 
 const NO_TOKEN: ApiError = { code: "no_token", message: "this call needs the token sous serve printed.", change: "Open the link sous serve printed, or send the header Authorization: Bearer <token>.", call: null };
 
@@ -111,7 +111,7 @@ function viewFolder(options: ServeOptions, env: NodeJS.ProcessEnv): string | und
   const carried = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "view");
   if (existsSync(join(carried, "index.html"))) return carried;
   try {
-    return join(dirname(createRequire(import.meta.url).resolve("@sous/view/package.json")), "dist");
+    return join(dirname(createRequire(import.meta.url).resolve("@sous-run/view/package.json")), "dist");
   } catch {
     return undefined;
   }

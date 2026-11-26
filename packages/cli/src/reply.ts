@@ -4,7 +4,7 @@
 // next calls, and an error goes to stderr.
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import { homePaths, homeWriteProblem, InputProblems, Refusal } from "@sous/engine";
+import { homePaths, homeWriteProblem, InputProblems, Refusal } from "@sous-run/engine";
 import { Usage } from "./args.js";
 
 /** A command the caller can run next, and what it does. */

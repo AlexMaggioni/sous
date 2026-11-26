@@ -22,7 +22,7 @@ import {
   type HomePaths,
   type Launcher,
   type Who,
-} from "@sous/engine";
+} from "@sous-run/engine";
 import { reply, type Reply } from "./reply.js";
 
 export interface AccountCommandOptions {

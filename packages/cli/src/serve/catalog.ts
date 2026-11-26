@@ -2,8 +2,8 @@
 // the agents, skills and MCP servers seen from a project. Each maps the engine's reads to the
 // contract's shape.
 
-import { daemonPid, isHarness, knownProjects, listAccounts, listAgents, listMcpServers, listSkills, loadConfig, runQuestions, type HomePaths } from "@sous/engine";
-import type { AgentRow, Harness, Overview, Settings } from "@sous/view";
+import { daemonPid, isHarness, knownProjects, listAccounts, listAgents, listMcpServers, listSkills, loadConfig, runQuestions, type HomePaths } from "@sous-run/engine";
+import type { AgentRow, Harness, Overview, Settings } from "@sous-run/view";
 import { projectOf } from "./runs.js";
 
 /** The home, the project sous serve started in and the others sous knows, the service, how many

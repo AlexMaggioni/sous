@@ -19,7 +19,7 @@ import {
   type StepResult,
   type Usage,
   type Account,
-} from "@sous/harnesses";
+} from "@sous-run/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
 import { activityStep, type ActivityEntry, type ActivityStep, type OnActivity } from "./activity.js";
 import type { LiveCall, SteeringBoard } from "./steering.js";

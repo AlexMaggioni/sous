@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { resumeRun, runQuestions, startRun } from "@sous/engine";
-import { PERSON, fakeRunner, inProcess, readState, testHome } from "@sous/engine/testing";
+import { resumeRun, runQuestions, startRun } from "@sous-run/engine";
+import { PERSON, fakeRunner, inProcess, readState, testHome } from "@sous-run/engine/testing";
 import { sous, waitFor } from "./sous.js";
 
 // An answer file that holds no value. A person or a script may write one by hand, and the run

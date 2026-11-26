@@ -1,6 +1,6 @@
 // sous step: one step of a run, with what it did.
 
-import { stepView, type StepView } from "@sous/engine";
+import { stepView, type StepView } from "@sous-run/engine";
 import { Usage, type Parsed } from "../args.js";
 import { reply, type Next, type Reply } from "../reply.js";
 import { runIdArg, wholeFlag } from "./common.js";

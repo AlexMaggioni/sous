@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { readState } from "@sous/engine/testing";
+import { readState } from "@sous-run/engine/testing";
 import { heldHome, holdsSlot, inToolCall, json, stepView, until } from "./helpers/held.js";
 import { sous } from "./sous.js";
 

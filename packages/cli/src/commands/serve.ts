@@ -2,7 +2,7 @@
 // holds a token, opens it, and serves until Ctrl-C. It is the person's: a step of a run never
 // starts it, and an agent starts it only with --by person.
 
-import { Refusal } from "@sous/engine";
+import { Refusal } from "@sous-run/engine";
 import { str, Usage, type Parsed } from "../args.js";
 import { reply, type Reply } from "../reply.js";
 import { startServer } from "../serve/server.js";

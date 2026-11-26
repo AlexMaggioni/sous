@@ -44,8 +44,8 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { rememberProject, type HomePaths } from "@sous/engine";
-import { inProcess, testHome, type InnerRunner, type InProcessWorkers } from "@sous/engine/testing";
+import { rememberProject, type HomePaths } from "@sous-run/engine";
+import { inProcess, testHome, type InnerRunner, type InProcessWorkers } from "@sous-run/engine/testing";
 import { callProblem, words } from "./helpers/calls.js";
 import { sous } from "./sous.js";
 

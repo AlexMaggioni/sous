@@ -1,7 +1,7 @@
 // sous stop, pause, tell, discard, prune and gc: the commands that change or clear runs. A request
 // that finds nothing to change exits 0 with a note.
 
-import { discardRun, gcRuns, loadConfig, pauseRun, pruneRuns, readRun, stopRun, stopStep, tellResult, tellStep, word, type RunView } from "@sous/engine";
+import { discardRun, gcRuns, loadConfig, pauseRun, pruneRuns, readRun, stopRun, stopStep, tellResult, tellStep, word, type RunView } from "@sous-run/engine";
 import { str, Usage, type Parsed } from "../args.js";
 import { reply, type Next, type Reply } from "../reply.js";
 import { needRun, runIdArg, stopReply, wholeFlag } from "./common.js";

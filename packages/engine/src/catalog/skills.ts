@@ -5,7 +5,7 @@
 // neither program reads them: `rulesync generate` copies them into the programs' folders.
 
 import { join } from "node:path";
-import { createHarness, type HarnessId } from "@sous/harnesses";
+import { createHarness, type HarnessId } from "@sous-run/harnesses";
 import { HARNESSES, lookupAgents, lookupSettings, splitFrontmatter, type LookupSettings } from "../agents.js";
 import { loadConfig, type HomePaths } from "../runs/home.js";
 import { readText, skillFiles } from "./files.js";

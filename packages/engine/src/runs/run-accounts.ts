@@ -3,7 +3,7 @@
 // refuses a login an unfinished run uses.
 
 import { deleteAccount, DEFAULT, moveRunAccount, setCurrentAccount, type AccountName } from "../accounts.js";
-import type { HarnessId } from "@sous/harnesses";
+import type { HarnessId } from "@sous-run/harnesses";
 import { recordAction, type Who } from "./actions.js";
 import type { HomePaths } from "./home.js";
 import type { Launcher } from "./launch.js";

@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { loadRecord, workerProcess, type HomePaths, type Launcher } from "@sous/engine";
-import { readState, testHome } from "@sous/engine/testing";
+import { loadRecord, workerProcess, type HomePaths, type Launcher } from "@sous-run/engine";
+import { readState, testHome } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 import { callProblem, words } from "./helpers/calls.js";
 

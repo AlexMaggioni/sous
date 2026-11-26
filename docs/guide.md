@@ -4,7 +4,7 @@
 closes. It asks its questions through an inbox, pauses on a failed step, and waits out the
 subscription limit. A service starts scheduled runs and resumes paused ones.
 
-Install it with `npm install --global @sous/cli --omit=optional`. The README has the details. `sous --version` prints the version, and `sous
+Install it with `npm install --global @sous-run/cli --omit=optional`. The README has the details. `sous --version` prints the version, and `sous
 update` installs the latest one with the package manager that installed sous. `sous update
 --check` only says whether a newer one is out, and `--json` gives `version`, `latest`, `install`
 (`npm`, `pnpm`, `bun`, `yarn` or `source`), `command` and `updated`. A build from source

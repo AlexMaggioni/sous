@@ -15,7 +15,7 @@ interface Fake {
 
 /** A machine with this version, install path and registry answer. It keeps what sous prints and
  *  the commands it runs. */
-function fake({ version = "0.1.0", cliPath = "/usr/local/lib/node_modules/@sous/cli/dist/cli.js", latest, exit = 0 }: Fake) {
+function fake({ version = "0.1.0", cliPath = "/usr/local/lib/node_modules/@sous-run/cli/dist/cli.js", latest, exit = 0 }: Fake) {
   const out: string[] = [];
   const err: string[] = [];
   const ran: string[][] = [];
@@ -73,11 +73,11 @@ async function check(options: Fake) {
 describe("how sous was installed", () => {
   it("reads the package manager from the path of cli.js, and upgrades through it", async () => {
     const cases: Array<[string, string, string | null]> = [
-      ["/usr/local/lib/node_modules/@sous/cli/dist/cli.js", "npm", "npm install --global @sous/cli@latest"],
-      ["C:\\Users\\a\\AppData\\Roaming\\npm\\node_modules\\@sous\\cli\\dist\\cli.js", "npm", "npm install --global @sous/cli@latest"],
-      ["/Users/a/Library/pnpm/global/5/.pnpm/@sous+cli@0.1.0/node_modules/@sous/cli/dist/cli.js", "pnpm", "pnpm add --global @sous/cli@latest"],
-      ["/Users/a/.bun/install/global/node_modules/@sous/cli/dist/cli.js", "bun", "bun add --global @sous/cli@latest"],
-      ["/Users/a/.config/yarn/global/node_modules/@sous/cli/dist/cli.js", "yarn", "yarn global add @sous/cli@latest"],
+      ["/usr/local/lib/node_modules/@sous-run/cli/dist/cli.js", "npm", "npm install --global @sous-run/cli@latest"],
+      ["C:\\Users\\a\\AppData\\Roaming\\npm\\node_modules\\@sous\\cli\\dist\\cli.js", "npm", "npm install --global @sous-run/cli@latest"],
+      ["/Users/a/Library/pnpm/global/5/.pnpm/@sous+cli@0.1.0/node_modules/@sous-run/cli/dist/cli.js", "pnpm", "pnpm add --global @sous-run/cli@latest"],
+      ["/Users/a/.bun/install/global/node_modules/@sous-run/cli/dist/cli.js", "bun", "bun add --global @sous-run/cli@latest"],
+      ["/Users/a/.config/yarn/global/node_modules/@sous-run/cli/dist/cli.js", "yarn", "yarn global add @sous-run/cli@latest"],
       ["/Users/a/Code/sous/packages/cli/dist/cli.js", "source", null],
     ];
     for (const [cliPath, install, command] of cases) {
@@ -130,15 +130,15 @@ describe("sous update", () => {
     assert.equal(result.code, 0);
     const reply = JSON.parse(result.out);
     assert.equal(reply.latest, "0.2.0");
-    assert.equal(reply.command, "npm install --global @sous/cli@latest");
+    assert.equal(reply.command, "npm install --global @sous-run/cli@latest");
     assert.equal(reply.updated, false);
     assert.deepEqual(result.ran, []);
   });
 
   it("installs the newer one with the package manager that installed this one", async () => {
-    const result = await sous(["update"], { version: "0.1.0", latest: "0.2.0", cliPath: "/Users/a/Library/pnpm/global/5/.pnpm/@sous+cli@0.1.0/node_modules/@sous/cli/dist/cli.js" });
+    const result = await sous(["update"], { version: "0.1.0", latest: "0.2.0", cliPath: "/Users/a/Library/pnpm/global/5/.pnpm/@sous+cli@0.1.0/node_modules/@sous-run/cli/dist/cli.js" });
     assert.equal(result.code, 0);
-    assert.deepEqual(result.ran, [["pnpm", "add", "--global", "@sous/cli@latest"]]);
+    assert.deepEqual(result.ran, [["pnpm", "add", "--global", "@sous-run/cli@latest"]]);
     assert.equal(result.out, "sous 0.1.0 is now 0.2.0.");
   });
 

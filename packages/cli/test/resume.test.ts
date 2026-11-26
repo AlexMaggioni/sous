@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { loadRecord, rerunRun, resumeRun, runQuestions, startRun, type HomePaths, type RunRecord } from "@sous/engine";
-import { PERSON, fakeRunner, inProcess, plantState, readState, testHome, writeAnswer, WorkflowError, WorkflowErrorCode, type PersistedRunState } from "@sous/engine/testing";
+import { loadRecord, rerunRun, resumeRun, runQuestions, startRun, type HomePaths, type RunRecord } from "@sous-run/engine";
+import { PERSON, fakeRunner, inProcess, plantState, readState, testHome, writeAnswer, WorkflowError, WorkflowErrorCode, type PersistedRunState } from "@sous-run/engine/testing";
 import { sous, waitFor } from "./sous.js";
 import { callProblem, words } from "./helpers/calls.js";
 

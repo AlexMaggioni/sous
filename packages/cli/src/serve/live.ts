@@ -4,8 +4,8 @@
 // that differs from the last read sends one "changed" event, and a read that finds nothing
 // changed sends nothing.
 
-import { readRun, runStamps, type HomePaths } from "@sous/engine";
-import type { LiveEvent } from "@sous/view";
+import { readRun, runStamps, type HomePaths } from "@sous-run/engine";
+import type { LiveEvent } from "@sous-run/view";
 
 /** One read of the home's stamps. */
 export interface HomeStamps {

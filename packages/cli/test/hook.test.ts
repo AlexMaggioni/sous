@@ -3,8 +3,8 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSy
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import type { HomePaths } from "@sous/engine";
-import { testHome } from "@sous/engine/testing";
+import type { HomePaths } from "@sous-run/engine";
+import { testHome } from "@sous-run/engine/testing";
 import { callProblem } from "./helpers/calls.js";
 import { sous } from "./sous.js";
 

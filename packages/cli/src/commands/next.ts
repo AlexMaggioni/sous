@@ -1,6 +1,6 @@
 // The calls that come next after sous wait and sous show, from where the run is.
 
-import { answerCalls, word, type Failure, type RunQuestion, type Who } from "@sous/engine";
+import { answerCalls, word, type Failure, type RunQuestion, type Who } from "@sous-run/engine";
 import type { Next } from "../reply.js";
 
 /** Where a run is, as wait and show give it. */

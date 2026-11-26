@@ -1,9 +1,9 @@
-# @sous/engine
+# @sous-run/engine
 
 The engine behind `sous`. It runs saved workflows. Each run has a worker process that runs the
 workflow script, keeps the run's record and journal under the sous home, asks its questions
 through the inbox and pauses when a step fails. Each agent step runs on Claude Code or Codex
-through `@sous/harnesses`.
+through `@sous-run/harnesses`.
 
 sous is the only caller. The entry, `src/index.ts`, exports only the names sous imports, and the
 architecture test fails when it exports one that sous does not. Everything else is internal and
@@ -34,7 +34,7 @@ Each operation takes the home's paths first, so a test can point it at a temp fo
 that starts a worker also takes a launcher (see below):
 
 ```ts
-import { homePaths, startRun, waitForRun, workerProcess } from "@sous/engine";
+import { homePaths, startRun, waitForRun, workerProcess } from "@sous-run/engine";
 
 const paths = homePaths(); // ~/.sous, or $SOUS_HOME
 const launch = workerProcess(() => "/path/to/sous/dist/cli.js");
@@ -79,7 +79,7 @@ given launcher to `run`, `resume`, `rerun`, `account use` and `daemon run`.
 
 ## The test kit
 
-`@sous/engine/testing` is for this repo's tests. The published package leaves it out.
+`@sous-run/engine/testing` is for this repo's tests. The published package leaves it out.
 
 - `testHome(workflows, config)` makes a home and a project folder in the temp folder.
 - `plantState(paths, state, events)` writes a run's state, and its event log if given, as the
@@ -90,8 +90,8 @@ given launcher to `run`, `resume`, `rerun`, `account use` and `daemon run`.
   `ended(runId)` gives the result of the run's last worker.
 
 ```ts
-import { startRun } from "@sous/engine";
-import { fakeRunner, inProcess, testHome } from "@sous/engine/testing";
+import { startRun } from "@sous-run/engine";
+import { fakeRunner, inProcess, testHome } from "@sous-run/engine/testing";
 
 const { paths, projectDir } = testHome({ one: "export const meta = { name: 'one', description: 'one step' }\nreturn await agent('go')" });
 const { runner, calls } = fakeRunner(() => "done");

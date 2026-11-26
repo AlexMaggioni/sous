@@ -8,8 +8,8 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { HomePaths } from "@sous/engine";
-import { fakeRunner, inProcess, readActions, readState, testHome } from "@sous/engine/testing";
+import type { HomePaths } from "@sous-run/engine";
+import { fakeRunner, inProcess, readActions, readState, testHome } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 import { callProblem } from "./helpers/calls.js";
 

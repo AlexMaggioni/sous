@@ -10,7 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
-import type { Account } from "@sous/harnesses";
+import type { Account } from "@sous-run/harnesses";
 import type { AgentResultProvenance, AgentUsage, StepRequest } from "../src/steps/agent-run.js";
 import type { StepAsk } from "../src/steps/agent-runner.js";
 import type { AgentSessionRef } from "../src/workflow-result.js";

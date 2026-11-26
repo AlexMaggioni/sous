@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { resumeRun, runQuestions, startRun } from "@sous/engine";
-import { PERSON, fakeRunner, inProcess, readState, testHome, writeAnswer } from "@sous/engine/testing";
+import { resumeRun, runQuestions, startRun } from "@sous-run/engine";
+import { PERSON, fakeRunner, inProcess, readState, testHome, writeAnswer } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 
 // A workflow's time limit reached while a code step runs, and while no step runs. runs.test.ts

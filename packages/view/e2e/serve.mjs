@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Starts `sous serve` on a throwaway world, for the end-to-end checks and for trying the page.
-// It needs the cli built (pnpm --filter @sous/cli build) and the page built (pnpm --filter
-// @sous/view build).
+// It needs the cli built (pnpm --filter @sous-run/cli build) and the page built (pnpm --filter
+// @sous-run/view build).
 //
 //   node packages/view/e2e/serve.mjs [--port 4417] [--token e2e] [--runs] [--root <dir>]
 //

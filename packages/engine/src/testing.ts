@@ -1,4 +1,4 @@
-// The test kit, at @sous/engine/testing. A test makes a home with it, plants a run's
+// The test kit, at @sous-run/engine/testing. A test makes a home with it, plants a run's
 // files, and starts workers in its own process through the launcher sous's commands take. sous's
 // code never imports it: the architecture test flags an import past the entry from src.
 

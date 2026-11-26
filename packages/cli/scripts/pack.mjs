@@ -1,4 +1,4 @@
-// Before npm packs @sous/cli, copy in what the package carries from outside its folder: the built
+// Before npm packs @sous-run/cli, copy in what the package carries from outside its folder: the built
 // page of sous serve, and the README, LICENSE and NOTICE of the repository. After the pack,
 // `node scripts/pack.mjs clean` removes the copies, so a build of the repository keeps taking the
 // page from packages/view.

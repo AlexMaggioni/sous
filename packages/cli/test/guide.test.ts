@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { testHome } from "@sous/engine/testing";
+import { testHome } from "@sous-run/engine/testing";
 import { callProblem, words } from "./helpers/calls.js";
 import { sous } from "./sous.js";
 

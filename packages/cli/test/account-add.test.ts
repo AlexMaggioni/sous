@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { describe, it } from "node:test";
-import { listAccounts } from "@sous/engine";
-import { PERSON, testHome } from "@sous/engine/testing";
+import { listAccounts } from "@sous-run/engine";
+import { PERSON, testHome } from "@sous-run/engine/testing";
 import { cmdAccount } from "../src/account-cli.js";
 import { capture } from "./sous.js";
 

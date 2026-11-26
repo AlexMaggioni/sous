@@ -17,7 +17,7 @@ import {
   startRun,
   stopStep,
   type HomePaths,
-} from "@sous/engine";
+} from "@sous-run/engine";
 import {
   createRun,
   fakeRunner,
@@ -35,7 +35,7 @@ import {
   WorkflowErrorCode,
   type Call,
   PERSON,
-} from "@sous/engine/testing";
+} from "@sous-run/engine/testing";
 import { main } from "../src/cli.js";
 import { sous, waitFor } from "./sous.js";
 import { git } from "./helpers/git.js";

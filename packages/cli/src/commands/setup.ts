@@ -2,7 +2,7 @@
 // what an agent that drives sous reads, and the line a new Claude Code session gets.
 
 import { join, resolve } from "node:path";
-import { installHook, installSkill, recordAction, Refusal, removeHook } from "@sous/engine";
+import { installHook, installSkill, recordAction, Refusal, removeHook } from "@sous-run/engine";
 import { cmdAccount as accountCommand } from "../account-cli.js";
 import { str, Usage, type Parsed } from "../args.js";
 import { checkSkill, doctor } from "../doctor.js";

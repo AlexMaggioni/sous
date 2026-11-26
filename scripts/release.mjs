@@ -1,4 +1,4 @@
-// Releases of sous. The three published packages, @sous/cli, @sous/engine and @sous/harnesses,
+// Releases of sous. The three published packages, @sous-run/cli, @sous-run/engine and @sous-run/harnesses,
 // always share one version, and CHANGELOG.md has a section for each.
 //
 //   node scripts/release.mjs bump <version>     set the version, date the changelog, commit, tag

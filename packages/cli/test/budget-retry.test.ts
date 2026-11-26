@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { readState, testHome } from "@sous/engine/testing";
+import { readState, testHome } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 
 const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../test/fakes");

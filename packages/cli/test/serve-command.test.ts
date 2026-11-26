@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { request } from "node:http";
 import { describe, it } from "node:test";
-import { testHome } from "@sous/engine/testing";
+import { testHome } from "@sous-run/engine/testing";
 import { main } from "../src/cli.js";
 import type { Machine } from "../src/commands/index.js";
 import { waitFor } from "./sous.js";

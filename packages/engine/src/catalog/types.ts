@@ -4,7 +4,7 @@
 // they are. Each of its routes names the contract's type of its answer (cli serve/routes.ts), so
 // its typecheck fails when one of these no longer fits the contract.
 
-import type { HarnessId as Harness } from "@sous/harnesses";
+import type { HarnessId as Harness } from "@sous-run/harnesses";
 
 export interface AgentSettings {
   harness: Harness;

@@ -23,17 +23,17 @@ importers:
 
   packages/cli:
     dependencies:
-      '@sous/engine':
+      '@sous-run/engine':
         specifier: workspace:*
         version: link:../engine
     devDependencies:
-      '@sous/view':
+      '@sous-run/view':
         specifier: workspace:*
         version: link:../view
 
   packages/engine:
     dependencies:
-      '@sous/harnesses':
+      '@sous-run/harnesses':
         specifier: workspace:*
         version: link:../harnesses
       acorn:

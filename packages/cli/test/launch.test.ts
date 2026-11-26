@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { loadRecord, logFile, type HomePaths } from "@sous/engine";
-import { fakeRunner, inProcess, testHome } from "@sous/engine/testing";
+import { loadRecord, logFile, type HomePaths } from "@sous-run/engine";
+import { fakeRunner, inProcess, testHome } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 
 // sous run, sous resume and sous rerun, through main, with a launcher that runs each worker in this

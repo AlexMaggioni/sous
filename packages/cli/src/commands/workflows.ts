@@ -2,7 +2,7 @@
 // agents their steps name.
 
 import { resolve } from "node:path";
-import { approveCall, approveWorkflows, checkWorkflow, dryRun, isRequired, listAgents, projectWorkflows, rememberProject, word, workflowDiff, workflowOutline, type Answers, type InputSpec, type OutlineApproval, type Who, type WorkflowOutline } from "@sous/engine";
+import { approveCall, approveWorkflows, checkWorkflow, dryRun, isRequired, listAgents, projectWorkflows, rememberProject, word, workflowDiff, workflowOutline, type Answers, type InputSpec, type OutlineApproval, type Who, type WorkflowOutline } from "@sous-run/engine";
 import { RESERVED, str, Usage, type Parsed } from "../args.js";
 import { reply, type Next, type Reply } from "../reply.js";
 import { atProject, projectDir } from "./common.js";

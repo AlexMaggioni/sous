@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { testHome } from "@sous/engine/testing";
+import { testHome } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 
 // sous check and sous workflows with --json, and sous check --dry-run with an answers file. The

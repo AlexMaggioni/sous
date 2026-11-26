@@ -1,13 +1,13 @@
 // sous version and sous update: the version installed, and the upgrade through the package
 // manager that installed it.
 
-import { Refusal } from "@sous/engine";
+import { Refusal } from "@sous-run/engine";
 import { reply, type Reply } from "../reply.js";
 import type { Parsed } from "../args.js";
 import type { Ctx } from "./index.js";
 
 /** The name sous is published under on npm. */
-const PACKAGE = "@sous/cli";
+const PACKAGE = "@sous-run/cli";
 
 /** How this sous was installed, read from the path of its cli.js. */
 type Install = "npm" | "pnpm" | "bun" | "yarn" | "source";

@@ -6,7 +6,7 @@
 // replaces the whole file, so two writers at once would lose one's change.
 
 import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import type { HarnessId, SteerOutcome } from "@sous/harnesses";
+import type { HarnessId, SteerOutcome } from "@sous-run/harnesses";
 import { appendJsonLine, readJsonFile, readJsonLines, writeJsonFile } from "../json-file.js";
 import { redactText } from "../redact.js";
 import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";

@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { daemonLog, ensureHome, homePaths, seedApprovals, traceCall, workerMain, workerProcess, type HomePaths, type Launcher, type Who } from "@sous/engine";
+import { daemonLog, ensureHome, homePaths, seedApprovals, traceCall, workerMain, workerProcess, type HomePaths, type Launcher, type Who } from "@sous-run/engine";
 import { flagList, parseArgs, str, Usage, type Parsed } from "./args.js";
 import { atProject } from "./commands/common.js";
 import { ALIASES, COMMANDS, type CommandSpec, type Ctx, type Machine } from "./commands/index.js";
@@ -57,12 +57,12 @@ function ownVersion(): string {
   }
 }
 
-/** The latest @sous/cli on the npm registry, or undefined after 5 seconds or on any failure.
+/** The latest @sous-run/cli on the npm registry, or undefined after 5 seconds or on any failure.
  *  npm_config_registry, which npm sets for the scripts it runs, names another registry. */
 async function latestOnNpm(env: NodeJS.ProcessEnv): Promise<string | undefined> {
   const registry = (env.npm_config_registry ?? "https://registry.npmjs.org/").replace(/\/?$/, "/");
   try {
-    const response = await fetch(`${registry}@sous%2fcli/latest`, { signal: AbortSignal.timeout(5000), headers: { accept: "application/json" } });
+    const response = await fetch(`${registry}@sous-run%2fcli/latest`, { signal: AbortSignal.timeout(5000), headers: { accept: "application/json" } });
     if (!response.ok) return undefined;
     const body = (await response.json()) as { version?: unknown };
     return typeof body.version === "string" ? body.version : undefined;

@@ -1,6 +1,6 @@
 // What one agent step is given and what it returns: the step request, AgentResult and usage.
 import type { Static, TSchema } from "typebox";
-import type { Account } from "@sous/harnesses";
+import type { Account } from "@sous-run/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
 import type { McpServerConfig } from "./mcp-config.js";
 import type { StepRoute } from "./agent-runner.js";

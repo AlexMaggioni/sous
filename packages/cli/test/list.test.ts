@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { loadRecord } from "@sous/engine";
-import { PERSON, createRun, testHome, updateRecord } from "@sous/engine/testing";
+import { loadRecord } from "@sous-run/engine";
+import { PERSON, createRun, testHome, updateRecord } from "@sous-run/engine/testing";
 import { describe, it } from "node:test";
 import { sous } from "./sous.js";
 import { git } from "./helpers/git.js";

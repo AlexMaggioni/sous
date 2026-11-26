@@ -19,7 +19,7 @@ import {
   saveSchedules,
   type Place,
   type Schedule,
-} from "@sous/engine";
+} from "@sous-run/engine";
 import { str, Usage, type Parsed } from "../args.js";
 import { reply, type Next, type Reply } from "../reply.js";
 import { projectDir } from "./common.js";

@@ -4,7 +4,7 @@
 // sous uses for new runs. It also checks where each program finds the sous skill, and that sous
 // can write to its home, which the Codex sandbox may block.
 
-import { checkPrograms, DEFAULT, describeAccount, folderText, homePaths, homeWriteProblem, loadConfig, skillPlaces, type ProgramReport, type SkillPlace } from "@sous/engine";
+import { checkPrograms, DEFAULT, describeAccount, folderText, homePaths, homeWriteProblem, loadConfig, skillPlaces, type ProgramReport, type SkillPlace } from "@sous-run/engine";
 import { homeAdvice, reply, underCodex, type Next, type Reply } from "./reply.js";
 
 export interface DoctorOptions {

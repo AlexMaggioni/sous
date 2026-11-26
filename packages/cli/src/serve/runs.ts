@@ -23,8 +23,8 @@ import {
   type RunQuestion,
   type RunRecord,
   type RunView,
-} from "@sous/engine";
-import type { Activity, Flow, Harness, NestedRun, Project, Question, RunPage, RunRow, Status, Step, StepDetail } from "@sous/view";
+} from "@sous-run/engine";
+import type { Activity, Flow, Harness, NestedRun, Project, Question, RunPage, RunRow, Status, Step, StepDetail } from "@sous-run/view";
 
 /** The contract's status for each of the pause rule's. */
 const STATUS: Record<RunView["status"], Status> = {

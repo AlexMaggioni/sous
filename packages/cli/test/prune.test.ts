@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { loadRecord, type HomePaths } from "@sous/engine";
-import { PERSON, createRun, plantState, testHome, updateRecord } from "@sous/engine/testing";
+import { loadRecord, type HomePaths } from "@sous-run/engine";
+import { PERSON, createRun, plantState, testHome, updateRecord } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 
 // sous prune removes the finished runs older than a number of days.

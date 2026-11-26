@@ -19,7 +19,7 @@ import {
   routeHarness,
   type McpLookup,
 } from "../agents.js";
-import type { HarnessId } from "@sous/harnesses";
+import type { HarnessId } from "@sous-run/harnesses";
 import { nextRun, parseCron } from "../runs/cron.js";
 import { loadConfig, loadSecrets, type HomePaths } from "../runs/home.js";
 import { projectWorkflows, resolveWorkflow } from "./dir.js";

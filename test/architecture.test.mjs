@@ -649,7 +649,7 @@ function importBreaks({ files, dirs, tests }) {
     }
   }
   // A test takes another package's parts from its entries, such as the engine's test kit at
-  // @sous/engine/testing, never by a path into that package's src or dist.
+  // @sous-run/engine/testing, never by a path into that package's src or dist.
   for (const { dir, file, path } of tests) {
     for (const { spec } of importsOf(file)) {
       if (spec.startsWith(".") && !resolve(dirname(file), spec).startsWith(join(ROOT, "packages", dir) + sep)) found.add(`${path} reaches outside its package with ${spec}`);

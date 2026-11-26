@@ -9,8 +9,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFile
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { readRun, rememberProject, type HomePaths, type Launcher } from "@sous/engine";
-import { createRun, inProcess, plantState, testHome, tick, type InnerRunner, type InProcessWorkers } from "@sous/engine/testing";
+import { readRun, rememberProject, type HomePaths, type Launcher } from "@sous-run/engine";
+import { createRun, inProcess, plantState, testHome, tick, type InnerRunner, type InProcessWorkers } from "@sous-run/engine/testing";
 import { sous } from "./sous.js";
 
 const PERSON: NodeJS.ProcessEnv = {};

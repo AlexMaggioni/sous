@@ -3,8 +3,8 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, it } from "node:test";
-import { listRecords, loadRecord, logFile, rememberProject, runQuestions, startRun, type HomePaths, type RunQuestion } from "@sous/engine";
-import { PERSON, inProcess, testHome, type InnerRunner } from "@sous/engine/testing";
+import { listRecords, loadRecord, logFile, rememberProject, runQuestions, startRun, type HomePaths, type RunQuestion } from "@sous-run/engine";
+import { PERSON, inProcess, testHome, type InnerRunner } from "@sous-run/engine/testing";
 import { main } from "../src/cli.js";
 import { capture, sous, waitFor } from "./sous.js";
 

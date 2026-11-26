@@ -1,5 +1,5 @@
 {
-  "name": "@sous/cli",
+  "name": "@sous-run/cli",
   "version": "0.1.0",
   "description": "Run workflows of Claude Code and Codex agents in the background, on your own machine.",
   "license": "Apache-2.0",
@@ -46,9 +46,9 @@
     "postpack": "node scripts/pack.mjs clean"
   },
   "dependencies": {
-    "@sous/engine": "workspace:*"
+    "@sous-run/engine": "workspace:*"
   },
   "devDependencies": {
-    "@sous/view": "workspace:*"
+    "@sous-run/view": "workspace:*"
   }
 }

@@ -2,7 +2,7 @@
 // them. The steps module opens a call when its turn starts and closes it when the turn ends. The
 // worker sends each `sous tell` through the board.
 
-import type { Steer, SteerOutcome } from "@sous/harnesses";
+import type { Steer, SteerOutcome } from "@sous-run/harnesses";
 
 /** An agent call: the run or nested run it runs in, its call index and its label. */
 export interface LiveCall {
