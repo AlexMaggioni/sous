@@ -4,7 +4,14 @@
 closes. It asks its questions through an inbox, pauses on a failed step, and waits out the
 subscription limit. A service starts scheduled runs and resumes paused ones.
 
-Build it from the repo root:
+Install it with `brew install alexmaggioni/tap/sous` or `npm install --global @sous/cli
+--omit=optional`. The README has the details. `sous --version` prints the version, and `sous
+update` installs the latest one with the package manager that installed sous. `sous update
+--check` only says whether a newer one is out, and `--json` gives `version`, `latest`, `install`
+(`brew`, `npm`, `pnpm`, `bun`, `yarn` or `source`), `command` and `updated`. A build from source
+gets no update command: pull the repository and build it again.
+
+To build it from the repo root:
 
 ```sh
 pnpm install
@@ -519,9 +526,11 @@ refuses a bad cron, and a schedule whose inputs miss a required one.
 ## The page
 
 ```sh
-pnpm --filter @sous/view build
 sous serve
 ```
+
+An installed sous carries the page. A build from source takes it from `packages/view/dist`, which
+`pnpm build` makes.
 
 `sous serve` shows the runs, the questions, the workflows, the agents, the skills and the MCP
 servers in the browser. It listens on 127.0.0.1 only, on port 4317 or the next free one. `--port`

@@ -58,12 +58,39 @@ sous show <run>             # steps, time and tokens, the result
 
 ## Install
 
-You need Node.js 22 or newer, pnpm 10, git, and at least one of the two programs:
+You need git and at least one of the two programs:
 
 - Claude Code 2.1.330 or newer, logged in
 - Codex 0.169.x, logged in
 
-sous is not on npm yet. Build it from source:
+On macOS or Linux, with Homebrew:
+
+```sh
+brew install alexmaggioni/tap/sous
+```
+
+On any system with Node.js 22 or newer, Windows included:
+
+```sh
+npm install --global @sous/cli --omit=optional
+```
+
+`--omit=optional` skips the 350 MB copy of Claude Code that the Agent SDK fetches by default.
+sous runs the Claude Code installed on your machine, so it never uses that copy. pnpm and bun
+work too: `pnpm add --global @sous/cli`, `bun add --global @sous/cli`.
+
+Then check that sous finds your programs:
+
+```sh
+sous --version
+sous doctor          # the Claude Code and Codex it found, their versions, their models
+sous doctor --live   # also runs one tiny step on each
+```
+
+`sous update` installs the latest version with the package manager that installed sous.
+`sous update --check` only says whether a newer one is out.
+
+To build it from source instead, you need Node.js 22 or newer and pnpm 10:
 
 ```sh
 git clone https://github.com/AlexMaggioni/sous.git
@@ -74,12 +101,8 @@ cd packages/cli && pnpm link --global
 ```
 
 `pnpm link --global` puts `sous` on your PATH. If pnpm asks for a global bin folder, run
-`pnpm setup` once and open a new shell. Then check that sous finds your programs:
-
-```sh
-sous doctor          # the Claude Code and Codex it found, their versions, their models
-sous doctor --live   # also runs one tiny step on each
-```
+`pnpm setup` once and open a new shell. To update a build from source, run `git pull`, then
+`pnpm install` and `pnpm build`.
 
 sous is developed on macOS, where it also sends notifications. CI runs the tests on Linux.
 
@@ -270,6 +293,13 @@ pnpm test
 package's tests and the golden files of `test/baseline`. It needs no credentials and starts no real
 agent. The steps run on fake programs in `test/fakes`. The proofs in `test/proofs` run on the real
 programs, by hand.
+
+A release is one version for the three published packages. Write its section in
+`CHANGELOG.md` as `## 0.2.0 (unreleased)`, then run `pnpm release 0.2.0` on `main`. That dates the
+section, sets the version, commits and tags `v0.2.0`. Pushing the tag starts
+`.github/workflows/release.yml`, which runs the tests, publishes to npm, makes the GitHub release
+and updates the Homebrew formula. A version such as `0.2.0-rc.1` goes to npm's `next` tag, with no
+formula.
 
 `pnpm install` points git at the hooks in `.githooks`. The pre-push hook runs `pnpm test` and stops
 the push when it fails. After a change to what sous prints, `BASELINE_UPDATE=1 node --test

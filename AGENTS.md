@@ -42,6 +42,9 @@ The code and its tests are the current state. When prose and code disagree, fix 
 - `pnpm install` sets `core.hooksPath` to `.githooks`. The pre-push hook there runs `pnpm test`
   and stops the push when it fails. It skips deleted branches and pushes with no new commit.
   `git push --no-verify` skips it.
+- A release is `pnpm release <version>` on `main`, after a `## <version> (unreleased)` section in
+  `CHANGELOG.md`. Pushing the tag it makes publishes. The README's Development section has the
+  rest. Never publish by hand.
 - `pnpm test` ends with the golden files in `test/baseline/golden`. After a change to what sous
   prints, `BASELINE_UPDATE=1 node --test test/baseline.test.mjs` rewrites them. Read the diff
   before you commit it.

@@ -9,7 +9,8 @@
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm build && pnpm typecheck && pnpm test:architecture && pnpm -r test && pnpm test:baseline",
     "test:architecture": "node --test test/architecture.test.mjs",
-    "test:baseline": "node --test test/baseline.test.mjs"
+    "test:baseline": "node --test test/baseline.test.mjs",
+    "release": "node scripts/release.mjs bump"
   },
   "engines": {
     "node": ">=22",
