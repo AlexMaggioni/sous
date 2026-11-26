@@ -195,7 +195,9 @@ describe("the start dialog", () => {
     const dialog = await screen.findByRole("dialog", { name: "Start ship" });
     expect(await within(dialog).findByText("Changed since you approved it.")).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Start" }));
-    expect(await within(dialog).findByText("await sh('npm run ship -- --force')")).toBeInTheDocument();
+    // The whole row's text, since shiki splits the line into one span per token once it loads.
+    const added = (code: string) => (_: string, el: Element | null) => el?.getAttribute("data-op") === "added" && (el.textContent ?? "").endsWith(code);
+    expect(await within(dialog).findByText(added("await sh('npm run ship -- --force')"))).toBeInTheDocument();
     expect(calls).toEqual([]);
     await userEvent.click(within(dialog).getByRole("button", { name: "Back" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Start" }));

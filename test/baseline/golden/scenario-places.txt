@@ -472,7 +472,7 @@ exit 0
     },
     "environment": {
       "git": {
-        "head": "2a25c37a7d008b82358ed3a5ce289e326522c1d4",
+        "head": "8d04e20aa53efcc9bd7580fb0190ffd313d1d43e",
         "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       }
     },
@@ -480,7 +480,7 @@ exit 0
       "format": "identity-v1",
       "terminalEnvironment": {
         "git": {
-          "head": "2a25c37a7d008b82358ed3a5ce289e326522c1d4",
+          "head": "8d04e20aa53efcc9bd7580fb0190ffd313d1d43e",
           "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       }
@@ -684,7 +684,7 @@ exit 0
     },
     "environment": {
       "git": {
-        "head": "2a25c37a7d008b82358ed3a5ce289e326522c1d4",
+        "head": "8d04e20aa53efcc9bd7580fb0190ffd313d1d43e",
         "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       }
     },
@@ -692,7 +692,7 @@ exit 0
       "format": "identity-v1",
       "terminalEnvironment": {
         "git": {
-          "head": "2a25c37a7d008b82358ed3a5ce289e326522c1d4",
+          "head": "8d04e20aa53efcc9bd7580fb0190ffd313d1d43e",
           "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       }
