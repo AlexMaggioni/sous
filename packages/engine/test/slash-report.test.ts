@@ -55,19 +55,27 @@ for (const [harness, model] of [
       );
     });
 
-    it("continued from its recorded session sends the continuation with no schema, then the report turn", async () => {
+    // The one rule for a turn that stopped early: a slash step sends its slash prompt again, since
+    // a command such as /goal may not outlive the program. The note goes apart, as on a first turn.
+    it("continued from its recorded session sends its slash prompt again with no schema, then the report turn", async () => {
       const place = fakePlace();
       let first: AgentSessionRef | undefined;
       const steps = createSteps(onFakes(place));
       try {
         await steps.run("/canary", routed(steps, { label: "canary", model }, { onSessionOpen: (ref: AgentSessionRef) => (first ??= ref) }));
-        assert.ok(first);
-        await steps.run("/canary", routed(steps, { label: "canary", model }, { schema: SCHEMA, continueFromSession: first }));
       } finally {
         await steps.dispose();
       }
+      assert.ok(first);
+      const resumed = createSteps(onFakes(place, { note: { text: "Use the main branch." } }));
+      try {
+        await resumed.run("/canary", routed(resumed, { label: "canary", model }, { schema: SCHEMA, continueFromSession: first }));
+      } finally {
+        await resumed.dispose();
+      }
       const [, continued, report] = place.lines();
-      assert.deepEqual([continued?.prompt, fields(continued), continued?.sessionId], [CONTINUE_PROMPT, null, first!.sessionId]);
+      assert.deepEqual([continued?.texts, fields(continued), continued?.sessionId], [["Use the main branch.", "/canary"], null, first!.sessionId]);
+      assert.ok(!place.lines().some((line) => line.prompt.startsWith(CONTINUE_PROMPT)), "no Continue the task. turn");
       assert.deepEqual([report?.prompt, fields(report), report?.sessionId], [REPORT, ["ok", "summary"], first!.sessionId]);
     });
   });

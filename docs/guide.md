@@ -551,7 +551,9 @@ the notices off.
 - A step cut off by `sous stop`, a time limit, the budget, the subscription limit or a lost login
   goes on in its own session and its own folder when the run resumes, in a nested workflow or a
   worktree too. Its next prompt is `Continue the task.`, followed by the `--note` message when there
-  is one. A step whose session or folder is gone starts over in a new session.
+  is one. A step whose prompt starts with `/` sends that prompt again instead, since a command such
+  as `/goal` may not outlive the program, and the note goes before it. A step whose session or
+  folder is gone starts over in a new session.
 - A run keeps the workflows as they were when it started, nested ones included. After an edit,
   `sous resume` refuses and names the two ways on: `--latest` takes the new version and keeps the
   finished steps that match, and `--same` goes on with the run's own version. The error's `next`

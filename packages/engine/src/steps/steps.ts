@@ -457,7 +457,9 @@ async function runOnHarness(
         continuation = { reattached: false, reason: "backend-mismatch" };
       } else {
         try {
-          const text = call.continueWithPrompt ? fresh : withNote(CONTINUE_PROMPT, note);
+          // A slash step sends its prompt again, since a command such as /goal may not outlive the
+          // program. Any other step goes on with Continue the task.
+          const text = call.continueWithPrompt || isSlash(prompt) ? fresh : withNote(CONTINUE_PROMPT, note);
           if (typeof recorded.costGauge === "number" && Number.isFinite(recorded.costGauge)) gauge = recorded.costGauge;
           answer = await turn({ ...base, ...text, ...turns.work, resume: recorded.sessionId });
           continuation = { reattached: true, method: "resume" };
