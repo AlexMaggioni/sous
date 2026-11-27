@@ -412,6 +412,8 @@ const fixes = await parallel(
       tested: true,
     })
     if (fix.status !== "landed") return { ...proof, fix }
+    // A proof with no command to rerun gets a verifier again.
+    if (!proof.rerun.trim()) return { ...(await prove(gate, 2)), fix }
     const again = await sh(proof.rerun, { label: `${gate.id} rerun`, allowFail: true })
     if (again.code === 0) return { ...proof, verdict: "passed", evidence: last(again.stdout + again.stderr, 2000), fix }
     return { ...(await prove(gate, 2, { rerun: proof.rerun, code: again.code, output: last(again.stdout + again.stderr) })), fix }

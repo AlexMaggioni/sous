@@ -4,13 +4,14 @@
 // The person's `sous join` stands in as this test's parent process, which lives through the test.
 
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { describe, it } from "node:test";
 import { readJsonLines } from "../../src/json-file.js";
 import type { HomePaths } from "../../src/runs/home.js";
 import { listQuestions } from "../../src/runs/inbox.js";
 import { askedWords, joinQuestion, joinTarget, leaveSession, takeSession, type JoinTarget } from "../../src/runs/join.js";
 import { createRun } from "../../src/runs/launch.js";
-import { activityWriter } from "../../src/runs/records.js";
+import { activityWriter, updateRecord } from "../../src/runs/records.js";
 import { Refusal } from "../../src/runs/refusal.js";
 import { readHolder, releaseHold, takeHold } from "../../src/runs/session-hold.js";
 import { holdFile, readState } from "../../src/runs/store.js";
@@ -129,6 +130,33 @@ describe("sous join in the engine", () => {
     assert.deepEqual([left?.act, left?.question], ["leave", asked!.id]);
   });
 
+  it("names an unlabeled step's question as the log names the step, so sous join finds it", async () => {
+    const { paths, projectDir } = setup({ bare: `export const meta = { name: 'bare', description: 'No label' }
+await agent('Plan it.', { until: 'turn' })
+return await agent('Build it.', { until: 'turn' })` });
+    const turns: string[] = [];
+    const inner: InnerRunner = {
+      async run(prompt, request) {
+        turns.push(prompt);
+        if (turns.length === 1) return "planned";
+        if (turns.length > 2) return "built";
+        request.onSessionOpen?.(REF);
+        return { status: "question", result: null, message: "Which API?" };
+      },
+    };
+    const { runId, worker } = start(paths, projectDir, "bare", inner);
+    await waitUntil(() => listQuestions(paths, runId).length > 0, "the step never asked");
+    const [question] = listQuestions(paths, runId);
+    assert.equal(question?.step, "agent 2");
+    const target = await targetOf(paths, runId, question!.step!);
+    assert.equal(joinQuestion(paths, target)?.id, question!.id);
+
+    await takeSession(paths, target, PERSON, { pid: JOINER, pollMs: 10 });
+    assert.equal(leaveSession(paths, target, PERSON, { pid: JOINER })?.id, question!.id);
+    await worker;
+    assert.equal(readState(paths, runId)?.result, "built");
+  });
+
   it("takes the session itself when no worker runs, and refuses a second person", async () => {
     const { paths, projectDir } = setup({ one: ONE_TURN });
     const { runId, worker } = start(paths, projectDir, "one", sessionRunner("done").inner);
@@ -209,6 +237,26 @@ describe("sous join in the engine", () => {
     releaseHold(file, JOINER);
   });
 
+  it("stops waiting for the session to come back when its second signal stops it, from a worker that never hands it over", async () => {
+    const { paths, projectDir } = setup({ one: ONE_TURN });
+    const { runId, worker } = start(paths, projectDir, "one", sessionRunner("done").inner);
+    await worker;
+    const target = joinTarget(paths, runId, "impl");
+    // A worker that has the request and never hands the session over.
+    const stuck = spawn(process.execPath, ["-e", "process.on('SIGUSR2', () => {}); setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    try {
+      updateRecord(paths, runId, { pid: stuck.pid! });
+      const stop = new AbortController();
+      const giveUp = new AbortController();
+      const taking = takeSession(paths, target, PERSON, { pid: process.pid, pollMs: 10, signal: stop.signal, giveUp: giveUp.signal, onWait: () => stop.abort() });
+      setTimeout(() => giveUp.abort(), 100);
+      await assert.rejects(taking, /stopped waiting/);
+      assert.equal(readHolder(holdFile(paths, runId, "s-impl")), undefined);
+    } finally {
+      stuck.kill("SIGKILL");
+    }
+  });
+
   it("gives what the agent asked with its program's own tool in the call, and nothing for a call that asked through its status", () => {
     const { paths } = setup();
     const runId = "run-asked";
@@ -229,10 +277,42 @@ describe("sous join in the engine", () => {
       ...(callIndex === undefined ? {} : { callIndex }),
       session: { ...REF, callIndex: callIndex ?? 1, label: "impl", keptOpen: false },
       running: false,
+      shown: { step: "impl", call: 1 },
     });
     assert.equal(askedWords(paths, target(0)), "Which API should I call?\nOptions: v1, v2");
     assert.equal(askedWords(paths, target(1)), undefined, "that call asked through its status");
     assert.equal(askedWords(paths, target()), undefined, "by its label, the step's last turn began after the answer");
+  });
+
+  it("steps into the session of the nested run that asked, where two nested runs have a step of the same name", async () => {
+    const { paths, projectDir } = setup({
+      outer: `export const meta = { name: 'outer', description: 'Two tickets' }
+return await parallel([() => workflow('ticket', { id: 'A' }, { label: 'A' }), () => workflow('ticket', { id: 'B' }, { label: 'B' })])`,
+      ticket: `export const meta = { name: 'ticket', description: 'One ticket', inputs: { id: 'The ticket' } }
+const impl = session({ label: 'impl' })
+return await impl.send('Build ' + args.id + '.', { label: 'build', until: 'turn' })`,
+    });
+    const turns: string[] = [];
+    const inner: InnerRunner = {
+      async run(prompt, request) {
+        turns.push(prompt);
+        if (prompt === CONTINUE_PROMPT) return "built";
+        request.onSessionOpen?.({ ...REF, sessionId: prompt === "Build B." ? "s-B" : "s-A" });
+        return prompt === "Build B." ? { status: "question", result: null, message: "Which API?" } : "built";
+      },
+    };
+    const { runId, worker } = start(paths, projectDir, "outer", inner);
+    await waitUntil(() => listQuestions(paths, runId).length > 0, "the step never asked");
+    const [question] = listQuestions(paths, runId);
+    assert.deepEqual([question?.step, question?.join], ["impl", "B: impl"]);
+    const target = await targetOf(paths, runId, question!.join!);
+    assert.deepEqual([target.session.sessionId, target.shown], ["s-B", { step: "B: build", call: 1 }]);
+    assert.equal(joinQuestion(paths, target)?.id, question!.id);
+
+    await takeSession(paths, target, PERSON, { pid: JOINER, pollMs: 10 });
+    assert.equal(leaveSession(paths, target, PERSON, { pid: JOINER })?.id, question!.id);
+    await worker;
+    assert.equal(readState(paths, runId)?.status, "completed");
   });
 
   it("finds a handle's session by the handle's label, and refuses a step with no session", async () => {
@@ -250,6 +330,7 @@ return 1`;
 
     const byHandle = joinTarget(paths, runId, "planner");
     assert.deepEqual([byHandle.step, byHandle.label, byHandle.session.handle, byHandle.session.sessionId], ["planner", "draft", "planner", "s1"]);
+    assert.deepEqual(byHandle.shown, { step: "draft", call: 1 }, "sous step finds the turn by its own label");
     assert.equal(joinTarget(paths, runId, "draft").session.sessionId, "s1", "a turn's own label names it too");
 
     assert.equal(refusalOf(() => joinTarget(paths, runId, "nope")).code, "no_such_step");

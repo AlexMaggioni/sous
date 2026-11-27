@@ -107,6 +107,11 @@ function decisionCall(question: Question, tried: Tried): string {
   return answerCommand(question, "approve", undefined, true, true);
 }
 
+/** The step `sous join` takes for an agent's question. */
+export function joinName(question: Pick<Question, "join" | "step">): string {
+  return question.join ?? question.step ?? "agent";
+}
+
 /**
  * Refuse an answer the caller may not give, with question_for_people. An agent's question in its
  * turn ("join") is refused to everyone, since the person answers it in the session. Then it allows, in this order:
@@ -118,7 +123,7 @@ function decisionCall(question: Question, tried: Tried): string {
 export function mayAnswer(question: Question, record: Pick<RunRecord, "letAgentAnswer">, who: Who, tried: Tried = { decision: "approve" }): void {
   if (question.answeredBy === "join") {
     const message = `${question.id} is a question from the agent of step "${question.step ?? "agent"}". The person answers it inside the agent's session, with sous join, not with sous answer or the page.`;
-    throw new Refusal("question_for_people", message, `Step into the session: sous join ${question.runId}${question.step ? ` ${question.step}` : ""}. Answer the agent there, then leave.`, null);
+    throw new Refusal("question_for_people", message, `Step into the session: sous join ${question.runId} ${word(joinName(question))}. Answer the agent there, then leave.`, null);
   }
   if (who.by === "person") return;
   if (!question.breakpoint && answeredByFor(question, record) === "anyone") return;

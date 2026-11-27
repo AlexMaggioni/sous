@@ -9,7 +9,7 @@
 import { recordAction, type Who } from "./actions.js";
 import type { HomePaths } from "./home.js";
 import { listQuestions, writeAnswer, type Question } from "./inbox.js";
-import { loadRecord, processAlive, readActivity, requestJoin } from "./records.js";
+import { loadRecord, processAlive, readActivity, requestJoin, scopePrefix } from "./records.js";
 import { Refusal } from "./refusal.js";
 import { runDetail } from "./run.js";
 import { readHolder, releaseHold, takeHold, type Holder } from "./session-hold.js";
@@ -34,6 +34,8 @@ export interface JoinTarget {
   model?: string;
   /** Whether a turn of the step runs now. */
   running: boolean;
+  /** The step and call as sous step finds them. A handle's label names its session, not a step. */
+  shown: { step: string; call: number };
 }
 
 /** The value a step's question gets when the person leaves its session. */
@@ -50,8 +52,16 @@ export function joinTarget(paths: HomePaths, runId: string, step: string, option
   const id = detail.record.runId;
   const show = `sous show ${id} --json`;
   const found = stepCalls(detail, step);
-  // A handle's turns may each have a label of their own. Its label still names its session.
-  const calls = found?.calls ?? detail.steps.filter((row) => row.session?.handle === step).map((agent) => ({ agent, scope: typeof agent.scope === "string" ? agent.scope : id }));
+  const scopeOf = (agent: { scope?: unknown }) => (typeof agent.scope === "string" ? agent.scope : id);
+  const prefixOf = (agent: { scope?: unknown }) => scopePrefix(id, scopeOf(agent), detail.record.nested);
+  // A handle's turns may each have a label of their own. Its label still names its session, after
+  // its nested run's name as sous log writes it. A bare label finds the root run's handle first.
+  const handles = (named: (agent: (typeof detail.steps)[number]) => boolean) => detail.steps.filter((row) => row.session?.handle !== undefined && named(row));
+  const byName = handles((row) => `${prefixOf(row)}${row.session!.handle}` === step);
+  const bare = handles((row) => row.session!.handle === step);
+  const bareScope = bare.some((row) => scopeOf(row) === id) ? id : bare.map(scopeOf)[0];
+  const rows = byName.length ? byName : bare.filter((row) => scopeOf(row) === bareScope);
+  const calls = found?.calls ?? rows.map((agent) => ({ agent, scope: scopeOf(agent) }));
   if (!calls.length) throw new Refusal("no_such_step", `run ${id} has no step "${step}".`, "Name one of the run's agent steps, by its label or its name in sous log.", show);
   const numbered = calls.map((call, i) => ({ ...call, call: i + 1 }));
   if (options.call !== undefined && !numbered[options.call - 1]) {
@@ -65,7 +75,9 @@ export function joinTarget(paths: HomePaths, runId: string, step: string, option
     throw new Refusal("step_has_no_session", message, code ? "Name an agent step." : "Wait until the step runs, then join it.", show);
   }
   const { agent, scope, call } = chosen;
-  const running = detail.running.includes(name) && call === numbered.length;
+  const logName = `${prefixOf(agent)}${agent.label}`;
+  const running = detail.running.includes(found ? name : logName) && call === numbered.length;
+  const shownCall = found ? call : (stepCalls(detail, logName)?.calls.findIndex((row) => row.agent === agent) ?? -1) + 1;
   return {
     runId: id,
     step: name,
@@ -76,6 +88,7 @@ export function joinTarget(paths: HomePaths, runId: string, step: string, option
     session: agent.session!,
     ...(agent.model ? { model: agent.model } : {}),
     running,
+    shown: found ? { step: name, call } : { step: logName, call: shownCall || call },
   };
 }
 
@@ -107,6 +120,10 @@ export interface TakeOptions {
   /** How long to wait between two looks at the hold, in ms. */
   pollMs?: number;
   signal?: AbortSignal;
+  /** After a stop, the wait for the worker to hand the session over and get it back ends here too,
+   *  as on a second Ctrl-C. The worker may then hand the session to this process, which holds it
+   *  until it ends. */
+  giveUp?: AbortSignal;
   /** Called once when the session's turn has to hand it over first, and again for a step of
    *  another process that holds it. */
   onWait?: (holder: Holder | undefined) => void;
@@ -153,7 +170,7 @@ export async function takeSession(paths: HomePaths, target: JoinTarget, who: Who
       // The worker has the request, and hands the session over once its turn lets go of it. A
       // process that goes on, such as sous wait, would then hold it for no one, so it gives the
       // session back at once and the step goes on.
-      while (!ours() && processAlive(record.pid)) await pause(pollMs, undefined);
+      while (!ours() && processAlive(record.pid) && !options.giveUp?.aborted) await pause(pollMs, options.giveUp).catch(() => undefined);
       releaseHold(file, me);
       throw error;
     }

@@ -194,8 +194,13 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
   const running = new Map<string, string>();
 
   const slash = readSlash(step.prompt);
-  if (step.note !== undefined && (slash.kind === "compact" || (slash.kind === "review" && slash.instructions === undefined))) {
-    notes.push(`Codex's /${slash.kind} takes no note, so the note did not reach it.`);
+  // The command each kind of slash prompt is, as the person typed it.
+  const command = slash.kind === "goal-show" ? "/goal" : slash.kind === "goal-clear" ? "/goal clear" : `/${slash.kind}`;
+  if (step.note !== undefined && (slash.kind === "compact" || slash.kind === "goal-show" || slash.kind === "goal-clear" || (slash.kind === "review" && slash.instructions === undefined))) {
+    notes.push(`Codex's ${command} takes no note, so the note did not reach it.`);
+  }
+  if (step.images?.length && (slash.kind === "goal" || slash.kind === "goal-show" || slash.kind === "goal-clear" || slash.kind === "compact" || slash.kind === "review")) {
+    notes.push(`Codex's ${command} takes no images, so the images did not reach it.`);
   }
   // A goal runs turns until its status leaves active. goalTurn is true while one of them runs.
   const goal = slash.kind === "goal";
@@ -361,7 +366,8 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
       throw new RpcError(server?.stderr.trim() || why, -32000);
     });
     turn = await Promise.race([turnDone, exited]);
-    if (!step.signal?.aborted) {
+    // A stop after the turn completed keeps the answer, as on Claude Code.
+    if (!step.signal?.aborted || turn.status === "completed") {
       const base = { sessionId: threadId, model, text, usage: spent, ...(asked !== undefined ? { asked } : {}), ...(notes.length ? { notes } : {}) };
       answer = answerOf(base, turn, Boolean(step.schema));
     }

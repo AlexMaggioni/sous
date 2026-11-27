@@ -14,15 +14,15 @@ export class Held<P extends HeldProgram> {
   private sealed = false;
 
   /**
-   * The session's kept program, when it still runs and its settings fit. A program that does not
-   * fit is closed first, so the turn can resume the session in a new one.
+   * The session's kept program, when it still runs and its settings fit, as any of `fits` names
+   * them. A program that does not fit is closed first, so the turn can resume the session in a new one.
    */
-  async take(sessionId: string | undefined, fits: string): Promise<P | undefined> {
+  async take(sessionId: string | undefined, fits: string | string[]): Promise<P | undefined> {
     if (sessionId === undefined) return undefined;
     const program = this.programs.get(sessionId);
     if (!program) return undefined;
     this.programs.delete(sessionId);
-    if (program.alive() && program.fits === fits) return program;
+    if (program.alive() && (typeof fits === "string" ? [fits] : fits).includes(program.fits)) return program;
     await program.close();
     return undefined;
   }

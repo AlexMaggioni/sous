@@ -1,6 +1,6 @@
 // The calls that come next after sous wait and sous show, from where the run is.
 
-import { answerCalls, word, type Failure, type RunQuestion, type Who } from "@sous-run/engine";
+import { answerCalls, joinName, word, type Failure, type RunQuestion, type Who } from "@sous-run/engine";
 import type { Next } from "../reply.js";
 
 /** Where a run is, as wait and show give it. */
@@ -78,8 +78,7 @@ export function nextCalls(run: RunAt, from: "wait" | "show", who: Who, timeout?:
     for (const q of run.questions ?? []) calls.push(...answerNext(q, who));
     for (const q of run.questions ?? []) {
       if (q.answeredBy !== "join") continue;
-      const step = q.step ?? "agent";
-      notes.push(`"${step}" needs the person, in its session. Ask them to run sous join ${id} ${word(step)} in a terminal of their own. The step goes on once they leave it.`);
+      notes.push(`"${q.step ?? "agent"}" needs the person, in its session. Ask them to run sous join ${id} ${word(joinName(q))} in a terminal of their own. The step goes on once they leave it.`);
     }
     calls.push({ ...wait, does: "waits again once the answer is in" });
   } else if (run.status === "running" || run.status === "pending" || run.status === "starting") {

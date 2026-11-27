@@ -69,13 +69,13 @@ describe("claude joinArgs", () => {
 });
 
 describe("codex joinArgs", () => {
-  test("a bare step resumes the thread in its folder and passes nothing else", () => {
-    assert.deepEqual(codex.joinArgs(BASE, writer().write), { args: ["resume", "s-1", "-C", "/work/project"], notes: [] });
+  test("a bare step resumes the thread in its folder, in the default mode it ran in", () => {
+    assert.deepEqual(codex.joinArgs(BASE, writer().write), { args: ["resume", "s-1", "-C", "/work/project", "--approve-for-me"], notes: [] });
   });
 
   test("passes the model and effort", () => {
     const { args } = codex.joinArgs({ ...BASE, model: "gpt-6-luna", effort: "low" }, writer().write);
-    assert.deepEqual(args, ["resume", "s-1", "-C", "/work/project", "-m", "gpt-6-luna", "-c", 'model_reasoning_effort="low"']);
+    assert.deepEqual(args, ["resume", "s-1", "-C", "/work/project", "-m", "gpt-6-luna", "-c", 'model_reasoning_effort="low"', "--approve-for-me"]);
   });
 
   test("each mode gets the sandbox and approval flags runCodex sets on the thread", () => {
@@ -86,15 +86,15 @@ describe("codex joinArgs", () => {
     assert.deepEqual(flags("agent-full-access"), ["-s", "danger-full-access", "-a", "never"]);
   });
 
-  test("an unknown mode becomes a note and no flag", () => {
+  test("an unknown mode opens in the default mode the step ran in, with a note", () => {
     const { args, notes } = codex.joinArgs({ ...BASE, mode: "acceptEdits" }, writer().write);
-    assert.deepEqual(args, ["resume", "s-1", "-C", "/work/project"]);
-    assert.deepEqual(notes, ["Codex has no mode acceptEdits, so the user's default stays."]);
+    assert.deepEqual(args, ["resume", "s-1", "-C", "/work/project", "--approve-for-me"]);
+    assert.deepEqual(notes, ["Codex has no mode acceptEdits, so the session opens in agent mode, as the step ran."]);
   });
 
   test("instructions go in developer_instructions as a TOML string", () => {
     const { args } = codex.joinArgs({ ...BASE, instructions: 'Be brief.\nSay "done" \\ go.\u007f' }, writer().write);
-    assert.deepEqual(args.slice(4), ["-c", 'developer_instructions="Be brief.\\nSay \\"done\\" \\\\ go.\\u007f"']);
+    assert.deepEqual(args.slice(5), ["-c", 'developer_instructions="Be brief.\\nSay \\"done\\" \\\\ go.\\u007f"']);
   });
 
   test("MCP servers go in one TOML table, with quoted keys where a bare key cannot hold the name", () => {
@@ -108,7 +108,7 @@ describe("codex joinArgs", () => {
       },
       writer().write,
     );
-    assert.deepEqual(args.slice(4), [
+    assert.deepEqual(args.slice(5), [
       "-c",
       'mcp_servers={ my_docs = { url = "https://example.invalid/mcp", http_headers = { X-Key = "k" } }, "a.b" = { command = "node", args = ["server.js"], env = { TOKEN = "t" } } }',
     ]);

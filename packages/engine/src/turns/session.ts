@@ -62,6 +62,8 @@ export interface SessionDeps {
   command: LoopDeps["command"];
   /** Waits on a join row with an agent's question, for the session or step `label`. */
   join: (message: string, label: string) => Promise<unknown>;
+  /** The label the engine gave the last turn in the session `key`, as the run's log names the step. */
+  labelOf?: (key: string) => string | undefined;
   /** Per-run changes to steps, by label, such as { reviewer: { model: "claude/haiku" } }. */
   stepOverrides?: Record<string, Record<string, unknown>>;
   /** A step's folder, resolved as the engine resolves a step's cwd. */
@@ -193,11 +195,12 @@ export function createSessions(deps: SessionDeps) {
   /**
    * Runs one step: its one turn with `until: "turn"`, else the loop's turns until "done". `turn`
    * sends one turn with the until the engine reads. `joinLabel` names the session a question
-   * waits on. A check command runs in `cwd`. `key` is the session the turns go on in, whose
+   * waits on, or gives that name once a turn has run. A check command runs in `cwd`. `key` is the session the turns go on in, whose
    * program closes when the step ends.
    */
-  const runStep = async (prompt: string, options: Record<string, unknown>, label: string, joinLabel: string, cwd: unknown, key: string | undefined, turn: (prompt: string, until: Until) => Promise<unknown>) => {
+  const runStep = async (prompt: string, options: Record<string, unknown>, label: string, joinLabel: string | (() => string), cwd: unknown, key: string | undefined, turn: (prompt: string, until: Until) => Promise<unknown>) => {
     const end = key === undefined || !deps.end ? undefined : () => deps.end!(key);
+    const asker = () => (typeof joinLabel === "string" ? joinLabel : joinLabel());
     const maxTurns = options.maxTurns as number | undefined;
     const maxRepairs = options.maxRepairs as number | undefined;
     if (options.until === "turn") {
@@ -210,7 +213,7 @@ export function createSessions(deps: SessionDeps) {
           if (key !== undefined) away(key);
           if (stopped.status === "question") {
             await end?.();
-            await deps.join(stopped.message ?? "The agent has a question.", joinLabel);
+            await deps.join(stopped.message ?? "The agent has a question.", asker());
           }
           value = await turn(CONTINUE_PROMPT, until);
         }
@@ -230,7 +233,7 @@ export function createSessions(deps: SessionDeps) {
         ...(typeof cwd === "string" ? { cwd } : {}),
         ...(typeof options.phase === "string" ? { phase: options.phase } : {}),
       },
-      { send: turn, command: deps.command, join: (message) => deps.join(message, joinLabel), ...(end ? { end } : {}) },
+      { send: turn, command: deps.command, join: (message) => deps.join(message, asker()), ...(end ? { end } : {}) },
     );
   };
 
@@ -376,7 +379,9 @@ export function createSessions(deps: SessionDeps) {
     const key = ` agent ${++agents}`;
     let turns = 0;
     try {
-      return await runStep(prompt, options, name, name, tree ? cwdIn(tree, rest.cwd) : rest.cwd, key, (text, until) => {
+      // An unlabeled step asks as the log names it, such as "agent 3", which the engine picks.
+      const asker = label ?? (() => deps.labelOf?.(key) ?? name);
+      return await runStep(prompt, options, name, asker, tree ? cwdIn(tree, rest.cwd) : rest.cwd, key, (text, until) => {
         const start = turns++ === 0 ? "fresh" : "kept";
         return deps.agent(text, { ...step, until, session: { key, start, ...(options.until === "turn" ? { once: true } : {}), ...placed } });
       });

@@ -628,6 +628,8 @@ async function runLevel<T>(
   // Each session key's session, the hash of its last turn and its cost so far. A replayed turn
   // fills it from its row, a live one when it settles. A nested workflow has a map of its own.
   const sessions = new Map<string, SessionEntry>();
+  // The label of each session key's last turn, which an unlabeled agent()'s question names.
+  const sessionLabels = new Map<string, string>();
 
   const agentRunner = options.agent;
   // Global caps are shared with any nested workflow() so they hold across nesting.
@@ -983,6 +985,7 @@ async function runLevel<T>(
     const retryAttempts =
       agentOptions.retries !== undefined ? normalizeAgentRetries(agentOptions.retries) : runAgentRetries;
     const label = requestedLabel || defaultAgentLabel(assignedPhase, shared.agentCount + 1);
+    if (sessionKey !== undefined) sessionLabels.set(sessionKey, label);
 
     // Every identity component is computed before the index is allocated. A hash
     // serialization failure therefore consumes no index and leaves no journal gap.
@@ -1863,7 +1866,7 @@ async function runLevel<T>(
     listSavedWorkflows: options.savedWorkflows?.list,
     stepOverrides: options.stepOverrides,
     resolveCwd: (cwd) => resolvePath(baseCwd, cwd ?? "."),
-    track: tracked, onDryRunCheck: options.codeEnv?.onDryRunCheck, endSession: endSession(sessions, agentRunner), forkSession: forkSession(sessions),
+    labelOf: (key) => sessionLabels.get(key), track: tracked, onDryRunCheck: options.codeEnv?.onDryRunCheck, endSession: endSession(sessions, agentRunner), forkSession: forkSession(sessions),
     places: stepPlaces, parallel, onRoom: (room) => options.onRoom?.(room, callbackContext),
   });
 

@@ -249,6 +249,19 @@ describe("other slash commands on codex", () => {
     assert.deepEqual(compacted.notes, ["Codex's /compact takes no note, so the note did not reach it."]);
   });
 
+  test("/goal alone and /goal clear say they dropped the note, and /goal and /review say they dropped the images", async () => {
+    const c = newCase([{ match: "^/goal ", answer: "Met." }, { match: "^/review", answer: "Fine." }]);
+    const image = { mimeType: "image/png", data: "iVBORw0KGgo=" };
+    const shown = await c.harness.run(c.step({ prompt: "/goal", note: "Keep the plan." }));
+    assert.deepEqual(shown.notes, ["Codex's /goal takes no note, so the note did not reach it."]);
+    const cleared = await c.harness.run(c.step({ prompt: "/goal clear", note: "Keep the plan." }));
+    assert.deepEqual(cleared.notes, ["Codex's /goal clear takes no note, so the note did not reach it."]);
+    const goal = await c.harness.run(c.step({ prompt: "/goal ship it", images: [image] }));
+    assert.deepEqual(goal.notes, ["Codex's /goal takes no images, so the images did not reach it."]);
+    const review = await c.harness.run(c.step({ prompt: "/review focus on the tests", images: [image] }));
+    assert.deepEqual(review.notes, ["Codex's /review takes no images, so the images did not reach it."]);
+  });
+
   test("/compact compacts the thread", async () => {
     const c = newCase([{ answer: "Noted." }]);
     const first = await c.harness.run(c.step({ prompt: "Keep going.", hold: true }));

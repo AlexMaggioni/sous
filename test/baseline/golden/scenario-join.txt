@@ -35,6 +35,7 @@ exit 4
     {
       "id": "<run-1>--1",
       "step": "builder",
+      "join": "builder",
       "prompt": "\"builder\" needs you in its session.",
       "kind": "input",
       "breakpoint": false,

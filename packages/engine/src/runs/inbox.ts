@@ -6,7 +6,7 @@ import { unlinkSync } from "node:fs";
 import { readJsonFile, writeJsonFile } from "../json-file.js";
 import { fitAnswer, fitSchema } from "../steps/answer.js";
 import type { By, Through, Who } from "./actions.js";
-import { answerCommand, answeredByFor, authorAnsweredBy, type Tried } from "./consent.js";
+import { answerCommand, answeredByFor, authorAnsweredBy, joinName, type Tried } from "./consent.js";
 import type { HomePaths } from "./home.js";
 import type { RunRecord } from "./records.js";
 import { word } from "./refusal.js";
@@ -37,6 +37,9 @@ export interface Question {
   answeredBy?: AnsweredBy;
   /** The label of the agent step that asks, for an agent's question. */
   step?: string;
+  /** What `sous join` takes to step into the asking session: the step, after its nested run's
+   *  name when a nested run asks. Older questions lack it, and give the step alone. */
+  join?: string;
   /** The shape of the answer, a JSON schema. An answer that does not fit is refused. At a
    *  breakpoint, it checks the value an approve carries. */
   schema?: Record<string, unknown>;
@@ -357,6 +360,8 @@ function schemaMeaning(question: Question, schema: Record<string, unknown>, text
 export interface QuestionView {
   id: string;
   step?: string;
+  /** For an agent's question, the step `sous join` takes. */
+  join?: string;
   prompt: string;
   kind: Question["kind"];
   choices?: string[];
@@ -383,7 +388,8 @@ function shownOf(question: Question): { title: string; show?: string } {
 export function questionView(question: Question, record?: Pick<RunRecord, "letAgentAnswer">): QuestionView {
   const { id, step, prompt, kind, choices, breakpoint, askedAt, schema } = question;
   const shown = breakpoint ? shownOf(question) : {};
-  return { id, ...(step ? { step } : {}), prompt, kind, ...(choices ? { choices } : {}), breakpoint, ...shown, askedAt, answeredBy: answeredByFor(question, record), ...(schema ? { schema } : {}) };
+  const join = question.answeredBy === "join" ? { join: joinName(question) } : {};
+  return { id, ...(step ? { step } : {}), ...join, prompt, kind, ...(choices ? { choices } : {}), breakpoint, ...shown, askedAt, answeredBy: answeredByFor(question, record), ...(schema ? { schema } : {}) };
 }
 
 /**
@@ -399,7 +405,7 @@ export function hint(question: Question, where: "sous" | "log" | "prompt" = "sou
     if (question.kind === "select") return (question.choices ?? []).join(" / ");
     return "your answer";
   }
-  if (question.answeredBy === "join") return `sous join ${question.runId}${question.step ? ` ${word(question.step)}` : ""}`;
+  if (question.answeredBy === "join") return `sous join ${question.runId} ${word(joinName(question))}`;
   if (question.breakpoint) return `${answerCommand(question, "approve")}  |  ${answerCommand(question, "send-back", '"note"')}  |  sous stop ${question.runId}`;
   if (question.schema) return answerCommand(question, "answer", "'<json>'");
   if (where === "log") return answerCommand(question, "answer", '"..."');

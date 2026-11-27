@@ -3,7 +3,7 @@
 
 import type { JsonValue } from "./generated/serde_json/JsonValue.js";
 import type { Harness } from "../types.js";
-import { serverConfig, serverName } from "./config.js";
+import { DEFAULT_MODE, serverConfig, serverName } from "./config.js";
 
 type JoinStep = Parameters<Harness["joinArgs"]>[0];
 
@@ -40,10 +40,13 @@ export function codexJoinArgs(join: JoinStep): { args: string[]; notes: string[]
   const notes: string[] = [];
   if (join.model) args.push("-m", join.model);
   if (join.effort) args.push("-c", `model_reasoning_effort=${tomlString(join.effort)}`);
-  if (join.mode) {
-    const flags = MODE_FLAGS[join.mode];
-    if (flags) args.push(...flags);
-    else notes.push(`Codex has no mode ${join.mode}, so the user's default stays.`);
+  // A step that named no mode, or one Codex does not have, ran in the default mode, so the session
+  // opens in it too.
+  const flags = MODE_FLAGS[join.mode ?? DEFAULT_MODE];
+  if (flags) args.push(...flags);
+  else {
+    args.push(...MODE_FLAGS[DEFAULT_MODE]!);
+    notes.push(`Codex has no mode ${join.mode}, so the session opens in ${DEFAULT_MODE} mode, as the step ran.`);
   }
   if (join.instructions) args.push("-c", `developer_instructions=${tomlString(join.instructions)}`);
   if (join.mcpServers?.length) {

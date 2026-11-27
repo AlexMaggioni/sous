@@ -14,7 +14,7 @@ import type { AgentUsage } from "../../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../../src/errors.js";
 import { runWorkflow, type WorkflowRunOptions } from "../../src/workflow.js";
 import { waitUntil } from "../helpers/async.js";
-import { fakePlace, onFakes, plantSkill, routed, said, type FakeLine, type FakePlace } from "../helpers/fake-steps.js";
+import { askedSchema, fakePlace, onFakes, plantSkill, promptOf, routed, said, type FakeLine, type FakePlace } from "../helpers/fake-steps.js";
 
 for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) delete process.env[name];
 
@@ -126,25 +126,22 @@ for (const [harness, model] of [
       assert.equal(lines[1]!.pid, lines[0]!.pid);
     });
 
-    it(`runs a slash step's slash turn and report turn in ${harness === "claude" ? "two programs, since the report turn's schema differs" : "one program"}`, async () => {
+    it("runs a slash step's slash turn and report turn in one program", async () => {
       const place = fakePlace();
       plantSkill(place, "canary");
       await run(place, `return await agent('/canary', { label: 'impl', model: '${model}' })`);
       const lines = place.lines();
       assert.deepEqual(
-        lines.map((line) => [line.prompt, line.schema === null]),
+        lines.map((line) => [promptOf(line), askedSchema(line) === null]),
         [
           [said(harness, "/canary"), true],
           [REPORT, false],
         ],
       );
       assert.equal(lines[1]!.sessionId, lines[0]!.sessionId);
-      if (harness === "claude") {
-        assert.notEqual(lines[1]!.pid, lines[0]!.pid);
-        assert.equal(lines[1]!.resume, true, "the report turn resumes the session");
-      } else {
-        assert.equal(lines[1]!.pid, lines[0]!.pid);
-      }
+      assert.equal(lines[1]!.pid, lines[0]!.pid);
+      // Claude Code takes a schema once per program, so its report turn asks for the value in its text.
+      assert.equal(lines[1]!.schema === null, harness === "claude");
     });
 
     it("closes the program before a question waits on its join row, and resumes in a new one after", async () => {

@@ -20,6 +20,8 @@ export interface FakeLine {
   sessionId: string;
   resume: boolean;
   schema: unknown;
+  /** The schema the prompt asked the answer to fit in its text, in a Claude Code program with none. */
+  textSchema?: unknown;
   prompt: string;
   /** The text blocks or items of the user message, when it had more than one. */
   texts?: string[];
@@ -28,6 +30,15 @@ export interface FakeLine {
 }
 
 export type FakePlace = ReturnType<typeof fakePlace>;
+
+/** The ask the claude adapter puts after a prompt whose value comes as JSON in its text. */
+const IN_TEXT = "\n\nAnswer with one JSON object that fits this JSON schema, and nothing else:\n";
+
+/** The schema a turn answered to: its program's, or the one its prompt asked for in its text. */
+export const askedSchema = (line: FakeLine | undefined): unknown => line?.schema ?? line?.textSchema ?? null;
+
+/** A turn's prompt without the ask for JSON in its text. */
+export const promptOf = (line: FakeLine | undefined): string | undefined => (line?.textSchema ? line.prompt.slice(0, line.prompt.lastIndexOf(IN_TEXT)) : line?.prompt);
 
 /**
  * How a later turn went on in an earlier turn's session: "held" in the earlier turn's program,

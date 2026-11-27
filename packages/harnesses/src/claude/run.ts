@@ -1,7 +1,9 @@
 // One turn on Claude Code. A program is one query() of the Claude Agent SDK, whose prompt stream
 // stays open between turns. A turn with hold keeps it for the session's next turn, which sends its
 // prompt into the same stream. The SDK takes outputFormat once per query, so a turn whose settings
-// differ from the kept program's closes it and resumes the session in a new one.
+// differ from the kept program's closes it and resumes the session in a new one. One turn is the
+// exception: a turn with a schema, such as a slash step's report turn, runs in a kept program that
+// has none, and asks for its value as JSON in its text.
 
 import { randomUUID } from "node:crypto";
 import {
@@ -95,6 +97,24 @@ function offersAuto(models: ModelInfo[], model: string | undefined): boolean {
   const wanted = model ?? "default";
   const row = models.find((info) => info.value === wanted || info.resolvedModel === wanted);
   return row === undefined || row.supportsAutoMode === true;
+}
+
+/** What a turn asks for when its value comes as JSON in its text. */
+function inTextAsk(schema: Step["schema"]): string {
+  return `Answer with one JSON object that fits this JSON schema, and nothing else:\n${JSON.stringify(schema)}`;
+}
+
+/** The JSON object in a turn's text: the whole text, or from its first "{" to its last "}". */
+function jsonIn(text: string): unknown {
+  for (const candidate of [text.trim(), text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)]) {
+    try {
+      const value: unknown = JSON.parse(candidate);
+      if (value !== null && typeof value === "object") return value;
+    } catch {
+      // not JSON
+    }
+  }
+  return undefined;
 }
 
 function userMessage(step: Step): SDKUserMessage {
@@ -221,13 +241,17 @@ function openProgram(step: Step, sessionId: string, options: Options, notes: str
 
 export async function runClaude(path: string, step: Step, events: StepEvents, held: Held<ClaudeProgram>): Promise<StepResult> {
   const fits = claudeFits(path, step);
+  const bare = step.schema === undefined ? undefined : claudeFits(path, { ...step, schema: undefined });
   const asking: Asking = {};
   const { options, notes } = claudeOptions(path, step, step.resume && !step.fork ? step.resume : randomUUID(), asking);
   checkStep(step, notes);
   if (step.signal?.aborted) throw new StepFailure("The step was stopped before it started.", { kind: "stopped" }, { notes });
   // A fork always opens a program of its own, and the resumed session's kept program stays kept.
-  const kept = step.fork ? undefined : await held.take(step.resume, fits);
+  const kept = step.fork ? undefined : await held.take(step.resume, bare === undefined ? fits : [fits, bare]);
   const program = kept ?? openProgram(step, options.sessionId ?? step.resume!, options, notes, fits, asking);
+  // The kept program has no outputFormat, so the turn's value comes as JSON in its text.
+  const inText = kept !== undefined && kept.fits !== fits;
+  const valueOf = (message: { structured_output?: unknown }, said: string) => (inText ? jsonIn(said) : message.structured_output);
   const { sessionId, abort } = program;
   program.stderr = "";
   let asked: string | undefined;
@@ -251,6 +275,8 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
     abort.abort();
   };
   step.signal?.addEventListener("abort", stop, { once: true });
+  // A stop while the turn waited for a kept program to close came before the listener.
+  if (step.signal?.aborted) stop();
   /** The turn has started: names its session and model, and opens the seam. */
   const opening = () => {
     opened = true;
@@ -272,7 +298,7 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
   };
   program.send(
     (async function* turn(): AsyncGenerator<SDKUserMessage> {
-      yield userMessage(step);
+      yield userMessage(inText ? { ...step, prompt: `${step.prompt}\n\n${inTextAsk(step.schema)}` } : step);
       yield* tells.messages();
     })(),
   );
@@ -368,8 +394,8 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
           if (asked !== undefined) {
             // sous ended the turn on the question, so the turn answers whatever the subtype says.
             const ok = message.subtype === "success" && !message.is_error;
-            const value = ok && step.schema ? message.structured_output : undefined;
             const said = (ok && message.result) || text;
+            const value = ok && step.schema ? valueOf(message, said) : undefined;
             answer = { sessionId, model: program.model, text: said, usage: total(), asked, ...(value !== undefined ? { value } : {}), ...(notes.length ? { notes } : {}) };
           } else if (message.subtype === "success" && !message.is_error) {
             const said = message.result || text;
@@ -378,11 +404,11 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
               // A refused or cut-off answer fails the same way on every try.
               failure = { kind: "failed", retry: false };
               failureText = cut;
-            } else if (step.schema && message.structured_output === undefined) {
+            } else if (step.schema && valueOf(message, said) === undefined) {
               failure = { kind: "schema", text: said };
               failureText = "Claude Code gave no value for the schema.";
             } else {
-              answer = { sessionId, model: program.model, text: said, usage: finalUsage, ...(step.schema ? { value: message.structured_output } : {}), ...(notes.length ? { notes } : {}) };
+              answer = { sessionId, model: program.model, text: said, usage: finalUsage, ...(step.schema ? { value: valueOf(message, said) } : {}), ...(notes.length ? { notes } : {}) };
             }
           } else if (message.subtype === "error_max_structured_output_retries") {
             failure = { kind: "schema", text };

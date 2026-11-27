@@ -10,7 +10,7 @@ import { Type } from "typebox";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { StepRequest } from "../src/steps/agent-run.js";
 import { createSteps } from "../src/steps/steps.js";
-import { fakePlace, onFakes, plantSkill, routed, said, wentOn, type FakeLine } from "./helpers/fake-steps.js";
+import { askedSchema, fakePlace, onFakes, plantSkill, promptOf, routed, said, wentOn, type FakeLine } from "./helpers/fake-steps.js";
 
 for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) delete process.env[name];
 
@@ -20,10 +20,13 @@ const STATUS = ["message", "result", "status"];
 const DONE = { untilDone: true } as const;
 
 /** The property names of the schema a turn got, or null when it got none. */
-const fields = (line: FakeLine | undefined) => (line?.schema ? Object.keys((line.schema as { properties: object }).properties).sort() : null);
+const fields = (line: FakeLine | undefined) => {
+  const schema = askedSchema(line);
+  return schema ? Object.keys((schema as { properties: object }).properties).sort() : null;
+};
 /** The schema the status schema of a turn gives `result`, before its null. */
 const resultSchema = (line: FakeLine | undefined) =>
-  ((line?.schema as { properties: { result: { anyOf: unknown[] } } }).properties.result.anyOf[0] as { properties?: object; type?: string });
+  ((askedSchema(line) as { properties: { result: { anyOf: unknown[] } } }).properties.result.anyOf[0] as { properties?: object; type?: string });
 
 /** Runs one step on the fakes with the given rules, and gives its value and the fakes' turns. */
 async function step(prompt: string, fieldsOf: Omit<StepRequest, "route">, rules: object[] = [], model = "claude/haiku") {
@@ -46,7 +49,7 @@ for (const [harness, model] of [
     it("with a plain prompt and no schema runs one turn with the status schema, whose result is text", async () => {
       const { value, lines } = await step("Build it.", DONE, [{ status: [{ status: "done", result: "Built.", message: null }] }], model);
       assert.deepEqual(
-        lines.map((line) => [line.prompt, fields(line)]),
+        lines.map((line) => [promptOf(line), fields(line)]),
         [["Build it.", STATUS]],
       );
       assert.equal(resultSchema(lines[0]).type, "string");
@@ -56,7 +59,7 @@ for (const [harness, model] of [
     it("with a plain prompt and a schema runs one turn with the status schema, whose result is the step's schema", async () => {
       const { value, lines } = await step("Build it.", { ...DONE, schema: SCHEMA }, [], model);
       assert.deepEqual(
-        lines.map((line) => [line.prompt, fields(line)]),
+        lines.map((line) => [promptOf(line), fields(line)]),
         [["Build it.", STATUS]],
       );
       assert.deepEqual(Object.keys(resultSchema(lines[0]).properties ?? {}).sort(), ["ok", "summary"]);
@@ -67,11 +70,11 @@ for (const [harness, model] of [
     it("with a slash prompt and no schema runs its turn with none, then the report turn asks for the status in the same session", async () => {
       const { value, lines } = await step("/canary", DONE, [], model);
       assert.deepEqual(
-        lines.map((line, i) => [line.prompt, fields(line), i === 0 ? line.resume : wentOn(lines[0], line)]),
+        lines.map((line, i) => [promptOf(line), fields(line), i === 0 ? line.resume : wentOn(lines[0], line)]),
         [
           [said(harness, "/canary"), null, false],
-          // Claude Code takes a schema once per program, so its report turn resumes the session in a new one.
-          [REPORT, STATUS, harness === "claude" ? "resumed" : "held"],
+          // On Claude Code the report turn asks for its value as JSON in its text, in the same program.
+          [REPORT, STATUS, "held"],
         ],
       );
       assert.equal(lines[1]?.sessionId, lines[0]?.sessionId);
@@ -83,11 +86,11 @@ for (const [harness, model] of [
     it("with a slash prompt and a schema runs its turn with none, then the report turn with the status schema", async () => {
       const { value, lines } = await step("/canary", { ...DONE, schema: SCHEMA }, [], model);
       assert.deepEqual(
-        lines.map((line, i) => [line.prompt, fields(line), i === 0 ? line.resume : wentOn(lines[0], line)]),
+        lines.map((line, i) => [promptOf(line), fields(line), i === 0 ? line.resume : wentOn(lines[0], line)]),
         [
           [said(harness, "/canary"), null, false],
-          // Claude Code takes a schema once per program, so its report turn resumes the session in a new one.
-          [REPORT, STATUS, harness === "claude" ? "resumed" : "held"],
+          // On Claude Code the report turn asks for its value as JSON in its text, in the same program.
+          [REPORT, STATUS, "held"],
         ],
       );
       assert.equal(lines[1]?.sessionId, lines[0]?.sessionId);
@@ -106,7 +109,7 @@ for (const [harness, model] of [
     it("with a plain prompt and no schema runs one turn with no schema and returns the text", async () => {
       const { value, lines } = await step("Build it.", {}, [], model);
       assert.deepEqual(
-        lines.map((line) => [line.prompt, fields(line)]),
+        lines.map((line) => [promptOf(line), fields(line)]),
         [["Build it.", null]],
       );
       assert.equal(value, `Fake ${harness} answer.`);
@@ -115,7 +118,7 @@ for (const [harness, model] of [
     it("with a plain prompt and a schema runs one turn with the step's schema and returns its value", async () => {
       const { value, lines } = await step("Build it.", { schema: SCHEMA }, [], model);
       assert.deepEqual(
-        lines.map((line) => [line.prompt, fields(line)]),
+        lines.map((line) => [promptOf(line), fields(line)]),
         [["Build it.", ["ok", "summary"]]],
       );
       assert.deepEqual(value, { ok: true, summary: "fake-summary" });
@@ -124,7 +127,7 @@ for (const [harness, model] of [
     it("with a slash prompt and no schema runs its one turn with no schema and sends no report turn", async () => {
       const { value, lines } = await step("/canary", {}, [], model);
       assert.deepEqual(
-        lines.map((line) => [line.prompt, fields(line)]),
+        lines.map((line) => [promptOf(line), fields(line)]),
         [[said(harness, "/canary"), null]],
       );
       assert.equal(typeof value, "string");
@@ -133,7 +136,7 @@ for (const [harness, model] of [
     it("with a slash prompt and a schema sends one report turn for the value, with the step's schema", async () => {
       const { value, lines } = await step("/canary", { schema: SCHEMA }, [], model);
       assert.deepEqual(
-        lines.map((line) => [line.prompt, fields(line)]),
+        lines.map((line) => [promptOf(line), fields(line)]),
         [
           [said(harness, "/canary"), null],
           [REPORT, ["ok", "summary"]],
@@ -148,7 +151,7 @@ describe("a status that does not fit", () => {
   it("gets a repair turn with the report prompt and the status schema, in the same session", async () => {
     const { value, lines } = await step("Build it.", DONE, [{ answer: { verdict: "fine" }, times: 1 }]);
     assert.deepEqual(
-      lines.map((line, i) => [line.prompt, fields(line), i === 0 ? line.resume : wentOn(lines[0], line)]),
+      lines.map((line, i) => [promptOf(line), fields(line), i === 0 ? line.resume : wentOn(lines[0], line)]),
       [
         ["Build it.", STATUS, false],
         [REPORT, STATUS, "held"],

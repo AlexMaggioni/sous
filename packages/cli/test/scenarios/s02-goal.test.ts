@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { listRecords } from "@sous-run/engine";
 import { readState } from "@sous-run/engine/testing";
-import { fakeWorld, wentOn, type FakeLine, type FakeRule } from "../helpers/fake-world.js";
+import { askedSchema, fakeWorld, promptOf, wentOn, type FakeLine, type FakeRule } from "../helpers/fake-world.js";
 import { SOLVED, TEST_COMMAND, plantStubs } from "../helpers/stub-repo.js";
 
 const OBJECTIVE = "every test in test/ passes";
@@ -36,7 +36,10 @@ const after = await sh(${JSON.stringify(TEST_COMMAND)}, { label: 'tests after', 
 return { result, before: before.code, after: after.code }`;
 
 /** The schema's property names a turn got, or null when it got none. */
-const fields = (line: FakeLine) => (line.schema === null || line.schema === undefined ? null : Object.keys((line.schema as { properties: object }).properties));
+const fields = (line: FakeLine) => {
+  const schema = askedSchema(line);
+  return schema === null ? null : Object.keys((schema as { properties: object }).properties);
+};
 
 interface StepJson {
   calls: number;
@@ -70,7 +73,7 @@ for (const [program, model] of [
       const lines = world.log();
       const turns = lines.filter((line) => line.prompt !== undefined);
       assert.deepEqual(
-        turns.map((line) => [line.program, line.prompt, line.texts ?? null, fields(line), line.rule]),
+        turns.map((line) => [line.program, promptOf(line), line.texts ?? null, fields(line), line.rule]),
         [
           [program, GOAL, null, null, 0],
           [program, REPORT, null, STATUS, 1],
@@ -81,9 +84,9 @@ for (const [program, model] of [
       assert.match(work!.system ?? "", /Task label: goal/);
       assert.equal(typeof work!.sessionId, "string");
       assert.equal(report!.sessionId, work!.sessionId);
-      // Claude Code takes a schema once per program, so there the report turn resumes the session
-      // in a new one. Codex goes on in the program the goal kept.
-      assert.equal(wentOn(work, report), program === "claude" ? "resumed" : "held");
+      // The report turn goes on in the program the goal kept, so a process the goal started still
+      // runs. Claude Code takes a schema once per program, so there it asks for JSON in its text.
+      assert.equal(wentOn(work, report), "held");
 
       // The goal's model turns come after the prompt and before the report turn, in its session.
       const goals = lines.filter((line) => line.goal !== undefined);

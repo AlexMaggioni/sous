@@ -4,7 +4,7 @@
 // opens the program on the session, and gives the session back to the step when the person
 // leaves. Every other step goes on.
 
-import { askedWords, joinProgram, joinQuestion, joinTarget, leaveSession, readRun, Refusal, takeSession, word, type JoinTarget, type RunQuestion, type RunView } from "@sous-run/engine";
+import { askedWords, joinName, joinProgram, joinQuestion, joinTarget, leaveSession, readRun, Refusal, takeSession, word, type JoinTarget, type RunQuestion, type RunView } from "@sous-run/engine";
 import type { Next } from "../reply.js";
 import type { Ctx } from "./index.js";
 import { waitNext } from "./next.js";
@@ -19,6 +19,8 @@ export interface Joined {
   runId: string;
   step: string;
   call: number;
+  /** The step and call as sous step finds them. */
+  shown: { step: string; call: number };
   sessionId: string;
   /** The program's name, such as Claude Code. */
   program: string;
@@ -45,7 +47,7 @@ export function leftText(joined: Joined): { text: string[]; notes: string[]; nex
   } else {
     text.push(`run ${runId} is ${status}, so nothing goes on in the session now.`);
   }
-  const next: Next[] = [{ call: `sous step ${runId} ${word(step)} --call ${joined.call} --json`, does: "shows the step and what it did since" }, waitNext(runId, "waits until the run ends, pauses or asks")];
+  const next: Next[] = [{ call: `sous step ${runId} ${word(joined.shown.step)} --call ${joined.shown.call} --json`, does: "shows the step and what it did since" }, waitNext(runId, "waits until the run ends, pauses or asks")];
   return { text, notes, next };
 }
 
@@ -85,10 +87,12 @@ export async function stepIn(ctx: Ctx, target: JoinTarget): Promise<Joined | { s
         say("Its last message there holds the question. Answer it in your own words.");
       }
     }
+    // The first Ctrl-C stops the wait, and a second one stops the wait for the session to come back.
     const stop = new AbortController();
-    const off = machine.onStop(() => stop.abort());
+    const giveUp = new AbortController();
+    const off = machine.onStop(() => (stop.signal.aborted ? giveUp.abort() : (stop.abort(), say("stopping. The turn hands the session over and gets it back. Ctrl-C again leaves now."))));
     try {
-      await takeSession(paths, target, who, { signal: stop.signal, onWait: (holder) => say(waitLine(target, holder)) });
+      await takeSession(paths, target, who, { signal: stop.signal, giveUp: giveUp.signal, onWait: (holder) => say(waitLine(target, holder)) });
     } catch (error) {
       if (stop.signal.aborted) return { stopped: true };
       throw error;
@@ -107,7 +111,7 @@ export async function stepIn(ctx: Ctx, target: JoinTarget): Promise<Joined | { s
     }
     if (exit === NOT_STARTED) throw new Refusal("no_program", `${program.name} did not start from ${program.path}.`, "Check the program with sous doctor, then join again.", "sous doctor");
     const { runId, step, call, cwd } = { ...target, cwd: program.cwd };
-    return { runId, step, call, sessionId: target.session.sessionId, program: program.name, cwd, exit, answered: answered ?? null, status: readRun(paths, runId).status };
+    return { runId, step, call, shown: target.shown, sessionId: target.session.sessionId, program: program.name, cwd, exit, answered: answered ?? null, status: readRun(paths, runId).status };
   } finally {
     files.remove();
   }
@@ -123,13 +127,13 @@ function waitLine(target: JoinTarget, holder: { by: string; pid: number } | unde
 /** sous wait in a terminal met an agent's question: offer to step into its session now. */
 export async function offerJoin(ctx: Ctx, question: RunQuestion): Promise<boolean> {
   const step = question.step ?? "agent";
-  const later = `${joinCommand(question.runId, step)} steps into it later. The step waits until then.`;
+  const later = `${joinCommand(question.runId, joinName(question))} steps into it later. The step waits until then.`;
   const typed = await ctx.machine.ask(`\n"${step}" needs you in its session. Step into it now? (Y/n) > `);
   if (/^n(o)?$/i.test(typed.trim())) {
     ctx.machine.err(later);
     return false;
   }
-  const joined = await stepIn(ctx, joinTarget(ctx.paths, question.runId, step));
+  const joined = await stepIn(ctx, joinTarget(ctx.paths, question.runId, joinName(question)));
   if ("stopped" in joined) {
     ctx.machine.err(`stopped waiting. ${later}`);
     return false;

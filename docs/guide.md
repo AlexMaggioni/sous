@@ -205,8 +205,9 @@ A script has these steps (see also [the engine README](../packages/engine/README
   still runs in the next. The program closes when the step ends, before a question waits, when
   the run pauses or stops, and after a failed turn, whose retry resumes the session in a new
   program. The next send starts the program again and resumes the session, so an idle session
-  holds no process. On Claude Code, a turn with a different schema, such as the report turn after
-  a slash command, also resumes the session in a new program.
+  holds no process. Claude Code takes a schema once per program, so after a slash turn, which runs
+  with none, the report turn and the later turns of the step ask for their value as JSON in their
+  text, in the same program.
 
   `<handle>.fork(options)` makes a new handle whose session starts as a copy of this one, as its
   last finished turn left it. It takes a handle's options and keeps its parent's for those it
@@ -726,8 +727,10 @@ the session or step works in the run's place, and the log says so.
 
 `sous join <run> <step>` opens the step's program, Claude Code or Codex, in this terminal, on the
 step's session and in its folder. The step is its label or its name in `sous log`, and `--call N`
-picks one of its calls, as `sous step` counts them. The program opens with the step's model,
-effort, permission mode, system text and MCP servers. A server the config no longer has is left
+picks one of its calls, as `sous step` counts them. A session() handle's label also finds its
+session, after its nested run's name as `sous log` writes it, such as `B: impl`. The program opens
+with the step's model, effort, permission mode, system text and MCP servers. A Codex step that
+named no mode opens in the agent mode it ran in. A server the config no longer has is left
 out, and a note says so.
 
 - When the step's turn runs, sous waits until its program has the prompt, then stops that turn,
@@ -749,7 +752,9 @@ out, and a note says so.
 - `sous wait` in a terminal offers to step in when an agent needs you. `n` leaves the step
   waiting.
 - Ctrl-C while sous waits for the session stops the wait and opens nothing. The step keeps its
-  session.
+  session. When the turn has the request already, sous waits until the turn hands the session
+  over and gets it back. A second Ctrl-C leaves at once, and the session stays with this
+  `sous join` until it exits.
 - The page shows the `sous join` line to copy, on the question and in the step's panel, which
   also names the session's program, id and folder.
 

@@ -356,9 +356,11 @@ async function runOnAccounts(
   const waits = new AbortController();
   const pollMs = options.pollMs ?? 500;
   const confirm = (prompt: string, checkpoint: { kind?: "confirm" | "input" | "select"; choices?: string[]; schema?: Record<string, unknown> }, context?: CheckpointCallContext) => {
-    const question = questionOf(runId, record.workflow, prompt, checkpoint, context);
+    const made = questionOf(runId, record.workflow, prompt, checkpoint, context);
+    const joins = made.answeredBy === "join";
+    // `sous join` finds a nested run's step after the nested run's name, as sous log writes it.
+    const question = joins && made.step && made.scope !== runId ? { ...made, join: `${from(made.scope)}${made.step}` } : made;
     const { id, scope } = question;
-    const joins = question.answeredBy === "join";
     // An answer that did not fit the question's schema: the run asks again.
     if (context?.refused !== undefined) log(`${stamp()} refused    ${id}: ${oneLine(context.refused, 400)}`);
     if (options.dryRun) {

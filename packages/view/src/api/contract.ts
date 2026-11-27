@@ -266,6 +266,8 @@ export interface Question {
   workflow: string;
   /** The step that asks, for an agent's question. */
   step?: string;
+  /** For an agent's question, the step `sous join` takes: the step, after its nested run's name. */
+  join?: string;
   prompt: string;
   kind: "confirm" | "input" | "select";
   choices?: string[];

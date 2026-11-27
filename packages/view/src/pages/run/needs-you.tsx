@@ -169,7 +169,7 @@ function JoinAnswer({ question }: { question: Question }) {
     <div className="mt-2 max-w-[560px]">
       <p className="text-muted">Its question is in its session. Step into it in a terminal. The step goes on once you leave.</p>
       <div className="mt-2">
-        <CommandBox command={commandOf(words.join(question.runId, question.step ?? "agent"))} label="Copy the join command" />
+        <CommandBox command={commandOf(words.join(question.runId, question.join ?? question.step ?? "agent"))} label="Copy the join command" />
       </div>
     </div>
   );

@@ -8,14 +8,17 @@ import { Type } from "typebox";
 import type { AgentSessionRef } from "../src/workflow-result.js";
 import { CONTINUE_PROMPT } from "../src/turns/status.js";
 import { createSteps } from "../src/steps/steps.js";
-import { fakePlace, onFakes, plantSkill, routed, said, wentOn, type FakeLine } from "./helpers/fake-steps.js";
+import { askedSchema, fakePlace, onFakes, plantSkill, promptOf, routed, said, wentOn, type FakeLine } from "./helpers/fake-steps.js";
 
 for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) delete process.env[name];
 
 const REPORT = "Report on the task you were given.";
 const SCHEMA = Type.Object({ ok: Type.Boolean(), summary: Type.String() });
 /** The property names of the schema a turn got, or null when it got none. */
-const fields = (line: FakeLine | undefined) => (line?.schema ? Object.keys((line.schema as { properties: object }).properties).sort() : null);
+const fields = (line: FakeLine | undefined) => {
+  const schema = askedSchema(line);
+  return schema ? Object.keys((schema as { properties: object }).properties).sort() : null;
+};
 
 for (const [harness, model] of [
   ["claude", "claude/haiku"],
@@ -36,8 +39,8 @@ for (const [harness, model] of [
       assert.equal(lines.length, 2, `two turns: ${JSON.stringify(lines.map((line) => line.prompt))}`);
       const [work, report] = lines;
       assert.deepEqual([work?.prompt, fields(work), work?.resume], [said(harness, "/canary"), null, false]);
-      // Claude Code takes a schema once per program, so its report turn resumes the session in a new one.
-      assert.deepEqual([report?.prompt, fields(report), wentOn(work, report)], [REPORT, ["ok", "summary"], harness === "claude" ? "resumed" : "held"]);
+      // On Claude Code the report turn asks for its value as JSON in its text, in the same program.
+      assert.deepEqual([promptOf(report), fields(report), wentOn(work, report)], [REPORT, ["ok", "summary"], "held"]);
       assert.equal(report?.sessionId, work?.sessionId);
       assert.deepEqual(value, { ok: true, summary: "fake-summary" });
     });
@@ -53,7 +56,7 @@ for (const [harness, model] of [
       }
       const lines = place.lines();
       assert.deepEqual(
-        lines.map((line) => [line.prompt, fields(line)]),
+        lines.map((line) => [promptOf(line), fields(line)]),
         [[said(harness, "/canary"), null]],
       );
     });
@@ -80,7 +83,7 @@ for (const [harness, model] of [
       const [, continued, report] = place.lines();
       assert.deepEqual([continued?.texts, fields(continued), continued?.sessionId], [["Use the main branch.", said(harness, "/canary")], null, first!.sessionId]);
       assert.ok(!place.lines().some((line) => line.prompt.startsWith(CONTINUE_PROMPT)), "no Continue the task. turn");
-      assert.deepEqual([report?.prompt, fields(report), report?.sessionId], [REPORT, ["ok", "summary"], first!.sessionId]);
+      assert.deepEqual([promptOf(report), fields(report), report?.sessionId], [REPORT, ["ok", "summary"], first!.sessionId]);
     });
   });
 
@@ -94,7 +97,7 @@ for (const [harness, model] of [
         await steps.dispose();
       }
       assert.deepEqual(
-        place.lines().map((line) => [line.prompt, fields(line)]),
+        place.lines().map((line) => [promptOf(line), fields(line)]),
         [["Say ok.", ["ok", "summary"]]],
       );
     });

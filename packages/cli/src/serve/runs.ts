@@ -128,9 +128,9 @@ export function runRows(paths: HomePaths): RunRow[] {
 
 /** A question as the page shows it. Who may answer depends on the run's record. */
 function questionOf(question: RunQuestion, record: RunRecord | undefined): Question {
-  const { id, step, prompt, kind, choices, breakpoint, title, show, askedAt, answeredBy } = questionView(question, record);
+  const { id, step, join, prompt, kind, choices, breakpoint, title, show, askedAt, answeredBy } = questionView(question, record);
   const { runId, scope, workflow } = question;
-  return { id, runId, scope, workflow, ...(step ? { step } : {}), prompt, kind, ...(choices ? { choices } : {}), breakpoint, ...(title === undefined ? {} : { title }), ...(show === undefined ? {} : { show }), answeredBy, askedAt };
+  return { id, runId, scope, workflow, ...(step ? { step } : {}), ...(join ? { join } : {}), prompt, kind, ...(choices ? { choices } : {}), breakpoint, ...(title === undefined ? {} : { title }), ...(show === undefined ? {} : { show }), answeredBy, askedAt };
 }
 
 /** Every open question, oldest first. */

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { listRecords } from "@sous-run/engine";
 import { readState } from "@sous-run/engine/testing";
-import { fakeWorld, wentOn, type FakeLine, type FakeRule, type FakeWorld } from "../helpers/fake-world.js";
+import { askedSchema, fakeWorld, promptOf, wentOn, type FakeLine, type FakeRule, type FakeWorld } from "../helpers/fake-world.js";
 
 const CANARY = "PELICAN-4417";
 const REPORT = "Report on the task you were given.";
@@ -28,7 +28,10 @@ const rulesOf = (program: keyof typeof SAID): FakeRule[] => [canaryRule(program)
 /** The fields of the status schema a report turn of a step that runs until done carries. */
 const STATUS = ["status", "result", "message"];
 /** The schema's property names a turn got, or null when it got none. */
-const fields = (line: FakeLine) => (line.schema === null || line.schema === undefined ? null : Object.keys((line.schema as { properties: object }).properties));
+const fields = (line: FakeLine) => {
+  const schema = askedSchema(line);
+  return schema === null ? null : Object.keys((schema as { properties: object }).properties);
+};
 
 /** A workflow whose one step sends `/canary` on `model`, with `options` added to the call. */
 const slashStep = (model: string, options = "") => `export const meta = { name: 'skill', description: 'A skill from the prompt' }
@@ -78,9 +81,9 @@ for (const [program, model] of [
       assert.equal(turn!.rule, 0);
       assert.equal(fields(turn!), null);
       assert.match(turn!.system ?? "", /Task label: canary step/);
-      // The step runs until done, so the report turn asks for the status in the same session. Claude
-      // Code takes a schema once per program, so there the report turn resumes the session in a new one.
-      assert.deepEqual([report!.prompt, fields(report!), report!.rule, wentOn(turn, report)], [REPORT, STATUS, 1, program === "claude" ? "resumed" : "held"]);
+      // The step runs until done, so the report turn asks for the status in the same session and
+      // program. Claude Code takes a schema once per program, so there it asks for JSON in its text.
+      assert.deepEqual([promptOf(report!), fields(report!), report!.rule, wentOn(turn, report)], [REPORT, STATUS, 1, "held"]);
       assert.equal(report!.sessionId, turn!.sessionId);
       assert.equal(value, CANARY);
     });
@@ -114,7 +117,7 @@ for (const [program, model] of [
 
         const lines = turns(world.log());
         assert.deepEqual(
-          lines.map((line) => [line.prompt, fields(line)]),
+          lines.map((line) => [promptOf(line), fields(line)]),
           [
             [SAID[program], null],
             [REPORT, [...reportFields]],
@@ -123,7 +126,7 @@ for (const [program, model] of [
         const [work, report] = lines;
         assert.deepEqual([work!.rule, report!.rule], [0, 1]);
         assert.equal(report!.sessionId, work!.sessionId);
-        assert.equal(wentOn(work, report), program === "claude" ? "resumed" : "held");
+        assert.equal(wentOn(work, report), "held");
         assert.deepEqual(value, { word: CANARY });
       });
     }
