@@ -5,6 +5,7 @@ import type { AgentResultProvenance, AgentUsage } from "./steps/agent-run.js";
 import type { AgentSessionRecord, RunningCall, TurnSessionEvent } from "./workflow-result.js";
 import type { WorkflowErrorCode } from "./errors.js";
 import type { RoomNote } from "./room/room.js";
+import { answerWords } from "./turns/status.js";
 import type { RoomTag, RunAgentEndPayload, RunAgentStartPayload } from "./run-events.js";
 
 export type WorkflowAgentStatus = "queued" | "running" | "done" | "error" | "skipped";
@@ -68,8 +69,9 @@ export interface WorkflowSnapshot {
   runId?: string;
 }
 
+/** A step's result, cut to `max` characters. A turn's answer reads in words, as answerWords gives it. */
 export function preview(value: unknown, max = 80): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
+  const text = answerWords(value) ?? (typeof value === "string" ? value : JSON.stringify(value));
   if (!text) return "";
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }

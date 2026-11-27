@@ -81,3 +81,44 @@ export function readStatus(value: unknown): TurnStatus | undefined {
 }
 
 const STATUSES = new Set<unknown>(["done", "working", "question"]);
+
+/**
+ * A turn's answer as a person reads it, or undefined for any other value. A status answer gives
+ * its status, then its result when done or its message otherwise: "done: 42", "working: the
+ * tests are left". A room turn, whose fields room/prompt.ts names, gives one line per message, then
+ * "done", its decision and who speaks next when it has them. A JSON text is read first, since
+ * Codex answers with the schema's value as its text.
+ */
+export function answerWords(value: unknown): string | undefined {
+  const answer = typeof value === "string" ? parsed(value) : value;
+  const status = readStatus(answer);
+  if (status) {
+    const said = status.status === "done" ? status.result : status.message;
+    return said === null || said === undefined || said === "" ? status.status : `${status.status}: ${inWords(said)}`;
+  }
+  if (answer === null || typeof answer !== "object") return undefined;
+  const { messages, done, decision, next } = answer as Record<string, unknown>;
+  if (!Array.isArray(messages) || typeof done !== "boolean") return undefined;
+  const lines = messages.map((message) => {
+    const { to, text } = (message ?? {}) as { to?: unknown; text?: unknown };
+    return `to ${typeof to === "string" ? to : "all"}: ${inWords(text)}`;
+  });
+  if (!lines.length) lines.push("says nothing");
+  if (done) lines.push("done");
+  if (decision !== null && decision !== undefined) lines.push(`decision: ${inWords(decision)}`);
+  if (typeof next === "string") lines.push(`next: ${next}`);
+  return lines.join("\n");
+}
+
+const inWords = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value));
+
+/** The value of a text that is one JSON object, else undefined. */
+function parsed(text: string): unknown {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{")) return undefined;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+}

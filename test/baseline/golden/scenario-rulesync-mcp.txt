@@ -197,7 +197,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
+        "resultPreview": "done: fake-result",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -248,7 +248,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
+        "resultPreview": "done: fake-result",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -298,7 +298,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
+        "resultPreview": "done: fake-result",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -348,7 +348,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
+        "resultPreview": "done: fake-result",
         "tokens": 150,
         "usage": {
           "input": 120,

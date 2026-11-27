@@ -230,7 +230,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
+        "resultPreview": "done: fake-result",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -274,7 +274,7 @@ exit 0
         "callIndex": 1,
         "scope": "<run-1>",
         "startedAt": "<startedAt>",
-        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
+        "resultPreview": "done: fake-result",
         "tokens": 0,
         "usage": {
           "input": 120,
@@ -319,7 +319,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
+        "resultPreview": "done: fake-result",
         "tokens": 150,
         "usage": {
           "input": 120,

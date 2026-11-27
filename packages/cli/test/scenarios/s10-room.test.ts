@@ -80,6 +80,16 @@ describe("a room of a Claude member, a GPT member and a mediator on the fakes", 
     assert.match(said[1]!.prompt!, new RegExp(`\\[claude to all\\] ${CLAUDE_WORD}\\n\\[gpt to all\\] ${GPT_WORD}`));
     assert.ok(said.every((line) => line.program === "claude"));
 
+    // A person reads each turn's answer in words, not as the schema's JSON, on Claude Code and Codex alike.
+    const runId = records[0]!.runId;
+    const mediatorTurn = await world.sous("step", runId, "mediator");
+    assert.equal(mediatorTurn.code, 0, mediatorTurn.stderr);
+    assert.match(mediatorTurn.stdout, new RegExp(`text +to all: ${CLAUDE_WORD} ${GPT_WORD} done decision: ${CLAUDE_WORD} ${GPT_WORD}\\n`));
+    const gptTurn = JSON.parse((await world.sous("step", runId, "gpt", "--json")).stdout) as { result: string; activity: Array<{ kind: string; text: string }> };
+    assert.deepEqual(gptTurn.activity.at(-1), { ...gptTurn.activity.at(-1), kind: "text", text: `to all: ${GPT_WORD} ${CLAUDE_WORD}\ndone` });
+    assert.equal(gptTurn.result, `to all: ${GPT_WORD} ${CLAUDE_WORD}\ndone`);
+    for (const reply of [mediatorTurn.stdout, JSON.stringify(gptTurn)]) assert.ok(!reply.includes('messages\\":') && !reply.includes('"messages":'), "no answer JSON");
+
     const dry = await world.sous("check", "meet", "--dry-run", "--json");
     assert.equal(dry.code, 0, `${dry.stdout}\n${dry.stderr}`);
     const dryRun = (JSON.parse(dry.stdout) as { dryRun: { status: string } }).dryRun;

@@ -205,7 +205,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":{\"answer\":\"fake-answer\",\"sure\":true},\"message\":\"fake-…",
+        "resultPreview": "done: {\"answer\":\"fake-answer\",\"sure\":true}",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -253,7 +253,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":{\"answer\":\"fake-answer\",\"sure\":true},\"message\":\"fake-…",
+        "resultPreview": "done: {\"answer\":\"fake-answer\",\"sure\":true}",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -299,7 +299,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
+        "resultPreview": "done: fake-result",
         "tokens": 150,
         "usage": {
           "input": 120,

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Type } from "typebox";
-import { readStatus, statusSchema } from "../../src/turns/status.js";
+import { answerWords, readStatus, statusSchema } from "../../src/turns/status.js";
 
 type Node = Record<string, unknown>;
 
@@ -152,5 +152,36 @@ describe("readStatus", () => {
     assert.equal(readStatus("done"), undefined, "a string");
     assert.equal(readStatus(null), undefined);
     assert.equal(readStatus([{ status: "done", result: "x", message: null }]), undefined);
+  });
+});
+
+describe("a turn's answer in words", () => {
+  it("gives a status answer's status, then its result when done or its message otherwise", () => {
+    assert.equal(answerWords({ status: "done", result: "It is built.", message: null }), "done: It is built.");
+    assert.equal(answerWords({ status: "done", result: { n: 1 }, message: "ignored" }), 'done: {"n":1}');
+    assert.equal(answerWords({ status: "working", result: null, message: "The tests are left." }), "working: The tests are left.");
+    assert.equal(answerWords({ status: "question", result: null, message: "404 or an empty list?" }), "question: 404 or an empty list?");
+    assert.equal(answerWords({ status: "done", result: null, message: null }), "done");
+  });
+
+  it("reads the same answer from its JSON text, as Codex gives it", () => {
+    assert.equal(answerWords(' {"status":"done","result":{"n":1},"message":"fake-message"}\n'), 'done: {"n":1}');
+  });
+
+  it("gives a room turn's messages, then done, its decision and who speaks next", () => {
+    const turn = { messages: [{ to: "all", text: "PELICAN" }, { to: "gpt", text: "And you?" }], done: true, decision: "PELICAN HERON", next: "gpt" };
+    assert.equal(answerWords(turn), "to all: PELICAN\nto gpt: And you?\ndone\ndecision: PELICAN HERON\nnext: gpt");
+    assert.equal(answerWords(JSON.stringify({ messages: [], done: false, decision: null })), "says nothing");
+    assert.equal(answerWords({ messages: [{ to: "all", text: "Yes." }], done: false, decision: { pick: 2 } }), 'to all: Yes.\ndecision: {"pick":2}');
+  });
+
+  it("gives undefined for anything else, so the reader shows it as it is", () => {
+    assert.equal(answerWords("Plain text from the agent."), undefined);
+    assert.equal(answerWords('{"status":"finished","result":"x","message":null}'), undefined);
+    assert.equal(answerWords("{not json"), undefined);
+    assert.equal(answerWords({ messages: "hi", done: true }), undefined);
+    assert.equal(answerWords({ messages: [], done: "yes" }), undefined);
+    assert.equal(answerWords(42), undefined);
+    assert.equal(answerWords(null), undefined);
   });
 });

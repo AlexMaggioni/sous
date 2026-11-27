@@ -261,7 +261,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
+        "resultPreview": "done: fake-result",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -309,7 +309,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
+        "resultPreview": "done: fake-result",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -370,7 +370,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":{\"summary\":\"fake-summary\",\"count\":1},\"message\":\"fake-…",
+        "resultPreview": "done: {\"summary\":\"fake-summary\",\"count\":1}",
         "tokens": 150,
         "usage": {
           "input": 120,

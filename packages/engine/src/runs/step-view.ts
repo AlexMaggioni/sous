@@ -5,6 +5,7 @@
 import { harnessName, isHarness } from "../agents.js";
 import { EXEC_MODEL } from "../code-steps.js";
 import type { PersistedRunEvent } from "../run-events.js";
+import { answerWords } from "../turns/status.js";
 import type { HomePaths } from "./home.js";
 import { readActivity, scopePrefix, type ActivityLine } from "./records.js";
 import { Refusal, word } from "./refusal.js";
@@ -149,7 +150,7 @@ export function stepView(paths: HomePaths, runId: string, name: string, options:
   const prompt = exec ? undefined : options.full || step.prompt.length <= PROMPT ? step.prompt : step.prompt.slice(0, PROMPT);
   const tokens = step.tokens ?? step.usage?.total;
   const tail = Math.max(0, options.tail ?? (options.full ? Infinity : TAIL));
-  const activity = tail ? all.slice(-tail) : [];
+  const activity = tail ? all.slice(-tail).map(inWords) : [];
   const opened = step.session;
   // sous join takes the step's last call with a session unless --call names another.
   const lastOpened = calls.map((call, i) => (call.agent.session ? i + 1 : 0)).reduce((a, b) => Math.max(a, b), 0);
@@ -175,7 +176,7 @@ export function stepView(paths: HomePaths, runId: string, name: string, options:
     ...(tokens ? { tokens } : {}),
     ...(prompt === undefined ? {} : { prompt }),
     // A saved step keeps a preview of its result, not the result.
-    ...(step.result === undefined && step.resultPreview === undefined ? {} : { result: step.result ?? step.resultPreview }),
+    ...(step.result === undefined && step.resultPreview === undefined ? {} : { result: answerWords(step.result ?? step.resultPreview) ?? step.result ?? step.resultPreview }),
     ...(step.error === undefined ? {} : { failure: step.error }),
     ...(command === undefined ? {} : { command }),
     ...(output === undefined ? {} : { output }),
@@ -185,6 +186,18 @@ export function stepView(paths: HomePaths, runId: string, name: string, options:
     ...(prompt !== undefined && prompt.length < step.prompt.length ? { promptCut: true as const } : {}),
     ...(others.length ? { alsoIn: others } : {}),
   };
+}
+
+/**
+ * An activity line with a turn's answer in words. Codex gives the answer as its text, and Claude
+ * Code may give it as a StructuredOutput call. Either reads as text, as answerWords gives it.
+ */
+function inWords(line: ActivityLine): ActivityLine {
+  if (line.kind !== "text" && !(line.kind === "tool" && line.tool === "StructuredOutput")) return line;
+  const words = answerWords(line.text);
+  if (words === undefined) return line;
+  const { tool: _tool, ...rest } = line;
+  return { ...rest, kind: "text", text: words };
 }
 
 /** The event in sous's vocabulary, or undefined for an event the log leaves out. */

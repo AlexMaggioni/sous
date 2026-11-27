@@ -236,7 +236,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"question\",\"result\":null,\"message\":\"Which API should I call?\"}",
+        "resultPreview": "question: Which API should I call?",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -281,7 +281,7 @@ exit 0
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"status\":\"done\",\"result\":\"JOIN KESTREL-5150\",\"message\":\"fake-message\"}",
+        "resultPreview": "done: JOIN KESTREL-5150",
         "tokens": 150,
         "usage": {
           "input": 120,
