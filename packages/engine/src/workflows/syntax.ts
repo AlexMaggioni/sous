@@ -54,6 +54,13 @@ export function property(object: AnyNode, key: string): AnyNode | undefined {
   return undefined;
 }
 
+/** The input a node reads, when it is args.name or args["name"]. */
+export function inputName(node: AnyNode | null | undefined): string | undefined {
+  if (node?.type !== "MemberExpression" || node.object?.type !== "Identifier" || node.object.name !== "args") return undefined;
+  if (!node.computed) return node.property?.type === "Identifier" ? (node.property.name as string) : undefined;
+  return staticString(node.property);
+}
+
 /** The name of a property the text writes, such as a in { a: 1 } or { "a": 1 }. A number names
  *  the property as JavaScript does, so { 1: x } names "1". */
 export function keyOf(item: AnyNode): string | undefined {

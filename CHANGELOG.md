@@ -31,6 +31,8 @@ says.
 - A step's turns run in one open program, so a background process from one turn still runs in the
   next.
 - Code steps take an `input` and a `schema`, and give the value in `result`.
+- `sous check` checks an agent that an input names, as `agentType: args.planner`, with the value
+  given or the input's default.
 - A stop closes the step's way in for messages at once, so a message sent after it reaches no
   turn.
 

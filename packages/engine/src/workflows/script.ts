@@ -3,7 +3,7 @@
 
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
 import type { WorkflowMeta, WorkflowMetaPhase } from "../workflow-result.js";
-import { boundNames, childrenOf, isFunction, keyOf, parseWorkflowText, property, SAVED_WORKFLOW_NAME, staticString, type AnyNode } from "./syntax.js";
+import { boundNames, childrenOf, inputName, isFunction, keyOf, parseWorkflowText, property, SAVED_WORKFLOW_NAME, staticString, type AnyNode } from "./syntax.js";
 
 /** The options of one step as the script writes them: an object that names an agent or MCP
  *  servers, or a send() with the options of its handle. */
@@ -12,6 +12,8 @@ export interface StepRefs {
   agentType?: string;
   /** True when the object has an agentType key, whatever its value. */
   setsAgentType: boolean;
+  /** The input that names the agent, when the script writes agentType: args.<input>. */
+  agentInput?: string;
   /** The model or harness, when the script names it with a string. */
   model?: string;
   /** True when the object has a model key, whatever its value. */
@@ -435,9 +437,11 @@ function sendCall(node: AnyNode, names: Names): { call: ScriptCall; refs?: StepR
   if (session !== undefined) call.session = session;
   if (!option("agentType") && !option("mcp")) return { call };
   const servers = option("mcp");
+  const input = inputName(option("agentType"));
   const refs: StepRefs = {
     ...(agent ? { agentType: agent } : {}),
     setsAgentType: option("agentType") !== undefined,
+    ...(input ? { agentInput: input } : {}),
     ...(model ? { model } : {}),
     setsModel: option("model") !== undefined,
     mcp: [...new Set((servers?.type === "ArrayExpression" ? (servers.elements as AnyNode[]).map(staticString) : []).filter((name): name is string => Boolean(name)))],
@@ -578,11 +582,13 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
       if (agentType || mcp) {
         const model = property(node, "model");
         const agentName = staticString(agentType);
+        const input = inputName(agentType);
         const modelName = staticString(model);
         const servers = mcp?.type === "ArrayExpression" ? (mcp.elements as AnyNode[]).map(staticString) : [];
         steps.push({
           ...(agentName ? { agentType: agentName } : {}),
           setsAgentType: agentType !== undefined,
+          ...(input ? { agentInput: input } : {}),
           ...(modelName ? { model: modelName } : {}),
           setsModel: model !== undefined,
           mcp: [...new Set(servers.filter((name): name is string => Boolean(name)))],

@@ -222,7 +222,7 @@ await choose("pick (one)", { any: true })
   assert.deepEqual(refs.steps, [
     { agentType: "implementer", setsAgentType: true, model: "codex", setsModel: true, mcp: ["linear", "github"] },
     { setsAgentType: false, setsModel: true, mcp: ["slack"] },
-    { setsAgentType: true, setsModel: true, mcp: [] },
+    { setsAgentType: true, agentInput: "who", setsModel: true, mcp: [] },
   ]);
   assert.deepEqual(refs.scripts, ["scripts/build.sh"]);
   assert.equal(refs.choosesAnyWorkflow, true);

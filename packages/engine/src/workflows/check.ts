@@ -1,7 +1,8 @@
 // `sous check`: what can be known about a workflow without running it. The script parses, the
 // inputs given fit what it declares, and each workflow, agent, MCP server and script file it
 // names exists. It reads the names from the parsed script. Names built at run time can't be
-// checked, so it reads strings written in the script only.
+// checked, so it reads strings written in the script only. An agent named by an input, as
+// agentType: args.planner, is checked with the input given or its default.
 // A step that names an agent and a harness must be able to run that agent there. A room's options
 // must be ones room() takes, as far as the text shows them.
 
@@ -62,9 +63,9 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
   const defaultModel = removedHarness(config.defaultModel);
   if (defaultModel) problems.push(`the configured default ${defaultModel}`);
   problems.push(...(resolved.extras.metaProblems ?? []));
-  if (given) {
-    problems.push(...checkInputs(resolved.extras, given).problems);
-  }
+  // The inputs as the run would get them, defaults included, for the agents they name.
+  const inputs = checkInputs(resolved.extras, given ?? {});
+  if (given) problems.push(...inputs.problems);
 
   const seen = new Set<string>();
   const visit = (name: string, refs: ScriptRefs, depth: number) => {
@@ -97,11 +98,15 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
     }
     // Each step's options: the agent it names, the model or harness, and its MCP servers.
     for (const step of refs.steps) {
-      const { agentType, model, mcp: servers } = step;
+      const { model, mcp: servers } = step;
+      // A nested workflow's inputs come from its caller at run time, so only the checked one's are known.
+      const named = depth === 1 && step.agentInput ? inputs.args[step.agentInput] : undefined;
+      const agentType = step.agentType ?? (typeof named === "string" && named ? named : undefined);
+      const from = step.agentType === undefined && agentType ? `--${step.agentInput}: ` : "";
       if (agentType) {
         const planned = planStep(agents, agentType, { ...(model ? { model } : {}), ...(servers.length ? { mcp: servers } : {}) });
         if ("problem" in planned) {
-          problems.push(`${within}${planned.problem}`);
+          problems.push(`${within}${from}${planned.problem}`);
           continue;
         }
         const { plan } = planned;

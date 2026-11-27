@@ -81,8 +81,10 @@ workflows and their inputs.
 
 `sous check ticket --ticket x` checks a workflow without running it: the script parses, the inputs
 fit, each workflow, agent and MCP server it names exists, and each agent can run on the harness its
-step picks. A script file that `run()` names and that is missing is only a note, since it must
-exist where the run works. With no inputs given, the check skips the required ones.
+step picks. An agent that an input names, as `agentType: args.planner`, is checked with the
+value given, else the input's default. A script file that `run()` names and that is missing is
+only a note, since it must exist where the run works. With no inputs given, the check skips the
+required ones.
 
 `sous check ticket --ticket x --dry-run` then runs the workflow once with stand-in agents, to catch
 mistakes in its steps and in how they connect. Each agent step answers at once: with a value that

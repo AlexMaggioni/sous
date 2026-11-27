@@ -39,6 +39,37 @@ await agent('z', { agentType: 'nobody' })`,
     assert.equal(checkWorkflow(paths, projectDir, "outer").problems.some((p) => p.includes("linear")), false);
   });
 
+  it("checks an agent an input names, with the input given or its default, in the checked workflow only", () => {
+    const { paths, projectDir } = setup({
+      named: `export const meta = { name: 'named', description: 'agents from inputs', inputs: {
+  planner: { type: 'string', description: 'The planner', default: 'planner' },
+  builder: { type: 'string', description: 'The builder', default: 'builder' },
+  helper: { type: 'string', description: 'A helper, no default' },
+} }
+await agent('plan', { agentType: args.planner })
+const impl = session({ agentType: args['builder'], label: 'impl' })
+await impl.send('build')
+if (args.helper) await agent('help', { agentType: args.helper })
+await workflow('nested', {})`,
+      nested: `export const meta = { name: 'nested', description: 'its inputs come from its caller', inputs: { who: { type: 'string', description: 'Who', default: 'nobody' } } }
+await agent('x', { agentType: args.who })`,
+    });
+    write(join(projectDir, ".rulesync", "subagents", "planner.md"), "---\nname: planner\ndescription: plans\n---\nPlan it.\n");
+    const missing = (input: string, name: string) => new RegExp(`^--${input}: no agent "${name}"\\. sous looks in \\.rulesync/subagents/`);
+
+    // The defaults: the planner exists, the builder doesn't, and the helper has no value to check.
+    const defaults = checkWorkflow(paths, projectDir, "named").problems;
+    assert.equal(defaults.length, 1, defaults.join("\n"));
+    assert.match(defaults[0]!, missing("builder", "builder"));
+
+    // The values given replace the defaults.
+    write(join(projectDir, ".rulesync", "subagents", "builder.md"), "---\nname: builder\ndescription: builds\n---\nBuild it.\n");
+    const given = checkWorkflow(paths, projectDir, "named", { planner: "ghost", helper: "aide" }).problems;
+    assert.equal(given.length, 2, given.join("\n"));
+    assert.ok(given.some((p) => missing("planner", "ghost").test(p)), given.join("\n"));
+    assert.ok(given.some((p) => missing("helper", "aide").test(p)), given.join("\n"));
+  });
+
   it("refuses a step model or a default that names Pi or OpenCode, which sous no longer runs", () => {
     const { paths, projectDir } = setup({
       gone: `export const meta = { name: 'gone', description: 'old harnesses' }
