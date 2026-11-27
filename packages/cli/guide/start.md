@@ -46,7 +46,7 @@ Tell the person the run id, what the run will do, that it may ask them something
 last runs cost. Then wait for it, as `sous guide wait` says.
 
 `--place worktree|folder|none` changes where this run works. A worktree is a new branch in
-`~/.sous/worktrees/<run>`. `folder` is the project folder itself. `none` is an empty scratch
+`~/.sous/worktrees/<run>`, whose folder goes when the run ends. `folder` is the project folder itself. `none` is an empty scratch
 folder. `--model claude/haiku` sets the model for steps that name none.
 
 ## Workflows only a person starts

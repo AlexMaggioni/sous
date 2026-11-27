@@ -1,12 +1,13 @@
 // Where a run works. A worktree (the default) is a new branch sous/<name> in its own folder under
-// the home's worktrees folder, kept after the run so the work can be reviewed and merged. A folder
-// run works in the project itself. A run with no place gets an empty scratch folder. A nested run
-// and a step with `isolation: "worktree"` get their worktrees here too, named the same way, through
-// `runPlaces`. A step's worktree goes when the step ends.
+// the home's worktrees folder. A folder run works in the project itself. A run with no place gets
+// an empty scratch folder. A nested run, a session and one step with `place: "worktree"` get their
+// worktrees here too, named the same way, through `runPlaces`. When a worktree's scope ends,
+// `closeWorktree` commits what is left, removes the folder and keeps the branch for review.
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import type { HomePaths, Place } from "../runs/home.js";
 import type { NestedRun, RunRecord } from "../runs/records.js";
 
@@ -70,8 +71,11 @@ function planPlace(paths: HomePaths, place: Place, name: string, baseDir: string
   return { cwd: tree.dir, worktree: tree.dir, branch: tree.branch };
 }
 
-/** Make a planned place. A place that is already there is kept as it is. */
-function makePlace(baseDir: string, planned: PreparedPlace): void {
+/**
+ * Make a planned place. A place that is already there is kept as it is. A worktree whose folder
+ * went is made again from its branch, as `sous rerun --reuse` needs.
+ */
+export function makePlace(baseDir: string, planned: PreparedPlace): void {
   if (planned.worktree && planned.branch) {
     if (!existsSync(planned.worktree)) makeWorktree(baseDir, { dir: planned.worktree, branch: planned.branch }, true);
   } else if (planned.cwd !== baseDir) {
@@ -97,26 +101,50 @@ function slug(text: string): string {
 /** Where a run tree's places are written down. In sous, the root run's record. */
 export interface PlaceNotes {
   nested(childRunId: string, change: Partial<NestedRun>): void;
-  stepWorktree(tree: Worktree, exists: boolean): void;
+  /** Name a session's or a step's worktree, with its label, or with `keep` false, forget it. */
+  stepWorktree(tree: Worktree & { label?: string }, keep: boolean): void;
+}
+
+/** Who a session's or one step's worktree belongs to. A step's has the occurrence of its label. */
+export interface PlaceOwner {
+  runId: string;
+  label: string;
+  occurrence?: number;
+}
+
+/** What closing a worktree did: whether sous committed leftover work, and whether the branch stays. */
+export interface Closed {
+  committed: boolean;
+  branchKept: boolean;
 }
 
 /**
- * The places of one run tree: its nested runs' places and its steps' worktrees. The workflow core
- * gets this and knows nothing of the home or the record. Each place is noted before it is made, so
- * no crash leaves a worktree that no note names, and gc can find it.
+ * The places of one run tree: its nested runs' places and its sessions' and steps' worktrees. The
+ * workflow core gets this and knows nothing of the home or the record. Each place is noted before
+ * it is made, so no crash leaves a worktree that no note names, and gc can find it.
  */
 export interface RunPlaces {
   /** Note a nested run before it starts. */
   noteNested(childRunId: string, run: { parent: string; workflow: string; label?: string }): void;
   /** Make the place a nested run asked for, and return its cwd. */
   nestedPlace(childRunId: string, place: Place, baseDir: string): string;
+  /** End a nested run's worktree when the nested workflow returns, as `closeWorktree` does. */
+  closeNested(childRunId: string, baseDir: string, label: string): RunClose;
   /**
-   * Make the worktree of a step with `isolation: "worktree"`, named for its run, its call index and
-   * its label. Returns the reason when the step cannot have one.
+   * Make the worktree of a session or of one step with `place: "worktree"`, from the HEAD of
+   * `baseDir`. A resumed run gets the same one back: the folder as it is, or a new folder on the
+   * branch that stayed. Returns the reason when there can be none.
    */
-  makeStepWorktree(baseDir: string, step: { runId: string; index: number; label: string }): { tree: Worktree } | { reason: string };
-  /** Remove a step's worktree and its branch when the step ends. */
-  removeStepWorktree(baseDir: string, tree: Worktree): void;
+  sessionPlace(baseDir: string, owner: PlaceOwner): { tree: Worktree } | { reason: string };
+  /** End a place's scope, as `closeWorktree` does. A place that could not close stays named. */
+  closePlace(baseDir: string, tree: Worktree, label: string): Closed | { reason: string };
+}
+
+/** The worktree of a session, `<run>-<label>-<suffix>`. The suffix keeps apart labels whose slugs
+ *  match: a short hash of the run and the label, or one step's occurrence. */
+function placeName(owner: PlaceOwner): string {
+  const suffix = owner.occurrence ?? createHash("sha256").update(`${owner.runId}\n${owner.label}`).digest("hex").slice(0, 6);
+  return `${slug(owner.runId)}-${slug(owner.label).slice(0, 32) || "agent"}-${suffix}`;
 }
 
 /** The places of one run tree under this home, noted in `notes`. */
@@ -132,29 +160,37 @@ export function runPlaces(paths: HomePaths, notes: PlaceNotes): RunPlaces {
       return planned.cwd;
     },
 
-    makeStepWorktree(baseDir, step) {
-      if (!isGitRepo(baseDir)) return { reason: "not a git repository" };
-      const tree = worktreeAt(paths, `${slug(step.runId)}-${step.index}-${slug(step.label).slice(0, 32) || "agent"}`);
-      const leftover = existsSync(tree.dir);
-      notes.stepWorktree(tree, true);
+    closeNested(childRunId, baseDir, label) {
+      const tree = worktreeAt(paths, childRunId);
       try {
-        makeWorktree(baseDir, tree, false);
+        return { tree, ...closeWorktree(baseDir, tree, label) };
+      } catch (error) {
+        return { tree, reason: (error as Error).message };
+      }
+    },
+
+    sessionPlace(baseDir, owner) {
+      if (!isGitRepo(baseDir)) return { reason: "not a git repository" };
+      const tree = worktreeAt(paths, placeName(owner));
+      notes.stepWorktree({ ...tree, label: owner.label }, true);
+      if (existsSync(tree.dir)) return { tree };
+      try {
+        makeWorktree(baseDir, tree, true);
         return { tree };
       } catch (error) {
-        // A worktree a crash left behind stays named, for gc.
-        if (!leftover) notes.stepWorktree(tree, false);
+        if (!branchExists(baseDir, tree.branch)) notes.stepWorktree(tree, false);
         return { reason: (error as Error).message };
       }
     },
 
-    // One that stays stays named, for gc.
-    removeStepWorktree(baseDir, tree) {
+    closePlace(baseDir, tree, label) {
       try {
-        removeWorktree(baseDir, tree.dir, tree.branch);
-      } catch {
-        // Left for gc.
+        const closed = closeWorktree(baseDir, tree, label);
+        if (!closed.branchKept) notes.stepWorktree(tree, false);
+        return closed;
+      } catch (error) {
+        return { reason: (error as Error).message };
       }
-      if (!existsSync(tree.dir)) notes.stepWorktree(tree, false);
     },
   };
 }
@@ -169,8 +205,9 @@ export const NO_PLACES: RunPlaces = {
     if (place === "folder") return baseDir;
     throw new Error(`place "${place}" needs a home for its folder, and this run has none. Use place "folder".`);
   },
-  makeStepWorktree: () => ({ reason: "no home for worktrees" }),
-  removeStepWorktree: () => {},
+  closeNested: (childRunId) => ({ tree: { dir: "", branch: `sous/${childRunId}` }, reason: "no home for worktrees" }),
+  sessionPlace: () => ({ reason: "no home for worktrees" }),
+  closePlace: () => ({ reason: "no home for worktrees" }),
 };
 
 /**
@@ -187,42 +224,121 @@ function worktreeUnchanged(dir: string, branch: string): boolean {
   }
 }
 
-/** Remove a worktree and its branch. */
-export function removeWorktree(repoDir: string, dir: string, branch: string): void {
-  if (existsSync(dir)) git(repoDir, ["worktree", "remove", "--force", dir]);
-  else git(repoDir, ["worktree", "prune"]);
-  git(repoDir, ["branch", "-D", branch]);
+function branchExists(repoDir: string, branch: string): boolean {
+  try {
+    git(repoDir, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Commit everything in `dir`, skipping the project's hooks. When git knows no author, sous is one. */
+function commitAll(dir: string, message: string): void {
+  git(dir, ["add", "-A"]);
+  const commit = ["commit", "--quiet", "--no-verify", "-m", message];
+  try {
+    git(dir, commit);
+  } catch (error) {
+    const stderr = String((error as { stderr?: unknown }).stderr ?? "");
+    if (!/tell me who you are|empty ident|auto-detect email|no email was given/i.test(stderr)) throw error;
+    git(dir, ["-c", "user.name=sous", "-c", "user.email=sous@localhost", ...commit]);
+  }
 }
 
 /**
- * The worktrees a run's record names that are still there: the run's own, unless it borrowed it
- * from the run it reuses, its nested runs' and its steps'.
+ * End a worktree's scope. sous commits what is uncommitted with the message
+ * `sous: uncommitted work of <label>`, then removes the folder. The branch stays, unless it never
+ * moved since it was made. It throws, and leaves the folder as it is, when the commit fails.
  */
-export function runWorktrees(record: RunRecord): Worktree[] {
-  const trees: Worktree[] = [];
-  if (record.worktree && record.branch && !record.reuseFrom) trees.push({ dir: record.worktree, branch: record.branch });
-  for (const child of Object.values(record.nested ?? {})) {
-    if (child.cwd && child.branch) trees.push({ dir: child.cwd, branch: child.branch });
+function closeWorktree(repoDir: string, tree: Worktree, label: string): Closed {
+  let committed = false;
+  if (existsSync(tree.dir)) {
+    if (git(tree.dir, ["status", "--porcelain"]) !== "") {
+      try {
+        commitAll(tree.dir, `sous: uncommitted work of ${label}`);
+      } catch (error) {
+        const stderr = String((error as { stderr?: unknown }).stderr ?? (error as Error).message);
+        throw new Error(`could not commit the work left in ${tree.dir}: ${stderr.trim()}`);
+      }
+      committed = true;
+    }
+    const unmoved = !committed && worktreeUnchanged(tree.dir, tree.branch);
+    git(repoDir, ["worktree", "remove", "--force", tree.dir]);
+    if (unmoved) {
+      git(repoDir, ["branch", "-D", tree.branch]);
+      return { committed, branchKept: false };
+    }
+  } else {
+    git(repoDir, ["worktree", "prune"]);
   }
-  trees.push(...(record.stepWorktrees ?? []));
-  const seen = new Set<string>();
-  const kept = trees.filter((tree) => existsSync(tree.dir) && !seen.has(tree.dir) && seen.add(tree.dir));
-  return kept.sort((a, b) => a.dir.localeCompare(b.dir));
+  return { committed, branchKept: branchExists(repoDir, tree.branch) };
 }
 
-/** At the end of a run, remove the given worktrees that changed no file. */
-export function dropUnchangedWorktrees(repoDir: string, trees: Worktree[]): string[] {
-  const removed: string[] = [];
-  for (const { dir, branch } of trees) {
-    if (!worktreeUnchanged(dir, branch)) continue;
+/** Remove a worktree's folder, when it has one, and its branch, when it is still there. */
+export function removeWorktree(repoDir: string, dir: string | undefined, branch: string): void {
+  if (dir !== undefined && existsSync(dir)) git(repoDir, ["worktree", "remove", "--force", dir]);
+  else git(repoDir, ["worktree", "prune"]);
+  if (branchExists(repoDir, branch)) git(repoDir, ["branch", "-D", branch]);
+}
+
+/**
+ * Each worktree a run's record names, with the label its leftover commit names: its sessions' and
+ * steps', its nested runs', deepest first, and its own. The run's own is left out when it borrowed
+ * it from the run it reuses, unless `borrowed` is set.
+ */
+function namedWorktrees(record: RunRecord, borrowed: boolean): Array<Worktree & { label: string }> {
+  const trees = (record.stepWorktrees ?? []).map(({ dir, branch, label }) => ({ dir, branch, label: label ?? branch.replace(/^sous\//, "") }));
+  const nested = Object.entries(record.nested ?? {}).sort(([a], [b]) => b.length - a.length);
+  for (const [, child] of nested) {
+    if (child.cwd && child.branch) trees.push({ dir: child.cwd, branch: child.branch, label: child.label ?? child.workflow });
+  }
+  if (record.worktree && record.branch && (borrowed || !record.reuseFrom)) trees.push({ dir: record.worktree, branch: record.branch, label: record.workflow });
+  const seen = new Set<string>();
+  return trees.filter((tree) => !seen.has(tree.dir) && seen.add(tree.dir));
+}
+
+/** A branch a run's record names, and its worktree's folder while the folder is there. */
+export interface RunBranch {
+  branch: string;
+  dir?: string;
+}
+
+/** The branches a run's record names that are still there, each with its folder when it has one. */
+export function runWorktrees(record: RunRecord): RunBranch[] {
+  const kept: RunBranch[] = [];
+  for (const { dir, branch } of namedWorktrees(record, false)) {
+    if (existsSync(dir)) kept.push({ branch, dir });
+    else if (branchExists(record.projectDir, branch)) kept.push({ branch });
+  }
+  return kept.sort((a, b) => a.branch.localeCompare(b.branch));
+}
+
+/** What the end of a run did with one of its worktrees, or why it stays. */
+/** The log line of one worktree whose scope ended, or that stayed. */
+export function closedLine({ dir, branch }: Worktree, close: Closed | { reason: string }): string {
+  if ("reason" in close) return `kept       ${dir}: ${close.reason}`;
+  if (!close.branchKept) return `removed    ${dir} and ${branch}, which changed no file`;
+  return `closed     ${dir}${close.committed ? ", with its uncommitted work committed" : ""}. Its work is on ${branch}`;
+}
+
+export type RunClose = { tree: Worktree } & (Closed | { reason: string });
+
+/**
+ * At the end of a run, end the scope of each worktree its record names whose folder is still
+ * there, as `closeWorktree` does: its sessions' and steps', its nested runs' and its own.
+ */
+export function closeRunWorktrees(record: RunRecord): RunClose[] {
+  const closed: RunClose[] = [];
+  for (const { label, ...tree } of namedWorktrees(record, true)) {
+    if (!existsSync(tree.dir)) continue;
     try {
-      removeWorktree(repoDir, dir, branch);
-      removed.push(dir);
-    } catch {
-      // Left for `sous gc`.
+      closed.push({ tree, ...closeWorktree(record.projectDir, tree, label) });
+    } catch (error) {
+      closed.push({ tree, reason: (error as Error).message });
     }
   }
-  return removed;
+  return closed;
 }
 
 export interface GcResult {
@@ -230,9 +346,20 @@ export interface GcResult {
   kept: Array<{ dir: string; branch: string; reason: string }>;
 }
 
+/** True when `branch` is merged into the project's current branch. */
+function mergedIntoHead(projectDir: string, branch: string): boolean {
+  try {
+    git(projectDir, ["merge-base", "--is-ancestor", branch, "HEAD"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Remove sous's worktrees whose branch is merged into the project's current branch and has no
- * uncommitted changes. Everything else stays, and so does each worktree in `busy`.
+ * uncommitted changes, and sous's merged branches whose worktree's scope ended. Everything else
+ * stays, and so does each folder or branch in `busy`. A branch with no folder has an empty `dir`.
  */
 export function gcWorktrees(paths: HomePaths, projectDirs: string[], options: { dryRun?: boolean; busy: Set<string> }): GcResult {
   const result: GcResult = { removed: [], kept: [] };
@@ -240,7 +367,7 @@ export function gcWorktrees(paths: HomePaths, projectDirs: string[], options: { 
   // Git reports real paths, so /var/... on macOS shows as /private/var/....
   const root = realpathSync(paths.worktrees);
   const real = (dir: string) => (existsSync(dir) ? realpathSync(dir) : dir);
-  const busy = new Set([...options.busy].map(real));
+  const busy = new Set([...options.busy].map((item) => (isAbsolute(item) ? real(item) : item)));
   const seen = new Set<string>();
   for (const projectDir of projectDirs) {
     if (!isGitRepo(projectDir)) continue;
@@ -266,7 +393,7 @@ export function gcWorktrees(paths: HomePaths, projectDirs: string[], options: { 
         continue;
       }
       // A run still going, or paused, keeps its worktrees, even before their first commit.
-      if (busy.has(entry.dir)) {
+      if (busy.has(entry.dir) || busy.has(entry.branch)) {
         result.kept.push({ ...entry, reason: "its run has not finished" });
         continue;
       }
@@ -275,14 +402,7 @@ export function gcWorktrees(paths: HomePaths, projectDirs: string[], options: { 
         result.kept.push({ ...entry, reason: "uncommitted changes" });
         continue;
       }
-      let merged = false;
-      try {
-        git(projectDir, ["merge-base", "--is-ancestor", entry.branch, "HEAD"]);
-        merged = true;
-      } catch {
-        merged = false;
-      }
-      if (!merged) {
+      if (!mergedIntoHead(projectDir, entry.branch)) {
         result.kept.push({ ...entry, reason: "not merged" });
         continue;
       }
@@ -292,10 +412,35 @@ export function gcWorktrees(paths: HomePaths, projectDirs: string[], options: { 
       }
       result.removed.push({ ...entry, reason: "merged" });
     }
+    gcBranches(projectDir, new Set(entries.map((entry) => entry.branch)), busy, options.dryRun, result);
   }
   for (const name of readdirSync(paths.worktrees)) {
     const dir = join(paths.worktrees, name);
     if (!seen.has(real(dir)) && !result.removed.some((r) => r.dir === real(dir))) result.kept.push({ dir, branch: "", reason: "its project was not checked" });
   }
   return result;
+}
+
+/**
+ * The branches of sous's worktrees whose scope ended, so they have no folder: a merged one goes,
+ * and the rest stay. `withFolder` holds the branches gc already saw with a folder.
+ */
+function gcBranches(projectDir: string, withFolder: Set<string>, busy: Set<string>, dryRun: boolean | undefined, result: GcResult): void {
+  let listing: string;
+  try {
+    listing = git(projectDir, ["for-each-ref", "--format=%(refname:short)", "refs/heads/sous/"]);
+  } catch {
+    return;
+  }
+  for (const branch of listing.split("\n").filter(Boolean)) {
+    if (withFolder.has(branch)) continue;
+    if (busy.has(branch)) {
+      result.kept.push({ dir: "", branch, reason: "its run has not finished" });
+    } else if (!mergedIntoHead(projectDir, branch)) {
+      result.kept.push({ dir: "", branch, reason: "not merged" });
+    } else {
+      if (!dryRun) git(projectDir, ["branch", "-d", branch]);
+      result.removed.push({ dir: "", branch, reason: "merged" });
+    }
+  }
 }

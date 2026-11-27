@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { JournalEntry, WorkflowCallRecord, WorkflowResumeCallDecision } from "../src/workflow-result.js";
@@ -184,7 +185,7 @@ return { values }`), {
 });
 
 describe("PreparedResume allocation-ordered barriers and fan-out", () => {
-  it("replays matching worktrees without making degradation a suffix barrier", async () => {
+  it("replays matching worktrees, and a live worktree step is no suffix barrier", async () => {
     const dirs = tempDirs("resume-engine-git");
     initGitRepo(dirs.cwd, "tracked.txt", "clean\n");
     const home = tempPlaces();
@@ -223,25 +224,29 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
       assert.equal(result.resumeReport?.live, 1);
       assert.deepEqual(orderedDecisions, [0, 1, 2]);
 
-      git(dirs.cwd, "branch", "sous/degrade-0-item-0");
+      // A branch already named like the step's worktree is checked out, so the step still works
+      // in a worktree, and the calls after it replay.
+      git(dirs.cwd, "branch", "sous/degrade-item-0-1");
       const degraded = [...original];
       degraded[0] = "worktree-0-changed";
       const degradedPrompts: string[] = [];
+      const degradedCwds: string[] = [];
       const degradedResult = await runWorkflow(fanout(degraded, true), {
         runId: "degrade",
         cwd: dirs.cwd,
         concurrency: 2,
         places: home.places("degrade"),
-        agent: { async run(prompt) { degradedPrompts.push(prompt); return `live:${prompt}`; } },
+        agent: { async run(prompt, options) { degradedPrompts.push(prompt); degradedCwds.push(options.cwd!); return `live:${prompt}`; } },
         ...occurrence(seedFor(recording), "degrade"),
         persistLogs: false,
       });
       assert.deepEqual(degradedPrompts, ["worktree-0-changed"]);
+      assert.deepEqual(degradedCwds, [join(home.home.worktrees, "degrade-item-0-1")]);
       assert.equal(degradedResult.resumeReport?.replayed, 2);
       assert.equal(degradedResult.resumeReport?.live, 1);
       assert.deepEqual(degradedResult.resumeReport?.calls.slice(0, 2).map((decision) =>
         decision.action === "live" ? decision.reason : decision.action), [
-        "worktree-degraded",
+        "not-recorded",
         "replayed",
       ]);
 

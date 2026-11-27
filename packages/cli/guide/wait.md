@@ -42,8 +42,8 @@ sous wait <run> --timeout 540 --json
 - `questions`, each with `id`, `prompt`, `kind`, `choices`, `breakpoint`, `askedAt` and
   `answeredBy`, `"people"` or `"anyone"`. See `sous guide asks`.
 - `cwd` and `branch`.
-- `result` and `review`, once the run completed. `review` holds the branch, the worktree and the
-  result.
+- `result` and `review`, once the run completed. `review` holds the branch and the result, and
+  the worktree while its folder is there.
 - `failure`, with the `step` and its `message`, when a step failed.
 - `resumesAt`, when the service resumes a run paused at the usage limit.
 

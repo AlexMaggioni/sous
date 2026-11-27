@@ -133,6 +133,7 @@ function pinnedLookup() {
     implementer: "---\nname: implementer\ndescription: builds\n---\nBuild it.\n",
     doubler: "---\nname: doubler\ndescription: doubles\nclaudecode:\n  model: claude/haiku\n---\nDouble it.\n",
     isolated: "---\nname: isolated\ndescription: works apart\nisolation: worktree\n---\nWork apart.\n",
+    placed: "---\nname: placed\ndescription: works apart\nplace: worktree\n---\nWork apart.\n",
     broken: "---\nname: broken\nsous:\n  harness: gemini\n---\nx\n",
   };
   for (const [name, content] of Object.entries(files)) write(join(place.projectDir, ".rulesync", "subagents", `${name}.md`), content);
@@ -174,7 +175,13 @@ describe("routeStep", () => {
       [
         "isolated",
         { agentType: "isolated" },
-        { agentKey: ISOLATED_KEY, isolation: "worktree", prompt: "Work apart.", plan: { harness: "claude", model: "claude" } },
+        { agentKey: ISOLATED_KEY, place: "worktree", prompt: "Work apart.", plan: { harness: "claude", model: "claude" } },
+      ],
+      [
+        // An agent file may write place, the word scripts use. Its key is the same.
+        "placed",
+        { agentType: "placed" },
+        { agentKey: ISOLATED_KEY, place: "worktree", prompt: "Work apart.", plan: { harness: "claude", model: "claude" } },
       ],
       ["run model", { runModel: "codex/gpt-run" }, { requested: "codex/gpt-run", agentKey: null, plan: { harness: "codex", model: "codex/gpt-run" } }],
       ["over", { model: "claude/sonnet", runModel: "codex/gpt-run" }, { requested: "claude/sonnet", agentKey: null, plan: { harness: "claude", model: "claude/sonnet" } }],
@@ -221,10 +228,9 @@ describe("routeStep", () => {
   });
 
   it("routes a step with no lookup on the model's harness, with no agent", () => {
-    assert.deepEqual(routeStep(undefined, { agentType: "reviewer", model: "claude/haiku", isolation: "worktree" }), {
+    assert.deepEqual(routeStep(undefined, { agentType: "reviewer", model: "claude/haiku" }), {
       requested: "claude/haiku",
       agentKey: null,
-      isolation: "worktree",
       plan: { harness: "claude", model: "claude/haiku" },
     });
   });

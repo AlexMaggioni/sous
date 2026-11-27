@@ -43,7 +43,8 @@ export interface FoundAgent {
   harness: HarnessId;
   description?: string;
   prompt: string;
-  isolation?: "worktree";
+  /** Where the agent works: "worktree" for a worktree of its own. */
+  place?: "worktree";
   timeout?: string;
   /** Settings for every harness. A harness's block replaces each one it sets. */
   common: HarnessSettings;
@@ -231,7 +232,7 @@ function readRulesyncAgent(file: string, defaultHarness: HarnessId): Parsed {
     harness: isHarness(sous.harness) ? sous.harness : defaultHarness,
     ...(text(data.description) ? { description: text(data.description) } : {}),
     prompt: body,
-    ...(data.isolation === "worktree" || claude.isolation === "worktree" ? { isolation: "worktree" as const } : {}),
+    ...(worktreeOf(data) || worktreeOf(claude) ? { place: "worktree" as const } : {}),
     ...(data.timeout !== undefined ? { timeout: String(data.timeout) } : {}),
     common: compact({
       effort: text(data.effort),
@@ -244,6 +245,9 @@ function readRulesyncAgent(file: string, defaultHarness: HarnessId): Parsed {
   };
 }
 
+/** True when frontmatter asks for a worktree, as `place: worktree` or Claude Code's `isolation: worktree`. */
+const worktreeOf = (data: Record<string, unknown>): boolean => data.place === "worktree" || data.isolation === "worktree";
+
 function readClaudeAgent(file: string): Parsed {
   const { data, body } = splitFrontmatter(readFileSync(file, "utf8"), file, true);
   return {
@@ -253,7 +257,7 @@ function readClaudeAgent(file: string): Parsed {
     harness: "claude",
     ...(text(data.description) ? { description: text(data.description) } : {}),
     prompt: body,
-    ...(data.isolation === "worktree" ? { isolation: "worktree" as const } : {}),
+    ...(worktreeOf(data) ? { place: "worktree" as const } : {}),
     common: {},
     blocks: { claude: claudeSettings(data) },
   };
@@ -437,7 +441,8 @@ export function withHarness(harness: HarnessId, id: string): string {
  *
  * Bound: `tools` (allowlist), `disallowedTools` (denylist), `model`, and the
  * markdown body (`prompt`). `skills`, `mcp`, `effort` and `timeout` are defaults that
- * a step's own values replace. Wired: `isolation` ("worktree") → createWorktree().
+ * a step's own values replace. `place` ("worktree") gives each session and step of the agent a
+ * worktree of its own.
  */
 export interface AgentDefinition {
   /** Stable identity used as the `agentType` value. */
@@ -450,8 +455,8 @@ export interface AgentDefinition {
   disallowedTools?: string[];
   /** Model spec: optional registered harness prefix plus a verbatim id, or a backend-only name. */
   model?: string;
-  /** Isolation mode. When "worktree", agents using this type run in a git worktree. */
-  isolation?: "worktree";
+  /** Where the agent works. With "worktree", each session and step of it gets a worktree. */
+  place?: "worktree";
   /** Default skills for this agent. A step's list replaces them. */
   skills?: string[];
   /** Default MCP server names (from the host's servers file). A step's list replaces them. */
@@ -479,7 +484,8 @@ export function agentDefinitionKey(def: AgentDefinition | undefined): string | n
     tools: def.tools ?? null,
     disallowedTools: def.disallowedTools ?? null,
     model: def.model ?? null,
-    isolation: def.isolation ?? null,
+    // The place keeps the key it had as isolation.
+    isolation: def.place ?? null,
     // Only when set, so older journals keep replaying.
     ...(def.skills ? { skills: def.skills } : {}),
     ...(def.effort ? { effort: def.effort } : {}),
@@ -496,7 +502,7 @@ export function definitionOf(agent: FoundAgent): AgentDefinition {
     ...(settings.tools ? { tools: settings.tools } : {}),
     ...(settings.disallowedTools ? { disallowedTools: settings.disallowedTools } : {}),
     ...(settings.model ? { model: modelFor(agent.harness, settings.model) } : {}),
-    ...(agent.isolation ? { isolation: agent.isolation } : {}),
+    ...(agent.place ? { place: agent.place } : {}),
     ...(settings.skills ? { skills: settings.skills } : {}),
     ...(settings.mcp ? { mcp: settings.mcp } : {}),
     ...(settings.effort ? { effort: settings.effort } : {}),
@@ -602,11 +608,11 @@ export function routeStep(lookup: AgentLookup | undefined, ask: StepAsk): StepRo
   const found = ask.agentType ? lookup?.agents.get(ask.agentType) : undefined;
   const def = found && definitionOf(found);
   const requested = ask.model ?? def?.model ?? ask.runModel;
-  const isolation = ask.isolation ?? def?.isolation;
+  const place = def?.place;
   const frozen: StepRoute = {
     ...(requested === undefined ? {} : { requested }),
     agentKey: agentDefinitionKey(def),
-    ...(isolation === undefined ? {} : { isolation }),
+    ...(place === undefined ? {} : { place }),
     ...(def ? { prompt: def.prompt } : {}),
   };
   const removed = removedHarness(requested);

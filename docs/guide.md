@@ -165,8 +165,9 @@ A script has these steps (see also [the engine README](../packages/engine/README
   handle's `label` and `cwd` are plain strings, for code steps: `sh("npm test", { cwd: impl.cwd })`.
   `--set <label>.model=` may change a handle's model, to another on the same program. Any other
   `--set` on a handle fails the script. A session option on `send()`, or a send option on
-  `session()`, fails the script and names where it goes. `place` on `session()` is not built yet
-  and fails.
+  `session()`, fails the script and names where it goes. With `place: "worktree"` the handle gets
+  a worktree of its own when `session()` is called, and its `branch` names the branch. See
+  [Places](#places).
 
   A step's turns run in one open program, so a background process the agent starts in one turn
   still runs in the next. The program closes when the step ends, before a question waits, when
@@ -221,7 +222,8 @@ A script has these steps (see also [the engine README](../packages/engine/README
   workflow and runs it. `any: true` allows every saved workflow except those for people only.
 - `workflow(name, args, { place, label })` runs a saved workflow inside this one, five levels
   deep at most. It gets the defaults of its inputs, and a missing or wrong input fails the call.
-  A nested worktree is a branch of its own. `sous show` lists the nested run's steps under its
+  A nested worktree is a branch of its own, and its folder goes when the nested workflow returns,
+  as a session's does (see [Places](#places)). `sous show` lists the nested run's steps under its
   label, and `sous log` starts each of its lines with that label.
 
 Agents pass text to each other through prompts, or structured objects with `schema`. Steps that
@@ -307,7 +309,8 @@ You review one change. Report what blocks it, then what could be better.
   default model.
 - Fields at the top of the frontmatter, such as `skills`, `mcpServers`, `tools` and `effort`, apply
   on every harness, and a block's own field replaces them. `timeout` is read at the top only, and
-  `isolation` at the top or in the `claudecode` block. `rulesync generate` leaves top-level fields
+  `place: worktree`, or Claude Code's `isolation: worktree`, at the top or in the `claudecode`
+  block. `rulesync generate` leaves top-level fields
   out of the files it writes, so your own sessions don't get them.
 - A step's own `skills`, `mcp`, `effort`, `timeout` or `model` replaces the agent's, never adds to
   it.
@@ -459,7 +462,7 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous inbox`, `sous answer <q> <text>` | questions waiting for you, and answering one. `--value-json` reads the text as JSON, such as `'{"a": 1}'`. Without it the text is the answer, and text that starts with `{` or `[` gets a note. The answer file keeps `by` and `through`. |
 | `sous approve <q>`, `sous send-back <q> <note>` | answer a breakpoint. `sous answer <q> stop` stops the run. |
 | `sous pause <run>`, `sous resume <run> [--latest \| --same]` | finish the running steps and start nothing new; go on from there |
-| `sous stop <run>` | end the run. Its worktree stays, unless the run changed no file. |
+| `sous stop <run>` | end the run. sous commits what is left in its worktrees and removes their folders. The branches stay, unless they never moved. |
 | `sous stop <run> --step <name>` | stop one running step, by the name `sous log` gives it, such as `"ticket A: implementer"`. The run pauses on it, and `sous resume` goes on with it in its session. |
 | `sous tell <run> --step <name> "<message>" [--call N]` | give a running agent step a message, which it reads after its current tool call. The step goes on. The step is its label or its name in `sous log`, as `sous step` takes it. Each running call of the step gets it, and `--call N` tells only the Nth call, counted as `sous step --call` counts them. The reply's `calls` lists each call told with its `step` name, its `call` number and its `delivery`. The reply's `delivery` is `delivered`, or `pending` while the step has not read it within 5 seconds. A code step fails with `step_takes_no_message`, a step that does not run now with `step_not_running`, and a step in a turn that takes no message for a moment, such as a compact, or between two turns, with `turn_not_steerable`. |
 | `sous resume <run> --note "<message>" [--step <name>]` | resume, and add the message to the prompt of the first agent call that runs. `--step` gives it to that step's first call instead, by its label or its name in `sous log`, or by a label the workflow's text writes for a step the run has not reached yet, the new text with `--latest`. A name in neither exits 65 with `no_such_step`, a code step exits 66 with `step_takes_no_message`, and the run stays paused. When no agent call took the note, `sous log` says it reached no step. When the step already finished, a note says the message reaches it only if the workflow calls it again. The step's activity shows a `note` line, and the `resume` line in `events.jsonl` holds the message. A run that runs already does not resume, and the reply gives the `sous tell` call instead. |
@@ -467,7 +470,7 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous run`, `rerun` or `resume` with `--let-agent-answer` | lets agents answer the run's questions for people, and its nested runs' questions. Never its breakpoints. A rerun does not carry it over. |
 | `sous wait <run> [--timeout N]` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer, 5 still running after `--timeout N` seconds. The run goes on after a timeout. An agent's wait, or a step's, has a timeout of 110 seconds when it gives none. A person's waits as long as it takes. In a terminal it asks the run's questions itself, so 4 comes only off a terminal or with `--json`. |
 | `sous status [--since 3d] [--line] [--all]` | what needs you, what runs, what waits to resume on its own, and what finished. Runs that ended show for the last 24 hours, or for the `--since` time. A failed or stopped run that ended before that counts only in a note, like a finished one. Each list shows 20 entries, or all with `--all`. `--line` prints one line for an agent's session start, or nothing when nothing needs you. |
-| `sous gc [--dry-run]` | remove worktrees whose branch is merged |
+| `sous gc [--dry-run]` | remove sous's merged branches, and their worktrees |
 | `sous discard <run> --yes` | delete the run's branches and worktrees, merged or not. Without `--yes` it lists them, deletes nothing and exits 0. A running run is refused: stop it first. |
 | `sous prune --days N` | remove finished runs older than N days |
 
@@ -606,20 +609,30 @@ the notices off.
 
 ### Places
 
-- `worktree` (the default): a new branch `sous/<run>` in `~/.sous/worktrees/<run>`. It stays
-  after the run for review, also when the run fails. A run that completes or is stopped and
-  changed no file removes it. `sous gc` and the
-  service, once an hour, remove a worktree whose branch is merged and has nothing uncommitted, and
-  keep one whose run has not finished.
+- `worktree` (the default): a new branch `sous/<run>` in `~/.sous/worktrees/<run>`. When the run
+  completes or is stopped, sous commits what is left uncommitted as `sous: uncommitted work of
+  <workflow>` and removes the folder. The branch stays for review, unless it never moved. A run
+  that pauses or fails keeps the folder for its resume. `sous gc` and the service, once an hour,
+  remove a merged branch whose folder is gone, and a worktree whose branch is merged and has
+  nothing uncommitted. They keep those of a run that has not finished.
 - `folder`: the project folder itself.
 - `none`: an empty scratch folder, for work that touches no repo, such as email.
 
-A step can work apart from the run, with `place: "worktree"` in the options of `agent()`, or
-`isolation: worktree` in its agent's frontmatter. It gets a new branch from the run's place,
-`sous/<run>-<n>-<label>`, in `~/.sous/worktrees/<run>-<n>-<label>`, where n counts the run's
-steps. sous removes that worktree and its branch when the step ends, so the step hands its work
-back in its answer. Outside a git repository the step works in the run's place, and the log says
-so.
+A session or one step can work apart from the run, with `place: "worktree"` in the options of
+`session()` or `agent()`, or `place: worktree` in its agent's frontmatter. It gets a new branch
+from the `HEAD` of the folder around it, in `~/.sous/worktrees/`:
+
+- A session's is `sous/<run>-<label>-<hash>`, where the hash is six characters of the run and the
+  label. sous makes it when `session()` is called. It lasts until the workflow that made the
+  handle returns.
+- One step's is `sous/<run>-<label>-<n>`, where n counts the `agent()` calls with that label from
+  1. It lasts until the step ends, its checks included.
+
+A step's `cwd` is read under the worktree's folder. When the worktree's scope ends, sous commits
+what is left uncommitted as `sous: uncommitted work of <label>`, skipping the project's hooks, and
+removes the folder. The branch stays, unless it never moved. A run that pauses or fails keeps the
+folder, and a resume goes on in it, or makes it again from the branch. Outside a git repository
+the session or step works in the run's place, and the log says so.
 
 ## Schedules and the service
 

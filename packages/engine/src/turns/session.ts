@@ -4,17 +4,39 @@
 //
 // Each turn reaches the engine's agent() as a step with `session: { key, start }`. The key is the
 // handle's label, and start is "fresh" on the first send and "kept" after. The engine keeps the
-// map from key to the session, so a resume finds it again from the journal.
+// map from key to the session, so a resume finds it again from the journal. A step in a worktree
+// adds the worktree's folder to it, and its cwd is read under that folder.
 //
 // A step runs until its agent says "done", unless it sets `until: "turn"`. turns/loop.ts sends its
 // turns. agent() gets a key no script can name, so its later turns go on in its own session.
 // When a keyed step ends, deps.end closes the program its turns kept open.
+//
+// A handle with place "worktree" gets its worktree when session() is called, and the workflow
+// that made it closes it when it returns. agent() with place "worktree" gets one for its step,
+// which closes when the step ends. A run that stops or pauses keeps both, for a resume.
 
+import { resolve } from "node:path";
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
+import type { Worktree } from "../places/places.js";
 import { LOOP_KEYS, checkLoopOptions, runUntilDone, type Check, type LoopDeps } from "./loop.js";
 import type { StepUntil, Until } from "./until.js";
 
 type AgentFn = (prompt: string, options: Record<string, unknown>) => Promise<unknown>;
+
+/** The worktrees of the sessions and steps with place "worktree". The engine gives one per workflow. */
+export interface SessionPlaces {
+  /**
+   * Makes or finds the worktree of the session `label`, or of one step when `occurrence` counts
+   * the step's calls with that label. Undefined when there can be none, after the log says why.
+   */
+  open(label: string, occurrence?: number): Worktree | undefined;
+  /** Ends a step's worktree: commits the work left in it, removes the folder and keeps a branch that moved. */
+  close(tree: Worktree, label: string): void;
+  /** True while the run stops or pauses. A worktree stays then, for a resume. */
+  halting(): boolean;
+  /** The place the agent `agentType` names in its definition. */
+  placeOf(agentType: string | undefined): "worktree" | undefined;
+}
 
 export interface SessionDeps {
   /** The engine's agent step. */
@@ -31,19 +53,23 @@ export interface SessionDeps {
   end?: (key: string) => Promise<void>;
   /** Wraps a function the script calls, as the script's globals are wrapped. */
   track?: <F extends (...args: never[]) => unknown>(fn: F) => F;
+  /** Where steps with place "worktree" work. Without it, they work in the workflow's folder. */
+  places?: SessionPlaces;
 }
 
 /** What a handle holds for every turn. */
-const SESSION_KEYS = ["label", "agentType", "model", "effort", "mode", "skills", "mcp", "mcpServers", "cwd"] as const;
+const SESSION_KEYS = ["label", "agentType", "model", "effort", "mode", "skills", "mcp", "mcpServers", "cwd", "place"] as const;
 /** What one turn may set. A model must stay on the handle's program. */
 const SEND_KEYS = ["label", "schema", "until", "check", "maxTurns", "maxRepairs", "ask", "timeout", "retries", "images", "phase", "model"] as const;
 const SESSION_KEY_SET = new Set<string>(SESSION_KEYS);
 const SEND_KEY_SET = new Set<string>(SEND_KEYS);
 
-/** A handle as the script sees it. Its label and folder are plain strings. */
+/** A handle as the script sees it. Its label, folder and branch are plain strings. */
 export interface SessionHandle {
   readonly label: string;
   readonly cwd: string;
+  /** The branch of the handle's worktree, when it has one. */
+  readonly branch?: string;
   send(prompt: string, options?: Record<string, unknown>): Promise<unknown>;
 }
 
@@ -67,6 +93,21 @@ const sameProgram = (left: unknown, right: unknown): boolean => {
   return a === undefined || b === undefined || a === b;
 };
 
+/** The place a step asked for, else the one its agent's definition names. */
+function placeOf(options: Record<string, unknown>, where: string, places: SessionPlaces | undefined): "worktree" | undefined {
+  if (options.place !== undefined && options.place !== "worktree") fail(`${where}: place is "worktree"`);
+  return (options.place as "worktree" | undefined) ?? places?.placeOf(typeof options.agentType === "string" ? options.agentType : undefined);
+}
+
+/** What a step's session says of its place: the place it asked for, and its worktree's folder when sous made one. */
+function placeFields(place: "worktree" | undefined, tree: Worktree | undefined): { place?: "worktree"; worktree?: string } {
+  if (place === undefined) return {};
+  return tree ? { place, worktree: tree.dir } : { place };
+}
+
+/** A step's folder in its worktree: its cwd under the worktree's folder. */
+const cwdIn = (tree: Worktree, cwd: unknown): string => resolve(tree.dir, typeof cwd === "string" ? cwd : ".");
+
 /** A step's options without the ones the loop reads, which never reach the engine. */
 function engineOptions(options: Record<string, unknown>): Record<string, unknown> {
   const { ask: _ask, until: _until, ...rest } = options;
@@ -78,6 +119,8 @@ export function createSessions(deps: SessionDeps) {
   const labels = new Set<string>();
   const track = deps.track ?? (<F>(fn: F) => fn);
   let agents = 0;
+  /** How many agent() calls with place "worktree" each label had. */
+  const occurrences = new Map<string, number>();
 
   /**
    * Runs one step: its one turn with `until: "turn"`, else the loop's turns until "done". `turn`
@@ -134,7 +177,6 @@ export function createSessions(deps: SessionDeps) {
   /** Makes a handle. Its label is unique among this workflow's handles. */
   const session = (given?: unknown): SessionHandle => {
     const options = optionsOf(given, "session()");
-    if (options.place !== undefined) fail('session(): place is not built yet. For one step in a worktree, write agent(prompt, { place: "worktree" }).');
     for (const key of Object.keys(options)) {
       if (!SESSION_KEY_SET.has(key)) fail(`session(): ${key} is not a session option. A session takes ${SESSION_KEYS.join(", ")}. A turn's options go on send().`);
     }
@@ -142,11 +184,14 @@ export function createSessions(deps: SessionDeps) {
     if (!label) fail("session() needs a label");
     if (labels.has(label)) fail(`session(): the label "${label}" is in use by another session of this workflow`);
     if (options.cwd !== undefined && typeof options.cwd !== "string") fail(`session "${label}": cwd must be a string`);
+    const place = placeOf(options, `session "${label}"`, deps.places);
     const held: Record<string, unknown> = {};
-    for (const key of SESSION_KEYS) if (options[key] !== undefined && key !== "label") held[key] = options[key];
+    for (const key of SESSION_KEYS) if (options[key] !== undefined && key !== "label" && key !== "place") held[key] = options[key];
     const changed = changedModel(label, label, held.model);
     labels.add(label);
-    const cwd = deps.resolveCwd(options.cwd as string | undefined);
+    const tree = place === undefined ? undefined : deps.places?.open(label);
+    const cwd = tree ? cwdIn(tree, options.cwd) : deps.resolveCwd(options.cwd as string | undefined);
+    const placed = placeFields(place, tree);
     let turns = 0;
     let running = false;
 
@@ -167,17 +212,17 @@ export function createSessions(deps: SessionDeps) {
       const step = { ...held, ...turn, label: stepLabel, ...(model === undefined ? {} : { model }) };
       running = true;
       try {
-        return await runStep(prompt, options, stepLabel, label, held.cwd, label, (text, until) => {
+        return await runStep(prompt, options, stepLabel, label, tree ? cwd : held.cwd, label, (text, until) => {
           const start = turns === 0 ? "fresh" : "kept";
           turns++;
-          return deps.agent(text, { ...step, until, session: { key: label, start } });
+          return deps.agent(text, { ...step, until, session: { key: label, start, ...placed } });
         });
       } finally {
         running = false;
       }
     };
 
-    return Object.freeze({ label, cwd, send: track(send) });
+    return Object.freeze({ label, cwd, ...(tree ? { branch: tree.branch } : {}), send: track(send) });
   };
 
   /** One send on a session no later step uses. It takes a session's options and a turn's. */
@@ -188,29 +233,30 @@ export function createSessions(deps: SessionDeps) {
     const change = label ? deps.stepOverrides?.[label] : undefined;
     const options: Record<string, unknown> = change ? { ...written, ...change } : written;
     checkLoopOptions(options, "agent()");
-    const { place, ...rest } = options;
-    if (place !== undefined && place !== "worktree") fail('agent(): place is "worktree"');
+    const place = placeOf(options, "agent()", deps.places);
+    const { place: _place, ...rest } = options;
     const step = engineOptions(rest);
     const name = label ?? "agent";
+    let tree: Worktree | undefined;
     if (place !== undefined) {
-      // A worktree step runs in a worktree of its own that goes when its call ends, so it has no
-      // session a second turn could go on in. Sessions take places in a later phase.
-      if (options.check !== undefined) fail(`agent(): a step with place "worktree" takes no check yet. Run the check in the script after it.`);
-      let sent = 0;
-      return runStep(prompt, options, name, name, rest.cwd, undefined, (text, until) => {
-        if (sent++ > 0) {
-          fail(`step "${name}" has place "worktree" and needs another turn, which only a session can run. Give it until: "turn", or run it without place.`);
-        }
-        return deps.agent(text, { ...step, until, session: { start: "fresh", place } });
-      });
+      const occurrence = (occurrences.get(name) ?? 0) + 1;
+      occurrences.set(name, occurrence);
+      tree = deps.places?.open(name, occurrence);
     }
+    const placed = placeFields(place, tree);
     // A key no script can name: a session label is trimmed, and this one starts with a space.
     const key = options.until === "turn" ? undefined : ` agent ${++agents}`;
     let turns = 0;
-    return runStep(prompt, options, name, name, rest.cwd, key, (text, until) => {
-      const start = turns++ === 0 ? "fresh" : "kept";
-      return deps.agent(text, key === undefined ? { ...step, until } : { ...step, until, session: { key, start } });
-    });
+    try {
+      return await runStep(prompt, options, name, name, tree ? cwdIn(tree, rest.cwd) : rest.cwd, key, (text, until) => {
+        const start = turns++ === 0 ? "fresh" : "kept";
+        if (key !== undefined) return deps.agent(text, { ...step, until, session: { key, start, ...placed } });
+        return deps.agent(text, place ? { ...step, until, session: { start, ...placed } } : { ...step, until });
+      });
+    } finally {
+      // The step's worktree ends with the step, unless the run stops or pauses.
+      if (tree && !deps.places!.halting()) deps.places!.close(tree, name);
+    }
   };
 
   return { session, agent };

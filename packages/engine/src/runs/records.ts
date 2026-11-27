@@ -74,8 +74,10 @@ export interface RunRecord {
   refused?: string;
   /** Workflows this run started inside itself, by child run id. */
   nested?: Record<string, NestedRun>;
-  /** Worktrees of steps with `isolation: "worktree"` that exist now. A step removes its own when it ends. */
-  stepWorktrees?: Array<{ dir: string; branch: string }>;
+  /** Worktrees of sessions and steps with `place: "worktree"`, with the label of each. A name
+   *  stays while its folder or its branch does, so gc keeps the folder of an unfinished run and
+   *  discard finds the branch. Older records have no label. */
+  stepWorktrees?: Array<{ dir: string; branch: string; label?: string }>;
   /** Set by `sous resume --latest`: the next resume takes the edited workflows. */
   resumeLatest?: boolean;
   /** The sha256 of the text sous checked at `sous resume --latest`. The worker resumes only that text. */
@@ -125,8 +127,9 @@ export function scopePrefix(runId: string, scope: string | undefined, nested: Re
 }
 
 /**
- * The root run's record as the notes of its run tree's places: its nested runs, and its steps'
- * worktrees while they exist. gc reads them there. A run with no record notes nothing.
+ * The root run's record as the notes of its run tree's places: its nested runs, and the
+ * worktrees of its sessions and steps while their folder or branch exists. gc and discard read
+ * them there. A run with no record notes nothing.
  */
 export function placeNotes(paths: HomePaths, rootRunId: string): PlaceNotes {
   return {
@@ -136,11 +139,11 @@ export function placeNotes(paths: HomePaths, rootRunId: string): PlaceNotes {
       const next = { ...record.nested?.[childRunId], ...change } as NestedRun;
       saveRecord(paths, { ...record, nested: { ...record.nested, [childRunId]: next } });
     },
-    stepWorktree(tree, exists) {
+    stepWorktree(tree, keep) {
       const record = loadRecord(paths, rootRunId);
       if (!record) return;
       const others = (record.stepWorktrees ?? []).filter((known) => known.dir !== tree.dir);
-      const stepWorktrees = exists ? [...others, tree] : others;
+      const stepWorktrees = keep ? [...others, tree] : others;
       saveRecord(paths, { ...record, stepWorktrees });
     },
   };

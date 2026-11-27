@@ -65,13 +65,12 @@ describe("gc of worktrees of a project it was not told to check", () => {
     const home = ensureHome(homePaths(temp("sous-places-gc-home-")));
     const checked = gitRepo();
     const unchecked = gitRepo();
-    const step = (index: number) => ({ runId: "run-9", index, label: "edit" });
-    const place = (repo: string, index: number) => {
-      const result = placesIn(home, "run-9").makeStepWorktree(repo, step(index));
+    const place = (repo: string, occurrence: number) => {
+      const result = placesIn(home, "run-9").sessionPlace(repo, { runId: "run-9", label: "edit", occurrence });
       assert.ok("tree" in result, "a worktree was made");
       return result.tree;
     };
-    return { home, checked, unchecked, checkedTree: place(checked, 0), uncheckedTree: place(unchecked, 1) };
+    return { home, checked, unchecked, checkedTree: place(checked, 1), uncheckedTree: place(unchecked, 2) };
   }
 
   it("keeps the worktree, with no branch and the reason that its project was not checked", () => {

@@ -92,7 +92,7 @@ export function agentPage(paths: HomePaths, projectDir: string, name: string, en
     scope: agent.scope,
     harness: agent.harness,
     settings: settingsOf(agent, raw),
-    ...(agent.isolation ? { isolation: agent.isolation } : {}),
+    ...(agent.place ? { place: agent.place } : {}),
     ...(agent.timeout ? { timeout: agent.timeout } : {}),
     usedBy,
     copies: lookup.files.filter((copy) => copy.name === name && copy.file !== agent.file).map(({ file, from, scope }) => ({ file, from, scope })),

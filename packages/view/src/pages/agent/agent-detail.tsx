@@ -153,7 +153,7 @@ function agentFacts(agent: AgentPage, search: ProjectSearch): Fact[] {
   if (claude) facts.push({ label: "Permission mode", value: claude.mode ?? <None>Default</None>, sub: other ? "Claude Code only" : undefined });
   facts.push(
     settingFact("Skills", settings, "skills", search),
-    { label: "Isolation", value: agent.isolation === "worktree" ? "A worktree of its own" : <None>The run's folder</None> },
+    { label: "Place", value: agent.place === "worktree" ? "A worktree of its own" : <None>The run's folder</None> },
     { label: "Timeout", value: agent.timeout ? <span className="tabular-nums">{agent.timeout}</span> : <None /> },
     {
       label: "Used by",

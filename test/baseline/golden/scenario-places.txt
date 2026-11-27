@@ -165,7 +165,6 @@ exit 0
   },
   "review": {
     "branch": "sous/<run-3>",
-    "worktree": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
     "result": {
       "where": [
         "git sous/<run-3>",
@@ -585,7 +584,7 @@ $ sous show <run-3>
 exit 0
 places  <run-3>
 status    completed
-place     worktree  <tmp>/scenario-places/sous-home/worktrees/<run-3>  (branch sous/<run-3>)
+place     worktree  (branch sous/<run-3>)
 started   <time>  by cli
 program   Claude Code 2.1.330  <repo>/test/fakes/claude
 account   Claude Code: default, Claude Code's own login in ~/.claude
@@ -614,7 +613,6 @@ exit 0
   "word": "completed",
   "cwd": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
   "branch": "sous/<run-3>",
-  "worktree": "<tmp>/scenario-places/sous-home/worktrees/<run-3>",
   "startedAt": "<startedAt>",
   "seconds": "<seconds>",
   "tokens": 150,

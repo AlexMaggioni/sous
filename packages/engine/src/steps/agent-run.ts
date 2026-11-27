@@ -101,7 +101,7 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
    *  offers it, and Codex uses `agent`. A mode the harness lacks leaves its default and adds
    *  a note. */
   mode?: string;
-  /** Working directory (e.g. an isolated git worktree). ABSOLUTE. The harness runs the step there. NOT hashed. */
+  /** Working directory, such as the worktree of the step's session. ABSOLUTE. The harness runs the step there. NOT hashed. */
   cwd?: string;
   /** Real usage for one runner attempt. A runner MAY invoke this multiple times within
    *  an attempt; every report is a CUMULATIVE snapshot for that attempt, and the last

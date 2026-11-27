@@ -85,12 +85,14 @@ export function cmdPause(args: Parsed, ctx: Ctx): Reply<object> {
 export function cmdGc(args: Parsed, ctx: Ctx): Reply<object> {
   const dryRun = args.flags["dry-run"] === true;
   const { removed, kept } = gcRuns(ctx.paths, ctx.who, { dryRun });
+  // A branch whose worktree's scope ended has no folder.
+  const where = (item: { dir: string; branch: string }) => (item.dir ? `${item.dir} (${item.branch})` : `branch ${item.branch}`);
   const text = [
-    ...removed.map((item) => `${dryRun ? "would remove" : "removed"} ${item.dir} (${item.branch}): ${item.reason}`),
-    ...kept.map((item) => `kept ${item.dir} (${item.branch}): ${item.reason}`),
+    ...removed.map((item) => `${dryRun ? "would remove" : "removed"} ${where(item)}: ${item.reason}`),
+    ...kept.map((item) => `kept ${where(item)}: ${item.reason}`),
   ];
-  if (!text.length) text.push("no worktrees");
-  const next: Next[] = dryRun && removed.length ? [{ call: "sous gc --json", does: "removes the merged worktrees" }] : [];
+  if (!text.length) text.push("no branches of sous");
+  const next: Next[] = dryRun && removed.length ? [{ call: "sous gc --json", does: "removes the merged branches and their worktrees" }] : [];
   return reply({ dryRun, removed, kept }, { text, next });
 }
 
@@ -100,13 +102,14 @@ export function cmdDiscard(args: Parsed, ctx: Ctx): Reply<object> {
   const runId = record.runId;
   const yes = args.flags.yes === true;
   const text: string[] = [];
-  const worktrees = discardRun(paths, runId, ctx.who, { remove: yes, deleted: (tree) => text.push(`deleted ${tree.branch} and ${tree.dir}`) });
-  if (!worktrees.length) return reply({ runId, worktrees, deleted: false }, { notes: [`${runId} has no worktree left, so there is nothing to discard.`] });
+  const both = (tree: { branch: string; dir?: string }) => `${tree.branch}${tree.dir ? ` and ${tree.dir}` : ""}`;
+  const worktrees = discardRun(paths, runId, ctx.who, { remove: yes, deleted: (tree) => text.push(`deleted ${both(tree)}`) });
+  if (!worktrees.length) return reply({ runId, worktrees, deleted: false }, { notes: [`${runId} has no branch or worktree left, so there is nothing to discard.`] });
   if (yes) return reply({ runId, worktrees, deleted: true }, { text });
   return reply(
     { runId, worktrees, deleted: false },
     {
-      text: worktrees.map((tree) => `would delete ${tree.branch} and ${tree.dir}`),
+      text: worktrees.map((tree) => `would delete ${both(tree)}`),
       notes: [`Nothing is deleted yet. Deleting them loses the work on these branches. sous discard ${runId} --yes deletes them.`],
       next: [{ call: `sous discard ${runId} --yes --json`, does: "deletes these branches and worktrees" }],
     },

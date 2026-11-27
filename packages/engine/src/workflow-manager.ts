@@ -195,8 +195,8 @@ export interface ExecOptions {
   /**
    * Working directory for THIS run, overriding the manager's constructor `cwd` —
    * the natural fit for hosts that run each workflow inside its own git worktree.
-   * Every agent step runs here (unless worktree isolation or a per-agent
-   * `agent({ cwd })` overrides it further). Persisted with the run so a resume
+   * Every agent step runs here, unless a session or step with `place: "worktree"` or a
+   * per-agent `agent({ cwd })` overrides it further. Persisted with the run so a resume
    * re-runs in the SAME directory. Run STATE stays keyed to the manager cwd, so
    * resuming a run is unaffected by the per-run directory's lifetime.
    */

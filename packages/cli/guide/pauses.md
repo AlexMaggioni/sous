@@ -99,4 +99,4 @@ Do that only when the person asks.
 sous stop <run> --json
 ```
 
-`stop` ends the run. Its worktree stays for review when the run changed a file.
+`stop` ends the run and commits what is left on its branch. See `sous guide ends`.

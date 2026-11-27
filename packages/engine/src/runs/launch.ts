@@ -6,7 +6,7 @@ import { openSync, closeSync } from "node:fs";
 import { generateRunId } from "./persistence/run-persistence.js";
 import { resolveWorkflow } from "../workflows/dir.js";
 import { checkInputs } from "../workflows/meta.js";
-import { preparePlace } from "../places/places.js";
+import { makePlace, preparePlace, type PreparedPlace } from "../places/places.js";
 import { loadConfig, rememberProject, type HomePaths, type OrcConfig, type Place } from "./home.js";
 import { accountsForRun } from "../accounts.js";
 import { saveRecord, updateRecord, type RunRecord } from "./records.js";
@@ -79,11 +79,10 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
   const budget = request.budget ?? configBudget(paths, config, request.command ?? `sous run ${resolved.name}`);
   const runId = generateRunId();
   const reuse = request.reuseFrom;
-  // A run that reuses another's results needs that run's files too, so it works where it did.
+  // A run that reuses another's results needs that run's files too, so it works where it did. Its
+  // worktree's folder went when that run ended, so sous makes it again from the branch.
   const place = reuse ? reuse.place : (request.place ?? resolved.extras.place ?? config.defaultPlace);
-  const prepared = reuse
-    ? { cwd: reuse.cwd, ...(reuse.worktree ? { worktree: reuse.worktree, branch: reuse.branch } : {}) }
-    : preparePlace(paths, place, runId, request.projectDir);
+  const prepared = reuse ? reusedPlace(reuse) : preparePlace(paths, place, runId, request.projectDir);
   const record: RunRecord = {
     runId,
     workflow: resolved.name,
@@ -119,6 +118,13 @@ export function createRun(paths: HomePaths, request: CreateRunRequest): RunRecor
 
 /** The config's budgetTokens, refused when it is not a whole number of tokens above 0. The
  *  refusal's call is the command with a --budget, which wins over the config. */
+/** The place of the run a rerun reuses, its worktree's folder made again from its branch. */
+function reusedPlace(reuse: RunRecord): PreparedPlace {
+  const planned = { cwd: reuse.cwd, ...(reuse.worktree ? { worktree: reuse.worktree, branch: reuse.branch } : {}) };
+  makePlace(reuse.projectDir, planned);
+  return planned;
+}
+
 function configBudget(paths: HomePaths, config: OrcConfig, command: string): number | undefined {
   const budget: unknown = config.budgetTokens;
   if (budget === undefined || (Number.isSafeInteger(budget) && (budget as number) > 0)) return budget as number | undefined;

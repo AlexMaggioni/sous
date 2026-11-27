@@ -31,7 +31,8 @@ describe("agentDefinitionKey", () => {
       tools: ["read", "grep"],
       disallowedTools: ["bash"],
       model: "vendor/m",
-      isolation: "worktree",
+      // The place keeps its old key, "isolation", so the key of an old journal still matches.
+      place: "worktree",
       source: "user",
     };
     assert.equal(
@@ -144,7 +145,7 @@ return {}`;
     assert.equal(seen.length, 0, "a step with a tier never reaches the runner");
   });
 
-  it("agentType isolation: worktree runs the agent in an isolated cwd", async () => {
+  it("an agent whose file says isolation: worktree runs in a worktree of its own", async () => {
     const repo = mkdtempSync(join(tmpdir(), "sous-agent-isolation-"));
     const home = homePaths(mkdtempSync(join(tmpdir(), "sous-agent-isolation-home-")));
     const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
@@ -167,7 +168,7 @@ return {}`;
       assert.equal(seen.length, 1);
       assert.ok(seen[0].cwd, "isolated agent should receive a cwd");
       assert.notEqual(seen[0].cwd, repo, "agent cwd should not be the base repo");
-      assert.equal(seen[0].cwd, join(home.worktrees, "iso-test-0-a"), "isolated cwd is under the home's worktrees folder");
+      assert.equal(seen[0].cwd, join(home.worktrees, "iso-test-a-1"), "isolated cwd is under the home's worktrees folder");
       assert.equal(seen[0].cwdExists, true, "worktree cwd should exist while the agent runs");
       // The system text is the agent's prompt and the label, with no isolation line: the cwd above shows the worktree.
       assert.equal(seen[0].instructions, "Run isolated.\n\nTask label: a");

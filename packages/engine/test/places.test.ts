@@ -17,6 +17,7 @@ import { PERSON } from "../src/testing.js";
 
 // A step with `place: "worktree"` gets its worktree from the places module, named like every
 // other worktree sous makes: a folder under the home's worktrees folder, on branch sous/<name>.
+// session-place.test.ts covers how a worktree closes. This file covers a step's in a run.
 
 const gitRepo = () => initGitRepo(mkdtempSync(join(tmpdir(), "sous-places-repo-")));
 
@@ -24,71 +25,66 @@ function tempHome(): HomePaths {
   return ensureHome(homePaths(mkdtempSync(join(tmpdir(), "sous-places-home-"))));
 }
 
-const step = { runId: "run-9", index: 0, label: "Edit it" };
+const step = { runId: "run-9", label: "Edit it", occurrence: 1 };
 
 describe("a step's worktree", () => {
-  it("is made under the home's worktrees folder on branch sous/<name>, then removed with its branch", () => {
+  it("is made under the home's worktrees folder on branch sous/<name>, and an edit there leaves the project alone", () => {
     const home = tempHome();
     const repo = gitRepo();
     try {
-      const made = placesIn(home, "run-9").makeStepWorktree(repo, step);
+      const made = placesIn(home, "run-9").sessionPlace(repo, step);
       assert.ok("tree" in made, "a worktree was made");
       const { tree } = made;
-      assert.equal(tree.dir, join(home.worktrees, "run-9-0-edit-it"));
-      assert.equal(tree.branch, "sous/run-9-0-edit-it");
+      assert.equal(tree.dir, join(home.worktrees, "run-9-edit-it-1"));
+      assert.equal(tree.branch, "sous/run-9-edit-it-1");
       assert.ok(existsSync(join(tree.dir, "file.txt")), "the worktree has a checkout");
       assert.equal(git(tree.dir, "branch", "--show-current"), tree.branch);
 
-      // An edit in the worktree leaves the project alone.
       writeFileSync(join(tree.dir, "file.txt"), "changed in worktree\n");
       assert.equal(readFileSync(join(repo, "file.txt"), "utf8"), "base\n");
-
-      placesIn(home, "run-9").removeStepWorktree(repo, tree);
-      assert.equal(existsSync(tree.dir), false, "worktree folder removed");
-      assert.equal(git(repo, "branch", "--list", tree.branch), "", "branch deleted");
     } finally {
       rmSync(repo, { recursive: true, force: true });
       rmSync(home.home, { recursive: true, force: true });
     }
   });
 
-  it("is not made when its branch already exists, and the step gets git's reason", () => {
+  it("checks out its branch when the branch already exists", () => {
     const home = tempHome();
     const repo = gitRepo();
     try {
-      git(repo, "branch", "sous/run-9-0-edit-it");
-      const made = placesIn(home, "run-9").makeStepWorktree(repo, step);
-      assert.ok("reason" in made);
-      assert.match(made.reason, /already exists/i);
-      assert.equal(existsSync(join(home.worktrees, "run-9-0-edit-it")), false);
+      git(repo, "branch", "sous/run-9-edit-it-1");
+      const made = placesIn(home, "run-9").sessionPlace(repo, step);
+      assert.ok("tree" in made, JSON.stringify(made));
+      assert.equal(git(made.tree.dir, "branch", "--show-current"), "sous/run-9-edit-it-1");
     } finally {
       rmSync(repo, { recursive: true, force: true });
       rmSync(home.home, { recursive: true, force: true });
     }
   });
 
-  it("removing it does not throw when git fails on broken worktree metadata", () => {
+  it("closing it does not throw when git fails on broken worktree metadata", () => {
     const home = tempHome();
     const repo = gitRepo();
     try {
-      const made = placesIn(home, "run-9").makeStepWorktree(repo, step);
+      const made = placesIn(home, "run-9").sessionPlace(repo, step);
       assert.ok("tree" in made);
       rmSync(made.tree.dir, { recursive: true, force: true });
-      const meta = join(repo, ".git", "worktrees", "run-9-0-edit-it");
+      const meta = join(repo, ".git", "worktrees", "run-9-edit-it-1");
       assert.ok(existsSync(meta), "git keeps the worktree's metadata after its folder is removed");
       writeFileSync(join(meta, "gitdir"), "/nonexistent/path\n");
-      assert.doesNotThrow(() => placesIn(home, "run-9").removeStepWorktree(repo, made.tree));
+      assert.doesNotThrow(() => placesIn(home, "run-9").closePlace(repo, made.tree, "Edit it"));
     } finally {
       rmSync(repo, { recursive: true, force: true });
       rmSync(home.home, { recursive: true, force: true });
     }
   });
 
-  it("a step with place worktree works in one from places, and it is gone after the step", async () => {
+  it("a step with place worktree works in one from places, and it is gone after the step, as the log says", async () => {
     const home = tempHome();
     const repo = gitRepo();
     try {
       const seen: Array<{ cwd: string; branch: string }> = [];
+      const logs: string[] = [];
       const script = `export const meta = { name: 'iso', description: 'isolated step' }
 await agent('edit', { label: 'editor', place: 'worktree' })
 return {}`;
@@ -97,6 +93,7 @@ return {}`;
         runId: "iso-run",
         places: placesIn(home, "iso-run"),
         persistLogs: false,
+        onLog: (message) => logs.push(message),
         agent: {
           async run(_prompt, options) {
             const cwd = String(options?.cwd);
@@ -105,10 +102,11 @@ return {}`;
           },
         },
       });
-      const dir = join(home.worktrees, "iso-run-0-editor");
-      assert.deepEqual(seen, [{ cwd: dir, branch: "sous/iso-run-0-editor" }]);
+      const dir = join(home.worktrees, "iso-run-editor-1");
+      assert.deepEqual(seen, [{ cwd: dir, branch: "sous/iso-run-editor-1" }]);
       assert.equal(existsSync(dir), false, "the worktree is gone after the step");
-      assert.equal(git(repo, "branch", "--list", "sous/iso-run-0-editor"), "", "and its branch");
+      assert.equal(git(repo, "branch", "--list", "sous/iso-run-editor-1"), "", "and its branch, which never moved");
+      assert.ok(logs.includes(`removed    ${dir} and sous/iso-run-editor-1, which changed no file`), logs.join("\n"));
     } finally {
       rmSync(repo, { recursive: true, force: true });
       rmSync(home.home, { recursive: true, force: true });
@@ -137,7 +135,7 @@ return {}`, {
         },
       });
       assert.deepEqual(seen, [dir]);
-      assert.ok(logs.includes(`isolation ignored for "editor" (not a git repository)`), logs.join("\n"));
+      assert.ok(logs.includes(`place ignored for "editor" (not a git repository)`), logs.join("\n"));
     } finally {
       rmSync(dir, { recursive: true, force: true });
       rmSync(home.home, { recursive: true, force: true });
@@ -164,7 +162,7 @@ return {}`, {
         },
       });
       assert.deepEqual(seen, [repo]);
-      assert.ok(logs.includes(`isolation ignored for "editor" (no home for worktrees)`), logs.join("\n"));
+      assert.ok(logs.includes(`place ignored for "editor" (no home for worktrees)`), logs.join("\n"));
       assert.equal(git(repo, "branch", "--list", "sous/*"), "", "no branch was made");
     } finally {
       rmSync(repo, { recursive: true, force: true });
@@ -182,8 +180,8 @@ return await agent('edit', { label: 'editor', place: 'worktree' })`,
     const record = createRun(paths, { who: PERSON, workflow: "iso", projectDir, inputs: {}, place: "folder" });
     const worker = runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: () => {} });
     await until(() => calls.length === 1);
-    const tree = { dir: join(paths.worktrees, `${record.runId}-0-editor`), branch: `sous/${record.runId}-0-editor` };
-    assert.deepEqual(loadRecord(paths, record.runId)?.stepWorktrees, [tree]);
+    const tree = { dir: join(paths.worktrees, `${record.runId}-editor-1`), branch: `sous/${record.runId}-editor-1` };
+    assert.deepEqual(loadRecord(paths, record.runId)?.stepWorktrees, [{ ...tree, label: "editor" }], "with its label, for the commit at the run's end");
     assert.ok(existsSync(tree.dir));
     release("editor");
     assert.equal((await worker)?.status, "completed");
@@ -210,9 +208,9 @@ return await agent('edit', { label: 'editor', place: 'worktree' })`,
 
     const worker = runWorker(record.runId, "resume", { paths, inner: runner, pollMs: 20, log: () => {} });
     await until(() => calls.length === 1);
-    const name = `${record.runId}-${question.callIndex + 1}-editor`;
+    const name = `${record.runId}-editor-1`;
     const tree = { dir: join(paths.worktrees, name), branch: `sous/${name}` };
-    assert.deepEqual(loadRecord(paths, record.runId)?.stepWorktrees, [tree]);
+    assert.deepEqual(loadRecord(paths, record.runId)?.stepWorktrees, [{ ...tree, label: "editor" }]);
     assert.ok(existsSync(tree.dir));
     release("editor");
     assert.equal((await worker)?.status, "completed");
@@ -242,17 +240,17 @@ function fakeNotes(): { notes: Note[]; sink: PlaceNotes } {
 }
 
 describe("a run's places note each place before they make it", () => {
-  it("names a step's worktree before making it, and drops the name once its folder is gone", () => {
+  it("names a step's worktree before making it, and drops the name once its branch is gone", () => {
     const home = tempHome();
     const repo = gitRepo();
     try {
       const { notes, sink } = fakeNotes();
       const places = runPlaces(home, sink);
-      const made = places.makeStepWorktree(repo, step);
+      const made = places.sessionPlace(repo, step);
       assert.ok("tree" in made);
-      const dir = join(home.worktrees, "run-9-0-edit-it");
+      const dir = join(home.worktrees, "run-9-edit-it-1");
       assert.deepEqual(notes, [{ step: dir, exists: true, there: false }]);
-      places.removeStepWorktree(repo, made.tree);
+      places.closePlace(repo, made.tree, "Edit it");
       assert.deepEqual(notes, [
         { step: dir, exists: true, there: false },
         { step: dir, exists: false, there: false },
@@ -263,15 +261,16 @@ describe("a run's places note each place before they make it", () => {
     }
   });
 
-  it("drops the name when git refuses the worktree", () => {
+  it("drops the name when git refuses the worktree and makes no branch", () => {
     const home = tempHome();
-    const repo = gitRepo();
+    // A repository with no commit yet: there is no HEAD to start a branch from.
+    const repo = mkdtempSync(join(tmpdir(), "sous-places-unborn-"));
+    git(repo, "init", "-q");
     try {
-      git(repo, "branch", "sous/run-9-0-edit-it");
       const { notes, sink } = fakeNotes();
-      const made = runPlaces(home, sink).makeStepWorktree(repo, step);
+      const made = runPlaces(home, sink).sessionPlace(repo, step);
       assert.ok("reason" in made);
-      const dir = join(home.worktrees, "run-9-0-edit-it");
+      const dir = join(home.worktrees, "run-9-edit-it-1");
       assert.deepEqual(notes, [
         { step: dir, exists: true, there: false },
         { step: dir, exists: false, there: false },
@@ -282,16 +281,17 @@ describe("a run's places note each place before they make it", () => {
     }
   });
 
-  it("keeps the name when a crash left the folder behind, so gc still finds it", () => {
+  it("keeps the name and the folder a crash left behind, so a resume and gc still find it", () => {
     const home = tempHome();
     const repo = gitRepo();
     try {
-      const dir = join(home.worktrees, "run-9-0-edit-it");
+      const dir = join(home.worktrees, "run-9-edit-it-1");
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, "left.txt"), "left by a crash\n");
       const { notes, sink } = fakeNotes();
-      const made = runPlaces(home, sink).makeStepWorktree(repo, step);
-      assert.ok("reason" in made);
+      const made = runPlaces(home, sink).sessionPlace(repo, step);
+      assert.ok("tree" in made);
+      assert.equal(readFileSync(join(dir, "left.txt"), "utf8"), "left by a crash\n");
       assert.deepEqual(notes, [{ step: dir, exists: true, there: true }]);
     } finally {
       rmSync(repo, { recursive: true, force: true });
@@ -304,10 +304,11 @@ describe("a run's places note each place before they make it", () => {
     const repo = gitRepo();
     try {
       // A folder git does not know as a worktree: the removal fails and the folder stays.
-      const tree = { dir: join(home.worktrees, "run-9-0-edit-it"), branch: "sous/run-9-0-edit-it" };
+      const tree = { dir: join(home.worktrees, "run-9-edit-it-1"), branch: "sous/run-9-edit-it-1" };
       mkdirSync(tree.dir, { recursive: true });
       const { notes, sink } = fakeNotes();
-      runPlaces(home, sink).removeStepWorktree(repo, tree);
+      const closed = runPlaces(home, sink).closePlace(repo, tree, "Edit it");
+      assert.ok("reason" in closed);
       assert.ok(existsSync(tree.dir));
       assert.deepEqual(notes, []);
     } finally {
@@ -343,8 +344,8 @@ describe("a run's places note each place before they make it", () => {
   });
 });
 
-describe("gc and a step's worktree a crash left behind", () => {
-  it("keeps it while its run is unfinished, and removes it once the run ended and its branch is merged", async () => {
+describe("the end of a run, and gc", () => {
+  it("gc keeps a crashed step's worktree while its run is unfinished, the run's end closes it, and gc removes the merged branch", async () => {
     const { paths, projectDir } = setup({
       look: `export const meta = { name: 'look', description: 'reads only' }\nreturn await agent('look', { label: 'reader' })`,
     });
@@ -352,7 +353,7 @@ describe("gc and a step's worktree a crash left behind", () => {
     git(projectDir, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
     const record = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {}, place: "folder" });
     // A step that made its worktree and committed in it, then its worker died.
-    const made = placesIn(paths, record.runId).makeStepWorktree(projectDir, { runId: record.runId, index: 3, label: "fixer" });
+    const made = placesIn(paths, record.runId).sessionPlace(projectDir, { runId: record.runId, label: "fixer", occurrence: 1 });
     assert.ok("tree" in made);
     const { tree } = made;
     writeFileSync(join(tree.dir, "fix.txt"), "fixed\n");
@@ -368,27 +369,95 @@ describe("gc and a step's worktree a crash left behind", () => {
 
     const { runner } = heldRunner(() => "ok");
     assert.equal((await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: () => {} }))?.status, "completed");
-    assert.ok(existsSync(tree.dir), "the run's own cleanup keeps a worktree with work in it");
+    assert.equal(existsSync(tree.dir), false, "the run's end removes the folder");
+    assert.equal(git(projectDir, "log", "-1", "--format=%s", tree.branch), "fix", "and keeps the branch, with nothing left to commit");
 
-    const after = gc();
-    assert.deepEqual(after.removed.map((r) => [r.branch, r.reason]), [[tree.branch, "merged"]]);
-    assert.equal(existsSync(tree.dir), false);
+    // The run ended and the branch is merged, so gc removes it. It has no folder, so its dir is empty.
+    const dry = gcWorktrees(paths, [projectDir], { dryRun: true, busy: busyWorktrees(paths) });
+    assert.deepEqual(dry, { removed: [{ dir: "", branch: tree.branch, reason: "merged" }], kept: [] });
+    assert.notEqual(git(projectDir, "branch", "--list", tree.branch), "", "a dry run removes nothing");
+    assert.deepEqual(gc().removed, [{ dir: "", branch: tree.branch, reason: "merged" }]);
     assert.equal(git(projectDir, "branch", "--list", tree.branch), "");
   });
 
-  it("the run's own cleanup removes a leftover that changed no file", async () => {
+  it("gc keeps a branch with no folder that is not merged, or whose run is unfinished", async () => {
     const { paths, projectDir } = setup({
       look: `export const meta = { name: 'look', description: 'reads only' }\nreturn await agent('look', { label: 'reader' })`,
     });
     git(projectDir, "init", "-q", "-b", "main");
     git(projectDir, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
     const record = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {}, place: "folder" });
-    const made = placesIn(paths, record.runId).makeStepWorktree(projectDir, { runId: record.runId, index: 3, label: "fixer" });
+    const places = placesIn(paths, record.runId);
+    const made = places.sessionPlace(projectDir, { runId: record.runId, label: "fixer" });
+    assert.ok("tree" in made);
+    writeFileSync(join(made.tree.dir, "fix.txt"), "fixed\n");
+    assert.deepEqual(places.closePlace(projectDir, made.tree, "fixer"), { committed: true, branchKept: true });
+    const gc = () => gcWorktrees(paths, [projectDir], { busy: busyWorktrees(paths) });
+
+    assert.deepEqual(gc().kept, [{ dir: "", branch: made.tree.branch, reason: "its run has not finished" }]);
+    const { runner } = heldRunner(() => "ok");
+    await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: () => {} });
+    assert.deepEqual(gc().kept, [{ dir: "", branch: made.tree.branch, reason: "not merged" }]);
+    assert.notEqual(git(projectDir, "branch", "--list", made.tree.branch), "");
+  });
+
+  it("the run's end commits the work left in its worktrees, keeps their branches, and logs each", async () => {
+    const { paths, projectDir } = setup({
+      look: `export const meta = { name: 'look', description: 'reads only' }\nreturn await agent('look', { label: 'reader' })`,
+    });
+    git(projectDir, "init", "-q", "-b", "main");
+    git(projectDir, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
+    const record = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {}, place: "worktree" });
+    // A session whose workflow failed left its worktree, with work in it.
+    const made = placesIn(paths, record.runId).sessionPlace(record.cwd, { runId: record.runId, label: "fixer" });
+    assert.ok("tree" in made);
+    writeFileSync(join(made.tree.dir, "fix.txt"), "fixed\n");
+    const lines: string[] = [];
+    const { runner } = heldRunner(() => {
+      writeFileSync(join(record.cwd, "look.txt"), "looked\n");
+      return "ok";
+    });
+    assert.equal((await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: (line) => lines.push(line.slice(9)) }))?.status, "completed");
+
+    const run = { dir: record.worktree!, branch: record.branch! };
+    for (const [tree, label] of [[made.tree, "fixer"], [run, "look"]] as const) {
+      assert.equal(existsSync(tree.dir), false, `the folder of ${label} goes`);
+      assert.equal(git(projectDir, "log", "-1", "--format=%s", tree.branch), `sous: uncommitted work of ${label}`);
+    }
+    assert.equal(git(projectDir, "show", `${record.branch}:look.txt`), "looked");
+    // A session's worktree closes before the run's own.
+    assert.deepEqual(
+      lines.filter((line) => line.startsWith("closed")),
+      [made.tree, run].map((tree) => `closed     ${tree.dir}, with its uncommitted work committed. Its work is on ${tree.branch}`),
+    );
+  });
+
+  it("a failed run keeps its folders for its resume", async () => {
+    const { paths, projectDir } = setup({
+      broken: `export const meta = { name: 'broken', description: 'fails' }\nawait agent('look', { label: 'reader' })\nthrow new Error('broken on purpose')`,
+    });
+    git(projectDir, "init", "-q", "-b", "main");
+    git(projectDir, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
+    const record = createRun(paths, { who: PERSON, workflow: "broken", projectDir, inputs: {}, place: "worktree" });
+    const { runner } = heldRunner(() => "ok");
+    assert.equal((await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: () => {} }))?.status, "failed");
+    assert.ok(existsSync(record.worktree!));
+  });
+
+  it("the run's end removes a worktree that changed no file, with its branch", async () => {
+    const { paths, projectDir } = setup({
+      look: `export const meta = { name: 'look', description: 'reads only' }\nreturn await agent('look', { label: 'reader' })`,
+    });
+    git(projectDir, "init", "-q", "-b", "main");
+    git(projectDir, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
+    const record = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {}, place: "folder" });
+    const made = placesIn(paths, record.runId).sessionPlace(projectDir, { runId: record.runId, label: "fixer", occurrence: 1 });
     assert.ok("tree" in made);
     const lines: string[] = [];
     const { runner } = heldRunner(() => "ok");
     await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: (line) => lines.push(line.slice(9)) });
     assert.equal(existsSync(made.tree.dir), false);
-    assert.ok(lines.includes(`removed    ${made.tree.dir}, which changed no file`), lines.join("\n"));
+    assert.equal(git(projectDir, "branch", "--list", made.tree.branch), "");
+    assert.ok(lines.includes(`removed    ${made.tree.dir} and ${made.tree.branch}, which changed no file`), lines.join("\n"));
   });
 });

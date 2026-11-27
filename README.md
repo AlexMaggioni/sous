@@ -192,14 +192,15 @@ one run.
 | `sous inbox`, `sous answer <q> <text>` | the questions waiting for you, and answering one |
 | `sous approve <q>`, `sous send-back <q> <note>` | answer a breakpoint |
 | `sous pause <run>`, `sous resume <run>` | let the running steps finish and start no new ones, then go on later |
-| `sous stop <run>` | end the run. Its worktree stays for review. |
+| `sous stop <run>` | end the run. Its branch stays for review. |
 | `sous rerun <run> --reuse` | run again with the same inputs, keeping the steps you did not edit |
 | `sous wait <run>` | wait until the run ends, pauses or asks, with an exit code for each |
-| `sous gc`, `sous discard <run>`, `sous prune --days N` | clean up merged worktrees, one run, old runs |
+| `sous gc`, `sous discard <run>`, `sous prune --days N` | clean up merged branches, one run, old runs |
 
 A run works in one of three places, set in the workflow's meta or with `--place`:
 
-- `worktree`, the default: a new branch `sous/<run>` in `~/.sous/worktrees/<run>`.
+- `worktree`, the default: a new branch `sous/<run>` in `~/.sous/worktrees/<run>`. When the run
+  ends, sous commits what is left on the branch and removes the folder.
 - `folder`: the project folder itself.
 - `none`: an empty scratch folder, for work that touches no repository.
 
@@ -215,7 +216,7 @@ sous daemon start
 
 A workflow can also carry its schedule in its meta, as `schedule: "0 2 * * *"`. The service checks
 the schedules every 20 seconds. It also resumes the runs paused at the usage limit once the limit
-resets, and removes merged worktrees once an hour.
+resets, and removes merged branches once an hour.
 
 ## From a Claude Code session
 

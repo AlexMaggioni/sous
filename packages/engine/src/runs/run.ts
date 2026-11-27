@@ -5,7 +5,7 @@
 
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { interruptedReason, type PersistedRunState, type RunStatus } from "./persistence/run-persistence.js";
-import { gcWorktrees, removeWorktree, runWorktrees, type GcResult } from "../places/places.js";
+import { gcWorktrees, removeWorktree, runWorktrees, type GcResult, type RunBranch } from "../places/places.js";
 import { recordAction, type Who } from "./actions.js";
 import { recordAndTell, type Tell } from "./notify.js";
 import type { HomePaths, Place } from "./home.js";
@@ -258,9 +258,10 @@ function spanOf(run: RunDetail, now: Date): number {
   return end === undefined ? Number.NaN : Date.parse(end) - Date.parse(run.record.createdAt);
 }
 
-/** The branch and worktree a run works in, when it has them. */
+/** The branch a run works on, and its worktree while the folder is there. The folder goes when
+ *  the run ends, and the branch stays. */
 function placeOf(record: RunRecord): { branch?: string; worktree?: string } {
-  return { ...(record.branch ? { branch: record.branch } : {}), ...(record.worktree ? { worktree: record.worktree } : {}) };
+  return { ...(record.branch ? { branch: record.branch } : {}), ...(record.worktree && existsSync(record.worktree) ? { worktree: record.worktree } : {}) };
 }
 
 /** What a run that starts may ask and cost: the asks in its workflow's text, and its workflow's
@@ -321,7 +322,8 @@ export interface WaitSummary {
   cwd: string;
   branch?: string;
   result?: unknown;
-  /** Set once the run completed: where it worked and what it returned. */
+  /** Set once the run completed: its branch, its worktree while the folder is there, and what it
+   *  returned. */
   review?: { branch?: string; worktree?: string; result: unknown };
   failure?: Failure;
   /** When the service resumes a run paused at a usage limit. */
@@ -725,9 +727,10 @@ export function answerQuestion(paths: HomePaths, question: RunQuestion, typed: R
   return { answered: true, running: processAlive(findRecord(paths, question.runId)?.pid), ...(result.notJson ? { notJson: true as const } : {}) };
 }
 
-/** A stopped run's worktrees. With `remove`, deletes each branch and folder and calls `deleted`
- *  after each. A discard that removed something records it. */
-export function discardRun(paths: HomePaths, runId: string, who: Who, options: { remove?: boolean; deleted?: (tree: { dir: string; branch: string }) => void } = {}): Array<{ dir: string; branch: string }> {
+/** A stopped run's branches, each with its worktree's folder while it has one. With `remove`,
+ *  deletes each branch and folder and calls `deleted` after each. A discard that removed
+ *  something records it. */
+export function discardRun(paths: HomePaths, runId: string, who: Who, options: { remove?: boolean; deleted?: (tree: RunBranch) => void } = {}): RunBranch[] {
   const record = needRecord(paths, runId);
   if (processAlive(record.pid)) throw new Refusal("run_is_running", `${record.runId} is running. sous stop ${record.runId} first.`, "Stop the run, then discard it.", `sous stop ${record.runId} --json`);
   const trees = runWorktrees(record);
@@ -796,15 +799,20 @@ export function pruneRuns(paths: HomePaths, days: number, who: Who, now = new Da
   return removed;
 }
 
-/** The worktrees of the runs that have not finished, borrowed ones included. gc keeps these. */
+/** The folders and branches of the runs that have not finished, borrowed ones included. gc keeps
+ *  these. */
 export function busyWorktrees(paths: HomePaths, runs = listRuns(paths)): Set<string> {
-  const dirs = new Set<string>();
+  const busy = new Set<string>();
   for (const { record, unfinished } of runs) {
     if (!unfinished) continue;
-    if (record.worktree) dirs.add(record.worktree);
-    for (const tree of runWorktrees(record)) dirs.add(tree.dir);
+    if (record.worktree) busy.add(record.worktree);
+    if (record.branch) busy.add(record.branch);
+    for (const tree of runWorktrees(record)) {
+      busy.add(tree.branch);
+      if (tree.dir) busy.add(tree.dir);
+    }
   }
-  return dirs;
+  return busy;
 }
 
 /**

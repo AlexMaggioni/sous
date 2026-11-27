@@ -570,7 +570,7 @@ describe("places and reruns", () => {
     return made;
   };
 
-  it("a run that changed no file removes its worktree when it ends, and one that did keeps it", async () => {
+  it("a run's folder goes when it ends, its leftover work is committed, and a run that changed no file loses its branch", async () => {
     const { paths, projectDir } = gitProject({
       look: `export const meta = { name: 'look', description: 'reads only' }\nreturn await agent('look around', { label: 'reader' })`,
       write: `export const meta = { name: 'write', description: 'writes a file' }\nreturn await agent('write it', { label: 'writer' })`,
@@ -590,25 +590,29 @@ describe("places and reruns", () => {
     await workers.ended(writer.runId);
     assert.equal(existsSync(reader.worktree!), false, "nothing changed, so the worktree is gone");
     assert.equal(git(projectDir, "branch", "--list", reader.branch!), "", "and its branch");
-    assert.equal(existsSync(join(writer.worktree!, "new.txt")), true, "the writer's work stays for review");
+    assert.equal(existsSync(writer.worktree!), false, "the writer's folder goes when its run ends");
+    assert.equal(git(projectDir, "show", `${writer.branch}:new.txt`), "hello", "the writer's work stays on its branch for review");
+    assert.equal(git(projectDir, "log", "-1", "--format=%s", writer.branch!), "sous: uncommitted work of write");
+    const shown = await sous(paths, ["show", writer.runId]);
+    assert.match(shown.out, new RegExp(`branch ${writer.branch}`), shown.out);
+    assert.doesNotMatch(shown.out, new RegExp(writer.worktree!), "show names no folder that is gone");
 
     // Cleanup keeps the worktree of a run that has not finished, even with no commit yet, and
-    // removes a finished run's worktree once its branch is merged.
+    // removes a finished run's branch once it is merged.
     const waiting = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {} });
-    git(writer.worktree!, "add", "new.txt");
-    commit(writer.worktree!, "commit", "-q", "-m", "work");
     git(projectDir, "merge", "-q", writer.branch!);
     // sous gc prints the folders as git names them, so /var/... on macOS shows as /private/var/....
     const waitingLine = `kept ${realpathSync(waiting.worktree!)} (${waiting.branch}): its run has not finished\n`;
     const dry = await sous(paths, ["gc", "--dry-run"]);
-    assert.deepEqual(dry, { code: 0, out: `would remove ${realpathSync(writer.worktree!)} (${writer.branch}): merged\n${waitingLine}next: sous gc --json  (removes the merged worktrees)\n` });
-    assert.equal(existsSync(writer.worktree!), true, "a dry run removes nothing");
+    assert.deepEqual(dry, { code: 0, out: `would remove branch ${writer.branch}: merged\n${waitingLine}next: sous gc --json  (removes the merged branches and their worktrees)\n` });
+    assert.equal(git(projectDir, "branch", "--list", writer.branch!), writer.branch, "a dry run removes nothing");
     const result = gcRuns(paths, PERSON);
-    assert.deepEqual(result.removed.map((r) => r.reason), ["merged"]);
-    assert.equal(existsSync(writer.worktree!), false);
+    assert.deepEqual(result.removed.map((r) => [r.branch, r.reason]), [[writer.branch, "merged"]]);
+    assert.equal(git(projectDir, "branch", "--list", writer.branch!), "");
     assert.equal(existsSync(waiting.worktree!), true);
 
-    // A finished run whose branch has nothing new is merged too, and sous gc removes its worktree.
+    // A finished run whose folder a crash left, and whose branch has nothing new, is merged too,
+    // and sous gc removes its worktree.
     const idle = createRun(paths, { who: PERSON, workflow: "look", projectDir, inputs: {} });
     const now = new Date().toISOString();
     plantState(paths, { runId: idle.runId, status: "completed", startedAt: now, updatedAt: now, agents: [], logs: [], phases: [] });
@@ -851,9 +855,14 @@ return await parallel(['A', 'B'].map((id) => () => workflow('child', { id }, { l
     const done = await workers.ended(runId);
     assert.equal(done?.status, "completed");
     assert.deepEqual(calls.map((c) => c.prompt).sort(), ["build A", "build A", "build B", "look"]);
-    assert.ok(trees.every((tree) => existsSync(join(tree.dir, `build ${tree === trees[0] ? "A" : "B"}.txt`))), "each ticket worked in its own worktree");
+    assert.ok(trees.every((tree) => !existsSync(tree.dir)), "each nested folder went when its scope ended");
+    assert.deepEqual(
+      trees.map((tree, n) => git(projectDir, "ls-tree", "--name-only", tree.branch, `build ${n ? "B" : "A"}.txt`)),
+      ["build A.txt", "build B.txt"],
+      "each ticket worked on its own branch, which keeps its work",
+    );
 
-    // Once the run ended, gc removes each merged nested worktree.
+    // Once the run ended, gc removes each merged nested branch.
     commit(projectDir, "merge", "-q", "--no-edit", trees[0]!.branch);
     toOldShape();
     const ended = gcRuns(paths, PERSON);

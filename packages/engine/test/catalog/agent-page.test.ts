@@ -54,7 +54,7 @@ describe("agentPage", () => {
     assert.equal(page.from, "rulesync");
     assert.equal(page.scope, "project");
     assert.equal(page.harness, "claude");
-    assert.equal(page.isolation, "worktree");
+    assert.equal(page.place, "worktree");
     assert.equal(page.timeout, "10m");
     assert.deepEqual(page.settings, [
       { harness: "claude", model: "haiku", mode: "plan", tools: ["Read", "Grep"], skills: ["deploy"] },

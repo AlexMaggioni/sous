@@ -137,7 +137,7 @@ const toHistory = (entry: HistoryEntry): AgentHistoryEntry => ({
   timestamp: entry.at,
 });
 
-export function createSteps(options: StepsOptions): AgentRunner & { route(ask: StepAsk): StepRoute; release(sessionId: string): Promise<void>; dispose(): Promise<void> } {
+export function createSteps(options: StepsOptions): AgentRunner & { route(ask: StepAsk): StepRoute; placeOf(agentType: string): "worktree" | undefined; release(sessionId: string): Promise<void>; dispose(): Promise<void> } {
   const lookup = options.programs ?? (options.inner ? undefined : () => ({}));
   const programs = new Map<HarnessId, Promise<Adapter | { problem: string }>>();
   const noteFor = noteTaker(options.note);
@@ -256,6 +256,7 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
 
   return {
     route: (ask) => routeStep(options.agents, ask),
+    placeOf: (agentType) => options.agents?.agents.get(agentType)?.place,
     run,
     release: (sessionId) => release(sessionId),
     async dispose() {

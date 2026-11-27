@@ -33,7 +33,8 @@ export interface AgentPage {
   harness: Harness;
   /** One entry per harness it can run on, the default harness first. */
   settings: AgentSettings[];
-  isolation?: "worktree";
+  /** Where it works: "worktree" for a worktree of its own. */
+  place?: "worktree";
   timeout?: string;
   /** The workflow steps that name it. */
   usedBy: Array<{ workflow: string; step: string }>;

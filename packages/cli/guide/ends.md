@@ -8,15 +8,17 @@
 sous show <run> --json
 ```
 
-The wait reply gives `result`, what the workflow returned, and `review`, with the branch and the
-worktree it worked in. `sous show <run> --full --json` has the result under `state.result`.
+The wait reply gives `result`, what the workflow returned, and `review`, with the branch it
+worked on. `sous show <run> --full --json` has the result under `state.result`.
 
-Read the diff on the run's branch yourself, against the branch the project was on when the run
-started:
+When the run ended, sous committed what was left uncommitted on the branch, as
+`sous: uncommitted work of <workflow>`, and removed the worktree's folder. Read the diff on the
+run's branch yourself, from the project folder, against the branch the project was on when the
+run started:
 
 ```sh
-git -C <worktree> log --oneline
-git -C <worktree> diff <start-branch>...HEAD
+git log --oneline <start-branch>..<branch>
+git diff <start-branch>...<branch>
 ```
 
 `sous show <run> --json` lists each step with its status, time and tokens. `--full` adds the
@@ -29,7 +31,7 @@ Tell the person:
 - what the run claims, from `result`;
 - what you checked yourself, such as the diff or a test you ran;
 - what you did not check;
-- the branch and the worktree.
+- the branch.
 
 Never merge, push or discard unless the person asks.
 
@@ -42,5 +44,5 @@ sous gc --dry-run --json
 ```
 
 `discard` without `--yes` lists the branches and worktrees it would delete, and deletes nothing.
-With `--yes` it deletes them, merged or not. `gc` removes only worktrees whose branch is merged.
-A run that completed and changed no file has no worktree left.
+With `--yes` it deletes them, merged or not. `gc` removes only merged branches, and their
+worktrees. A run that completed and changed no file has no branch left.

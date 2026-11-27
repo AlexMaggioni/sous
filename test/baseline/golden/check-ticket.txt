@@ -16,7 +16,7 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> phase      implement
   <hh:mm:ss> phase      review
   <hh:mm:ss> phase      verify
-  <hh:mm:ss> removed    <tmp>/check-ticket/sous-home/worktrees/<run-1>, which changed no file
+  <hh:mm:ss> removed    <tmp>/check-ticket/sous-home/worktrees/<run-1> and sous/<run-1>, which changed no file
   <hh:mm:ss> run        ticket in <tmp>/check-ticket/sous-home/worktrees/<run-1>
   <hh:mm:ss> start      commit (exec)
   <hh:mm:ss> start      diff 1 (exec)

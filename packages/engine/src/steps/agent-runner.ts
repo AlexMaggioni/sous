@@ -15,7 +15,6 @@ export interface StepAsk {
   skills?: string[];
   mcp?: string[];
   timeout?: number | string;
-  isolation?: "worktree";
   /** The run's model for this step: its phase route, else meta.model, else the run's default. */
   runModel?: string;
 }
@@ -26,7 +25,8 @@ export interface StepRoute {
   requested?: string;
   /** The agent's part of the call hash, in the format agentDefinitionKey gives. Null without an agent. */
   agentKey: string | null;
-  isolation?: "worktree";
+  /** Where the agent's definition says it works. turns/session.ts reads it when a step names no place. */
+  place?: "worktree";
   /** The agent's instructions. */
   prompt?: string;
   /** What the runner that made this route runs. The engine passes it back and never reads it. */
@@ -75,6 +75,13 @@ export interface AgentRunner {
    * with no agent, and the agent's name as a hint in the instructions.
    */
   route?(ask: StepAsk): StepRoute;
+
+  /**
+   * The place the agent `agentType` names in its file, if any. A session or a step that names an
+   * agent and no place works there. turns/session.ts asks it before the step routes, since a
+   * session's worktree is made when session() is called. It never throws.
+   */
+  placeOf?(agentType: string): "worktree" | undefined;
 
   /**
    * Closes the program a step's turns kept open for the session (request.hold), and settles once

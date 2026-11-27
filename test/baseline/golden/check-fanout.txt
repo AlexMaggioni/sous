@@ -14,7 +14,7 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> log        Logs persisted to <tmp>/check-fanout/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
   <hh:mm:ss> phase      fan out
   <hh:mm:ss> phase      nest
-  <hh:mm:ss> removed    <tmp>/check-fanout/sous-home/worktrees/<run-1>, which changed no file
+  <hh:mm:ss> removed    <tmp>/check-fanout/sous-home/worktrees/<run-1> and sous/<run-1>, which changed no file
   <hh:mm:ss> run        fanout in <tmp>/check-fanout/sous-home/worktrees/<run-1>
   <hh:mm:ss> start      child run: child agent
   <hh:mm:ss> start      child run: child echo (exec)

@@ -173,8 +173,8 @@ return await agent('same-prompt', { label: 'fixed', place: 'worktree' })`;
       assert.notEqual(resolvedCwds[0], resolvedCwds[1]);
       assert.notEqual(resolvedCwds[0], repo);
       assert.notEqual(resolvedCwds[1], repo);
-      assert.match(resolvedCwds[0], /worktree-a-0-fixed$/);
-      assert.match(resolvedCwds[1], /worktree-b-0-fixed$/);
+      assert.match(resolvedCwds[0], /worktree-a-fixed-1$/);
+      assert.match(resolvedCwds[1], /worktree-b-fixed-1$/);
     } finally {
       rmSync(repo, { recursive: true, force: true });
       home.cleanup();

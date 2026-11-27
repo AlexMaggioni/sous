@@ -24,7 +24,7 @@ export function checkStep(step: Step, notes: string[] = []): void {
   if (step.fork && !step.resume) throw new StepFailure("A step with fork needs resume, the session to fork.", { kind: "failed", retry: false }, { notes });
 }
 
-export const noUsage =(): Usage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 });
+export const noUsage = (): Usage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 });
 
 /** A usage with its total set by the one rule. */
 export function usage(input: number, output: number, cacheRead: number, cacheWrite: number, costUsd?: number): Usage {

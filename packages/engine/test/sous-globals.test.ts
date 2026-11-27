@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -496,21 +496,26 @@ return await choose('What next?', { any: true, input: { id: 7 } })`;
 });
 
 describe("nested places", () => {
-  it("a nested workflow can ask for its own place", async () => {
-    const { runner, calls } = recordingRunner(() => "ok");
+  it("a nested workflow can ask for its own place, whose scope ends when it returns, as the log says", async () => {
+    const { runner, calls } = recordingRunner((_prompt, options) => {
+      writeFileSync(join(String(options.cwd), "work.txt"), "work\n");
+      return "ok";
+    });
     const child = `export const meta = { name: 'child', description: 'c' }
 await agent('work', { label: 'w' })
 return cwd`;
     const script = `export const meta = { name: 'parent', description: 'p' }
-return await workflow('child', {}, { place: 'worktree' })`;
+return await workflow('child', {}, { place: 'worktree', label: 'Child' })`;
     const repo = mkdtempSync(join(tmpdir(), "sous-nested-place-"));
     const home = homePaths(mkdtempSync(join(tmpdir(), "sous-nested-place-home-")));
+    const logs: string[] = [];
     try {
       execFileSync("git", ["init", "-q"], { cwd: repo });
       execFileSync("git", ["-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], { cwd: repo });
       const result = await runWorkflow<string>(script, {
         agent: runner,
         persistLogs: false,
+        onLog: (message) => logs.push(message),
         cwd: repo,
         runId: "parent-run",
         places: placesIn(home, "parent-run"),
@@ -520,7 +525,12 @@ return await workflow('child', {}, { place: 'worktree' })`;
       const dir = join(home.worktrees, "parent-run-nested1");
       assert.equal(result.result, dir);
       assert.equal(calls[0]!.options.cwd, dir);
-      assert.equal(execFileSync("git", ["branch", "--show-current"], { cwd: dir, encoding: "utf8" }).trim(), "sous/parent-run-nested1");
+      // The nested workflow returned, so sous committed its work and removed the folder.
+      const onBranch = (...args: string[]) => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+      assert.equal(existsSync(dir), false);
+      assert.equal(onBranch("log", "-1", "--format=%s", "sous/parent-run-nested1"), "sous: uncommitted work of Child");
+      assert.equal(onBranch("show", "sous/parent-run-nested1:work.txt"), "work");
+      assert.ok(logs.includes(`closed     ${dir}, with its uncommitted work committed. Its work is on sous/parent-run-nested1`), logs.join("\n"));
     } finally {
       rmSync(repo, { recursive: true, force: true });
       rmSync(home.home, { recursive: true, force: true });

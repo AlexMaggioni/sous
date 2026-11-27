@@ -12,7 +12,7 @@ import { decisionOf, type Decision } from "./runs/inbox.js";
 import { parseDurationSeconds } from "./duration.js";
 import { isSchemaObject } from "./steps/answer.js";
 import { cloneStrictJsonValue } from "./strict-json.js";
-import { createSessions } from "./turns/session.js";
+import { createSessions, type SessionPlaces } from "./turns/session.js";
 
 type AgentFn = (prompt: string, options: Record<string, unknown>) => Promise<unknown>;
 /** What a code step passes besides its spec. */
@@ -46,6 +46,8 @@ export interface SousGlobalDeps {
   onDryRunCheck?: CodeStepEnv["onDryRunCheck"];
   /** Closes the program a step in the session `key` kept open, when the step ends. */
   endSession?: (key: string) => Promise<void>;
+  /** Where sessions and steps with place "worktree" work. */
+  places?: SessionPlaces;
 }
 
 interface StepOptions {
@@ -125,6 +127,7 @@ export function createSousGlobals(deps: SousGlobalDeps) {
     ...(deps.endSession ? { end: deps.endSession } : {}),
     ...(deps.stepOverrides ? { stepOverrides: deps.stepOverrides } : {}),
     ...(deps.track ? { track: deps.track } : {}),
+    ...(deps.places ? { places: deps.places } : {}),
   });
 
   const exec = (spec: ExecSpec, options: StepOptions, defaultLabel: string, where: string): Promise<unknown> => {

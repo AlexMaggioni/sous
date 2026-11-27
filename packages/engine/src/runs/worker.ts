@@ -10,7 +10,7 @@ import { envFor, lookupAgents, lookupMcpServers, lookupSettings } from "../agent
 import { projectWorkflows } from "../workflows/dir.js";
 import type { CheckpointCallContext } from "../checkpoint-call.js";
 import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";
-import { dropUnchangedWorktrees, runPlaces, runWorktrees } from "../places/places.js";
+import { closedLine, closeRunWorktrees, runPlaces } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
 import { ask, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
@@ -469,9 +469,10 @@ async function runOnAccounts(
   const atLimit = pause?.reason === "usage_limit" && !stopping;
   const limitText = atLimit ? limitNotice(paths, loadRecord(paths, runId) ?? record, pause?.resetAt) : undefined;
   if (limitText) log(`${stamp()} limit      ${limitText}`);
+  // The run ended, so the scope of each worktree it still has ends. A paused or failed run keeps
+  // its folders for its resume.
   if (status === "completed" || status === "aborted") {
-    const trees = runWorktrees(loadRecord(paths, runId) ?? record);
-    for (const dir of dropUnchangedWorktrees(record.projectDir, trees)) log(`${stamp()} removed    ${dir}, which changed no file`);
+    for (const line of closeRunWorktrees(loadRecord(paths, runId) ?? record).map((close) => closedLine(close.tree, close))) log(`${stamp()} ${line}`);
   }
   // A scheduled run speaks up only when it needs the user or fails.
   const quiet = options.dryRun || (record.origin === "schedule" && (status === "completed" || status === "aborted"));

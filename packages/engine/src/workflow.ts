@@ -8,7 +8,7 @@ import {
   type CheckpointRun,
 } from "./checkpoint-call.js";
 import { existsSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
+import { isAbsolute, resolve as resolvePath } from "node:path";
 import vm from "node:vm";
 import type { TSchema } from "typebox";
 import type { AgentHistoryEntry } from "./steps/agent-history.js";
@@ -20,6 +20,7 @@ import type {
 } from "./steps/agent-run.js";
 import { checkUntil, untilFields, untilHash, type Until } from "./turns/until.js";
 import type { AgentRunner, StepAsk, StepRoute } from "./steps/agent-runner.js";
+import type { SessionPlaces } from "./turns/session.js";
 import type {
   AgentSessionRecord,
   AgentSessionRef,
@@ -76,7 +77,7 @@ import {
   strictSnapshot,
 } from "./strict-json.js";
 import { captureCallPath } from "./call-path.js";
-import { isPlace, NO_PLACES, type RunPlaces, type Worktree } from "./places/places.js";
+import { closedLine, isPlace, NO_PLACES, type RunPlaces, type Worktree } from "./places/places.js";
 import { fittedResult, metaLimits, nestedArgs } from "./workflows/meta.js";
 import { parseWorkflowScript } from "./workflows/script.js";
 import {
@@ -91,14 +92,6 @@ import { EXEC_MODEL, EXEC_RESULT_SCHEMA, runCodeStep, type CodeStepEnv, type Exe
 // returns the result MINUS the run-manager's terminal status trio; the manager stamps
 // status/reason/resetHint on top (the engine seam is never widened).
 export type { WorkflowMeta, WorkflowMetaPhase, JournalEntry } from "./workflow-result.js";
-
-/** A step's worktree, or why the step works without one. */
-interface StepWorktree {
-  isolated: boolean;
-  cwd: string;
-  tree?: Worktree;
-  reason?: string;
-}
 
 /** Bare engine return: the host-facing WorkflowRunResult MINUS the manager's terminal
  *  status trio (status/reason/resetHint). The WorkflowManager composes those on top. */
@@ -291,9 +284,9 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
    *  it when this does not. */
   maxNestingDepth?: number;
   /**
-   * The places of the run tree: where nested runs and steps with `isolation: "worktree"` get their
-   * worktrees, and where those are noted. Nested runs get the same object. Without it, a step works
-   * in the run's folder and a nested run can only ask for place "folder".
+   * The places of the run tree: where nested runs, sessions and steps with place "worktree" get
+   * their worktrees, and where those are noted. Nested runs get the same object. Without it, a
+   * step works in the run's folder and a nested run can only ask for place "folder".
    */
   places?: RunPlaces;
   /**
@@ -452,8 +445,8 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    * The session this step is a turn of. turns/session.ts sets it: a handle's send() gives the
    * handle's label as `key`, with start "fresh" on the first turn and "kept" after. A kept turn
    * goes on in the session the run's map holds for its key, and fails rather than start fresh
-   * when the program lost it. agent() with `place: "worktree"` gives a session with no key and
-   * that place: the one step works in a worktree of its own. A step with no session is fresh.
+   * when the program lost it. A step with place "worktree" gives its worktree's folder as
+   * `worktree`, and its cwd is read under that folder. A step with no session is fresh.
    */
   session?: StepSession;
   /** When the step ends: after one turn, or when the agent says it is done. turns/loop.ts sends
@@ -466,7 +459,10 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
 export interface StepSession {
   key?: string;
   start: "fresh" | "kept";
+  /** The place the step asked for. Its inputs record it, whether or not sous could make it. */
   place?: "worktree";
+  /** The folder of the worktree the step works in, which turns/session.ts made. */
+  worktree?: string;
 }
 
 /** What the run's map holds for a session key: the session, the hash of its last turn, and the
@@ -646,14 +642,6 @@ async function runLevel<T>(
   };
   shared.resumeActivity = resumeActivity;
   const limiter = shared.limiter;
-  // A step with place "worktree" works in a worktree of its own, which places makes and removes.
-  const openStepWorktree = (callIndex: number, label: string): StepWorktree => {
-    const made = places.makeStepWorktree(baseCwd, { runId, index: callIndex, label });
-    return "tree" in made ? { isolated: true, cwd: made.tree.dir, tree: made.tree } : { isolated: false, cwd: baseCwd, reason: made.reason };
-  };
-  const closeStepWorktree = (worktree: StepWorktree | undefined): void => {
-    if (worktree?.tree) places.removeStepWorktree(baseCwd, worktree.tree);
-  };
   let nestedWorkflows = false;
   // This run's own workflow() count, taken in call order.
   let nestedLocalSeq = 0;
@@ -943,8 +931,7 @@ async function runLevel<T>(
     const pendingLabel = requestedLabel || defaultAgentLabel(assignedPhase, shared.agentCount + 1);
 
     // The step as the engine knows it. The runner routes it, and the route gives the model the
-    // step asked for, its agent's part of the call hash, its isolation and its agent's prompt.
-    // A step's place "worktree" goes to the runner as its isolation.
+    // step asked for, its agent's part of the call hash and its agent's prompt.
     // Model order: the step's own model, its agent's, then the run's model for this step. The
     // run's model is the phase's route, else meta.model, else the run's default.
     const ask: StepAsk = {
@@ -955,7 +942,6 @@ async function runLevel<T>(
       skills: agentOptions.skills,
       mcp: agentOptions.mcp,
       timeout: agentOptions.timeout,
-      isolation: agentOptions.session?.place,
       runModel: resolveModelForPhase(assignedPhase, routingConfig) ?? options.defaultModel,
     };
     // A code step, and a runner with no route of its own, get the engine's route, which has no agent.
@@ -977,7 +963,10 @@ async function runLevel<T>(
     const sessionKey = agentOptions.session?.key;
     const kept = agentOptions.session?.start === "kept" && sessionKey !== undefined ? sessions.get(sessionKey) : undefined;
 
-    const resolvedIsolation = route.isolation;
+    // A step in a worktree works under the worktree's folder. Its inputs record the place it
+    // asked for, not the folder, which differs from run to run.
+    const placeDir = agentOptions.session?.worktree;
+    const resolvedIsolation = agentOptions.session?.place;
     const retryAttempts =
       agentOptions.retries !== undefined ? normalizeAgentRetries(agentOptions.retries) : runAgentRetries;
     const label = requestedLabel || defaultAgentLabel(assignedPhase, shared.agentCount + 1);
@@ -1039,9 +1028,6 @@ async function runLevel<T>(
     shared.agentCount++;
     shared.agentOccurrenceCount = agentOrdinal + 1;
 
-    let precreatedWorktree: StepWorktree | undefined;
-    let preparedRunCwd: string | undefined;
-    let worktreePrepared = false;
     let agentStartEmitted = false;
 
     const emitAgentStart = () => {
@@ -1105,15 +1091,8 @@ async function runLevel<T>(
         );
       }
     };
-    // Opens the step's worktree.
-    const openWorktree = (): StepWorktree => {
-      const opened = openStepWorktree(callIndex, label);
-      if (!opened.isolated) log(`isolation ignored for "${label}" (${opened.reason})`);
-      return opened;
-    };
-    // The cwd the runner gets: the worktree when it is isolated, else options.cwd under the base.
-    const stepCwd = (worktree: StepWorktree | undefined): string =>
-      worktree?.isolated ? worktree.cwd : resolvePath(baseCwd, agentOptions.cwd ?? ".");
+    // The cwd the runner gets: options.cwd under the step's worktree, else under the base.
+    const stepCwd = (): string => resolvePath(placeDir ?? baseCwd, agentOptions.cwd ?? ".");
 
     // Puts this turn in its key's entry of the session map: its session, its hash, and the
     // session's cost so far (sessionCost).
@@ -1127,8 +1106,7 @@ async function runLevel<T>(
     let continuationIndex: number | undefined = callIndex;
     const runLive = () => limiter(async () => {
       const maxAttempts = retryAttempts + 1;
-      let worktree = precreatedWorktree;
-      let runCwd = preparedRunCwd;
+      let runCwd: string | undefined;
       let attemptsRan = 0;
       let observedTokens = 0;
       const sealedUsage: AgentUsage[] = [];
@@ -1214,7 +1192,7 @@ async function runLevel<T>(
         ...(usage ? { usage } : {}),
         ...(slot?.modelResolved ? { modelResolved: slot.modelResolved } : {}),
         ...(slot?.sessionRef?.backendId ? { backendId: slot.sessionRef.backendId } : {}),
-        ...(worktree?.isolated ? { worktree: true } : {}),
+        ...(placeDir !== undefined ? { worktree: true } : {}),
         ...(runCwd !== undefined && origin === "runner" ? { resolvedCwd: runCwd } : {}),
         ...(slot?.provenance ? { provenance: slot.provenance } : {}),
       });
@@ -1269,8 +1247,7 @@ async function runLevel<T>(
         emitAgentStart();
 
         checkCwdOption();
-        if (resolvedIsolation === "worktree" && !worktreePrepared) worktree = openWorktree();
-        runCwd = stepCwd(worktree);
+        runCwd = stepCwd();
 
         let continuationSkipReason: ContinuationSkipReason | undefined;
         if (continuationCandidate) {
@@ -1566,8 +1543,6 @@ async function runLevel<T>(
           emitFailure(error, attemptsRan > 0 ? "runner" : "engine", "error", undefined, signal.aborted || pauseRequested());
         }
         throw error;
-      } finally {
-        closeStepWorktree(worktree);
       }
     });
 
@@ -1644,34 +1619,12 @@ async function runLevel<T>(
           ? pairing.failed.recordedIndex
           : undefined;
       }
-      let reason = pairing.reason;
-      // A run that reports decisions opens the step's worktree before it decides, so the
-      // decision can say when the worktree is not isolated.
-      if (resumePlan && resolvedIsolation === "worktree") {
-        emitAgentStart();
-        try {
-          checkCwdOption();
-        } catch (error) {
-          stepSlot.live(reason);
-          throw error;
-        }
-        worktreePrepared = true;
-        try {
-          precreatedWorktree = openWorktree();
-        } catch (error) {
-          stepSlot.live("worktree-degraded");
-          throw error;
-        }
-        if (!precreatedWorktree.isolated) reason = "worktree-degraded";
-        preparedRunCwd = stepCwd(precreatedWorktree);
-      }
-      stepSlot.live(reason);
+      stepSlot.live(pairing.reason);
       return runLive();
     };
 
     // A call that fails before it runs or replays settles as an engine error.
     const failUnpaired = (error: unknown): never => {
-      closeStepWorktree(precreatedWorktree);
       if (!stepSlot.settled) {
         const errorRecord = projectRecordedError(error);
         const workflowError = wrapError(error, { agentLabel: label });
@@ -1816,6 +1769,11 @@ async function runLevel<T>(
       runId: childRunId,
       persistLogs: false,
     }, { runtime: shared, depth: ownDepth + 1 });
+    // The nested workflow returned, so its worktree's scope ends.
+    if (place === "worktree") {
+      const closed = places.closeNested(childRunId, baseCwd, label ?? childName);
+      log("reason" in closed ? `the worktree of "${label ?? childName}" stays at ${childCwd} (${closed.reason})` : closedLine(closed.tree, closed));
+    }
     state.fallbacks.push(...(child.fallbacks ?? []));
     state.checkpointsTaken.push(...(child.checkpointsTaken ?? []));
     return fittedResult(child.meta, child.result, childName);
@@ -1872,6 +1830,8 @@ async function runLevel<T>(
       return out instanceof Promise && realmPromiseCtor ? realmPromiseCtor.resolve(out) : out;
     }) as F;
 
+  // The worktrees of this workflow's sessions and steps with place "worktree".
+  const stepPlaces = sessionPlaces({ places, baseCwd, runId, log, halting: () => signal.aborted || pauseRequested(), agentRunner });
   // Code steps, questions, breakpoints and choose(), built on agent() and checkpoint().
   const sous = createSousGlobals({
     agent: agent as (prompt: string, options: Record<string, unknown>) => Promise<unknown>,
@@ -1884,6 +1844,7 @@ async function runLevel<T>(
     stepOverrides: options.stepOverrides,
     resolveCwd: (cwd) => resolvePath(baseCwd, cwd ?? "."),
     track: tracked, onDryRunCheck: options.codeEnv?.onDryRunCheck, endSession: endSession(sessions, agentRunner),
+    places: stepPlaces,
   });
 
   const context = vm.createContext({
@@ -1930,6 +1891,8 @@ async function runLevel<T>(
     await tripwire.drain();
     if (shared.pendingCheckpoint) throw shared.pendingCheckpoint;
     if (shared.pendingPause) throw shared.pendingPause;
+    // The workflow returned, so its sessions' worktrees end.
+    stepPlaces.closeSessions();
   } catch (error) {
     scriptFailed = true;
     if (shared.pendingPause && !signal.aborted) {
@@ -2098,13 +2061,49 @@ function validateAgentOptions(
   }
 }
 
+/**
+ * The worktrees of one workflow's sessions and steps with place "worktree", in the run's places.
+ * Each starts from the workflow's folder. A step's worktree ends with its step. closeSessions()
+ * ends those of the sessions, when the workflow returns.
+ */
+function sessionPlaces(deps: {
+  places: RunPlaces;
+  baseCwd: string;
+  runId: string;
+  log: (message: string) => void;
+  halting: () => boolean;
+  agentRunner: AgentRunner;
+}): SessionPlaces & { closeSessions(): void } {
+  const opened: Array<{ tree: Worktree; label: string }> = [];
+  const close = (tree: Worktree, label: string): void => {
+    const closed = deps.places.closePlace(deps.baseCwd, tree, label);
+    deps.log("reason" in closed ? `the worktree of "${label}" stays at ${tree.dir} (${closed.reason})` : closedLine(tree, closed));
+  };
+  return {
+    open(label, occurrence) {
+      const made = deps.places.sessionPlace(deps.baseCwd, { runId: deps.runId, label, ...(occurrence === undefined ? {} : { occurrence }) });
+      if ("reason" in made) {
+        deps.log(`place ignored for "${label}" (${made.reason})`);
+        return undefined;
+      }
+      if (occurrence === undefined) opened.push({ tree: made.tree, label });
+      return made.tree;
+    },
+    close,
+    halting: deps.halting,
+    placeOf: (agentType) => (agentType ? deps.agentRunner.placeOf?.(agentType) : undefined),
+    closeSessions() {
+      for (const { tree, label } of opened.splice(0)) close(tree, label);
+    },
+  };
+}
+
 /** The route of a code step, or of a step whose runner has no route() of its own. It has no agent. */
 function unroutedStep(ask: StepAsk): StepRoute {
   const requested = ask.model ?? ask.runModel;
   return {
     ...(requested === undefined ? {} : { requested }),
     agentKey: null,
-    ...(ask.isolation === undefined ? {} : { isolation: ask.isolation }),
   };
 }
 
@@ -2176,12 +2175,14 @@ function checkSessionFields(options: AgentOptions): void {
   const session = options.session as unknown;
   if (session === undefined) return;
   if (session === null || typeof session !== "object" || Array.isArray(session)) refuse("session takes an object");
-  const { key, start, place, ...rest } = session as Record<string, unknown>;
-  if (Object.keys(rest).length > 0) refuse(`session takes key, start and place, not ${Object.keys(rest).join(", ")}`);
+  const { key, start, place, worktree, ...rest } = session as Record<string, unknown>;
+  if (Object.keys(rest).length > 0) refuse(`session takes key, start, place and worktree, not ${Object.keys(rest).join(", ")}`);
   if (start !== "fresh" && start !== "kept") refuse('session.start is "fresh" or "kept"');
   if (key !== undefined && (typeof key !== "string" || key.trim() === "")) refuse("session.key is a label");
   if (start === "kept" && key === undefined) refuse("a kept session needs a key");
   if (place !== undefined && place !== "worktree") refuse('session.place is "worktree"');
+  if (worktree !== undefined && (typeof worktree !== "string" || !isAbsolute(worktree))) refuse("session.worktree is a folder's full path");
+  if (worktree !== undefined && place === undefined) refuse("session.worktree needs place");
 }
 
 /**

@@ -122,7 +122,9 @@ export function cmdShow(args: Parsed, ctx: Ctx): Reply<object> {
   out(`${record.workflow}  ${record.runId}`);
   out(`status    ${run.word}${saved?.resetHint ? ` (${saved.resetHint})` : ""}`);
   if (saved?.reason && saved.status !== "completed" && saved.reason !== saved.pauseReason) out(`reason    ${saved.reason}`);
-  out(`place     ${record.place}  ${record.cwd}${record.branch ? `  (branch ${record.branch})` : ""}`);
+  // A worktree's folder goes when the run ends, and its branch stays.
+  const folder = record.worktree && !shortRun(run, ctx.now()).worktree ? "" : `  ${record.cwd}`;
+  out(`place     ${record.place}${folder}${record.branch ? `  (branch ${record.branch})` : ""}`);
   out(`started   ${record.createdAt}  by ${record.origin}${record.schedule ? ` (${record.schedule})` : ""}${record.rerunOf ? `, rerun of ${record.rerunOf}` : ""}${record.reuseFrom ? `, reusing its unchanged steps` : ""}${record.startedByRun ? `, from run ${record.startedByRun}` : ""}`);
   if (Object.keys(record.args).length) out(`inputs    ${JSON.stringify(record.args)}`);
   if (record.overrides) out(`changes   ${JSON.stringify(record.overrides)}`);

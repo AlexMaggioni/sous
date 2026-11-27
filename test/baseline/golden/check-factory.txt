@@ -32,6 +32,9 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> log        TK-1: review 1: approved
   <hh:mm:ss> log        TK-2: review 1: approved
   <hh:mm:ss> log        TK-3: review 1: approved
+  <hh:mm:ss> log        removed <tmp>/check-factory/sous-home/worktrees/<run-1>-nested1 and sous/<run-1>-nested1, which changed no file
+  <hh:mm:ss> log        removed <tmp>/check-factory/sous-home/worktrees/<run-1>-nested2 and sous/<run-1>-nested2, which changed no file
+  <hh:mm:ss> log        removed <tmp>/check-factory/sous-home/worktrees/<run-1>-nested3 and sous/<run-1>-nested3, which changed no file
   <hh:mm:ss> phase      TK-1: implement
   <hh:mm:ss> phase      TK-1: review
   <hh:mm:ss> phase      TK-1: verify
@@ -41,10 +44,7 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> phase      TK-3: implement
   <hh:mm:ss> phase      TK-3: review
   <hh:mm:ss> phase      TK-3: verify
-  <hh:mm:ss> removed    <tmp>/check-factory/sous-home/worktrees/<run-1>, which changed no file
-  <hh:mm:ss> removed    <tmp>/check-factory/sous-home/worktrees/<run-1>-nested1, which changed no file
-  <hh:mm:ss> removed    <tmp>/check-factory/sous-home/worktrees/<run-1>-nested2, which changed no file
-  <hh:mm:ss> removed    <tmp>/check-factory/sous-home/worktrees/<run-1>-nested3, which changed no file
+  <hh:mm:ss> removed    <tmp>/check-factory/sous-home/worktrees/<run-1> and sous/<run-1>, which changed no file
   <hh:mm:ss> run        factory in <tmp>/check-factory/sous-home/worktrees/<run-1>
   <hh:mm:ss> start      TK-1: commit (exec)
   <hh:mm:ss> start      TK-1: diff 1 (exec)

@@ -250,6 +250,7 @@ export type WorkflowResumeCallLiveReason =
   | "ambiguous-content"
   | "candidate-consumed"
   | "empty-output"
+  /** Old runs' reports only. A step now reuses its worktree's branch, so it no longer degrades. */
   | "worktree-degraded";
 
 export type WorkflowResumeCallFailedReason =
@@ -474,9 +475,9 @@ export interface WorkflowCallRecord {
   modelResolved?: string;
   /** The terminal attempt's runner-reported backendId, when reported. */
   backendId?: string;
-  /** True when the engine created a git worktree for this call. */
+  /** True when the call ran in the worktree of its session or step. */
   worktree?: boolean;
-  /** The resolved isolation request at call time; absent when none. */
+  /** The place the call asked for, under its old name, whether or not sous could make it. Absent when none. */
   isolation?: "worktree";
   /** The post-resolution execution directory handed to the runner. */
   resolvedCwd?: string;

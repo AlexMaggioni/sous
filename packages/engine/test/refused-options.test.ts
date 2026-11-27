@@ -65,9 +65,7 @@ for (const { call, message } of REFUSED_GLOBALS) {
   });
 }
 
-test("place on session() fails, as it is not built yet", async () => {
-  await refuses(
-    "const s = session({ label: 's', place: 'worktree' })\nreturn await s.send('p')",
-    'session(): place is not built yet. For one step in a worktree, write agent(prompt, { place: "worktree" }).',
-  );
+test("a place other than worktree on session() or agent() fails the script", async () => {
+  await refuses("const s = session({ label: 's', place: 'folder' })\nreturn await s.send('p')", 'session "s": place is "worktree"');
+  await refuses("return await agent('p', { place: 'folder' })", 'agent(): place is "worktree"');
 });
