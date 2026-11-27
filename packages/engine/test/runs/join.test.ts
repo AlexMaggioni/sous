@@ -11,7 +11,7 @@ import type { HomePaths } from "../../src/runs/home.js";
 import { listQuestions } from "../../src/runs/inbox.js";
 import { askedWords, joinQuestion, joinTarget, leaveSession, takeSession, type JoinTarget } from "../../src/runs/join.js";
 import { createRun } from "../../src/runs/launch.js";
-import { activityWriter, requestJoin, updateRecord } from "../../src/runs/records.js";
+import { activityWriter, requestJoin, takeJoins, updateRecord } from "../../src/runs/records.js";
 import { Refusal } from "../../src/runs/refusal.js";
 import { readHolder, releaseHold, takeHold } from "../../src/runs/session-hold.js";
 import { holdFile, readState } from "../../src/runs/store.js";
@@ -383,5 +383,16 @@ return 1`;
     await worker;
     assert.equal(readHolder(holdFile(paths, record.runId, "s-ended")), undefined, "no hold for a sous join that ended");
     releaseHold(holdFile(paths, record.runId, "s-waits"), JOINER);
+  });
+
+  it("drops the person's own join requests no worker took when they leave, and keeps the others", async () => {
+    const { paths, projectDir } = setup({ one: ONE_TURN });
+    const record = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {} });
+    const other = { sessionId: "s-other", pid: process.pid };
+    requestJoin(paths, record.runId, { sessionId: "s-impl", pid: JOINER });
+    requestJoin(paths, record.runId, other);
+    const target: JoinTarget = { runId: record.runId, step: "impl", label: "impl", scope: record.runId, call: 1, session: { sessionId: "s-impl" } as JoinTarget["session"], running: false, shown: { step: "impl", call: 1 } };
+    leaveSession(paths, target, PERSON, { pid: JOINER, answer: false });
+    assert.deepEqual(takeJoins(paths, record.runId), [other]);
   });
 });

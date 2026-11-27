@@ -9,7 +9,7 @@
 import { recordAction, type Who } from "./actions.js";
 import type { HomePaths } from "./home.js";
 import { listQuestions, writeAnswer, type Question } from "./inbox.js";
-import { loadRecord, processAlive, readActivity, requestJoin, scopePrefix } from "./records.js";
+import { loadRecord, processAlive, readActivity, requestJoin, scopePrefix, takeJoins } from "./records.js";
 import { Refusal } from "./refusal.js";
 import { runDetail } from "./run.js";
 import { readHolder, releaseHold, takeHold, type Holder } from "./session-hold.js";
@@ -197,7 +197,11 @@ export async function takeSession(paths: HomePaths, target: JoinTarget, who: Who
  * opened, the question stays open. Returns the question it answered.
  */
 export function leaveSession(paths: HomePaths, target: JoinTarget, who: Who, options: { pid?: number; answer?: false } = {}): Question | undefined {
-  releaseHold(holdFile(paths, target.runId, target.session.sessionId), options.pid ?? process.pid);
+  const me = options.pid ?? process.pid;
+  releaseHold(holdFile(paths, target.runId, target.session.sessionId), me);
+  // A request no worker took, as when the worker ended first, would hand a later worker's session
+  // to this process while it still runs, as sous wait does. The person left, so it goes.
+  for (const join of takeJoins(paths, target.runId)) if (join.pid !== me) requestJoin(paths, target.runId, join);
   const question = options.answer === false ? undefined : joinQuestion(paths, target);
   if (question) writeAnswer(paths, question, JOINED_ANSWER, who);
   recordAction(paths, { act: "leave", ...who, runId: target.runId, step: target.step, ...(question ? { question: question.id } : {}) });
