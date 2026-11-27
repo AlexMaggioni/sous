@@ -21,7 +21,9 @@
 // turn logs { goal: { turn, of } }. thread/goal/get answers the goal, and thread/goal/clear
 // clears it and sends thread/goal/cleared. An ask rule asks in the goal's first turn.
 // thread/goal/set with a status and no objective only
-// sets the status, as a client pauses a goal.
+// sets the status, as a client pauses a goal. A goal rule with lateInterrupt true answers its first
+// turn even after turn/interrupt, as when the interrupt reaches Codex once the turn has ended. A
+// goal that is no longer active after a turn plays no more turns.
 // thread/settings/update sets the model, effort and policies of the thread's later turns, which a
 // goal's turns use and log.
 // skills/list names the skills in .agents/skills/<name>/SKILL.md and .codex/skills under each
@@ -621,7 +623,7 @@ async function playGoal(thread, objective) {
       process.exit(decision.code);
     }
     thread.turn = undefined;
-    if (turn.interrupted) {
+    if (turn.interrupted && !decision.lateInterrupt) {
       setGoal(thread, "paused");
       notify("turn/completed", { threadId: thread.id, turn: turnView("interrupted") });
       return;
@@ -647,6 +649,7 @@ async function playGoal(thread, objective) {
     // The status leaves active just before the last turn ends, as the real one does.
     if (at === turns) setGoal(thread, "complete");
     notify("turn/completed", { threadId: thread.id, turn: turnView("completed", [done]) });
+    if (thread.goal?.status !== "active") return;
     if (at < turns) setGoal(thread, "active");
   }
 }

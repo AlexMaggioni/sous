@@ -221,6 +221,10 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
     events.steer?.(seam.send);
   };
   let finish!: (turn: Pick<Turn, "status" | "error">) => void;
+  // A goal the step stopped ends stopped, also when its last turn answered before the interrupt
+  // reached it, unless the goal was met.
+  const goalEnd = (turn: Pick<Turn, "status" | "error">): Pick<Turn, "status" | "error"> =>
+    goal && stopped && goalStatus !== "complete" && turn.status === "completed" ? { status: "interrupted", error: null } : turn;
   const turnDone = new Promise<Pick<Turn, "status" | "error">>((resolve) => (finish = resolve));
 
   const fail = (message: string, failure: Failure): never => {
@@ -249,7 +253,7 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
         if (!goal || p.threadId !== threadId) break;
         goalStatus = p.goal?.status ?? "cleared";
         // A goal that stops between its turns ends the step with the last turn's answer.
-        if (goalStatus !== "active" && !goalTurn) finish({ status: "completed", error: null });
+        if (goalStatus !== "active" && !goalTurn) finish(goalEnd({ status: "completed", error: null }));
         break;
       }
       case "thread/tokenUsage/updated": {
@@ -292,7 +296,7 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
         // An active goal goes on to its next turn. A turn that failed or stopped ends it.
         if (goal && goalStatus === "active" && p.turn.status === "completed") break;
         turnEnded = true;
-        finish(p.turn);
+        finish(goalEnd(p.turn));
         break;
       }
     }

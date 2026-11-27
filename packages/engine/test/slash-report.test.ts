@@ -14,11 +14,11 @@ for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"
 
 const REPORT = "Report on the task you were given.";
 const SCHEMA = Type.Object({ ok: Type.Boolean(), summary: Type.String() });
-/** The property names of the schema a turn got, or null when it got none. */
-const fields = (line: FakeLine | undefined) => {
-  const schema = askedSchema(line);
-  return schema ? Object.keys((schema as { properties: object }).properties).sort() : null;
-};
+const keys = (schema: unknown) => (schema ? Object.keys((schema as { properties: object }).properties).sort() : null);
+/** The property names of the schema the program got for a turn, or null when it got none. */
+const fields = (line: FakeLine | undefined) => keys(line?.schema ?? null);
+/** The same for a report turn, which on Claude Code may ask for it in its text. */
+const reportFields = (line: FakeLine | undefined) => keys(askedSchema(line));
 
 for (const [harness, model] of [
   ["claude", "claude/haiku"],
@@ -40,7 +40,7 @@ for (const [harness, model] of [
       const [work, report] = lines;
       assert.deepEqual([work?.prompt, fields(work), work?.resume], [said(harness, "/canary"), null, false]);
       // On Claude Code the report turn asks for its value as JSON in its text, in the same program.
-      assert.deepEqual([promptOf(report), fields(report), wentOn(work, report)], [REPORT, ["ok", "summary"], "held"]);
+      assert.deepEqual([promptOf(report), reportFields(report), wentOn(work, report)], [REPORT, ["ok", "summary"], "held"]);
       assert.equal(report?.sessionId, work?.sessionId);
       assert.deepEqual(value, { ok: true, summary: "fake-summary" });
     });
@@ -83,7 +83,7 @@ for (const [harness, model] of [
       const [, continued, report] = place.lines();
       assert.deepEqual([continued?.texts, fields(continued), continued?.sessionId], [["Use the main branch.", said(harness, "/canary")], null, first!.sessionId]);
       assert.ok(!place.lines().some((line) => line.prompt.startsWith(CONTINUE_PROMPT)), "no Continue the task. turn");
-      assert.deepEqual([promptOf(report), fields(report), report?.sessionId], [REPORT, ["ok", "summary"], first!.sessionId]);
+      assert.deepEqual([promptOf(report), reportFields(report), report?.sessionId], [REPORT, ["ok", "summary"], first!.sessionId]);
     });
   });
 

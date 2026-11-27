@@ -42,8 +42,8 @@ export interface JoinTarget {
 const JOINED_ANSWER = "joined";
 
 /**
- * The session of a step, by its name in the log or its label as sous step finds it, or by the
- * label of its session() handle. The step's last call with a session gives it, or the `call`th
+ * The session of a step, by the label of its session() handle after its nested run's name, by
+ * its name in the log or its label as sous step finds it, or by a handle's bare label. The step's last call with a session gives it, or the `call`th
  * call. Refusals: no_such_step for a name the run never had, and step_has_no_session for a code
  * step or a step whose program has not named its session yet.
  */
@@ -51,13 +51,15 @@ export function joinTarget(paths: HomePaths, runId: string, step: string, option
   const detail = runDetail(paths, runId);
   const id = detail.record.runId;
   const show = `sous show ${id} --json`;
-  const found = stepCalls(detail, step);
   const scopeOf = (agent: { scope?: unknown }) => (typeof agent.scope === "string" ? agent.scope : id);
   const prefixOf = (agent: { scope?: unknown }) => scopePrefix(id, scopeOf(agent), detail.record.nested);
   // A handle's turns may each have a label of their own. Its label still names its session, after
   // its nested run's name as sous log writes it. A bare label finds the root run's handle first.
   const handles = (named: (agent: (typeof detail.steps)[number]) => boolean) => detail.steps.filter((row) => row.session?.handle !== undefined && named(row));
   const byName = handles((row) => `${prefixOf(row)}${row.session!.handle}` === step);
+  // A handle's own name, such as a join question gives, comes before a step of that label, which
+  // sous step may find in a nested run.
+  const found = byName.length ? undefined : stepCalls(detail, step);
   const bare = handles((row) => row.session!.handle === step);
   const bareScope = bare.some((row) => scopeOf(row) === id) ? id : bare.map(scopeOf)[0];
   const rows = byName.length ? byName : bare.filter((row) => scopeOf(row) === bareScope);

@@ -315,6 +315,37 @@ return await impl.send('Build ' + args.id + '.', { label: 'build', until: 'turn'
     assert.equal(readState(paths, runId)?.status, "completed");
   });
 
+  it("steps into the root run's handle that asked, where a nested run has a step of the handle's label", async () => {
+    const { paths, projectDir } = setup({
+      outer: `export const meta = { name: 'outer', description: 'A ticket, then a handle' }
+await workflow('ticket', {}, { label: 'A' })
+const impl = session({ label: 'impl' })
+return await impl.send('Root.', { label: 'build', until: 'turn' })`,
+      ticket: `export const meta = { name: 'ticket', description: 'One step' }
+return await agent('Nested.', { label: 'impl', until: 'turn' })`,
+    });
+    const inner: InnerRunner = {
+      async run(prompt, request) {
+        if (prompt === CONTINUE_PROMPT) return "built";
+        request.onSessionOpen?.({ ...REF, sessionId: prompt === "Root." ? "s-root" : "s-nested" });
+        return prompt === "Root." ? { status: "question", result: null, message: "Which API?" } : "built";
+      },
+    };
+    const { runId, worker } = start(paths, projectDir, "outer", inner);
+    await waitUntil(() => listQuestions(paths, runId).length > 0, "the step never asked");
+    const [question] = listQuestions(paths, runId);
+    // A root run's question has no join name, so sous join names its step.
+    assert.deepEqual([question?.step, question?.join], ["impl", undefined]);
+    const target = await targetOf(paths, runId, question!.step!);
+    assert.deepEqual([target.session.sessionId, target.scope], ["s-root", runId]);
+    assert.equal(joinQuestion(paths, target)?.id, question!.id);
+
+    await takeSession(paths, target, PERSON, { pid: JOINER, pollMs: 10 });
+    assert.equal(leaveSession(paths, target, PERSON, { pid: JOINER })?.id, question!.id);
+    await worker;
+    assert.equal(readState(paths, runId)?.status, "completed");
+  });
+
   it("finds a handle's session by the handle's label, and refuses a step with no session", async () => {
     const script = `export const meta = { name: 'h', description: 'A handle, a code step, and a step that opens no session' }
 const plan = session({ label: 'planner' })

@@ -319,7 +319,7 @@ export function decide(program, prompt, schema, context = {}) {
     break;
   }
   const rule = picked?.rule ?? {};
-  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, tool: rule.tool, notSteerable: rule.notSteerable, noSteer: rule.noSteer === true, mark: rule.mark, stop: rule.stop, errorInfo: rule.errorInfo, goal: rule.goal, ask: rule.ask, files: rule.files, run: rule.run };
+  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, tool: rule.tool, notSteerable: rule.notSteerable, noSteer: rule.noSteer === true, mark: rule.mark, stop: rule.stop, errorInfo: rule.errorInfo, goal: rule.goal, lateInterrupt: rule.lateInterrupt === true, ask: rule.ask, files: rule.files, run: rule.run };
   if (rule.exit !== undefined) return { ...out, kind: "exit", code: rule.exit };
   if (rule.limit) return { ...out, kind: "limit", resetsAt: rule.limit.resetsAt, first: rule.limit.first === true, silent: rule.limit.silent === true };
   if (rule.auth) return { ...out, kind: "auth" };

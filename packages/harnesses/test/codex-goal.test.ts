@@ -133,6 +133,16 @@ describe("/goal on codex", () => {
     assert.equal(c.log().filter((line) => line.goal).length, 1, "no turn ran after the stop");
   });
 
+  test("a stop whose interrupt comes once the goal's turn has answered still stops the step", async () => {
+    const c = newCase([{ match: "^/goal ", goal: TURNS, hold: "never", lateInterrupt: true, answer: MET }]);
+    const stopper = new AbortController();
+    const run = c.harness.run(c.step({ prompt: `/goal ${OBJECTIVE}`, signal: stopper.signal }));
+    await logged(c, (line) => line.goal?.turn === 1);
+    stopper.abort();
+    assert.equal((await failureOf(run)).failure.kind, "stopped");
+    assert.equal(c.log().filter((line) => line.goal).length, 1, "no turn ran after the stop");
+  });
+
   test("a stop closes the turn's seam at once, so a message after it reaches no turn", async () => {
     const c = newCase([{ match: "^/goal ", goal: TURNS, hold: "never", answer: MET }]);
     const stopper = new AbortController();
