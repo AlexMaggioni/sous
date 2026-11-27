@@ -1,6 +1,6 @@
 // The parts a graph is drawn from. model.ts makes them from a workflow's text, overlay.ts lays a
 // run's steps over them, and layout.ts places them. Plain data: nothing here draws.
-import type { Status, StepKind } from "../api/contract.ts";
+import type { RoomTag, Status, StepKind } from "../api/contract.ts";
 
 /** The icon of a node in a saved graph. A run's node shows its status instead. */
 export type KindIcon = StepKind | "pipeline";
@@ -92,11 +92,11 @@ export interface Ret {
   flow?: string;
 }
 
-/** A loop with its back arrow, a nested workflow, or a pipeline. Folded, it is one node. */
+/** A loop with its back arrow, a nested workflow, a pipeline, or a room with a lane per member. Folded, it is one node. */
 export interface Box {
   t: "box";
   key: string;
-  kind: "loop" | "workflow" | "pipeline";
+  kind: "loop" | "workflow" | "pipeline" | "room";
   title: string;
   /** Muted after the title, such as "round 2 of 3". */
   sub?: string;
@@ -122,9 +122,14 @@ export interface Box {
   step?: string;
   node?: string;
   flow?: string;
+  /** In a run, the room() call a room box shows, for its transcript. */
+  room?: RoomTag & { scope: string };
 }
 
 export type Part = Mark | Leaf | Seq | Par | Iff | Ret | Box;
+
+/** The kind icon of a box other than a loop. */
+export const boxIcon = (box: Box): KindIcon => (box.kind === "pipeline" || box.kind === "room" ? box.kind : "workflow");
 
 /** Every box that folds, depth first, with how many boxes it sits in. */
 export function foldingBoxes(part: Part, depth = 0, out: Array<{ box: Box; depth: number }> = []): Array<{ box: Box; depth: number }> {

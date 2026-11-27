@@ -4,7 +4,7 @@
 import { type ReactNode } from "react";
 import type { Flow, FlowNode, RunPage } from "../api/contract.ts";
 import { FlowGraph } from "../graph/flow-graph.tsx";
-import { findPart, type Leaf, type Part } from "../graph/tree.ts";
+import { findPart, type Box, type Leaf, type Part } from "../graph/tree.ts";
 import { nodeOf, type Plan } from "./plan.ts";
 import { useStepAbout, type About } from "./step-about.tsx";
 import { PanelColumns, PlanArea, StepPanel } from "./step-panel.tsx";
@@ -31,11 +31,13 @@ export type PlanViewProps = {
   onLine?: (line: number, flow: string | undefined) => void;
   /** The run's side of a step's panel, laid out around what the step is. */
   call?: (leaf: Leaf, about: About, node: FlowNode | undefined) => ReactNode;
+  /** The run's side of a room's panel: what its members said. */
+  room?: (box: Box, about: About) => ReactNode;
   /** What shows in place of the Steps view when there is no plan. */
   empty: ReactNode;
 };
 
-type BodyProps = Pick<PlanViewProps, "flow" | "flows" | "run" | "project" | "onLine" | "file" | "call"> & {
+type BodyProps = Pick<PlanViewProps, "flow" | "flows" | "run" | "project" | "onLine" | "file" | "call" | "room"> & {
   part: Part;
   node: FlowNode | undefined;
   plan: Plan;
@@ -43,24 +45,30 @@ type BodyProps = Pick<PlanViewProps, "flow" | "flows" | "run" | "project" | "onL
 };
 
 /** The panel's body: the run's side around what the step is, or only what the step is. */
-function PanelBody({ part, node, plan, flow, flows, run, project, onSelect, onLine, file, call }: BodyProps) {
+function PanelBody({ part, node, plan, flow, flows, run, project, onSelect, onLine, file, call, room }: BodyProps) {
   const about = useStepAbout({ part, node, flow, flows, graph: plan.graph, project, onSelect, onLine, file });
   // A name made at run time can't be matched to a step of the run until the step starts.
   const unmatched = run && part.t === "leaf" && node?.t === "step" && node.dynamic && !part.step;
   return (
     <>
       {unmatched && <p className="mb-4 max-w-[70ch] text-pretty text-muted">Its name is made at run time, so sous can tell which step of the run it is only once one starts.</p>}
-      {run && call && part.t === "leaf" ? call(part, about, node) : <PanelColumns is={about.main} side={about.side} />}
+      {run && call && part.t === "leaf" ? (
+        call(part, about, node)
+      ) : run && room && part.t === "box" && part.kind === "room" ? (
+        room(part, about)
+      ) : (
+        <PanelColumns is={about.main} side={about.side} />
+      )}
     </>
   );
 }
 
-export function PlanView({ view, plan, flow, flows, run, now, selected, onSelect, label, project, file, onLine, call, empty }: PlanViewProps) {
+export function PlanView({ view, plan, flow, flows, run, now, selected, onSelect, label, project, file, onLine, call, room, empty }: PlanViewProps) {
   const part = selected && plan ? findPart(plan.graph, selected) : undefined;
   const node = part ? nodeOf(part, flow, flows) : undefined;
   const panel = part && plan && (
     <StepPanel part={part} node={node} onClose={() => onSelect(undefined)}>
-      <PanelBody key={part.key} part={part} node={node} plan={plan} flow={flow} flows={flows} run={run} project={project} onSelect={onSelect} onLine={onLine} file={file} call={call} />
+      <PanelBody key={part.key} part={part} node={node} plan={plan} flow={flow} flows={flows} run={run} project={project} onSelect={onSelect} onLine={onLine} file={file} call={call} room={room} />
     </StepPanel>
   );
   return (

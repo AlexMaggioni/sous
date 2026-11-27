@@ -1,13 +1,13 @@
 // A run's graph: its steps laid over the graph of the text it started with. Each node of the text
 // takes the run's step of the same label, else of the same kind and run-time name, such as
 // "sh: pnpm test" for a sh() with no label, else the next step of its kind in order. A loop shows
-// its latest round, a pipeline its items, a nested run its own box. When a step finds no node, the
-// graph shows the steps as they ran instead, so it is never wrong.
-import type { Flow, FlowLoop, FlowNode, FlowPipeline, FlowStep, NestedRun, Question, Status, Step } from "../api/contract.ts";
-import { formatDuration } from "../format.ts";
+// its latest round, a pipeline its items, a nested run its own box, a room a lane per member. When
+// a step finds no node, the graph shows the steps as they ran instead, so it is never wrong.
+import type { Flow, FlowLoop, FlowNode, FlowPipeline, FlowStep, NestedRun, Question, Room, Status, Step } from "../api/contract.ts";
+import { formatDuration, plural } from "../format.ts";
 import { isEnded } from "../status.ts";
-import { itemLabel, kindFits, madePart, namesScope, namesStep, runScopes, type Entry, type RunScope, type StepEntry } from "./match.ts";
-import { seqOf, withMarks, type RunHooks, type Walk } from "./model.ts";
+import { itemLabel, kindFits, madePart, namesRoom, namesScope, namesStep, runScopes, type Entry, type RoomEntry, type RunScope, type StepEntry } from "./match.ts";
+import { roomBody, roomMembers, seqOf, withMarks, type RunHooks, type Walk } from "./model.ts";
 import type { Box, Leaf, Part, Seq } from "./tree.ts";
 import { kidsOf } from "./tree.ts";
 
@@ -17,6 +17,8 @@ export interface RunInput {
   flows?: Record<string, Flow>;
   nested?: NestedRun[];
   questions?: Question[];
+  /** The run's rooms, for their members and how far they got. */
+  rooms?: Room[];
   /**
    * The questions the person answered on the page with an answer that lets the run go on. Their
    * gate reads done at once, as the answer lands, without waiting for the next step to start.
@@ -41,8 +43,11 @@ interface Ctx {
   answered: Question[];
   now: number;
   ended: boolean;
+  rooms: Room[];
   /** The steps behind each leaf, for the time a box took. */
   times: Map<Leaf, Step[]>;
+  /** The rooms still talking: between two rounds, every turn has ended but the room has not. */
+  talking: Set<Box>;
 }
 
 interface Slot {
@@ -75,7 +80,13 @@ function stepNodes(nodes: FlowNode[], out: Array<{ node: FlowStep; pos: number }
 }
 
 const nodeFor = (nodes: Array<{ node: FlowStep; pos: number }>, e: Entry) =>
-  nodes.find(({ node }) => (e.t === "step" ? namesStep(node, e.step.label) : node.kind === "workflow" && namesScope(node, e.scope)));
+  nodes.find(({ node }) => {
+    if (e.t === "room") return namesRoom(node, e.room.name);
+    return e.t === "step" ? node.kind !== "room" && namesStep(node, e.step.label) : node.kind === "workflow" && namesScope(node, e.scope);
+  });
+
+/** The name an entry ran under, for the part of it a template made. */
+const ranAs = (e: Entry) => (e.t === "step" ? e.step.label : e.t === "room" ? e.room.name : (e.scope.label ?? ""));
 
 /** The steps of one run, root or nested, laid over its graph. */
 class ScopeRun implements RunHooks {
@@ -83,7 +94,7 @@ class ScopeRun implements RunHooks {
   slots: Slot[] = [];
   allowed: Set<Entry> | null = null;
   item: string | undefined;
-  /** For each nested run claimed, how many slots came before it, so a question before it reads as passed. */
+  /** For each nested run or room claimed, how many slots came before it, so a question before it reads as passed. */
   scopesAt: number[] = [];
   /** The steps each node took in the rounds before the one the graph shows. */
   earlier = new Map<FlowStep, StepEntry[]>();
@@ -116,6 +127,19 @@ class ScopeRun implements RunHooks {
         this.scopesAt.push(this.slots.length);
         return nestedBox(hit.scope, node, leaf, w, this.ctx);
       }
+    }
+    if (node.kind === "room") {
+      const free = this.free().filter((e): e is RoomEntry => e.t === "room");
+      const hit = free.find((e) => namesRoom(node, e.room.name)) ?? free[0];
+      if (hit) {
+        this.used.add(hit);
+        this.scopesAt.push(this.slots.length);
+        return roomBox(hit, this.scope.id, node, leaf, this.ctx);
+      }
+      // A room that has not talked yet shows its members waiting, or one node when the text makes them at run time.
+      if (node.members?.length) return roomBox(null, this.scope.id, node, leaf, this.ctx);
+      this.slots.push({ node, leaf, allowed: this.allowed });
+      return leaf;
     }
     const slot: Slot = { node, leaf, allowed: this.allowed, ...(this.item ? { item: this.item } : {}) };
     const hit = this.free().find((e): e is StepEntry => e.t === "step" && namesStep(node, e.step.label));
@@ -166,7 +190,7 @@ class ScopeRun implements RunHooks {
       if (!hit) continue;
       const k = counts.get(hit.node) ?? 0;
       counts.set(hit.node, k + 1);
-      const made = madePart(hit.node, e.t === "step" ? e.step.label : (e.scope.label ?? ""));
+      const made = madePart(hit.node, ranAs(e));
       const id = made ?? `#${k}`;
       if (!items.has(id)) items.set(id, new Set());
       items.get(id)?.add(e);
@@ -315,10 +339,72 @@ function nestedBox(scope: RunScope, node: FlowStep | null, leaf: Leaf | null, w:
   };
 }
 
-/** A run's own steps in the order they ran, each nested run in its box. */
+/** How a room ended, after its name. */
+const ENDED: Record<NonNullable<Room["ended"]>, string> = { decided: "decided", agreed: "agreed", quiet: "went quiet", limit: "at its round limit" };
+
+/**
+ * A room: a box with one lane per member, in the order the room names them, each lane its member's
+ * latest turn with the earlier ones as its calls. The run's record of the room names the members
+ * and says how far it got. Without one, the text's members and the turns' labels stand in. Without
+ * an entry, the room has not talked yet, and its members wait under the names the text gives them.
+ */
+function roomBox(entry: RoomEntry | null, scope: string, node: FlowStep | null, leaf: Leaf | null, ctx: Ctx, path = ""): Box {
+  const turnsOf = entry?.turns ?? [];
+  const name = entry?.room.name ?? leaf?.label ?? "room";
+  const key = leaf ? leaf.key : `${path}/${turnsOf[0]?.step.key ?? name}`;
+  const flow = leaf?.flow ? { flow: leaf.flow } : {};
+  const record = entry ? ctx.rooms.find((r) => r.scope === scope && r.name === entry.room.name && r.call === entry.room.call) : undefined;
+  const text = node ? roomMembers(node) : [];
+  const members = entry ? [...new Set([...(record?.members ?? text.filter((m) => m !== "…")), ...turnsOf.map((t) => t.step.label)])] : text;
+  const open = ctx.questions.filter((q) => q.scope === scope);
+  const miss: Status = ctx.ended ? "skipped" : "queued";
+  const lanes = members.map((label, i): Leaf => {
+    const turns = turnsOf.filter((t) => t.step.label === label).map((t) => t.step);
+    const last = turns[turns.length - 1];
+    const q = last && open.find((q) => q.step === last.name || q.step === last.key);
+    const status: Status = q ? "needs" : (last?.status ?? miss);
+    const ms = durationOf(turns, ctx.now);
+    const lane: Leaf = {
+      t: "leaf",
+      key: `${key}/@${i}`,
+      label,
+      kind: "agent",
+      status,
+      ...(last ? { step: last.key } : {}),
+      ...(turns.length > 1 ? { calls: turns.map((t) => t.key) } : {}),
+      ...(ms !== null && ran(status) ? { duration: formatDuration(ms) } : {}),
+      ...(status === "needs" ? { needs: true } : {}),
+      ...(q ? { ask: q.id } : {}),
+      ...flow,
+    };
+    ctx.times.set(lane, turns);
+    return lane;
+  });
+  const sub = record?.ended ? `${ENDED[record.ended]}, ${plural(record.rounds, "round")}` : record?.rounds ? `round ${record.rounds}` : undefined;
+  const goal = record?.goal ?? node?.prompt;
+  const box: Box = {
+    t: "box",
+    key,
+    kind: "room",
+    title: name,
+    ...(sub ? { sub, foldSub: sub } : {}),
+    tip: goal ? `Room ${name}: ${firstLine(goal)}` : `Room ${name}`,
+    body: roomBody(key, lanes),
+    foldable: true,
+    auto: true,
+    ...(entry ? { room: { scope, ...entry.room } } : {}),
+    ...(node ? { node: node.id } : {}),
+    ...flow,
+  };
+  if (entry && !record?.ended && !ctx.ended) ctx.talking.add(box);
+  return box;
+}
+
+/** A run's own steps in the order they ran, each nested run and each room in its box. */
 function asRan(scope: RunScope, ctx: Ctx, w: Omit<Walk, "hooks">): Seq {
   const items: Part[] = scope.entries.map((e) => {
     if (e.t === "scope") return nestedBox(e.scope, null, null, w, ctx);
+    if (e.t === "room") return roomBox(e, scope.id, null, null, ctx, w.path);
     const status = e.step.status;
     const ms = durationOf([e.step], ctx.now);
     const tries = e.step.tries ?? 1;
@@ -356,6 +442,7 @@ function fillBoxes(part: Part, ctx: Ctx): Leaf[] {
   if (part.t !== "box" || part.kind === "loop") return leaves;
   const statuses = leaves.map((l) => l.status ?? "queued");
   part.status = part.body ? rollup(statuses, ctx) : ctx.ended ? "skipped" : "queued";
+  if (part.status === "done" && ctx.talking.has(part)) part.status = "running";
   part.needs = statuses.includes("needs") || undefined;
   part.bad = (!part.needs && statuses.includes("failed")) || undefined;
   if (part.kind === "pipeline") part.folded = !part.needs;
@@ -382,7 +469,9 @@ export function runGraph(input: RunInput): RunGraph {
     answered: input.answered ?? [],
     now: input.now ?? Date.now(),
     ended: !!input.status && isEnded(input.status),
+    rooms: input.rooms ?? [],
     times: new Map(),
+    talking: new Set(),
   };
   const root = runScopes(input.steps, input.nested);
   // A run with no step yet takes its id from a question it asks.

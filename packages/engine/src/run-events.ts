@@ -39,6 +39,14 @@ export interface RunAgentStartPayload extends RunEventOrigin {
   callIndex: number;
   /** The structural call-path key (WorkflowCallRecord.path), when captured. */
   path?: string;
+  /** The room whose turn this step is. */
+  room?: RoomTag;
+}
+
+/** The room() call a step is a turn of: its name, and which room() call of its run it is, from 1. */
+export interface RoomTag {
+  name: string;
+  call: number;
 }
 
 export interface RunAgentEndPayload extends RunEventOrigin {

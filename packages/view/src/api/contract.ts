@@ -103,6 +103,8 @@ export interface RunPage extends RunRow {
   questions: Question[];
   /** Every step call, in the order they started, nested runs' steps included. */
   steps: Step[];
+  /** Every room() call, nested runs' included. */
+  rooms?: Room[];
   /** The workflows this run started inside itself. */
   nested: NestedRun[];
   /** The graph of the workflow text the run started with. Unset when sous can't read the text. */
@@ -161,6 +163,42 @@ export interface Step {
   preview?: string;
   /** How many tries it took, when more than one. */
   tries?: number;
+  /** The room whose turn this step is. */
+  room?: RoomTag;
+}
+
+/** Which room a step is a turn of: its name, and which room() call of that name, from 1, in its run. */
+export interface RoomTag {
+  name: string;
+  call: number;
+}
+
+/** One room() call of a run, as it stands: who talks, every message so far, and how it ended. */
+export interface Room extends RoomTag {
+  /** The run it ran in: the root run's id or a nested run's. */
+  scope: string;
+  goal: string;
+  /** Each member's label, in order. */
+  members: string[];
+  turns: "together" | "in order" | "moderated";
+  hears: "all" | "addressed";
+  decider?: string;
+  /** The rounds run so far. */
+  rounds: number;
+  transcript: RoomMessage[];
+  /** Set once it ended. */
+  ended?: "decided" | "agreed" | "quiet" | "limit";
+  /** The decider's decision, when it decided. */
+  decision?: unknown;
+}
+
+/** One message of a room. The opening messages have round 0. */
+export interface RoomMessage {
+  round: number;
+  from: string;
+  /** A member's label, or "all". */
+  to: string;
+  text: string;
 }
 
 export interface Usage {

@@ -14,10 +14,11 @@
 // may then ask other prompts on a resume, and those turns run live. In "moderated" one member
 // speaks at a time, so the room waits for it.
 
-import type { Ended, MemberState, RoomMessage } from "./order.js";
+import type { Ended, MemberState, RoomMessage, Turns } from "./order.js";
 import { atTable, ending, lastTurn, together } from "./order.js";
 import { readRoomOptions, type Describe, type RoomMember, type RoomSetup } from "./options.js";
-import { decideNow, firstPrompt, laterPrompt, turnSchema } from "./prompt.js";
+import { decideNow, firstPrompt, laterPrompt, turnSchema, type Hears } from "./prompt.js";
+import type { RoomTag } from "../run-events.js";
 
 export interface RoomDeps {
   /** Runs turns as the script's parallel() does. */
@@ -28,6 +29,30 @@ export interface RoomDeps {
   describe: Describe;
   /** Calls `fn` each time a turn of the session `label` waits for the person. Gives the call that stops it. */
   watch: (label: string, fn: () => void) => () => void;
+  /** Runs `fn` as a turn of the room `tag`, so its step records the room. */
+  inRoom: <T>(tag: RoomTag, fn: () => T) => T;
+  /** Gets the room as it stands: at its start, after each answer and at its end. */
+  note?: (room: RoomNote) => void;
+}
+
+/** A room as it stands, for the run's page. */
+export interface RoomNote {
+  name: string;
+  /** Which room() call of its run it is, from 1. Its turns carry the same number. */
+  call: number;
+  goal: string;
+  /** The members' labels, in order. */
+  members: string[];
+  turns: Turns;
+  hears: Hears;
+  decider?: string;
+  rounds: number;
+  /** Every message so far, the opening first with round 0. */
+  transcript: RoomMessage[];
+  /** How it ended, once it has. */
+  ended?: Ended;
+  /** The decider's decision, once it gave one. */
+  decision?: unknown;
 }
 
 /** What room() returns. */
@@ -65,13 +90,14 @@ function firstLine(text: string): string {
 
 /** Makes room(), which reads its options, runs its turns and gives { ended, decision, rounds, transcript, members }. */
 export function createRoom(deps: RoomDeps) {
+  let calls = 0;
   return (given: unknown): Promise<RoomResult> => {
     const setup = readRoomOptions(given, deps.describe);
-    return runRoom(setup, deps);
+    return runRoom(setup, ++calls, deps);
   };
 }
 
-async function runRoom(room: RoomSetup, deps: RoomDeps): Promise<RoomResult> {
+async function runRoom(room: RoomSetup, call: number, deps: RoomDeps): Promise<RoomResult> {
   const transcript: RoomMessage[] = [...room.opening];
   const members: Member[] = room.members.map((member) => ({ ...member, done: false, busy: false, turns: 0 }));
   const byLabel = new Map(members.map((member) => [member.label, member]));
@@ -83,13 +109,30 @@ async function runRoom(room: RoomSetup, deps: RoomDeps): Promise<RoomResult> {
   let next: string | null = null;
   const say = (text: string) => deps.log(`room ${room.name}  ${text}`);
   for (const message of transcript) say(`${message.from} to ${message.to}: ${firstLine(message.text)}`);
+  const tag: RoomTag = { name: room.name, call };
+  /** Tells the run how the room stands. */
+  const note = (ended?: Ended) =>
+    deps.note?.({
+      name: room.name,
+      call,
+      goal: room.goal,
+      members: members.map((member) => member.label),
+      turns: room.turns,
+      hears: room.hears,
+      ...(room.decider === undefined ? {} : { decider: room.decider }),
+      rounds,
+      transcript: transcript.map((message) => ({ ...message })),
+      ...(ended ? { ended } : {}),
+      ...(decided ? { decision } : {}),
+    });
+  note();
 
   /** Sends the member its turn: what is new since its last turn, and `note` after it. */
   const send = (member: Member, note?: string): Promise<unknown> => {
     const prompt = member.read === undefined ? firstPrompt(room, member.label, transcript, rounds) : laterPrompt(room, member.label, transcript, member.read, rounds);
     member.read = transcript.length;
     member.turns++;
-    return member.handle.send(note ? `${prompt}\n\n${note}` : prompt, { until: "turn", schema: turnSchema(room, member.label) });
+    return deps.inRoom(tag, () => member.handle.send(note ? `${prompt}\n\n${note}` : prompt, { until: "turn", schema: turnSchema(room, member.label) }));
   };
 
   /** A whole turn, run as parallel() runs one: null when it failed and the run goes on. */
@@ -110,28 +153,32 @@ async function runRoom(room: RoomSetup, deps: RoomDeps): Promise<RoomResult> {
     return Promise.race([sent.then((answer): Outcome => ({ answer })), waits.then((): Outcome => ({ waits: turn }))]).finally(stop);
   };
 
-  /** Puts a member's answer in the transcript, in round `round`. */
+  /** Puts a member's answer in the transcript, in round `round`, and tells the run how the room stands. */
   const take = (member: Member, answer: unknown, round: number) => {
-    member.busy = false;
-    waiting.delete(member.label);
-    if (!isObject(answer)) {
-      member.done = true;
-      say(`${member.label} gave no answer`);
-      return;
+    try {
+      member.busy = false;
+      waiting.delete(member.label);
+      if (!isObject(answer)) {
+        member.done = true;
+        say(`${member.label} gave no answer`);
+        return;
+      }
+      for (const message of Array.isArray(answer.messages) ? answer.messages : []) {
+        if (!isObject(message) || typeof message.text !== "string") continue;
+        const to = typeof message.to === "string" && message.to !== member.label && (message.to === "all" || byLabel.has(message.to)) ? message.to : "all";
+        transcript.push({ round, from: member.label, to, text: message.text });
+        say(`${member.label} to ${to}: ${firstLine(message.text)}`);
+      }
+      member.done = answer.done === true;
+      if (member.label !== room.decider) return;
+      if (answer.decision !== null && answer.decision !== undefined) {
+        decided = true;
+        decision = answer.decision;
+      }
+      next = typeof answer.next === "string" && answer.next !== member.label && byLabel.has(answer.next) ? answer.next : null;
+    } finally {
+      note();
     }
-    for (const message of Array.isArray(answer.messages) ? answer.messages : []) {
-      if (!isObject(message) || typeof message.text !== "string") continue;
-      const to = typeof message.to === "string" && message.to !== member.label && (message.to === "all" || byLabel.has(message.to)) ? message.to : "all";
-      transcript.push({ round, from: member.label, to, text: message.text });
-      say(`${member.label} to ${to}: ${firstLine(message.text)}`);
-    }
-    member.done = answer.done === true;
-    if (member.label !== room.decider) return;
-    if (answer.decision !== null && answer.decision !== undefined) {
-      decided = true;
-      decision = answer.decision;
-    }
-    next = typeof answer.next === "string" && answer.next !== member.label && byLabel.has(answer.next) ? answer.next : null;
   };
 
   /** Takes each turn's outcome, in the order the members spoke: an answer, or a turn that waits. */
@@ -230,6 +277,7 @@ async function runRoom(room: RoomSetup, deps: RoomDeps): Promise<RoomResult> {
     if (decided) ended = "decided";
   }
   say(`ended ${ended} after ${rounds} round${rounds === 1 ? "" : "s"}`);
+  note(ended);
   return {
     ended,
     decision: decided ? decision : null,

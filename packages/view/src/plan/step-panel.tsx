@@ -6,7 +6,7 @@ import { X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { FlowNode } from "../api/contract.ts";
 import { kindOf } from "../graph/graph-node.tsx";
-import type { Part } from "../graph/tree.ts";
+import { boxIcon, type Part } from "../graph/tree.ts";
 import { LAYERS, pressOf } from "../shell/keys.ts";
 import { COLUMN_ID } from "../shell/list-nav.ts";
 import { IconButton } from "../ui/button.tsx";
@@ -26,6 +26,7 @@ const KIND_WORDS: Record<string, string> = {
   breakpoint: "Breakpoint",
   workflow: "Nested workflow",
   choose: "Picks what runs next",
+  room: "Room",
   pipeline: "Pipeline",
 };
 const LOOP_WORDS: Record<string, string> = { for: "For loop", while: "While loop" };
@@ -37,7 +38,7 @@ function kindWords(part: Part, node: FlowNode | undefined): string {
       return KIND_WORDS[part.kind] ?? part.kind;
     case "box":
       if (part.kind === "loop") return node?.t === "loop" ? LOOP_WORDS[node.loop]! : "Loop";
-      return part.kind === "pipeline" ? "Pipeline" : "Nested workflow";
+      return KIND_WORDS[boxIcon(part)]!;
     case "par":
       return part.conds ? "If and else" : "Branches at once";
     case "iff":
@@ -53,7 +54,7 @@ function HeadIcon({ part }: { part: Part }) {
   const status = part.t === "leaf" || part.t === "box" ? part.status : undefined;
   if (status) return <StatusIcon status={status} label={false} />;
   if (part.t !== "leaf" && !(part.t === "box" && part.kind !== "loop")) return null;
-  const Icon = kindOf(part.t === "leaf" ? part.kind : part.kind === "pipeline" ? "pipeline" : "workflow").icon;
+  const Icon = kindOf(part.t === "leaf" ? part.kind : boxIcon(part)).icon;
   return <Icon size={14} strokeWidth={1.5} aria-hidden="true" className="flex-none text-icon" />;
 }
 

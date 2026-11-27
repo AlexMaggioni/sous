@@ -29,6 +29,7 @@ import { Page } from "../page.tsx";
 import { NeedsYou } from "./needs-you.tsx";
 import { Notices } from "./notices.tsx";
 import { RunActions } from "./run-actions.tsx";
+import { RoomCall } from "./room-call.tsx";
 import { StepCall } from "./step-call.tsx";
 import { useNow } from "./use-now.ts";
 
@@ -234,6 +235,7 @@ function Loaded({ run, readAt, search }: { run: RunPage; readAt: number; search:
             call={(leaf, about, node) => (
               <StepCall key={leaf.key} run={run} leaf={leaf} now={now} primary={primaryHere} onSelect={setStep} about={about} source={node?.t === "step" ? node.code : undefined} onPassed={pass} />
             )}
+            room={(box, about) => <RoomCall key={box.key} run={run} box={box} onSelect={setStep} about={about} />}
             empty={<p className="mt-4 text-muted">{isLive(run.status) ? "No step has started yet. Steps show here as they start." : "This run ran no steps."}</p>}
           />
         </div>

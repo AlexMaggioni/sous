@@ -9,7 +9,7 @@ import { kidsOf, pathTo, type Part, type Seq } from "../graph/tree.ts";
 export type Plan = RunGraph;
 
 /** What the plan reads of a run, such as a RunPage. */
-export type PlanRun = Pick<RunInput, "steps" | "nested" | "questions" | "status" | "args">;
+export type PlanRun = Pick<RunInput, "steps" | "nested" | "questions" | "status" | "args" | "rooms">;
 
 /**
  * The plan of a saved workflow, or of a run laid over its text. Null when there is nothing to show.
@@ -18,7 +18,7 @@ export type PlanRun = Pick<RunInput, "steps" | "nested" | "questions" | "status"
 export function planOf(flow: Flow | undefined, flows: Record<string, Flow> | undefined, run?: PlanRun, now?: number, answered?: Question[]): Plan | null {
   if (run) {
     if (!flow && !run.steps.length) return null;
-    return runGraph({ flow, steps: run.steps, flows, nested: run.nested, questions: run.questions, answered, status: run.status, args: run.args, now });
+    return runGraph({ flow, steps: run.steps, flows, nested: run.nested, questions: run.questions, rooms: run.rooms, answered, status: run.status, args: run.args, now });
   }
   return flow ? { graph: savedGraph(flow, flows), asRan: false } : null;
 }

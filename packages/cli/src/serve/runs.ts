@@ -224,6 +224,7 @@ function stepsOf(detail: RunDetail, state: RunState): Step[] {
       ...(step.error === undefined ? {} : { error: step.error }),
       ...(preview === undefined ? {} : { preview }),
       ...(step.tries ? { tries: step.tries } : {}),
+      ...(step.room ? { room: step.room } : {}),
     };
   });
 }
@@ -295,6 +296,7 @@ export function runPage(paths: HomePaths, id: string): RunPage {
     ...(detail.result === undefined ? {} : { result: detail.result }),
     questions: detail.questions.map((question) => questionOf(question, record)),
     steps: stepsOf(detail, runState(detail)),
+    ...(detail.engineState?.rooms?.length ? { rooms: detail.engineState.rooms } : {}),
     nested,
     ...flowsOf(texts.script, texts.workflows, record),
     can: { ...can, resumeChoice: can.resume && texts.changed.length > 0, rerun: true },

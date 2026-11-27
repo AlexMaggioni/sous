@@ -20,6 +20,8 @@ import type {
 } from "./steps/agent-run.js";
 import { checkUntil, untilFields, untilHash, type Until } from "./turns/until.js";
 import type { AgentRunner, StepAsk, StepRoute } from "./steps/agent-runner.js";
+import type { RoomNote } from "./room/room.js";
+import type { RoomTag } from "./run-events.js";
 import type { SessionPlaces } from "./turns/session.js";
 import { endSession, forkSession, sessionCost, sessionRefOf, type SessionEntry } from "./turns/session-map.js";
 import type {
@@ -245,11 +247,14 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
    * plan's source run, or of this run when there is no plan.
    */
   resume?: WorkflowResume;
-  /** Manager-owned absolute root-execution activity count. The engine reports
-   *  every transition; it includes logical primitives and raw runner promises. */
-  onResumeActivity?: (active: number) => void;
-  /** Manager-owned absolute root agent/checkpoint allocation count. */
-  onResumeCallAllocated?: (allocated: number) => void;
+  /** Manager-owned counts a resume checks. Each goes up or down by one at a time. */
+  resumeCounts?: {
+    /** The absolute root-execution activity count. The engine reports every transition; it
+     *  includes logical primitives and raw runner promises. */
+    active?: (active: number) => void;
+    /** The absolute root agent/checkpoint allocation count. */
+    allocated?: (allocated: number) => void;
+  };
   /** Manager-owned incremental report sink. Invoked once per terminal root call
    *  decision so paused/failed executions do not need an EngineRunResult. */
   onResumeDecision?: (decision: WorkflowResumeCallDecision) => void;
@@ -309,7 +314,11 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
     /** The structural call-path key (same value as WorkflowCallRecord.path), when captured. */
     path?: string;
     scope: string;
+    /** The room whose turn this step is. */
+    room?: RoomTag;
   }) => void;
+  /** Gets each room() call as it stands: at its start, after each answer and at its end. */
+  onRoom?: (room: RoomNote, context: WorkflowCallbackContext) => void;
   onAgentEnd?: (event: {
     label: string;
     phase?: string;
@@ -471,6 +480,8 @@ export interface StepSession {
   worktree?: string;
   /** Called when the turn waits because the person holds its session. A room goes on without the member then. */
   waits?: () => void;
+  /** The room this turn belongs to. The step records it, and it stays out of the call hash. */
+  room?: RoomTag;
 }
 
 interface RuntimeState {
@@ -632,7 +643,7 @@ async function runLevel<T>(
   const resumeActivity = shared.resumeActivity ?? {
     active: 0,
     invalid: false,
-    onChange: options.onResumeActivity,
+    onChange: options.resumeCounts?.active,
   };
   shared.resumeActivity = resumeActivity;
   const limiter = shared.limiter;
@@ -679,7 +690,7 @@ async function runLevel<T>(
     }
     rootCallsAllocated = allocated;
     try {
-      options.onResumeCallAllocated?.(allocated);
+      options.resumeCounts?.allocated?.(allocated);
     } catch {
       resumeActivity.invalid = true;
     }
@@ -1045,6 +1056,7 @@ async function runLevel<T>(
         callIndex,
         path: callPath,
         scope: runId,
+        ...(agentOptions.session?.room === undefined ? {} : { room: agentOptions.session.room }),
       }));
     };
 
@@ -1772,7 +1784,7 @@ async function runLevel<T>(
       resume: options.resume?.rows
         ? { rows: options.resume.rows, ...(options.resume.continuation ? { continuation: options.resume.continuation } : {}) }
         : undefined,
-      onResumeCallAllocated: undefined,
+      resumeCounts: options.resumeCounts?.active ? { active: options.resumeCounts.active } : undefined,
       onResumeDecision: undefined,
       runId: childRunId,
       persistLogs: false,
@@ -1852,7 +1864,7 @@ async function runLevel<T>(
     stepOverrides: options.stepOverrides,
     resolveCwd: (cwd) => resolvePath(baseCwd, cwd ?? "."),
     track: tracked, onDryRunCheck: options.codeEnv?.onDryRunCheck, endSession: endSession(sessions, agentRunner), forkSession: forkSession(sessions),
-    places: stepPlaces, parallel,
+    places: stepPlaces, parallel, onRoom: (room) => options.onRoom?.(room, callbackContext),
   });
 
   const context = vm.createContext({
@@ -2169,8 +2181,9 @@ function checkSessionFields(options: AgentOptions): void {
   const session = options.session as unknown;
   if (session === undefined) return;
   if (session === null || typeof session !== "object" || Array.isArray(session)) refuse("session takes an object");
-  const { key, start, once, place, worktree, waits, ...rest } = session as Record<string, unknown>;
-  if (Object.keys(rest).length > 0) refuse(`session takes key, start, once, place, worktree and waits, not ${Object.keys(rest).join(", ")}`);
+  const { key, start, once, place, worktree, waits, room, ...rest } = session as Record<string, unknown>;
+  if (Object.keys(rest).length > 0) refuse(`session takes key, start, once, place, worktree, waits and room, not ${Object.keys(rest).join(", ")}`);
+  if (room !== undefined && (typeof room !== "object" || room === null || typeof (room as RoomTag).name !== "string" || !Number.isSafeInteger((room as RoomTag).call))) refuse("session.room is a room's name and call");
   if (waits !== undefined && typeof waits !== "function") refuse("session.waits is a function");
   if (once !== undefined && typeof once !== "boolean") refuse("session.once is true or false");
   if (start !== "fresh" && start !== "kept" && start !== "fork") refuse('session.start is "fresh", "kept" or "fork"');

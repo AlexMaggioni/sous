@@ -32,7 +32,7 @@ import {
   type RunPausedPayload,
   type RunPauseReason,
 } from "./run-events.js";
-import { foldStep, holdTurnSession, preview, type WorkflowSnapshot } from "./display.js";
+import { foldStep, fullTokens, holdTurnSession, noteRoom, preview, type WorkflowSnapshot } from "./display.js";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
 import { continueRows, newRows, reuseRows, reviseRows, type RunRows } from "./run-rows.js";
@@ -1036,34 +1036,23 @@ export class WorkflowManager extends EventEmitter {
         ...(exec.codeEnv ? { codeEnv: exec.codeEnv } : {}),
         persistenceRoot: this.persistenceRoot,
         ...(resume ? { resume } : {}),
-        tokenUsageBaseline: managed.sameRunContinuation
-          ? {
-              input: managed.snapshot.tokenUsage?.input ?? 0,
-              output: managed.snapshot.tokenUsage?.output ?? 0,
-              total: managed.snapshot.tokenUsage?.total ?? 0,
-              cost: managed.snapshot.tokenUsage?.cost ?? 0,
-              cacheRead: managed.snapshot.tokenUsage?.cacheRead ?? 0,
-              cacheWrite: managed.snapshot.tokenUsage?.cacheWrite ?? 0,
-            }
-          : undefined,
+        tokenUsageBaseline: managed.sameRunContinuation ? fullTokens(managed.snapshot.tokenUsage) : undefined,
         runId: managed.runId,
-        onResumeActivity: (active) => {
-          if (
-            !Number.isSafeInteger(active) ||
-            active < 0 ||
-            Math.abs(active - (managed.resumeActivity ?? 0)) !== 1
-          ) {
-            managed.resumeActivityInvalid = true;
-            return;
-          }
-          managed.resumeActivity = active;
-        },
-        onResumeCallAllocated: (allocated) => {
-          if (!Number.isSafeInteger(allocated) || allocated !== (managed.callsAllocated ?? 0) + 1) {
-            managed.resumeActivityInvalid = true;
-            return;
-          }
-          managed.callsAllocated = allocated;
+        resumeCounts: {
+          active: (active) => {
+            if (!Number.isSafeInteger(active) || active < 0 || Math.abs(active - (managed.resumeActivity ?? 0)) !== 1) {
+              managed.resumeActivityInvalid = true;
+              return;
+            }
+            managed.resumeActivity = active;
+          },
+          allocated: (allocated) => {
+            if (!Number.isSafeInteger(allocated) || allocated !== (managed.callsAllocated ?? 0) + 1) {
+              managed.resumeActivityInvalid = true;
+              return;
+            }
+            managed.callsAllocated = allocated;
+          },
         },
         onResumeDecision: (decision) => {
           if (!managed.resumeReporting) return;
@@ -1104,6 +1093,12 @@ export class WorkflowManager extends EventEmitter {
           if (this.dropPostTerminal(managed, "agentStart")) return;
           foldStep(managed.snapshot.agents, { type: "agentStart", ...event }, new Date().toISOString());
           publish(this.createRunEvent("agentStart", { runId: managed.runId, ...event }));
+        },
+        // A room's messages go to disk as they come, so the page shows the conversation while it runs.
+        onRoom: (room, context) => {
+          if (this.dropPostTerminal(managed, "room")) return;
+          noteRoom(managed.snapshot, { scope: context.scope, ...room });
+          this.persistRun(managed);
         },
         onAgentEnd: (event) => {
           if (this.dropPostTerminal(managed, "agentEnd")) return;
@@ -1459,6 +1454,7 @@ export class WorkflowManager extends EventEmitter {
         startedAt: a.startedAt ?? managed.startedAt.toISOString(),
         ...(a.endedAt ? { endedAt: a.endedAt } : {}),
       })),
+      ...(managed.snapshot.rooms?.length ? { rooms: managed.snapshot.rooms } : {}),
       logs: managed.snapshot.logs,
       result: managed.result?.result,
       tokenUsage: managed.snapshot.tokenUsage
@@ -1656,19 +1652,9 @@ export class WorkflowManager extends EventEmitter {
         name: persisted.workflowName,
         phases: persisted.phases ?? [],
         logs: persisted.logs ?? [],
+        ...(persisted.rooms?.length ? { rooms: persisted.rooms.map((room) => ({ ...room })) } : {}),
         ...noAgents(),
-        ...(persisted.tokenUsage
-          ? {
-              tokenUsage: {
-                input: persisted.tokenUsage.input,
-                output: persisted.tokenUsage.output,
-                total: persisted.tokenUsage.total,
-                cost: persisted.tokenUsage.cost ?? 0,
-                cacheRead: persisted.tokenUsage.cacheRead ?? 0,
-                cacheWrite: persisted.tokenUsage.cacheWrite ?? 0,
-              },
-            }
-          : {}),
+        ...(persisted.tokenUsage ? { tokenUsage: fullTokens(persisted.tokenUsage) } : {}),
       },
       startedAt: new Date(persisted.startedAt),
       script: revision ?? persisted.script,

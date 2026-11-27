@@ -12,7 +12,7 @@ import { decisionOf, type Decision } from "./runs/inbox.js";
 import { parseDurationSeconds } from "./duration.js";
 import { isSchemaObject } from "./steps/answer.js";
 import { cloneStrictJsonValue } from "./strict-json.js";
-import { createRoom } from "./room/room.js";
+import { createRoom, type RoomNote } from "./room/room.js";
 import { createSessions, type SessionPlaces } from "./turns/session.js";
 
 type AgentFn = (prompt: string, options: Record<string, unknown>) => Promise<unknown>;
@@ -53,6 +53,8 @@ export interface SousGlobalDeps {
   places?: SessionPlaces;
   /** The script's parallel(). A room runs its turns through it. */
   parallel: (thunks: Array<() => Promise<unknown>>) => Promise<unknown[]>;
+  /** Gets each room as it stands: at its start, after each answer and at its end. */
+  onRoom?: (room: RoomNote) => void;
 }
 
 interface StepOptions {
@@ -116,7 +118,7 @@ function plainCopy<T>(value: T): T {
 }
 
 export function createSousGlobals(deps: SousGlobalDeps) {
-  const { session, agent, describe, watch } = createSessions({
+  const { session, agent, describe, watch, inRoom } = createSessions({
     agent: deps.agent,
     resolveCwd: deps.resolveCwd,
     // A check command is a code step that may fail, as sh runs it.
@@ -137,7 +139,7 @@ export function createSousGlobals(deps: SousGlobalDeps) {
   });
 
   /** Agents that talk to each other until they reach a goal. Each member is a session handle. */
-  const room = createRoom({ parallel: deps.parallel, log: deps.log, describe, watch });
+  const room = createRoom({ parallel: deps.parallel, log: deps.log, describe, watch, inRoom, ...(deps.onRoom ? { note: deps.onRoom } : {}) });
 
   const exec = (spec: ExecSpec, options: StepOptions, defaultLabel: string, where: string): Promise<unknown> => {
     const schema = schemaOf(options.schema, where);

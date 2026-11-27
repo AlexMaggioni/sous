@@ -345,6 +345,7 @@ export function projectRunEventForPersistence(
         ...(event.path === undefined || Buffer.byteLength(event.path, "utf8") > MAX_OBSERVABILITY_SCALAR_BYTES
           ? {}
           : { path: event.path }),
+        ...(event.room === undefined ? {} : { room: { name: projectText(event.room.name, state), call: event.room.call } }),
       };
       break;
     case "agentEnd": {

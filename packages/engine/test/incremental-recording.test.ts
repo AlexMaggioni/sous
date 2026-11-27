@@ -60,8 +60,7 @@ return "done"`),
         agent: { async run() { return "ok"; } },
         persistLogs: false,
         confirm: async () => true,
-        onResumeActivity: (active) => activities.push(active),
-        onResumeCallAllocated: (allocated) => allocations.push(allocated),
+        resumeCounts: { active: (active) => activities.push(active), allocated: (allocated) => allocations.push(allocated) },
       },
     );
     assert.deepEqual(activities, [1, 2, 1, 0, 1, 0]);
@@ -74,7 +73,7 @@ return "done"`),
       args: blocked.promise,
       agent: { async run() { return "unused"; } },
       persistLogs: false,
-      onResumeActivity: (active) => nestedActivities.push(active),
+      resumeCounts: { active: (active) => nestedActivities.push(active) },
     });
     assert.deepEqual(nestedActivities, [1]);
     blocked.resolve("ready");
@@ -104,9 +103,8 @@ return refused`),
         agent: { async run() { return "unused"; } },
         cwd,
         persistLogs: false,
-        onResumeActivity: (active) => seen.push(active),
+        resumeCounts: { active: (active) => seen.push(active), allocated: (allocated) => allocations.push(allocated) },
         onLog: (message) => seen.push(message),
-        onResumeCallAllocated: (allocated) => allocations.push(allocated),
       },
     );
     assert.deepEqual([...result.result], ["agent", "ask"]);
@@ -121,7 +119,7 @@ return refused`),
       runWorkflow(script(`try { await agent("sync") } catch {}\nreturn "caught"`), {
         agent: { run() { throw new Error("sync"); } } as AgentRunner,
         persistLogs: false,
-        onResumeActivity: (active) => syncActivities.push(active),
+        resumeCounts: { active: (active) => syncActivities.push(active) },
       }),
       (error: unknown) => isStepFailedPause(error as { code?: unknown; details?: unknown }),
     );

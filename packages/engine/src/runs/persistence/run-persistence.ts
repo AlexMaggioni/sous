@@ -33,6 +33,8 @@ import type {
 } from "../../workflow-result.js";
 import type { AuthErrorContext, CheckpointContext } from "../../errors.js";
 import { WorkflowErrorCode } from "../../errors.js";
+import type { RoomRecord } from "../../display.js";
+import type { RoomTag } from "../../run-events.js";
 import type { RunEnvironmentIdentity } from "../../run-environment.js";
 import { createRunEventLog, type RunEventPersistence } from "./run-event-persistence.js";
 import { workflowProjectPaths } from "./project-paths.js";
@@ -67,6 +69,8 @@ export interface PersistedAgentState {
   scope?: string;
   usage?: AgentUsage;
   provenance?: AgentResultProvenance;
+  /** The room whose turn this step is. */
+  room?: RoomTag;
 }
 
 export interface PersistedResumeFormat {
@@ -182,6 +186,8 @@ export interface PersistedRunState {
   phases: string[];
   currentPhase?: string;
   agents: PersistedAgentState[];
+  /** Each room() call, in the order they started, with every message. */
+  rooms?: RoomRecord[];
   logs: string[];
   result?: unknown;
   startedAt: string;

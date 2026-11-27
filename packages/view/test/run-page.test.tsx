@@ -3,7 +3,7 @@ import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { Activity, ApiError, Flow, Question, RunPage, Step, StepDetail } from "../src/api/contract.ts";
+import type { Activity, ApiError, Flow, Question, Room, RunPage, Step, StepDetail } from "../src/api/contract.ts";
 import { RunDetail } from "../src/pages/run/run-detail.tsx";
 import { COLUMN_ID } from "../src/shell/list-nav.ts";
 import { SidebarContext } from "../src/shell/use-sidebar.ts";
@@ -441,5 +441,72 @@ describe("a step's panel", () => {
     await userEvent.click(within(drop).getByRole("button", { name: "Tell" }));
     await waitFor(() => expect(calls).toEqual([["tell", "r1", "Use zod", "--step", "coder"]]));
     expect(await screen.findByText("Sent to coder, not read yet")).toBeInTheDocument();
+  });
+});
+
+describe("a room's panel", () => {
+  const roomFlow: Flow = { nodes: [{ t: "step", id: "p", line: 1, kind: "room", label: "plan", members: ["a", "b"], prompt: "Agree on a plan.", options: { decider: "b" } }], notes: [] };
+  const turn = (i: number, label: string, more: Partial<Step> = {}) => step(i, label, { kind: "agent", room: { name: "plan", call: 1 }, ...more });
+  const room = (more: Partial<Room> = {}): Room => ({
+    scope: "r1",
+    name: "plan",
+    call: 1,
+    goal: "Agree on a plan.",
+    members: ["a", "b"],
+    turns: "together",
+    hears: "all",
+    decider: "b",
+    rounds: 1,
+    transcript: [
+      { round: 0, from: "a", to: "all", text: "Agree on a plan." },
+      { round: 1, from: "a", to: "b", text: "Ship the **parser** first." },
+      { round: 1, from: "b", to: "all", text: "Agreed, the parser first." },
+    ],
+    ended: "decided",
+    decision: { plan: "parser first" },
+    ...more,
+  });
+  const talked = (more: Partial<RunPage> = {}) => runPage({ status: "done", statusText: "Done", pauseReason: undefined, can: CAN, flow: roomFlow, steps: [turn(1, "a"), turn(2, "b")], rooms: [room()], ...more });
+
+  test("it shows every message by round, how the room ended and what it decided", async () => {
+    serve([talked()]);
+    open("/runs/r1?step=%2Fp");
+    const drop = await screen.findByRole("region", { name: "Details of plan" });
+    for (const title of ["Opening", "Round 1", "Decision"]) expect(within(drop).getByText(title)).toBeInTheDocument();
+    expect(within(drop).getByText("parser", { selector: "strong" })).toBeInTheDocument();
+    expect(within(drop).getByText("Agreed, the parser first.")).toBeInTheDocument();
+    expect(within(drop).getByText("The decider decided")).toBeInTheDocument();
+    expect(within(drop).getByText(/"plan": "parser first"/)).toBeInTheDocument();
+    // Who sent each message, and to whom.
+    const lines = within(drop).getAllByRole("listitem").map((li) => li.querySelector("p")?.textContent);
+    expect(lines).toEqual(["a to everyone", "a to b", "b to everyone"]);
+    // What the room is, from the text.
+    expect(within(drop).getByText("Every member at once")).toBeInTheDocument();
+  });
+
+  test("a member's name opens that member's lane", async () => {
+    serve([talked()], [detail("b", { kind: "agent", command: undefined, output: undefined, prompt: "Round 1" })]);
+    const router = open("/runs/r1?step=%2Fp");
+    const drop = await screen.findByRole("region", { name: "Details of plan" });
+    const lines = within(drop).getAllByRole("listitem");
+    await userEvent.click(within(lines[2]!).getByRole("button", { name: "b" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ step: "/p/@1" }));
+    expect(await screen.findByRole("region", { name: "Details of b" })).toBeInTheDocument();
+  });
+
+  test("a room that still talks shows its rounds so far, and no decision yet", async () => {
+    serve([talked({ status: "running", statusText: "Running", can: { ...CAN, stop: true, remove: false }, rooms: [room({ ended: undefined, decision: undefined })] })]);
+    open("/runs/r1?step=%2Fp");
+    const drop = await screen.findByRole("region", { name: "Details of plan" });
+    expect(within(drop).getByText("Round 1")).toBeInTheDocument();
+    expect(within(drop).queryByText("Decision")).toBeNull();
+    expect(within(drop).getByText("Running")).toBeInTheDocument();
+  });
+
+  test("a room that hasn't talked yet says so", async () => {
+    serve([talked({ status: "running", statusText: "Running", can: { ...CAN, stop: true, remove: false }, steps: [], rooms: undefined })]);
+    open("/runs/r1?step=%2Fp");
+    const drop = await screen.findByRole("region", { name: "Details of plan" });
+    expect(within(drop).getByText("It hasn't run yet.")).toBeInTheDocument();
   });
 });

@@ -21,7 +21,7 @@ import { useWash } from "../ui/motion.ts";
 import { STATUS_LABEL, StatusIcon } from "../ui/status-icon.tsx";
 import { Tip } from "../ui/tooltip.tsx";
 import type { Measure } from "./measure.ts";
-import type { Box, KindIcon, Leaf } from "./tree.ts";
+import { boxIcon, type Box, type KindIcon, type Leaf } from "./tree.ts";
 
 const KIND: Record<KindIcon, { icon: LucideIcon; name: string }> = {
   agent: { icon: Bot, name: "agent" },
@@ -44,7 +44,7 @@ export const kindOf = (kind: KindIcon) => KIND[kind];
 /** The icon of a node: its status in a run, else its kind in gray. */
 function NodeIcon({ part }: { part: Leaf | Box }) {
   if (part.status) return <StatusIcon status={part.status} label={false} />;
-  const kind: KindIcon = part.t === "leaf" ? part.kind : part.kind === "pipeline" ? "pipeline" : "workflow";
+  const kind: KindIcon = part.t === "leaf" ? part.kind : boxIcon(part);
   const Icon = KIND[kind].icon;
   return <Icon size={14} strokeWidth={1.5} aria-hidden="true" className="flex-none text-icon" />;
 }
@@ -74,7 +74,7 @@ export function describeNode(part: Leaf | Box, run: boolean): string {
   const box = part.t === "box";
   const name = box ? part.title : part.label;
   const retries = part.t === "leaf" ? part.retries?.slice(2) : undefined;
-  const kind = !run && part.t === "leaf" ? KIND[part.kind].name : box ? (part.kind === "pipeline" ? "pipeline" : "workflow") : "";
+  const kind = !run && part.t === "leaf" ? KIND[part.kind].name : box ? KIND[boxIcon(part)].name : "";
   const rest = [
     kind && kind !== name ? kind : "",
     part.count ? `${part.count.slice(1)} items` : "",

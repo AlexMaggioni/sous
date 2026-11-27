@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import type { Flow, FlowStep, RunPage, Step } from "../api/contract.ts";
 import { formatDuration, tickLabel } from "../format.ts";
 import { kindOf } from "../graph/graph-node.tsx";
-import { kidsOf, type Leaf, type Part } from "../graph/tree.ts";
+import { boxIcon, kidsOf, type Leaf, type Part } from "../graph/tree.ts";
 import { barOf, lastMoment, runAxis, stepDuration, ticksOf, type Axis } from "../pages/run/time-axis.ts";
 import { isLive } from "../status.ts";
 import { useListMotion, useWash } from "../ui/motion.ts";
@@ -30,7 +30,7 @@ const firstLine = (s: string | undefined) => s?.split("\n").find((l) => l.trim()
 /** The icon of a part that has no status: its kind, in gray. */
 function iconOf(part: Part): LucideIcon {
   if (part.t === "leaf") return kindOf(part.kind).icon;
-  if (part.t === "box") return part.kind === "loop" ? Repeat : kindOf(part.kind === "pipeline" ? "pipeline" : "workflow").icon;
+  if (part.t === "box") return part.kind === "loop" ? Repeat : kindOf(boxIcon(part)).icon;
   if (part.t === "par") return part.conds ? GitBranch : GitFork;
   if (part.t === "iff") return GitBranch;
   return CircleStop;

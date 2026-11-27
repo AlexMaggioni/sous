@@ -27,8 +27,10 @@
 // works in its parent's folder, or with place "worktree" in a worktree of its own, made from the
 // last commit of its parent's folder.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { resolve } from "node:path";
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
+import type { RoomTag } from "../run-events.js";
 import type { Worktree } from "../places/places.js";
 import { LOOP_KEYS, checkLoopOptions, runUntilDone, type Check, type LoopDeps } from "./loop.js";
 import { CONTINUE_PROMPT, readStatus } from "./status.js";
@@ -181,6 +183,8 @@ export function createSessions(deps: SessionDeps) {
   const away = (key: string) => {
     for (const watcher of [...(watchers.get(key) ?? [])]) watcher();
   };
+  /** The room whose turn a send runs in, so the step records it. */
+  const roomTurn = new AsyncLocalStorage<RoomTag>();
   const track = deps.track ?? (<F>(fn: F) => fn);
   let agents = 0;
   /** How many agent() calls with place "worktree" each label had. */
@@ -306,7 +310,8 @@ export function createSessions(deps: SessionDeps) {
         return await runStep(prompt, options, stepLabel, label, tree ? cwd : held.cwd, label, (text, until) => {
           const start = turns === 0 ? state.first : "kept";
           turns++;
-          return deps.agent(text, { ...step, until, session: { key: label, start, ...placed, waits: () => away(label) } });
+          const room = roomTurn.getStore();
+          return deps.agent(text, { ...step, until, session: { key: label, start, ...placed, waits: () => away(label), ...(room === undefined ? {} : { room }) } });
         });
       } finally {
         running = false;
@@ -396,5 +401,8 @@ export function createSessions(deps: SessionDeps) {
     };
   };
 
-  return { session, agent, describe, watch };
+  /** Runs `fn` as a turn of the room `tag`: each step its sends start records the room. */
+  const inRoom = <T>(tag: RoomTag, fn: () => T): T => roomTurn.run(tag, fn);
+
+  return { session, agent, describe, watch, inRoom };
 }

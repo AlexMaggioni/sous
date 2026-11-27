@@ -4,7 +4,8 @@ import type { AgentHistoryEntry } from "./steps/agent-history.js";
 import type { AgentResultProvenance, AgentUsage } from "./steps/agent-run.js";
 import type { AgentSessionRecord, RunningCall, TurnSessionEvent } from "./workflow-result.js";
 import type { WorkflowErrorCode } from "./errors.js";
-import type { RunAgentEndPayload, RunAgentStartPayload } from "./run-events.js";
+import type { RoomNote } from "./room/room.js";
+import type { RoomTag, RunAgentEndPayload, RunAgentStartPayload } from "./run-events.js";
 
 export type WorkflowAgentStatus = "queued" | "running" | "done" | "error" | "skipped";
 
@@ -35,7 +36,15 @@ export interface WorkflowAgentSnapshot {
   /** When this step started and ended, as ISO times. */
   startedAt?: string;
   endedAt?: string;
+  /** The room whose turn this step is. */
+  room?: RoomTag;
 }
+
+/** A room() call of the run as it goes: its members, its messages and how it ended. */
+export type RoomRecord = RoomNote & {
+  /** The run it ran in: the root run's id or a nested run's. */
+  scope: string;
+};
 
 export interface WorkflowSnapshot {
   name: string;
@@ -44,6 +53,8 @@ export interface WorkflowSnapshot {
   currentPhase?: string;
   logs: string[];
   agents: WorkflowAgentSnapshot[];
+  /** Each room() call, in the order they started. */
+  rooms?: RoomRecord[];
   durationMs?: number;
   result?: unknown;
   tokenUsage?: {
@@ -68,7 +79,7 @@ export function preview(value: unknown, max = 80): string {
  *  has the result preview and the session: the log keeps a longer, redacted preview and no
  *  session. */
 export type StepEvent =
-  | ({ type: "agentStart" } & Pick<RunAgentStartPayload, "scope" | "callIndex" | "label" | "phase" | "prompt" | "model">)
+  | ({ type: "agentStart" } & Pick<RunAgentStartPayload, "scope" | "callIndex" | "label" | "phase" | "prompt" | "model" | "room">)
   | ({ type: "agentEnd" } & Pick<RunAgentEndPayload, "scope" | "callIndex" | "error" | "errorCode" | "recoverable" | "tokens" | "model" | "usage" | "provenance" | "session"> & { errorRecord?: object; resultPreview?: string });
 
 /**
@@ -96,6 +107,7 @@ export function foldStep(steps: WorkflowAgentSnapshot[], event: StepEvent, at: s
       callIndex: event.callIndex,
       scope: event.scope,
       startedAt: at,
+      ...(event.room === undefined ? {} : { room: event.room }),
     };
     if (index === -1) steps.push(step);
     else steps[index] = step;
@@ -132,4 +144,17 @@ export function holdTurnSession(steps: WorkflowAgentSnapshot[], { session, callI
   step.session = session;
   step.call = call;
   return true;
+}
+
+/** Keep a room() call as it stands now, in place of what the snapshot had for it. */
+export function noteRoom(snapshot: WorkflowSnapshot, room: RoomRecord): void {
+  const rooms = (snapshot.rooms ??= []);
+  const index = rooms.findIndex((other) => other.scope === room.scope && other.name === room.name && other.call === room.call);
+  if (index === -1) rooms.push(room);
+  else rooms[index] = room;
+}
+
+/** A run's token usage with every count, a missing one as 0. */
+export function fullTokens(usage: WorkflowSnapshot["tokenUsage"]): Required<NonNullable<WorkflowSnapshot["tokenUsage"]>> {
+  return { input: usage?.input ?? 0, output: usage?.output ?? 0, total: usage?.total ?? 0, cost: usage?.cost ?? 0, cacheRead: usage?.cacheRead ?? 0, cacheWrite: usage?.cacheWrite ?? 0 };
 }

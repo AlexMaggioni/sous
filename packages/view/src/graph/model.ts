@@ -85,6 +85,38 @@ function workflowBox(node: FlowStep, w: Walk): Part {
   };
 }
 
+/** A room's members as the text names them, "…" for one it makes at run time. */
+export function roomMembers(node: FlowStep): string[] {
+  return (node.members ?? []).map((m) => (/^\{[^{}]*\}$/.test(m) ? "…" : m));
+}
+
+/** A room's body: one lane per member, side by side, as they talk in the same rounds. */
+export function roomBody(key: string, members: Leaf[]): Seq {
+  const lanes: Seq[] = members.map((leaf) => ({ t: "seq", key: `${leaf.key}/lane`, items: [leaf] }));
+  return { t: "seq", key: `${key}/members`, items: lanes.length === 1 ? lanes[0].items : lanes.length ? [{ t: "par", key: `${key}/lanes`, lanes }] : [] };
+}
+
+/** A saved room: a box with a lane per member. A room whose list of members the text makes at run time stays one node. */
+function roomBox(node: FlowStep, w: Walk): Part {
+  const leaf = leafOf(node, w);
+  const members = roomMembers(node);
+  if (!members.length) return leaf;
+  const turns = node.options?.turns;
+  const leaves: Leaf[] = members.map((label, i) => ({ t: "leaf", key: `${leaf.key}/@${i}`, label, kind: "agent", node: node.id, ...inFlow(w) }));
+  return {
+    t: "box",
+    key: leaf.key,
+    kind: "room",
+    title: leaf.label,
+    ...(turns && turns !== "together" ? { sub: turns, foldSub: turns } : {}),
+    ...(node.prompt ? { tip: `Room ${leaf.label}: ${node.prompt}` } : {}),
+    body: roomBody(leaf.key, leaves),
+    foldable: true,
+    node: node.id,
+    ...inFlow(w),
+  };
+}
+
 function stepParts(node: FlowStep, w: Walk): Part[] {
   if (node.kind === "breakpoint" && node.body?.length) {
     // The step a breakpoint runs comes first, then the breakpoint waits. A send back runs it again.
@@ -93,7 +125,7 @@ function stepParts(node: FlowStep, w: Walk): Part[] {
     return [...body.items, w.hooks ? w.hooks.step(node, leafOf(node, w), w) : leafOf(node, w)];
   }
   if (w.hooks) return [w.hooks.step(node, leafOf(node, w), w)];
-  return [node.kind === "workflow" ? workflowBox(node, w) : leafOf(node, w)];
+  return [node.kind === "workflow" ? workflowBox(node, w) : node.kind === "room" ? roomBox(node, w) : leafOf(node, w)];
 }
 
 function loopBox(node: FlowLoop, w: Walk): Part[] {

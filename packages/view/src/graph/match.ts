@@ -1,8 +1,9 @@
 // How the engine names a step at run time, so a run's steps find their node in the graph of the
 // text. Read from the engine itself: packages/engine/src/sous-globals.ts names each call,
 // runs/records.ts prefixes a nested run's steps, and display.ts keeps only agent and code calls as
-// steps. ask and breakpoint wait as questions, under the label "checkpoint".
-import type { FlowStep, NestedRun, Step } from "../api/contract.ts";
+// steps. ask and breakpoint wait as questions, under the label "checkpoint". A room's turns are
+// steps under their members' labels, each tagged with its room's name and call (room/room.ts).
+import type { FlowStep, NestedRun, RoomTag, Step } from "../api/contract.ts";
 
 /** A run's step. */
 export interface StepEntry {
@@ -18,7 +19,15 @@ export interface ScopeEntry {
   at: number;
 }
 
-export type Entry = StepEntry | ScopeEntry;
+/** One room() call, in the place of its first turn, with every turn of its members. */
+export interface RoomEntry {
+  t: "room";
+  room: RoomTag;
+  turns: StepEntry[];
+  at: number;
+}
+
+export type Entry = StepEntry | ScopeEntry | RoomEntry;
 
 /** The steps and nested runs of one run, root or nested, in the order they started. */
 export interface RunScope {
@@ -84,6 +93,13 @@ export function itemLabel(node: FlowStep, item: string): string | null {
   return node.dynamic && parts?.length === 1 ? node.label.replace(EXPR, item) : null;
 }
 
+/** Whether the engine names this room node's room this: the same name, the same template, or any name for a room the text leaves unnamed. */
+export function namesRoom(node: FlowStep, name: string): boolean {
+  if (node.kind !== "room") return false;
+  if (node.dynamic) return templateTest(node.label).test(name);
+  return name === node.label || unlabeled(node);
+}
+
 /** A step of the same kind, for a match by order: an agent for an agent, a command for code. */
 export function kindFits(node: FlowStep, step: Step): boolean {
   if (node.kind === "agent" || node.kind === "choose") return step.kind === "agent";
@@ -131,12 +147,20 @@ export function runScopes(steps: Step[], nested: NestedRun[] = []): RunScope {
     s.label = names[names.length - 1];
     s.parent = byPrefix.get(names.slice(0, -1).join(" / ")) ?? rootId;
   }
-  // The steps, each in its run.
+  // The steps, each in its run. A room's turns go into one entry, at its first turn.
+  const rooms = new Map<string, RoomEntry>();
   steps.forEach((step, i) => {
     const s = scopeOf(step.scope);
     if (s.id !== rootId && s.parent === undefined) s.parent = rootId;
     s.first = Math.min(s.first, i);
-    s.entries.push({ t: "step", step, at: i });
+    const entry: StepEntry = { t: "step", step, at: i };
+    if (!step.room) return void s.entries.push(entry);
+    const id = JSON.stringify([step.scope, step.room.name, step.room.call]);
+    const room = rooms.get(id);
+    if (room) return void room.turns.push(entry);
+    const made: RoomEntry = { t: "room", room: step.room, turns: [entry], at: i };
+    rooms.set(id, made);
+    s.entries.push(made);
   });
   // Each nested run in its parent, at its first step, and its parent's first step no later.
   const kids = [...scopes.values()].filter((s) => s.id !== rootId);

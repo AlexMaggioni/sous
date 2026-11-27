@@ -304,6 +304,33 @@ function chooseAbout(node: FlowStep, reads: Read[], onSelect: (key: string) => v
   };
 }
 
+/** Who speaks in each round of a room. */
+const TURN_WORDS = { together: "Every member at once", "in order": "One member after another", moderated: "Whom the decider names" } as const;
+
+function roomAbout(node: FlowStep, reads: Read[], onSelect: (key: string) => void): About {
+  const o = node.options ?? {};
+  return {
+    main: node.prompt && (
+      <PanelPart title="Goal">
+        <PromptText text={node.prompt} reads={reads} onSelect={onSelect} />
+      </PanelPart>
+    ),
+    side: (
+      <Pairs
+        pairs={[
+          ["Members", node.members?.length ? node.members.join(", ") : "Made at run time"],
+          ["Speaks", TURN_WORDS[o.turns ?? "together"]],
+          ["Hears", o.hears === "addressed" ? "What is sent to it" : "Every message"],
+          ["Decider", o.decider],
+          ["Rounds", o.maxRounds ? `Up to ${o.maxRounds}` : undefined],
+          ["Decides", o.schema?.length ? <span className="font-mono text-xs">{o.schema.join(", ")}</span> : undefined],
+          ["Returns", node.result ? <span className="font-mono text-xs">{node.result}</span> : undefined],
+        ]}
+      />
+    ),
+  };
+}
+
 /** The sentence that says what a group does. */
 function groupSentence(part: Part, node: FlowNode | undefined): string {
   if (part.t === "box" && node?.t === "loop") {
@@ -312,6 +339,11 @@ function groupSentence(part: Part, node: FlowNode | undefined): string {
     return `Runs the steps inside again while ${node.label ?? "its condition holds"}.`;
   }
   if (part.t === "box" && part.kind === "pipeline") return `Takes each of ${part.title} through the steps inside. The items run at the same time, each through every stage in order.`;
+  if (part.t === "box" && part.kind === "room") {
+    const o = node?.t === "step" ? (node.options ?? {}) : {};
+    const ends = ["they agree", o.decider && `${o.decider} decides`, "nobody has more to say", o.maxRounds && `${plural(o.maxRounds, "round")} have run`].filter(Boolean);
+    return `Its members talk in rounds until ${ends.slice(0, -1).join(", ")} or ${ends[ends.length - 1]}.`;
+  }
   if (part.t === "par")
     return part.conds ? `Runs one branch: the first ${part.conds[0]}, else the second.` : `Runs ${plural(part.lanes.length, "branch", "branches")} at the same time, and goes on once every one ends.`;
   if (part.t === "iff") return `Runs the steps inside only ${part.label}.`;
@@ -353,12 +385,13 @@ export function useStepAbout({ part, node, flow, flows, graph, project, onSelect
   else if (step && ["ask", "breakpoint"].includes(step.kind)) kind = askAbout(step, inside, onSelect);
   else if (step?.kind === "workflow") kind = workflowAbout(step, project);
   else if (step?.kind === "choose") kind = chooseAbout(step, reads, onSelect);
+  else if (step?.kind === "room") kind = roomAbout(step, reads, onSelect);
   const line = node?.line;
   const main = (
     <div className="flex flex-col">
       {sentence && <p className="mb-4 max-w-[70ch] text-pretty">{sentence}</p>}
       {kind.main}
-      {inside.length > 0 && step?.kind !== "breakpoint" && (
+      {inside.length > 0 && step?.kind !== "breakpoint" && step?.kind !== "room" && (
         <PanelPart title="Inside" meta={plural(inside.length, "step")}>
           <ul className="flex flex-col gap-1">
             {inside.slice(0, 12).map((r) => (

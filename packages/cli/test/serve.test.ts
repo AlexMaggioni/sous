@@ -363,6 +363,50 @@ describe("a step that took more than one try", () => {
   });
 });
 
+describe("a room on the run page", () => {
+  it("tags each turn with its room, and gives the room's record with every message", async (t) => {
+    const talk = `export const meta = { name: 'talk', description: 'two members agree', place: 'none' }
+const a = session({ label: 'a' })
+const b = session({ label: 'b' })
+await a.send('Before the room.')
+return (await room({ name: 'plan', goal: 'Agree on a plan.', members: [a, b] })).ended`;
+    const { paths, projectDir } = testHome({ talk });
+    const { runner } = fakeRunner((step) => (step.prompt.startsWith("Round ") ? { messages: [{ to: "all", text: `${step.label} agrees.` }], done: true } : "Sent."));
+    const workers = inProcess({ inner: runner });
+    const server = await startServer({ paths, project: projectDir, port: 0, host: "127.0.0.1", launch: workers.launch, commands: COMMANDS });
+    t.after(() => server.close());
+    const runId = startRun(paths, workers.launch, { who: PERSON, workflow: "talk", projectDir, inputs: {} }).runId;
+    assert.equal((await workers.ended(runId))?.status, "completed");
+
+    const page: RunPage = (await call(server, `/api/runs/${runId}`)).json;
+    assert.deepEqual(
+      page.steps.map((step) => [step.label, step.room]),
+      [
+        ["a", undefined],
+        ["a", { name: "plan", call: 1 }],
+        ["b", { name: "plan", call: 1 }],
+      ],
+    );
+    assert.deepEqual(page.rooms, [
+      {
+        scope: runId,
+        name: "plan",
+        call: 1,
+        goal: "Agree on a plan.",
+        members: ["a", "b"],
+        turns: "together",
+        hears: "all",
+        rounds: 1,
+        transcript: [
+          { round: 1, from: "a", to: "all", text: "a agrees." },
+          { round: 1, from: "b", to: "all", text: "b agrees." },
+        ],
+        ended: "agreed",
+      },
+    ]);
+  });
+});
+
 describe("the live stream of sous serve", () => {
   it("says hello, sends nothing while nothing changes, then names a run within a second of its change", async (t) => {
     const { paths, projectDir, workers, server } = await served(t);

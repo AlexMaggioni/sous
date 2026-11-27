@@ -422,7 +422,8 @@ function isPersistedEvent(value: unknown): boolean {
         hasOptional(value, "timeoutMs", (candidate) => candidate === null || isNonNegativeFinite(candidate)) &&
         hasOptional(value, "idleTimeoutMs", (candidate) => candidate === null || isNonNegativeFinite(candidate)) &&
         hasRequired(value, "callIndex", isNonNegativeSafeInteger) &&
-        hasOptional(value, "path", isProjectedText)
+        hasOptional(value, "path", isProjectedText) &&
+        hasOptional(value, "room", (room) => isObject(room) && hasRequired(room, "name", isProjectedText) && hasRequired(room, "call", isNonNegativeSafeInteger))
       );
     case "agentEnd":
       return (
