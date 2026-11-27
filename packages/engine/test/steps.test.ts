@@ -17,7 +17,7 @@ import type { AgentSessionRef } from "../src/workflow-result.js";
 import { lookupAgents, lookupMcpServers } from "../src/agents.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { createSteps, type StepsOptions } from "../src/steps/steps.js";
-import { CONTINUATION_INSTRUCTION } from "../src/steps/answer.js";
+import { CONTINUE_PROMPT } from "../src/turns/status.js";
 import { runWorkflow } from "../src/workflow.js";
 import { waitUntil } from "./helpers/async.js";
 import { write } from "./helpers/files.js";
@@ -766,7 +766,7 @@ describe("piece 13: resume with a note", () => {
     const lines = place.lines();
     assert.deepEqual([lines[1]?.resume, lines[1]?.sessionId], [true, first!.sessionId], "the second request continues the session");
     const prompt = lines[1]?.prompt ?? "";
-    const instruction = prompt.indexOf(CONTINUATION_INSTRUCTION);
+    const instruction = prompt.indexOf(CONTINUE_PROMPT);
     assert.ok(instruction >= 0, `the continued prompt holds the continuation instruction:\n${prompt}`);
     const note = prompt.indexOf(NOTE);
     assert.ok(note > instruction, `the note comes after the continuation instruction:\n${prompt}`);

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Type } from "typebox";
 import type { AgentSessionRef } from "../src/workflow-result.js";
-import { CONTINUATION_INSTRUCTION } from "../src/steps/answer.js";
+import { CONTINUE_PROMPT } from "../src/turns/status.js";
 import { createSteps } from "../src/steps/steps.js";
 import { fakePlace, onFakes, routed, type FakeLine } from "./helpers/fake-steps.js";
 
@@ -67,7 +67,7 @@ for (const [harness, model] of [
         await steps.dispose();
       }
       const [, continued, report] = place.lines();
-      assert.deepEqual([continued?.prompt, fields(continued), continued?.sessionId], [CONTINUATION_INSTRUCTION, null, first!.sessionId]);
+      assert.deepEqual([continued?.prompt, fields(continued), continued?.sessionId], [CONTINUE_PROMPT, null, first!.sessionId]);
       assert.deepEqual([report?.prompt, fields(report), report?.sessionId], [REPORT, ["ok", "summary"], first!.sessionId]);
     });
   });

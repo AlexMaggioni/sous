@@ -27,7 +27,7 @@ export type ContinuationSkipReason =
   // attempted:
   | "hash-mismatch" // recorded hash !== the live call's hash at this index (script changed)
   | "inputs-mismatch" // recorded inputsHash !== the live call's inputsHash, or either is absent
-  | "worktree-isolated" // the call is worktree-isolated
+  | "worktree-isolated" // old saves only: a worktree step's session now goes on in its own folder
   | "cwd-mismatch" // recorded cwd !== the call's resolved cwd
   | "cwd-missing" // the call's resolved cwd does not exist on disk
   // runner-side gates — reattach attempted and abandoned before the continuation turn:

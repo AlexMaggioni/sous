@@ -69,7 +69,8 @@ notifications, and CI runs the tests on Linux. To build it from source, see
 - **An inbox.** Agents ask questions, and breakpoints wait for you to approve a step or send it
   back with a note.
 - **Resume.** A failed step pauses the run. `sous resume` runs it again and keeps every finished
-  step. After you edit the workflow, `sous resume --latest` keeps the steps that did not change.
+  step. A step cut off by a stop or a limit goes on in its own session. After you edit the
+  workflow, `sous resume --latest` keeps the steps that did not change.
 - **Worktrees.** Each run gets a branch and a worktree, or works in the project folder, or in a
   scratch folder. A single step can also work on a branch of its own.
 - **Schedules.** A cron line in the workflow, or `sous schedule add`.

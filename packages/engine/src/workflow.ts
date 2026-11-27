@@ -200,7 +200,7 @@ export interface WorkflowAgentAttemptControl {
  * goes with no rows.
  */
 export type WorkflowResume = {
-  /** The interrupted calls a live call can go on from, by call index. */
+  /** The interrupted calls a live call can go on from, by scope and call index. */
   continuation?: PreparedContinuation;
 } & (
   | {
@@ -1269,8 +1269,6 @@ async function runLevel<T>(
             continuationCandidate.inputsHash !== callInputsHash
           ) {
             continuationSkipReason = "inputs-mismatch";
-          } else if (resolvedIsolation === "worktree") {
-            continuationSkipReason = "worktree-isolated";
           } else if (continuationCandidate.recordedCwd !== runCwd) {
             continuationSkipReason = "cwd-mismatch";
           } else if (!existsSync(runCwd)) {
@@ -1795,9 +1793,11 @@ async function runLevel<T>(
       // The COMBINED signal, so a parent-side fault/abort cancels the child's agents too
       // (the child layers its own fault controller on top of this).
       signal,
-      // A nested run finds its rows in the same resume rows by its run id. It has no plan and no
-      // interrupted calls.
-      resume: options.resume?.rows ? { rows: options.resume.rows } : undefined,
+      // A nested run finds its rows and its interrupted calls in the run's, by its run id. It has
+      // no plan.
+      resume: options.resume?.rows
+        ? { rows: options.resume.rows, ...(options.resume.continuation ? { continuation: options.resume.continuation } : {}) }
+        : undefined,
       onResumeCallAllocated: undefined,
       onResumeDecision: undefined,
       runId: childRunId,

@@ -15,13 +15,6 @@ export const REPORT_PROMPT = "Report on the task you were given.";
 /** The repair turn for a schema step whose answer did not fit. It uses the report turn's words. */
 export const REPROMPT_TEXT = REPORT_PROMPT;
 
-/** The prompt that continues a turn a usage limit or a lost login cut off. */
-export const CONTINUATION_INSTRUCTION =
-  "Your previous turn was interrupted before it finished — the provider paused it for a usage " +
-  "limit or expired credentials, not because the task was complete. The full task and all prior " +
-  "context are already in this session's history; do not restart or repeat work you already did. " +
-  "Continue from where you stopped and produce the COMPLETE final answer to the original task now.";
-
 /** True for a prompt that starts with "/", which the program reads as a command or a skill. */
 export const isSlash = (prompt: string) => prompt.startsWith("/");
 

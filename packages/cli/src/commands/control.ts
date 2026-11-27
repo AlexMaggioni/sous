@@ -30,7 +30,7 @@ export function cmdStop(args: Parsed, ctx: Ctx): Reply<object> {
     const data = { runId, step, stopping, status: view.status };
     if (!stopping) return reply(data, { notes: [`${runId} is not running (${view.status}), so no step runs and nothing stops.`], next: stateNext(view) });
     return reply(data, {
-      text: [`stopping "${step}" in ${runId}. The run pauses on it, and sous resume ${runId} runs it again.`],
+      text: [`stopping "${step}" in ${runId}. The run pauses on it, and sous resume ${runId} goes on with it in its session.`],
       next: [waitNext(runId, "waits until the run pauses on the step")],
     });
   }

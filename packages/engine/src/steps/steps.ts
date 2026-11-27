@@ -32,10 +32,10 @@ import type { AgentSessionRef } from "../workflow-result.js";
 import type { McpServerConfig } from "./mcp-config.js";
 import { harnessName, missingServer, routeStep, stepModel, withHarness, type AgentLookup, type McpLookup, type RoutePlan } from "../agents.js";
 import { stepLimitError, WorkflowError, WorkflowErrorCode } from "../errors.js";
-import { readStatus, statusSchema, type TurnStatus } from "../turns/status.js";
+import { CONTINUE_PROMPT, readStatus, statusSchema, type TurnStatus } from "../turns/status.js";
 import { hostStopError, type HostPause } from "../host-pause.js";
 import type { SlotPool } from "../runs/slots.js";
-import { checkImages, CONTINUATION_INSTRUCTION, extractValidated, isSlash, REPORT_PROMPT, REPROMPT_TEXT, toMcpServer, validateValue, withNote } from "./answer.js";
+import { checkImages, extractValidated, isSlash, REPORT_PROMPT, REPROMPT_TEXT, toMcpServer, validateValue, withNote } from "./answer.js";
 
 /** The runner a test or the dry run gives instead of the programs. It gets the planned step. */
 export interface InnerRunner {
@@ -457,7 +457,7 @@ async function runOnHarness(
         continuation = { reattached: false, reason: "backend-mismatch" };
       } else {
         try {
-          const text = call.continueWithPrompt ? fresh : withNote(CONTINUATION_INSTRUCTION, note);
+          const text = call.continueWithPrompt ? fresh : withNote(CONTINUE_PROMPT, note);
           if (typeof recorded.costGauge === "number" && Number.isFinite(recorded.costGauge)) gauge = recorded.costGauge;
           answer = await turn({ ...base, ...text, ...turns.work, resume: recorded.sessionId });
           continuation = { reattached: true, method: "resume" };

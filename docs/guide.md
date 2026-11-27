@@ -453,7 +453,7 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous approve <q>`, `sous send-back <q> <note>` | answer a breakpoint. `sous answer <q> stop` stops the run. |
 | `sous pause <run>`, `sous resume <run> [--latest \| --same]` | finish the running steps and start nothing new; go on from there |
 | `sous stop <run>` | end the run. Its worktree stays, unless the run changed no file. |
-| `sous stop <run> --step <name>` | stop one running step, by the name `sous log` gives it, such as `"ticket A: implementer"`. The run pauses on it, and `sous resume` runs it again. |
+| `sous stop <run> --step <name>` | stop one running step, by the name `sous log` gives it, such as `"ticket A: implementer"`. The run pauses on it, and `sous resume` goes on with it in its session. |
 | `sous tell <run> --step <name> "<message>" [--call N]` | give a running agent step a message, which it reads after its current tool call. The step goes on. The step is its label or its name in `sous log`, as `sous step` takes it. Each running call of the step gets it, and `--call N` tells only the Nth call, counted as `sous step --call` counts them. The reply's `calls` lists each call told with its `step` name, its `call` number and its `delivery`. The reply's `delivery` is `delivered`, or `pending` while the step has not read it within 5 seconds. A code step fails with `step_takes_no_message`, a step that does not run now with `step_not_running`, and a step in a turn that takes no message for a moment, such as a compact, or between two turns, with `turn_not_steerable`. |
 | `sous resume <run> --note "<message>" [--step <name>]` | resume, and add the message to the prompt of the first agent call that runs. `--step` gives it to that step's first call instead, by its label or its name in `sous log`, or by a label the workflow's text writes for a step the run has not reached yet, the new text with `--latest`. A name in neither exits 65 with `no_such_step`, a code step exits 66 with `step_takes_no_message`, and the run stays paused. When no agent call took the note, `sous log` says it reached no step. When the step already finished, a note says the message reaches it only if the workflow calls it again. The step's activity shows a `note` line, and the `resume` line in `events.jsonl` holds the message. A run that runs already does not resume, and the reply gives the `sous tell` call instead. |
 | `sous rerun <run> [--reuse]` | the same workflow with the same inputs. `--reuse` keeps the results of the steps you did not edit and works in the same place. |
@@ -546,8 +546,12 @@ the notices off.
 
 - An agent step that fails is tried again up to its `retries`, or the config's `retries` when the
   step sets none. A code step is tried once unless it sets `retries`. Either way, 5 tries at most.
-  After the last try the run pauses on that step. `sous resume` runs the step again and keeps the
-  finished ones.
+  After the last try the run pauses on that step. `sous resume` runs the step again in a new
+  session and keeps the finished ones.
+- A step cut off by `sous stop`, a time limit, the budget, the subscription limit or a lost login
+  goes on in its own session and its own folder when the run resumes, in a nested workflow or a
+  worktree too. Its next prompt is `Continue the task.`, followed by the `--note` message when there
+  is one. A step whose session or folder is gone starts over in a new session.
 - A run keeps the workflows as they were when it started, nested ones included. After an edit,
   `sous resume` refuses and names the two ways on: `--latest` takes the new version and keeps the
   finished steps that match, and `--same` goes on with the run's own version. The error's `next`
@@ -579,7 +583,7 @@ the notices off.
   and a loop would never end. A meta `maxAgents` under 1000 still holds in a dry run.
 - A workflow's `timeout` limits each start and each resume of a run. When it is reached, the
   running steps stop, code steps such as `sh` as well as agent steps, and the run pauses on them,
-  shown as `paused: time limit`. `sous resume` runs them again with the whole limit, and `sous stop`
+  shown as `paused: time limit`. `sous resume` goes on with them with the whole limit, and `sous stop`
   ends the run. With no step running, as when the run waits for an answer, the run pauses the same
   way, and no new step starts.
 - A run's budget limits the tokens each start and each resume of it may spend. It is

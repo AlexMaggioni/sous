@@ -182,7 +182,7 @@ describe("live-boundary continuation", () => {
         home.places("paused-source"),
       );
       const cases: Array<{
-        reason: "hash-mismatch" | "inputs-mismatch" | "cwd-mismatch" | "cwd-missing" | "worktree-isolated";
+        reason: "hash-mismatch" | "inputs-mismatch" | "cwd-mismatch" | "cwd-missing";
         script: string;
         cwd: string;
         candidate: ContinuationCandidate;
@@ -192,7 +192,9 @@ describe("live-boundary continuation", () => {
         { reason: "inputs-mismatch", script: workflow(), cwd: fixture.cwd, candidate: { ...source.candidate, inputsHash: undefined } },
         { reason: "cwd-mismatch", script: workflow(), cwd: fixture.cwd, candidate: { ...source.candidate, recordedCwd: join(fixture.cwd, "other") } },
         { reason: "cwd-missing", script: workflow("cwd: 'removed-cwd'"), cwd: fixture.cwd, candidate: missingSource.candidate },
-        { reason: "worktree-isolated", script: workflow("place: 'worktree'"), cwd: git.cwd, candidate: worktreeSource.candidate },
+        // A worktree step goes on in its session only in the folder it worked in. This one's run
+        // has other places, so its worktree is another folder.
+        { reason: "cwd-mismatch", script: workflow("place: 'worktree'"), cwd: git.cwd, candidate: worktreeSource.candidate },
       ];
 
       for (const item of cases) {
@@ -442,29 +444,42 @@ describe("live-boundary continuation", () => {
     }
   });
 
-  it("never threads a root continuation candidate into nested workflow execution", async () => {
+  it("a nested call goes on only with a candidate of its own scope, never with the root's at the same index", async () => {
     const fixture = tempCwd();
     try {
       const source = await recordInterrupted(fixture.cwd);
       const nested = `export const meta = { name: "parent", description: "nested continuation" }
 return await workflow(\`export const meta = { name: "child", description: "child" }
-return await agent("task", { label: "worker" })\`)`;
-      const fallbacks: WorkflowRunFallback[] = [];
-      const result = await runWorkflow(nested, {
-        runId: TARGET,
-        cwd: fixture.cwd,
-        persistLogs: false,
-        resume: { continuation: prepared(source.candidate) },
-        agent: {
-          async run(_prompt, options) {
-            assert.equal(options.continueFromSession, undefined);
-            return "fresh nested result";
+return await agent('task', { label: 'worker' })\`)`;
+      const child = `${TARGET}-nested1`;
+      // The nested call's own row failed, so it may go on in a session of its own scope.
+      const rows = resumeRows({ runId: TARGET, journal: [], calls: [{ ...source.call, scope: child }], key: "inputs" });
+      const resumeWith = async (scope: string) => {
+        const fallbacks: WorkflowRunFallback[] = [];
+        const sessions: Array<string | undefined> = [];
+        const result = await runWorkflow(nested, {
+          runId: TARGET,
+          cwd: fixture.cwd,
+          persistLogs: false,
+          resume: { rows, continuation: prepared(source.candidate, scope) },
+          agent: {
+            async run(_prompt, options) {
+              sessions.push(options.continueFromSession?.sessionId);
+              if (options.continueFromSession) options.onResultProvenance?.({ source: "live", continuation: { reattached: true, method: "resume" } });
+              return options.continueFromSession ? "continued" : "fresh";
+            },
           },
-        },
-        onFallback: (fallback) => fallbacks.push(fallback),
-      });
-      assert.equal(result.result, "fresh nested result");
-      assert.deepEqual(fallbacks, []);
+          onFallback: (fallback) => fallbacks.push(fallback),
+        });
+        return { result: result.result, sessions, continuations: fallbacks.map((fallback) => fallback.continuation) };
+      };
+
+      assert.deepEqual(await resumeWith(TARGET), { result: "fresh", sessions: [undefined], continuations: [] }, "the root's candidate");
+      assert.deepEqual(await resumeWith(child), {
+        result: "continued",
+        sessions: [source.session.sessionId],
+        continuations: [{ outcome: "reattached", method: "resume" }],
+      }, "the nested run's own candidate");
     } finally {
       fixture.cleanup();
     }
