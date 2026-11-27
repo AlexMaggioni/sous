@@ -434,7 +434,7 @@ const FUNCTION_LINES = 250;
 const SLACK = 50;
 const LINE_CAPS = {
   "packages/engine/src/workflow.ts": 2312,
-  "packages/engine/src/workflow-manager.ts": 2084,
+  "packages/engine/src/workflow-manager.ts": 1968,
   "packages/engine/src/workflow.ts: runLevel": 1413,
   "packages/engine/src/workflow.ts: agentImplementation": 780,
   "packages/engine/src/workflow.ts: runLive": 446,
