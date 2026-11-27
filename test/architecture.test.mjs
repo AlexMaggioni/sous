@@ -400,7 +400,7 @@ const PINS = [
     ["packages/engine/test/result-observability.test.ts", "a reuse run that fails before its engine returns lists its root call rows in the order they settled"],
   ] },
   { change: "A caller that passes no places object gets no home to make worktrees in", tests: [
-    ["packages/engine/test/places.test.ts", "a step with isolation worktree and no places works in the run's folder, and the log says why"],
+    ["packages/engine/test/places.test.ts", "a step with place worktree and no places works in the run's folder, and the log says why"],
     ["packages/engine/test/sous-globals.test.ts", "with no places, a nested place of its own fails and says why, and place folder works in the parent's folder"],
   ] },
   { change: "runSync on a run that paused or failed returns the result the run saved", tests: [
@@ -435,7 +435,7 @@ const SLACK = 50;
 const LINE_CAPS = {
   "packages/engine/src/workflow.ts": 2312,
   "packages/engine/src/workflow-manager.ts": 2084,
-  "packages/engine/src/workflow.ts: runLevel": 1476,
+  "packages/engine/src/workflow.ts: runLevel": 1413,
   "packages/engine/src/workflow.ts: agentImplementation": 780,
   "packages/engine/src/workflow.ts: runLive": 446,
 };
@@ -449,7 +449,7 @@ const LINE_CAPS = {
 const MEMBER_CAPS = [
   { file: "packages/engine/src/workflow-manager.ts", methodsOf: "WorkflowManager", cap: 11 },
   { file: "packages/engine/src/workflow.ts", fieldsOf: "WorkflowRunOptions", cap: 36 },
-  { file: "packages/engine/src/workflow.ts", fieldsOf: "AgentOptions", cap: 18 },
+  { file: "packages/engine/src/workflow.ts", fieldsOf: "AgentOptions", cap: 16 },
 ];
 
 /**
