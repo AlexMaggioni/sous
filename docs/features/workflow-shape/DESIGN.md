@@ -1226,8 +1226,8 @@ at low effort.
     since the session asked none. One message started the build. Four asked how it was going, and
     one asked to see the page. The last asked for news, and it also restarted the session, whose
     turn an API error had ended just after a ticket was parked. So the sous run took one action
-    where the owner's took seven, or two when only the messages the build needed count. By the
-    rule of scenario 15, it passes on this stage.
+    where the owner's took seven, or two when only the messages the build needed count. The owner
+    chose this stage for the verdict on 2026-11-27, so scenario 15 passes.
 
 How the plan holds:
 
@@ -1261,9 +1261,8 @@ The owner answered on 2026-11-26. The design above follows these answers.
 10. The command that steps in is `sous join`: yes.
 11. The live tests may spend the owner's tokens, on the smallest model of each program. `/goal`
     must work in a step. Live tests 1 to 3 show it starts and loops through the SDK.
+12. On 2026-11-27 the owner chose the stage of live test 15 for scenario 15's verdict.
 
 ## Open
 
-- Whether the stage of live test 15 is the one the owner wants for scenario 15's verdict. The
-  design leaves that choice to the owner. Live test 15 picked a stage the owner had built by hand
-  with the same agents, and the verdict there is one action against seven.
+Nothing is open.
