@@ -1203,6 +1203,13 @@ at low effort.
     `thread/goal/set` sends the notifications the protocol names. It passed. A goal starts its
     first turn by itself, and the text `/canary` runs no skill. Decisions 3 and 5 have the
     results.
+14. The build workflow of `examples/build` runs a stand-in stage end to end, until the owner names
+    a real one. The stage adds two functions to a new library, with two gates, and stand-in
+    agents with the owner's agent names run on Haiku at low effort. On 2026-11-27 it passed
+    twice: 7 agent steps, both tickets landed after one review each, both gates passed, and the
+    stage's tests and each gate's proof passed again on the run's branch with no agent. Each run
+    took 160 to 200 seconds and $0.03 to $0.05. The test is in
+    `packages/cli/test/live/build.test.ts`, behind `SOUS_LIVE_BUILD=1`.
 
 How the plan holds:
 
@@ -1239,4 +1246,5 @@ The owner answered on 2026-11-26. The design above follows these answers.
 
 ## Open
 
-- The capstone stage for scenario 15. The owner chooses it before phase 9.
+- The real stage for scenario 15. The owner chooses it. Live test 14 runs a stand-in stage until
+  then.
