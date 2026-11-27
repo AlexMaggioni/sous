@@ -31,6 +31,7 @@ import type {
   WorkflowRunResult,
 } from "./workflow-result.js";
 import type { McpServerConfig } from "./steps/mcp-config.js";
+import { phaseScope } from "./steps/phase-scope.js";
 import type { WorkflowRecordedError } from "./errors.js";
 import {
   MAX_AGENT_RETRIES,
@@ -453,7 +454,6 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
 }
 
 interface RuntimeState {
-  currentPhase?: string;
   logs: string[];
   phases: string[];
   /** Monotonic, assigned at lexical agent() call time — the stable resume key. */
@@ -579,7 +579,6 @@ async function runLevel<T>(
     // under a declared phase instead of an orphan "(no phase)" bucket. An
     // explicit phase() (or agent({ phase })) overrides this.
     phases: meta.phases?.[0]?.title ? [meta.phases[0].title] : [],
-    currentPhase: meta.phases?.[0]?.title,
     callSeq: 0,
     agentSessions: [],
     fallbacks: [],
@@ -587,6 +586,8 @@ async function runLevel<T>(
     calls: [],
     settlementSeq: 0,
   };
+  // The current phase, one per parallel() or pipeline() branch (steps/phase-scope.ts).
+  const phaseNow = phaseScope(meta.phases?.[0]?.title);
 
   // The latest session of the step with this label, for agent({ continue }).
   const sessionForLabel = (label: string | undefined): AgentSessionRef | undefined => {
@@ -693,7 +694,7 @@ async function runLevel<T>(
         { recoverable: false },
       );
     }
-    state.currentPhase = title;
+    phaseNow.set(title);
     if (!state.phases.includes(title)) state.phases.push(title);
     options.onPhase?.(title, callbackContext);
   };
@@ -907,7 +908,7 @@ async function runLevel<T>(
 
     checkAgentLimit();
 
-    const assignedPhase = agentOptions.phase ?? state.currentPhase;
+    const assignedPhase = agentOptions.phase ?? phaseNow.get();
     const agentOrdinal = shared.agentOccurrenceCount ?? 0;
 
     const requestedLabel = agentOptions.label?.trim();
@@ -1693,7 +1694,7 @@ async function runLevel<T>(
     return Promise.all(
       thunks.map(async (thunk, index) => {
         try {
-          return await thunk();
+          return await phaseNow.branch(thunk);
         } catch (error) {
           if (signal.aborted) throw error;
           const workflowError = wrapError(error);
@@ -1718,7 +1719,7 @@ async function runLevel<T>(
       throw new TypeError("pipeline() stages must be functions: pipeline(items, item => ..., result => ...)");
     }
     return Promise.all(
-      items.map(async (item, index) => {
+      items.map((item, index) => phaseNow.branch(async () => {
         let value: unknown = item;
         for (const stage of stages) {
           try {
@@ -1735,7 +1736,7 @@ async function runLevel<T>(
           }
         }
         return value;
-      }),
+      })),
     );
   };
 
@@ -1856,7 +1857,7 @@ async function runLevel<T>(
     gates: { throwIfAborted, throwIfHalted, pauseRequested, pauseError, checkAgentLimit, interruptIfHalting },
     host: options,
     resuming: resumePlan !== undefined,
-    phase: () => state.currentPhase,
+    phase: phaseNow.get,
     realmObjectPrototype: () => realmObjectPrototype,
     vmFilename,
     preludeLines,

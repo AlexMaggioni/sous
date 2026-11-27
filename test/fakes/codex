@@ -8,19 +8,60 @@
 // turn/steer works as in 0.169.0: during a turn it answers with the turn id and adds a userMessage
 // item to the turn. After the turn it fails with -32600 "no active turn to steer". A rule's
 // notSteerable makes it fail with activeTurnNotSteerable instead, as a compact turn does. Each
-// thread keeps the user messages it read in codex-threads/<id>, one per line.
+// thread keeps the user messages it read in codex-threads/<id>, one per line, as { role, text }.
+// decide() gets the thread id, its developerInstructions as the system text, and the thread's
+// earlier messages, so the recall, status, system and session rules work.
+// thread/fork with { threadId, cwd } copies the parent's file to a new thread id and answers as
+// thread/start does, with the new thread in the given cwd. Later turns on the fork write to the
+// fork's file only. An unknown parent fails as thread/resume does.
+// thread/goal/set with { threadId, objective } plays the goal's turns by itself, with no
+// turn/start from the client. A goal rule gives the number of turns, else it plays one. Each turn
+// sends turn/started, its agent message and turn/completed. thread/goal/updated follows each turn
+// with status active, and the last one says complete just before the last turn/completed. Each
+// turn logs { goal: { turn, of } }. thread/goal/get answers the goal, and thread/goal/clear
+// clears it and sends thread/goal/cleared.
+// `codex resume <id>` is a person in the full-screen view. It appends the line in FAKE_PERSON to
+// the thread's file, logs { byHand: line }, and exits 0 without reading stdin. With FAKE_PERSON
+// unset or empty the person typed nothing. An unknown id fails as the real one does. Its -m and
+// -c flags are accepted and ignored.
 // `codex --version` prints a version like the real one, or FAKE_VERSION.
 
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { appendLog, debug, decide, limitRule, loginPresent, mcpSummary, readJsonLines, waitFor } from "./lib.mjs";
+import { appendLog, debug, decide, limitRule, loginPresent, mcpSummary, readJsonLines, sessionMessages, waitFor } from "./lib.mjs";
 
 const VERSION = process.env.FAKE_VERSION ?? "0.169.0";
 const argv = process.argv.slice(2);
 
 if (argv.includes("--version") || argv.includes("-V")) {
   process.stdout.write(`codex-cli ${VERSION}\n`);
+  process.exit(0);
+}
+/** The subcommand: the first word that is neither a flag nor a flag's value. */
+const VALUE_FLAGS = new Set(["-c", "--config", "-m", "--model", "-C", "--cd", "-p", "--profile", "-s", "--sandbox", "-a", "--ask-for-approval", "-i", "--image", "--add-dir", "--enable", "--disable"]);
+function words(args) {
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    if (VALUE_FLAGS.has(args[i])) i++;
+    else if (!args[i].startsWith("-")) out.push(args[i]);
+  }
+  return out;
+}
+
+// A person at a terminal: `codex resume <id>`. The fake types FAKE_PERSON's line and leaves.
+const [subcommand, threadArg] = words(argv);
+if (subcommand === "resume") {
+  const file = join(dirname(process.env.FAKE_LOG ?? join(process.cwd(), "fake.log")), "codex-threads", threadArg ?? "");
+  if (!threadArg || !existsSync(file)) {
+    process.stderr.write(`No saved session found with ID ${threadArg ?? ""}. Run \`codex resume\` without an ID to choose from existing sessions.\n`);
+    process.exit(1);
+  }
+  const line = process.env.FAKE_PERSON ?? "";
+  if (line !== "") {
+    appendFileSync(file, `${JSON.stringify({ role: "user", text: line })}\n`);
+    appendLog({ program: "codex", sessionId: threadArg, byHand: line });
+  }
   process.exit(0);
 }
 if (!argv.includes("app-server")) {
@@ -156,7 +197,7 @@ function threadView(thread) {
   return {
     id: thread.id,
     sessionId: thread.id,
-    forkedFromId: null,
+    forkedFromId: thread.forkedFrom ?? null,
     parentThreadId: null,
     preview: thread.preview ?? "",
     ephemeral: false,
@@ -233,6 +274,41 @@ function openThread(params, resumed) {
 function transcript(thread, text) {
   mkdirSync(threadsDir, { recursive: true });
   appendFileSync(join(threadsDir, thread.id), `${JSON.stringify({ role: "user", text })}\n`);
+}
+
+/** What a rule may match beyond the prompt: the thread id, its system text and its earlier messages. */
+function context(thread) {
+  return { session: thread.id, system: thread.developerInstructions ?? "", earlier: sessionMessages(join(threadsDir, thread.id)) };
+}
+
+/**
+ * thread/fork: a new thread that starts with the parent's messages. It keeps the parent's settings
+ * when this server has the parent open, and the params override them. Returns undefined when no
+ * parent was saved and none is open.
+ */
+function forkThread(params) {
+  const parentFile = join(threadsDir, params.threadId ?? "");
+  const open = threads.get(params.threadId);
+  if (!params.threadId || (!open && !existsSync(parentFile))) return undefined;
+  const config = params.config ?? open?.config ?? {};
+  const thread = {
+    id: randomUUID(),
+    resumed: false,
+    forkedFrom: params.threadId,
+    cwd: params.cwd ?? open?.cwd ?? process.cwd(),
+    config,
+    model: params.model ?? open?.model ?? config.model ?? cliOverrides.model ?? MODEL.id,
+    effort: open?.effort ?? config.model_reasoning_effort ?? cliOverrides.model_reasoning_effort ?? null,
+    baseInstructions: params.baseInstructions ?? open?.baseInstructions ?? null,
+    developerInstructions: params.developerInstructions ?? open?.developerInstructions ?? null,
+    mcpServers: open?.mcpServers ?? threadServers(config).servers,
+    turn: undefined,
+  };
+  mkdirSync(threadsDir, { recursive: true });
+  if (existsSync(parentFile)) copyFileSync(parentFile, join(threadsDir, thread.id));
+  else writeFileSync(join(threadsDir, thread.id), "");
+  threads.set(thread.id, thread);
+  return thread;
 }
 
 /** turn/steer: the error it fails with. Without one, it answers and adds the message to the turn. */
@@ -340,7 +416,7 @@ async function runTurn(thread, turnId, params) {
   const prompt = promptText(params.input);
   const images = promptImages(params.input);
   const schema = params.outputSchema ?? null;
-  const decision = decide("codex", prompt, schema);
+  const decision = decide("codex", prompt, schema, context(thread));
   const turn = { id: turnId, interrupted: false, notSteerable: decision.notSteerable, noSteer: decision.noSteer };
   thread.turn = turn;
   const model = params.model ?? thread.model;
@@ -366,6 +442,8 @@ async function runTurn(thread, turnId, params) {
     effort: params.effort ?? thread.effort ?? null,
     sessionId: thread.id,
     resume: thread.resumed,
+    // Only on a fork, so the baseline's golden lines stay as they were.
+    ...(thread.forkedFrom ? { fork: true } : {}),
     schema,
     mcpServers: mcpSummary(thread.mcpServers),
     approvalPolicy: params.approvalPolicy ?? null,
@@ -432,6 +510,90 @@ async function runTurn(thread, turnId, params) {
   notify("turn/completed", { threadId: thread.id, turn: turnView("completed", [done]) });
 }
 
+/** The goal as thread/goal/get and thread/goal/updated show it. */
+function goalView(thread) {
+  const goal = thread.goal;
+  return goal ? { threadId: thread.id, objective: goal.objective, status: goal.status, tokenBudget: null, tokensUsed: goal.tokensUsed, timeUsedSeconds: 0, createdAt: 1700000000, updatedAt: 1700000000 } : null;
+}
+
+function setGoal(thread, status) {
+  thread.goal.status = status;
+  notify("thread/goal/updated", { threadId: thread.id, goal: goalView(thread) });
+}
+
+/**
+ * thread/goal/set: the goal's turns, played with no turn/start. A goal rule gives the number of
+ * turns, else one. The rule sees the prompt "/goal <objective>", which the log and transcript keep.
+ * A failed turn ends the goal blocked, or usageLimited on a limit, and an interrupt pauses it.
+ */
+async function playGoal(thread, objective) {
+  const prompt = `/goal ${objective}`;
+  const decision = decide("codex", prompt, null, context(thread));
+  const turns = Math.max(1, Number(decision.goal) || 1);
+  appendLog({
+    program: "codex",
+    argv,
+    cwd: thread.cwd,
+    model: thread.model,
+    effort: thread.effort ?? null,
+    sessionId: thread.id,
+    resume: thread.resumed,
+    ...(thread.forkedFrom ? { fork: true } : {}),
+    schema: null,
+    mcpServers: mcpSummary(thread.mcpServers),
+    baseInstructions: thread.baseInstructions,
+    developerInstructions: thread.developerInstructions,
+    login: loginPresent(),
+    prompt,
+    objective,
+    rule: decision.rule,
+    outcome: decision.kind,
+  });
+  transcript(thread, prompt);
+  thread.preview ||= prompt.slice(0, 80);
+  for (let at = 1; at <= turns; at++) {
+    const turnId = randomUUID();
+    const turn = { id: turnId, interrupted: false, notSteerable: decision.notSteerable, noSteer: decision.noSteer };
+    thread.turn = turn;
+    const base = { threadId: thread.id, turnId };
+    const turnView = (status, items = [], error = null) => ({ id: turnId, items, itemsView: "full", status, error, startedAt: 1700000000, completedAt: status === "inProgress" ? null : 1700000001, durationMs: status === "inProgress" ? null : 1000 });
+    appendLog({ program: "codex", sessionId: thread.id, goal: { turn: at, of: turns } });
+    notify("turn/started", { threadId: thread.id, turn: turnView("inProgress") });
+    if (at === 1) await waitFor(decision, () => turn.interrupted);
+    if (decision.kind === "exit") {
+      process.stderr.write("fake crash\n");
+      process.exit(decision.code);
+    }
+    thread.turn = undefined;
+    if (turn.interrupted) {
+      setGoal(thread, "paused");
+      notify("turn/completed", { threadId: thread.id, turn: turnView("interrupted") });
+      return;
+    }
+    if (decision.kind !== "answer") {
+      const message = decision.kind === "limit" ? "You've hit your usage limit. Upgrade to Pro or try again later." : (decision.message ?? "The goal turn failed.");
+      const error = { message, codexErrorInfo: decision.kind === "limit" ? "usageLimitExceeded" : decision.kind === "auth" ? "unauthorized" : (decision.errorInfo ?? "internalServerError"), additionalDetails: null, misalignment: null };
+      notify("error", { ...base, error, willRetry: false });
+      setGoal(thread, decision.kind === "limit" ? "usageLimited" : "blocked");
+      notify("turn/completed", { threadId: thread.id, turn: turnView("failed", [], error) });
+      return;
+    }
+    const said = at === turns ? decision.text : `Working on the goal, model turn ${at}.`;
+    const itemId = `msg_${randomUUID().slice(0, 8)}`;
+    const item = { type: "agentMessage", id: itemId, text: "", phase: null, memoryCitation: null, delivery: null, questions: null };
+    notify("item/started", { ...base, item, startedAtMs: 1700000000000 });
+    notify("item/agentMessage/delta", { ...base, itemId, delta: said });
+    const done = { ...item, text: said };
+    notify("item/completed", { ...base, item: done, completedAtMs: 1700000001000 });
+    notify("thread/tokenUsage/updated", { ...base, tokenUsage: { total: USAGE, last: USAGE, modelContextWindow: 272000 } });
+    thread.goal.tokensUsed += USAGE.totalTokens;
+    // The status leaves active just before the last turn ends, as the real one does.
+    if (at === turns) setGoal(thread, "complete");
+    notify("turn/completed", { threadId: thread.id, turn: turnView("completed", [done]) });
+    if (at < turns) setGoal(thread, "active");
+  }
+}
+
 function onRequest(message) {
   const { id, method } = message;
   const params = message.params ?? {};
@@ -461,6 +623,34 @@ function onRequest(message) {
       const { error } = threadServers(params.config ?? {});
       if (error) return fail(-32603, error);
       return reply(threadResponse(openThread(params, resumed)));
+    }
+    case "thread/fork": {
+      const thread = forkThread(params);
+      if (!thread) return fail(-32600, `no rollout found for thread id ${params.threadId}`);
+      return reply(threadResponse(thread));
+    }
+    case "thread/goal/set": {
+      const thread = threads.get(params.threadId);
+      if (!thread) return fail(-32600, `thread not found: ${params.threadId}`);
+      const objective = String(params.objective ?? "");
+      thread.goal = { objective, status: "active", tokensUsed: 0 };
+      reply({ goal: goalView(thread) });
+      thread.chain = (thread.chain ?? Promise.resolve()).then(() => playGoal(thread, objective));
+      return;
+    }
+    case "thread/goal/get": {
+      const thread = threads.get(params.threadId);
+      if (!thread) return fail(-32600, `thread not found: ${params.threadId}`);
+      return reply({ goal: goalView(thread) });
+    }
+    case "thread/goal/clear": {
+      const thread = threads.get(params.threadId);
+      if (!thread) return fail(-32600, `thread not found: ${params.threadId}`);
+      const had = Boolean(thread.goal);
+      thread.goal = undefined;
+      reply({ cleared: had });
+      notify("thread/goal/cleared", { threadId: thread.id });
+      return;
     }
     case "thread/read": {
       const thread = threads.get(params.threadId);

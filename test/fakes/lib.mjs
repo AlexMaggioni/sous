@@ -35,6 +35,46 @@
 //                          activeTurnNotSteerable and this turn kind, such as "compact"
 //               times      apply the rule to the first N matching requests only. The count
 //                          comes from earlier lines in FAKE_LOG, so it holds across processes.
+//               slash      true: the rule matches only a prompt whose first character is "/".
+//                          false: only a prompt that does not start with "/". A leading space
+//                          counts, so " /x" is not a slash prompt.
+//               session    the rule matches only this session's requests. A string is the
+//                          session id. { "match": regex } tests the id with a regex.
+//               system     a regex. The rule matches only when the session's system text matches
+//                          it. Claude: the appended system prompt. Codex: developerInstructions.
+//                          A session with no such text has the empty string.
+//               recall     true: the answer is the canary words found in this session's earlier
+//                          user messages, in the order they first came, joined with one space.
+//                          A canary word is an all-caps word of four letters or more, with an
+//                          optional dash and number: PLUM, KIWI, PELICAN-4417. With none the
+//                          answer is "Nothing to recall." A fork's earlier messages start with
+//                          its parent's. With a schema the words go in the value's "result"
+//                          field, or in its first string field when it has none.
+//               status     a list of statuses the rule answers in turn, one per matching request,
+//                          counted as times counts. The last one repeats once the list runs out.
+//                          An entry is a status ("done", "working" or "question") or an object
+//                          { status, result, message }. The answer is the status object
+//                          { status, result, message }, with result null and a made-up message
+//                          when the entry leaves them out. With a schema the object goes over the
+//                          value the schema makes.
+//               goal       Claude: N. The rule matches only a prompt that starts with "/goal".
+//                          The turn plays N model turns. Between two of them the session gets a
+//                          user message that starts "Stop hook feedback:", as the goal's Stop
+//                          hook sends. One result comes after the last. Each model turn logs a
+//                          line { goal: { turn, of } }. With a schema the turn stops after its
+//                          first model turn and answers the status "working", as the real
+//                          program does when the schema cuts the goal short.
+//                          Codex: N turns that thread/goal/set plays by itself, each with its own
+//                          turn/started and turn/completed. The rule sees "/goal <objective>".
+//                          Without a goal rule the goal plays one turn. test/fakes/codex says more.
+//               ask        Claude: the model calls AskUserQuestion before it answers. The fake
+//                          sends a can_use_tool control request for it and logs the reply as a
+//                          line { ask: { behavior, message, interrupt } }, or { ask: { error } }
+//                          when the client answers with an error. A deny with interrupt true ends
+//                          the turn with no success result. Any other reply goes on to the
+//                          answer. true asks a made-up question, a string asks that question.
+//                          When --disallowedTools names AskUserQuestion the model never sees the
+//                          tool, so the fake logs { ask: { skipped: "disallowed" } } and answers.
 // FAKE_DEBUG  a file. Each program appends what it reads and writes, for debugging.
 //
 // Steering. A message sent into a running turn (Claude: a user message with priority next,
@@ -42,6 +82,18 @@
 // logs "queued" when it gets the message and "read" when the turn reads it, after its tool call.
 // Codex logs "read", or why it refused: "no_active_turn", "wrong_turn", "not_steerable" or
 // "unknown_method".
+//
+// Sessions. Each program keeps a session's user messages, one JSON line { role, text } each, in
+// a folder next to FAKE_LOG, and passes them to decide() for recall.
+//
+// Fork and by hand:
+//   Fork. Claude: --fork-session with --resume <parent> copies the parent's messages to the new
+//   session, named by --session-id or made up, and the turn goes on in the new one alone. Codex:
+//   thread/fork with { threadId, cwd } copies them to a new thread in that cwd.
+//   By hand. `claude --resume <id>` with no --input-format and no --print, or `codex resume <id>`,
+//   is a person in a terminal. The fake appends the line in FAKE_PERSON to the session's
+//   messages, logs { byHand: line }, and exits 0 without reading stdin. With FAKE_PERSON unset or
+//   empty the person typed nothing. An unknown id fails as a real resume does.
 
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -88,31 +140,99 @@ function loadRules() {
   return Array.isArray(rules) ? rules : [];
 }
 
+/** The words that stand in for memory: all caps, four letters or more, maybe a dash and a number. */
+const CANARY = /\b[A-Z]{4,}(?:-[0-9]+)?\b/g;
+
+/** The canary words in some texts, each once, in the order they first come. */
+export function canaryWords(texts) {
+  const words = [];
+  for (const text of texts) for (const word of String(text).match(CANARY) ?? []) if (!words.includes(word)) words.push(word);
+  return words;
+}
+
+/** The user messages a session kept in its file, oldest first. */
+export function sessionMessages(file) {
+  if (!existsSync(file)) return [];
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return {};
+      }
+    })
+    .filter((entry) => entry.role === "user" && typeof entry.text === "string")
+    .map((entry) => entry.text);
+}
+
+/** A status object from a status entry: a status, or { status, result, message }. */
+export function statusObject(entry) {
+  const fields = typeof entry === "string" ? { status: entry } : (entry ?? {});
+  const status = fields.status ?? "done";
+  return { status, result: fields.result ?? null, message: fields.message ?? `Fake status ${status}.` };
+}
+
+/** The value a schema makes, with fields laid over it when it makes an object. */
+export function valueWith(schema, fields) {
+  const made = schema ? fabricate(schema) : undefined;
+  return made && typeof made === "object" && !Array.isArray(made) ? { ...made, ...fields } : { ...fields };
+}
+
+/** True when a rule's session field names this session. */
+function sameSession(wanted, session) {
+  if (typeof session !== "string") return false;
+  if (typeof wanted === "string") return wanted === session;
+  return typeof wanted?.match === "string" && new RegExp(wanted.match).test(session);
+}
+
 /**
  * The answer for one request. Returns { rule, kind, text, value, delayMs, hold, message,
- * resetsAt, first, silent, usage, approval, listTools, tool, notSteerable, noSteer, mark, stop, errorInfo, code }. kind is "answer", "fail",
- * "limit", "auth" or "exit".
+ * resetsAt, first, silent, usage, approval, listTools, tool, notSteerable, noSteer, mark, stop,
+ * errorInfo, code, goal, ask }. kind is "answer", "fail", "limit", "auth" or "exit".
+ *
+ * context holds what a rule may match beyond the prompt: { session, system, earlier }, the
+ * session id, its system text and the user messages it got before this one. A program that
+ * leaves it out gets no match from a rule with session or system, and recalls nothing.
  */
-export function decide(program, prompt, schema) {
+export function decide(program, prompt, schema, context = {}) {
   const rules = loadRules();
   const earlier = readLines();
   let picked;
   for (const [index, rule] of rules.entries()) {
     if (rule.program && rule.program !== program) continue;
     if (rule.match && !new RegExp(rule.match).test(prompt)) continue;
-    if (rule.times !== undefined) {
-      const used = earlier.filter((line) => line.rule === index).length;
-      if (used >= rule.times) continue;
-    }
-    picked = { index, rule };
+    if (rule.slash !== undefined && prompt.startsWith("/") !== Boolean(rule.slash)) continue;
+    if (rule.goal !== undefined && !/^\/goal(\s|$)/.test(prompt)) continue;
+    if (rule.session !== undefined && !sameSession(rule.session, context.session)) continue;
+    if (rule.system !== undefined && !new RegExp(rule.system).test(context.system ?? "")) continue;
+    const used = earlier.filter((line) => line.rule === index).length;
+    if (rule.times !== undefined && used >= rule.times) continue;
+    picked = { index, rule, used };
     break;
   }
   const rule = picked?.rule ?? {};
-  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, tool: rule.tool, notSteerable: rule.notSteerable, noSteer: rule.noSteer === true, mark: rule.mark, stop: rule.stop, errorInfo: rule.errorInfo };
+  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, tool: rule.tool, notSteerable: rule.notSteerable, noSteer: rule.noSteer === true, mark: rule.mark, stop: rule.stop, errorInfo: rule.errorInfo, goal: rule.goal, ask: rule.ask };
   if (rule.exit !== undefined) return { ...out, kind: "exit", code: rule.exit };
   if (rule.limit) return { ...out, kind: "limit", resetsAt: rule.limit.resetsAt, first: rule.limit.first === true, silent: rule.limit.silent === true };
   if (rule.auth) return { ...out, kind: "auth" };
   if (rule.fail) return { ...out, kind: "fail", message: rule.fail };
+  let fields;
+  if (Array.isArray(rule.status) && rule.status.length) fields = statusObject(rule.status[Math.min(picked.used, rule.status.length - 1)]);
+  if (rule.recall) {
+    const words = canaryWords(context.earlier ?? []);
+    const said = words.length ? words.join(" ") : "Nothing to recall.";
+    if (!schema && !fields) return { ...out, kind: "answer", text: said };
+    const value = valueWith(schema, fields ?? {});
+    const key = "result" in value || !schema ? "result" : (Object.keys(value).find((name) => typeof value[name] === "string") ?? "result");
+    value[key] = said;
+    return { ...out, kind: "answer", text: JSON.stringify(value), value };
+  }
+  if (fields) {
+    const value = valueWith(schema, fields);
+    return { ...out, kind: "answer", text: JSON.stringify(value), value };
+  }
   let value;
   if (schema) {
     value = rule.answer === undefined ? fabricate(schema) : typeof rule.answer === "string" ? parseOr(rule.answer) : rule.answer;
