@@ -1,6 +1,7 @@
-// A step's note goes as a second text of the same user message: a second text block on Claude
-// Code, a second text input item on Codex. It is never part of the prompt's own text, and never a
-// turn of its own. Run against the fake programs in test/fakes.
+// A step's note goes as another text of the same user message, before the prompt: a text block on
+// Claude Code, a text input item on Codex. Claude Code reads a slash command only from a message's
+// last text block, so the prompt goes last. The note is never part of the prompt's own text, and
+// never a turn of its own. Run against the fake programs in test/fakes.
 
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -47,14 +48,21 @@ const PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQD
 
 for (const id of ["claude", "codex"] as const) {
   describe(`the ${id} adapter's note`, () => {
-    test("goes as a second text of the same message, and a rule sees it", async () => {
+    test("goes as a text before the prompt in the same message, and a rule sees it", async () => {
       const c = newCase(id, [{ match: "v2 API", answer: "saw the note" }]);
       const result = await c.run({ prompt: "/canary", note: NOTE, images: [{ mimeType: "image/png", data: PIXEL }] });
       assert.equal(result.text, "saw the note");
       const lines = c.lines();
       assert.equal(lines.length, 1, "one turn");
-      assert.deepEqual(lines[0]?.texts, ["/canary", NOTE]);
+      assert.deepEqual(lines[0]?.texts, [NOTE, "/canary"]);
       assert.equal(lines[0]?.images?.length, 1, "the images still go with the message");
+    });
+
+    test("leaves the slash prompt last, so a slash rule still matches with a note", async () => {
+      const c = newCase(id, [{ slash: true, answer: "ran the command" }, { answer: "no command" }]);
+      const result = await c.run({ prompt: "/canary", note: NOTE });
+      assert.equal(result.text, "ran the command");
+      assert.equal(c.lines()[0]?.texts?.at(-1), "/canary");
     });
 
     test("leaves a step without a note as one text", async () => {

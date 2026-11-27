@@ -54,11 +54,11 @@ const FINAL_ERRORS = new Set(["contextWindowExceeded", "sessionBudgetExceeded", 
 // How long a stop waits for Codex to end the turn before it closes the server.
 const STOP_WAIT_MS = 10_000;
 
-/** The turn's input: the prompt, the note as a second text item, then the images. */
+/** The turn's input: the note as its own text item, then the prompt, then the images. */
 function turnInput(step: Step): UserInput[] {
   return [
-    { type: "text", text: step.prompt, text_elements: [] },
     ...(step.note === undefined ? [] : [{ type: "text", text: step.note, text_elements: [] } satisfies UserInput]),
+    { type: "text", text: step.prompt, text_elements: [] },
     ...(step.images ?? []).map((image): UserInput => ({ type: "image", url: `data:${image.mimeType};base64,${image.data}` })),
   ];
 }

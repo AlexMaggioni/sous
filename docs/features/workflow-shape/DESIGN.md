@@ -374,6 +374,11 @@ Rules that fail instead of falling back:
 - A second `send()` on a handle while one runs fails the script. Today two parallel steps can
   continue one session at once (`workflow.ts:1274-1275`).
 
+On a resume, Claude Code reports the session's whole cost so far as the turn's `total_cost_usd`
+(live test 6). `runOnHarness` subtracts an earlier reading only within one attempt
+(`steps/steps.ts:335-336`). So the map also keeps the cost the session's turns recorded, and a
+kept turn counts only what it added.
+
 ### 2. The done signal
 
 | Option | How | For | Against |
@@ -533,8 +538,11 @@ Before phase 8, a Codex slash prompt goes as written text. Phase 8 brings the re
 
 `sous resume --note` adds the person's note to the prompt of the turn it resumes. On a plain
 prompt the note goes after a blank line, as today (`steps/steps.ts:109`). On a slash prompt it
-goes as a second text block of the same user message on Claude Code, or as a second text input
-item on Codex. It never lands inside the slash prompt, and it is never a turn of its own.
+goes as another text block of the same user message on Claude Code, or as another text input
+item on Codex, before the prompt. Claude Code 2.1.332 reads a slash command only from the
+message's last text block: with the note after `/canary`, live test 1 showed the command never
+ran, and with the note first it ran and the model followed the note. The note never lands inside
+the slash prompt, and it is never a turn of its own.
 
 ### 6. Limits
 
@@ -838,7 +846,7 @@ are made in it:
 | `createSousGlobals` (`sous-globals.ts:75-274`) | Change | The `ask: true` loop (`:246-271`) leaves. `session` and `room` come in. `agent` becomes one line. Code steps, `ask`, `breakpoint` and `choose` stay. |
 | `buildPrompt`, `CONTRACT` (`steps/answer.ts:12-40`) | Remove | The prompt goes as written. |
 | `REPROMPT_TEXT`, `CONTINUATION_INSTRUCTION` (`steps/answer.ts:20-31`) | Change | The first becomes the report prompt. The second becomes `Continue the task.`, since any stop now leads to it. |
-| `runOnHarness` (`steps/steps.ts:279-489`) | Change | Sends the prompt as written. Picks the turn's schema. Runs the report turn. Waits for the session's hold. Fails the step on `no_session` once the handle's first row is written. Keeps the program open across the step's turns. Passes a `--note` after a slash prompt as a second text block, where `withNote` appends it to the prompt today (`steps/steps.ts:109`). |
+| `runOnHarness` (`steps/steps.ts:279-489`) | Change | Sends the prompt as written. Picks the turn's schema. Runs the report turn. Waits for the session's hold. Fails the step on `no_session` once the handle's first row is written. Keeps the program open across the step's turns. Passes a `--note` on a slash prompt as a text block before it, where `withNote` appends it to the prompt today (`steps/steps.ts:109`). Counts only the cost a kept turn added. |
 | `createSteps.run` (`steps/steps.ts:164-239`) | Change | Builds the status schema before the split at `:218`, so a stand-in gets it too. |
 | `AgentRunner`, `StepAsk` (`steps/agent-runner.ts`) | Change | `isolation` leaves `StepAsk` and `StepRoute`. |
 | `EngineFields` (`steps/agent-run.ts:76-171`) | Change | Gains `until` and `fork`. `continueFromSession` and `continueWithPrompt` stay. |
@@ -876,7 +884,7 @@ New files in the engine:
 
 | Part | Verdict | What happens |
 | --- | --- | --- |
-| `Step`, `StepResult` (`packages/harnesses/src/types.ts:54-99`) | Change | `Step.fork`. A note that goes as a second text block or input item after a slash prompt. `StepResult.asked`, set when the agent called the native question tool. |
+| `Step`, `StepResult` (`packages/harnesses/src/types.ts:54-99`) | Change | `Step.fork`. A note that goes as a text block or input item before a slash prompt. `StepResult.asked`, set when the agent called the native question tool. |
 | `claudeOptions` (`claude/run.ts:28-71`) | Change | `forkSession` and a chosen `sessionId` with `resume`. With `ask` on, `AskUserQuestion` leaves `disallowedTools` (`:38`), and the `canUseTool` refusal (`:39-41`) gets new words. |
 | `runClaude` (`claude/run.ts:112-279`) | Change | Reports a fork's own id and not the parent's (`:113`, `:242`). Passes `asked` from `canUseTool` to the answer. Settles the `interrupt: true` refusal as a question, where today it falls to `failed, retry: true` (`:250-251`, `:278`). Keeps the prompt stream open after a `result` for the step's next turn (`:254-257`). A turn still ends at the first `result`, which comes after a whole goal loop. |
 | `Tells` (`claude/tells.ts`) | Keep | No change. |
@@ -1124,23 +1132,35 @@ The building agent runs the person-in-the-loop tests itself:
 
 The `/goal` tests, on Claude Code through `query()` with an open prompt stream. Tests 1 to 3 ran
 on 2026-11-26 with Claude Code 2.1.330, SDK 0.3.330 and Haiku at low effort, for under one cent
-each.
+each. Tests 1, 4, 5 in part, 6 and 8 ran later that day with Claude Code 2.1.332, where `haiku`
+is `claude-haiku-5-5` (`packages/harnesses/test/live/slash.test.ts`, `SOUS_LIVE_SLASH=1`).
 
 1. `/goal <condition>` starts the loop when it is the whole prompt. It did, and `goal` is in the
-   init message's `slash_commands`. Today's label line in front stops it. One part has not run
-   yet. With `sous resume --note`, a slash prompt must still run its command.
+   init message's `slash_commands`. Today's label line in front stops it. With `sous resume
+   --note`, a slash prompt must still run its command. It does when the note's block comes
+   before the prompt, and not after it (decision 5).
 2. How many `result` messages the loop sends. One, after the goal was met. The goal's Stop hook
    sent the agent back twice, as user messages that begin `Stop hook feedback:`. No
    `active_goal` message reached the caller.
 3. Whether the loop runs to the end with `outputFormat` set. It does not. The structured output
    rule ended the query after two of three model turns, with the status `working`. A slash
    prompt runs with no schema, and the report turn asks for the status.
-4. A plain turn with `resume` and a schema after the goal cleared returns the status object.
-   And what a later turn sees when the goal never cleared, and whether sous must send
-   `/goal clear`.
-5. After an abort in the middle of the loop, whether a `resume` finds the goal still active.
+4. A plain turn with `resume` and a schema after the goal cleared returns the status object. It
+   did. A later turn on a goal that is still set runs the goal again: with a schema, the model
+   did the goal's work and reported `done`, and the goal cleared. With no schema, the Stop hook
+   sent the model back until the goal was met, and the turn's answer was the goal's last message.
+   `/goal` with no condition reports the goal, and `/goal clear` clears it. Neither spends a
+   token. A met goal clears by itself.
+5. After an abort in the middle of the loop, whether a `resume` finds the goal still active. In
+   part: after a stop at "Goal set", `/goal` on the resumed session answered "Goal active: ...
+   (not yet evaluated)". Phase 4 runs the abort mid-loop.
 6. Whether the evaluator's tokens are in the usage sous reads (`claude/run.ts:201-205`,
-   `:228-230`). If not, the budget counts too few.
+   `:228-230`). They are not. On a goal turn, the model calls came to about 11,100 to 11,300
+   tokens more than `result.usage`, most of them cache writes. A plain turn has a gap of about
+   1,200 tokens from another background call. `total_cost_usd` includes them. So a budget in
+   dollars counts the evaluator, and a count of tokens does not. On a resume, `total_cost_usd`
+   is the session's total so far (decision 1). The Stop hook's feedback reaches the session
+   file and not the step's history, which keeps only tool results from user messages.
 7. Whether a new worktree under `~/.sous/worktrees` passes the trust rule that hooks need.
 
 The other tests, each behind its own variable. Tests 10, 11 and 13 ran on 2026-11-26, with
@@ -1148,7 +1168,9 @@ Claude Code 2.1.330, SDK 0.3.330 and Haiku at low effort, and with Codex 0.169.0
 at low effort.
 
 8. `/canary` runs a project skill marked `disable-model-invocation: true`, a user skill and a
-   plugin skill.
+   plugin skill. The project skill ran, and is in the init message's `skills` despite the mark.
+   A user skill and a plugin skill are in `skills` too. A plugin's commands are only in
+   `slash_commands`.
 9. Both programs fill the status object with no contract paragraph, and a model that stops early
    reports `working`.
 10. `forkSession` with `resume` gives a new id and leaves the parent as it was, and a fork can
@@ -1169,7 +1191,7 @@ How the plan holds:
 | If the test shows | Then |
 | --- | --- |
 | The goal does not outlive an abort | Nothing changes. A resumed slash turn sends its prompt again. |
-| The evaluator's tokens are missing | The guide says so, and the budget stays a lower bound for goal steps. |
+| The evaluator's tokens are missing | They are. The guide says so: a budget in dollars counts them, and a count of tokens is a lower bound for goal steps. |
 | Models ignore the status with no contract | The fixed sentence of the report prompt gets the contract's words. The prompt of the work turn stays as written. |
 
 ## The owner's answers

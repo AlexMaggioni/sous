@@ -37,9 +37,10 @@
 //                          activeTurnNotSteerable and this turn kind, such as "compact"
 //               times      apply the rule to the first N matching requests only. The count
 //                          comes from earlier lines in FAKE_LOG, so it holds across processes.
-//               slash      true: the rule matches only a prompt whose first character is "/".
-//                          false: only a prompt that does not start with "/". A leading space
-//                          counts, so " /x" is not a slash prompt.
+//               slash      true: the rule matches only a message whose last text starts with
+//                          "/", since Claude Code reads a slash command only from a message's
+//                          last text block. false: only a message whose last text does not. A
+//                          leading space counts, so " /x" is not a slash prompt.
 //               session    the rule matches only this session's requests. A string is the
 //                          session id. { "match": regex } tests the id with a regex.
 //               system     a regex. The rule matches only when the session's system text matches
@@ -194,8 +195,9 @@ function sameSession(wanted, session) {
  * resetsAt, first, silent, usage, approval, listTools, tool, notSteerable, noSteer, mark, stop,
  * errorInfo, code, goal, ask }. kind is "answer", "fail", "limit", "auth" or "exit".
  *
- * context holds what a rule may match beyond the prompt: { session, system, earlier }, the
- * session id, its system text and the user messages it got before this one. A program that
+ * context holds what a rule may match beyond the prompt: { session, system, earlier, last }, the
+ * session id, its system text, the user messages it got before this one and the message's last
+ * text, which a slash rule reads (the whole prompt when it is left out). A program that
  * leaves it out gets no match from a rule with session or system, and recalls nothing.
  */
 export function decide(program, prompt, schema, context = {}) {
@@ -205,8 +207,9 @@ export function decide(program, prompt, schema, context = {}) {
   for (const [index, rule] of rules.entries()) {
     if (rule.program && rule.program !== program) continue;
     if (rule.match && !new RegExp(rule.match).test(prompt)) continue;
-    if (rule.slash !== undefined && prompt.startsWith("/") !== Boolean(rule.slash)) continue;
-    if (rule.goal !== undefined && !/^\/goal(\s|$)/.test(prompt)) continue;
+    const last = context.last ?? prompt;
+    if (rule.slash !== undefined && last.startsWith("/") !== Boolean(rule.slash)) continue;
+    if (rule.goal !== undefined && !/^\/goal(\s|$)/.test(last)) continue;
     if (rule.session !== undefined && !sameSession(rule.session, context.session)) continue;
     if (rule.system !== undefined && !new RegExp(rule.system).test(context.system ?? "")) continue;
     const used = earlier.filter((line) => line.rule === index).length;

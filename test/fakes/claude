@@ -290,7 +290,7 @@ async function runTurn(message, fromTell = false) {
   const texts = promptTexts(message);
   const images = promptImages(message);
   const system = state.init.appendSystemPrompt ?? flags["append-system-prompt"];
-  const decision = decide("claude", prompt, schema, { session: sessionId, system: typeof system === "string" ? system : "", earlier: sessionMessages(join(sessionsDir, sessionId)) });
+  const decision = decide("claude", prompt, schema, { session: sessionId, system: typeof system === "string" ? system : "", earlier: sessionMessages(join(sessionsDir, sessionId)), last: texts.at(-1) ?? "" });
   // queue holds the messages sent into the turn, read the uuids of those it has read.
   const turn = { interrupted: false, uuid: message.uuid, queue: [], read: [], fromTell };
   state.turn = turn;

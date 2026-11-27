@@ -54,8 +54,9 @@ export interface Image {
 export interface Step {
   /** The user message's text, sent as it is. */
   prompt: string;
-  /** A second text of the same user message, after the prompt: a second text block on Claude
-   *  Code, a second text input item on Codex. It never joins the prompt's own text. */
+  /** Another text of the same user message, before the prompt: a text block on Claude Code, a
+   *  text input item on Codex. It never joins the prompt's own text. Claude Code reads a slash
+   *  command only from the message's last text block, so the prompt goes last. */
   note?: string;
   images?: Image[];
   cwd: string;

@@ -75,7 +75,7 @@ return 'done'`;
       assert.equal(line?.texts, undefined, "the note is in the one text block");
     });
 
-    it("sends a note on a slash prompt as a second text of the same message", async () => {
+    it("sends a note on a slash prompt as a text before it, in the same message", async () => {
       const place = fakePlace();
       const steps = createSteps(onFakes(place, { note: { text: NOTE } }));
       try {
@@ -85,8 +85,9 @@ return 'done'`;
       }
       const lines = place.lines();
       assert.equal(lines.length, 1, "the note is no turn of its own");
-      assert.deepEqual(lines[0]?.texts, ["/x run the check", NOTE]);
-      assert.ok(lines[0]?.prompt.startsWith("/x"), `the message starts with the command: ${lines[0]?.prompt}`);
+      assert.deepEqual(lines[0]?.texts, [NOTE, "/x run the check"]);
+      // Claude Code reads a slash command only from the message's last text block.
+      assert.equal(lines[0]?.texts?.at(-1), "/x run the check", "the command is the message's last text, as written");
     });
   });
 }

@@ -418,7 +418,7 @@ async function runTurn(thread, turnId, params) {
   const texts = promptTexts(params.input);
   const images = promptImages(params.input);
   const schema = params.outputSchema ?? null;
-  const decision = decide("codex", prompt, schema, context(thread));
+  const decision = decide("codex", prompt, schema, { ...context(thread), last: texts.at(-1) ?? "" });
   const turn = { id: turnId, interrupted: false, notSteerable: decision.notSteerable, noSteer: decision.noSteer };
   thread.turn = turn;
   const model = params.model ?? thread.model;
