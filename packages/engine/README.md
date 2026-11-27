@@ -50,6 +50,8 @@ rest in its own `vm` realm, with these globals:
 
 - Agent steps: `agent(prompt, options)`, and `session(options)`, whose handle's
   `send(prompt, options)` runs each step of one session.
+- Rooms: `room(options)` lets the sessions of several handles talk until they agree or a decider
+  decides. Each member's turn is one `send()` on its handle.
 - Code steps: `sh`, `js`, `py`, `run` and `waitUntil`. The engine runs them itself, so they get
   the journal, resume, retries and events of any step.
 - Flow: `parallel`, `pipeline`, `phase` and `log`. A retry is a plain loop in the script.
@@ -124,6 +126,7 @@ does not, such as `createRun` for a run that needs no worker.
 | `src/run-events.ts`, `src/run-observability.ts`, `src/display.ts` | A run's events and what the event log saves of them. `display.ts` has the fold that turns step events into the step list. |
 | `src/run-environment.ts`, `src/redact.ts` | `run-environment.ts` records the git commit of the run's folder and a digest of its uncommitted changes, for diagnosis only. A resume never checks them. `redact.ts` hides credentials in text the engine shows a host, and cuts long text on a code point boundary. |
 | `src/turns/` | Session handles. `session.ts` has `session()`, a handle's `send()` and `agent()`. Each turn reaches the engine's agent step with `session: { key, start }`, and the engine keeps the map from key to the program's session. `session-map.ts` has that map's entry, and what ends a session, copies one for `fork()` and counts its cost. `status.ts` has a turn's status: the schema a turn answers with, reading its value, and the fixed prompts `Continue the task.` and the report prompt. `loop.ts` runs a step's turns until the agent says done: it sends `Continue the task.` after `working`, waits on a `join` question after `question`, runs the checks after `done`, and counts `maxTurns`. `until.ts` reads a step's `until`, which also carries `ask` and the limits to the steps module. |
+| `src/room/` | `room()`. `order.ts` says who speaks next and when the room ends, and `prompt.ts` writes each turn's prompt and schema. Neither does any I/O. `options.ts` reads and checks the options, and `room.ts` runs the turns as `send()` calls on the members' handles, in the script's `parallel()`. A member whose turn waits for the person gives way, and the others go on. |
 | `src/steps/` | One agent step. `agent-runner.ts` is the seam the engine calls, and `steps.ts` runs the step on a harness. |
 | `src/places/` | Where a run works: a worktree, the project folder or a scratch folder. `runPlaces(paths, notes)` gives the workflow core the places of one run tree. |
 | `src/workflows/`, `src/fabricate.ts` | Saved workflows: the folders that hold them, the check and the dry run. `fabricate.ts` makes a value that fits a JSON Schema, for the dry run's stand-in agents. |

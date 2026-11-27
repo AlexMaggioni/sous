@@ -68,10 +68,13 @@ for (const [program, model] of [
         assert.deepEqual([holderOf(file).pid, holderOf(file).by], [PERSON, "join"], "the session is the person's");
         assert.equal(siblingDone, false, "the sibling still runs");
 
-        // The session's next turn waits while the person holds it.
-        const next = steps.run("Go on.", routed(steps, { label: "a", model }, { runId: RUN, callIndex: 2, hold: true, continueFromSession: open.delivered("a")!, continueWithPrompt: true }));
+        // The session's next turn waits while the person holds it. The call hears it too, so a
+        // room can go on without the member.
+        let callWaits = 0;
+        const next = steps.run("Go on.", routed(steps, { label: "a", model }, { runId: RUN, callIndex: 2, hold: true, continueFromSession: open.delivered("a")!, continueWithPrompt: true, onWait: () => callWaits++ }));
         await waitUntil(() => waits.length > 0, "the next turn did not wait for the person");
         assert.deepEqual(waits, ["a"]);
+        assert.equal(callWaits, 1, "the call's own onWait ran once");
         assert.equal(place.lines().filter((line) => line.prompt === "Go on.").length, 0, "no program got the next turn while the person worked");
 
         place.gate("quick-go");

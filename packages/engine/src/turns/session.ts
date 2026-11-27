@@ -17,6 +17,10 @@
 // `until: "turn"` sends one turn more, "Continue the task.", after a turn the person stepped into
 // or the agent ended with a question, as the loop does, so its value is the agent's answer.
 //
+// A room watches its members' handles. watch() tells it when a member's turn waits for the person:
+// the agent asked, the person stepped into the turn, or the turn waits because the person holds
+// the session. The room then goes on without that member until its turn ends.
+//
 // A handle with place "worktree" gets its worktree when session() is called, and the workflow
 // that made it closes it when it returns. agent() with place "worktree" gets one for its step,
 // which closes when the step ends. A run that stops or pauses keeps both, for a resume. A fork
@@ -161,8 +165,22 @@ function engineOptions(options: Record<string, unknown>): Record<string, unknown
   return rest;
 }
 
+/** What a room reads of a handle: its label and the model its turns run on. */
+export interface HandleInfo {
+  label: string;
+  model?: string;
+}
+
 export function createSessions(deps: SessionDeps) {
   const labels = new Set<string>();
+  /** The handles of this workflow, for describe(). */
+  const handles = new WeakMap<object, HandleInfo>();
+  /** What watches each session key, for watch(). */
+  const watchers = new Map<string, Set<() => void>>();
+  /** Tells the watchers of the session `key` that its turn waits for the person. */
+  const away = (key: string) => {
+    for (const watcher of [...(watchers.get(key) ?? [])]) watcher();
+  };
   const track = deps.track ?? (<F>(fn: F) => fn);
   let agents = 0;
   /** How many agent() calls with place "worktree" each label had. */
@@ -185,6 +203,7 @@ export function createSessions(deps: SessionDeps) {
       try {
         let value = await turn(prompt, until);
         for (let stopped = unfinished(value); stopped; stopped = unfinished(value)) {
+          if (key !== undefined) away(key);
           if (stopped.status === "question") {
             await end?.();
             await deps.join(stopped.message ?? "The agent has a question.", joinLabel);
@@ -287,7 +306,7 @@ export function createSessions(deps: SessionDeps) {
         return await runStep(prompt, options, stepLabel, label, tree ? cwd : held.cwd, label, (text, until) => {
           const start = turns === 0 ? state.first : "kept";
           turns++;
-          return deps.agent(text, { ...step, until, session: { key: label, start, ...placed } });
+          return deps.agent(text, { ...step, until, session: { key: label, start, ...placed, waits: () => away(label) } });
         });
       } finally {
         running = false;
@@ -322,7 +341,10 @@ export function createSessions(deps: SessionDeps) {
       return handle({ label: forkLabel, held: forkHeld, cwdOption, ...(forkTree ? { tree: forkTree } : {}), cwd: forkCwd, placed: forkPlaced, ...(forkChanged ? { changed: forkChanged } : {}), first: "fork" });
     };
 
-    return Object.freeze({ label, cwd, ...(tree ? { branch: tree.branch } : {}), send: track(send), fork: track(fork) });
+    const made = Object.freeze({ label, cwd, ...(tree ? { branch: tree.branch } : {}), send: track(send), fork: track(fork) });
+    const model = changed ?? held.model;
+    handles.set(made, { label, ...(typeof model === "string" ? { model } : {}) });
+    return made;
   };
 
   /** One send on a session no later step uses. It takes a session's options and a turn's. */
@@ -359,5 +381,20 @@ export function createSessions(deps: SessionDeps) {
     }
   };
 
-  return { session, agent };
+  /** The label and model of a handle this workflow made, else undefined. */
+  const describe = (value: unknown): HandleInfo | undefined =>
+    value !== null && typeof value === "object" ? handles.get(value) : undefined;
+
+  /** Calls `fn` each time a turn of the session `label` waits for the person. Gives the call that stops it. */
+  const watch = (label: string, fn: () => void): (() => void) => {
+    const set = watchers.get(label) ?? new Set();
+    watchers.set(label, set);
+    set.add(fn);
+    return () => {
+      set.delete(fn);
+      if (set.size === 0) watchers.delete(label);
+    };
+  };
+
+  return { session, agent, describe, watch };
 }

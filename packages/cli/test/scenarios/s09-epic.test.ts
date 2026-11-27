@@ -105,10 +105,13 @@ for (const [program, model] of [
       const [built, held] = [turnOf(before, implement(2))!, turnOf(before, tests(2))!];
       assert.equal(held.sessionId, built.sessionId, "ticket 2's implementer keeps its session for the tests");
 
+      // What the run saved before the resume: its agents and call rows, which the resume reads to go on.
+      const interrupted = readState(world.paths, runId);
+      const rowsBefore = JSON.stringify({ status: interrupted?.status, pauseReason: interrupted?.pauseReason, agents: interrupted?.agents, calls: interrupted?.calls }, null, 2);
       const resumed = await world.sous("resume", runId, "--wait", "--json").catch((error: Error) => {
-        // A resume that hangs shows what the fakes were asked and what the run saved.
+        // A resume that hangs shows what the fakes were asked and what the run saved, before and after.
         const asked = turns(world.log()).map((line) => `${line.prompt} (session ${line.sessionId}, resume ${line.resume})`);
-        throw new Error(`${error.message}\nasked:\n${asked.join("\n")}\nsaved:\n${JSON.stringify(readState(world.paths, runId), null, 2)}`);
+        throw new Error(`${error.message}\nasked:\n${asked.join("\n")}\nsaved before the resume:\n${rowsBefore}\nsaved:\n${JSON.stringify(readState(world.paths, runId), null, 2)}`);
       });
       assert.equal(resumed.code, 0, `${resumed.stdout}\n${resumed.stderr}`);
       assert.equal(readState(world.paths, runId)?.status, "completed");

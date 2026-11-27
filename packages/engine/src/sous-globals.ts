@@ -2,8 +2,8 @@
 //
 // Code steps (sh, js, py, run, waitUntil) go to the engine's code() as a spec. The engine runs
 // them itself, so they get the journal, resume, retries, limits and events of any step.
-// session() and agent() come from turns/session.ts. Each removed function fails the script with
-// what to write instead.
+// session() and agent() come from turns/session.ts, and room() from room/room.ts. Each removed
+// function fails the script with what to write instead.
 
 import type { CheckpointPurpose } from "./checkpoint-call.js";
 import type { CodeStepEnv, ExecSpec } from "./code-steps.js";
@@ -12,6 +12,7 @@ import { decisionOf, type Decision } from "./runs/inbox.js";
 import { parseDurationSeconds } from "./duration.js";
 import { isSchemaObject } from "./steps/answer.js";
 import { cloneStrictJsonValue } from "./strict-json.js";
+import { createRoom } from "./room/room.js";
 import { createSessions, type SessionPlaces } from "./turns/session.js";
 
 type AgentFn = (prompt: string, options: Record<string, unknown>) => Promise<unknown>;
@@ -50,6 +51,8 @@ export interface SousGlobalDeps {
   forkSession?: (from: string, key: string) => boolean;
   /** Where sessions and steps with place "worktree" work. */
   places?: SessionPlaces;
+  /** The script's parallel(). A room runs its turns through it. */
+  parallel: (thunks: Array<() => Promise<unknown>>) => Promise<unknown[]>;
 }
 
 interface StepOptions {
@@ -113,7 +116,7 @@ function plainCopy<T>(value: T): T {
 }
 
 export function createSousGlobals(deps: SousGlobalDeps) {
-  const { session, agent } = createSessions({
+  const { session, agent, describe, watch } = createSessions({
     agent: deps.agent,
     resolveCwd: deps.resolveCwd,
     // A check command is a code step that may fail, as sh runs it.
@@ -132,6 +135,9 @@ export function createSousGlobals(deps: SousGlobalDeps) {
     ...(deps.track ? { track: deps.track } : {}),
     ...(deps.places ? { places: deps.places } : {}),
   });
+
+  /** Agents that talk to each other until they reach a goal. Each member is a session handle. */
+  const room = createRoom({ parallel: deps.parallel, log: deps.log, describe, watch });
 
   const exec = (spec: ExecSpec, options: StepOptions, defaultLabel: string, where: string): Promise<unknown> => {
     const schema = schemaOf(options.schema, where);
@@ -343,5 +349,5 @@ export function createSousGlobals(deps: SousGlobalDeps) {
     Object.entries(REMOVED_GLOBALS).map(([name, message]) => [name, (): never => fail(message)]),
   ) as Record<keyof typeof REMOVED_GLOBALS, () => never>;
 
-  return { agent, session, sh, js, py, run, waitUntil, ask, breakpoint, choose, ...removed };
+  return { agent, session, room, sh, js, py, run, waitUntil, ask, breakpoint, choose, ...removed };
 }

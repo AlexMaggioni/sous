@@ -186,7 +186,7 @@ export function createSteps(options: StepsOptions): Steps {
   const handing = new Set<string>();
 
   /** Wait until nobody holds the session and no hand-over to a person is under way. */
-  async function free(runId: string, sessionId: string, label: string | undefined, signal: AbortSignal | undefined): Promise<void> {
+  async function free(runId: string, sessionId: string, label: string | undefined, signal: AbortSignal | undefined, onWait?: () => void): Promise<void> {
     let told = false;
     for (;;) {
       signal?.throwIfAborted();
@@ -195,6 +195,7 @@ export function createSteps(options: StepsOptions): Steps {
       // Another turn of this run may hold it too, such as a second send on one handle at once.
       if (holder?.by === "join" && !told) {
         options.onWait?.({ label, sessionId, holder });
+        onWait?.();
         told = true;
       }
       await pause(holds?.pollMs ?? 250, signal);
@@ -266,7 +267,7 @@ export function createSteps(options: StepsOptions): Steps {
     };
     let release: (() => void) | undefined;
     for (;;) {
-      if (resumes) await free(runKey, resumes, call.label, call.signal);
+      if (resumes) await free(runKey, resumes, call.label, call.signal, call.onWait);
       if (options.slots) {
         options.onSlot?.({ label: call.label, state: "waiting" });
         release = await options.slots.acquire({ runId: call.runId, label: call.label }, call.signal);

@@ -469,6 +469,8 @@ export interface StepSession {
   place?: "worktree";
   /** The folder of the worktree the step works in, which turns/session.ts made. */
   worktree?: string;
+  /** Called when the turn waits because the person holds its session. A room goes on without the member then. */
+  waits?: () => void;
 }
 
 interface RuntimeState {
@@ -1326,7 +1328,7 @@ async function runLevel<T>(
                   cwd: runCwd,
                   mcpServers: agentOptions.mcpServers,
                   images: agentOptions.images,
-                  runId,
+                  runId, ...(agentOptions.session?.waits ? { onWait: agentOptions.session.waits } : {}),
                   ...(continueFromSession === undefined ? {} : { continueFromSession }),
                   // A kept turn sends this step's prompt into its session. Only a resumed, interrupted turn gets the
                   // runner's resume instruction. A session's turn keeps its program open until its step ends (endSession).
@@ -1850,7 +1852,7 @@ async function runLevel<T>(
     stepOverrides: options.stepOverrides,
     resolveCwd: (cwd) => resolvePath(baseCwd, cwd ?? "."),
     track: tracked, onDryRunCheck: options.codeEnv?.onDryRunCheck, endSession: endSession(sessions, agentRunner), forkSession: forkSession(sessions),
-    places: stepPlaces,
+    places: stepPlaces, parallel,
   });
 
   const context = vm.createContext({
@@ -2167,8 +2169,9 @@ function checkSessionFields(options: AgentOptions): void {
   const session = options.session as unknown;
   if (session === undefined) return;
   if (session === null || typeof session !== "object" || Array.isArray(session)) refuse("session takes an object");
-  const { key, start, once, place, worktree, ...rest } = session as Record<string, unknown>;
-  if (Object.keys(rest).length > 0) refuse(`session takes key, start, once, place and worktree, not ${Object.keys(rest).join(", ")}`);
+  const { key, start, once, place, worktree, waits, ...rest } = session as Record<string, unknown>;
+  if (Object.keys(rest).length > 0) refuse(`session takes key, start, once, place, worktree and waits, not ${Object.keys(rest).join(", ")}`);
+  if (waits !== undefined && typeof waits !== "function") refuse("session.waits is a function");
   if (once !== undefined && typeof once !== "boolean") refuse("session.once is true or false");
   if (start !== "fresh" && start !== "kept" && start !== "fork") refuse('session.start is "fresh", "kept" or "fork"');
   if (key !== undefined && (typeof key !== "string" || key.trim() === "")) refuse("session.key is a label");

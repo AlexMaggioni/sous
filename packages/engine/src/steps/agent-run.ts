@@ -111,6 +111,8 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
    *  report received before the attempt settles wins. Fires on success AND error. May
    *  never fire. */
   onUsage?: (usage: AgentUsage) => void;
+  /** Called once when the turn waits because a person holds its session. NOT hashed. */
+  onWait?: () => void;
   /** Out-of-band result provenance for the current attempt. The last report received
    *  before the attempt settles wins; late reports are dropped by the engine. */
   onResultProvenance?: (provenance: AgentResultProvenance) => void;
