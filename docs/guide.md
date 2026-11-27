@@ -165,6 +165,32 @@ A script has these steps (see also [the engine README](../packages/engine/README
     answer that did not fit. Reaching either fails the step with the code `STEP_LIMIT`, which
     the script can catch. Uncaught, it fails the run.
 
+  A prompt goes to the agent as written, the same text you would type in the session. A prompt
+  that starts with a slash command, such as `/goal every test passes` or `/code-review`, runs that
+  command. The command owns its turn's answer, so sous then sends `Report on the task you were
+  given.` in the same session, and the report turn answers with the status and the schema's
+  value. With `until: "turn"`, a slash step gets the report turn only when it has a `schema`. A
+  `--note` on a slash step goes before the command, as a text of its own. `sous check` notes a
+  prompt that starts with a value made at run time, since a value that starts with `/` would run
+  a command.
+
+  Codex reads no slash command from text, so on Codex sous sends each one to what the Codex app
+  server has:
+
+  - `/goal <objective>` sets the session's goal. Codex runs its own turns until the goal is met
+    or blocked, and a stop pauses the goal. A note goes after the objective.
+  - `/goal` alone answers with the goal and its status, and `/goal clear` clears it. Neither
+    command calls the model. The report turn still follows.
+  - `/review` reviews the changes not committed, and `/review <instructions>` follows its own
+    instructions, with a note after them. The answer is the review.
+  - `/compact` compacts the session. `/review` alone and `/compact` take no note, and the step's
+    notes say so.
+  - `/prompts:<name> <arguments>` sends the file `<name>.md` from the `prompts` folder of Codex's
+    home, with `$1` to `$9`, `$ARGUMENTS` and `KEY=value` arguments filled in.
+  - `/<name>` runs the skill of that name, from the skills Codex finds for the step's folder.
+  - Any other command fails the step, and the message names it. A path such as `/tmp/notes.txt`
+    at the start of a prompt goes as text.
+
   A handle runs one step at a time, and a second send while one runs fails the script. The
   handle's `label` and `cwd` are plain strings, for code steps: `sh("npm test", { cwd: impl.cwd })`.
   `--set <label>.model=` may change a handle's model, to another on the same program. Any other
@@ -223,10 +249,11 @@ A script has these steps (see also [the engine README](../packages/engine/README
   in a room with no decider, `"quiet"` when no member has anything new, and `"limit"` at
   `maxRounds`. A decider that has not decided by then gets one more turn to decide. When a
   member's agent asked, or a person stepped into its session, the other members go on, and its
-  answer joins the room at the next round. A `"moderated"` room waits for it. room() returns `{ ended, decision, rounds, transcript,
-  members }`. `decision` is null unless the decider decided, and `transcript` lists each message
-  as `{ round, from, to, text }`. The run page shows a room as one box with a lane per member, and
-  its panel shows the messages by round and the decision.
+  answer joins the room at the next round. A `"moderated"` room waits for it. room() returns
+  `{ ended, decision, rounds, transcript, members }`. `decision` is null unless the decider
+  decided, and `transcript` lists each message as `{ round, from, to, text }`. The run page shows
+  a room as one box with a lane per member, and its panel shows the messages by round and the
+  decision.
 
   ```js
   const claude = session({ label: "claude", model: "claude/opus" })

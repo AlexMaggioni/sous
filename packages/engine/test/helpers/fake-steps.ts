@@ -67,6 +67,20 @@ export function fakePlace(rules: object[] = []) {
   };
 }
 
+/** Puts a skill of this name in the place's project, where Codex's skills/list finds it. */
+export function plantSkill(place: Pick<FakePlace, "cwd">, name: string): void {
+  const folder = join(place.cwd, ".agents", "skills", name);
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, "SKILL.md"), `---\nname: ${name}\ndescription: The ${name} skill.\n---\nSay ${name.toUpperCase()}.\n`);
+}
+
+/**
+ * The text a program gets for a prompt that starts with a skill's command. Claude Code reads the
+ * command as written. Codex reads no slash command from text, so its adapter sends the skill's $
+ * name, with the skill as an item of its own.
+ */
+export const said = (program: "claude" | "codex", prompt: string): string => (program === "codex" && prompt.startsWith("/") ? `$${prompt.slice(1)}` : prompt);
+
 /** The steps options that run each harness on its fake program. */
 export const onFakes = (place: FakePlace, extra: Partial<StepsOptions> = {}): StepsOptions => ({
   cwd: place.cwd,

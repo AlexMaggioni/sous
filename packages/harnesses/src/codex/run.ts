@@ -1,7 +1,11 @@
 // One turn on Codex: one turn/start on a thread of an app-server. A turn with hold keeps the
 // server and its thread open for the session's next turn, which then sends only its turn/start.
+// A prompt that starts with a slash command Codex has goes to its own method: /goal to
+// thread/goal/set, whose turns run until the goal stops, /review, /compact, a skill as a skill
+// item, and /prompts:<name> as the prompt file's text.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { ASKED_REFUSAL, addAsked, questionText } from "../ask.js";
 import { addUsage, checkStep, noUsage, StepFailure } from "../failure.js";
 import { toStrictJsonSchema } from "../schema.js";
@@ -20,13 +24,15 @@ import type { McpServerElicitationRequestResponse } from "./generated/v2/McpServ
 import type { PermissionsRequestApprovalParams } from "./generated/v2/PermissionsRequestApprovalParams.js";
 import type { PermissionsRequestApprovalResponse } from "./generated/v2/PermissionsRequestApprovalResponse.js";
 import type { RateLimitSnapshot } from "./generated/v2/RateLimitSnapshot.js";
+import type { ThreadGoalUpdatedNotification } from "./generated/v2/ThreadGoalUpdatedNotification.js";
 import type { ThreadTokenUsageUpdatedNotification } from "./generated/v2/ThreadTokenUsageUpdatedNotification.js";
 import type { Turn } from "./generated/v2/Turn.js";
 import type { TurnCompletedNotification } from "./generated/v2/TurnCompletedNotification.js";
 import type { TurnError } from "./generated/v2/TurnError.js";
 import type { UserInput } from "./generated/v2/UserInput.js";
-import { codexEnv } from "./program.js";
+import { codexEnv, codexLogin } from "./program.js";
 import { AppServer, RpcError, type ThreadOpened } from "./rpc.js";
+import { expandPrompt, goalReport, readSlash, type Slash } from "./slash.js";
 import { steerTurn } from "./steer.js";
 
 const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string };
@@ -151,11 +157,24 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
   // The tool each MCP server runs now, since an MCP approval names only the server.
   const running = new Map<string, string>();
 
+  const slash = readSlash(step.prompt);
+  if (step.note !== undefined && (slash.kind === "compact" || (slash.kind === "review" && slash.instructions === undefined))) {
+    notes.push(`Codex's /${slash.kind} takes no note, so the note did not reach it.`);
+  }
+  // A goal runs turns until its status leaves active. goalTurn is true while one of them runs.
+  const goal = slash.kind === "goal";
+  let goalStatus = "active";
+  let goalTurn = false;
+
   // The seam onto the turn, from turn/start to turn/completed.
   let seam: ReturnType<typeof steerTurn> | undefined;
   // The turn can end before the turn/start reply comes. The seam then never opens.
   let turnEnded = false;
   const closeSeam = () => seam?.close() && events.steer?.(undefined);
+  const openSeam = (id: string) => {
+    seam = steerTurn({ server: server!, threadId: threadId!, turnId: id, delivered: (told) => history({ role: "user", kind: "text", text: told }), note: (note) => notes.push(note) });
+    events.steer?.(seam.send);
+  };
   let finish!: (turn: Pick<Turn, "status" | "error">) => void;
   const turnDone = new Promise<Pick<Turn, "status" | "error">>((resolve) => (finish = resolve));
 
@@ -167,7 +186,23 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
     switch (method) {
       case "turn/started": {
         const p = params as { threadId: string; turn: Turn };
-        if (p.threadId === threadId) turnId ??= p.turn.id;
+        if (p.threadId !== threadId) break;
+        if (!goal) turnId ??= p.turn.id;
+        else {
+          // Each turn of a goal has an id and a seam of its own.
+          turnId = p.turn.id;
+          goalTurn = true;
+          openSeam(turnId);
+        }
+        break;
+      }
+      case "thread/goal/updated":
+      case "thread/goal/cleared": {
+        const p = params as Partial<ThreadGoalUpdatedNotification> & { threadId: string };
+        if (!goal || p.threadId !== threadId) break;
+        goalStatus = p.goal?.status ?? "cleared";
+        // A goal that stops between its turns ends the step with the last turn's answer.
+        if (goalStatus !== "active" && !goalTurn) finish({ status: "completed", error: null });
         break;
       }
       case "thread/tokenUsage/updated": {
@@ -202,6 +237,9 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
         if (item.type === "agentMessage") {
           text = item.text;
           history({ role: "assistant", kind: "text", text: item.text });
+        } else if (item.type === "exitedReviewMode") {
+          text = item.review;
+          history({ role: "assistant", kind: "text", text: item.review });
         } else if (item.type === "commandExecution") {
           const failed = item.status !== "completed" || (item.exitCode !== null && item.exitCode !== 0);
           history({ role: "tool", kind: "toolResult", text: item.aggregatedOutput ?? "", ...(failed ? { isError: true } : {}) });
@@ -224,8 +262,11 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
       case "turn/completed": {
         const p = params as TurnCompletedNotification;
         if (p.threadId !== threadId || (turnId && p.turn.id !== turnId)) break;
-        turnEnded = true;
+        goalTurn = false;
         closeSeam();
+        // An active goal goes on to its next turn. A turn that failed or stopped ends it.
+        if (goal && goalStatus === "active" && p.turn.status === "completed") break;
+        turnEnded = true;
         finish(p.turn);
         break;
       }
@@ -238,6 +279,11 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
   let stopTimer: NodeJS.Timeout | undefined;
   const stop = () => {
     if (threadId && turnId) server?.request("turn/interrupt", { threadId, turnId }).catch(() => undefined);
+    if (goal && threadId) {
+      // A paused goal starts no turn after this one. Between turns the step ends now.
+      server?.request("thread/goal/set", { threadId, status: "paused" }).catch(() => undefined);
+      if (!goalTurn) finish({ status: "interrupted", error: null });
+    }
     // A stop before turn/start answered runs again after it, with the same deadline.
     stopTimer ??= setTimeout(() => finish({ status: "interrupted", error: null }), STOP_WAIT_MS);
   };
@@ -276,47 +322,26 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
     events.model?.(model);
     if (step.signal?.aborted) fail("The step was stopped.", { kind: "stopped" });
 
-    const started = await server!.request("turn/start", {
-      threadId,
-      input: turnInput(step),
-      approvalPolicy: mode.approvalPolicy,
-      approvalsReviewer: mode.approvalsReviewer,
-      sandboxPolicy: mode.sandboxPolicy,
-      ...(step.model ? { model: step.model } : {}),
-      ...(step.effort ? { effort: step.effort } : {}),
-      ...(step.schema ? { outputSchema: toStrictJsonSchema(step.schema) as Record<string, never> } : {}),
-    });
-    turnId ??= started.turn.id;
-    // The thread holds the prompt once turn/start has returned.
+    const started = await startWork(server!, step, threadId, mode, slash, fail);
+    // The thread holds the prompt once its request has returned.
     events.delivered?.();
-    if (!turnEnded) {
-      seam = steerTurn({ server: server!, threadId, turnId, delivered: (told) => history({ role: "user", kind: "text", text: told }), note: (note) => notes.push(note) });
-      events.steer?.(seam.send);
+    if (started.text !== undefined) {
+      // A goal's report or clear runs no turn.
+      text = started.text;
+      history({ role: "assistant", kind: "text", text });
+      finish({ status: "completed", error: null });
+    } else if (started.turnId) {
+      turnId ??= started.turnId;
+      if (!turnEnded) openSeam(turnId);
     }
     if (step.signal?.aborted) stop();
     const exited = server!.exited.then((why): never => {
       throw new RpcError(server?.stderr.trim() || why, -32000);
     });
     turn = await Promise.race([turnDone, exited]);
-    if (asked !== undefined && !step.signal?.aborted) {
-      // sous ended the turn on the question. A value counts only from a turn that completed.
-      answer = { sessionId: threadId, model, text, usage: spent, asked, ...(notes.length ? { notes } : {}) };
-      if (step.schema && turn.status === "completed") {
-        try {
-          answer = { ...answer, value: JSON.parse(text) };
-        } catch {
-          // The question stands without a value.
-        }
-      }
-    } else if (turn.status === "completed" && !step.signal?.aborted) {
-      answer = { sessionId: threadId, model, text, usage: spent, ...(notes.length ? { notes } : {}) };
-      if (step.schema) {
-        try {
-          answer = { ...answer, value: JSON.parse(text) };
-        } catch {
-          answer = undefined;
-        }
-      }
+    if (!step.signal?.aborted) {
+      const base = { sessionId: threadId, model, text, usage: spent, ...(asked !== undefined ? { asked } : {}), ...(notes.length ? { notes } : {}) };
+      answer = answerOf(base, turn, Boolean(step.schema));
     }
   } catch (error) {
     if (error instanceof StepFailure) throw error;
@@ -356,6 +381,91 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
   }
   if (info === "unauthorized") return fail(message, { kind: "auth" });
   return fail(message, { kind: "failed", retry: !(typeof info === "string" && FINAL_ERRORS.has(info)) });
+}
+
+/**
+ * The step's answer once its turn ended, or none. A turn that asked answers with its question,
+ * since sous ended the turn on it, and with a value only when the turn completed with JSON. Any
+ * other turn answers only when it completed, and with a schema only when its text is JSON, so a
+ * step whose answer is not JSON goes on to the repair.
+ */
+function answerOf(base: StepResult, turn: Pick<Turn, "status">, schema: boolean): StepResult | undefined {
+  const fallback = base.asked !== undefined ? base : undefined;
+  if (turn.status !== "completed") return fallback;
+  if (!schema) return base;
+  try {
+    return { ...base, value: JSON.parse(base.text) };
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Starts the step's work on the thread. A plain prompt, a skill and a prompt file go as a turn, and
+ * /review as a review turn: each answers with its turn's id. A goal's turns and a compact turn
+ * start by themselves, so their ids come with turn/started. /goal alone and /goal clear run no
+ * turn and answer with their text.
+ */
+async function startWork(server: AppServer, step: Step, threadId: string, mode: Mode, slash: Slash, fail: (message: string, failure: Failure) => never): Promise<{ turnId?: string; text?: string }> {
+  const settings = {
+    approvalPolicy: mode.approvalPolicy,
+    approvalsReviewer: mode.approvalsReviewer,
+    sandboxPolicy: mode.sandboxPolicy,
+    ...(step.model ? { model: step.model } : {}),
+    ...(step.effort ? { effort: step.effort } : {}),
+  };
+  switch (slash.kind) {
+    case "goal-show":
+      return { text: goalReport((await server.request("thread/goal/get", { threadId })).goal) };
+    case "goal-clear":
+      return { text: (await server.request("thread/goal/clear", { threadId })).cleared ? "Goal cleared" : "No goal set" };
+    case "goal": {
+      // The goal's turns take the thread's settings, so the step's go first. A note goes after
+      // the objective, since the goal has no other input.
+      await server.request("thread/settings/update", { threadId, ...settings });
+      await server.request("thread/goal/set", { threadId, objective: withNote(slash.objective, step.note) });
+      return {};
+    }
+    case "compact":
+      await server.request("thread/compact/start", { threadId });
+      return {};
+    case "review": {
+      await server.request("thread/settings/update", { threadId, ...settings });
+      // A review's own instructions take the note after them. A review of the changes takes none.
+      const target = slash.instructions === undefined ? { type: "uncommittedChanges" as const } : { type: "custom" as const, instructions: withNote(slash.instructions, step.note) };
+      return { turnId: (await server.request("review/start", { threadId, target, delivery: "inline" })).turn.id };
+    }
+    default: {
+      const input = await commandInput(server, step, slash, fail);
+      const outputSchema = step.schema ? { outputSchema: toStrictJsonSchema(step.schema) as Record<string, never> } : {};
+      return { turnId: (await server.request("turn/start", { threadId, input, ...settings, ...outputSchema })).turn.id };
+    }
+  }
+}
+
+/** The text with the note after a blank line, for an input that has no other place for it. */
+const withNote = (text: string, note: string | undefined) => (note === undefined ? text : `${text}\n\n${note}`);
+
+/**
+ * A turn's input: the prompt as text, a skill as the text "$name" and the skill item, or a prompt
+ * file's text. A command that is none of these fails the step.
+ */
+async function commandInput(server: AppServer, step: Step, slash: Slash, fail: (message: string, failure: Failure) => never): Promise<UserInput[]> {
+  if (slash.kind === "prompt") {
+    const file = join(codexLogin(codexEnv(step.account)).folder, "prompts", `${slash.name}.md`);
+    if (!existsSync(file)) fail(`Codex has no prompt /prompts:${slash.name}, since ${file} does not exist.`, { kind: "failed", retry: false });
+    return turnInput({ ...step, prompt: expandPrompt(readFileSync(file, "utf8"), slash.args) });
+  }
+  if (slash.kind !== "command") return turnInput(step);
+  const listed = await server.request("skills/list", { cwds: [step.cwd] });
+  const skill = listed.data.flatMap((entry) => entry.skills).find((found) => found.name === slash.name && found.enabled);
+  if (!skill) {
+    const known = "/goal, /review, /compact, /prompts:<name> and the skills it finds";
+    fail(`Codex has no command or skill /${slash.name}. A Codex step runs ${known}.`, { kind: "failed", retry: false });
+  }
+  // The text names the skill with $, as a person types it in Codex, and the item loads it.
+  const said = `$${slash.name}${slash.rest ? ` ${slash.rest}` : ""}`;
+  return [...turnInput({ ...step, prompt: said }), { type: "skill", name: skill!.name, path: skill!.path }];
 }
 
 /** A Codex app-server a turn kept open, with its thread. */

@@ -10,7 +10,7 @@ import { Type } from "typebox";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { StepRequest } from "../src/steps/agent-run.js";
 import { createSteps } from "../src/steps/steps.js";
-import { fakePlace, onFakes, routed, wentOn, type FakeLine } from "./helpers/fake-steps.js";
+import { fakePlace, onFakes, plantSkill, routed, said, wentOn, type FakeLine } from "./helpers/fake-steps.js";
 
 for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) delete process.env[name];
 
@@ -28,6 +28,7 @@ const resultSchema = (line: FakeLine | undefined) =>
 /** Runs one step on the fakes with the given rules, and gives its value and the fakes' turns. */
 async function step(prompt: string, fieldsOf: Omit<StepRequest, "route">, rules: object[] = [], model = "claude/haiku") {
   const place = fakePlace(rules);
+  plantSkill(place, "canary");
   const steps = createSteps(onFakes(place));
   try {
     const value = await steps.run(prompt, routed(steps, { label: "builder", model }, fieldsOf));
@@ -68,7 +69,7 @@ for (const [harness, model] of [
       assert.deepEqual(
         lines.map((line, i) => [line.prompt, fields(line), i === 0 ? line.resume : wentOn(lines[0], line)]),
         [
-          ["/canary", null, false],
+          [said(harness, "/canary"), null, false],
           // Claude Code takes a schema once per program, so its report turn resumes the session in a new one.
           [REPORT, STATUS, harness === "claude" ? "resumed" : "held"],
         ],
@@ -84,7 +85,7 @@ for (const [harness, model] of [
       assert.deepEqual(
         lines.map((line, i) => [line.prompt, fields(line), i === 0 ? line.resume : wentOn(lines[0], line)]),
         [
-          ["/canary", null, false],
+          [said(harness, "/canary"), null, false],
           // Claude Code takes a schema once per program, so its report turn resumes the session in a new one.
           [REPORT, STATUS, harness === "claude" ? "resumed" : "held"],
         ],
@@ -124,7 +125,7 @@ for (const [harness, model] of [
       const { value, lines } = await step("/canary", {}, [], model);
       assert.deepEqual(
         lines.map((line) => [line.prompt, fields(line)]),
-        [["/canary", null]],
+        [[said(harness, "/canary"), null]],
       );
       assert.equal(typeof value, "string");
     });
@@ -134,7 +135,7 @@ for (const [harness, model] of [
       assert.deepEqual(
         lines.map((line) => [line.prompt, fields(line)]),
         [
-          ["/canary", null],
+          [said(harness, "/canary"), null],
           [REPORT, ["ok", "summary"]],
         ],
       );

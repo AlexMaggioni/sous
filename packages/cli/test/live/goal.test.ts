@@ -1,18 +1,19 @@
-// Live scenarios 2 and 3 of the workflow shape, through `sous run` on Claude Code. A fixture
+// Live scenarios 2 and 3 of the workflow shape, through `sous run`. A fixture
 // repository has three stubbed functions and a test for each, which `node --test` runs with no
 // install. Scenario 2 sends `/goal every test in test/ passes`: the goal's turn runs with no
 // schema, then the report turn asks for the status in the same session. Scenario 3 sends a plain
 // prompt that runs until the agent says done. Each workflow then runs `node --test`, and the test
 // passes when it exits 0, the step's turns are those the design says, and every turn ran in one
-// session. It never reads the model's words.
+// session. It never reads the model's words. Scenario 2 runs on Claude Code and on Codex, where
+// the goal goes through thread/goal/set. Scenario 3 runs on Claude Code.
 //
-// It is off by default. It needs Claude Code and your own login, so run it from packages/cli
-// without test/with-temp-home.mjs, after pnpm build:
+// It is off by default. It needs Claude Code and Codex and your own logins, so run it from
+// packages/cli without test/with-temp-home.mjs, after pnpm build:
 //
 //   env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID SOUS_LIVE_GOAL=1 ../../node_modules/.bin/tsx --test test/live/goal.test.ts
 //
-// Every turn runs on haiku at low effort. The test prints each turn's status, cost, tokens and
-// time, and each run's time.
+// Every Claude Code turn runs on haiku at low effort, and every Codex turn on gpt-6-luna at low
+// effort. The test prints each turn's status, cost, tokens and time, and each run's time.
 
 import assert from "node:assert/strict";
 import { describe, test, type TestContext } from "node:test";
@@ -21,7 +22,8 @@ import { liveWorld, programPrompts, turnLine, turnsOf, type StepTurn, type LiveW
 import { TEST_COMMAND, plantStubs } from "../helpers/stub-repo.js";
 
 const ON = process.env.SOUS_LIVE_GOAL === "1";
-const MODEL = "claude/haiku";
+const MODELS = { claude: "claude/haiku", codex: "codex/gpt-6-luna" } as const;
+type Program = keyof typeof MODELS;
 const EFFORT = "low";
 const OBJECTIVE = "every test in test/ passes";
 const GOAL = `/goal ${OBJECTIVE}`;
@@ -29,9 +31,9 @@ const PLAIN = "Write the functions in src/text.js so that every test in test/ pa
 const REPORT = "Report on the task you were given.";
 const CONTINUE = "Continue the task.";
 
-/** A workflow in the project folder: the step, then the fixture's tests. */
-const script = (name: string, prompt: string) => `export const meta = { name: '${name}', description: 'Make the stubs pass', place: 'folder' }
-const result = await agent(${JSON.stringify(prompt)}, { label: 'impl', model: '${MODEL}', effort: '${EFFORT}' })
+/** A workflow in the project folder: the step on the program, then the fixture's tests. */
+const script = (name: string, prompt: string, program: Program) => `export const meta = { name: '${name}', description: 'Make the stubs pass', place: 'folder' }
+const result = await agent(${JSON.stringify(prompt)}, { label: 'impl', model: '${MODELS[program]}', effort: '${EFFORT}' })
 const tests = await sh(${JSON.stringify(TEST_COMMAND)}, { label: 'tests', allowFail: true })
 return { result, tests: tests.code }`;
 
@@ -42,7 +44,7 @@ const extraTurns = (turns: StepTurn[]) => turns.reduce((sum, turn) => sum + (((t
 /** Runs the workflow to its end, prints each turn, and gives the step's turns and the tests' exit
  *  code. It checks what both scenarios share: the run completed, the tests pass, every turn's row
  *  holds a status, the last says done, and every turn ran in one session. */
-async function runStubs(t: TestContext, world: LiveWorld, name: string) {
+async function runStubs(t: TestContext, world: LiveWorld, name: string, program: Program) {
   const start = Date.now();
   const run = await world.sous("run", name, "--wait", "--json");
   const state = world.state();
@@ -66,19 +68,19 @@ async function runStubs(t: TestContext, world: LiveWorld, name: string) {
     turns.map((turn) => turn.sessionId),
     turns.map(() => session),
   );
-  const prompts = programPrompts("claude", session);
+  const prompts = programPrompts(program, session);
   t.diagnostic(`the session's user messages: ${JSON.stringify(prompts.map((text) => text.slice(0, 120)))}`);
   return { turns, prompts };
 }
 
-describe("scenarios 2 and 3 live on Claude Code", { skip: ON ? false : "set SOUS_LIVE_GOAL=1 to run it, on your own login" }, () => {
+describe("scenarios 2 and 3 live", { skip: ON ? false : "set SOUS_LIVE_GOAL=1 to run it, on your own login" }, () => {
   test("scenario 2: /goal runs as written with no schema, the report turn follows in its session, and the tests pass", { timeout: 900_000 }, async (t) => {
     const world = liveWorld(t, "goal");
     plantStubs(world);
-    world.write(".sous/workflows/goal.js", script("goal", GOAL));
+    world.write(".sous/workflows/goal.js", script("goal", GOAL, "claude"));
     t.diagnostic(`home ${world.home}, project ${world.project}`);
 
-    const { turns, prompts } = await runStubs(t, world, "goal");
+    const { turns, prompts } = await runStubs(t, world, "goal", "claude");
 
     // Each row of a slash step is its goal's turn and the report turn after it, so it says it took
     // two program turns, or more when an answer needed a repair.
@@ -92,13 +94,33 @@ describe("scenarios 2 and 3 live on Claude Code", { skip: ON ? false : "set SOUS
     assert.equal(prompts.filter((text) => text === CONTINUE).length, turns.length - 1);
   });
 
+  test("scenario 2 on Codex: thread/goal/set runs the goal, the report turn follows in its thread, and the tests pass", { timeout: 900_000 }, async (t) => {
+    const world = liveWorld(t, "goal-codex");
+    plantStubs(world);
+    world.write(".sous/workflows/goal.js", script("goal", GOAL, "codex"));
+    t.diagnostic(`home ${world.home}, project ${world.project}`);
+
+    const { turns, prompts } = await runStubs(t, world, "goal", "codex");
+
+    // Each row is the goal's turns and the report turn after them, so it took two turns or more.
+    for (const turn of turns) assert.ok(((turn.result as { turns?: number }).turns ?? 1) >= 2, `a row of the goal step took one turn: ${JSON.stringify(turn.result)}`);
+    // The objective went to thread/goal/set, not as a message, so no user message holds the
+    // command, and the thread's first user message is Codex's own goal context. The report prompt
+    // came in the same thread, with nothing of sous in front of it.
+    assert.ok(!prompts.some((text) => text.startsWith("/goal")), JSON.stringify(prompts));
+    assert.ok(prompts[0]?.startsWith('<codex_internal_context source="goal">'), JSON.stringify(prompts));
+    assert.ok(!prompts.some((text) => text.includes("Task label")), JSON.stringify(prompts));
+    assert.equal(prompts.filter((text) => text === REPORT).length, extraTurns(turns));
+    assert.equal(prompts.filter((text) => text === CONTINUE).length, turns.length - 1);
+  });
+
   test("scenario 3: a plain prompt runs until the agent says done, in one session, and the tests pass", { timeout: 900_000 }, async (t) => {
     const world = liveWorld(t, "done");
     plantStubs(world);
-    world.write(".sous/workflows/done.js", script("done", PLAIN));
+    world.write(".sous/workflows/done.js", script("done", PLAIN, "claude"));
     t.diagnostic(`home ${world.home}, project ${world.project}`);
 
-    const { turns, prompts } = await runStubs(t, world, "done");
+    const { turns, prompts } = await runStubs(t, world, "done", "claude");
 
     // A plain prompt's turn carries the status itself: the program got the prompt as written,
     // then one "Continue the task." for each row that said working, and no report turn. The

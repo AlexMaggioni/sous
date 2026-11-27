@@ -3,7 +3,8 @@
 // session's system text. A slash step runs its command with no schema. A step that runs until done,
 // the default, then asks for the status in a report turn of the same session, and a step with
 // until "turn" and a schema asks for the value there. The fakes stand in for the programs: a rule
-// answers the canary word only to a prompt that starts with "/canary".
+// answers the canary word only to the canary command. Codex reads no slash command from text, so
+// there the canary is a skill of the project, and the step sends its $ name with the skill.
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -17,11 +18,13 @@ const REPORT = "Report on the task you were given.";
  *  them on the program's command line. */
 const SETTING_SOURCES = "--setting-sources=user,project,local";
 
-/** The canary rule matches only a slash prompt. Any other prompt gets another word. */
-const RULES: FakeRule[] = [
-  { match: "^/canary", slash: true, answer: CANARY },
-  { match: "", answer: "OTHER-WORD" },
-];
+/** The text each program gets for the prompt `/canary`. */
+const SAID = { claude: "/canary", codex: "$canary" } as const;
+/** The canary rule: on Claude Code a slash prompt, on Codex the skill's $ name. */
+const canaryRule = (program: keyof typeof SAID): FakeRule =>
+  program === "claude" ? { match: "^/canary", slash: true, answer: CANARY } : { match: "^\\$canary$", answer: CANARY };
+/** The canary rule matches only the canary command. Any other prompt gets another word. */
+const rulesOf = (program: keyof typeof SAID): FakeRule[] => [canaryRule(program), { match: "", answer: "OTHER-WORD" }];
 /** The fields of the status schema a report turn of a step that runs until done carries. */
 const STATUS = ["status", "result", "message"];
 /** The schema's property names a turn got, or null when it got none. */
@@ -30,6 +33,16 @@ const fields = (line: FakeLine) => (line.schema === null || line.schema === unde
 /** A workflow whose one step sends `/canary` on `model`, with `options` added to the call. */
 const slashStep = (model: string, options = "") => `export const meta = { name: 'skill', description: 'A skill from the prompt' }
 return await agent('/canary', { label: 'canary step', model: '${model}'${options} })`;
+
+/** Commits the canary skill in the project, where Codex finds it in each run's worktree. */
+function plantCanary(world: FakeWorld): void {
+  world.write(".agents/skills/canary/SKILL.md", "---\nname: canary\ndescription: Says the canary word.\n---\nSay the canary word.\n");
+  world.git("add", ".agents");
+  world.git("commit", "-qm", "The canary skill");
+}
+
+/** The names of the skill items a turn carried. Only Codex takes a skill as an item. */
+const skillNames = (line: FakeLine) => (line.skills as Array<{ name: string }> | undefined)?.map((skill) => skill.name);
 
 /** The fakes' turns: the log lines that carry a prompt. */
 const turns = (lines: FakeLine[]) => lines.filter((line) => line.prompt !== undefined);
@@ -51,7 +64,8 @@ for (const [program, model] of [
 ] as const) {
   describe(`a slash prompt on the fake ${program}`, () => {
     it("reaches the program as written, with the label in the system text, and the step returns the canary", async (t) => {
-      const world = fakeWorld(t, { rules: [RULES[0]!, { match: `^${REPORT}$`, answer: CANARY }, RULES[1]!] });
+      const world = fakeWorld(t, { rules: [canaryRule(program), { match: `^${REPORT}$`, answer: CANARY }, { match: "", answer: "OTHER-WORD" }] });
+      plantCanary(world);
       world.workflow("skill", slashStep(model));
 
       const value = await runSkill(world);
@@ -59,7 +73,8 @@ for (const [program, model] of [
       const [turn, report, ...more] = turns(world.log());
       assert.equal(more.length, 0, JSON.stringify(world.log()));
       assert.equal(turn!.program, program);
-      assert.equal(turn!.prompt, "/canary");
+      assert.equal(turn!.prompt, SAID[program]);
+      assert.deepEqual(skillNames(turn!), program === "codex" ? ["canary"] : undefined);
       assert.equal(turn!.rule, 0);
       assert.equal(fields(turn!), null);
       assert.match(turn!.system ?? "", /Task label: canary step/);
@@ -71,7 +86,8 @@ for (const [program, model] of [
     });
 
     it("with until turn runs the one turn as written and returns the canary", async (t) => {
-      const world = fakeWorld(t, { rules: RULES });
+      const world = fakeWorld(t, { rules: rulesOf(program) });
+      plantCanary(world);
       world.workflow("skill", slashStep(model, ", until: 'turn'"));
 
       const value = await runSkill(world);
@@ -79,7 +95,7 @@ for (const [program, model] of [
       const [turn, ...more] = turns(world.log());
       assert.equal(more.length, 0, JSON.stringify(world.log()));
       assert.equal(turn!.program, program);
-      assert.equal(turn!.prompt, "/canary");
+      assert.equal(turn!.prompt, SAID[program]);
       assert.equal(turn!.rule, 0);
       assert.match(turn!.system ?? "", /Task label: canary step/);
       assert.equal(value, CANARY);
@@ -90,7 +106,8 @@ for (const [program, model] of [
       ["turn", ["word"]],
     ] as const) {
       it(`with a schema and until ${until} runs /canary with no schema, then a report turn in the same session, and returns the schema's value`, async (t) => {
-        const world = fakeWorld(t, { rules: [{ match: "^/canary", slash: true, answer: CANARY }, { match: `^${REPORT}$`, answer: { word: CANARY } }] });
+        const world = fakeWorld(t, { rules: [canaryRule(program), { match: `^${REPORT}$`, answer: { word: CANARY } }] });
+        plantCanary(world);
         world.workflow("skill", slashStep(model, `, until: '${until}', schema: { type: 'object', properties: { word: { type: 'string' } }, required: ['word'], additionalProperties: false }`));
 
         const value = await runSkill(world);
@@ -99,7 +116,7 @@ for (const [program, model] of [
         assert.deepEqual(
           lines.map((line) => [line.prompt, fields(line)]),
           [
-            ["/canary", null],
+            [SAID[program], null],
             [REPORT, [...reportFields]],
           ],
         );
@@ -115,7 +132,7 @@ for (const [program, model] of [
 
 describe("the skills of a step on the fake claude", () => {
   it("load as in a session opened by hand, from the setting sources for user and plugin skills", async (t) => {
-    const world = fakeWorld(t, { rules: RULES });
+    const world = fakeWorld(t, { rules: rulesOf("claude") });
     world.workflow("skill", slashStep("claude/haiku"));
 
     await runSkill(world);

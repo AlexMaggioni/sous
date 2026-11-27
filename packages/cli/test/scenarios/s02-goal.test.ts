@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { listRecords } from "@sous-run/engine";
 import { readState } from "@sous-run/engine/testing";
-import { fakeWorld, type FakeLine, type FakeRule } from "../helpers/fake-world.js";
+import { fakeWorld, wentOn, type FakeLine, type FakeRule } from "../helpers/fake-world.js";
 import { SOLVED, TEST_COMMAND, plantStubs } from "../helpers/stub-repo.js";
 
 const OBJECTIVE = "every test in test/ passes";
@@ -22,8 +22,6 @@ const RESULT = "I wrote slug, clamp and total, and every test passes.";
 const GOAL_TURNS = 3;
 /** The fields of the status schema the report turn carries. */
 const STATUS = ["status", "result", "message"];
-/** Why the Codex half waits. */
-const PHASE_8 = "phase 8 builds the Codex goal: until then a Codex /goal prompt goes to the program as written text, not through thread/goal/set";
 
 const RULES: FakeRule[] = [
   { match: "^/goal ", slash: true, goal: GOAL_TURNS, files: SOLVED, answer: MET },
@@ -50,7 +48,7 @@ for (const [program, model] of [
   ["codex", "codex/gpt-fake"],
 ] as const) {
   describe(`a /goal step on the fake ${program}`, () => {
-    it("runs the goal's model turns as written with no schema, then the report turn in the same session, and the tests pass after", { skip: program === "codex" ? PHASE_8 : false }, async (t) => {
+    it("runs the goal's model turns as written with no schema, then the report turn in the same session, and the tests pass after", async (t) => {
       const world = fakeWorld(t, { rules: RULES });
       plantStubs(world);
       world.workflow("goal", script(model));
@@ -79,11 +77,13 @@ for (const [program, model] of [
         ],
       );
       const [work, report] = turns;
-      if (program === "codex") assert.equal(work!.objective, OBJECTIVE, "the goal went as a turn, not through thread/goal/set");
+      if (program === "codex") assert.equal(work!.objective, OBJECTIVE, "the goal went through thread/goal/set");
       assert.match(work!.system ?? "", /Task label: goal/);
       assert.equal(typeof work!.sessionId, "string");
       assert.equal(report!.sessionId, work!.sessionId);
-      assert.equal(report!.resume, true);
+      // Claude Code takes a schema once per program, so there the report turn resumes the session
+      // in a new one. Codex goes on in the program the goal kept.
+      assert.equal(wentOn(work, report), program === "claude" ? "resumed" : "held");
 
       // The goal's model turns come after the prompt and before the report turn, in its session.
       const goals = lines.filter((line) => line.goal !== undefined);

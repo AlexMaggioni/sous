@@ -19,7 +19,17 @@
 // sends turn/started, its agent message and turn/completed. thread/goal/updated follows each turn
 // with status active, and the last one says complete just before the last turn/completed. Each
 // turn logs { goal: { turn, of } }. thread/goal/get answers the goal, and thread/goal/clear
-// clears it and sends thread/goal/cleared.
+// clears it and sends thread/goal/cleared. An ask rule asks in the goal's first turn.
+// thread/goal/set with a status and no objective only
+// sets the status, as a client pauses a goal.
+// thread/settings/update sets the model, effort and policies of the thread's later turns, which a
+// goal's turns use and log.
+// skills/list names the skills in .agents/skills/<name>/SKILL.md and .codex/skills under each
+// cwd. A turn logs the skill items of its input as skills: [{ name, path }].
+// review/start plays a review turn on the thread: the rule sees "/review" or "/review <custom
+// instructions>", and its answer comes as the exitedReviewMode item's review. The line logs
+// { review: target }. thread/compact/start plays a compact turn with a contextCompaction item,
+// which no one can steer, and logs { compact: true }.
 // `codex resume <id>` is a person in the full-screen view. It appends the person's line to the
 // thread's file, logs it, and exits 0 without reading stdin. An unknown id fails as the real one
 // does. Its flags are accepted and ignored, and the log keeps them. lib.mjs says more.
@@ -28,7 +38,7 @@
 // `codex --version` prints a version like the real one, or FAKE_VERSION.
 
 import { randomUUID } from "node:crypto";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { appendLog, debug, decide, limitRule, loginPresent, mcpSummary, personLine, personStays, readJsonLines, sessionMessages, waitFor, makeEdits } from "./lib.mjs";
 
@@ -429,6 +439,7 @@ async function runTurn(thread, turnId, params) {
   const prompt = promptText(params.input);
   const texts = promptTexts(params.input);
   const images = promptImages(params.input);
+  const skills = (params.input ?? []).filter((item) => item?.type === "skill").map((item) => ({ name: item.name, path: item.path }));
   const schema = params.outputSchema ?? null;
   const decision = decide("codex", prompt, schema, { ...context(thread), last: texts.at(-1) ?? "" });
   const turn = { id: turnId, interrupted: false, notSteerable: decision.notSteerable, noSteer: decision.noSteer };
@@ -470,6 +481,7 @@ async function runTurn(thread, turnId, params) {
     // Only with more than one, so the baseline's golden lines stay as they were.
     ...(texts.length > 1 ? { texts } : {}),
     ...(images.length ? { images } : {}),
+    ...(skills.length ? { skills } : {}),
     rule: decision.rule,
     outcome: decision.kind,
     ...(answer ? { approval: answer.error ? { error: answer.error } : answer.result } : {}),
@@ -574,6 +586,8 @@ async function playGoal(thread, objective) {
     ...(thread.forkedFrom ? { fork: true } : {}),
     schema: null,
     mcpServers: mcpSummary(thread.mcpServers),
+    approvalPolicy: thread.approvalPolicy ?? null,
+    sandboxPolicy: thread.sandboxPolicy?.type ?? null,
     baseInstructions: thread.baseInstructions,
     developerInstructions: thread.developerInstructions,
     login: loginPresent(),
@@ -592,6 +606,15 @@ async function playGoal(thread, objective) {
     const turnView = (status, items = [], error = null) => ({ id: turnId, items, itemsView: "full", status, error, startedAt: 1700000000, completedAt: status === "inProgress" ? null : 1700000001, durationMs: status === "inProgress" ? null : 1000 });
     appendLog({ program: "codex", sessionId: thread.id, goal: { turn: at, of: turns } });
     notify("turn/started", { threadId: thread.id, turn: turnView("inProgress") });
+    // An ask rule asks in the goal's first turn. A refusal leaves the turn to the client's
+    // turn/interrupt, which pauses the goal.
+    if (at === 1 && decision.ask) {
+      const question = typeof decision.ask === "string" ? decision.ask : "Which way should I go?";
+      const questions = [{ id: "question", header: "Question", question, isOther: false, isSecret: false, options: null }];
+      const reply = await ask("item/tool/requestUserInput", { ...base, itemId: `call_${randomUUID().slice(0, 8)}`, questions, isBlocking: true, autoResolutionMs: null });
+      appendLog({ program: "codex", sessionId: thread.id, ask: reply.error ? { error: reply.error.message ?? reply.error } : { answers: reply.result?.answers ?? null } });
+      if (!reply.error) while (!turn.interrupted) await new Promise((resolve) => setTimeout(resolve, 20));
+    }
     if (at === 1) await waitFor(decision, () => turn.interrupted);
     if (decision.kind === "exit") {
       process.stderr.write("fake crash\n");
@@ -628,6 +651,66 @@ async function playGoal(thread, objective) {
   }
 }
 
+/** The skills of a folder, as skills/list names them: each SKILL.md under .agents/skills and .codex/skills. */
+function repoSkills(cwd) {
+  const out = [];
+  for (const base of [join(cwd, ".agents", "skills"), join(cwd, ".codex", "skills")]) {
+    if (!existsSync(base)) continue;
+    for (const name of readdirSync(base)) {
+      const path = join(base, name, "SKILL.md");
+      if (!existsSync(path)) continue;
+      const head = /^---\n([\s\S]*?)\n---/.exec(readFileSync(path, "utf8"))?.[1] ?? "";
+      const field = (key) => new RegExp(`^${key}:\\s*(.*)$`, "m").exec(head)?.[1]?.trim();
+      out.push({ name: field("name") ?? name, description: field("description") ?? "", path, scope: "repo", enabled: true, pluginId: null });
+    }
+  }
+  return out;
+}
+
+/** The common part of a turn's notifications: the turn as turn/started and turn/completed show it. */
+const viewOf = (turnId) => (status, items = [], error = null) => ({ id: turnId, items, itemsView: "full", status, error, startedAt: 1700000000, completedAt: status === "inProgress" ? null : 1700000001, durationMs: status === "inProgress" ? null : 1000 });
+
+/** review/start: a review turn whose answer is the exitedReviewMode item's review. */
+async function runReview(thread, turnId, target) {
+  const prompt = target.type === "custom" ? `/review ${target.instructions}` : "/review";
+  const decision = decide("codex", prompt, null, context(thread));
+  const turn = { id: turnId, interrupted: false };
+  thread.turn = turn;
+  const base = { threadId: thread.id, turnId };
+  const turnView = viewOf(turnId);
+  appendLog({ program: "codex", sessionId: thread.id, cwd: thread.cwd, model: thread.model, effort: thread.effort ?? null, prompt, review: target, rule: decision.rule, outcome: decision.kind });
+  transcript(thread, prompt);
+  notify("turn/started", { threadId: thread.id, turn: turnView("inProgress") });
+  const entered = { type: "enteredReviewMode", id: `review_${randomUUID().slice(0, 8)}`, review: prompt };
+  notify("item/started", { ...base, item: entered, startedAtMs: 1700000000000 });
+  notify("item/completed", { ...base, item: entered, completedAtMs: 1700000000000 });
+  await waitFor(decision, () => turn.interrupted);
+  thread.turn = undefined;
+  if (turn.interrupted) return notify("turn/completed", { threadId: thread.id, turn: turnView("interrupted") });
+  const exited = { type: "exitedReviewMode", id: `review_${randomUUID().slice(0, 8)}`, review: decision.text };
+  notify("item/started", { ...base, item: { ...exited, review: "" }, startedAtMs: 1700000000000 });
+  notify("item/completed", { ...base, item: exited, completedAtMs: 1700000001000 });
+  notify("thread/tokenUsage/updated", { ...base, tokenUsage: tokenUsage(thread, USAGE) });
+  notify("turn/completed", { threadId: thread.id, turn: turnView("completed", [exited]) });
+}
+
+/** thread/compact/start: a compact turn, which no one can steer. */
+async function runCompact(thread) {
+  const turnId = randomUUID();
+  const turn = { id: turnId, interrupted: false, notSteerable: "compact" };
+  thread.turn = turn;
+  const base = { threadId: thread.id, turnId };
+  const turnView = viewOf(turnId);
+  appendLog({ program: "codex", sessionId: thread.id, compact: true });
+  notify("turn/started", { threadId: thread.id, turn: turnView("inProgress") });
+  const item = { type: "contextCompaction", id: `compact_${randomUUID().slice(0, 8)}` };
+  notify("item/started", { ...base, item, startedAtMs: 1700000000000 });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  notify("item/completed", { ...base, item, completedAtMs: 1700000001000 });
+  thread.turn = undefined;
+  notify("turn/completed", { threadId: thread.id, turn: turnView("completed", [item]) });
+}
+
 function onRequest(message) {
   const { id, method } = message;
   const params = message.params ?? {};
@@ -643,7 +726,28 @@ function onRequest(message) {
       return reply({ ordinaryUsageAllowed: true, rateLimits: snapshot, rateLimitsByLimitId: { codex: snapshot }, rateLimitResetCredits: null, accountId: null, rateLimitUpsell: null });
     }
     case "skills/list":
-      return reply({ data: [] });
+      return reply({ data: (params.cwds?.length ? params.cwds : [process.cwd()]).map((cwd) => ({ cwd, skills: repoSkills(cwd), errors: [] })) });
+    case "thread/settings/update": {
+      const thread = threads.get(params.threadId);
+      if (!thread) return fail(-32600, `thread not found: ${params.threadId}`);
+      for (const key of ["model", "effort", "approvalPolicy", "approvalsReviewer", "sandboxPolicy"]) if (params[key] !== undefined && params[key] !== null) thread[key] = params[key];
+      return reply({});
+    }
+    case "review/start": {
+      const thread = threads.get(params.threadId);
+      if (!thread) return fail(-32600, `thread not found: ${params.threadId}`);
+      const turnId = randomUUID();
+      reply({ turn: { id: turnId, items: [], itemsView: "full", status: "inProgress", error: null, startedAt: 1700000000, completedAt: null, durationMs: null }, reviewThreadId: thread.id });
+      thread.chain = (thread.chain ?? Promise.resolve()).then(() => runReview(thread, turnId, params.target ?? {}));
+      return;
+    }
+    case "thread/compact/start": {
+      const thread = threads.get(params.threadId);
+      if (!thread) return fail(-32600, `thread not found: ${params.threadId}`);
+      reply({});
+      thread.chain = (thread.chain ?? Promise.resolve()).then(() => runCompact(thread));
+      return;
+    }
     case "model/list":
       return reply({ data: [MODEL], nextCursor: null });
     case "config/read": {
@@ -666,6 +770,12 @@ function onRequest(message) {
     case "thread/goal/set": {
       const thread = threads.get(params.threadId);
       if (!thread) return fail(-32600, `thread not found: ${params.threadId}`);
+      if (params.objective === undefined || params.objective === null) {
+        if (!thread.goal) return fail(-32600, "no goal to update");
+        appendLog({ program: "codex", sessionId: thread.id, goalStatus: params.status ?? null });
+        if (params.status) setGoal(thread, params.status);
+        return reply({ goal: goalView(thread) });
+      }
       const objective = String(params.objective ?? "");
       thread.goal = { objective, status: "active", tokensUsed: 0 };
       reply({ goal: goalView(thread) });

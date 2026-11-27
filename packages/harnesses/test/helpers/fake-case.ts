@@ -14,6 +14,8 @@ export interface LogLine {
   prompt: string;
   texts?: string[];
   images?: unknown[];
+  /** The skill items of a Codex turn. */
+  skills?: { name: string; path: string }[];
   rule?: number | null;
 }
 

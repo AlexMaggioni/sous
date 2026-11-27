@@ -1,7 +1,8 @@
 // A step's prompt reaches the program as the same bytes a person types in a session opened by
 // hand. The step's label goes in the system text, which stays the same on every turn of one
 // session. A resume's note follows a plain prompt after a blank line, and goes apart from a slash
-// prompt, as the step's note.
+// prompt, as the step's note. Codex reads no slash command from text, so there a skill's command
+// goes as the skill's $ name.
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -9,7 +10,7 @@ import { Type } from "typebox";
 import type { PlannedRequest } from "../src/steps/agent-run.js";
 import { createSteps } from "../src/steps/steps.js";
 import { runWorkflow } from "../src/workflow.js";
-import { fakePlace, onFakes, routed, systemOf } from "./helpers/fake-steps.js";
+import { fakePlace, onFakes, plantSkill, routed, said, systemOf } from "./helpers/fake-steps.js";
 
 for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) delete process.env[name];
 
@@ -23,6 +24,7 @@ for (const [harness, model] of [
   describe(`prompts as written on ${harness}`, () => {
     it("sends the prompt bytes exactly, with and without a schema", async () => {
       const place = fakePlace();
+      plantSkill(place, "canary");
       const steps = createSteps(onFakes(place));
       const plain = "  Build part A.\n\nKeep the tests green.\n";
       const shaped = "/canary check the build";
@@ -35,7 +37,7 @@ for (const [harness, model] of [
       }
       const prompts = place.lines().map((line) => line.prompt);
       assert.equal(prompts[0], plain);
-      assert.equal(prompts[1], shaped);
+      assert.equal(prompts[1], said(harness, shaped));
       assert.equal(prompts.at(-1), "Say ok.");
     });
 
@@ -78,6 +80,7 @@ return 'done'`;
 
     it("sends a note on a slash prompt as a text before it, in the same message", async () => {
       const place = fakePlace();
+      plantSkill(place, "x");
       const steps = createSteps(onFakes(place, { note: { text: NOTE } }));
       try {
         await steps.run("/x run the check", routed(steps, { label: "a", model }, { runId: "run-note", callIndex: 0 }));
@@ -86,9 +89,9 @@ return 'done'`;
       }
       const lines = place.lines();
       assert.equal(lines.length, 1, "the note is no turn of its own");
-      assert.deepEqual(lines[0]?.texts, [NOTE, "/x run the check"]);
+      assert.deepEqual(lines[0]?.texts, [NOTE, said(harness, "/x run the check")]);
       // Claude Code reads a slash command only from the message's last text block.
-      assert.equal(lines[0]?.texts?.at(-1), "/x run the check", "the command is the message's last text, as written");
+      assert.equal(lines[0]?.texts?.at(-1), said(harness, "/x run the check"), "the command is the message's last text");
     });
   });
 }

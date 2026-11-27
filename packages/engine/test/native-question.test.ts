@@ -11,7 +11,7 @@ import { Type } from "typebox";
 import type { StepRequest } from "../src/steps/agent-run.js";
 import { createSteps } from "../src/steps/steps.js";
 import { untilFields, untilHash } from "../src/turns/until.js";
-import { fakePlace, onFakes, routed, type FakePlace } from "./helpers/fake-steps.js";
+import { fakePlace, onFakes, plantSkill, routed, said, type FakePlace } from "./helpers/fake-steps.js";
 
 for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) delete process.env[name];
 
@@ -33,6 +33,7 @@ function asks(place: FakePlace): unknown[] {
 
 async function step(prompt: string, fields: Omit<StepRequest, "route">, rules: object[], model: string) {
   const place = fakePlace(rules);
+  plantSkill(place, "plan");
   const steps = createSteps(onFakes(place));
   try {
     const value = await steps.run(prompt, routed(steps, { label: "builder", model }, fields));
@@ -70,9 +71,9 @@ for (const [program, model] of [
     });
 
     it("ends a slash step on its work turn, with no report turn", async () => {
-      const { value, place } = await step("/plan the work", { untilDone: true }, [{ match: "^/plan", ask: QUESTION, answer: "Never." }], model);
+      const { value, place } = await step("/plan the work", { untilDone: true }, [{ match: "^[/$]plan", ask: QUESTION, answer: "Never." }], model);
       assert.deepEqual(value, ASKED);
-      assert.deepEqual(place.lines().map((line) => line.prompt), ["/plan the work"]);
+      assert.deepEqual(place.lines().map((line) => line.prompt), [said(program, "/plan the work")]);
     });
 
     it("keeps the tool off with ask false, so the agent answers", async () => {
