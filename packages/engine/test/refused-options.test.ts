@@ -91,3 +91,16 @@ return await s.send('q')`;
   });
   assert.equal(calls(), 1, "the step ran, and the session never did");
 });
+
+test("agent() refuses a --set that changes its label", async () => {
+  const { runner, calls } = countingRunner();
+  const script = `export const meta = { name: 'refused', description: 'refused' }
+const s = session({ label: 'review' })
+return await agent('p', { label: 'fix' })`;
+  await assert.rejects(runWorkflow(script, { agent: runner, persistLogs: false, stepOverrides: { fix: { label: "review" } } }), (error: unknown) => {
+    assert.ok(error instanceof WorkflowError);
+    assert.equal(error.message, "--set fix.label: a step's label cannot be changed. Change it in the workflow.");
+    return true;
+  });
+  assert.equal(calls(), 0);
+});

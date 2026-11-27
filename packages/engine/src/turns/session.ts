@@ -376,6 +376,8 @@ export function createSessions(deps: SessionDeps) {
     }
     if (label !== undefined) stepLabels.add(label.trim());
     const change = label ? deps.stepOverrides?.[label] : undefined;
+    // The label names the step in sous log and sous join, so --set may not change it.
+    if (change?.label !== undefined) fail(`--set ${label}.label: a step's label cannot be changed. Change it in the workflow.`);
     const options: Record<string, unknown> = change ? { ...written, ...change } : written;
     checkLoopOptions(options, "agent()");
     const place = placeOf(options, "agent()", deps.places);

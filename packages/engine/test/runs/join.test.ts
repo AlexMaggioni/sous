@@ -4,14 +4,14 @@
 // The person's `sous join` stands in as this test's parent process, which lives through the test.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
 import { readJsonLines } from "../../src/json-file.js";
 import type { HomePaths } from "../../src/runs/home.js";
 import { listQuestions } from "../../src/runs/inbox.js";
 import { askedWords, joinQuestion, joinTarget, leaveSession, takeSession, type JoinTarget } from "../../src/runs/join.js";
 import { createRun } from "../../src/runs/launch.js";
-import { activityWriter, updateRecord } from "../../src/runs/records.js";
+import { activityWriter, requestJoin, updateRecord } from "../../src/runs/records.js";
 import { Refusal } from "../../src/runs/refusal.js";
 import { readHolder, releaseHold, takeHold } from "../../src/runs/session-hold.js";
 import { holdFile, readState } from "../../src/runs/store.js";
@@ -369,5 +369,19 @@ return 1`;
     assert.deepEqual([code.code, code.message], ["step_has_no_session", '"shell" is a code step, so it has no session to step into.']);
     assert.equal(refusalOf(() => joinTarget(paths, runId, "quiet")).code, "step_has_no_session");
     assert.equal(refusalOf(() => joinTarget(paths, runId, "draft", { call: 2 })).code, "no_such_step");
+  });
+
+  it("hands over a session a waiting sous join asked for before the worker started, and drops one whose sous join ended", async () => {
+    const { paths, projectDir } = setup({ one: ONE_TURN });
+    const record = createRun(paths, { who: PERSON, workflow: "one", projectDir, inputs: {} });
+    // A sous join that asked while the worker started up, whose signal came before it listened.
+    requestJoin(paths, record.runId, { sessionId: "s-waits", pid: JOINER });
+    const ended = spawnSync(process.execPath, ["-e", "process.pid"]).pid;
+    requestJoin(paths, record.runId, { sessionId: "s-ended", pid: ended });
+    const worker = runWorker(record.runId, "start", { paths, inner: sessionRunner("built").inner, pollMs: 20, log: quiet, handleSignals: true });
+    await waitUntil(() => readHolder(holdFile(paths, record.runId, "s-waits"))?.pid === JOINER, "the waiting sous join never got its session");
+    await worker;
+    assert.equal(readHolder(holdFile(paths, record.runId, "s-ended")), undefined, "no hold for a sous join that ended");
+    releaseHold(holdFile(paths, record.runId, "s-waits"), JOINER);
   });
 });

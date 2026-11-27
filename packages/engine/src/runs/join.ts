@@ -160,7 +160,11 @@ export async function takeSession(paths: HomePaths, target: JoinTarget, who: Who
   };
   if (record && processAlive(record.pid)) {
     requestJoin(paths, target.runId, { sessionId: target.session.sessionId, pid: me });
-    process.kill(record.pid!, "SIGUSR2");
+    try {
+      process.kill(record.pid!, "SIGUSR2");
+    } catch {
+      // The worker ended since the look above. The loop below finds it gone and takes the hold.
+    }
     try {
       while (!ours() && processAlive(record.pid)) {
         const holder = readHolder(file);
