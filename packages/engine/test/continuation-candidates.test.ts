@@ -8,8 +8,8 @@ import type { PersistedAgentState, PersistedRunState } from "../src/runs/persist
 
 // A resumed turn goes on in its session whatever stopped it (DESIGN.md, "Resume and the journal"):
 // the person, a budget pause, a time limit, the usage limit, a lost login or a kill. So every pause
-// reason and every error code gives a candidate, and so does a call of a nested run, keyed by its
-// own scope.
+// reason but a failed step, and every error code, gives a candidate, and so does a call of a
+// nested run, keyed by its own scope. A failed step runs its own prompt again.
 
 const runId = "paused-source";
 const NESTED = "paused-source-nested1";
@@ -95,9 +95,10 @@ describe("continuation candidates", () => {
       errorCode: WorkflowErrorCode.AUTH_REQUIRED,
     }] })));
 
-    for (const pauseReason of ["checkpoint_required", undefined, "time_limit", "budget", "requested", "interrupted", "step_failed", "step_stopped"]) {
+    for (const pauseReason of ["checkpoint_required", undefined, "time_limit", "budget", "requested", "interrupted", "step_stopped"]) {
       assert.ok(candidate(state({ pauseReason })), `pause reason ${String(pauseReason)}`);
     }
+    assert.equal(build(state({ pauseReason: "step_failed" })), undefined, "a failed step runs its own prompt again");
     for (const errorCode of Object.values(WorkflowErrorCode)) {
       assert.ok(candidate(state({ agents: [{ ...agent(), errorCode }] })), `error code ${errorCode}`);
     }

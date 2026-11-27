@@ -1,8 +1,9 @@
 /**
  * The interrupted agent calls a resume goes on with in their own sessions. A turn goes on in its
  * session whatever stopped it: the person, a budget pause, a time limit, the usage limit, a lost
- * login or a kill. So any pause reason and any error code gives a candidate, in the run and in its
- * nested runs. Bad saved rows can only remove a candidate. They never make a resume throw.
+ * login or a kill. So any pause reason but a failed step, and any error code, gives a candidate, in
+ * the run and in its nested runs. Bad saved rows can only remove a candidate. They never make a
+ * resume throw.
  */
 
 import { continuationKey, type ContinuationCandidate, type PreparedContinuation } from "./resume.js";
@@ -80,9 +81,13 @@ function candidateOf(record: Record<string, unknown>, joined: AgentSessionRecord
   };
 }
 
-/** The candidates of a paused run, or undefined when it has none. */
+/**
+ * The candidates of a paused run, or undefined when it has none. A run paused because a step
+ * failed has none: the failed step runs its own prompt again, with the note when there is one.
+ */
 export function continuationCandidates(persisted: PersistedRunState): PreparedContinuation | undefined {
   if (!isRecord(persisted) || persisted.status !== "paused" || typeof persisted.runId !== "string") return undefined;
+  if (persisted.pauseReason === "step_failed") return undefined;
   const sessions = erroredSessions(persisted);
   // The last saved row of each call is the one that counts.
   const rows = new Map<string, { record: Record<string, unknown>; index: number }>();
