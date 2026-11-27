@@ -166,6 +166,13 @@ A script has these steps (see also [the engine README](../packages/engine/README
   `--set` on a handle fails the script. A session option on `send()`, or a send option on
   `session()`, fails the script and names where it goes. `place` on `session()` is not built yet
   and fails.
+
+  A step's turns run in one open program, so a background process the agent starts in one turn
+  still runs in the next. The program closes when the step ends, before a question waits, when
+  the run pauses or stops, and after a failed turn, whose retry resumes the session in a new
+  program. The next send starts the program again and resumes the session, so an idle session
+  holds no process. On Claude Code, a turn with a different schema, such as the report turn after
+  a slash command, also resumes the session in a new program.
 - `agent(prompt, options)` is one send on a fresh session that no later step uses. It takes a
   handle's options and a send's options, and `place: "worktree"` (see [Places](#places)). Its
   `label` may repeat.

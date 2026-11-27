@@ -8,7 +8,7 @@ import { Type } from "typebox";
 import type { AgentSessionRef } from "../src/workflow-result.js";
 import { CONTINUATION_INSTRUCTION } from "../src/steps/answer.js";
 import { createSteps } from "../src/steps/steps.js";
-import { fakePlace, onFakes, routed, type FakeLine } from "./helpers/fake-steps.js";
+import { fakePlace, onFakes, routed, wentOn, type FakeLine } from "./helpers/fake-steps.js";
 
 for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) delete process.env[name];
 
@@ -35,7 +35,8 @@ for (const [harness, model] of [
       assert.equal(lines.length, 2, `two turns: ${JSON.stringify(lines.map((line) => line.prompt))}`);
       const [work, report] = lines;
       assert.deepEqual([work?.prompt, fields(work), work?.resume], ["/canary", null, false]);
-      assert.deepEqual([report?.prompt, fields(report), report?.resume], [REPORT, ["ok", "summary"], true]);
+      // Claude Code takes a schema once per program, so its report turn resumes the session in a new one.
+      assert.deepEqual([report?.prompt, fields(report), wentOn(work, report)], [REPORT, ["ok", "summary"], harness === "claude" ? "resumed" : "held"]);
       assert.equal(report?.sessionId, work?.sessionId);
       assert.deepEqual(value, { ok: true, summary: "fake-summary" });
     });

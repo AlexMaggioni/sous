@@ -77,6 +77,11 @@ export interface Step {
   mode?: string;
   /** Continue this session instead of starting one. */
   resume?: string;
+  /**
+   * Keep the program open after the turn succeeds, so the next turn that resumes the same session
+   * runs in it. A failed or stopped turn always closes its program. release() closes a kept one.
+   */
+  hold?: boolean;
   signal?: AbortSignal;
 }
 
@@ -150,7 +155,18 @@ export interface Harness {
   version(path?: string): Promise<{ version?: string; problem?: string }>;
   /** The models the program offers. Calls no model. */
   models(account?: Account): Promise<string[]>;
+  /**
+   * Runs one turn. A turn that resumes a session whose program a turn with hold kept open runs in
+   * that program when its settings fit it. Otherwise the kept program closes, and the turn starts
+   * the program again with a resume.
+   */
   run(step: Step, events?: StepEvents): Promise<StepResult>;
+  /**
+   * Closes the program a turn with hold kept open for the session, or every kept program when no
+   * session is given, and waits until each has exited. After a call with no session, a turn with
+   * hold keeps nothing. It never throws.
+   */
+  release(sessionId?: string): Promise<void>;
   /**
    * The program's login in env, for callers that start no step, such as an account list.
    * variable moves the program's folder, value is what env sets it to, folder is the folder the

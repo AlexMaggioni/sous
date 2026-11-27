@@ -6,6 +6,8 @@
 // "working" sends CONTINUE_PROMPT. "done" runs the checks, and a failed one sends its feedback as
 // the next prompt. "question" waits on a join row, then sends CONTINUE_PROMPT. maxTurns counts
 // every turn sous sends, report and repair turns included, and is off unless the step sets it.
+// The step's turns share one open program. The loop ends it with deps.end when it returns or
+// throws, and before it waits on a join row, so no program runs while a person steps in.
 
 import { WorkflowError, WorkflowErrorCode, stepLimitError } from "../errors.js";
 import { CONTINUE_PROMPT, readStatus } from "./status.js";
@@ -37,6 +39,8 @@ export interface LoopDeps {
   command: (command: string, options: { step: string; label: string; cwd?: string; phase?: string }) => Promise<unknown>;
   /** Waits on a join row with the agent's question, until the person has stepped in and left. */
   join: (message: string) => Promise<unknown>;
+  /** Closes the program the step's turns kept open. The next turn starts it again with a resume. */
+  end?: () => Promise<void>;
 }
 
 /** The names the loop takes off a step's options. */
@@ -82,6 +86,15 @@ function statusOf(value: unknown): { status: string; result: unknown; message: s
 /** Runs the step's turns until "done" and its checks pass, and gives the done result. */
 export async function runUntilDone(prompt: string, options: LoopOptions, deps: LoopDeps): Promise<unknown> {
   const checks = options.check === undefined ? [] : Array.isArray(options.check) ? options.check : [options.check];
+  try {
+    return await turns(prompt, checks, options, deps);
+  } finally {
+    await deps.end?.();
+  }
+}
+
+/** The loop itself: turns until "done" and passing checks. */
+async function turns(prompt: string, checks: Array<string | CheckFn>, options: LoopOptions, deps: LoopDeps): Promise<unknown> {
   let sent = 0;
   let rounds = 0;
   let next = prompt;
@@ -100,6 +113,7 @@ export async function runUntilDone(prompt: string, options: LoopOptions, deps: L
       continue;
     }
     if (turn.status === "question") {
+      await deps.end?.();
       await deps.join(turn.message ?? "The agent has a question.");
       next = CONTINUE_PROMPT;
       continue;

@@ -46,6 +46,8 @@ export interface SousGlobalDeps {
   track?: <F extends (...args: never[]) => unknown>(fn: F) => F;
   /** Set in a dry run: the code steps' hook for a check command's exit code. */
   onDryRunCheck?: CodeStepEnv["onDryRunCheck"];
+  /** Closes the program a step in the session `key` kept open, when the step ends. */
+  endSession?: (key: string) => Promise<void>;
 }
 
 interface StepOptions {
@@ -122,6 +124,7 @@ export function createSousGlobals(deps: SousGlobalDeps) {
     },
     // A question waits on a join row. Only the person who steps into the session answers it.
     join: (message, label) => deps.markedCheckpoint(message, { kind: "input" }, { answeredBy: "join", step: label }),
+    ...(deps.endSession ? { end: deps.endSession } : {}),
     ...(deps.stepOverrides ? { stepOverrides: deps.stepOverrides } : {}),
     ...(deps.track ? { track: deps.track } : {}),
   });

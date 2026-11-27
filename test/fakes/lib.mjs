@@ -1,8 +1,10 @@
 // Shared parts of the fake claude and codex programs: the answer a request gets, the value
 // built from a JSON schema, the rules file and the request log. Node only, no dependencies.
 //
-// FAKE_LOG    a file. Each request appends one JSON line to it. A user message with more than
-//             one text (Claude: text blocks, Codex: text input items) logs them in `texts`.
+// FAKE_LOG    a file. Each request appends one JSON line to it, with the program's `pid`, so a
+//             test can tell which turns shared a process. A user message with more than one text
+//             (Claude: text blocks, Codex: text input items) logs them in `texts`. `resume` says
+//             whether the program opened the session with a resume.
 // FAKE_RULES  a JSON file with a list of rules. The first rule whose `match` regex matches the
 //             prompt decides the answer. The prompt is every text of the message, joined with a
 //             newline. A rule may also name a `program` (claude or codex).
@@ -95,6 +97,12 @@
 // Sessions. Each program keeps a session's user messages, one JSON line { role, text } each, in
 // a folder next to FAKE_LOG, and passes them to decide() for recall.
 //
+// Held programs. Both fakes run more than one turn in one process, as the real ones do. Claude:
+// a user message that comes after a result runs as the next turn, with init again. A message
+// with priority next during a turn stays a tell. Codex: a second turn/start on an open thread
+// runs as the next turn. Its tokenUsage total runs on across the thread's turns, and last is
+// each response's own.
+//
 // Fork and by hand:
 //   Fork. Claude: --fork-session with --resume <parent> copies the parent's messages to the new
 //   session, named by --session-id or made up, and the turn goes on in the new one alone. Codex:
@@ -139,7 +147,7 @@ function readLines() {
 export function appendLog(entry) {
   const file = process.env.FAKE_LOG;
   if (!file) return;
-  appendFileSync(file, `${JSON.stringify(entry)}\n`);
+  appendFileSync(file, `${JSON.stringify({ ...entry, pid: process.pid })}\n`);
 }
 
 function loadRules() {

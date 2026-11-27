@@ -469,6 +469,12 @@ interface SessionEntry {
   cost: number;
 }
 
+/** Ends a session's step: the runner closes the program the step's turns kept open. */
+const endSession = (sessions: Map<string, SessionEntry>, runner: AgentRunner) => async (key: string) => {
+  const sessionId = sessions.get(key)?.ref?.sessionId;
+  if (sessionId !== undefined) await runner.release?.(sessionId);
+};
+
 interface RuntimeState {
   logs: string[];
   phases: string[];
@@ -1332,9 +1338,9 @@ async function runLevel<T>(
                   images: agentOptions.images,
                   runId,
                   ...(continueFromSession === undefined ? {} : { continueFromSession }),
-                  // A kept turn sends this step's prompt into its session. Only a resumed,
-                  // interrupted turn gets the runner's resume instruction.
-                  ...(keptRef ? { continueWithPrompt: true } : {}),
+                  // A kept turn sends this step's prompt into its session. Only a resumed, interrupted turn gets the
+                  // runner's resume instruction. A session's turn keeps its program open until its step ends (endSession).
+                  ...(keptRef ? { continueWithPrompt: true } : {}), ...(sessionKey === undefined ? {} : { hold: true }),
                   callIndex,
                   callHash,
                   callPath,
@@ -1867,7 +1873,7 @@ async function runLevel<T>(
     listSavedWorkflows: options.listSavedWorkflows,
     stepOverrides: options.stepOverrides,
     resolveCwd: (cwd) => resolvePath(baseCwd, cwd ?? "."),
-    track: tracked, onDryRunCheck: options.codeEnv?.onDryRunCheck,
+    track: tracked, onDryRunCheck: options.codeEnv?.onDryRunCheck, endSession: endSession(sessions, agentRunner),
   });
 
   const context = vm.createContext({

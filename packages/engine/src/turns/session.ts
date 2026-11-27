@@ -8,6 +8,7 @@
 //
 // A step runs until its agent says "done", unless it sets `until: "turn"`. turns/loop.ts sends its
 // turns. agent() gets a key no script can name, so its later turns go on in its own session.
+// When a keyed step ends, deps.end closes the program its turns kept open.
 
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
 import { LOOP_KEYS, checkLoopOptions, runUntilDone, type Check, type LoopDeps } from "./loop.js";
@@ -26,6 +27,8 @@ export interface SessionDeps {
   stepOverrides?: Record<string, Record<string, unknown>>;
   /** A step's folder, resolved as the engine resolves a step's cwd. */
   resolveCwd: (cwd: string | undefined) => string;
+  /** Closes the program the turns of a step in the session `key` kept open. */
+  end?: (key: string) => Promise<void>;
   /** Wraps a function the script calls, as the script's globals are wrapped. */
   track?: <F extends (...args: never[]) => unknown>(fn: F) => F;
 }
@@ -79,15 +82,21 @@ export function createSessions(deps: SessionDeps) {
   /**
    * Runs one step: its one turn with `until: "turn"`, else the loop's turns until "done". `turn`
    * sends one turn with the until the engine reads. `joinLabel` names the session a question
-   * waits on. A check command runs in `cwd`.
+   * waits on. A check command runs in `cwd`. `key` is the session the turns go on in, whose
+   * program closes when the step ends.
    */
-  const runStep = (prompt: string, options: Record<string, unknown>, label: string, joinLabel: string, cwd: unknown, turn: (prompt: string, until: Until) => Promise<unknown>) => {
+  const runStep = async (prompt: string, options: Record<string, unknown>, label: string, joinLabel: string, cwd: unknown, key: string | undefined, turn: (prompt: string, until: Until) => Promise<unknown>) => {
+    const end = key === undefined || !deps.end ? undefined : () => deps.end!(key);
     const maxTurns = options.maxTurns as number | undefined;
     const maxRepairs = options.maxRepairs as number | undefined;
     if (options.until === "turn") {
       if (options.check !== undefined) fail(`step "${label}": check runs when the agent says done. A step with until "turn" has no check.`);
       const limits: StepUntil = { end: "turn", ...(maxRepairs === undefined ? {} : { maxRepairs }), ...(maxTurns === undefined ? {} : { maxTurns, turnsLeft: maxTurns }) };
-      return turn(prompt, Object.keys(limits).length > 1 ? limits : "turn");
+      try {
+        return await turn(prompt, Object.keys(limits).length > 1 ? limits : "turn");
+      } finally {
+        await end?.();
+      }
     }
     return runUntilDone(
       prompt,
@@ -100,7 +109,7 @@ export function createSessions(deps: SessionDeps) {
         ...(typeof cwd === "string" ? { cwd } : {}),
         ...(typeof options.phase === "string" ? { phase: options.phase } : {}),
       },
-      { send: turn, command: deps.command, join: (message) => deps.join(message, joinLabel) },
+      { send: turn, command: deps.command, join: (message) => deps.join(message, joinLabel), ...(end ? { end } : {}) },
     );
   };
 
@@ -158,7 +167,7 @@ export function createSessions(deps: SessionDeps) {
       const step = { ...held, ...turn, label: stepLabel, ...(model === undefined ? {} : { model }) };
       running = true;
       try {
-        return await runStep(prompt, options, stepLabel, label, held.cwd, (text, until) => {
+        return await runStep(prompt, options, stepLabel, label, held.cwd, label, (text, until) => {
           const start = turns === 0 ? "fresh" : "kept";
           turns++;
           return deps.agent(text, { ...step, until, session: { key: label, start } });
@@ -188,7 +197,7 @@ export function createSessions(deps: SessionDeps) {
       // session a second turn could go on in. Sessions take places in a later phase.
       if (options.check !== undefined) fail(`agent(): a step with place "worktree" takes no check yet. Run the check in the script after it.`);
       let sent = 0;
-      return runStep(prompt, options, name, name, rest.cwd, (text, until) => {
+      return runStep(prompt, options, name, name, rest.cwd, undefined, (text, until) => {
         if (sent++ > 0) {
           fail(`step "${name}" has place "worktree" and needs another turn, which only a session can run. Give it until: "turn", or run it without place.`);
         }
@@ -198,7 +207,7 @@ export function createSessions(deps: SessionDeps) {
     // A key no script can name: a session label is trimmed, and this one starts with a space.
     const key = options.until === "turn" ? undefined : ` agent ${++agents}`;
     let turns = 0;
-    return runStep(prompt, options, name, name, rest.cwd, (text, until) => {
+    return runStep(prompt, options, name, name, rest.cwd, key, (text, until) => {
       const start = turns++ === 0 ? "fresh" : "kept";
       return deps.agent(text, key === undefined ? { ...step, until } : { ...step, until, session: { key, start } });
     });

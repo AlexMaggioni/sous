@@ -1,6 +1,6 @@
 // The agent calls that run now, each with the steer seam its program opened, so a tell reaches
-// them. The steps module opens a call when its turn starts and closes it when the turn ends. The
-// worker sends each `sous tell` through the board.
+// them. The steps module opens a call when its first turn starts and closes it when the call ends
+// (CallSeam). The worker sends each `sous tell` through the board.
 
 import type { Steer, SteerOutcome } from "@sous-run/harnesses";
 
@@ -80,4 +80,43 @@ export class SteeringBoard {
       }),
     );
   }
+}
+
+/**
+ * One call's place on the board across its turns. The call opens when its first turn starts and
+ * stays open until the call ends, so a tell between two turns of the call waits and goes into the
+ * next turn. At the call's end each tell still waiting resolves ended.
+ */
+export class CallSeam {
+  private send: Steer | undefined;
+  private readonly waiting: Array<{ text: string; id: string; settle: (outcome: SteerOutcome) => void }> = [];
+  private closed = false;
+
+  constructor(
+    private readonly board: SteeringBoard,
+    private readonly call: LiveCall,
+  ) {}
+
+  /** The adapter's steer event: a turn's seam opened, or closed with undefined. */
+  readonly steer = (send: Steer | undefined): void => {
+    if (this.closed) return;
+    this.send = send;
+    if (!send) return;
+    this.board.open(this.call, this.tell);
+    for (const tell of this.waiting.splice(0)) send(tell.text, tell.id).then(tell.settle, () => tell.settle("ended"));
+  };
+
+  /** The call ended. */
+  close(): void {
+    this.closed = true;
+    this.send = undefined;
+    this.board.close(this.call);
+    for (const tell of this.waiting.splice(0)) tell.settle("ended");
+  }
+
+  private readonly tell: Steer = (text, id) => {
+    if (this.send) return this.send(text, id);
+    if (this.closed) return Promise.resolve("ended");
+    return new Promise<SteerOutcome>((settle) => this.waiting.push({ text, id, settle }));
+  };
 }

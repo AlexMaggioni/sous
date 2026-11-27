@@ -1,4 +1,7 @@
-// One step on Claude Code: one query() of the Claude Agent SDK.
+// One turn on Claude Code. A program is one query() of the Claude Agent SDK, whose prompt stream
+// stays open between turns. A turn with hold keeps it for the session's next turn, which sends its
+// prompt into the same stream. The SDK takes outputFormat once per query, so a turn whose settings
+// differ from the kept program's closes it and resumes the session in a new one.
 
 import { randomUUID } from "node:crypto";
 import {
@@ -16,7 +19,8 @@ import { addUsage, noUsage, StepFailure, usage } from "../failure.js";
 import { toAnthropicJsonSchema } from "../schema.js";
 import { refusal, toolName } from "../tools.js";
 import type { Failure, HistoryEntry, McpServer, Step, StepEvents, StepResult, Usage } from "../types.js";
-import { claudeEnv } from "./program.js";
+import type { Held, HeldProgram } from "../held.js";
+import { claudeEnv, spawnClaude } from "./program.js";
 import { Tells } from "./tells.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"];
@@ -25,7 +29,7 @@ const EFFORTS: EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
 const ASK = "AskUserQuestion";
 
 /** The SDK options for a step, and the notes on what it could not honor. */
-function claudeOptions(path: string, step: Step, sessionId: string, abort: AbortController, stderr: (text: string) => void) {
+function claudeOptions(path: string, step: Step, sessionId: string) {
   const notes: string[] = [];
   const allow = step.tools?.allow;
   const deny = step.tools?.deny ?? [];
@@ -40,8 +44,6 @@ function claudeOptions(path: string, step: Step, sessionId: string, abort: Abort
       const why = tool === ASK ? "Ask the question in your answer instead." : refusal(step.tools, tool);
       return why ? { behavior: "deny", message: why } : { behavior: "allow", updatedInput: input };
     },
-    abortController: abort,
-    stderr,
   };
   if (step.resume) options.resume = step.resume;
   else options.sessionId = sessionId;
@@ -109,31 +111,36 @@ const STOPS: Record<string, string> = {
   max_tokens: "The answer was cut off at the model's output limit (stop reason max_tokens).",
 };
 
-export async function runClaude(path: string, step: Step, events: StepEvents = {}): Promise<StepResult> {
-  const sessionId = step.resume ?? randomUUID();
+/** An open Claude Code program: one query whose prompt stream waits for each turn's messages. */
+export interface ClaudeProgram extends HeldProgram {
+  readonly sessionId: string;
+  readonly query: Query;
+  readonly abort: AbortController;
+  readonly notes: string[];
+  model: string;
+  /** The tail of the program's stderr. */
+  stderr: string;
+  /** Sends a turn's messages into the prompt stream, after the turns before it. */
+  send(turn: AsyncIterable<SDKUserMessage>): void;
+}
+
+/** The settings a turn must share with a kept program to run in it. */
+function claudeFits(path: string, step: Step): string {
+  const { cwd, account, model, effort, instructions, schema, tools, skills, mcpServers, mode } = step;
+  return JSON.stringify({ path, cwd, account, model, effort, instructions, schema, tools, skills, mcpServers, mode });
+}
+
+/** Starts Claude Code for a step's session. Its first turn still has to send. */
+function openProgram(step: Step, sessionId: string, options: Options, notes: string[], fits: string): ClaudeProgram {
   const abort = new AbortController();
-  let stderr = "";
-  const { options, notes } = claudeOptions(path, step, sessionId, abort, (text) => {
-    stderr = (stderr + text).slice(-8000);
-  });
-  if (step.signal?.aborted) throw new StepFailure("The step was stopped before it started.", { kind: "stopped" }, { notes });
-  const stop = () => abort.abort();
-  step.signal?.addEventListener("abort", stop, { once: true });
-
-  const history = (entry: Omit<HistoryEntry, "at">) => events.history?.({ ...entry, at: Date.now() });
-  history({ role: "user", kind: "text", text: step.prompt });
-
-  // The prompt stays open until the first result, so the SDK keeps answering permission requests
-  // and the step's tells reach the turn. The result closes it.
-  const tells = new Tells((told) => history({ role: "user", kind: "text", text: told }));
-  /** Closes the seam. True when a tell was still unread, so the query must end now. */
-  const release = () => {
-    const { open, unread } = tells.close();
-    if (open) events.steer?.(undefined);
-    return unread;
-  };
+  const turns: AsyncIterable<SDKUserMessage>[] = [];
+  let wake: (() => void) | undefined;
+  let ended = false;
+  let child: ReturnType<typeof spawnClaude> | undefined;
+  let exited: Promise<void> = Promise.resolve();
   let started!: (query: Query) => void;
   const ready = new Promise<Query>((resolve) => (started = resolve));
+
   async function* prompt(): AsyncGenerator<SDKUserMessage> {
     // The SDK may ask for the first message before query() returns, so this waits for it.
     const q = await ready;
@@ -142,16 +149,103 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
       const models = await q.supportedModels().catch(() => undefined);
       if (models && offersAuto(models, step.model)) await q.setPermissionMode("auto").catch(() => undefined);
     }
-    yield userMessage(step);
-    yield* tells.messages();
+    while (!ended) {
+      const turn = turns.shift();
+      if (turn) yield* turn;
+      else await new Promise<void>((resolve) => (wake = resolve));
+    }
   }
+
+  const q = query({
+    prompt: prompt(),
+    options: {
+      ...options,
+      abortController: abort,
+      spawnClaudeCodeProcess: (spawnOptions) => {
+        const spawned = spawnClaude(spawnOptions, (text) => (program.stderr = (program.stderr + text).slice(-8000)));
+        exited = new Promise<void>((resolve) => {
+          spawned.once("exit", () => resolve());
+          spawned.once("error", () => resolve());
+        });
+        child = spawned;
+        return spawned;
+      },
+    },
+  });
+  started(q);
+  let closing: Promise<void> | undefined;
+  const program: ClaudeProgram = {
+    fits,
+    sessionId,
+    query: q,
+    abort,
+    notes,
+    model: step.model ?? "",
+    stderr: "",
+    send(turn) {
+      turns.push(turn);
+      wake?.();
+    },
+    alive: () => !ended && !abort.signal.aborted && child !== undefined && child.exitCode === null && child.signalCode === null,
+    close() {
+      closing ??= (async () => {
+        ended = true;
+        wake?.();
+        q.close();
+        // The SDK ends stdin and kills the program after its grace. This waits for it to exit.
+        const kill = setTimeout(() => child?.kill("SIGKILL"), 5000);
+        await exited;
+        clearTimeout(kill);
+      })();
+      return closing;
+    },
+  };
+  return program;
+}
+
+export async function runClaude(path: string, step: Step, events: StepEvents, held: Held<ClaudeProgram>): Promise<StepResult> {
+  const fits = claudeFits(path, step);
+  const { options, notes } = claudeOptions(path, step, step.resume ?? randomUUID());
+  if (step.signal?.aborted) throw new StepFailure("The step was stopped before it started.", { kind: "stopped" }, { notes });
+  const kept = await held.take(step.resume, fits);
+  const program = kept ?? openProgram(step, step.resume ?? options.sessionId!, options, notes, fits);
+  const { sessionId, abort } = program;
+  program.stderr = "";
+  const stop = () => abort.abort();
+  step.signal?.addEventListener("abort", stop, { once: true });
+
+  const history = (entry: Omit<HistoryEntry, "at">) => events.history?.({ ...entry, at: Date.now() });
+  history({ role: "user", kind: "text", text: step.prompt });
+
+  // The turn's messages stay open until its result, so the SDK keeps answering permission requests
+  // and the step's tells reach the turn. The result closes them.
+  const tells = new Tells((told) => history({ role: "user", kind: "text", text: told }));
+  /** Closes the seam. True when a tell was still unread, so the query must end now. */
+  const release = () => {
+    const { open, unread } = tells.close();
+    if (open) events.steer?.(undefined);
+    return unread;
+  };
+  /** The turn has started: names its session and model, and opens the seam. */
+  const opening = () => {
+    opened = true;
+    events.session?.(sessionId);
+    events.model?.(program.model);
+    const send = tells.open();
+    if (send) events.steer?.(send);
+  };
+  program.send(
+    (async function* turn(): AsyncGenerator<SDKUserMessage> {
+      yield userMessage(step);
+      yield* tells.messages();
+    })(),
+  );
 
   // Usage per assistant message, since the SDK repeats a message once per content block.
   const perMessage = new Map<string, Usage>();
   let spent = noUsage();
   let finalUsage: Usage | undefined;
   const total = () => finalUsage ?? spent;
-  let model = step.model ?? "";
   let opened = false;
   let text = "";
   let limit: { resetAt?: string } | undefined;
@@ -167,25 +261,22 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
     throw new StepFailure(message, failure, { usage: total(), ...(opened ? { sessionId } : {}), notes });
   };
 
-  let q: Query | undefined;
+  // A kept program sends its init again, but the turn starts as its prompt goes in.
+  if (kept) opening();
   try {
-    q = query({ prompt: prompt(), options });
-    started(q);
-    for await (const message of q as AsyncIterable<SDKMessage | Lifecycle>) {
-      // The step ends at the first result. A later frame belongs to no turn of this step.
-      if (resulted) continue;
+    // Frames come by hand, since leaving a for await loop would end the query.
+    while (!resulted) {
+      const next = await program.query.next();
+      if (next.done) break;
+      const message = next.value as SDKMessage | Lifecycle;
       switch (message.type) {
         case "command_lifecycle":
           tells.lifecycle(message.command_uuid, message.state);
           break;
         case "system":
-          if (message.subtype === "init") {
-            opened = true;
-            model = message.model;
-            events.session?.(message.session_id);
-            events.model?.(message.model);
-            const send = tells.open();
-            if (send) events.steer?.(send);
+          if (message.subtype === "init" && !opened) {
+            program.model = message.model;
+            opening();
           }
           break;
         case "rate_limit_event":
@@ -225,6 +316,8 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
           break;
         }
         case "result": {
+          // usage is this turn's own. total_cost_usd runs on across the program's turns, from the
+          // cost a resume restored, as it did when each turn resumed in a program of its own.
           const u = message.usage;
           finalUsage = usage(u.input_tokens ?? 0, u.output_tokens ?? 0, u.cache_read_input_tokens ?? 0, u.cache_creation_input_tokens ?? 0, message.total_cost_usd);
           events.usage?.(finalUsage);
@@ -239,7 +332,7 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
               failure = { kind: "schema", text: said };
               failureText = "Claude Code gave no value for the schema.";
             } else {
-              answer = { sessionId, model, text: said, usage: finalUsage, ...(step.schema ? { value: message.structured_output } : {}), ...(notes.length ? { notes } : {}) };
+              answer = { sessionId, model: program.model, text: said, usage: finalUsage, ...(step.schema ? { value: message.structured_output } : {}), ...(notes.length ? { notes } : {}) };
             }
           } else if (message.subtype === "error_max_structured_output_retries") {
             failure = { kind: "schema", text };
@@ -253,26 +346,29 @@ export async function runClaude(path: string, step: Step, events: StepEvents = {
           tells.consumed(message.user_message_uuids);
           resulted = true;
           // Claude Code would run a tell it never read as a turn of its own, unseen and unpaid
-          // for here. Closing the query stops it.
+          // for here. Closing the program stops it.
           unreadTell = release();
           break;
         }
       }
-      if (unreadTell) break;
     }
   } catch (error) {
-    if (!abort.signal.aborted) failureText ||= stderr.trim() || (error instanceof Error ? error.message : String(error));
+    if (!abort.signal.aborted) failureText ||= program.stderr.trim() || (error instanceof Error ? error.message : String(error));
   } finally {
     release();
     step.signal?.removeEventListener("abort", stop);
-    q?.close();
+    // A held turn that answered, or gave no value for its schema, keeps the program for the
+    // step's next turn. Any other end closes it.
+    const keep = step.hold && resulted && !unreadTell && !abort.signal.aborted && (answer !== undefined || failure?.kind === "schema");
+    if (keep) await held.keep(sessionId, program);
+    else await program.close();
   }
 
   // A stop after the result keeps the answer.
   if (answer) return answer;
   if (step.signal?.aborted) fail("The step was stopped.", { kind: "stopped" });
   if (failure) fail(failureText, failure);
-  if (/No conversation found/i.test(stderr)) fail(`No Claude Code session ${sessionId} to resume.`, { kind: "no_session", sessionId });
+  if (/No conversation found/i.test(program.stderr)) fail(`No Claude Code session ${sessionId} to resume.`, { kind: "no_session", sessionId });
   if (limit || limitSeen) fail(failureText || "Claude Code hit its usage limit.", { kind: "usage_limit", ...limit });
   if (authFailed) fail(failureText || "Claude Code is not logged in.", { kind: "auth" });
   return fail(failureText || "Claude Code ended the step without an answer.", { kind: "failed", retry: true });

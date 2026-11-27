@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { listRecords } from "@sous-run/engine";
 import { readState } from "@sous-run/engine/testing";
-import { fakeWorld, type FakeLine, type FakeRule } from "../helpers/fake-world.js";
+import { fakeWorld, wentOn, type FakeLine, type FakeRule } from "../helpers/fake-world.js";
 
 const PROMPT = "Make every test in test/ pass.";
 const CONTINUE = "Continue the task.";
@@ -52,10 +52,11 @@ for (const [program, model] of [
 
       const lines = turns(world.log());
       assert.deepEqual(
-        lines.map((line) => [line.program, line.prompt, line.resume === true, fields(line)]),
+        lines.map((line, i) => [line.program, line.prompt, i === 0 ? line.resume === true : wentOn(lines[0], line), fields(line)]),
         [
           [program, PROMPT, false, ["message", "result", "status"]],
-          [program, CONTINUE, true, ["message", "result", "status"]],
+          // The step's next turn goes on in the first turn's open program.
+          [program, CONTINUE, "held", ["message", "result", "status"]],
         ],
       );
       assert.equal(typeof lines[0]!.sessionId, "string");
