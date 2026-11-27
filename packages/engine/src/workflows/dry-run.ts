@@ -9,6 +9,8 @@
 
 import { rmSync } from "node:fs";
 import { dirname } from "node:path";
+import { DRY_RUN_MAX_CALLS } from "../config.js";
+import { agentLimitMessage } from "../errors.js";
 import { fabricateFromSchema } from "../fabricate.js";
 import { isGitRepo, removeWorktree, runWorktrees } from "../places/places.js";
 import { loadConfig, type HomePaths } from "../runs/home.js";
@@ -37,6 +39,8 @@ function matches(pattern: string, label: string): boolean {
 }
 
 const STATUSES = ["done", "working", "question"];
+
+const DRY_RUN_CAP_REASON = `The dry run stopped after ${DRY_RUN_MAX_CALLS} agent, code and checkpoint calls. A dry run starts no program, so it keeps this cap to end a loop in the script. A real run has no cap unless the script sets meta.maxAgents.`;
 const STATUS_KEYS = ["status", "result", "message"];
 
 /** The step's own schema inside a status schema: the first choice of its result. A step with no
@@ -74,18 +78,19 @@ function asStatus(answer: unknown, schema: Record<string, unknown> | undefined, 
 
 /** Agents that answer at once: the answer given for the step, else a value that fits the step's
  *  schema, else a line of text. Booleans in a made-up value are true, so loops on them end. A step
- *  that runs until done gets its answer as a turn's status, and "done" when none is given. */
+ *  that runs until done gets its answer as a turn's status, and "done" when none is given or its
+ *  answers ran out on a status other than done. */
 function standInAgents(answers: Answers = {}): InnerRunner & { calls: string[] } {
   const calls: string[] = [];
   const given = new Map<string, number>();
-  const answerFor = (label: string): { value: unknown } | undefined => {
+  /** The next answer for the step. `spent` is true once its list ran out, and the last answer repeats. */
+  const answerFor = (label: string): { value: unknown; spent: boolean } | undefined => {
     const key = Object.hasOwn(answers, label) ? label : Object.keys(answers).find((pattern) => matches(pattern, label));
     if (key === undefined) return undefined;
-    const value = answers[key];
-    if (!Array.isArray(value)) return { value };
+    const list = Array.isArray(answers[key]) ? (answers[key] as unknown[]) : [answers[key]];
     const n = given.get(key) ?? 0;
     given.set(key, n + 1);
-    return { value: value[Math.min(n, value.length - 1)] };
+    return { value: list[Math.min(n, list.length - 1)], spent: n >= list.length };
   };
   const run = async (_prompt: string, request: PlannedRequest): Promise<unknown> => {
     const label = request.label ?? "agent";
@@ -96,7 +101,10 @@ function standInAgents(answers: Answers = {}): InnerRunner & { calls: string[] }
     const schema = request.schema as Record<string, unknown> | undefined;
     if (!request.untilDone) return answer ? answer.value : madeUp(schema, label);
     const own = resultSchema(schema);
-    return asStatus(answer ? answer.value : "done", own, label);
+    const status = asStatus(answer ? answer.value : "done", own, label) as { status: unknown };
+    // A status other than done plays once: once the answers run out, the step says done, so a
+    // step answered "working" ends.
+    return answer?.spent && status.status !== "done" ? asStatus("done", own, label) : status;
   };
   return { run, calls };
 }
@@ -135,7 +143,9 @@ export async function dryRun(paths: HomePaths, request: DryRunRequest): Promise<
     const result = await runWorker(record.runId, "start", { paths, inner: agents, log: request.log ?? (() => {}), dryRun: true, onDryRunCheck: (check) => checks.push(check) });
     const state = readState(paths, record.runId);
     const status = result?.status ?? state?.status ?? "unknown";
-    const reason = result?.reason ?? state?.reason ?? state?.pauseReason;
+    const given = result?.reason ?? state?.reason ?? state?.pauseReason;
+    // The dry run's own cap, which the script did not set.
+    const reason = given === agentLimitMessage(DRY_RUN_MAX_CALLS) ? DRY_RUN_CAP_REASON : given;
     // The result is plain JSON, made in the workflow's own sandbox; a copy belongs to this side.
     const value = status === "completed" && result?.result !== undefined ? { result: JSON.parse(JSON.stringify(result.result)) as unknown } : {};
     return { runId: record.runId, status, ...value, ...(reason ? { reason: String(reason) } : {}), agents: agents.calls, ...(checks.length ? { checks } : {}) };

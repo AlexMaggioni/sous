@@ -61,13 +61,17 @@ describe("the calls of a run", () => {
     assert.match(String(run.result), /limit/i, "the fourth level's step is refused");
   });
 
-  it("take the run's own maxAgents over the meta's", async () => {
-    const run = runWorkflow(script("for (let i = 0; i < 5; i++) await agent('x' + i, { label: 'a' + i, until: 'turn' })\nreturn 'all'", ", maxAgents: 2"), {
-      agent: echo,
-      persistLogs: false,
-      maxAgents: 10,
-    });
-    assert.equal((await run).result, "all");
+  it("hold the smaller of the run's own maxAgents and the meta's", async () => {
+    const five = "for (let i = 0; i < 5; i++) await agent('x' + i, { label: 'a' + i, until: 'turn' })\nreturn 'all'";
+    const refused = (error: { code?: string; message: string }) => {
+      assert.equal(error.code, WorkflowErrorCode.AGENT_LIMIT_EXCEEDED);
+      assert.match(error.message, /limit of 2\b/);
+      return true;
+    };
+    await assert.rejects(runWorkflow(script(five, ", maxAgents: 2"), { agent: echo, persistLogs: false, maxAgents: 10 }), refused);
+    await assert.rejects(runWorkflow(script(five, ", maxAgents: 10"), { agent: echo, persistLogs: false, maxAgents: 2 }), refused);
+    const both = await runWorkflow(script(five, ", maxAgents: 10"), { agent: echo, persistLogs: false, maxAgents: 20 });
+    assert.equal(both.result, "all");
   });
 });
 
@@ -84,9 +88,11 @@ describe("how deep workflows nest", () => {
     assert.match(String(four.result), /at most 3 levels deep/);
   });
 
-  it("stops at the run's own maxNestingDepth", async () => {
+  it("stops at the run's own maxNestingDepth, or the meta's when it is smaller", async () => {
     const run = await runWorkflow(nested(3), { agent: echo, persistLogs: false, loadSavedWorkflow: loadLevel, maxNestingDepth: 2 });
     assert.match(String(run.result), /at most 2 levels deep/);
+    const meta = await runWorkflow(nested(3, ", maxNestingDepth: 2"), { agent: echo, persistLogs: false, loadSavedWorkflow: loadLevel, maxNestingDepth: 5 });
+    assert.match(String(meta.result), /at most 2 levels deep/);
   });
 });
 
@@ -127,6 +133,18 @@ describe("a dry run", () => {
     });
     const dry = await dryRun(paths, { who: PERSON, workflow: "spin", projectDir, inputs: {} });
     assert.equal(dry.status, "failed");
-    assert.match(dry.reason ?? "", /limit.*1000|1000.*limit/i);
+    assert.match(dry.reason ?? "", /dry run/i, "the reason names the dry run's cap, not a setting the script never set");
+    assert.match(dry.reason ?? "", /1000/);
+    assert.doesNotMatch(dry.reason ?? "", /set by maxAgents/);
+  });
+
+  it("keeps the script's own meta.maxAgents when it is under the dry run's cap", async () => {
+    const { paths, projectDir } = testHome({
+      three: "export const meta = { name: 'three', description: 'three at most', maxAgents: 3 }\nfor (let i = 0; i < 5; i++) await agent('x' + i, { label: 'a' + i, until: 'turn' })",
+    });
+    const dry = await dryRun(paths, { who: PERSON, workflow: "three", projectDir, inputs: {} });
+    assert.equal(dry.status, "failed");
+    assert.match(dry.reason ?? "", /limit of 3\b.*maxAgents/);
+    assert.equal(dry.agents.length, 3);
   });
 });

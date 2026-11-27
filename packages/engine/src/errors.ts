@@ -207,6 +207,11 @@ export function wrapError(error: unknown, context?: { agentLabel?: string }): Wo
  * guarded because workflow code can throw exotic objects (throwing getters, circular
  * structures, hostile toString) and containment must not leak leases or rejections.
  */
+/** Why a run stopped at its cap on agent, code and checkpoint calls. */
+export function agentLimitMessage(max: number): string {
+  return `The run reached its limit of ${max} agent, code and checkpoint calls, set by maxAgents.`;
+}
+
 export function errorMessage(error: unknown): string {
   if (error instanceof Error) {
     const message = readMessage(error);

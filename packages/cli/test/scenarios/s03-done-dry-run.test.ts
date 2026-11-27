@@ -51,6 +51,20 @@ describe("a step that runs until done, in a dry run", () => {
     assert.deepEqual(listRecords(world.paths), []);
   });
 
+  it("plays a status other than done once: when the answers run out on working or question, the step says done", async (t) => {
+    const world = fakeWorld(t);
+    world.workflow("done", script());
+
+    const once = await dryJson(world, { implementer: "working" });
+    assert.equal(once.status, "completed");
+    assert.deepEqual(once.agents, ["implementer", "implementer"], "one working turn, then done");
+
+    const listed = await dryJson(world, { implementer: ["working", "question"] });
+    assert.equal(listed.status, "completed");
+    assert.deepEqual(listed.agents, ["implementer", "implementer", "implementer"], "working, question, then done");
+    assert.deepEqual(listed.result, { result: "stand-in answer from implementer" });
+  });
+
   it("reads an object with a status as a turn, and a plain answer as done with that answer", async (t) => {
     const world = fakeWorld(t);
     world.workflow("done", script());

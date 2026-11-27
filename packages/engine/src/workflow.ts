@@ -39,6 +39,7 @@ import {
   MAX_CONCURRENCY,
 } from "./config.js";
 import {
+  agentLimitMessage,
   errorMessage,
   isAuthRequired,
   isProviderUsageLimit,
@@ -545,13 +546,12 @@ export function sanitizeVmName(name: string): string {
 
 /** Runs a workflow. Its result must fit its meta.schema, or the run fails. A nested workflow's
  *  result is checked by the workflow() call that starts it. The limits its meta sets apply to the
- *  whole run tree, where the options set none. */
+ *  whole run tree, as do the options'. Where both set one, the smaller holds. */
 export async function runWorkflow<T = unknown>(
   script: string,
   options: WorkflowRunOptions,
 ): Promise<EngineRunResult<T>> {
-  const meta = metaLimits(parseWorkflowScript(script).meta);
-  const limits = { maxAgents: options.maxAgents ?? meta.maxAgents, maxNestingDepth: options.maxNestingDepth ?? meta.maxNestingDepth };
+  const limits = metaLimits(parseWorkflowScript(script).meta, options);
   const run = await runLevel<T>(script, { ...options, ...limits }, undefined);
   return { ...run, result: fittedResult(run.meta, run.result) as T };
 }
@@ -894,7 +894,7 @@ async function runLevel<T>(
   const checkAgentLimit = () => {
     if (maxAgents !== undefined && shared.agentCount >= maxAgents) {
       throw new WorkflowError(
-        `The run reached its limit of ${maxAgents} agent, code and checkpoint calls, set by maxAgents.`,
+        agentLimitMessage(maxAgents),
         WorkflowErrorCode.AGENT_LIMIT_EXCEEDED,
         { recoverable: false },
       );

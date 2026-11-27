@@ -112,11 +112,15 @@ function isLimit(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1;
 }
 
-/** The limits the meta sets, each a whole number of at least 1. One it sets wrong is left out, and
- *  workflowExtras names it as a problem. */
-export function metaLimits(meta: WorkflowMeta): { maxAgents?: number; maxNestingDepth?: number } {
+/** The limits of a run: the run's own and the meta's, each a whole number of at least 1. One the
+ *  meta sets wrong is left out, and workflowExtras names it as a problem. */
+export function metaLimits(meta: WorkflowMeta, own: { maxAgents?: number; maxNestingDepth?: number }): { maxAgents?: number; maxNestingDepth?: number } {
   const limits: { maxAgents?: number; maxNestingDepth?: number } = {};
-  for (const key of LIMIT_KEYS) if (isLimit(meta[key])) limits[key] = meta[key];
+  for (const key of LIMIT_KEYS) {
+    // Every limit that is set holds, so the smaller one wins.
+    const set = [own[key], isLimit(meta[key]) ? meta[key] : undefined].filter((value): value is number => value !== undefined);
+    if (set.length) limits[key] = Math.min(...set);
+  }
   return limits;
 }
 

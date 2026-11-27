@@ -108,7 +108,8 @@ series of answers given in turn, the last one repeating:
 A step that runs until done takes its turns from the answers. A status name plays one turn, so
 `["working", "working", "done"]` is three turns. So does an object with `status` and no other key
 than `status`, `result` and `message`. Any other answer is "done", with that answer as the result.
-With no answer, the stand-in says "done" at once. A check command runs once: the dry run prints
+With no answer, the stand-in says "done" at once. A status other than "done" plays once, so when
+the answers run out on "working" or "question", the step says "done". A check command runs once: the dry run prints
 its exit code, and `--json` lists it under `checks`. Then the step goes on as if the check passed.
 An agent's question gets a stand-in answer, as a question from `ask()` does.
 
@@ -575,7 +576,7 @@ the notices off.
   run fails at the next one. `maxNestingDepth` in the meta caps how deep `workflow()` nests. Each
   is a whole number of at least 1. A step's `maxTurns` and `maxRepairs` and a breakpoint's `max`
   are off unless set too. A dry run alone keeps a cap of 1000 calls, since it starts no program
-  and a loop would never end.
+  and a loop would never end. A meta `maxAgents` under 1000 still holds in a dry run.
 - A workflow's `timeout` limits each start and each resume of a run. When it is reached, the
   running steps stop, code steps such as `sh` as well as agent steps, and the run pauses on them,
   shown as `paused: time limit`. `sous resume` runs them again with the whole limit, and `sous stop`
