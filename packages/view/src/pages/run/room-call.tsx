@@ -115,7 +115,7 @@ export function RoomCall({ run, box, onSelect, about }: RoomCallProps) {
       <Transcript room={room} lanes={lanes} />
       {decision && (
         <PanelPart title="Decision">
-          <CodeFrame meta={plural(lineCount(decision), "line")} copy={decision}>
+          <CodeFrame meta={plural(lineCount(decision), "line")} copy={decision} copyLabel="Copy the decision">
             <CodeLines code={decision} lang="json" wrap label={`Decision of ${box.title}`} />
           </CodeFrame>
         </PanelPart>

@@ -53,14 +53,15 @@ export function CodeLines({ code, lang, wrap = false, label }: { code: string; l
   );
 }
 
-/** A box with the path, the line count and a copy button above the lines. */
-export function CodeFrame({ path, meta, copy, children }: { path?: string; meta: ReactNode; copy?: string; children: ReactNode }) {
+/** A box with the path, the line count and a copy button above the lines. The button's name is
+ *  `copyLabel`, else "Copy the file" when the box names a path, else "Copy". */
+export function CodeFrame({ path, meta, copy, copyLabel, children }: { path?: string; meta: ReactNode; copy?: string; copyLabel?: string; children: ReactNode }) {
   return (
     <div className="max-w-full min-w-0 overflow-hidden rounded-lg border border-line bg-raised">
       <div className="flex min-h-8 items-center gap-2 border-b border-line pr-1 pl-3 text-xs text-muted">
         <span className="min-w-0 flex-1 truncate font-mono">{path}</span>
         <span className="flex-none">{meta}</span>
-        {copy !== undefined && <CopyButton text={copy} label="Copy the file" />}
+        {copy !== undefined && <CopyButton text={copy} label={copyLabel ?? (path ? "Copy the file" : "Copy")} />}
         {copy === undefined && <span className="h-6" />}
       </div>
       {children}

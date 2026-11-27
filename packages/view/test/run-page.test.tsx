@@ -477,6 +477,7 @@ describe("a room's panel", () => {
     expect(within(drop).getByText("Agreed, the parser first.")).toBeInTheDocument();
     expect(within(drop).getByText("The decider decided")).toBeInTheDocument();
     expect(within(drop).getByText(/"plan": "parser first"/)).toBeInTheDocument();
+    expect(within(drop).getByRole("button", { name: "Copy the decision" })).toBeInTheDocument();
     // Who sent each message, and to whom.
     const lines = within(drop).getAllByRole("listitem").map((li) => li.querySelector("p")?.textContent);
     expect(lines).toEqual(["a to everyone", "a to b", "b to everyone"]);

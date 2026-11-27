@@ -199,6 +199,42 @@ A script has these steps (see also [the engine README](../packages/engine/README
 - `agent(prompt, options)` is one send on a fresh session that no later step uses. It takes a
   handle's options and a send's options, and `place: "worktree"` (see [Places](#places)). Its
   `label` may repeat.
+- `room(options)` lets the sessions of several handles talk in rounds until they agree or one of
+  them decides. Each turn of a member is one send on its handle, in its own session, so the
+  journal, a resume, retries, `sous tell` and `sous join` work for it as for any send. Only the
+  members hear what the room says. A session of the run outside the room hears none of it.
+
+  - `members`: two handles or more, or `{ session, role }` to give a member a role. Each member is
+    another session, and no member's label is `all`.
+  - `goal`: the text of what the room must reach. `name` names the room in the log and on the page.
+  - `turns`: `"together"`, the default, lets every member with something new speak at once in each
+    round. `"in order"` lets them speak one at a time, in the order of `members`. `"moderated"`
+    lets the decider speak first and after each other turn, and name who speaks next.
+  - `hears`: `"all"`, the default, gives every member every message. `"addressed"` gives a member
+    only the messages to it or to all.
+  - `decider`: the handle of the member who decides. `schema`, a JSON schema object, is the
+    decision's shape, and needs a decider.
+  - `maxRounds`: the room ends after this many rounds. A room has no limit unless it sets one.
+  - `opening`: messages said before round 1, as `{ from, to, text }`.
+
+  A member speaks in round 1, and again once another member sent a message to it or to all. Each
+  turn answers with messages, each to one member's label or to `all`, and whether the member is
+  done. The room ends `"decided"` when the decider decides, `"agreed"` when every member is done
+  in a room with no decider, `"quiet"` when no member has anything new, and `"limit"` at
+  `maxRounds`. A decider that has not decided by then gets one more turn to decide. When a
+  member's agent asked, or a person stepped into its session, the other members go on, and its
+  answer joins the room at the next round. A `"moderated"` room waits for it. room() returns `{ ended, decision, rounds, transcript,
+  members }`. `decision` is null unless the decider decided, and `transcript` lists each message
+  as `{ round, from, to, text }`. The run page shows a room as one box with a lane per member, and
+  its panel shows the messages by round and the decision.
+
+  ```js
+  const claude = session({ label: "claude", model: "claude/opus" })
+  const gpt = session({ label: "gpt", model: "codex" })
+  const lead = session({ label: "lead" })
+  const talk = await room({ goal: "Agree on one plan for the parser.", members: [claude, gpt, lead], decider: lead })
+  talk.decision
+  ```
 - Code steps: `sh(command)`, `js(source, input)`, `py(source, input)`, `run(file)` and
   `waitUntil(command, { every })`. They run on this machine, count no tokens and take no agent
   slot. Each returns `{ code, stdout, stderr, result }`. A non-zero exit fails the step unless

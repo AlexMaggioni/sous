@@ -62,6 +62,12 @@
 //                          answer is "Nothing to recall." A fork's earlier messages start with
 //                          its parent's. With a schema the words go in the value's "result"
 //                          field, or in its first string field when it has none.
+//                          A room turn, whose schema has messages and done, also reads this
+//                          turn's prompt, since that holds what the other members said. It sends
+//                          the words to all in one message, or no message when it finds none,
+//                          and is done. The decider's decision is the words, or an object with
+//                          the words in its first string field, and null when it finds none.
+//                          It names no member to speak next.
 //               status     a list of statuses the rule answers in turn, one per matching request,
 //                          counted as times counts. The last one repeats once the list runs out.
 //                          An entry is a status ("done", "working" or "question") or an object
@@ -245,6 +251,27 @@ export function isStatusSchema(schema) {
   return names === "message,result,status" && JSON.stringify(properties.status).includes('"done"');
 }
 
+/** True when a request's schema is a room turn's: its messages and whether it is done. */
+function isRoomSchema(schema) {
+  const properties = schema?.properties;
+  return Boolean(properties && typeof properties === "object" && "messages" in properties && "done" in properties);
+}
+
+/** A room turn's answer that says `words`: one message to all, done, and the decider's decision. */
+function roomTurn(schema, value, words) {
+  const said = words.join(" ");
+  value.messages = words.length ? [{ to: "all", text: said }] : [];
+  value.done = true;
+  if ("decision" in schema.properties) {
+    const made = value.decision;
+    const object = made && typeof made === "object" && !Array.isArray(made);
+    const key = object ? (Object.keys(made).find((name) => typeof made[name] === "string") ?? "result") : undefined;
+    value.decision = !words.length ? null : object ? { ...made, [key]: said } : said;
+  }
+  if ("next" in schema.properties) value.next = null;
+  return value;
+}
+
 /** True when a value is a status object already: a status, and no field but result and message. */
 function isStatus(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.status !== "string") return false;
@@ -300,6 +327,10 @@ export function decide(program, prompt, schema, context = {}) {
   let fields;
   if (Array.isArray(rule.status) && rule.status.length) fields = statusObject(rule.status[Math.min(picked.used, rule.status.length - 1)]);
   if (rule.recall) {
+    if (isRoomSchema(schema)) {
+      const value = roomTurn(schema, valueWith(schema, fields ?? {}), canaryWords([...(context.earlier ?? []), prompt]));
+      return { ...out, kind: "answer", text: JSON.stringify(value), value };
+    }
     const words = canaryWords(context.earlier ?? []);
     const said = words.length ? words.join(" ") : "Nothing to recall.";
     if (!schema && !fields) return { ...out, kind: "answer", text: said };
