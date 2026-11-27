@@ -5,7 +5,7 @@ import type {
   WorkflowResumeDisabledReason,
 } from "./workflow-result.js";
 
-/** One interrupted root agent occurrence that may be continued at its live boundary. */
+/** One interrupted agent call, in the run or a nested run, that may go on in its session. */
 export interface ContinuationCandidate {
   readonly callIndex: number;
   readonly hash: string;
@@ -14,9 +14,14 @@ export interface ContinuationCandidate {
   readonly recordedCwd: string;
 }
 
-/** Manager-prepared continuation candidates for one resumed execution. */
+/** The manager's continuation candidates for one resumed execution, by continuationKey. */
 export interface PreparedContinuation {
-  readonly candidatesByIndex: ReadonlyMap<number, ContinuationCandidate>;
+  readonly candidates: ReadonlyMap<string, ContinuationCandidate>;
+}
+
+/** The key of a call among the candidates: its run's scope and its index there. */
+export function continuationKey(scope: string, callIndex: number): string {
+  return `${scope}#${callIndex}`;
 }
 
 /** Manager-prepared, engine-internal execution input. */

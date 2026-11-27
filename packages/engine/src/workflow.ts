@@ -54,7 +54,7 @@ import { createWorkflowLogger } from "./runs/persistence/logger.js";
 import { parseModelRoutingFromMeta, resolveModelForPhase } from "./model-routing.js";
 import { projectRecordedError } from "./recorded-error.js";
 import { registerRunTripwire } from "./rejection-tripwire.js";
-import type { LiveResume, OccurrenceResume, PreparedContinuation } from "./resume.js";
+import { continuationKey, type LiveResume, type OccurrenceResume, type PreparedContinuation } from "./resume.js";
 import { buildResumeReport } from "./resume-report.js";
 import { nestedRunId } from "./resume-identity.js";
 import { createPairing, type RecordedScope } from "./resume-pairing.js";
@@ -1122,7 +1122,7 @@ async function runLevel<T>(
       const sealedUsage: AgentUsage[] = [];
       const continuationCandidate = continuationIndex === undefined
         ? undefined
-        : preparedContinuation?.candidatesByIndex.get(continuationIndex);
+        : preparedContinuation?.candidates.get(continuationKey(runId, continuationIndex));
 
       interface AttemptSlots {
         sealed: boolean;

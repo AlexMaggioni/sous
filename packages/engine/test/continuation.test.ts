@@ -13,7 +13,7 @@ import type {
 } from "../src/workflow-result.js";
 import type { ContinuationAttempt } from "../src/steps/agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
-import type { ContinuationCandidate, PreparedContinuation } from "../src/resume.js";
+import { continuationKey, type ContinuationCandidate, type PreparedContinuation } from "../src/resume.js";
 import { normalizeResumeSeed } from "../src/resume-matcher.js";
 import { resumeRows } from "../src/resume-rows.js";
 import { runWorkflow } from "../src/workflow.js";
@@ -95,8 +95,11 @@ async function recordInterrupted(
   };
 }
 
-function prepared(candidate: ContinuationCandidate): PreparedContinuation {
-  return { candidatesByIndex: new Map([[candidate.callIndex, candidate]]) };
+/** The run every continued run here uses, so its candidates are found under its scope. */
+const TARGET = "continued-target";
+
+function prepared(candidate: ContinuationCandidate, scope = TARGET): PreparedContinuation {
+  return { candidates: new Map([[continuationKey(scope, candidate.callIndex), candidate]]) };
 }
 
 function continuedRunner(
@@ -127,7 +130,7 @@ describe("live-boundary continuation", () => {
       const fallbacks: WorkflowRunFallback[] = [];
       const journal: JournalEntry[] = [];
       const result = await runWorkflow(workflow(), {
-        runId: "continued-target",
+        runId: TARGET,
         cwd: fixture.cwd,
         persistLogs: false,
         agent: continuedRunner(source.candidate),
@@ -196,6 +199,7 @@ describe("live-boundary continuation", () => {
         const fallbacks: WorkflowRunFallback[] = [];
         let calls = 0;
         const result = await runWorkflow(item.script, {
+          runId: TARGET,
           cwd: item.cwd,
           places: home.places("live"),
           persistLogs: false,
@@ -240,6 +244,7 @@ describe("live-boundary continuation", () => {
       for (const item of changed) {
         const fallbacks: WorkflowRunFallback[] = [];
         await runWorkflow(item.script, {
+          runId: TARGET,
           cwd: fixture.cwd,
           persistLogs: false,
           resume: { continuation: prepared(source.candidate) },
@@ -263,6 +268,7 @@ describe("live-boundary continuation", () => {
       let runs = 0;
       await assert.rejects(
         runWorkflow(workflow("keepSession: true"), {
+          runId: TARGET,
           cwd: fixture.cwd,
           persistLogs: false,
           resume: { continuation: prepared(source.candidate) },
@@ -292,6 +298,7 @@ describe("live-boundary continuation", () => {
       const source = await recordInterrupted(fixture.cwd);
       for (const item of [{ name: "retries", script: workflow("retries: 1") }]) {
         const result = await runWorkflow(item.script, {
+          runId: TARGET,
           cwd: fixture.cwd,
           persistLogs: false,
           resume: { continuation: prepared(source.candidate) },
@@ -312,6 +319,7 @@ describe("live-boundary continuation", () => {
       for (const reason of reasons) {
         const fallbacks: WorkflowRunFallback[] = [];
         await runWorkflow(workflow(), {
+          runId: TARGET,
           cwd: fixture.cwd,
           persistLogs: false,
           resume: { continuation: prepared(source.candidate) },
@@ -323,6 +331,7 @@ describe("live-boundary continuation", () => {
 
       const declined: WorkflowRunFallback[] = [];
       await runWorkflow(workflow(), {
+        runId: TARGET,
         cwd: fixture.cwd,
         persistLogs: false,
         resume: { continuation: prepared(source.candidate) },
@@ -350,6 +359,7 @@ describe("live-boundary continuation", () => {
       const controller = new AbortController();
       const fallbacks: WorkflowRunFallback[] = [];
       await assert.rejects(runWorkflow(workflow(), {
+        runId: TARGET,
         cwd: fixture.cwd,
         persistLogs: false,
         signal: controller.signal,
@@ -368,6 +378,7 @@ describe("live-boundary continuation", () => {
       const gateController = new AbortController();
       const gateFallbacks: WorkflowRunFallback[] = [];
       await assert.rejects(runWorkflow(workflow(), {
+        runId: TARGET,
         cwd: fixture.cwd,
         persistLogs: false,
         signal: gateController.signal,
@@ -399,6 +410,7 @@ describe("live-boundary continuation", () => {
       const fallbacks: WorkflowRunFallback[] = [];
       let attempt = 0;
       const result = await runWorkflow(retryScript, {
+        runId: TARGET,
         cwd: fixture.cwd,
         persistLogs: false,
         resume: { continuation: prepared(source.candidate) },
@@ -439,6 +451,7 @@ return await workflow(\`export const meta = { name: "child", description: "child
 return await agent("task", { label: "worker" })\`)`;
       const fallbacks: WorkflowRunFallback[] = [];
       const result = await runWorkflow(nested, {
+        runId: TARGET,
         cwd: fixture.cwd,
         persistLogs: false,
         resume: { continuation: prepared(source.candidate) },
@@ -502,6 +515,7 @@ return [first, second]`);
       };
       const directives: Array<[number | undefined, boolean]> = [];
       const result = await runWorkflow(script, {
+        runId: TARGET,
         cwd: fixture.cwd,
         persistLogs: false,
         resume: { continuation: prepared(candidate) },
@@ -535,7 +549,7 @@ return [first, second]`);
         runId: "continued-source",
         cwd: fixture.cwd,
         persistLogs: false,
-        resume: { continuation: prepared(source.candidate) },
+        resume: { continuation: prepared(source.candidate, "continued-source") },
         agent: continuedRunner(source.candidate),
         onAgentJournal: (entry) => continuedJournal.push(entry),
         onCallRecord: (call) => continuedCalls.push(call),
@@ -571,6 +585,7 @@ return [first, second]`);
 
       let liveStrategyDirective = false;
       await runWorkflow(workflow(), {
+        runId: TARGET,
         cwd: fixture.cwd,
         persistLogs: false,
         resume: {

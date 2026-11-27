@@ -2,11 +2,17 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AgentSessionRecord, WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowErrorCode } from "../src/errors.js";
-import type { PreparedContinuation } from "../src/resume.js";
+import { continuationCandidates } from "../src/continuation-candidates.js";
+import { continuationKey, type PreparedContinuation } from "../src/resume.js";
 import type { PersistedAgentState, PersistedRunState } from "../src/runs/persistence/run-persistence.js";
-import { WorkflowManager } from "../src/workflow-manager.js";
+
+// A resumed turn goes on in its session whatever stopped it (DESIGN.md, "Resume and the journal"):
+// the person, a budget pause, a time limit, the usage limit, a lost login or a kill. So every pause
+// reason and every error code gives a candidate, and so does a call of a nested run, keyed by its
+// own scope.
 
 const runId = "paused-source";
+const NESTED = "paused-source-nested1";
 
 function session(index = 0): AgentSessionRecord {
   return {
@@ -74,26 +80,26 @@ function state(overrides: Partial<PersistedRunState> = {}): PersistedRunState {
 }
 
 function build(persisted: PersistedRunState): PreparedContinuation | undefined {
-  const prototype = WorkflowManager.prototype as unknown as {
-    buildPreparedContinuation(value: PersistedRunState): PreparedContinuation | undefined;
-  };
-  return prototype.buildPreparedContinuation.call({}, persisted);
+  return continuationCandidates(persisted);
 }
 
-function candidate(persisted: PersistedRunState, index = 0) {
-  return build(persisted)?.candidatesByIndex.get(index);
+function candidate(persisted: PersistedRunState, index = 0, scope = runId) {
+  return build(persisted)?.candidates.get(continuationKey(scope, index));
 }
 
-describe("PreparedContinuation snapshot projection", () => {
-  it("requires a pause-class source, an error outcome, an authoritative pause-class agent error, and reopen support", () => {
+describe("continuation candidates", () => {
+  it("require a paused source, an error outcome, an agent row in error, and reopen support, with any pause reason and any error code", () => {
     assert.ok(candidate(state()));
     assert.ok(candidate(state({ pauseReason: "auth_required", agents: [{
       ...agent(),
       errorCode: WorkflowErrorCode.AUTH_REQUIRED,
     }] })));
 
-    for (const pauseReason of ["checkpoint_required", undefined]) {
-      assert.equal(build(state({ pauseReason })), undefined);
+    for (const pauseReason of ["checkpoint_required", undefined, "time_limit", "budget", "requested", "interrupted", "step_failed", "step_stopped"]) {
+      assert.ok(candidate(state({ pauseReason })), `pause reason ${String(pauseReason)}`);
+    }
+    for (const errorCode of Object.values(WorkflowErrorCode)) {
+      assert.ok(candidate(state({ agents: [{ ...agent(), errorCode }] })), `error code ${errorCode}`);
     }
     for (const status of ["completed", "failed", "aborted"] as const) {
       assert.equal(build(state({ status })), undefined);
@@ -103,10 +109,6 @@ describe("PreparedContinuation snapshot projection", () => {
     }
     assert.equal(candidate(state({ agents: [{
       ...agent(),
-      errorCode: WorkflowErrorCode.AGENT_EXECUTION_ERROR,
-    }] })), undefined);
-    assert.equal(candidate(state({ agents: [{
-      ...agent(),
       session: { ...session(), reopen: { load: false, resume: false, list: true } },
     }] })), undefined);
 
@@ -114,14 +116,7 @@ describe("PreparedContinuation snapshot projection", () => {
       ...call(),
       error: { ...call().error, code: WorkflowErrorCode.AGENT_EXECUTION_ERROR },
     } as WorkflowCallRecord;
-    assert.ok(candidate(state({ calls: [disagreeingCall] })), "agent-row errorCode admits the candidate");
-    assert.equal(candidate(state({
-      agents: [{ ...agent(), errorCode: WorkflowErrorCode.AGENT_EXECUTION_ERROR }],
-      calls: [{
-        ...call(),
-        error: { ...call().error, code: WorkflowErrorCode.PROVIDER_USAGE_LIMIT },
-      } as WorkflowCallRecord],
-    })), undefined, "call-record error code cannot override the agent row");
+    assert.ok(candidate(state({ calls: [disagreeingCall] })), "the call row's error code does not decide");
   });
 
   it("is a total fail-to-fresh projection for malformed persistence while retaining well-formed siblings", () => {
@@ -148,7 +143,7 @@ describe("PreparedContinuation snapshot projection", () => {
       agents: [{ ...agent(), callIndex: 9 }, goodAgent],
       calls: [call(), goodCall],
     });
-    assert.deepEqual([...build(mixed)!.candidatesByIndex.keys()], [1]);
+    assert.deepEqual([...build(mixed)!.candidates.keys()], [continuationKey(runId, 1)]);
   });
 
   it("enforces row status and record/session backend and cwd coherence, tolerating a missing cwd side", () => {
@@ -165,7 +160,7 @@ describe("PreparedContinuation snapshot projection", () => {
     assert.equal(candidate(state({ agents: [{ ...agent(), session: noSessionCwd as AgentSessionRecord }] }))?.recordedCwd, "/workspace");
   });
 
-  it("joins only coherent root rows, uses later root rows, and never reads the journal or nested event-derived rows", () => {
+  it("joins an agent row only to the call row of its own scope, uses later rows, and never reads the journal", () => {
     const nested = {
       ...agent(),
       scope: "nested-run",
@@ -177,7 +172,8 @@ describe("PreparedContinuation snapshot projection", () => {
     };
     assert.equal(candidate(state({ agents: [nested, root] }))?.sessionRef.sessionId, "root-session");
     assert.equal(candidate(state({ agents: [root, nested] }))?.sessionRef.sessionId, "root-session");
-    assert.equal(candidate(state({ agents: [nested] })), undefined);
+    assert.equal(candidate(state({ agents: [nested] })), undefined, "a nested agent row does not pair with a root call row");
+    assert.equal(candidate(state({ agents: [nested] }), 0, "nested-run"), undefined, "nor with no call row of its own scope");
 
     const earlier = { ...root, session: { ...session(), sessionId: "earlier" } };
     const later = { ...root, session: { ...session(), sessionId: "later" } };
@@ -202,8 +198,18 @@ describe("PreparedContinuation snapshot projection", () => {
       agents: [agent(0), agent(1)],
       calls: [firstCall, secondCall],
     }));
-    assert.deepEqual([...projected!.candidatesByIndex.keys()], [0, 1]);
-    assert.equal(projected!.candidatesByIndex.get(0)?.callIndex, 0);
-    assert.equal(projected!.candidatesByIndex.get(1)?.callIndex, 1);
+    assert.deepEqual([...projected!.candidates.keys()], [continuationKey(runId, 0), continuationKey(runId, 1)]);
+    assert.equal(projected!.candidates.get(continuationKey(runId, 0))?.callIndex, 0);
+    assert.equal(projected!.candidates.get(continuationKey(runId, 1))?.callIndex, 1);
+  });
+
+  it("come from a nested run's calls, each under its own scope", () => {
+    const nestedAgent = (index: number): PersistedAgentState => ({ ...agent(index), scope: NESTED, session: { ...session(index), sessionId: `nested-${index}` } });
+    const nestedCall = (index: number): WorkflowCallRecord => ({ ...call(index), scope: NESTED });
+    const persisted = state({ pauseReason: "interrupted", agents: [agent(0), nestedAgent(0), nestedAgent(2)], calls: [call(0), nestedCall(0), nestedCall(2)] });
+    assert.equal(candidate(persisted, 0)?.sessionRef.sessionId, "session-0");
+    assert.equal(candidate(persisted, 0, NESTED)?.sessionRef.sessionId, "nested-0");
+    assert.equal(candidate(persisted, 2, NESTED)?.sessionRef.sessionId, "nested-2");
+    assert.equal(build(persisted)?.candidates.size, 3);
   });
 });
