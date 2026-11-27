@@ -78,6 +78,13 @@ export interface Step {
   /** Continue this session instead of starting one. */
   resume?: string;
   /**
+   * With resume: start a new session that begins with the resumed session's messages. The resumed
+   * session gets nothing new, and the result and the session event name the new session. A turn
+   * with fork never runs in the program a turn with hold kept for the resumed session. Without
+   * resume the step fails before the program starts.
+   */
+  fork?: boolean;
+  /**
    * Keep the program open after the turn succeeds, so the next turn that resumes the same session
    * runs in it. A failed or stopped turn always closes its program. release() closes a kept one.
    */

@@ -9,6 +9,7 @@ import type { ConfigReadResponse } from "./generated/v2/ConfigReadResponse.js";
 import type { GetAccountRateLimitsResponse } from "./generated/v2/GetAccountRateLimitsResponse.js";
 import type { ModelListParams } from "./generated/v2/ModelListParams.js";
 import type { ModelListResponse } from "./generated/v2/ModelListResponse.js";
+import type { ThreadForkParams } from "./generated/v2/ThreadForkParams.js";
 import type { ThreadResumeParams } from "./generated/v2/ThreadResumeParams.js";
 import type { ThreadStartParams } from "./generated/v2/ThreadStartParams.js";
 import type { ThreadUnsubscribeParams } from "./generated/v2/ThreadUnsubscribeParams.js";
@@ -18,7 +19,7 @@ import type { TurnStartResponse } from "./generated/v2/TurnStartResponse.js";
 import type { TurnSteerParams } from "./generated/v2/TurnSteerParams.js";
 import type { TurnSteerResponse } from "./generated/v2/TurnSteerResponse.js";
 
-/** The thread fields the adapter reads from thread/start and thread/resume. */
+/** The thread fields the adapter reads from thread/start, thread/resume and thread/fork. */
 export interface ThreadOpened {
   thread: { id: string };
   model: string;
@@ -31,6 +32,7 @@ export interface Methods {
   "model/list": [ModelListParams, ModelListResponse];
   "thread/start": [ThreadStartParams, ThreadOpened];
   "thread/resume": [ThreadResumeParams, ThreadOpened];
+  "thread/fork": [ThreadForkParams, ThreadOpened];
   "turn/start": [TurnStartParams, TurnStartResponse];
   "turn/steer": [TurnSteerParams, TurnSteerResponse];
   "turn/interrupt": [TurnInterruptParams, unknown];

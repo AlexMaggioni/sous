@@ -1,6 +1,7 @@
-// The error run() throws, and the usage sums both adapters keep.
+// The error run() throws, the check a step passes before it runs, and the usage sums both
+// adapters keep.
 
-import type { Failure, HarnessFailure, Usage } from "./types.js";
+import type { Failure, HarnessFailure, Step, Usage } from "./types.js";
 
 export class StepFailure extends Error implements HarnessFailure {
   failure: Failure;
@@ -18,7 +19,12 @@ export class StepFailure extends Error implements HarnessFailure {
   }
 }
 
-export const noUsage = (): Usage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 });
+/** Throws when a step asks for what no adapter can do: a fork with no session to fork. */
+export function checkStep(step: Step, notes: string[] = []): void {
+  if (step.fork && !step.resume) throw new StepFailure("A step with fork needs resume, the session to fork.", { kind: "failed", retry: false }, { notes });
+}
+
+export const noUsage =(): Usage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 });
 
 /** A usage with its total set by the one rule. */
 export function usage(input: number, output: number, cacheRead: number, cacheWrite: number, costUsd?: number): Usage {
