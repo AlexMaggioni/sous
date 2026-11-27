@@ -626,6 +626,13 @@ The rules:
 - A fork can have its own place on both programs. Live test 10 on 2026-11-26 showed it. A Claude
   Code fork with a chosen `sessionId` runs in another folder and resumes later from there.
   Codex's `thread/fork` takes a `cwd`. sous copies no transcript.
+- On Codex an agent's own `git commit` needs a rights request, in a worktree as in a checkout.
+  Codex's `workspace-write` sandbox keeps `.git` read-only, and a worktree's git files sit in the
+  main checkout's `.git`. In the default `agent` mode the reviewer grants the request, but on
+  2026-11-27 `gpt-6-luna` at low effort made none: it tried once, failed, and reported the
+  failure or a `question`. A Codex session opened by hand does the same, so sous keeps the
+  sandbox as it is, and the commit at the scope's end keeps the work. Adding the worktree's git
+  folders to `writableRoots` would let Codex commit with no request. That is the owner's call.
 - `isolation: worktree` in an agent's frontmatter (`agents.ts:234`, `:256`, `:605`) is read as
   `place: "worktree"`. sous does not refuse it, so agent files the owner also opens by hand keep
   working.
@@ -1107,7 +1114,7 @@ phase that makes it pass, under `packages/cli/test/scenarios/`.
 | 2. Sessions | The cap commit for `AgentOptions`, then its 16 fields in one move. Lines freed in `workflow.ts` and the old options refused. The session map and `after` in the hash. `session()`, `send()` and `agent()` on it. The `QUESTION:` loop goes. The text readers. | 5 | One kept session on each program. |
 | 3. The done signal | `turns/status.ts` and `turns/loop.ts`. `until`, `check`, `maxTurns` and `maxRepairs`. The report turn asks for the status. `question` waits on a `join` row, which engine tests answer through the testing kit. One program per step, open across its turns. The defaults of decision 6 go. Each step kind's `input` and `schema`, input schemas and `meta.schema`. The dry run. | 2 on Claude Code, 3, 4 | Test 9, the status on both programs. Scenario 3 on each program. Scenario 4, with one ticket that fails through a `check` that exits 1. |
 | 4. Resume keeps the session | The wider continuation, in nested runs too. `onTurnSession`. Rows for a killed worker's calls. The one rule for a turn that stopped early. | 7, 14 | Scenario 7 on each program. `/goal` test 5. Which Claude message marks a delivered prompt. |
-| 5. Places and forks | `place` on a session and a step, with its branch kept. `fork()` on both programs. | 6, 8, 9 | Scenarios 6, 8 and 9. |
+| 5. Places and forks | `place` on a session and a step, with its branch kept. `fork()` on both programs. | 6, 8, 9 | A fork in a worktree and an epic of two tickets in worktrees, on each program. Test 7. Done on 2026-11-27. |
 | 6. The person in the loop | The session on `sous step` and the page. `sous join`, which answers the `join` row. The hold and its lock. The needs-you panel. The refused native question. | 12, 13 | Scenarios 12 and 13, with `sous join` driven in tmux. The needs-you notice in a Playwright browser. Test 12. |
 | 7. Rooms | `room()` from handles, then the room's page. | 10, 11 | Scenarios 10 and 11, in one room of Claude Code and Codex. |
 | 8. Codex's slash prompts | On Codex, `/goal` through `thread/goal/set`, a skill as the `skill` item, `/review`, `/compact` and `/prompts:<name>`. Any other leading slash fails the step. | 2 on Codex | Scenario 2 on Codex. |
@@ -1164,7 +1171,12 @@ rest of test 5 ran on 2026-11-27.
    dollars counts the evaluator, and a count of tokens does not. On a resume, `total_cost_usd`
    is the session's total so far (decision 1). The Stop hook's feedback reaches the session
    file and not the step's history, which keeps only tool results from user messages.
-7. Whether a new worktree under `~/.sous/worktrees` passes the trust rule that hooks need.
+7. Whether a new worktree under `~/.sous/worktrees` passes the trust rule that hooks need. It
+   does. On 2026-11-27, with Claude Code 2.1.332 and Haiku at low effort, a session with place
+   "worktree" sent `/goal every test in test/ passes` in a worktree Claude Code had never seen.
+   The goal's Stop hook ran, the model made the fixture's tests pass, and the goal cleared: a
+   second `/goal` in the same session printed "No goal set". The test is in
+   `packages/cli/test/live/places.test.ts`, behind `SOUS_LIVE_PLACES=1`.
 
 The other tests, each behind its own variable. Tests 10, 11 and 13 ran on 2026-11-26, with
 Claude Code 2.1.330, SDK 0.3.330 and Haiku at low effort, and with Codex 0.169.0 on `gpt-6-luna`
@@ -1178,7 +1190,10 @@ at low effort.
    reports `working`.
 10. `forkSession` with `resume` gives a new id and leaves the parent as it was, and a fork can
     run from another folder. The same for Codex's `thread/fork` with a `cwd`. It passed on both
-    programs. Decision 11 has the results.
+    programs. Decision 11 has the results. On 2026-11-27 the same ran through `sous run`, in
+    `packages/cli/test/live/places.test.ts`: a fork with place "worktree" recalled its parent's
+    code word and its own, the parent recalled only its own, and the fork's branch held the file
+    the fork wrote, through the commit sous makes when the fork's scope ends.
 11. `claude --resume <id>` opens a session the SDK made, and the SDK resumes it under the same id
     after the person's turns. The same for `codex resume` and `thread/resume`. It passed on both
     programs. Decision 10 has the results.

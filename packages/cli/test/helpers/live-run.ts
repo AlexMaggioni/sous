@@ -195,3 +195,19 @@ export function programPrompts(program: "claude" | "codex", sessionId: string): 
     return text && !text.startsWith("<environment_context>") ? [text] : [];
   });
 }
+
+/**
+ * What Claude Code's local commands printed in a session, oldest first, such as `/goal` with no
+ * condition, which reports the goal without a model call. The session file keeps each as a
+ * `system` line of subtype `local_command`, with the command's name and its output.
+ */
+export function claudeCommandOutputs(sessionId: string, command: string): string[] {
+  const folder = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
+  const [file] = filesUnder(folder, (name) => name === `${sessionId}.jsonl`);
+  if (!file) throw new Error(`no Claude Code session file for ${sessionId} under ${folder}`);
+  return jsonLines(file).flatMap((line) => {
+    if (line.type !== "system" || line.subtype !== "local_command") return [];
+    if ((line.commandRun as { command?: string } | undefined)?.command !== command) return [];
+    return typeof line.content === "string" ? [line.content.replace(/<\/?local-command-stdout>/g, "")] : [];
+  });
+}

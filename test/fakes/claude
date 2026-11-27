@@ -20,7 +20,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { appendLog, debug, decide, loginPresent, mcpSummary, readJsonLines, sessionMessages, statusObject, valueWith, waitFor, writeFiles } from "./lib.mjs";
+import { appendLog, debug, decide, loginPresent, mcpSummary, readJsonLines, sessionMessages, statusObject, valueWith, waitFor, makeEdits } from "./lib.mjs";
 
 const VERSION = process.env.FAKE_VERSION ?? "2.1.330";
 const argv = process.argv.slice(2);
@@ -406,7 +406,7 @@ async function runTurn(message, fromTell = false) {
     write(assistant(model, text));
     result({ subtype: "success", is_error: false, result: text });
   } else {
-    writeFiles(decision.files, process.cwd());
+    makeEdits(decision, process.cwd());
     streamText(model, decision.text);
     write(assistant(model, decision.text));
     result({ subtype: "success", is_error: false, result: decision.text, ...(decision.stop ? { stop_reason: decision.stop } : {}), ...(schema ? { structured_output: decision.value } : {}) });
@@ -464,7 +464,7 @@ async function playGoal(model, decision, turn) {
     }
     appendLog({ program: "claude", sessionId, goal: { turn: at, of: decision.goal } });
     const met = at === turns && !schema;
-    if (met) writeFiles(decision.files, process.cwd());
+    if (met) makeEdits(decision, process.cwd());
     const said = met ? decision.text : `Working on the goal, model turn ${at}.`;
     streamText(model, said);
     write(assistant(model, said));

@@ -9,6 +9,7 @@
 
 import { rmSync } from "node:fs";
 import { dirname } from "node:path";
+import { isHarness } from "../agents.js";
 import { DRY_RUN_MAX_CALLS } from "../config.js";
 import { agentLimitMessage } from "../errors.js";
 import { fabricateFromSchema } from "../fabricate.js";
@@ -96,9 +97,11 @@ function standInAgents(answers: Answers = {}): InnerRunner & { calls: string[] }
     const label = request.label ?? "agent";
     calls.push(label);
     // One session id per session, as with real agents: a kept turn goes on in its session, and a
-    // fork gets a new one.
+    // fork gets a new one. The session is on the program the step's model names.
     const kept = request.continueFromSession && !request.fork ? request.continueFromSession.sessionId : undefined;
-    request.onSessionOpen?.({ sessionId: kept ?? `dry-run-${calls.length}`, backendId: "claude", cwd: request.cwd!, reopen: { load: true, resume: true, list: true } });
+    const program = request.model?.split("/")[0]?.toLowerCase();
+    const backendId = request.continueFromSession?.backendId ?? (isHarness(program) ? program : "claude");
+    request.onSessionOpen?.({ sessionId: kept ?? `dry-run-${calls.length}`, backendId, cwd: request.cwd!, reopen: { load: true, resume: true, list: true } });
     const answer = answerFor(label);
     const schema = request.schema as Record<string, unknown> | undefined;
     if (!request.untilDone) return answer ? answer.value : madeUp(schema, label);

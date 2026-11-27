@@ -29,7 +29,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { appendLog, debug, decide, limitRule, loginPresent, mcpSummary, readJsonLines, sessionMessages, waitFor, writeFiles } from "./lib.mjs";
+import { appendLog, debug, decide, limitRule, loginPresent, mcpSummary, readJsonLines, sessionMessages, waitFor, makeEdits } from "./lib.mjs";
 
 const VERSION = process.env.FAKE_VERSION ?? "0.169.0";
 const argv = process.argv.slice(2);
@@ -514,7 +514,7 @@ async function runTurn(thread, turnId, params) {
     notify("turn/completed", { threadId: thread.id, turn: turnView("failed", [], error) });
     return;
   }
-  writeFiles(decision.files, params.cwd ?? thread.cwd);
+  makeEdits(decision, params.cwd ?? thread.cwd);
   const itemId = `msg_${randomUUID().slice(0, 8)}`;
   const item = { type: "agentMessage", id: itemId, text: "", phase: null, memoryCitation: null, delivery: null, questions: null };
   notify("item/started", { ...base, item, startedAtMs: 1700000000000 });
@@ -593,7 +593,7 @@ async function playGoal(thread, objective) {
       notify("turn/completed", { threadId: thread.id, turn: turnView("failed", [], error) });
       return;
     }
-    if (at === turns) writeFiles(decision.files, thread.cwd);
+    if (at === turns) makeEdits(decision, thread.cwd);
     const said = at === turns ? decision.text : `Working on the goal, model turn ${at}.`;
     const itemId = `msg_${randomUUID().slice(0, 8)}`;
     const item = { type: "agentMessage", id: itemId, text: "", phase: null, memoryCitation: null, delivery: null, questions: null };

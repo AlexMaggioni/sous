@@ -158,6 +158,18 @@ describe("the fake claude's rules", () => {
     assert.equal(again.text, "PLUM");
   });
 
+  test("files and run make a turn's edits in its folder before it answers, and a failed command does not stop the turn", async () => {
+    const c = newCase();
+    c.rules([
+      { match: "^Edit", files: { "src/a.txt": "one\n" }, run: "cp src/a.txt b.txt && printf two >> b.txt", answer: "Edited." },
+      { match: "^Break", run: "exit 3", answer: "Tried." },
+    ]);
+    assert.equal((await c.run({ prompt: "Edit the files." })).text, "Edited.");
+    assert.equal(readFileSync(join(c.cwd, "src", "a.txt"), "utf8"), "one\n");
+    assert.equal(readFileSync(join(c.cwd, "b.txt"), "utf8"), "one\ntwo");
+    assert.equal((await c.run({ prompt: "Break it." })).text, "Tried.");
+  });
+
   test("slash matches a prompt that starts with / only", async () => {
     const c = newCase();
     c.rules([{ slash: true, answer: "ran a command" }]);

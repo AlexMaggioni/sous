@@ -34,6 +34,10 @@
 //               files      { "<path>": "<text>" }: the turn writes these files, by their path from
 //                          the program's folder, before it answers, as a model's edits would. A
 //                          goal writes them in its last model turn, and only when it runs to the end.
+//               run        a shell command the turn runs in the program's folder after it writes
+//                          its files and before it answers, as a model's Bash call would, such as
+//                          a git commit. A goal runs it with its files. A failed command goes
+//                          to FAKE_DEBUG, and the turn answers anyway.
 //               mark       Claude writes a file of this name next to FAKE_LOG once the turn
 //                          has sent its result, so a test can tell the turn ran to its end
 //               noSteer    Codex fails turn/steer during the turn as a Codex before 0.169.0
@@ -115,6 +119,7 @@
 //   messages, logs { byHand: line }, and exits 0 without reading stdin. With FAKE_PERSON unset or
 //   empty the person typed nothing. An unknown id fails as a real resume does.
 
+import { execSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -227,7 +232,7 @@ function sameSession(wanted, session) {
 /**
  * The answer for one request. Returns { rule, kind, text, value, delayMs, hold, message,
  * resetsAt, first, silent, usage, approval, listTools, tool, notSteerable, noSteer, mark, stop,
- * errorInfo, code, goal, ask, files }. kind is "answer", "fail", "limit", "auth" or "exit".
+ * errorInfo, code, goal, ask, files, run }. kind is "answer", "fail", "limit", "auth" or "exit".
  *
  * context holds what a rule may match beyond the prompt: { session, system, earlier, last }, the
  * session id, its system text, the user messages it got before this one and the message's last
@@ -252,7 +257,7 @@ export function decide(program, prompt, schema, context = {}) {
     break;
   }
   const rule = picked?.rule ?? {};
-  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, tool: rule.tool, notSteerable: rule.notSteerable, noSteer: rule.noSteer === true, mark: rule.mark, stop: rule.stop, errorInfo: rule.errorInfo, goal: rule.goal, ask: rule.ask, files: rule.files };
+  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, tool: rule.tool, notSteerable: rule.notSteerable, noSteer: rule.noSteer === true, mark: rule.mark, stop: rule.stop, errorInfo: rule.errorInfo, goal: rule.goal, ask: rule.ask, files: rule.files, run: rule.run };
   if (rule.exit !== undefined) return { ...out, kind: "exit", code: rule.exit };
   if (rule.limit) return { ...out, kind: "limit", resetsAt: rule.limit.resetsAt, first: rule.limit.first === true, silent: rule.limit.silent === true };
   if (rule.auth) return { ...out, kind: "auth" };
@@ -281,12 +286,19 @@ export function decide(program, prompt, schema, context = {}) {
   return { ...out, kind: "answer", text, value };
 }
 
-/** Writes a rule's files, by their path from `cwd`, as a model's edits would. */
-export function writeFiles(files, cwd) {
-  for (const [path, text] of Object.entries(files ?? {})) {
+/** Makes a decision's edits in `cwd`, as a model's would: writes its files, by their path from
+ *  `cwd`, then runs its shell command there. */
+export function makeEdits(decision, cwd) {
+  for (const [path, text] of Object.entries(decision.files ?? {})) {
     const file = join(cwd, path);
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, String(text));
+  }
+  if (!decision.run) return;
+  try {
+    execSync(decision.run, { cwd, stdio: "ignore", shell: "/bin/sh" });
+  } catch (error) {
+    debug("run", `failed: ${decision.run}: ${error.message}`);
   }
 }
 

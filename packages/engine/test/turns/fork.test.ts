@@ -235,16 +235,18 @@ return { s: [s.cwd, s.branch], critic: [critic.cwd, critic.branch], trial: [tria
     assert.equal(existsSync(trial.dir), false, "the fork's worktree ends when the workflow returns");
   });
 
-  it("runs in a dry run, on the stand-ins", async () => {
-    const { paths, projectDir } = testHome({
-      forks: `${meta}
-const s = session({ label: 's' })
+  for (const model of ["claude/haiku", "codex/gpt-fake"]) {
+    it(`runs in a dry run, on the stand-ins, with ${model}`, async () => {
+      const { paths, projectDir } = testHome({
+        forks: `${meta}
+const s = session({ label: 's', model: '${model}' })
 await s.send('Plan it.')
 const f = s.fork({ label: 'f' })
 return [await f.send('Try it.'), await s.send('Do it.')]`,
+      });
+      const dry = await dryRun(paths, { who: PERSON, workflow: "forks", projectDir, inputs: {} });
+      assert.equal(dry.status, "completed", dry.reason);
+      assert.deepEqual(dry.agents, ["s", "f", "s"]);
     });
-    const dry = await dryRun(paths, { who: PERSON, workflow: "forks", projectDir, inputs: {} });
-    assert.equal(dry.status, "completed", dry.reason);
-    assert.deepEqual(dry.agents, ["s", "f", "s"]);
-  });
+  }
 });
