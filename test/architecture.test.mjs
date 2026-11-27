@@ -191,6 +191,7 @@ const TOUCHES_MACHINE = [
   "packages/engine/src/runs/records.ts",
   "packages/engine/src/runs/run.ts",
   "packages/engine/src/runs/service.ts",
+  "packages/engine/src/runs/session-hold.ts",
   "packages/engine/src/runs/slots.ts",
   "packages/engine/src/runs/store.ts",
   "packages/engine/src/runs/worker.ts",
