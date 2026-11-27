@@ -110,7 +110,8 @@ return 'done'`,
     // The doubled prefix reaches the runner as it is.
     assert.equal(by("doubled").model, "claude/claude/haiku");
     assert.match(String(by("doubled").instructions), /Double it\./);
-    assert.match(String(by("isolated").instructions), /Work apart\.[\s\S]*Requested isolation: worktree/);
+    // The system text is the agent's prompt and the label. The isolation shows in the folder, not in prose.
+    assert.equal(by("isolated").instructions, "Work apart.\n\nTask label: isolated");
     assert.deepEqual([by("plain").model, by("haiku").model, by("effort").effort], [undefined, "claude/haiku", "high"]);
   });
 

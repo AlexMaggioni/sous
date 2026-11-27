@@ -346,12 +346,13 @@ function steer(params, reply) {
   return undefined;
 }
 
-function promptText(input) {
-  return (input ?? [])
-    .filter((item) => item?.type === "text")
-    .map((item) => item.text)
-    .join("\n");
+/** The text items of a turn's input, in order. */
+function promptTexts(input) {
+  return (input ?? []).filter((item) => item?.type === "text").map((item) => item.text);
 }
+
+/** A turn's text: its text items, joined with a newline, so a rule sees each one. */
+const promptText = (input) => promptTexts(input).join("\n");
 
 /** The images a turn's input carries, as { mimeType, data }, from their data URLs. */
 function promptImages(input) {
@@ -414,6 +415,7 @@ function approvalRequest(approval, thread, base) {
 
 async function runTurn(thread, turnId, params) {
   const prompt = promptText(params.input);
+  const texts = promptTexts(params.input);
   const images = promptImages(params.input);
   const schema = params.outputSchema ?? null;
   const decision = decide("codex", prompt, schema, context(thread));
@@ -453,6 +455,8 @@ async function runTurn(thread, turnId, params) {
     developerInstructions: thread.developerInstructions,
     login: loginPresent(),
     prompt,
+    // Only with more than one, so the baseline's golden lines stay as they were.
+    ...(texts.length > 1 ? { texts } : {}),
     ...(images.length ? { images } : {}),
     rule: decision.rule,
     outcome: decision.kind,

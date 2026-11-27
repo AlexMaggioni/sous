@@ -112,7 +112,7 @@ return await agent("Fix the flaky login test.", { label: "fix test", model: "cod
 };
 
 /** What the fake programs answer. The first rule whose match fits the prompt decides. The prompt
- *  starts with the step's "Task label: ..." line. */
+ *  is the step's prompt as written. The step's "Task label: ..." line is in the system text. */
 const RULES = [
   { match: "Plan the dark mode", delayMs: 1500, answer: "1. Add a theme setting.\n2. Read it at start.\n3. Add the toggle to the settings page." },
   { match: "Review the plan", delayMs: 2500, tool: "ls", answer: "The plan is sound. Store the choice per user, not per device." },

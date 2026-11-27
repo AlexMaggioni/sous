@@ -36,6 +36,7 @@ interface LogLine {
   sessionId: string;
   resume: boolean;
   prompt: string;
+  schema?: unknown;
   login: string[];
   appendSystemPrompt?: string | null;
   developerInstructions?: string | null;
@@ -253,7 +254,9 @@ describe("steps on the fake programs", () => {
       assert.equal(place.lines().length, 2);
       assert.equal(repair?.resume, true);
       assert.equal(repair?.sessionId, first?.sessionId);
-      assert.match(repair?.prompt ?? "", /did not return valid JSON matching the required output schema/);
+      // The repair turn asks with the report turn's words, and the schema again.
+      assert.equal(repair?.prompt, "Report on the task you were given.");
+      assert.ok(repair?.schema, "the repair turn carries the schema");
     });
 
     it(`gives up on a ${harness} schema answer that never fits after its repair turns`, async () => {
@@ -292,7 +295,7 @@ describe("steps on the fake programs", () => {
         await steps.dispose();
       }
       assert.equal(place.lines().length, 1, "the bad image never reaches the program");
-      assert.match(place.lines()[0]?.prompt ?? "", /\n\nlook$/);
+      assert.equal(place.lines()[0]?.prompt, "look", "the prompt goes as written, with the images beside it");
       assert.deepEqual(place.lines()[0]?.images, [image]);
     });
 

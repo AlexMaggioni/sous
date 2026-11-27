@@ -186,15 +186,16 @@ function onControl(message) {
   }
 }
 
-function promptText(message) {
+/** The text blocks of a user message, in order. */
+function promptTexts(message) {
   const content = message.message?.content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((block) => block?.type === "text")
-    .map((block) => block.text)
-    .join("\n");
+  if (typeof content === "string") return [content];
+  if (!Array.isArray(content)) return [];
+  return content.filter((block) => block?.type === "text").map((block) => block.text);
 }
+
+/** A user message's text: its text blocks, joined with a newline, so a rule sees each one. */
+const promptText = (message) => promptTexts(message).join("\n");
 
 /** The images a user message carries, as { mimeType, data }. */
 function promptImages(message) {
@@ -286,6 +287,7 @@ let initSent = false;
 
 async function runTurn(message, fromTell = false) {
   const prompt = promptText(message);
+  const texts = promptTexts(message);
   const images = promptImages(message);
   const system = state.init.appendSystemPrompt ?? flags["append-system-prompt"];
   const decision = decide("claude", prompt, schema, { session: sessionId, system: typeof system === "string" ? system : "", earlier: sessionMessages(join(sessionsDir, sessionId)) });
@@ -314,6 +316,8 @@ async function runTurn(message, fromTell = false) {
     skills: state.init.skills ?? null,
     login: loginPresent(),
     prompt,
+    // Only with more than one, so the baseline's golden lines stay as they were.
+    ...(texts.length > 1 ? { texts } : {}),
     ...(images.length ? { images } : {}),
     rule: decision.rule,
     outcome: decision.kind,

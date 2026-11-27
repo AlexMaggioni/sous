@@ -1,9 +1,11 @@
 // Shared parts of the fake claude and codex programs: the answer a request gets, the value
 // built from a JSON schema, the rules file and the request log. Node only, no dependencies.
 //
-// FAKE_LOG    a file. Each request appends one JSON line to it.
+// FAKE_LOG    a file. Each request appends one JSON line to it. A user message with more than
+//             one text (Claude: text blocks, Codex: text input items) logs them in `texts`.
 // FAKE_RULES  a JSON file with a list of rules. The first rule whose `match` regex matches the
-//             prompt decides the answer. A rule may also name a `program` (claude or codex).
+//             prompt decides the answer. The prompt is every text of the message, joined with a
+//             newline. A rule may also name a `program` (claude or codex).
 //               answer     the text, or the value when the request has a schema
 //               delayMs    wait this long before answering
 //               hold       wait until a file of this name exists next to FAKE_LOG, or until

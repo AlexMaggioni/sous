@@ -116,6 +116,11 @@ export function checkWorkflow(paths: HomePaths, projectDir: string, nameOrPath: 
       const full = isAbsolute(file) ? file : join(projectDir, file);
       if (!existsSync(full)) notes.push(`script ${file} is not in ${projectDir}${where}. It must exist where the run works.`);
     }
+    // sous sends a prompt as written, so one that starts with a value from outside could run a slash command.
+    for (const { label, line } of refs.runTimePrompts) {
+      const step = label === undefined ? "agent" : `agent "${label}"`;
+      notes.push(`${within}${step} (line ${line}) starts its prompt with a value made at run time. A value that starts with "/" would run a command. Start the prompt with fixed words.`);
+    }
     if (refs.choosesAnyWorkflow) notes.push(`an agent may pick any saved workflow${where}`);
   };
   visit(resolved.name, resolved.refs, 1);

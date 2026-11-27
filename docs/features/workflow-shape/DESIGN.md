@@ -1022,12 +1022,11 @@ How each new thing replays:
   PROPOSAL.md argued. A scripted `question` is noted too, and the dry run
   goes on as if the person had stepped in and left.
 
-`phase()` is one value per `runLevel` (`workflow.ts:575`), so a nested workflow has its own,
-and the parallel branches of one level share it. A step reads it when it is called
-(`workflow.ts:910`), and it is in the call hash (`workflow.ts:2161`). Two parallel branches of
-one level that each call `phase()` may give a step another phase on resume. Not confirmed. The first
-phase of the build writes that test. If it fails, `phase` leaves the hash. The model a phase
-routes to is in the hash already (`workflow.ts:929`, `:2152`).
+`phase()` is kept per branch of `parallel()` and `pipeline()` (`steps/phase-scope.ts`), so a
+branch's phase reaches neither its siblings nor the code after it, and a nested workflow has its
+own. A step reads it when it is called, and it stays in the call hash. Phase 0's test
+(`packages/engine/test/phase-resume.test.ts`) shows that a resume gives each step the phase it had
+the first time, however the branches interleave.
 
 ### What changes for a 0.1.0 script
 
@@ -1048,9 +1047,7 @@ routes to is in the hash already (`workflow.ts:929`, `:2152`).
 ### What changes for a paused run
 
 A run paused under 0.1.0 runs its agent steps again after the upgrade. Their hash has `until`
-now. Its code steps and the answers to its `ask()` and `breakpoint()` calls replay, unless
-`phase` leaves the hash, and then
-nothing replays. Finish or stop paused runs before the upgrade, or start them again with
+now. Its code steps and the answers to its `ask()` and `breakpoint()` calls replay. Finish or stop paused runs before the upgrade, or start them again with
 `sous rerun`. One breaking release carries all of it.
 
 ## The architecture test

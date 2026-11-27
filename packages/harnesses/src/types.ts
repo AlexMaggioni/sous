@@ -52,7 +52,11 @@ export interface Image {
 }
 
 export interface Step {
+  /** The user message's text, sent as it is. */
   prompt: string;
+  /** A second text of the same user message, after the prompt: a second text block on Claude
+   *  Code, a second text input item on Codex. It never joins the prompt's own text. */
+  note?: string;
   images?: Image[];
   cwd: string;
   account?: Account;

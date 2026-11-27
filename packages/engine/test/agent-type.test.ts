@@ -169,7 +169,8 @@ return {}`;
       assert.notEqual(seen[0].cwd, repo, "agent cwd should not be the base repo");
       assert.equal(seen[0].cwd, join(home.worktrees, "iso-test-0-a"), "isolated cwd is under the home's worktrees folder");
       assert.equal(seen[0].cwdExists, true, "worktree cwd should exist while the agent runs");
-      assert.ok(seen[0].instructions?.includes("Requested isolation: worktree"));
+      // The system text is the agent's prompt and the label, with no isolation line: the cwd above shows the worktree.
+      assert.equal(seen[0].instructions, "Run isolated.\n\nTask label: a");
     } finally {
       rmSync(repo, { recursive: true, force: true });
       rmSync(home.home, { recursive: true, force: true });

@@ -1,6 +1,6 @@
-// The words around a step's prompt, and reading a schema step's answer.
-// The prompt texts stay byte for byte as earlier versions sent them, so a resumed run asks
-// the same way.
+// The prompts sous sends besides a step's own, and reading a schema step's answer.
+// A step's own prompt goes as written, so a slash command or a skill runs as it does in a session
+// opened by hand.
 
 import type { TSchema } from "typebox";
 import { Check, Convert } from "typebox/value";
@@ -9,19 +9,11 @@ import type { McpServerConfig } from "./mcp-config.js";
 import type { PromptImage } from "./agent-run.js";
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
 
-const CONTRACT = [
-  "Final output contract:",
-  "- Your FINAL message MUST be a single JSON object that conforms to the required output schema.",
-  "- Output ONLY that JSON object — no prose, no explanation, and no markdown code fences.",
-  "- If you need to inspect files or run commands first, do so, then emit the JSON object as your final message.",
-].join("\n");
+/** The report turn, which asks a slash step with a schema for its value, in the same session. */
+export const REPORT_PROMPT = "Report on the task you were given.";
 
-/** The repair turn for a schema step whose answer did not fit. */
-export const REPROMPT_TEXT = [
-  "Your previous reply did not return valid JSON matching the required output schema.",
-  "Reply now with ONLY a single JSON object that conforms to the schema —",
-  "no prose, no explanation, and no markdown code fences.",
-].join(" ");
+/** The repair turn for a schema step whose answer did not fit. It uses the report turn's words. */
+export const REPROMPT_TEXT = REPORT_PROMPT;
 
 /** The prompt that continues a turn a usage limit or a lost login cut off. */
 export const CONTINUATION_INSTRUCTION =
@@ -30,13 +22,16 @@ export const CONTINUATION_INSTRUCTION =
   "context are already in this session's history; do not restart or repeat work you already did. " +
   "Continue from where you stopped and produce the COMPLETE final answer to the original task now.";
 
-/** The step's label, its prompt, and for a schema step the answer contract. */
-export function buildPrompt(prompt: string, label: string | undefined, schema: unknown): string {
-  const parts: string[] = [];
-  if (label) parts.push(`Task label: ${label}`);
-  parts.push(prompt);
-  if (schema) parts.push(CONTRACT);
-  return parts.join("\n\n");
+/** True for a prompt that starts with "/", which the program reads as a command or a skill. */
+export const isSlash = (prompt: string) => prompt.startsWith("/");
+
+/**
+ * A turn's text with the resume's note. On a plain prompt the note follows after a blank line. On
+ * a slash prompt it goes apart, as the step's note, so it never lands inside the command.
+ */
+export function withNote(prompt: string, note: string | undefined): { prompt: string; note?: string } {
+  if (note === undefined) return { prompt };
+  return isSlash(prompt) ? { prompt, note } : { prompt: `${prompt}\n\n${note}` };
 }
 
 /** A fenced json block, else the first balanced {...} or [...]. */

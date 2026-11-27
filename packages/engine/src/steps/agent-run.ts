@@ -83,7 +83,8 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
    *  downstream. Freeze the exact object handed to hashAgentCall; normalize for Codex on
    *  a COPY, never mutate the hashed value. */
   schema?: S;
-  /** Extra system guidance (engine builds it from phase/agentType/isolation). NOT hashed. */
+  /** The step's system text: its agent's prompt and its label. The engine builds it, the same for
+   *  every turn of one session. NOT hashed. */
   instructions?: string;
   /** Engine-owned cancellation. The steps module joins it with the step's time limit and
    *  passes the result to the harness, which stops the step when it fires. */
@@ -192,6 +193,9 @@ export interface PlannedRequest extends Omit<EngineFields, "callIndex" | "callHa
   disallowedToolNames?: string[];
   /** The account the step's harness runs as. */
   account?: Account;
+  /** A resume's note on a slash prompt, which goes apart from the prompt. On a plain prompt the
+   *  note is in the prompt, after a blank line. */
+  note?: string;
 }
 
 /** The result side of the seam: schema => the validated object, no schema => text.

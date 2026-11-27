@@ -1311,12 +1311,7 @@ async function runLevel<T>(
                   label,
                   schema: agentOptions.schema,
                   signal: attemptSignal,
-                  instructions: buildAgentInstructions(
-                    assignedPhase,
-                    agentOptions,
-                    route.prompt,
-                    resolvedIsolation,
-                  ),
+                  instructions: buildAgentInstructions(agentOptions.agentType, route.prompt, label),
                   model: modelSpec,
                   mode: effectiveMode,
                   route,
@@ -2200,22 +2195,19 @@ function hasModelConfigOption(configOptions: Record<string, string | boolean> | 
   return Boolean(configOptions && "model" in configOptions);
 }
 
-function buildAgentInstructions(
-  phase: string | undefined,
-  options: AgentOptions,
-  agentPrompt: string | undefined,
-  resolvedIsolation?: "worktree",
-): string | undefined {
+/**
+ * A step's system text: its agent's prompt and its label. It holds nothing that changes between
+ * the steps of one session, such as the phase, so it is the same on every turn of a kept session
+ * and the program's prompt cache stays valid. The label goes here, not in the prompt, so the
+ * prompt reaches the program as written.
+ */
+function buildAgentInstructions(agentType: string | undefined, agentPrompt: string | undefined, label: string | undefined): string | undefined {
   const lines: string[] = [];
   // A found agent gives its own prompt, the route's. Only fall back to the prose hint when the
   // agentType named no known agent.
   if (agentPrompt) lines.push(agentPrompt);
-  else if (options.agentType) lines.push(`Act as workflow subagent type: ${options.agentType}`);
-  if (phase) lines.push(`Workflow phase: ${phase}`);
-  // Use resolvedIsolation so the annotation fires whether isolation came from
-  // the call site or from the agentDef's isolation field.
-  if (resolvedIsolation) lines.push(`Requested isolation: ${resolvedIsolation}`);
-  // Note: options.model is applied for real via the session, not injected as prose.
+  else if (agentType) lines.push(`Act as workflow subagent type: ${agentType}`);
+  if (label) lines.push(`Task label: ${label}`);
   return lines.length ? lines.join("\n\n") : undefined;
 }
 

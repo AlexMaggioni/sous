@@ -38,6 +38,19 @@ export interface ScriptRefs {
   asks: number;
   /** The step calls the script writes, in order. One in a loop shows once, and one on an object is none. */
   calls: ScriptCall[];
+  /**
+   * The agent() calls whose prompt starts with a value made at run time, in order. sous sends a
+   * prompt as written, so such a value that starts with "/" runs a slash command. A prompt
+   * starts with fixed words when it is a literal, a template whose text before its first ${} is
+   * not empty, or a + whose left end does. session().send() is not read yet.
+   */
+  runTimePrompts: PromptRef[];
+}
+
+/** An agent() call, by its literal label and the line it starts on. */
+export interface PromptRef {
+  label?: string;
+  line: number;
 }
 
 /** One step call as the script writes it. Only literal values are read. */
@@ -265,6 +278,24 @@ function validateMeta(meta: unknown): asserts meta is WorkflowMeta {
   }
 }
 
+/** True when the first characters of a prompt come from a value made at run time. A missing
+ *  prompt is not one. A ? : starts at run time when either branch does. */
+function startsAtRunTime(node: AnyNode | undefined): boolean {
+  switch (node?.type) {
+    case undefined:
+    case "Literal":
+      return false;
+    case "TemplateLiteral":
+      return node.expressions.length > 0 && (node.quasis[0].value.cooked ?? node.quasis[0].value.raw) === "";
+    case "BinaryExpression":
+      return node.operator === "+" ? startsAtRunTime(node.left) : true;
+    case "ConditionalExpression":
+      return startsAtRunTime(node.consequent) || startsAtRunTime(node.alternate);
+    default:
+      return true;
+  }
+}
+
 /** The step a call writes, or nothing when the callee is not a step. */
 function scriptCall(node: AnyNode): ScriptCall | undefined {
   const kind = node.callee.name as ScriptCall["kind"];
@@ -307,6 +338,7 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
   let choosesAnyWorkflow = false;
   let asks = 0;
   const calls: ScriptCall[] = [];
+  const runTimePrompts: PromptRef[] = [];
   const pending = [ast];
   while (pending.length > 0) {
     const node = pending.pop()!;
@@ -315,6 +347,9 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
       const callee = node.callee.name;
       const call = scriptCall(node);
       if (call) calls.push(call);
+      if (call?.kind === "agent" && startsAtRunTime(node.arguments[0])) {
+        runTimePrompts.push({ ...(call.label === undefined ? {} : { label: call.label }), line: node.loc?.start.line ?? 0 });
+      }
       if (callee === "workflow" && first && SAVED_WORKFLOW_NAME.test(first)) workflows.add(first);
       if (callee === "run" && first) scripts.add(first);
       if (callee === "ask" || callee === "breakpoint" || callee === "checkpoint") asks++;
@@ -348,5 +383,5 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
     }
     pushAstChildren(node, pending);
   }
-  return { workflows: [...workflows], models: [...models], steps, scripts: [...scripts], choosesAnyWorkflow, asks, calls };
+  return { workflows: [...workflows], models: [...models], steps, scripts: [...scripts], choosesAnyWorkflow, asks, calls, runTimePrompts };
 }

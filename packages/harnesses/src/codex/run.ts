@@ -54,6 +54,15 @@ const FINAL_ERRORS = new Set(["contextWindowExceeded", "sessionBudgetExceeded", 
 // How long a stop waits for Codex to end the turn before it closes the server.
 const STOP_WAIT_MS = 10_000;
 
+/** The turn's input: the prompt, the note as a second text item, then the images. */
+function turnInput(step: Step): UserInput[] {
+  return [
+    { type: "text", text: step.prompt, text_elements: [] },
+    ...(step.note === undefined ? [] : [{ type: "text", text: step.note, text_elements: [] } satisfies UserInput]),
+    ...(step.images ?? []).map((image): UserInput => ({ type: "image", url: `data:${image.mimeType};base64,${image.data}` })),
+  ];
+}
+
 export async function runCodex(path: string, step: Step, events: StepEvents = {}): Promise<StepResult> {
   const notes: string[] = [...toolNotes(step)];
   if (step.skills?.length) notes.push(`Codex gets no skills from a step, so ${step.skills.join(", ")} did not reach it.`);
@@ -243,13 +252,9 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
     events.model?.(model);
     if (step.signal?.aborted) fail("The step was stopped.", { kind: "stopped" });
 
-    const input: UserInput[] = [
-      { type: "text", text: step.prompt, text_elements: [] },
-      ...(step.images ?? []).map((image): UserInput => ({ type: "image", url: `data:${image.mimeType};base64,${image.data}` })),
-    ];
     const started = await server.request("turn/start", {
       threadId,
-      input,
+      input: turnInput(step),
       approvalPolicy: mode.approvalPolicy,
       approvalsReviewer: mode.approvalsReviewer,
       sandboxPolicy: mode.sandboxPolicy,

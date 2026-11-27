@@ -1,7 +1,9 @@
 // The steps module. It turns a workflow's agent call into one step on Claude Code or Codex.
 // It routes the step with routeStep, finds the program once per run, names the MCP servers, takes
-// a slot, sets the time limit and runs the step. A schema answer that does not fit gets repair turns
-// in the same session. Code steps never come here: the engine runs them.
+// a slot, sets the time limit and runs the step. The prompt goes as written. A slash prompt runs
+// with no schema, and a step with a schema then sends a report turn for its value. A schema answer
+// that does not fit gets repair turns in the same session. Code steps never come here: the engine
+// runs them.
 // A test or the dry run gives `inner`, a runner of its own, and then no program starts.
 
 import type { TSchema } from "typebox";
@@ -31,7 +33,7 @@ import { harnessName, missingServer, routeStep, stepModel, withHarness, type Age
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
 import { hostStopError, type HostPause } from "../host-pause.js";
 import type { SlotPool } from "../runs/slots.js";
-import { buildPrompt, checkImages, CONTINUATION_INSTRUCTION, extractValidated, REPROMPT_TEXT, toMcpServer, validateValue } from "./answer.js";
+import { checkImages, CONTINUATION_INSTRUCTION, extractValidated, isSlash, REPORT_PROMPT, REPROMPT_TEXT, toMcpServer, validateValue, withNote } from "./answer.js";
 
 /** The runner a test or the dry run gives instead of the programs. It gets the planned step. */
 export interface InnerRunner {
@@ -104,9 +106,6 @@ const agentUsage = (spent: Usage, cost: number): AgentUsage => ({ input: spent.i
 /** The activity entry of a history item. A turn's own prompt is left out: the steps module
  *  reports the prompt itself, and a repair turn is its own text. A user message after it is a tell. */
 const ACTIVITY_KINDS: Record<HistoryEntry["kind"], ActivityEntry["kind"]> = { text: "text", toolCall: "tool", toolResult: "tool-result", error: "error" };
-
-/** The text with the note after it, when there is one. */
-const withNote = (text: string, note: string | undefined) => (note === undefined ? text : `${text}\n\n${note}`);
 
 /**
  * Which call gets the note: the first that asks and fits its step and scope. The call keeps it,
@@ -247,10 +246,12 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
   };
 }
 
-/** A test's or the dry run's runner gets the planned step with the engine's own fields, and the account. */
+/** A test's or the dry run's runner gets the planned step with the engine's own fields, and the
+ *  account. A slash prompt's note goes apart from the prompt, in the request. It gets one call, with
+ *  the schema: a runner keeps no session for a report turn. */
 async function runInner(
   inner: InnerRunner,
-  prompt: string,
+  { prompt, note }: { prompt: string; note?: string },
   call: StepRequest,
   step: RoutePlan,
   given: { signal?: AbortSignal; servers: McpServerConfig[]; account?: Account },
@@ -271,6 +272,7 @@ async function runInner(
     ...(signal ? { signal } : {}),
     ...(servers.length ? { mcpServers: servers } : {}),
     ...(account ? { account } : {}),
+    ...(note === undefined ? {} : { note }),
   };
   return inner.run(prompt, request);
 }
@@ -292,7 +294,7 @@ async function runOnHarness(
     board?: { board: SteeringBoard; call: LiveCall };
     /** Gets the attempt's tokens so far while a turn runs. */
     usage?: (spent: AgentUsage) => void;
-    /** The resume's note, after the prompt or the continuation instruction. Repair turns go without it. */
+    /** The resume's note, with the prompt or the continuation instruction. Report and repair turns go without it. */
     note?: string;
   },
 ): Promise<unknown> {
@@ -314,7 +316,6 @@ async function runOnHarness(
     ...(model ? { model } : {}),
     ...(step.effort ? { effort: step.effort } : {}),
     ...(call.instructions ? { instructions: call.instructions } : {}),
-    ...(schema ? { schema: schema as unknown as Record<string, unknown> } : {}),
     ...tools,
     ...(step.skills ? { skills: step.skills } : {}),
     ...(mcpServers.length ? { mcpServers } : {}),
@@ -423,10 +424,11 @@ async function runOnHarness(
     // The record names the model, or the harness alone when the step picks none.
     if (model) call.onModelResolved?.(withHarness(harness, model));
     else if (step.model && step.model !== call.route.requested) call.onModelResolved?.(withHarness(harness, step.model));
-    const fresh = { prompt: withNote(buildPrompt(prompt, label, schema), note), ...(images.length ? { images } : {}) };
-    let answer: { text: string; value?: unknown; sessionId?: string } | undefined;
+    const fresh = { ...withNote(prompt, note), ...(images.length ? { images } : {}) };
+    const turns = stepTurns(prompt, schema);
+    let answer: Answer | undefined;
     // A schema answer the program refused still has text to read.
-    const turn = async (input: Step) => {
+    const turn = async (input: Step): Promise<Answer> => {
       try {
         const result = await once(input);
         return { text: result.text, value: result.value, sessionId: result.sessionId };
@@ -443,9 +445,9 @@ async function runOnHarness(
         continuation = { reattached: false, reason: "backend-mismatch" };
       } else {
         try {
-          const text = call.continueWithPrompt ? fresh : { prompt: withNote(buildPrompt(CONTINUATION_INSTRUCTION, label, schema), note) };
+          const text = call.continueWithPrompt ? fresh : withNote(CONTINUATION_INSTRUCTION, note);
           if (typeof recorded.costGauge === "number" && Number.isFinite(recorded.costGauge)) gauge = recorded.costGauge;
-          answer = await turn({ ...base, ...text, resume: recorded.sessionId });
+          answer = await turn({ ...base, ...text, ...turns.work, resume: recorded.sessionId });
           continuation = { reattached: true, method: "resume" };
         } catch (error) {
           if (failureOf(error)?.kind !== "no_session" || signal?.aborted) throw error;
@@ -455,7 +457,11 @@ async function runOnHarness(
       }
       report({ source: "live", continuation });
     }
-    answer ??= await turn({ ...base, ...fresh });
+    answer ??= await turn({ ...base, ...fresh, ...turns.work });
+    if (turns.report) {
+      signal?.throwIfAborted();
+      answer = await turn({ ...base, ...turns.report, resume: answer.sessionId ?? opened });
+    }
 
     if (!schema) {
       const text = answer.text.trim();
@@ -467,7 +473,7 @@ async function runOnHarness(
       if (value !== undefined) return value;
       if (repair >= REPAIRS || !answer.sessionId) break;
       signal?.throwIfAborted();
-      answer = await turn({ ...base, prompt: REPROMPT_TEXT, resume: answer.sessionId });
+      answer = await turn({ ...base, prompt: REPROMPT_TEXT, schema: schema as unknown as Record<string, unknown>, resume: answer.sessionId });
     }
     throw new WorkflowError("Subagent did not produce valid structured output after repair attempts", WorkflowErrorCode.SCHEMA_NONCOMPLIANCE, {
       recoverable: false,
@@ -486,6 +492,21 @@ async function runOnHarness(
     if (history.length) call.onHistory?.(history);
     if (notes.size) onNotes?.([...notes]);
   }
+}
+
+/** A turn's answer: its text, the schema's value when the program gave one, and its session. */
+type Answer = { text: string; value?: unknown; sessionId?: string };
+
+/**
+ * The schema of a step's work turn, and the report turn after it. A plain prompt's turn carries
+ * the schema. A slash prompt's turn carries none, since a schema cuts a command such as /goal
+ * short. A slash step with a schema then sends the report turn, with the schema, in the same
+ * session. The step's own prompt decides, so a continued slash step reports too.
+ */
+function stepTurns(prompt: string, schema: TSchema | undefined): { work: Pick<Step, "schema">; report?: Pick<Step, "prompt" | "schema"> } {
+  if (!schema) return { work: {} };
+  const json = schema as unknown as Record<string, unknown>;
+  return isSlash(prompt) ? { work: {}, report: { prompt: REPORT_PROMPT, schema: json } } : { work: { schema: json } };
 }
 
 /** The answer's value when it fits the schema: the program's own value, else JSON in its text. */

@@ -89,7 +89,7 @@ function userMessage(step: Step): SDKUserMessage {
   }));
   return {
     type: "user",
-    message: { role: "user", content: [{ type: "text", text: step.prompt }, ...images] },
+    message: { role: "user", content: [{ type: "text", text: step.prompt }, ...(step.note === undefined ? [] : [{ type: "text" as const, text: step.note }]), ...images] },
     parent_tool_use_id: null,
   };
 }
