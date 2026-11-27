@@ -2,7 +2,7 @@
 // server and its thread open for the session's next turn, which then sends only its turn/start.
 
 import { readFileSync } from "node:fs";
-import { addUsage, noUsage, StepFailure } from "../failure.js";
+import { addUsage, checkStep, noUsage, StepFailure } from "../failure.js";
 import { toStrictJsonSchema } from "../schema.js";
 import { refusal } from "../tools.js";
 import type { Held, HeldProgram } from "../held.js";
@@ -123,6 +123,7 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
     if (MODES[step.mode]) mode = MODES[step.mode]!;
     else notes.push(`Codex has no mode ${step.mode}, so the step runs in ${DEFAULT_MODE} mode.`);
   }
+  checkStep(step, notes);
   if (step.signal?.aborted) throw new StepFailure("The step was stopped before it started.", { kind: "stopped" }, { notes });
 
   const history = (entry: Omit<HistoryEntry, "at">) => events.history?.({ ...entry, at: Date.now() });
@@ -218,7 +219,8 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
     }
   }
 
-  const kept = await held.take(step.resume, codexFits(path, step));
+  // A fork always opens a server of its own, and the resumed thread's kept server stays kept.
+  const kept = step.fork ? undefined : await held.take(step.resume, codexFits(path, step));
   let server: AppServer | undefined = kept?.server;
   let stopTimer: NodeJS.Timeout | undefined;
   const stop = () => {
@@ -350,7 +352,7 @@ async function shut(server: AppServer, threadId: string | undefined): Promise<vo
   await server.close();
 }
 
-/** Reads the config, then starts the step's thread or resumes its session. */
+/** Reads the config, then starts the step's thread, or resumes or forks its session. */
 async function openThread(
   server: AppServer,
   step: Step,
@@ -372,9 +374,11 @@ async function openThread(
   };
   if (!step.resume) return server.request("thread/start", thread);
   try {
+    // A fork answers with the new thread, which starts with the resumed thread's messages.
+    if (step.fork) return await server.request("thread/fork", { threadId: step.resume, ...thread });
     return await server.request("thread/resume", { threadId: step.resume, ...thread });
   } catch (error) {
-    if (isThreadError(error)) fail(`No Codex thread ${step.resume} to resume.`, { kind: "no_session", sessionId: step.resume });
+    if (isThreadError(error)) fail(`No Codex thread ${step.resume} to ${step.fork ? "fork" : "resume"}.`, { kind: "no_session", sessionId: step.resume });
     throw error;
   }
 }

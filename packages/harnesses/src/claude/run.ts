@@ -15,7 +15,7 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { addUsage, noUsage, StepFailure, usage } from "../failure.js";
+import { addUsage, checkStep, noUsage, StepFailure, usage } from "../failure.js";
 import { toAnthropicJsonSchema } from "../schema.js";
 import { refusal, toolName } from "../tools.js";
 import type { Failure, HistoryEntry, McpServer, Step, StepEvents, StepResult, Usage } from "../types.js";
@@ -45,8 +45,10 @@ function claudeOptions(path: string, step: Step, sessionId: string) {
       return why ? { behavior: "deny", message: why } : { behavior: "allow", updatedInput: input };
     },
   };
+  // A fork resumes the session into a new one, which sessionId names.
   if (step.resume) options.resume = step.resume;
-  else options.sessionId = sessionId;
+  if (step.resume && step.fork) options.forkSession = true;
+  if (!step.resume || step.fork) options.sessionId = sessionId;
   if (step.model) options.model = step.model;
   if (step.effort) {
     if ((EFFORTS as string[]).includes(step.effort)) options.effort = step.effort as EffortLevel;
@@ -205,10 +207,12 @@ function openProgram(step: Step, sessionId: string, options: Options, notes: str
 
 export async function runClaude(path: string, step: Step, events: StepEvents, held: Held<ClaudeProgram>): Promise<StepResult> {
   const fits = claudeFits(path, step);
-  const { options, notes } = claudeOptions(path, step, step.resume ?? randomUUID());
+  const { options, notes } = claudeOptions(path, step, step.resume && !step.fork ? step.resume : randomUUID());
+  checkStep(step, notes);
   if (step.signal?.aborted) throw new StepFailure("The step was stopped before it started.", { kind: "stopped" }, { notes });
-  const kept = await held.take(step.resume, fits);
-  const program = kept ?? openProgram(step, step.resume ?? options.sessionId!, options, notes, fits);
+  // A fork always opens a program of its own, and the resumed session's kept program stays kept.
+  const kept = step.fork ? undefined : await held.take(step.resume, fits);
+  const program = kept ?? openProgram(step, options.sessionId ?? step.resume!, options, notes, fits);
   const { sessionId, abort } = program;
   program.stderr = "";
   const stop = () => abort.abort();
@@ -382,7 +386,10 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
   if (answer) return answer;
   if (step.signal?.aborted) fail("The step was stopped.", { kind: "stopped" });
   if (failure) fail(failureText, failure);
-  if (/No conversation found/i.test(program.stderr)) fail(`No Claude Code session ${sessionId} to resume.`, { kind: "no_session", sessionId });
+  if (/No conversation found/i.test(program.stderr)) {
+    const missing = step.resume ?? sessionId;
+    fail(`No Claude Code session ${missing} to ${step.fork ? "fork" : "resume"}.`, { kind: "no_session", sessionId: missing });
+  }
   if (limit || limitSeen) fail(failureText || "Claude Code hit its usage limit.", { kind: "usage_limit", ...limit });
   if (authFailed) fail(failureText || "Claude Code is not logged in.", { kind: "auth" });
   return fail(failureText || "Claude Code ended the step without an answer.", { kind: "failed", retry: true });
