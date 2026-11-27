@@ -29,6 +29,9 @@
 //               tool       run this shell command as one tool call before the answer. The
 //                          delayMs and hold then last through the tool call, so a message sent
 //                          meanwhile lands mid-turn. The program reads it after the tool call.
+//               files      { "<path>": "<text>" }: the turn writes these files, by their path from
+//                          the program's folder, before it answers, as a model's edits would. A
+//                          goal writes them in its last model turn, and only when it runs to the end.
 //               mark       Claude writes a file of this name next to FAKE_LOG once the turn
 //                          has sent its result, so a test can tell the turn ran to its end
 //               noSteer    Codex fails turn/steer during the turn as a Codex before 0.169.0
@@ -104,7 +107,7 @@
 //   messages, logs { byHand: line }, and exits 0 without reading stdin. With FAKE_PERSON unset or
 //   empty the person typed nothing. An unknown id fails as a real resume does.
 
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export const LOGIN_VARS = ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"];
@@ -216,7 +219,7 @@ function sameSession(wanted, session) {
 /**
  * The answer for one request. Returns { rule, kind, text, value, delayMs, hold, message,
  * resetsAt, first, silent, usage, approval, listTools, tool, notSteerable, noSteer, mark, stop,
- * errorInfo, code, goal, ask }. kind is "answer", "fail", "limit", "auth" or "exit".
+ * errorInfo, code, goal, ask, files }. kind is "answer", "fail", "limit", "auth" or "exit".
  *
  * context holds what a rule may match beyond the prompt: { session, system, earlier, last }, the
  * session id, its system text, the user messages it got before this one and the message's last
@@ -241,7 +244,7 @@ export function decide(program, prompt, schema, context = {}) {
     break;
   }
   const rule = picked?.rule ?? {};
-  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, tool: rule.tool, notSteerable: rule.notSteerable, noSteer: rule.noSteer === true, mark: rule.mark, stop: rule.stop, errorInfo: rule.errorInfo, goal: rule.goal, ask: rule.ask };
+  const out = { rule: picked?.index ?? null, delayMs: rule.delayMs ?? 0, hold: rule.hold, usage: rule.usage, approval: rule.approval, listTools: rule.listTools === true, tool: rule.tool, notSteerable: rule.notSteerable, noSteer: rule.noSteer === true, mark: rule.mark, stop: rule.stop, errorInfo: rule.errorInfo, goal: rule.goal, ask: rule.ask, files: rule.files };
   if (rule.exit !== undefined) return { ...out, kind: "exit", code: rule.exit };
   if (rule.limit) return { ...out, kind: "limit", resetsAt: rule.limit.resetsAt, first: rule.limit.first === true, silent: rule.limit.silent === true };
   if (rule.auth) return { ...out, kind: "auth" };
@@ -268,6 +271,15 @@ export function decide(program, prompt, schema, context = {}) {
   }
   const text = schema ? JSON.stringify(value) : typeof rule.answer === "string" ? rule.answer : rule.answer === undefined ? `Fake ${program} answer.` : JSON.stringify(rule.answer);
   return { ...out, kind: "answer", text, value };
+}
+
+/** Writes a rule's files, by their path from `cwd`, as a model's edits would. */
+export function writeFiles(files, cwd) {
+  for (const [path, text] of Object.entries(files ?? {})) {
+    const file = join(cwd, path);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, String(text));
+  }
 }
 
 /** The first limit rule for a program, for a program that reads its limits on request. */

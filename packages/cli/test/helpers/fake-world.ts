@@ -17,8 +17,9 @@ import { git } from "./git.js";
 
 const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../test/fakes");
 
-/** Variables of the test's own shell that would steer sous or the fakes away from the world. */
-const DROPPED = ["SOUS_HOME", "SOUS_RUN_ID", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_EXECUTABLE", "CODEX_PATH", "FAKE_VERSION", "FAKE_PERSON"];
+/** Variables of the test's own shell that would steer sous or the fakes away from the world.
+ *  NODE_TEST_CONTEXT would make a `node --test` that a step runs think it is inside this test. */
+const DROPPED = ["NODE_TEST_CONTEXT", "SOUS_HOME", "SOUS_RUN_ID", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_EXECUTABLE", "CODEX_PATH", "FAKE_VERSION", "FAKE_PERSON"];
 
 /** One rule of the fakes. test/fakes/lib.mjs lists every field. */
 export interface FakeRule {
