@@ -36,7 +36,6 @@ import { phaseScope } from "./steps/phase-scope.js";
 import type { WorkflowRecordedError } from "./errors.js";
 import {
   MAX_AGENT_RETRIES,
-  MAX_AGENTS_PER_RUN,
   MAX_CONCURRENCY,
 } from "./config.js";
 import {
@@ -76,11 +75,10 @@ import {
 } from "./strict-json.js";
 import { captureCallPath } from "./call-path.js";
 import { isPlace, NO_PLACES, type RunPlaces, type Worktree } from "./places/places.js";
-import { fittedResult, nestedArgs } from "./workflows/meta.js";
+import { fittedResult, metaLimits, nestedArgs } from "./workflows/meta.js";
 import { parseWorkflowScript } from "./workflows/script.js";
 import {
   createSousGlobals,
-  DEFAULT_MAX_NESTING_DEPTH,
   type CodeStepOptions,
 } from "./sous-globals.js";
 import { parseDurationSeconds } from "./duration.js";
@@ -237,7 +235,8 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
    * settles with PAUSE_REQUESTED instead of a result. Ignored while `signal` is aborted.
    */
   pauseSignal?: AbortSignal;
-  /** Maximum number of agents allowed in this run. Default: 1000 */
+  /** The cap on the run's agent, code and checkpoint calls, nested runs included. None when
+   *  unset. The root workflow's meta.maxAgents sets it when this does not. */
   maxAgents?: number;
   /** Whether to persist logs to disk. Default: true */
   persistLogs?: boolean;
@@ -278,7 +277,8 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   stepOverrides?: Record<string, Record<string, unknown>>;
   /** The environment code steps run with. Nested runs get the same. */
   codeEnv?: CodeStepEnv;
-  /** How deep workflow() may nest. Default 5. */
+  /** How deep workflow() may nest. None when unset. The root workflow's meta.maxNestingDepth sets
+   *  it when this does not. */
   maxNestingDepth?: number;
   /** Names of the saved workflows an agent may pick with choose({ any: true }). */
   listSavedWorkflows?: () => Array<{ name: string; description?: string }>;
@@ -529,7 +529,7 @@ export interface WorkflowRunLimitOptions {
 /** Resolve the run limits once so admission, persistence, and execution report the same values. */
 export function resolveWorkflowRunLimits(options: WorkflowRunLimitOptions): WorkflowRunLimits {
   return {
-    maxAgents: options.maxAgents ?? MAX_AGENTS_PER_RUN,
+    ...(options.maxAgents !== undefined ? { maxAgents: options.maxAgents } : {}),
     concurrency: normalizeConcurrency(
       options.concurrency ?? Math.max(1, (globalThis.navigator?.hardwareConcurrency ?? 8) - 2),
     ),
@@ -544,12 +544,15 @@ export function sanitizeVmName(name: string): string {
 }
 
 /** Runs a workflow. Its result must fit its meta.schema, or the run fails. A nested workflow's
- *  result is checked by the workflow() call that starts it. */
+ *  result is checked by the workflow() call that starts it. The limits its meta sets apply to the
+ *  whole run tree, where the options set none. */
 export async function runWorkflow<T = unknown>(
   script: string,
   options: WorkflowRunOptions,
 ): Promise<EngineRunResult<T>> {
-  const run = await runLevel<T>(script, options, undefined);
+  const meta = metaLimits(parseWorkflowScript(script).meta);
+  const limits = { maxAgents: options.maxAgents ?? meta.maxAgents, maxNestingDepth: options.maxNestingDepth ?? meta.maxNestingDepth };
+  const run = await runLevel<T>(script, { ...options, ...limits }, undefined);
   return { ...run, result: fittedResult(run.meta, run.result) as T };
 }
 
@@ -889,9 +892,9 @@ async function runLevel<T>(
   };
   // The cap counts agent, code and checkpoint calls, across nested runs.
   const checkAgentLimit = () => {
-    if (shared.agentCount >= maxAgents) {
+    if (maxAgents !== undefined && shared.agentCount >= maxAgents) {
       throw new WorkflowError(
-        `Agent limit exceeded (${maxAgents}). Use maxAgents option to increase the limit.`,
+        `The run reached its limit of ${maxAgents} agent, code and checkpoint calls, set by maxAgents.`,
         WorkflowErrorCode.AGENT_LIMIT_EXCEEDED,
         { recoverable: false },
       );
@@ -1759,10 +1762,10 @@ async function runLevel<T>(
     localOrdinal: number,
   ) => {
     throwIfAborted();
-    const maxNestingDepth = options.maxNestingDepth ?? DEFAULT_MAX_NESTING_DEPTH;
-    // Depth is this run's own level, so parallel siblings don't add up.
+    const maxNestingDepth = options.maxNestingDepth;
+    // Depth is this run's own level, so parallel siblings don't add up. No cap unless set.
     const ownDepth = nested?.depth ?? 0;
-    if (ownDepth >= maxNestingDepth) {
+    if (maxNestingDepth !== undefined && ownDepth >= maxNestingDepth) {
       throw new WorkflowError(
         `workflow() can nest at most ${maxNestingDepth} levels deep`,
         WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,

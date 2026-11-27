@@ -26,6 +26,7 @@ import { createSteps, type InnerRunner, type StepsNote } from "../steps/steps.js
 import { SteeringBoard } from "../steps/steering.js";
 import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";
 import { programLookup } from "../programs.js";
+import { DRY_RUN_MAX_CALLS } from "../config.js";
 
 export interface WorkerOptions {
   paths?: HomePaths;
@@ -50,6 +51,18 @@ function dryRunCheck(log: (line: string) => void, options: WorkerOptions) {
     const after = check.code === 0 ? "" : ", and the dry run goes on as if it passed";
     log(`${stamp()} check      ${check.step}: \`${oneLine(check.command, 200)}\` ended with exit code ${check.code}${after}`);
     options.onDryRunCheck?.(check);
+  };
+}
+
+/** Takes the steer signal and the stop signals for this go, and returns what lets them go. */
+function listenForSignals(onSteer: () => void, onStop: () => void): () => void {
+  steerHandlers.add(onSteer);
+  process.on("SIGTERM", onStop);
+  process.on("SIGINT", onStop);
+  return () => {
+    steerHandlers.delete(onSteer);
+    process.off("SIGTERM", onStop);
+    process.off("SIGINT", onStop);
   };
 }
 
@@ -154,7 +167,6 @@ function managerFor(paths: HomePaths, record: RunRecord, lookup?: (name: string)
     defaultAgentRetries: loadConfig(paths).retries,
     loadSavedWorkflow: guard.lookup,
     sous: {
-      maxNestingDepth: 5,
       // What an agent may pick with choose({ any: true }). Workflows for people only stay out, and
       // so do those the guard refuses the run.
       listSavedWorkflows: () =>
@@ -386,11 +398,7 @@ async function runOnAccounts(
   };
   const releaseSteer = options.handleSignals ? holdSteerSignal() : undefined;
   const releasePause = options.handleSignals ? answerPause(paths, runId, manager, log) : undefined;
-  if (options.handleSignals) {
-    steerHandlers.add(onSteer);
-    process.on("SIGTERM", onStop);
-    process.on("SIGINT", onStop);
-  }
+  const releaseSignals = options.handleSignals ? listenForSignals(onSteer, onStop) : undefined;
   // A tell sent before the steps start gets its receipt now. No call is open yet, so it is no_turn,
   // and the cli tells from the run's steps whether its call runs.
   sendTells(paths, runId, steering, onActivity, log);
@@ -402,6 +410,8 @@ async function runOnAccounts(
     // Code steps also get the project folder, since a run may work elsewhere (a worktree, a scratch folder).
     codeEnv: { env: { ...secrets, SOUS_PROJECT: record.projectDir }, base, onActivity, ...(options.dryRun ? { onDryRunCheck: dryRunCheck(log, options) } : {}) },
     ...(record.concurrency ? { concurrency: record.concurrency } : {}),
+    // A dry run keeps a cap on its calls, since it starts no program and a loop would never end.
+    ...(options.dryRun ? { maxAgents: DRY_RUN_MAX_CALLS } : {}),
     ...(record.overrides ? { stepOverrides: record.overrides } : {}),
     ...(record.defaultModel ?? config.defaultModel ? { defaultModel: record.defaultModel ?? config.defaultModel } : {}),
   };
@@ -437,11 +447,7 @@ async function runOnAccounts(
   } finally {
     limits.end();
     waits.abort();
-    if (options.handleSignals) {
-      steerHandlers.delete(onSteer);
-      process.off("SIGTERM", onStop);
-      process.off("SIGINT", onStop);
-    }
+    releaseSignals?.();
     releaseSteer?.();
     releasePause?.();
     await runner.dispose().catch(() => {});

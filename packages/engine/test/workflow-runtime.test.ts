@@ -616,8 +616,8 @@ return { a, nested }`;
   assert.equal(result.result.nested.child, "ran:child task");
 });
 
-test("workflow() nests five levels deep, and a sixth level throws", async () => {
-  // The limit was one level; it is now five by default.
+test("workflow() nests five levels deep, and a sixth level throws, with maxNestingDepth: 5", async () => {
+  // The cap has no default. limits-off.test.ts shows a run with none.
   const level = `export const meta = { name: 'level', description: 'l' }
 const n = args.n
 await agent('level ' + n, { label: 'l' + n })
@@ -633,6 +633,7 @@ return { err, deepest }`;
     agent: countingAgent().runner,
     persistLogs: false,
     loadSavedWorkflow: (name) => (name === "level" ? level : undefined),
+    maxNestingDepth: 5,
   });
   assert.equal(five.result.err, null);
   assert.equal(five.result.deepest, 5);
@@ -641,6 +642,7 @@ return { err, deepest }`;
     agent: countingAgent().runner,
     persistLogs: false,
     loadSavedWorkflow: (name) => (name === "level" ? level : undefined),
+    maxNestingDepth: 5,
   });
   assert.match(six.result.err, /at most 5 levels deep/);
 });

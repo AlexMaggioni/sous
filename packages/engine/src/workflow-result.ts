@@ -37,6 +37,10 @@ export interface WorkflowMeta {
   startedBy?: unknown;
   timeout?: unknown;
   schedule?: unknown;
+  /** The cap on the run's calls. With none, the run has no cap. */
+  maxAgents?: unknown;
+  /** How deep workflow() may nest. With none, there is no cap. */
+  maxNestingDepth?: unknown;
 }
 
 /**
@@ -471,7 +475,8 @@ export interface WorkflowCallRecord {
 
 /** Host-resolved execution bounds in force for one run. */
 export interface WorkflowRunLimits {
-  maxAgents: number;
+  /** The cap on the run's agent, code and checkpoint calls. None when unset. */
+  maxAgents?: number;
   concurrency: number;
   agentRetries: number;
 }

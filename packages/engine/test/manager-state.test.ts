@@ -179,8 +179,8 @@ return { count: args.count, answer }`,
       });
       assert.equal(persisted?.environment, undefined);
       assert.equal(persisted?.callsAllocated, 0);
+      // No maxAgents: a run's calls have no cap unless it sets one.
       assert.deepEqual(persisted?.limits, {
-        maxAgents: 1000,
         concurrency: 8,
         agentRetries: 0,
       });

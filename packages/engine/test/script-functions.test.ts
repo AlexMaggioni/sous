@@ -79,10 +79,10 @@ describe("a bad call to a script function fails the run with its message", () =>
     assert.equal(error.message, "choose() needs at least one step or workflow");
   });
 
-  it('breakpoint "Check" was sent back 5 times, the default of max', async () => {
+  it('breakpoint "Check" was sent back 5 times, with max: 5', async () => {
     const { runner, calls } = recordingRunner(() => "draft");
     let asked = 0;
-    const error = await failureOf("return await breakpoint('Check', () => agent('write it', { label: 'draft' }))", {
+    const error = await failureOf("return await breakpoint('Check', () => agent('write it', { label: 'draft' }), { max: 5 })", {
       agent: runner,
       confirm: async () => {
         asked++;

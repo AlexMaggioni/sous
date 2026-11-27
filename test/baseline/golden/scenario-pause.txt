@@ -184,7 +184,6 @@ exit 0
     "eventSeq": 18,
     "callsAllocated": 2,
     "limits": {
-      "maxAgents": 1000,
       "concurrency": 8,
       "agentRetries": 2
     },

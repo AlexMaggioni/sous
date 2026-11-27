@@ -234,7 +234,6 @@ exit 0
     "nestedWorkflows": true,
     "callsAllocated": 3,
     "limits": {
-      "maxAgents": 1000,
       "concurrency": 8,
       "agentRetries": 2
     },

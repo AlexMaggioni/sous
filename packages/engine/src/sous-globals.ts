@@ -14,8 +14,6 @@ import { isSchemaObject } from "./steps/answer.js";
 import { cloneStrictJsonValue } from "./strict-json.js";
 import { createSessions } from "./turns/session.js";
 
-export const DEFAULT_MAX_NESTING_DEPTH = 5;
-
 type AgentFn = (prompt: string, options: Record<string, unknown>) => Promise<unknown>;
 /** What a code step passes besides its spec. */
 export interface CodeStepOptions {
@@ -264,13 +262,14 @@ export function createSousGlobals(deps: SousGlobalDeps) {
       const decision = await decide(stepOrOptions?.show);
       return approvedValue(decision) ? decision.value : decision;
     }
-    const max = maybeOptions.max ?? 5;
+    // No cap unless the script sets max.
+    const max = maybeOptions.max;
     let note: string | undefined;
     for (let round = 1; ; round++) {
       const result = await stepOrOptions(note);
       const decision = await decide(maybeOptions.show ? maybeOptions.show(result) : result);
       if (decision.decision === "approve") return approvedValue(decision) ? decision.value : result;
-      if (round >= max) fail(`breakpoint "${title}" was sent back ${max} times`);
+      if (max !== undefined && round >= max) fail(`breakpoint "${title}" was sent back ${max} times`);
       note = decision.note;
     }
   };

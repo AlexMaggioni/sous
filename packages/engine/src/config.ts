@@ -2,8 +2,9 @@
  * Configuration constants for @sous-run/engine.
  */
 
-/** Maximum number of agents allowed per workflow run. */
-export const MAX_AGENTS_PER_RUN = 1000;
+/** The agent, code and checkpoint calls a dry run may make. A real run has no cap unless it sets
+ *  maxAgents. A dry run starts no program, so a loop in its script would never end. */
+export const DRY_RUN_MAX_CALLS = 1000;
 
 /** Maximum concurrent agents (matches Claude Code limit). */
 export const MAX_CONCURRENCY = 16;

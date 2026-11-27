@@ -284,7 +284,6 @@ exit 0
     "eventSeq": 13,
     "callsAllocated": 2,
     "limits": {
-      "maxAgents": 1000,
       "concurrency": 8,
       "agentRetries": 2
     },
@@ -489,7 +488,6 @@ exit 0
     "eventSeq": 13,
     "callsAllocated": 2,
     "limits": {
-      "maxAgents": 1000,
       "concurrency": 8,
       "agentRetries": 2
     },
@@ -701,7 +699,6 @@ exit 0
     "eventSeq": 13,
     "callsAllocated": 2,
     "limits": {
-      "maxAgents": 1000,
       "concurrency": 8,
       "agentRetries": 2
     },

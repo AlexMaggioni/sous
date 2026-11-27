@@ -198,8 +198,8 @@ A script has these steps (see also [the engine README](../packages/engine/README
   not fit is refused with the reason, and the question stays open, at `sous answer`, on the page
   and through an answer file alike.
 - `breakpoint(title, step, { show, max, input, schema })` runs the step, then waits for the user
-  to approve, stop the run, or send the step back with a note. The step reruns with the note, 5
-  times at most unless `max` says otherwise, then the breakpoint fails. A stop ends the run as
+  to approve, stop the run, or send the step back with a note. The step reruns with the note as
+  often as the user sends it back. With `max`, the breakpoint fails after that many send-backs. A stop ends the run as
   `sous stop` does, and `sous wait` exits with 3. A breakpoint is always for people, so it fails
   on `answeredBy`. `input` shows with the title. With a `schema`, the person may approve with a
   JSON value instead, such as `sous answer <id> '{"n": 2}'`. The value must fit, and the
@@ -567,9 +567,15 @@ the notices off.
   and resumes it now.
 - A run whose program loses its login pauses, shown as `paused: login`. The service does not
   resume it. Log in again, then `sous resume` goes on.
-- `maxAgents` caps the agents running at once across all runs. Others wait in a queue, and a
-  person's run goes before a scheduled one.
-- A loop's rounds are the workflow's to cap, usually with an input such as `rounds`.
+- The config's `maxAgents` caps the agents running at once across all runs. Others wait in a
+  queue, and a person's run goes before a scheduled one.
+- Every limit on a run's work is off unless the workflow sets it. A loop's rounds are the
+  workflow's to cap, usually with an input such as `rounds`. `maxAgents` in the meta, unlike the
+  config's, caps the run's agent, code and checkpoint calls, nested workflows included, and the
+  run fails at the next one. `maxNestingDepth` in the meta caps how deep `workflow()` nests. Each
+  is a whole number of at least 1. A step's `maxTurns` and `maxRepairs` and a breakpoint's `max`
+  are off unless set too. A dry run alone keeps a cap of 1000 calls, since it starts no program
+  and a loop would never end.
 - A workflow's `timeout` limits each start and each resume of a run. When it is reached, the
   running steps stop, code steps such as `sh` as well as agent steps, and the run pauses on them,
   shown as `paused: time limit`. `sous resume` runs them again with the whole limit, and `sous stop`

@@ -11,6 +11,8 @@
 //     concurrency: 2,
 //     startedBy: "people",   // or "anyone", the default: agents may start it too
 //     timeout: "2h",          // the running steps stop and the run pauses after this long
+//     maxAgents: 200,         // the run fails at its 201st agent, code or checkpoint call
+//     maxNestingDepth: 3,     // workflow() may nest 3 levels deep
 //     schedule: "0 9 * * 1-5", // the service starts it on this cron; or { cron, inputs }
 //   }
 //
@@ -87,6 +89,9 @@ export function workflowExtras(meta: WorkflowMeta): WorkflowExtras {
     if (!isSchemaObject(spec.schema)) problems.push(`meta.inputs.${name}.schema must be a JSON schema object`);
     else if (spec.type !== "json") problems.push(`meta.inputs.${name}.schema needs type: "json"`);
   }
+  for (const key of LIMIT_KEYS) {
+    if (meta[key] !== undefined && !isLimit(meta[key])) problems.push(`meta.${key} must be a whole number of at least 1, got ${JSON.stringify(meta[key])}`);
+  }
   const timeout = timeoutOf(meta.timeout);
   if (timeout.timeout) extras.timeout = timeout.timeout;
   if (timeout.problem) problems.push(timeout.problem);
@@ -98,6 +103,21 @@ export function workflowExtras(meta: WorkflowMeta): WorkflowExtras {
   }
   if (problems.length) extras.metaProblems = problems;
   return extras;
+}
+
+/** The limits a meta may set. Each is off unless set. */
+const LIMIT_KEYS = ["maxAgents", "maxNestingDepth"] as const;
+
+function isLimit(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1;
+}
+
+/** The limits the meta sets, each a whole number of at least 1. One it sets wrong is left out, and
+ *  workflowExtras names it as a problem. */
+export function metaLimits(meta: WorkflowMeta): { maxAgents?: number; maxNestingDepth?: number } {
+  const limits: { maxAgents?: number; maxNestingDepth?: number } = {};
+  for (const key of LIMIT_KEYS) if (isLimit(meta[key])) limits[key] = meta[key];
+  return limits;
 }
 
 function scheduleOf(value: unknown): { schedule?: WorkflowExtras["schedule"]; problem?: string } {

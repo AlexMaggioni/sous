@@ -299,7 +299,6 @@ exit 0
     ],
     "callsAllocated": 5,
     "limits": {
-      "maxAgents": 1000,
       "concurrency": 8,
       "agentRetries": 2
     },
