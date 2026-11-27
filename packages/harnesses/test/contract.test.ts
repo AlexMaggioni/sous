@@ -456,6 +456,33 @@ for (const kit of KITS) {
       assert.equal(turnLines(c).length, 1);
       assert.equal(steerLines(c).length, 0);
     });
+
+    test("closes the seam in the stop itself, so a tell after a stop ends and sends nothing", async () => {
+      const c = newCase(kit);
+      c.rules([{ tool: "seq 1 10", hold: "go", answer: "Stopped at five." }]);
+      const stopper = new AbortController();
+      const seams: Array<Steer | undefined> = [];
+      const history: HistoryEntry[] = [];
+      const run = c.harness.run(c.step({ prompt: "Count to ten.", signal: stopper.signal }), { history: (entry) => history.push(entry), steer: (send) => seams.push(send) });
+      try {
+        await until(() => history.some((entry) => entry.kind === "toolCall"), 10_000, "the fake's tool call never reached the history");
+        await until(() => seams.at(-1) !== undefined, 10_000, "the adapter never opened the steer seam");
+        const send = seams.at(-1)!;
+        stopper.abort();
+        assert.equal(seams.at(-1), undefined, "the seam stayed open after the stop");
+        assert.equal(await send(TELL, randomUUID()), "ended");
+        const failure = await run.then(
+          () => assert.fail("the stopped step answered"),
+          (error: HarnessFailure) => error,
+        );
+        assert.equal(failure.failure.kind, "stopped");
+        assert.equal(seams.filter((seam) => seam !== undefined).length, 1, "a seam opened after the stop");
+        assert.equal(steerLines(c).length, 0, "the tell reached the program");
+      } finally {
+        writeFileSync(join(c.dir, "go"), "");
+        await run.catch(() => undefined);
+      }
+    });
   });
 }
 

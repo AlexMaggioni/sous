@@ -31,6 +31,8 @@ says.
 - A step's turns run in one open program, so a background process from one turn still runs in the
   next.
 - Code steps take an `input` and a `schema`, and give the value in `result`.
+- A stop closes the step's way in for messages at once, so a message sent after it reaches no
+  turn.
 
 ### The person
 

@@ -232,8 +232,6 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
   program.stderr = "";
   let asked: string | undefined;
   program.asking.record = (question) => (asked = addAsked(asked, question));
-  const stop = () => abort.abort();
-  step.signal?.addEventListener("abort", stop, { once: true });
 
   const history = (entry: Omit<HistoryEntry, "at">) => events.history?.({ ...entry, at: Date.now() });
   history({ role: "user", kind: "text", text: step.prompt });
@@ -247,6 +245,12 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
     if (open) events.steer?.(undefined);
     return unread;
   };
+  // A stopped step takes no message, so the seam closes before the query ends.
+  const stop = () => {
+    release();
+    abort.abort();
+  };
+  step.signal?.addEventListener("abort", stop, { once: true });
   /** The turn has started: names its session and model, and opens the seam. */
   const opening = () => {
     opened = true;

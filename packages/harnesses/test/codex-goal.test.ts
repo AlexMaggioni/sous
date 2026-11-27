@@ -133,6 +133,23 @@ describe("/goal on codex", () => {
     assert.equal(c.log().filter((line) => line.goal).length, 1, "no turn ran after the stop");
   });
 
+  test("a stop closes the turn's seam at once, so a message after it reaches no turn", async () => {
+    const c = newCase([{ match: "^/goal ", goal: TURNS, hold: "never", answer: MET }]);
+    const stopper = new AbortController();
+    const seams: Array<Steer | undefined> = [];
+    const run = c.harness.run(c.step({ prompt: `/goal ${OBJECTIVE}`, signal: stopper.signal }), { steer: (given) => seams.push(given) });
+    await logged(c, (line) => line.goal?.turn === 1);
+    while (!seams[0]) await new Promise((resolve) => setTimeout(resolve, 20));
+    const send = seams[0];
+    stopper.abort();
+    // The seam closed in the stop itself, before Codex answered the interrupt.
+    assert.deepEqual(seams, [send, undefined]);
+    assert.equal(await send("Also keep the old names.", "m1"), "ended");
+    assert.equal((await failureOf(run)).failure.kind, "stopped");
+    assert.deepEqual(seams, [send, undefined], "no seam opened after the stop");
+    assert.ok(!c.log().some((line) => line.steer), "the message never reached Codex");
+  });
+
   test("a question during a goal ends the step with the question", async () => {
     const c = newCase([{ match: "^/goal ", goal: TURNS, ask: "Which region?", answer: MET }]);
     const answer = await c.harness.run(c.step({ prompt: `/goal ${OBJECTIVE}`, ask: true }));

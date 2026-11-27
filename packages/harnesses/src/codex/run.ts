@@ -134,6 +134,42 @@ function requestHandler(step: Step, history: (entry: Omit<HistoryEntry, "at">) =
   };
 }
 
+type Item = ItemStartedNotification["item"];
+type Log = (entry: Omit<HistoryEntry, "at">) => void;
+
+/** Records a tool call when its item starts. An MCP call also notes the tool its server runs now. */
+function itemStarted(item: Item, history: Log, running: Map<string, string>): void {
+  if (item.type === "commandExecution") history({ role: "assistant", kind: "toolCall", text: item.command, toolName: "Bash" });
+  else if (item.type === "fileChange") history({ role: "assistant", kind: "toolCall", text: item.changes.map((change) => change.path).join("\n"), toolName: "Edit" });
+  else if (item.type === "mcpToolCall") {
+    running.set(item.server, item.tool);
+    history({ role: "assistant", kind: "toolCall", text: JSON.stringify(item.arguments ?? {}), toolName: `mcp__${item.server}__${item.tool}` });
+  }
+}
+
+/** Records an item that completed, and gives the text of the answer or the review it carries. */
+function itemCompleted(item: Item, history: Log, running: Map<string, string>): string | undefined {
+  if (item.type === "agentMessage") {
+    history({ role: "assistant", kind: "text", text: item.text });
+    return item.text;
+  }
+  if (item.type === "exitedReviewMode") {
+    history({ role: "assistant", kind: "text", text: item.review });
+    return item.review;
+  }
+  if (item.type === "commandExecution") {
+    const failed = item.status !== "completed" || (item.exitCode !== null && item.exitCode !== 0);
+    history({ role: "tool", kind: "toolResult", text: item.aggregatedOutput ?? "", ...(failed ? { isError: true } : {}) });
+  } else if (item.type === "fileChange") {
+    history({ role: "tool", kind: "toolResult", text: item.status, ...(item.status !== "completed" ? { isError: true } : {}) });
+  } else if (item.type === "mcpToolCall") {
+    running.delete(item.server);
+    const failed = item.error !== null || item.status !== "completed";
+    history({ role: "tool", kind: "toolResult", text: JSON.stringify(item.error ?? item.result ?? null), ...(failed ? { isError: true } : {}) });
+  }
+  return undefined;
+}
+
 export async function runCodex(path: string, step: Step, events: StepEvents, held: Held<CodexProgram>): Promise<StepResult> {
   const notes: string[] = [...toolNotes(step)];
   if (step.skills?.length) notes.push(`Codex gets no skills from a step, so ${step.skills.join(", ")} did not reach it.`);
@@ -166,12 +202,16 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
   let goalStatus = "active";
   let goalTurn = false;
 
-  // The seam onto the turn, from turn/start to turn/completed.
+  // The seam onto the turn, from turn/start to turn/completed or a stop.
   let seam: ReturnType<typeof steerTurn> | undefined;
   // The turn can end before the turn/start reply comes. The seam then never opens.
   let turnEnded = false;
+  // A stopped step takes no message, so no seam opens after the stop.
+  let stopped = false;
   const closeSeam = () => seam?.close() && events.steer?.(undefined);
   const openSeam = (id: string) => {
+    closeSeam();
+    if (stopped) return;
     seam = steerTurn({ server: server!, threadId: threadId!, turnId: id, delivered: (told) => history({ role: "user", kind: "text", text: told }), note: (note) => notes.push(note) });
     events.steer?.(seam.send);
   };
@@ -189,9 +229,11 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
         if (p.threadId !== threadId) break;
         if (!goal) turnId ??= p.turn.id;
         else {
-          // Each turn of a goal has an id and a seam of its own.
+          // Each turn of a goal has an id and a seam of its own. A turn that starts after a stop,
+          // as when the pause came after the turn had ended, gets the interrupt the stop sent.
           turnId = p.turn.id;
           goalTurn = true;
+          if (stopped) server?.request("turn/interrupt", { threadId, turnId }).catch(() => undefined);
           openSeam(turnId);
         }
         break;
@@ -222,34 +264,12 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
       }
       case "item/started": {
         const { item, threadId: thread } = params as ItemStartedNotification;
-        if (thread !== threadId) break;
-        if (item.type === "commandExecution") history({ role: "assistant", kind: "toolCall", text: item.command, toolName: "Bash" });
-        else if (item.type === "fileChange") history({ role: "assistant", kind: "toolCall", text: item.changes.map((change) => change.path).join("\n"), toolName: "Edit" });
-        else if (item.type === "mcpToolCall") {
-          running.set(item.server, item.tool);
-          history({ role: "assistant", kind: "toolCall", text: JSON.stringify(item.arguments ?? {}), toolName: `mcp__${item.server}__${item.tool}` });
-        }
+        if (thread === threadId) itemStarted(item, history, running);
         break;
       }
       case "item/completed": {
         const { item, threadId: thread } = params as ItemCompletedNotification;
-        if (thread !== threadId) break;
-        if (item.type === "agentMessage") {
-          text = item.text;
-          history({ role: "assistant", kind: "text", text: item.text });
-        } else if (item.type === "exitedReviewMode") {
-          text = item.review;
-          history({ role: "assistant", kind: "text", text: item.review });
-        } else if (item.type === "commandExecution") {
-          const failed = item.status !== "completed" || (item.exitCode !== null && item.exitCode !== 0);
-          history({ role: "tool", kind: "toolResult", text: item.aggregatedOutput ?? "", ...(failed ? { isError: true } : {}) });
-        } else if (item.type === "fileChange") {
-          history({ role: "tool", kind: "toolResult", text: item.status, ...(item.status !== "completed" ? { isError: true } : {}) });
-        } else if (item.type === "mcpToolCall") {
-          running.delete(item.server);
-          const failed = item.error !== null || item.status !== "completed";
-          history({ role: "tool", kind: "toolResult", text: JSON.stringify(item.error ?? item.result ?? null), ...(failed ? { isError: true } : {}) });
-        }
+        if (thread === threadId) text = itemCompleted(item, history, running) ?? text;
         break;
       }
       case "error": {
@@ -278,6 +298,8 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
   let server: AppServer | undefined = kept?.server;
   let stopTimer: NodeJS.Timeout | undefined;
   const stop = () => {
+    stopped = true;
+    closeSeam();
     if (threadId && turnId) server?.request("turn/interrupt", { threadId, turnId }).catch(() => undefined);
     if (goal && threadId) {
       // A paused goal starts no turn after this one. Between turns the step ends now.
