@@ -39,6 +39,13 @@ export interface CheckpointPurpose {
   step?: string;
 }
 
+/** What a question shows. One an agent asked in its turn names the step that needs the person,
+ *  who reads the agent's message in its session. The journal keeps the message. */
+export function shownPrompt(prompt: string, purpose: CheckpointPurpose | undefined): string {
+  if (purpose?.answeredBy !== "join") return prompt;
+  return purpose.step ? `"${purpose.step}" needs you in its session.` : "An agent needs you in its session.";
+}
+
 /** The engine-computed identity of one checkpoint() call, handed to the confirm
  *  callback as its additive third argument. */
 export interface CheckpointCallContext {

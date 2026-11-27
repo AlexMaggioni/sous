@@ -227,6 +227,7 @@ describe("the routes of sous serve", () => {
     const step: StepDetail = await get(`/api/runs/${ended}/step?name=hi`);
     assert.deepEqual([step.name, step.kind, step.status, step.call, step.calls], ["hi", "agent", "done", 1, 1]);
     assert.match(step.prompt!, /say hi to Ada/);
+    assert.deepEqual([step.session?.join, typeof step.session?.id, typeof step.session?.folder], [`sous join ${ended} hi`, "string", "string"], "the step shows its session and the command that steps into it");
     assert.ok(Array.isArray(step.activity));
 
     const questions = await get("/api/questions");

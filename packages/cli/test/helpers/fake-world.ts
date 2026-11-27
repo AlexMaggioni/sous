@@ -19,7 +19,7 @@ const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../test
 
 /** Variables of the test's own shell that would steer sous or the fakes away from the world.
  *  NODE_TEST_CONTEXT would make a `node --test` that a step runs think it is inside this test. */
-const DROPPED = ["NODE_TEST_CONTEXT", "SOUS_HOME", "SOUS_RUN_ID", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_EXECUTABLE", "CODEX_PATH", "FAKE_VERSION", "FAKE_PERSON"];
+const DROPPED = ["NODE_TEST_CONTEXT", "SOUS_HOME", "SOUS_RUN_ID", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_EXECUTABLE", "CODEX_PATH", "FAKE_VERSION", "FAKE_PERSON", "FAKE_PERSON_WAIT"];
 
 /** One rule of the fakes. test/fakes/lib.mjs lists every field. */
 export interface FakeRule {
@@ -87,11 +87,33 @@ export function wentOn(earlier: FakeLine | undefined, later: FakeLine | undefine
   return later.resume ? "resumed" : "apart";
 }
 
+/** The command line that runs `argv` in a terminal of its own, as a person's shell gives it.
+ *  `script` opens the terminal. macOS takes the command as its arguments, util-linux as one
+ *  shell line after -c, with -e to pass the command's exit code on. Its input is /dev/null: macOS
+ *  script refuses a socket there, and Node's pipes are sockets. */
+function inTerminal(argv: string[]): string[] {
+  if (process.platform === "darwin") return ["script", "-q", "/dev/null", ...argv];
+  const quoted = argv.map((word) => `'${word.replaceAll("'", `'\\''`)}'`).join(" ");
+  return ["script", "-qec", quoted, "/dev/null"];
+}
+
+/** What a terminal shows, as plain lines: no colors, no carriage returns, and none of the ^D
+ *  that script types when its own input ends. */
+function plain(text: string): string {
+  return text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\^D\x08+/g, "").replace(/\r/g, "");
+}
+
 /** What a sous command gave. */
 export interface SousResult {
   code: number;
   stdout: string;
   stderr: string;
+}
+
+export interface SousOptions {
+  env?: Record<string, string>;
+  timeoutMs?: number;
+  terminal?: boolean;
 }
 
 export interface FakeWorldOptions {
@@ -129,8 +151,10 @@ export interface FakeWorld {
   /** Run the sous command in the project, and wait for it to exit. It fails the test after
    *  `timeoutMs`, 60 seconds unless `sousWith` says otherwise. */
   sous(...args: string[]): Promise<SousResult>;
-  /** The same, with more environment variables and a time limit. */
-  sousWith(options: { env?: Record<string, string>; timeoutMs?: number }, ...args: string[]): Promise<SousResult>;
+  /** The same, with more environment variables and a time limit. With `terminal`, the command
+   *  runs in a terminal of its own, as it does for a person, and stdout has all it printed on
+   *  both streams, as plain lines. */
+  sousWith(options: SousOptions, ...args: string[]): Promise<SousResult>;
   /** Every line of the fakes' log so far, oldest first. */
   log(): FakeLine[];
   /** Kill what the world started: sous commands still running, run workers and the service.
@@ -170,11 +194,13 @@ export function fakeWorld(t: { after(fn: () => void): void }, options: FakeWorld
     writeFileSync(file, text);
   };
 
-  const sousWith = (extra: { env?: Record<string, string>; timeoutMs?: number }, ...args: string[]) => {
+  const sousWith = (extra: SousOptions, ...args: string[]) => {
     const env: NodeJS.ProcessEnv = { ...process.env };
     for (const name of DROPPED) delete env[name];
     Object.assign(env, { SOUS_HOME: paths.home, FAKE_LOG: logFile, FAKE_RULES: rulesFile }, person === undefined ? {} : { FAKE_PERSON: person }, extra.env);
-    const child = spawn(process.execPath, [cliFile(), ...args], { cwd: projectDir, env, stdio: ["ignore", "pipe", "pipe"] });
+    const argv = [process.execPath, cliFile(), ...args];
+    const [command, ...rest] = extra.terminal ? inTerminal(argv) : argv;
+    const child = spawn(command!, rest, { cwd: projectDir, env, stdio: ["ignore", "pipe", "pipe"] });
     running.add(child);
     let stdout = "";
     let stderr = "";
@@ -190,7 +216,7 @@ export function fakeWorld(t: { after(fn: () => void): void }, options: FakeWorld
       child.on("close", (code, signal) => {
         clearTimeout(timer);
         running.delete(child);
-        done({ code: code ?? (signal ? 128 : 1), stdout, stderr });
+        done({ code: code ?? (signal ? 128 : 1), stdout: extra.terminal ? plain(stdout) : stdout, stderr });
       });
     });
   };

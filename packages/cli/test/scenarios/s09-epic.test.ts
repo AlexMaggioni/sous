@@ -7,9 +7,9 @@
 // "Continue the task.".
 
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { listRecords } from "@sous-run/engine";
+import { listRecords, logFile } from "@sous-run/engine";
 import { readState } from "@sous-run/engine/testing";
 import { fakeWorld, type FakeLine, type FakeRule, type FakeWorld } from "../helpers/fake-world.js";
 
@@ -131,7 +131,10 @@ for (const [program, model] of [
       assert.equal(existsSync(held.cwd!), false, "ticket 2's worktree is gone once its workflow returns");
 
       const branches = world.git("branch", "--list", "sous/*", "--format=%(refname:short)").split("\n").filter(Boolean);
-      assert.equal(branches.length, 3, `branches: ${branches.join(", ")}`);
+      // A branch too many shows what moved it, and what the run did with each worktree.
+      const moves = branches.map((branch) => `${branch}:\n${world.git("reflog", "show", "--format=  %gs", `refs/heads/${branch}`)}`);
+      const closes = readFileSync(logFile(world.paths, runId), "utf8").split("\n").filter((line) => / (removed|closed|kept) /.test(line));
+      assert.equal(branches.length, 3, `branches: ${branches.join(", ")}\n${moves.join("\n")}\nthe run's log:\n${closes.join("\n")}`);
       const byTicket = new Map(branches.map((branch) => [world.git("log", "-1", "--format=%s", branch), branch]));
       for (const n of [1, 2, 3]) {
         const branch = byTicket.get(`Ticket ${n}`);

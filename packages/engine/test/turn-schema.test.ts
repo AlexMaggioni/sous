@@ -17,7 +17,7 @@ for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"
 const REPORT = "Report on the task you were given.";
 const SCHEMA = Type.Object({ ok: Type.Boolean(), summary: Type.String() });
 const STATUS = ["message", "result", "status"];
-const DONE = { untilDone: { ask: true } } as const;
+const DONE = { untilDone: true } as const;
 
 /** The property names of the schema a turn got, or null when it got none. */
 const fields = (line: FakeLine | undefined) => (line?.schema ? Object.keys((line.schema as { properties: object }).properties).sort() : null);
@@ -95,7 +95,7 @@ for (const [harness, model] of [
     });
 
     it("with ask false gives no question status", async () => {
-      const { lines } = await step("Build it.", { untilDone: { ask: false } }, [], model);
+      const { lines } = await step("Build it.", { untilDone: true, ask: false }, [], model);
       const status = (lines[0]?.schema as { properties: { status: { anyOf: Array<{ enum?: string[] }> } } }).properties.status.anyOf[0]?.enum;
       assert.deepEqual(status, ["done", "working"]);
     });

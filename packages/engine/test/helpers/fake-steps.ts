@@ -57,6 +57,8 @@ export function fakePlace(rules: object[] = []) {
     dir,
     cwd,
     accounts,
+    /** Open the gate a rule's hold waits on. */
+    gate: (name: string) => writeFileSync(join(dir, name), ""),
     /** The turn lines, in order. Lines for goals, tells and asks are left out. */
     lines: () =>
       (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as FakeLine & { outcome?: string }) : []).filter(

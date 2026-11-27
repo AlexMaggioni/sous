@@ -57,7 +57,7 @@ import { workflowHomeDir } from "./workflow-paths.js";
 import { cloneStrictJsonValue, deepFreeze } from "./strict-json.js";
 import { CALL_PATH_FORMAT } from "./call-path.js";
 import { hostPauseReason, type HostPause, type HostPauseReason } from "./host-pause.js";
-import { CHECKPOINT_INPUTS_FORMAT, type CheckpointCallContext, type CheckpointOptions } from "./checkpoint-call.js";
+import { CHECKPOINT_INPUTS_FORMAT, shownPrompt, type CheckpointCallContext, type CheckpointOptions } from "./checkpoint-call.js";
 import {
   CALL_INPUTS_FORMAT,
   type EngineRunResult,
@@ -1022,7 +1022,7 @@ export class WorkflowManager extends EventEmitter {
         maxAgents,
         // The host says when it has asked, and the run's log gets the question as an asked event.
         ...(confirm ? { confirm: (text, options, context) => confirm(text, options, { ...context!, asked: () => publish(this.createRunEvent("asked", {
-          runId: managed.runId, scope: context?.scope ?? managed.runId, callIndex: context?.callIndex ?? 0, prompt: text, ...(context?.purpose?.step ? { step: context.purpose.step } : {}),
+          runId: managed.runId, scope: context?.scope ?? managed.runId, callIndex: context?.callIndex ?? 0, prompt: shownPrompt(text, context?.purpose), ...(context?.purpose?.step ? { step: context.purpose.step } : {}),
         })) }) } : {}),
         onNestedWorkflow: (ordinal, childRunId) => {
           managed.nestedWorkflows = true;

@@ -6,11 +6,11 @@ description: Start, watch, answer and write sous workflows. sous runs workflows 
 # sous
 
 sous runs workflows in the background. A workflow is a JavaScript file of steps. A run is one
-execution of it. A run goes on when this session ends, so the run's record is the truth and
-your memory of it is not.
+execution of it. A run goes on when this session ends, so trust the run's record, not your
+memory of it.
 
 Treat a run like a subagent you started, with three differences. It outlives you. It can ask
-the user. Its work lands on a git branch for review.
+the user. Its work lands on a git branch.
 
 ## Start here
 
@@ -41,9 +41,10 @@ The exit code says why: 0 completed, 1 failed, 2 paused, 3 stopped, 4 asks.
 ## When it asks
 
 A question with `answeredBy: "people"` is the user's. Show it in full, with its choices.
-Pass their words on with the call in `next`. If the user is not there, say that the run
-waits for them as long as it takes, and stop. Never answer it with a choice you made.
+Pass their words on with the call in `next`. If the user is away, say the run waits
+for them, and stop. Never answer it with a choice you made.
 Only a question with `answeredBy: "anyone"` is yours to answer.
+With `"join"`, a step needs the user in its session. Give them `sous join <run> <step>`.
 
 ## When it ends
 

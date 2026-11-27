@@ -62,6 +62,32 @@ export function noteFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.note`);
 }
 
+/** The sessions `sous join` asked the worker to hand over, one per line, until the worker takes them. */
+export function joinRequestFile(paths: HomePaths, runId: string): string {
+  return join(paths.records, `${runId}.join`);
+}
+
+const SESSION_ID = /^[A-Za-z0-9_-]+$/;
+
+/** The hold file of a session, which names the one process that writes to it now
+ *  (runs/session-hold.ts). A nested run's sessions belong to its root run, whose worker runs them. */
+export function holdFile(paths: HomePaths, runId: string, sessionId: string): string {
+  if (!SESSION_ID.test(sessionId)) throw new Error(`not a session id: ${JSON.stringify(sessionId)}`);
+  return join(paths.records, `${rootRunId(runId)}.hold-${sessionId}`);
+}
+
+/** Every hold file of a run, for its delete. */
+function holdFiles(paths: HomePaths, runId: string): string[] {
+  const prefix = `${rootRunId(runId)}.hold-`;
+  try {
+    return readdirSync(paths.records)
+      .filter((name) => name.startsWith(prefix))
+      .map((name) => join(paths.records, name));
+  } catch {
+    return [];
+  }
+}
+
 /** What the run's steps did, one JSON line per entry. Only the worker appends to it. */
 export function activityFile(paths: HomePaths, runId: string): string {
   return join(paths.records, `${runId}.activity.jsonl`);
@@ -237,11 +263,12 @@ export function removeEngineRun(paths: HomePaths, runId: string): boolean {
   }
 }
 
-/** Delete a run's record, workflow snapshot, step stop, tell and note requests, and logs. removeEngineRun deletes the engine's files. */
+/** Delete a run's record, workflow snapshot, step stop, tell, join and note requests, session holds,
+ *  and logs. removeEngineRun deletes the engine's files. */
 export function removeRunFiles(paths: HomePaths, record: RunRecord): void {
   // The engine keeps its own copy of the log, in a folder named after where the run worked.
   const engineLogs = workflowProjectPaths(record.cwd, { persistenceRoot: paths.runs });
-  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), pauseRequestFile(paths, record.runId), tellRequestFile(paths, record.runId), noteFile(paths, record.runId), activityFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`)];
+  const files = [recordFile(paths, record.runId), snapshotFile(paths, record.runId), stopRequestFile(paths, record.runId), pauseRequestFile(paths, record.runId), tellRequestFile(paths, record.runId), joinRequestFile(paths, record.runId), noteFile(paths, record.runId), activityFile(paths, record.runId), logFile(paths, record.runId), join(engineLogs.runsDir, `${record.runId}.log`), ...holdFiles(paths, record.runId)];
   for (const file of files) {
     try {
       unlinkSync(file);

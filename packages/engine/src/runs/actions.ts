@@ -32,7 +32,7 @@ export type ActionKind =
   | "run" | "rerun" | "resume" | "pause" | "stop" | "stop-step" | "discard" | "prune" | "gc"
   | "answer" | "approve" | "send-back" | "let-agent-answer" | "approve-workflow" | "tell"
   | "schedule-add" | "schedule-remove" | "schedule-enable" | "schedule-disable" | "account-use" | "skill-install" | "hook-install" | "hook-remove"
-  | "remove-run" | "trash-workflow";
+  | "remove-run" | "trash-workflow" | "join" | "leave";
 
 /** One line of events.jsonl. */
 export interface Action {

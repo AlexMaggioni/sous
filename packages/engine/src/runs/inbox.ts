@@ -9,6 +9,7 @@ import type { By, Through, Who } from "./actions.js";
 import { answerCommand, answeredByFor, authorAnsweredBy, type Tried } from "./consent.js";
 import type { HomePaths } from "./home.js";
 import type { RunRecord } from "./records.js";
+import { word } from "./refusal.js";
 import { answerFile, questionFile, questionFiles } from "./store.js";
 
 export interface Question {
@@ -398,7 +399,7 @@ export function hint(question: Question, where: "sous" | "log" | "prompt" = "sou
     if (question.kind === "select") return (question.choices ?? []).join(" / ");
     return "your answer";
   }
-  if (question.answeredBy === "join") return `sous join ${question.runId}${question.step ? ` ${question.step}` : ""}`;
+  if (question.answeredBy === "join") return `sous join ${question.runId}${question.step ? ` ${word(question.step)}` : ""}`;
   if (question.breakpoint) return `${answerCommand(question, "approve")}  |  ${answerCommand(question, "send-back", '"note"')}  |  sous stop ${question.runId}`;
   if (question.schema) return answerCommand(question, "answer", "'<json>'");
   if (where === "log") return answerCommand(question, "answer", '"..."');

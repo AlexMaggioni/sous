@@ -13,6 +13,7 @@ factory  Take open bug tickets from Linear, or from tickets/ without a key, and 
   --rounds  number, optional, default 2  Most review rounds per ticket
 fanout  Parallel agent steps, a shell step and a nested workflow
 harnesses  A Claude Code step and a Codex step
+join  An agent that needs the person, who steps into its session
 limit  A step that hits the usage limit, which pauses the run
   -- --model  string, optional, default "claude"  Model of the step
 pause  The test pauses the run during its first step, then resumes it

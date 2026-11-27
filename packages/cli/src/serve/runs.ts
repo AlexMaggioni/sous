@@ -329,6 +329,7 @@ export function stepDetail(paths: HomePaths, runId: string, name: string, call?:
     ...(view.output === undefined ? {} : { output: view.output }),
     ...(view.result === undefined ? {} : { result: view.result }),
     ...(view.failure === undefined ? {} : { failure: view.failure }),
+    ...(view.session ? { session: view.session } : {}),
     activity: view.activity.map(activityOf),
   };
 }

@@ -4,7 +4,7 @@
 // a loop, switches between its calls. It reads the call only while the panel shows it.
 import { ChevronLeft, ChevronRight, Play, Send } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
-import type { Question, RunPage, Step, StepDetail } from "../../api/contract.ts";
+import type { Question, RunPage, Step, StepDetail, StepSession } from "../../api/contract.ts";
 import { useStep } from "../../api/queries.ts";
 import { commandOf, useSend } from "../../api/send.ts";
 import { clock, formatCost, formatDate, formatDuration, formatFull, formatTokens, lineCount, plural } from "../../format.ts";
@@ -148,6 +148,26 @@ function CallFacts({ step, detail, now }: { step: Step; detail?: StepDetail; now
   );
 }
 
+/** The agent's session: its program, id and folder, and the command that steps into it in a terminal. */
+function StepSessionPart({ session }: { session: StepSession }) {
+  return (
+    <div className="flex flex-col gap-2 text-xs">
+      <Pairs
+        pairs={[
+          ["Program", session.program],
+          ["Id", <code className="font-mono [overflow-wrap:anywhere]">{session.id}</code>],
+          ["Handle", session.handle],
+          ["Folder", <code className="font-mono [overflow-wrap:anywhere]">{session.folder}</code>],
+        ]}
+      />
+      <p className="text-muted">Step into it in a terminal. The step's next turn waits until you leave.</p>
+      <div>
+        <CommandBox command={session.join} label="Copy the join command" />
+      </div>
+    </div>
+  );
+}
+
 /** What the call did: the agent's activity, or the command's output and result, then the prompt as sent. */
 function CallDetail({ step, detail, source }: { step: Step; detail: StepDetail; source?: string }) {
   const live = step.status === "running";
@@ -159,6 +179,11 @@ function CallDetail({ step, detail, source }: { step: Step; detail: StepDetail; 
       {detail.kind === "agent" && (
         <PanelPart title="Activity">
           <ActivityList key={`${step.key} ${step.call}`} activity={detail.activity} live={live} empty={live ? "No activity yet. Lines show here as the agent works." : "No activity."} />
+        </PanelPart>
+      )}
+      {detail.session && (
+        <PanelPart title="Session">
+          <StepSessionPart session={detail.session} />
         </PanelPart>
       )}
       {command && (

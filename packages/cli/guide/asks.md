@@ -6,8 +6,22 @@ Each question's `answeredBy` says who may answer it:
 - `"people"`: only the person. You pass on their answer.
 - `"anyone"`: you may answer it yourself. The workflow's author allowed it, or the person started
   the run with `--let-agent-answer`.
+- `"join"`: a step's agent needs the person in its session. See below.
 
 The calls in `next` are the ones that fit you.
+
+## A step that needs the person
+
+A question with `answeredBy: "join"` came from a step's agent in its turn. Its `prompt` names the
+step, such as `"impl" needs you in its session.` The agent's own words stay in its session. Tell
+the person, and give them the command to type in a terminal of their own:
+
+```sh
+sous join <run> <step>
+```
+
+They read the agent's message there, answer it and leave. The step then goes on in the same
+session. Nobody answers it with `sous answer`, and you cannot join it yourself.
 
 ## Show it, then pass on the answer
 

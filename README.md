@@ -21,14 +21,16 @@ A sous workflow is a JavaScript file. Its steps call agents and run code. You st
 command, and it runs in the background, on the Claude Code and Codex already installed on your
 machine. Close the terminal and the run goes on.
 
-When an agent has a question, it lands in your inbox. When a step fails, the run pauses on it and
+When an agent needs you, `sous join` opens its session in your terminal. You answer it there, and
+the agent goes on when you leave. When a step fails, the run pauses on it and
 `sous resume` goes on from there. When the subscription limit hits, the run pauses, and the sous
 service resumes it after the reset. Each run works in a git worktree of its own, so its changes wait on a branch for your
 review.
 
 ```sh
 sous run ticket --ticket "Add a --json flag to the export command"
-sous inbox                  # questions from the agents
+sous status                 # the runs, and what needs you
+sous join <run> <step>      # step into an agent's session
 sous show <run>             # steps, time and tokens, the result
 ```
 
@@ -66,8 +68,10 @@ notifications, and CI runs the tests on Linux. To build it from source, see
   or from each program's own folders, and never writes into them.
 - **Runs in the background.** A run survives the terminal. A service starts scheduled runs and
   resumes the ones that paused at the limit.
-- **An inbox.** Agents ask questions, and breakpoints wait for you to approve a step or send it
-  back with a note.
+- **Step in.** `sous join` opens an agent step's own session in your terminal, to answer its
+  question or steer it. The step goes on when you leave, and nothing else in the run stops.
+- **An inbox.** A workflow's own questions, and breakpoints that wait for you to approve a step or
+  send it back with a note.
 - **Resume.** A failed step pauses the run. `sous resume` runs it again and keeps every finished
   step. A step cut off by a stop or a limit goes on in its own session. After you edit the
   workflow, `sous resume --latest` keeps the steps that did not change.
@@ -189,7 +193,8 @@ one run.
 | --- | --- |
 | `sous run <workflow>` | start a run in the background. `--wait` follows it. |
 | `sous list`, `sous show <run>`, `sous log <run> -f` | the runs, one run's steps, its log |
-| `sous inbox`, `sous answer <q> <text>` | the questions waiting for you, and answering one |
+| `sous join <run> <step>` | step into an agent step's session. It goes on when you leave. |
+| `sous inbox`, `sous answer <q> <text>` | the workflow's questions waiting for you, and answering one |
 | `sous approve <q>`, `sous send-back <q> <note>` | answer a breakpoint |
 | `sous pause <run>`, `sous resume <run>` | let the running steps finish and start no new ones, then go on later |
 | `sous stop <run>` | end the run. Its branch stays for review. |

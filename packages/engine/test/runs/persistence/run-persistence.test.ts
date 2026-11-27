@@ -491,6 +491,8 @@ test(
       label: "recovery-agent",
       phase: "Recovery",
       keptOpen: true,
+      // The session() handle's label, which `sous join` names it by.
+      handle: "recovery-agent",
     };
     const persistedAgentSession: AgentSessionRecord | undefined = persisted.agents[0]?.session;
     const persistedJournalSession: AgentSessionRecord | undefined = persisted.journal?.[0]?.session;

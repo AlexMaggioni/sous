@@ -107,9 +107,22 @@ function makeWorld(root, name, { config = { notify: false }, rules = [], debug =
 
 // ── running sous ──
 
-function sous(world, args, { cwd = world.project, timeoutMs = 90_000 } = {}) {
+/** The command line that runs `argv` in a terminal of its own, as a person's shell gives it.
+ *  macOS script takes the command as its arguments, util-linux script as one shell line. */
+function inTerminal(argv) {
+  if (process.platform === "darwin") return ["script", "-q", "/dev/null", ...argv];
+  return ["script", "-qec", argv.map((word) => `'${word.replaceAll("'", `'\\''`)}'`).join(" "), "/dev/null"];
+}
+
+/** What a terminal shows, as plain lines: no colors, no carriage returns, and none of the ^D
+ *  that script types when its own input ends. */
+const plain = (text) => text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\^D\x08+/g, "").replace(/\r/g, "");
+
+/** Run sous. With `terminal`, it runs in a terminal of its own, and stdout holds both streams. */
+function sous(world, args, { cwd = world.project, timeoutMs = 90_000, terminal = false } = {}) {
   return new Promise((done) => {
-    const child = spawn(process.execPath, [SOUS, ...args], { cwd, env: world.env, stdio: ["ignore", "pipe", "pipe"] });
+    const [command, ...rest] = terminal ? inTerminal([process.execPath, SOUS, ...args]) : [process.execPath, SOUS, ...args];
+    const child = spawn(command, rest, { cwd, env: world.env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => (stdout += chunk));
@@ -117,7 +130,7 @@ function sous(world, args, { cwd = world.project, timeoutMs = 90_000 } = {}) {
     const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
     child.on("close", (code, signal) => {
       clearTimeout(timer);
-      done({ args, code: code ?? `killed by ${signal}`, stdout, stderr });
+      done({ args, code: code ?? `killed by ${signal}`, stdout: terminal ? plain(stdout) : stdout, stderr });
     });
   });
 }
@@ -463,6 +476,22 @@ const SCENARIOS = {
       const run = await start(world, "retry");
       await wait(world, run);
       await step(world, ["resume", run]);
+      await wait(world, run);
+    },
+  },
+  join: {
+    rules: [
+      { match: "JOIN-ASK", status: [{ status: "question", message: "Which API should I call?" }], times: 1 },
+      { match: "Continue the task.", recall: true },
+    ],
+    async drive(world) {
+      const run = await start(world, "join");
+      await wait(world, run);
+      await step(world, ["status"]);
+      await step(world, ["inbox"]);
+      await step(world, ["answer", run, "v2"]);
+      await step(world, ["join", run, "builder"]);
+      await step(world, ["join", run, "builder"], { terminal: true });
       await wait(world, run);
     },
   },

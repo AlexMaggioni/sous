@@ -73,15 +73,6 @@ describe("a run over the graph of its text", () => {
     expect(leaves(graph).map((l) => l.step)).toEqual(["r1:1", "r1:2", "r1:3", "r1:4"]);
   });
 
-  test("an asking agent's answer turns belong to it, and the last one gives its status", () => {
-    const { graph, asRan } = runGraph({
-      flow: flow(step("agent", "triager")),
-      steps: ran("r1", [["triager", "agent", "done"], ["triager (answer 1)", "agent", "running"]]),
-    });
-    expect(asRan).toBe(false);
-    expect(byLabel(graph, "triager")?.status).toBe("running");
-  });
-
   test("a step whose label changed takes the node of its kind in order, between the nodes around it", () => {
     const { graph, asRan } = runGraph({
       flow: flow(step("sh", "fetch"), step("agent", "plan"), step("sh", "tests")),

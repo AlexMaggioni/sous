@@ -39,6 +39,9 @@ sous runs saved workflows in the background.
         --step <name>                   stop one running step instead; the run pauses on it
   sous tell <run> --step <name> <msg>   give a running agent step a message it reads after its tool call
         --call n                        tell only the nth call of the step
+  sous join <run> <step>                step into an agent step's session in this terminal; the
+                                        step goes on in it when you leave, and nothing else stops
+        --call n                        the session of the nth call of the step
   sous rerun <run> [--name value ...]   start the same workflow again with the same inputs
         --reuse                         keep the results of the steps you did not edit, in the same place
         --budget N                      tokens one go of the new run may spend (default: the run's)

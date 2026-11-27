@@ -69,8 +69,10 @@ describe("agent session records (result.agentSessions)", () => {
       label: "planner",
       phase: "Plan",
       keptOpen: true,
+      handle: "planner",
     });
     assert.equal(second.sessionId, "sess-2");
+    assert.equal(second.handle, undefined, "agent() has no handle");
     assert.equal(second.callIndex, 1);
     assert.equal(second.label, "helper");
     assert.equal(second.keptOpen, false);

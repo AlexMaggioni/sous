@@ -2,11 +2,12 @@
 // read only: the step from the run's steps and its saved activity, the events from the engine's
 // event log, in a small vocabulary.
 
+import { harnessName, isHarness } from "../agents.js";
 import { EXEC_MODEL } from "../code-steps.js";
 import type { PersistedRunEvent } from "../run-events.js";
 import type { HomePaths } from "./home.js";
 import { readActivity, scopePrefix, type ActivityLine } from "./records.js";
-import { Refusal } from "./refusal.js";
+import { Refusal, word } from "./refusal.js";
 import { runDetail, type RunDetail } from "./run.js";
 import { lastEventSeq, readEventsAfter } from "./store.js";
 
@@ -34,6 +35,9 @@ export interface StepView {
   /** A code step's command and the end of its output. */
   command?: string;
   output?: string;
+  /** An agent step's session, once its program opened one: its id, its program, the folder it
+   *  works in, and the command that steps into it. A turn of a session() handle names the handle. */
+  session?: { id: string; program: string; folder: string; join: string; handle?: string };
   /** The last entries of the call's activity, oldest first. */
   activity: ActivityLine[];
   /** How many older entries the tail leaves out. */
@@ -146,6 +150,16 @@ export function stepView(paths: HomePaths, runId: string, name: string, options:
   const tokens = step.tokens ?? step.usage?.total;
   const tail = Math.max(0, options.tail ?? (options.full ? Infinity : TAIL));
   const activity = tail ? all.slice(-tail) : [];
+  const opened = step.session;
+  // sous join takes the step's last call with a session unless --call names another.
+  const lastOpened = calls.map((call, i) => (call.agent.session ? i + 1 : 0)).reduce((a, b) => Math.max(a, b), 0);
+  const session = opened && {
+    id: opened.sessionId,
+    program: isHarness(opened.backendId) ? harnessName(opened.backendId) : opened.backendId,
+    folder: opened.cwd,
+    join: `sous join ${id} ${word(found.name)}${number === lastOpened ? "" : ` --call ${number}`}`,
+    ...(opened.handle ? { handle: opened.handle } : {}),
+  };
   return {
     runId: id,
     step: found.name,
@@ -165,6 +179,7 @@ export function stepView(paths: HomePaths, runId: string, name: string, options:
     ...(step.error === undefined ? {} : { failure: step.error }),
     ...(command === undefined ? {} : { command }),
     ...(output === undefined ? {} : { output }),
+    ...(session ? { session } : {}),
     activity,
     ...(activity.length < all.length ? { earlier: all.length - activity.length } : {}),
     ...(prompt !== undefined && prompt.length < step.prompt.length ? { promptCut: true as const } : {}),

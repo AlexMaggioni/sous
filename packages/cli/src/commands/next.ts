@@ -8,7 +8,7 @@ interface RunAt {
   runId: string;
   status: string;
   /** The questions as a reply shows them, with who may answer each as it stands for the run. */
-  questions?: ReadonlyArray<Pick<RunQuestion, "id" | "kind" | "choices" | "breakpoint" | "prompt" | "answeredBy">>;
+  questions?: ReadonlyArray<Pick<RunQuestion, "id" | "kind" | "choices" | "breakpoint" | "prompt" | "answeredBy" | "step">>;
   failure?: Failure;
   pauseReason?: string;
   /** The tokens one go of the run may spend, when it has a budget. */
@@ -76,6 +76,11 @@ export function nextCalls(run: RunAt, from: "wait" | "show", who: Who, timeout?:
   const notes: string[] = [];
   if (run.status === "asks") {
     for (const q of run.questions ?? []) calls.push(...answerNext(q, who));
+    for (const q of run.questions ?? []) {
+      if (q.answeredBy !== "join") continue;
+      const step = q.step ?? "agent";
+      notes.push(`"${step}" needs the person, in its session. Ask them to run sous join ${id} ${word(step)} in a terminal of their own. The step goes on once they leave it.`);
+    }
     calls.push({ ...wait, does: "waits again once the answer is in" });
   } else if (run.status === "running" || run.status === "pending" || run.status === "starting") {
     calls.push(wait);

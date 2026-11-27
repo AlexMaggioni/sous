@@ -17,6 +17,8 @@ export const words = {
   stopAt: (question: string) => ["answer", question, "stop"],
   /** `call` picks one call of a step that ran more than once. */
   tell: (run: string, step: string, message: string, call?: number) => ["tell", run, message, "--step", step, ...(call === undefined ? [] : ["--call", String(call)])],
+  /** Steps into a step's session. The person runs it in a terminal, so the page only shows it. */
+  join: (run: string, step: string) => ["join", run, step],
 };
 
 /** Text sous reads as a flag, not as words: it starts with "-", as in "--force" or "-f". */
@@ -53,9 +55,13 @@ export interface Asked {
   show?: string;
 }
 
-/** A question in the page's words. A breakpoint comes with its title and the text it shows. */
-export function askedOf(question: Pick<Question, "prompt" | "kind" | "breakpoint" | "step" | "title" | "show">): Asked {
+/**
+ * A question in the page's words. A breakpoint comes with its title and the text it shows. An
+ * agent that asked in its turn shows no message, since the person reads it in its session.
+ */
+export function askedOf(question: Pick<Question, "prompt" | "kind" | "breakpoint" | "step" | "title" | "show" | "answeredBy">): Asked {
   if (question.breakpoint) return { who: "Breakpoint", title: question.title ?? question.prompt, ...(question.show ? { show: question.show } : {}) };
+  if (question.answeredBy === "join") return { who: "Agent", title: "This agent needs you" };
   const who = question.step ? `${question.step} asks` : question.kind === "confirm" ? "Checkpoint" : "Question";
   return { who, title: question.prompt };
 }

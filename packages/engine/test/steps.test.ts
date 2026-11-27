@@ -152,14 +152,19 @@ describe("steps on the fake programs", () => {
     const agents = lookupAgents({ projectDir: place.cwd, rulesyncGlobal: join(place.dir, "aiglobal"), defaultHarness: "claude", env });
     const steps = createSteps(onFakes(place, { agents }));
     try {
-      await steps.run("hello", routed(steps, { label: "a", model: "claude/haiku", agentType: "tester" }));
+      await steps.run("hello", routed(steps, { label: "a", model: "claude/haiku", agentType: "tester" }, { ask: false }));
+      // Every step may ask the person, so the program's own question tool joins its list.
+      await steps.run("hello", routed(steps, { label: "b", model: "claude/haiku", agentType: "tester" }));
     } finally {
       await steps.dispose();
     }
-    const [line] = place.lines();
+    const [line, asking] = place.lines();
     assert.deepEqual(line?.tools, ["Read", "Bash"]);
     assert.deepEqual(line?.allowedTools, ["Read", "Bash(npm test)", "mcp__linear__list_issues"]);
     assert.ok(["Edit", "Write"].every((tool) => line?.disallowedTools?.includes(tool)));
+    assert.deepEqual(asking?.tools, ["Read", "Bash", "AskUserQuestion"]);
+    assert.ok(["Edit", "Write"].every((tool) => asking?.disallowedTools?.includes(tool)));
+    assert.equal(asking?.disallowedTools?.includes("AskUserQuestion"), false);
   });
 
   it("counts only what a resumed Claude Code session adds to its cost", async () => {

@@ -13,7 +13,9 @@
 //
 // A step runs until its agent says "done", unless it sets `until: "turn"`. turns/loop.ts sends its
 // turns. agent() gets a key no script can name, so its later turns go on in its own session.
-// When a keyed step ends, deps.end closes the program its turns kept open.
+// When a keyed step ends, deps.end closes the program its turns kept open. A step with
+// `until: "turn"` sends one turn more, "Continue the task.", after a turn the person stepped into
+// or the agent ended with a question, as the loop does, so its value is the agent's answer.
 //
 // A handle with place "worktree" gets its worktree when session() is called, and the workflow
 // that made it closes it when it returns. agent() with place "worktree" gets one for its step,
@@ -25,6 +27,7 @@ import { resolve } from "node:path";
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
 import type { Worktree } from "../places/places.js";
 import { LOOP_KEYS, checkLoopOptions, runUntilDone, type Check, type LoopDeps } from "./loop.js";
+import { CONTINUE_PROMPT, readStatus } from "./status.js";
 import type { StepUntil, Until } from "./until.js";
 
 type AgentFn = (prompt: string, options: Record<string, unknown>) => Promise<unknown>;
@@ -138,6 +141,19 @@ function placeFields(place: "worktree" | undefined, tree: Worktree | undefined):
 /** A step's folder in its worktree: its cwd under the worktree's folder. */
 const cwdIn = (tree: Worktree, cwd: unknown): string => resolve(tree.dir, typeof cwd === "string" ? cwd : ".");
 
+/**
+ * A one-turn step's value when the turn did not finish: the steps module's row for a turn the
+ * person stepped into ("working"), or for a question the agent asked. Both have exactly the keys
+ * status, result and message, with result null. A schema whose own answers look like this would
+ * read as one too, so such a step should run until done.
+ */
+function unfinished(value: unknown): { status: "working" | "question"; message: string | null } | undefined {
+  const status = readStatus(value);
+  if (!status || (status.status !== "working" && status.status !== "question") || status.result !== null) return undefined;
+  const keys = Object.keys(value as object).sort().join(",");
+  return keys === "message,result,status" ? { status: status.status, message: status.message ?? null } : undefined;
+}
+
 /** A step's options without the ones the loop reads, which never reach the engine. */
 function engineOptions(options: Record<string, unknown>): Record<string, unknown> {
   const { ask: _ask, until: _until, ...rest } = options;
@@ -164,9 +180,18 @@ export function createSessions(deps: SessionDeps) {
     const maxRepairs = options.maxRepairs as number | undefined;
     if (options.until === "turn") {
       if (options.check !== undefined) fail(`step "${label}": check runs when the agent says done. A step with until "turn" has no check.`);
-      const limits: StepUntil = { end: "turn", ...(maxRepairs === undefined ? {} : { maxRepairs }), ...(maxTurns === undefined ? {} : { maxTurns, turnsLeft: maxTurns }) };
+      const limits: StepUntil = { end: "turn", ...(options.ask === false ? { ask: false } : {}), ...(maxRepairs === undefined ? {} : { maxRepairs }), ...(maxTurns === undefined ? {} : { maxTurns, turnsLeft: maxTurns }) };
+      const until = Object.keys(limits).length > 1 ? limits : "turn";
       try {
-        return await turn(prompt, Object.keys(limits).length > 1 ? limits : "turn");
+        let value = await turn(prompt, until);
+        for (let stopped = unfinished(value); stopped; stopped = unfinished(value)) {
+          if (stopped.status === "question") {
+            await end?.();
+            await deps.join(stopped.message ?? "The agent has a question.", joinLabel);
+          }
+          value = await turn(CONTINUE_PROMPT, until);
+        }
+        return value;
       } finally {
         await end?.();
       }
@@ -319,14 +344,14 @@ export function createSessions(deps: SessionDeps) {
       tree = deps.places?.open(name, occurrence);
     }
     const placed = placeFields(place, tree);
-    // A key no script can name: a session label is trimmed, and this one starts with a space.
-    const key = options.until === "turn" ? undefined : ` agent ${++agents}`;
+    // A key no script can name: a session label is trimmed, and this one starts with a space. A
+    // one-turn step has one too, for the turn after a person steps in.
+    const key = ` agent ${++agents}`;
     let turns = 0;
     try {
       return await runStep(prompt, options, name, name, tree ? cwdIn(tree, rest.cwd) : rest.cwd, key, (text, until) => {
         const start = turns++ === 0 ? "fresh" : "kept";
-        if (key !== undefined) return deps.agent(text, { ...step, until, session: { key, start, ...placed } });
-        return deps.agent(text, place ? { ...step, until, session: { start, ...placed } } : { ...step, until });
+        return deps.agent(text, { ...step, until, session: { key, start, ...(options.until === "turn" ? { once: true } : {}), ...placed } });
       });
     } finally {
       // The step's worktree ends with the step, unless the run stops or pauses.

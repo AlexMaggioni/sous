@@ -163,6 +163,18 @@ function BreakpointAnswer({ question, primary, answer, sending }: AnswerProps) {
   );
 }
 
+/** An agent that asked in its turn: the person steps into its session, in a terminal, to answer. */
+function JoinAnswer({ question }: { question: Question }) {
+  return (
+    <div className="mt-2 max-w-[560px]">
+      <p className="text-muted">Its question is in its session. Step into it in a terminal. The step goes on once you leave.</p>
+      <div className="mt-2">
+        <CommandBox command={commandOf(words.join(question.runId, question.step ?? "agent"))} label="Copy the join command" />
+      </div>
+    </div>
+  );
+}
+
 /** What the asking agent did before it asked: its last lines, read only once opened. */
 function BeforeAsking({ run, step }: { run: RunPage; step: Step }) {
   const [open, setOpen] = useState(false);
@@ -250,8 +262,8 @@ export function QuestionPanel({
           </div>
         </div>
       )}
-      {step && step.kind === "agent" && <BeforeAsking run={run} step={step} />}
-      {question.breakpoint ? <BreakpointAnswer {...props} /> : question.kind === "confirm" ? <ConfirmAnswer {...props} /> : question.kind === "select" && question.choices?.length ? <SelectAnswer {...props} /> : <InputAnswer {...props} />}
+      {question.answeredBy === "join" ? <JoinAnswer question={question} /> : step && step.kind === "agent" && <BeforeAsking run={run} step={step} />}
+      {question.answeredBy === "join" ? null : question.breakpoint ? <BreakpointAnswer {...props} /> : question.kind === "confirm" ? <ConfirmAnswer {...props} /> : question.kind === "select" && question.choices?.length ? <SelectAnswer {...props} /> : <InputAnswer {...props} />}
       {error !== null && (
         <div className="mt-3">
           <Refusal error={error} />

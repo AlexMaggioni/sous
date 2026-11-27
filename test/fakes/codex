@@ -30,7 +30,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { appendLog, debug, decide, limitRule, loginPresent, mcpSummary, personLine, readJsonLines, sessionMessages, waitFor, makeEdits } from "./lib.mjs";
+import { appendLog, debug, decide, limitRule, loginPresent, mcpSummary, personLine, personStays, readJsonLines, sessionMessages, waitFor, makeEdits } from "./lib.mjs";
 
 const VERSION = process.env.FAKE_VERSION ?? "0.169.0";
 const argv = process.argv.slice(2);
@@ -58,6 +58,7 @@ if (subcommand === "resume") {
     process.stderr.write(`No saved session found with ID ${threadArg ?? ""}. Run \`codex resume\` without an ID to choose from existing sessions.\n`);
     process.exit(1);
   }
+  await personStays();
   const person = personLine();
   if (person !== "") appendFileSync(file, `${JSON.stringify({ role: "user", text: person })}\n`);
   const at = argv.findIndex((arg) => arg === "-C" || arg === "--cd");

@@ -1,0 +1,343 @@
+$ sous run join --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "join",
+  "cwd": "<tmp>/scenario-join/sous-home/scratch/<run-1>",
+  "log": "<tmp>/scenario-join/sous-home/logs/<run-1>.log",
+  "status": "starting",
+  "asks": 0,
+  "lastRuns": {
+    "count": 0,
+    "seconds": "<seconds>",
+    "tokens": 0
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits until the run ends, pauses or asks"
+    },
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
+}
+
+$ sous wait <run-1> --json
+exit 4
+{
+  "runId": "<run-1>",
+  "workflow": "join",
+  "status": "asks",
+  "questions": [
+    {
+      "id": "<run-1>--1",
+      "step": "builder",
+      "prompt": "\"builder\" needs you in its session.",
+      "kind": "input",
+      "breakpoint": false,
+      "askedAt": "<time>",
+      "answeredBy": "join"
+    }
+  ],
+  "cwd": "<tmp>/scenario-join/sous-home/scratch/<run-1>",
+  "notes": [
+    "\"builder\" needs the person, in its session. Ask them to run sous join <run-1> builder in a terminal of their own. The step goes on once they leave it."
+  ],
+  "next": [
+    {
+      "call": "sous wait <run-1> --json",
+      "does": "waits again once the answer is in"
+    }
+  ]
+}
+
+$ sous status
+exit 0
+needs you
+  <run-1>  join  asks: "builder" needs you in its session.
+    sous join <run-1> builder
+service not running
+
+$ sous inbox
+exit 0
+<run-1>--1  join  <n>s ago
+  "builder" needs you in its session.
+  sous join <run-1> builder
+
+$ sous answer <run-1> v2
+exit 66
+stderr:
+<run-1>--1 is a question from the agent of step "builder". The person answers it inside the agent's session, with sous join, not with sous answer or the page.
+  change: Step into the session: sous join <run-1> builder. Answer the agent there, then leave.
+
+$ sous join <run-1> builder
+exit 66
+stderr:
+sous join opens the step's program in this terminal, and this shell has none.
+  change: Ask the person to run sous join <run-1> builder in a terminal of their own.
+
+$ sous join <run-1> builder
+exit 0
+"builder" asked you a question in its session.
+waiting for run <run-1> to hand the session of "builder" over.
+opening Claude Code in <tmp>/scenario-join/sous-home/scratch/<run-1>, in the session of "builder". Leave it to give the session back to the step.
+left the session of "builder" in <run-1>.
+"builder" has its answer and goes on in its session.
+next: sous step <run-1> builder --call 1 --json  (shows the step and what it did since)
+next: sous wait <run-1> --json  (waits until the run ends, pauses or asks)
+
+$ sous wait <run-1> --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "join",
+  "status": "completed",
+  "cwd": "<tmp>/scenario-join/sous-home/scratch/<run-1>",
+  "result": "JOIN KESTREL-5150",
+  "review": {
+    "result": "JOIN KESTREL-5150"
+  },
+  "notes": [],
+  "next": [
+    {
+      "call": "sous show <run-1> --json",
+      "does": "shows the run and its steps"
+    }
+  ]
+}
+
+$ sous show <run-1>
+exit 0
+join  <run-1>
+status    completed
+place     none  <tmp>/scenario-join/sous-home/scratch/<run-1>
+started   <time>  by cli
+program   Claude Code 2.1.330  <repo>/test/fakes/claude
+account   Claude Code: default, Claude Code's own login in ~/.claude
+account   Codex: default, Codex's own login in ~/.codex
+tokens    300  in <n>s
+steps
+  done  builder  (<n>s, 150 tokens)
+  done  builder  (<n>s, 150 tokens)
+result
+JOIN KESTREL-5150
+
+$ sous show <run-1> --full --json
+exit 0
+{
+  "runId": "<run-1>",
+  "workflow": "join",
+  "status": "completed",
+  "word": "completed",
+  "cwd": "<tmp>/scenario-join/sous-home/scratch/<run-1>",
+  "startedAt": "<startedAt>",
+  "seconds": "<seconds>",
+  "tokens": 300,
+  "steps": [
+    {
+      "label": "builder",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    },
+    {
+      "label": "builder",
+      "status": "done",
+      "seconds": "<seconds>",
+      "tokens": 150
+    }
+  ],
+  "questions": [],
+  "record": {
+    "runId": "<run-1>",
+    "workflow": "join",
+    "file": "<tmp>/scenario-join/project/.sous/workflows/join.js",
+    "args": {},
+    "place": "none",
+    "cwd": "<tmp>/scenario-join/sous-home/scratch/<run-1>",
+    "projectDir": "<tmp>/scenario-join/project",
+    "priority": "user",
+    "origin": "cli",
+    "createdAt": "<createdAt>",
+    "through": {
+      "kind": "person"
+    },
+    "workflowHash": "c34c054d00f4cca93f610c7f91c22b31b4e1863b91cefc7d309a9f8ac86b917d",
+    "accounts": {
+      "claude": {
+        "name": "default",
+        "folder": null
+      },
+      "codex": {
+        "name": "default",
+        "folder": null
+      }
+    },
+    "programs": {
+      "claude": {
+        "path": "<repo>/test/fakes/claude",
+        "version": "2.1.330"
+      }
+    }
+  },
+  "state": {
+    "runId": "<run-1>",
+    "workflowName": "join",
+    "args": {},
+    "cwd": "<tmp>/scenario-join/sous-home/scratch/<run-1>",
+    "effectiveCwd": "<tmp>/scenario-join/sous-home/scratch/<run-1>",
+    "runtime": {
+      "engineVersion": "0.1.0",
+      "node": "<node>",
+      "v8": "<v8>",
+      "pathFormat": 1,
+      "inputsFormat": 2,
+      "checkpointInputsFormat": 2
+    },
+    "resume": {
+      "format": "identity-v1"
+    },
+    "eventStreamId": "<eventStreamId>",
+    "eventSeq": 16,
+    "checkpointsTaken": [
+      {
+        "callIndex": 1,
+        "kind": "input",
+        "decision": "joined",
+        "source": "live"
+      }
+    ],
+    "callsAllocated": 3,
+    "limits": {
+      "concurrency": 8,
+      "agentRetries": 2
+    },
+    "status": "completed",
+    "phases": [],
+    "agents": [
+      {
+        "id": 1,
+        "label": "builder",
+        "prompt": "JOIN-ASK Pick the API, then build it.",
+        "status": "done",
+        "callIndex": 0,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "{\"status\":\"question\",\"result\":null,\"message\":\"Which API should I call?\"}",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "{\"status\":\"question\",\"result\":null,\"message\":\"Which API should I call?\"}",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "session": {
+          "sessionId": "<id-1>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "cwd": "<tmp>/scenario-join/sous-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "instructions": "Task label: builder",
+          "costGauge": 0.0012,
+          "callIndex": 0,
+          "label": "builder",
+          "keptOpen": true
+        },
+        "endedAt": "<endedAt>"
+      },
+      {
+        "id": 2,
+        "label": "builder",
+        "prompt": "Continue the task.",
+        "status": "done",
+        "callIndex": 2,
+        "scope": "<run-1>",
+        "startedAt": "<startedAt>",
+        "history": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "{\"status\":\"done\",\"result\":\"JOIN KESTREL-5150\",\"message\":\"fake-message\"}",
+            "timestamp": "<timestamp>"
+          }
+        ],
+        "resultPreview": "{\"status\":\"done\",\"result\":\"JOIN KESTREL-5150\",\"message\":\"fake-message\"}",
+        "tokens": 150,
+        "usage": {
+          "input": 120,
+          "output": 30,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 150,
+          "cost": 0.0012
+        },
+        "provenance": {
+          "source": "live",
+          "continuation": {
+            "reattached": true,
+            "method": "resume"
+          }
+        },
+        "session": {
+          "sessionId": "<id-1>",
+          "backendId": "claude",
+          "poolKey": "claude",
+          "cwd": "<tmp>/scenario-join/sous-home/scratch/<run-1>",
+          "reopen": {
+            "load": true,
+            "resume": true,
+            "list": true,
+            "fork": true
+          },
+          "instructions": "Task label: builder",
+          "costGauge": 0.0024,
+          "callIndex": 2,
+          "label": "builder",
+          "keptOpen": true
+        },
+        "endedAt": "<endedAt>"
+      }
+    ],
+    "logs": [
+      "Logs persisted to <tmp>/scenario-join/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
+    ],
+    "result": "JOIN KESTREL-5150",
+    "tokenUsage": {
+      "input": 240,
+      "output": 60,
+      "total": 300,
+      "cost": 0.0024,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "startedAt": "<startedAt>",
+    "updatedAt": "<updatedAt>",
+    "completedAt": "<completedAt>",
+    "durationMs": "<durationMs>"
+  },
+  "notes": [],
+  "next": []
+}
+
+fake requests (sorted):
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": every part of the task is finished, parts it leaves for a later turn included, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. When you end this turn with any part left, even because the task said to stop here, the status is \\\"working\\\". Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--resume=<id-1>","--setting-sources=user,project,local"],"cwd":"<tmp>/scenario-join/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":true,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": every part of the task is finished, parts it leaves for a later turn included, and result holds the answer. \"working\": there is more to do, and message says what is left. When you end this turn with any part left, even because the task said to stop here, the status is \"working\". Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":[],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: builder","skills":null,"login":[],"prompt":"Continue the task.","rule":1,"outcome":"answer","pid":"<pid>"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": every part of the task is finished, parts it leaves for a later turn included, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. When you end this turn with any part left, even because the task said to stop here, the status is \\\"working\\\". Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-join/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": every part of the task is finished, parts it leaves for a later turn included, and result holds the answer. \"working\": there is more to do, and message says what is left. When you end this turn with any part left, even because the task said to stop here, the status is \"working\". Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":[],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: builder","skills":null,"login":[],"prompt":"JOIN-ASK Pick the API, then build it.","rule":0,"outcome":"answer","pid":"<pid>"}
+{"program":"claude","byHand":true,"sessionId":"<id-1>","cwd":"<tmp>/scenario-join/sous-home/scratch/<run-1>","args":["--resume","<id-1>","--append-system-prompt","Task label: builder"],"person":"I stepped in. Keep this word in mind: KESTREL-5150.","pid":"<pid>"}

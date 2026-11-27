@@ -1,8 +1,8 @@
 # The sous guide
 
 `sous` runs saved workflows on this machine, in the background. A run keeps going when the terminal
-closes. It asks its questions through an inbox, pauses on a failed step, and waits out the
-subscription limit. A service starts scheduled runs and resumes paused ones.
+closes. When an agent needs you, `sous join` opens its session in your terminal. A run pauses on a
+failed step and waits out the subscription limit. A service starts scheduled runs and resumes paused ones.
 
 Install it with `npm install --global @sous-run/cli`. The README has the details. `sous --version` prints the version, and `sous
 update` installs the latest one with the package manager that installed sous. `sous update
@@ -147,10 +147,14 @@ A script has these steps (see also [the engine README](../packages/engine/README
   - `until`, `"done"` by default or `"turn"`. A step runs turns in its session until the agent
     reports `done`. Each turn answers with a status: `done` with its result, `working` when there
     is more to do (sous sends `Continue the task.`), or `question` when the agent needs the
-    person. A question waits in the inbox, and the person answers it inside the agent's session
-    with `sous join`, which is not built yet. `sous answer` and the page refuse it. With
-    `until: "turn"` the step ends with its one turn and returns its text or its schema's value.
-  - `ask`, `true` by default. `ask: false` takes `question` out of the status.
+    person. A turn that calls its program's own question tool, such as Claude Code's
+    `AskUserQuestion`, ends as a question too. The step then waits for the person, who steps into
+    its session with `sous join` and answers there, as in
+    [Stepping into a session](#stepping-into-a-session). `sous answer` and the page refuse such a
+    question. With `until: "turn"` the step ends with its one turn and returns its text or its
+    schema's value.
+  - `ask`, `true` by default. `ask: false` takes `question` out of the status and the question
+    tool out of the program, so the step never waits for the person.
   - `check`, run when the agent reports `done`: a command, a function, or a list of them, in
     order. A command runs as a code step labelled `<label>: check`, in the step's folder, and
     passes when it exits 0. A function gets the result and the round, and returns `true`,
@@ -195,7 +199,6 @@ A script has these steps (see also [the engine README](../packages/engine/README
 - `agent(prompt, options)` is one send on a fresh session that no later step uses. It takes a
   handle's options and a send's options, and `place: "worktree"` (see [Places](#places)). Its
   `label` may repeat.
-- An agent step does not stop to ask the person. `ask` has no effect yet.
 - Code steps: `sh(command)`, `js(source, input)`, `py(source, input)`, `run(file)` and
   `waitUntil(command, { every })`. They run on this machine, count no tokens and take no agent
   slot. Each returns `{ code, stdout, stderr, result }`. A non-zero exit fails the step unless
@@ -481,11 +484,12 @@ the service resumes it. `sous show` prints it, and `sous doctor` checks the acco
 | `sous pause <run>`, `sous resume <run> [--latest \| --same]` | finish the running steps and start nothing new; go on from there |
 | `sous stop <run>` | end the run. sous commits what is left in its worktrees and removes their folders. The branches stay, unless they never moved. |
 | `sous stop <run> --step <name>` | stop one running step, by the name `sous log` gives it, such as `"ticket A: implementer"`. The run pauses on it, and `sous resume` goes on with it in its session. |
+| `sous join <run> <step> [--call N]` | step into an agent step's session in this terminal, as in [Stepping into a session](#stepping-into-a-session) |
 | `sous tell <run> --step <name> "<message>" [--call N]` | give a running agent step a message, which it reads after its current tool call. The step goes on. The step is its label or its name in `sous log`, as `sous step` takes it. Each running call of the step gets it, and `--call N` tells only the Nth call, counted as `sous step --call` counts them. The reply's `calls` lists each call told with its `step` name, its `call` number and its `delivery`. The reply's `delivery` is `delivered`, or `pending` while the step has not read it within 5 seconds. A code step fails with `step_takes_no_message`, a step that does not run now with `step_not_running`, and a step in a turn that takes no message for a moment, such as a compact, or between two turns, with `turn_not_steerable`. |
 | `sous resume <run> --note "<message>" [--step <name>]` | resume, and add the message to the prompt of the first agent call that runs. `--step` gives it to that step's first call instead, by its label or its name in `sous log`, or by a label the workflow's text writes for a step the run has not reached yet, the new text with `--latest`. A name in neither exits 65 with `no_such_step`, a code step exits 66 with `step_takes_no_message`, and the run stays paused. When no agent call took the note, `sous log` says it reached no step. When the step already finished, a note says the message reaches it only if the workflow calls it again. The step's activity shows a `note` line, and the `resume` line in `events.jsonl` holds the message. A run that runs already does not resume, and the reply gives the `sous tell` call instead. |
 | `sous rerun <run> [--reuse]` | the same workflow with the same inputs. `--reuse` keeps the results of the steps you did not edit and works in the same place. |
 | `sous run`, `rerun` or `resume` with `--let-agent-answer` | lets agents answer the run's questions for people, and its nested runs' questions. Never its breakpoints. A rerun does not carry it over. |
-| `sous wait <run> [--timeout N]` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer, 5 still running after `--timeout N` seconds. The run goes on after a timeout. An agent's wait, or a step's, has a timeout of 110 seconds when it gives none. A person's waits as long as it takes. In a terminal it asks the run's questions itself, so 4 comes only off a terminal or with `--json`. |
+| `sous wait <run> [--timeout N]` | wait until the run ends, pauses or asks. Exit 0 done, 1 failed, 2 paused, 3 stopped, 4 waits for an answer, 5 still running after `--timeout N` seconds. The run goes on after a timeout. An agent's wait, or a step's, has a timeout of 110 seconds when it gives none. A person's waits as long as it takes. In a terminal it asks the run's questions itself, and offers to step into the session of an agent that needs you, so 4 comes only off a terminal or with `--json`. |
 | `sous status [--since 3d] [--line] [--all]` | what needs you, what runs, what waits to resume on its own, and what finished. Runs that ended show for the last 24 hours, or for the `--since` time. A failed or stopped run that ended before that counts only in a note, like a finished one. Each list shows 20 entries, or all with `--all`. `--line` prints one line for an agent's session start, or nothing when nothing needs you. |
 | `sous gc [--dry-run]` | remove sous's merged branches, and their worktrees |
 | `sous discard <run> --yes` | delete the run's branches and worktrees, merged or not. Without `--yes` it lists them, deletes nothing and exits 0. A running run is refused: stop it first. |
@@ -652,6 +656,35 @@ what is left uncommitted as `sous: uncommitted work of <label>`, skipping the pr
 removes the folder. The branch stays, unless it never moved. A run that pauses or fails keeps the
 folder, and a resume goes on in it, or makes it again from the branch. Outside a git repository
 the session or step works in the run's place, and the log says so.
+
+### Stepping into a session
+
+`sous join <run> <step>` opens the step's program, Claude Code or Codex, in this terminal, on the
+step's session and in its folder. The step is its label or its name in `sous log`, and `--call N`
+picks one of its calls, as `sous step` counts them. The program opens with the step's model,
+effort, permission mode, system text and MCP servers. A server the config no longer has is left
+out, and a note says so.
+
+- When the step's turn runs, sous waits until its program has the prompt, then stops that turn,
+  which ends as `working`. Every other step of the run goes on.
+- While the person is in the session, the step's next turn waits. When they leave the program,
+  the step goes on in the same session with `Continue the task.`, and the agent reads what they
+  said there.
+- When the agent asked, leaving answers its question. sous shows such a question as
+  `"<step>" needs you in its session.` with the `sous join` line, in `sous status`, `sous inbox`,
+  `sous wait`, the run's log, the notice and the page. The agent's own words stay in its session.
+- `sous wait` in a terminal offers to step in when an agent needs you. `n` leaves the step
+  waiting.
+- Ctrl-C while sous waits for the session stops the wait and opens nothing. The step keeps its
+  session.
+- The page shows the `sous join` line to copy, on the question and in the step's panel, which
+  also names the session's program, id and folder.
+
+`sous join` needs a terminal. Without one, or from a step of a run, it exits 66 with
+`no_person_here`. It also exits 66 with `step_has_no_session` for a code step or a step that has
+not opened its session yet, `session_joined` when someone is in the session already, and
+`no_program` when sous cannot find or start the step's program. A step the run never had exits 65
+with `no_such_step`.
 
 ## Schedules and the service
 

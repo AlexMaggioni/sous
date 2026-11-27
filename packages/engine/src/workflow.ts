@@ -462,6 +462,9 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
 export interface StepSession {
   key?: string;
   start: "fresh" | "kept" | "fork";
+  /** True for a one-turn step's key. Its turns go on in its session only within the step, after
+   *  the person stepped in or the agent asked, so the session is not kept open for a later step. */
+  once?: boolean;
   /** The place the step asked for. Its inputs record it, whether or not sous could make it. */
   place?: "worktree";
   /** The folder of the worktree the step works in, which turns/session.ts made. */
@@ -951,6 +954,8 @@ async function runLevel<T>(
     // A kept turn goes on in its key's session. With no entry yet, it is the session's first turn.
     // A fork's turn finds its parent's session there until its own first turn settles, and forks it.
     const sessionKey = agentOptions.session?.key;
+    // Whether the step keeps its session open for a later turn, which a one-turn step does not.
+    const keepsOpen = sessionKey !== undefined && agentOptions.session?.once !== true;
     const start = agentOptions.session?.start;
     const kept = start !== undefined && start !== "fresh" && sessionKey !== undefined ? sessions.get(sessionKey) : undefined;
     const forking = kept?.forked === true;
@@ -1156,6 +1161,8 @@ async function runLevel<T>(
               label,
               phase: assignedPhase,
               keptOpen,
+              // A handle's key is its label. agent()'s key starts with a space, so no script names it.
+              ...(sessionKey !== undefined && !sessionKey.startsWith(" ") ? { handle: sessionKey } : {}),
             })
           : undefined;
 
@@ -1209,7 +1216,7 @@ async function runLevel<T>(
         const session = slot
           ? sessionRecord(
               slot,
-              sessionKey !== undefined ||
+              keepsOpen ||
                 isProviderUsageLimit(workflowError) ||
                 isAuthRequired(workflowError),
             )
@@ -1323,7 +1330,7 @@ async function runLevel<T>(
                   ...(continueFromSession === undefined ? {} : { continueFromSession }),
                   // A kept turn sends this step's prompt into its session. Only a resumed, interrupted turn gets the
                   // runner's resume instruction. A session's turn keeps its program open until its step ends (endSession).
-                  ...(keptRef ? { continueWithPrompt: true, ...(forking ? { fork: true } : {}) } : {}), ...(sessionKey === undefined ? {} : { hold: true }),
+                  ...(keptRef ? { continueWithPrompt: true, ...(forking ? { fork: true } : {}) } : {}), ...(keepsOpen ? { hold: true } : {}),
                   callIndex,
                   callHash,
                   callPath, callInputsHash,
@@ -1331,7 +1338,7 @@ async function runLevel<T>(
                     const copied = slot.sealed ? undefined : cloneTelemetry(ref);
                     if (!copied) return;
                     slot.sessionRef = copied;
-                    const session = sessionRecord(slot, sessionKey !== undefined);
+                    const session = sessionRecord(slot, keepsOpen);
                     if (session) guardTerminal("onTurnSession", () => options.onTurnSession?.(deepFreeze({ session, callIndex, scope: runId, ...callIds, ...(runCwd === undefined ? {} : { resolvedCwd: runCwd }) })));
                   },
                   onSessionCostGauge: (amount: number) => {
@@ -1412,7 +1419,7 @@ async function runLevel<T>(
             const resultSnapshot = strictSnapshot(result, `agent "${label}" result`, label);
             recordTokens(result, slot.usage);
             const usage = terminalUsage();
-            const session = sessionRecord(slot, sessionKey !== undefined);
+            const session = sessionRecord(slot, keepsOpen);
             if (session) state.agentSessions.push(session);
             settleSession(session, usage?.cost, slot.usage?.cost);
             const entry = deepFreeze({
@@ -2160,8 +2167,9 @@ function checkSessionFields(options: AgentOptions): void {
   const session = options.session as unknown;
   if (session === undefined) return;
   if (session === null || typeof session !== "object" || Array.isArray(session)) refuse("session takes an object");
-  const { key, start, place, worktree, ...rest } = session as Record<string, unknown>;
-  if (Object.keys(rest).length > 0) refuse(`session takes key, start, place and worktree, not ${Object.keys(rest).join(", ")}`);
+  const { key, start, once, place, worktree, ...rest } = session as Record<string, unknown>;
+  if (Object.keys(rest).length > 0) refuse(`session takes key, start, once, place and worktree, not ${Object.keys(rest).join(", ")}`);
+  if (once !== undefined && typeof once !== "boolean") refuse("session.once is true or false");
   if (start !== "fresh" && start !== "kept" && start !== "fork") refuse('session.start is "fresh", "kept" or "fork"');
   if (key !== undefined && (typeof key !== "string" || key.trim() === "")) refuse("session.key is a label");
   if (start !== "fresh" && key === undefined) refuse(`a ${start === "fork" ? "forked" : "kept"} session needs a key`);

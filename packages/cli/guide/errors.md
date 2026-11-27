@@ -43,7 +43,10 @@ goes to stderr as the message, then `change:`, then `try:` with the call.
 | `home_not_writable` | sous can't write to its home. Under Codex the sandbox blocks it. Tell the person what `change` says. |
 | `started_by_people` | Only a person starts this workflow. Give them `forPerson` to type in their own terminal. |
 | `not_approved` | The workflow is new or changed since the person approved it. `call` shows the change. Show it to the person and ask. Once they agree, run `sous workflows approve <name> --by person --json`. |
-| `no_person_here` | A step of a run gave `--by person`. Leave it out. A step answers only a question open to anyone. The person answers the rest, and the run waits for them. |
+| `no_person_here` | A step of a run gave `--by person`. Leave it out. A step answers only a question open to anyone. The person answers the rest, and the run waits for them. `sous join` gives it with no terminal. Give the person the command. |
+| `step_has_no_session` | A code step, or an agent with no session yet. Wait, then join. |
+| `session_joined` | The person is in that session already. Wait until they leave. |
+| `no_program` | sous can't open the step's program. Tell the person what `change` says. |
 | `question_for_people` | The question is the person's. Show it to them, then make `call` with their answer. A step of a run gets no `call`: the run waits for the person. |
 | `needs_person` | Only the person decides this, such as approving a workflow. Ask them, then make `call`, which adds `--by person`. |
 | `broken_record` | A file sous keeps, such as a run's event log or `approvals.json`, does not parse. Tell the person. Do not fix, move or delete it yourself. |

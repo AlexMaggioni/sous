@@ -16,17 +16,17 @@ export type Until = "turn" | "done" | StepUntil;
 const LIMITS = ["maxRepairs", "maxTurns", "turnsLeft"];
 
 /** A step's until as the runner gets it. A step with no until runs one turn. */
-export function untilFields(until: Until | undefined): Pick<StepRequest, "untilDone" | "limits"> {
-  if (until === undefined || typeof until === "string") return until === "done" ? { untilDone: {} } : {};
+export function untilFields(until: Until | undefined): Pick<StepRequest, "untilDone" | "ask" | "limits"> {
+  if (until === undefined || typeof until === "string") return until === "done" ? { untilDone: true } : {};
   const { end, ask, ...limits } = until;
-  return { ...(end === "done" ? { untilDone: ask === undefined ? {} : { ask } } : {}), ...(Object.keys(limits).length ? { limits } : {}) };
+  return { ...(end === "done" ? { untilDone: true } : {}), ...(ask === false ? { ask } : {}), ...(Object.keys(limits).length ? { limits } : {}) };
 }
 
-/** What the call hash holds of a step's until: "done", and ask when it is false. The limits change
- *  no turn the model sees, so they stay out. */
+/** What the call hash holds of a step's until: "done", and ask when it is false, since both change
+ *  what the model sees. The limits change no turn the model sees, so they stay out. */
 export function untilHash(until: Until | undefined): { until?: "done"; ask?: false } {
-  const done = untilFields(until).untilDone;
-  return done ? { until: "done", ...(done.ask === false ? { ask: false as const } : {}) } : {};
+  const fields = untilFields(until);
+  return { ...(fields.untilDone ? { until: "done" as const } : {}), ...(fields.ask === false ? { ask: false as const } : {}) };
 }
 
 /** Refuses an until that is not "turn", "done" or the object form. */

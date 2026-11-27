@@ -192,8 +192,21 @@ export interface StepDetail {
   output?: string;
   result?: unknown;
   failure?: string;
+  /** An agent step's session, once its program opened one: its id, its program, the folder it
+   *  works in, and the command that steps into it. A turn of a session() handle names the handle. */
+  session?: StepSession;
   /** Everything the step did, oldest first, with secrets hidden. */
   activity: Activity[];
+}
+
+export interface StepSession {
+  id: string;
+  /** The program's name, such as Claude Code. */
+  program: string;
+  folder: string;
+  /** The command that steps into the session, such as `sous join r-1 impl`. */
+  join: string;
+  handle?: string;
 }
 
 export interface Activity {

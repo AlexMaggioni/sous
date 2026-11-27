@@ -17,6 +17,12 @@ export type RefusalCode =
   | "no_person_here"
   | "step_takes_no_message"
   | "turn_not_steerable"
+  /** sous join named a code step, or a step whose program has not opened its session yet. */
+  | "step_has_no_session"
+  /** sous join named a session a person stepped into already. */
+  | "session_joined"
+  /** sous join found no copy of the step's program to open. */
+  | "no_program"
   | "run_is_running"
   /** A run that has not completed, failed or stopped, which only an ended run's removal refuses. */
   | "run_not_ended"

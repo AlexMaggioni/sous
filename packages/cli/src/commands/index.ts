@@ -8,6 +8,7 @@ import { cmdAnswer, cmdInbox } from "./questions.js";
 import { cmdList, cmdLog, cmdShow, cmdStatus, cmdWait } from "./reads.js";
 import { cmdRerun, cmdResume, cmdRun } from "./runs.js";
 import { cmdServe } from "./serve.js";
+import { cmdJoin } from "./join.js";
 import { cmdStep } from "./step.js";
 import { cmdDaemon, cmdSchedule } from "./service.js";
 import { cmdAccount, cmdDoctor, cmdGuide, cmdHook, cmdSkill } from "./setup.js";
@@ -43,6 +44,14 @@ export interface Machine {
   open(url: string): void;
   /** Wait for Ctrl-C, or the signal that ends the process. */
   untilStopped(): Promise<void>;
+  /** Call `stop` on Ctrl-C or the signal that ends the process, until the function it gives is called. */
+  onStop(stop: () => void): () => void;
+  /** Run a program in this terminal, in its folder and with its environment, and give its exit
+   *  code, or 127 when it does not start. Ctrl-C goes to the program, and sous waits for it. */
+  openProgram(program: { path: string; args: string[]; env: Record<string, string | undefined>; cwd: string }): Promise<number>;
+  /** A new folder only this user reads, for files that may hold secrets, such as an MCP config.
+   *  `write` gives the file's path. */
+  privateFolder(): { write(name: string, text: string): string; remove(): void };
   out(line: string): void;
   /** Text as it comes, such as a log, with no line end added. */
   write(text: string): void;
@@ -101,6 +110,7 @@ export const COMMANDS: Record<string, CommandSpec> = {
   resume: { run: cmdResume, flags: takes("latest", "same", "budget", "note", "step", "wait", "let-agent-answer", "by", "json") },
   stop: { run: cmdStop, flags: takes("step", "by", "json") },
   tell: { run: cmdTell, flags: takes("step", "call", "by", "json") },
+  join: { run: cmdJoin, flags: takes("call", "by", "json") },
   rerun: { run: cmdRerun, flags: takes("place", "reuse", "set", "model", "budget", "wait", "let-agent-answer", "by", "json"), inputs: true },
   workflows: { run: cmdWorkflows, flags: takes("project", "all", "by", "diff", "full", "json") },
   agents: { run: cmdAgents, flags: takes("project", "json") },

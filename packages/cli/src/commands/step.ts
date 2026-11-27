@@ -25,6 +25,11 @@ function stepText(view: Shown): string[] {
   if (view.command !== undefined) lines.push(`command: ${view.command}`);
   if (view.prompt !== undefined) lines.push(`prompt: ${oneLine(view.prompt, 200)}`);
   if (view.failure !== undefined) lines.push(`failure: ${view.failure}`);
+  if (view.session) {
+    const { session } = view;
+    lines.push(`session: ${session.id} (${session.program}${session.handle ? `, handle ${session.handle}` : ""}) in ${session.folder}`);
+    lines.push(`step in: ${session.join}`);
+  }
   if (view.activity.length) lines.push("activity:");
   for (const line of view.activity) lines.push(`  ${line.at.slice(11, 19)} ${line.kind.padEnd(11)} ${line.tool ? `${line.tool}: ` : ""}${oneLine(line.text, 300)}`);
   return lines;

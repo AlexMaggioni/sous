@@ -12,11 +12,11 @@ import { runQuestions, answerQuestion } from "../../src/runs/run.js";
 import { readState } from "../../src/runs/store.js";
 import { runWorker } from "../../src/runs/worker.js";
 import { createSteps } from "../../src/steps/steps.js";
-import { PERSON, writeAnswer, type InnerRunner } from "../../src/testing.js";
+import { PERSON, testHome, writeAnswer, type InnerRunner } from "../../src/testing.js";
 import { isStepFailedPause, runWorkflow, type JournalEntry, type WorkflowRunOptions } from "../../src/workflow.js";
 import { fakePlace, onFakes, wentOn, type FakePlace } from "../helpers/fake-steps.js";
 import { journalResume } from "../helpers/journal-resume.js";
-import { quiet, setup } from "../runs/fixture.js";
+import { boom, quiet, setup } from "../runs/fixture.js";
 
 for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) delete process.env[name];
 
@@ -221,7 +221,7 @@ describe("a resume", () => {
 });
 
 describe("a question", () => {
-  it("waits on one join row with the agent's message, refuses the inbox, and sends Continue the task. once answered", async () => {
+  it("waits on one join row that names the step, refuses the inbox, and sends Continue the task. once answered", async () => {
     const workflow = `${meta}\nconst s = session({ label: 'impl', model: '${MODEL}' })\nreturn await s.send('Build the endpoint.')`;
     const { paths, projectDir } = setup({ loop: workflow });
     const seen: Array<{ prompt: string; resumed?: string }> = [];
@@ -244,7 +244,8 @@ describe("a question", () => {
       if (!question) await new Promise((resolve) => setTimeout(resolve, 20));
     }
     assert.ok(question, "the step asks");
-    assert.equal(question.prompt, "Return 404 or an empty list?");
+    // The person reads the agent's message in its session. The question names the step.
+    assert.equal(question.prompt, '"impl" needs you in its session.');
     assert.equal(question.answeredBy, "join");
     assert.equal(question.step, "impl");
     assert.throws(
@@ -261,5 +262,41 @@ describe("a question", () => {
     const state = readState(paths, record.runId);
     const kinds = (state?.journal ?? []).map((entry) => entry.kind);
     assert.deepEqual(kinds, ["agent", "checkpoint", "agent"]);
+  });
+
+  it("replays the answered join row on a resume, and does not wait on it again", async () => {
+    const workflow = `${meta}\nconst s = session({ label: 'impl', model: '${MODEL}' })\nreturn await s.send('Build the endpoint.')`;
+    const { paths, projectDir } = testHome({ loop: workflow }, { retries: 0 });
+    const seen: string[] = [];
+    let crash = true;
+    const inner: InnerRunner = {
+      async run(prompt, request) {
+        seen.push(prompt);
+        if (!request.continueFromSession) request.onSessionOpen?.({ sessionId: "s1", backendId: "claude", cwd: request.cwd!, reopen: { load: true, resume: true, list: true } });
+        if (seen.length === 1) return { status: "question", result: null, message: "Return 404 or an empty list?" };
+        if (crash) throw boom();
+        return { status: "done", result: "404 it is.", message: null };
+      },
+    };
+    const record = createRun(paths, { who: PERSON, workflow: "loop", projectDir, inputs: {} });
+    const first = runWorker(record.runId, "start", { paths, inner, pollMs: 20, log: quiet });
+    let question: ReturnType<typeof runQuestions>[number] | undefined;
+    for (let waited = 0; !question && waited < 15_000; waited += 20) {
+      question = runQuestions(paths, record.runId)[0];
+      if (!question) await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.ok(question, "the step asks");
+    writeAnswer(paths, question, "joined");
+    assert.equal((await first)?.status, "paused", "the turn after the answer failed");
+    assert.deepEqual(seen, ["Build the endpoint.", CONTINUE]);
+
+    crash = false;
+    const resumed = await runWorker(record.runId, "resume", { paths, inner, pollMs: 20, log: quiet });
+    assert.equal(resumed?.status, "completed");
+    assert.equal(resumed?.result, "404 it is.");
+    assert.deepEqual(seen.slice(2), [CONTINUE], "the question's turn and the join row replay, and only the failed turn runs again");
+    assert.deepEqual(runQuestions(paths, record.runId), []);
+    const kinds = (readState(paths, record.runId)?.journal ?? []).map((entry) => entry.kind);
+    assert.deepEqual(kinds, ["agent", "checkpoint", "agent"], "one join row");
   });
 });

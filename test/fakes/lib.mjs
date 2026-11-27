@@ -135,7 +135,9 @@
 //   sessionId, cwd, args, person, pid }, and exits 0 without reading stdin. args is every
 //   argument after the program's name. cwd is Codex's -C folder, else the folder the fake runs
 //   in. An empty FAKE_PERSON adds no message. An unknown id prints to stderr and exits 1, as a
-//   real resume does.
+//   real resume does. With FAKE_PERSON_WAIT set to a file name, the person takes their time:
+//   the fake writes "<name>.in" next to FAKE_LOG once it is open, then waits until a file of
+//   that name exists there before it types the line and leaves.
 
 import { execSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -168,6 +170,16 @@ function readLines() {
         return {};
       }
     });
+}
+
+/** A person who takes their time: with FAKE_PERSON_WAIT set, say the person is in, then wait
+ *  until the file of that name exists next to FAKE_LOG. */
+export async function personStays(env = process.env) {
+  const name = env.FAKE_PERSON_WAIT;
+  if (!name) return;
+  const dir = dirname(env.FAKE_LOG ?? join(process.cwd(), "fake.log"));
+  writeFileSync(join(dir, `${name}.in`), String(process.pid));
+  while (!existsSync(join(dir, name))) await new Promise((resolve) => setTimeout(resolve, 50));
 }
 
 /** What the person types by hand: FAKE_PERSON, else a line with a canary word for recall. */

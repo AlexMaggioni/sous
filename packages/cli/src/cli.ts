@@ -4,7 +4,8 @@
 // holds the only machine access of the cli.
 
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, openSync, readFileSync, realpathSync } from "node:fs";
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { constants, tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
@@ -129,6 +130,42 @@ function machine(): Machine {
         process.on("SIGINT", stop);
         process.on("SIGTERM", stop);
       }),
+    onStop(stop) {
+      process.on("SIGINT", stop);
+      process.on("SIGTERM", stop);
+      return () => {
+        process.off("SIGINT", stop);
+        process.off("SIGTERM", stop);
+      };
+    },
+    openProgram: (program) =>
+      new Promise((done) => {
+        // The terminal sends Ctrl-C to sous as well as to the program. The program handles it.
+        const ignore = () => {};
+        process.on("SIGINT", ignore);
+        let ended = false;
+        const end = (code: number) => {
+          if (ended) return;
+          ended = true;
+          process.off("SIGINT", ignore);
+          done(code);
+        };
+        const child = spawn(program.path, program.args, { cwd: program.cwd, env: program.env, stdio: "inherit" });
+        child.on("error", () => end(127));
+        child.on("exit", (code, signal) => end(code ?? 128 + (signal ? constants.signals[signal] : 0)));
+      }),
+    privateFolder() {
+      // mkdtemp makes the folder readable by this user only.
+      const dir = mkdtempSync(join(tmpdir(), "sous-join-"));
+      return {
+        write(name, text) {
+          const file = join(dir, name);
+          writeFileSync(file, text, { mode: 0o600 });
+          return file;
+        },
+        remove: () => rmSync(dir, { recursive: true, force: true }),
+      };
+    },
     out: (line) => process.stdout.write(`${line}\n`),
     write: (text) => process.stdout.write(text),
     err: (line) => process.stderr.write(`${line}\n`),
@@ -201,6 +238,9 @@ sous runs saved workflows in the background.
         --step <name>                   stop one running step instead; the run pauses on it
   sous tell <run> --step <name> <msg>   give a running agent step a message it reads after its tool call
         --call n                        tell only the nth call of the step
+  sous join <run> <step>                step into an agent step's session in this terminal; the
+                                        step goes on in it when you leave, and nothing else stops
+        --call n                        the session of the nth call of the step
   sous rerun <run> [--name value ...]   start the same workflow again with the same inputs
         --reuse                         keep the results of the steps you did not edit, in the same place
         --budget N                      tokens one go of the new run may spend (default: the run's)

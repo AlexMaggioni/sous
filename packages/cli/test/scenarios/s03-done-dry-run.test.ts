@@ -115,7 +115,8 @@ describe("a step that runs until done, in a dry run", () => {
     const text = await world.sous("check", "done", "--dry-run", "--answers", join(world.projectDir, "answers.json"));
 
     assert.equal(text.code, 0, `${text.stdout}\n${text.stderr}`);
-    assert.match(text.stdout, /question {3}Which parser\?\n\s+answered {3}"stand-in answer" \(dry run\)/);
+    // An agent's question names the step. The person reads the message in the step's session.
+    assert.match(text.stdout, /question {3}"implementer" needs you in its session\.\n\s+answered {3}"stand-in answer" \(dry run\)/);
     assert.match(text.stdout, /dry run completed, with 2 agent steps answered by stand-ins/);
     assert.deepEqual(world.log(), []);
   });

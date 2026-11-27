@@ -279,6 +279,28 @@ describe("what needs you", () => {
     await userEvent.click(within(await panel("Approve the notes")).getByRole("button", { name: "Stop the run" }));
     await waitFor(() => expect(calls).toEqual([["answer", "q4", "stop"]]));
   });
+
+  test("an agent that asked in its turn shows the sous join line to copy, no answer box, and not its message", async () => {
+    const joining = runPage({
+      status: "needs",
+      statusText: "Needs you",
+      pauseReason: undefined,
+      can: CAN,
+      steps: [step(1, "build"), step(2, "impl", { kind: "agent", status: "running", endedAt: undefined, durationMs: undefined })],
+      questions: [ask("q5", "Which database should I use?", "input", { answeredBy: "join", step: "impl" })],
+    });
+    const { calls } = serve([joining]);
+    open("/runs/r1");
+    const box = await panel("This agent needs you");
+    expect(box).toHaveTextContent("Its question is in its session. Step into it in a terminal. The step goes on once you leave.");
+    expect(within(box).getByText("sous join r1 impl")).toBeInTheDocument();
+    expect(within(box).getByRole("button", { name: "Copy the join command" })).toBeInTheDocument();
+    expect(box).not.toHaveTextContent("Which database should I use?");
+    expect(within(box).queryByRole("textbox")).toBeNull();
+    expect(within(box).queryByRole("button", { name: "Answer" })).toBeNull();
+    expect(within(box).queryByText(/did before asking/)).toBeNull();
+    expect(calls).toEqual([]);
+  });
 });
 
 describe("the views and the URL", () => {
@@ -342,6 +364,28 @@ describe("a step's panel", () => {
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(router.state.location.search).toEqual({}));
     expect(screen.queryByRole("region", { name: "Details of build" })).toBeNull();
+  });
+
+  test("an agent step shows its session: program, id, folder, and the sous join line to copy", async () => {
+    const coder = step(1, "coder", { kind: "agent" });
+    const done = runPage({ status: "done", statusText: "Done", pauseReason: undefined, steps: [coder], flow: undefined, can: CAN });
+    const session = { id: "s-7f2c", program: "Claude Code", folder: "/tmp/parser/.sous/worktrees/coder", join: "sous join r1 coder", handle: "coder" };
+    serve([done], [detail("coder", { kind: "agent", command: undefined, output: undefined, prompt: "Fix the parser.", session })]);
+    open("/runs/r1?step=r1%3A1");
+    const drop = await screen.findByRole("region", { name: "Details of coder" });
+    // The panel shows first, then the step's detail once read.
+    await within(drop).findByText("Session");
+    for (const text of ["Claude Code", "s-7f2c", "/tmp/parser/.sous/worktrees/coder", "sous join r1 coder"]) expect(within(drop).getByText(text)).toBeInTheDocument();
+    expect(within(drop).getByRole("button", { name: "Copy the join command" })).toBeInTheDocument();
+  });
+
+  test("a code step shows no session", async () => {
+    serve([runPage()], [detail("build")]);
+    open("/runs/r1?step=%2Fa");
+    const drop = await screen.findByRole("region", { name: "Details of build" });
+    await within(drop).findByText("npm run build");
+    expect(within(drop).queryByText("Session")).toBeNull();
+    expect(within(drop).queryByRole("button", { name: "Copy the join command" })).toBeNull();
   });
 
   test("Escape leaves the panel open while the person types in it, so the draft stays", async () => {

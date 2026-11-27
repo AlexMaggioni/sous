@@ -210,7 +210,7 @@ class ScopeRun implements RunHooks {
     const open = this.ctx.questions.filter((q) => q.scope === this.scope.id);
     const given = this.ctx.answered.filter((q) => q.scope === this.scope.id);
     const taken = new Set<Question>();
-    const later = (i: number) => this.slots.slice(i + 1).some((s) => s.entry && ran(statusOf(s.entry))) || this.scopesAt.some((n) => n > i);
+    const later = (i: number) => this.slots.slice(i + 1).some((s) => s.entry && ran(s.entry.step.status)) || this.scopesAt.some((n) => n > i);
     this.slots.forEach((slot, i) => {
       const { leaf, node, entry } = slot;
       // In a run the agent moves to the tooltip, and a name made at run time shows as it ran.
@@ -225,13 +225,13 @@ class ScopeRun implements RunHooks {
       if (entry) {
         const before = (this.earlier.get(node) ?? []).sort((a, b) => a.at - b.at);
         if (before.length) leaf.calls = [...before.map((e) => e.step.key), entry.step.key];
-        const steps = [...before.flatMap((e) => [e.step, ...e.turns]), entry.step, ...entry.turns];
+        const steps = [...before.map((e) => e.step), entry.step];
         this.ctx.times.set(leaf, steps);
-        leaf.status = statusOf(entry);
+        leaf.status = entry.step.status;
         leaf.step = entry.step.key;
         const tries = entry.step.tries ?? 1;
         if (tries > 1) leaf.retries = `↻ ${tries - 1}${node.retries ? ` of ${node.retries}` : ""}`;
-        const ms = durationOf([entry.step, ...entry.turns], this.ctx.now);
+        const ms = durationOf([entry.step], this.ctx.now);
         if (ms !== null && ran(leaf.status)) leaf.duration = formatDuration(ms);
         const q = open.find((q) => q.step && (q.step === entry.step.name || q.step === entry.step.key));
         if (q) {
@@ -266,11 +266,7 @@ function asks(node: FlowStep, prompt: string): boolean {
   return line === node.label || line.startsWith(node.label);
 }
 
-function statusOf(entry: StepEntry): Status {
-  return entry.turns.length ? entry.turns[entry.turns.length - 1].status : entry.step.status;
-}
-
-/** How long a step and its answer turns took, or have run so far. */
+/** How long the steps took, or have run so far. */
 function durationOf(steps: Step[], now: number): number | null {
   let total = 0;
   let any = false;
@@ -323,9 +319,8 @@ function nestedBox(scope: RunScope, node: FlowStep | null, leaf: Leaf | null, w:
 function asRan(scope: RunScope, ctx: Ctx, w: Omit<Walk, "hooks">): Seq {
   const items: Part[] = scope.entries.map((e) => {
     if (e.t === "scope") return nestedBox(e.scope, null, null, w, ctx);
-    const steps = [e.step, ...e.turns];
-    const status = statusOf(e);
-    const ms = durationOf(steps, ctx.now);
+    const status = e.step.status;
+    const ms = durationOf([e.step], ctx.now);
     const tries = e.step.tries ?? 1;
     const leaf: Leaf = {
       t: "leaf",
@@ -338,7 +333,7 @@ function asRan(scope: RunScope, ctx: Ctx, w: Omit<Walk, "hooks">): Seq {
       ...(tries > 1 ? { retries: `↻ ${tries - 1}` } : {}),
       ...(status === "needs" ? { needs: true } : {}),
     };
-    ctx.times.set(leaf, steps);
+    ctx.times.set(leaf, [e.step]);
     return leaf;
   });
   return { t: "seq", key: `${w.path}/ran`, items };

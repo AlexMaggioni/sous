@@ -4,11 +4,10 @@
 // steps. ask and breakpoint wait as questions, under the label "checkpoint".
 import type { FlowStep, NestedRun, Step } from "../api/contract.ts";
 
-/** A run's step, with the answer turns of an asking agent, such as "triager (answer 1)". */
+/** A run's step. */
 export interface StepEntry {
   t: "step";
   step: Step;
-  turns: Step[];
   at: number;
 }
 
@@ -101,9 +100,6 @@ export function namesScope(node: FlowStep, scope: RunScope): boolean {
   return scope.workflow ? scope.workflow === node.workflow : scope.label === node.workflow;
 }
 
-/** "triager (answer 2)" is a turn of "triager". */
-const ANSWER = /^(.*) \(answer \d+\)$/;
-
 /**
  * The run's scopes, from the root: each with its steps and nested runs in the order they started.
  * Without `nested`, each nested run comes from the names of its steps, which the engine prefixes
@@ -135,15 +131,12 @@ export function runScopes(steps: Step[], nested: NestedRun[] = []): RunScope {
     s.label = names[names.length - 1];
     s.parent = byPrefix.get(names.slice(0, -1).join(" / ")) ?? rootId;
   }
-  // The steps, with each answer turn under the step it answers.
+  // The steps, each in its run.
   steps.forEach((step, i) => {
     const s = scopeOf(step.scope);
     if (s.id !== rootId && s.parent === undefined) s.parent = rootId;
     s.first = Math.min(s.first, i);
-    const answer = ANSWER.exec(step.label);
-    const asked = answer ? [...s.entries].reverse().find((e): e is StepEntry => e.t === "step" && e.step.label === answer[1]) : undefined;
-    if (asked) asked.turns.push(step);
-    else s.entries.push({ t: "step", step, turns: [], at: i });
+    s.entries.push({ t: "step", step, at: i });
   });
   // Each nested run in its parent, at its first step, and its parent's first step no later.
   const kids = [...scopes.values()].filter((s) => s.id !== rootId);

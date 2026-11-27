@@ -8,6 +8,10 @@
 // A test or the dry run gives `inner`, a runner of its own, and then no program starts.
 // Every turn asks its program to stay open. A call that does not hold (StepRequest.hold), or that
 // fails, closes it at its end. A held one stays open until release() or dispose().
+// A turn holds its session (runs/session-hold.ts) while it runs, and waits while a person who
+// stepped in with `sous join` holds it. join() hands a session to the person: a turn that runs
+// in it stops once its program has the prompt, and ends as a "working" row, JOINED, so the step
+// goes on with its next turn once the person leaves. Nothing else in the run stops.
 
 import type { TSchema } from "typebox";
 import {
@@ -37,6 +41,7 @@ import { stepLimitError, WorkflowError, WorkflowErrorCode } from "../errors.js";
 import { CONTINUE_PROMPT, readStatus, statusSchema, type TurnStatus } from "../turns/status.js";
 import { hostStopError, type HostPause } from "../host-pause.js";
 import type { SlotPool } from "../runs/slots.js";
+import type { Holder, SessionHolds } from "../runs/session-hold.js";
 import { checkImages, extractValidated, isSlash, REPORT_PROMPT, REPROMPT_TEXT, toMcpServer, validateValue, withNote } from "./answer.js";
 
 /** The runner a test or the dry run gives instead of the programs. It gets the planned step. */
@@ -81,6 +86,23 @@ export interface StepsOptions {
   /** A note from `sous resume --note`. It goes to the first agent call that runs, or to the first
    *  with the label `step`, in one of the runs or nested runs `scopes` when given. */
   note?: StepsNote;
+  /** The holds on sessions, so one process writes to a session at a time. Without them a turn
+   *  waits for no one, and join() still stops a turn that runs. */
+  holds?: SessionHolds;
+  /** Called when a turn waits because a person holds its session, with who holds it. */
+  onWait?: (event: { label?: string; sessionId: string; holder: Holder }) => void;
+}
+
+/** The row of a turn the person stepped into: the agent is still working, so the step sends its
+ *  next turn once the person leaves the session. */
+const JOINED = { status: "working", result: null, message: "The person stepped in." } as const;
+
+/** A turn that runs now in a session: its stop, whether its program has the prompt, and the pid
+ *  of a `sous join` waiting for it. */
+interface LiveTurn {
+  stop: AbortController;
+  delivered: boolean;
+  joiner?: number;
 }
 
 /** A note a resume gives one agent call. `step` is a label, and `scopes` the runs or nested runs
@@ -137,10 +159,47 @@ const toHistory = (entry: HistoryEntry): AgentHistoryEntry => ({
   timestamp: entry.at,
 });
 
-export function createSteps(options: StepsOptions): AgentRunner & { route(ask: StepAsk): StepRoute; placeOf(agentType: string): "worktree" | undefined; release(sessionId: string): Promise<void>; dispose(): Promise<void> } {
+/** How the step opened its program, for the host's copy of the session, so `sous join` opens it the same way. */
+const launchOf = (step: RoutePlan, call: StepRequest) => ({
+  ...(step.effort ? { effort: step.effort } : {}),
+  ...(call.mode ? { mode: call.mode } : {}),
+  ...(call.instructions ? { instructions: call.instructions } : {}),
+  ...(step.mcp?.length ? { mcp: [...step.mcp] } : {}),
+});
+
+export interface Steps extends AgentRunner {
+  route(ask: StepAsk): StepRoute;
+  placeOf(agentType: string): "worktree" | undefined;
+  release(sessionId: string): Promise<void>;
+  /** Hand the session to the `sous join` with pid `pid` (see the head of this file). */
+  join(runId: string, sessionId: string, pid: number): Promise<void>;
+  dispose(): Promise<void>;
+}
+
+export function createSteps(options: StepsOptions): Steps {
   const lookup = options.programs ?? (options.inner ? undefined : () => ({}));
   const programs = new Map<HarnessId, Promise<Adapter | { problem: string }>>();
   const noteFor = noteTaker(options.note);
+  const holds = options.holds;
+  // The turns that run now, by session, and the sessions join() hands over between turns.
+  const live = new Map<string, LiveTurn>();
+  const handing = new Set<string>();
+
+  /** Wait until nobody holds the session and no hand-over to a person is under way. */
+  async function free(runId: string, sessionId: string, label: string | undefined, signal: AbortSignal | undefined): Promise<void> {
+    let told = false;
+    for (;;) {
+      signal?.throwIfAborted();
+      const holder = holds?.held(runId, sessionId);
+      if (!holder && !handing.has(sessionId)) return;
+      // Another turn of this run may hold it too, such as a second send on one handle at once.
+      if (holder?.by === "join" && !told) {
+        options.onWait?.({ label, sessionId, holder });
+        told = true;
+      }
+      await pause(holds?.pollMs ?? 250, signal);
+    }
+  }
 
   /** Find the harness's program and check its version, once per run. */
   async function prepare(harness: HarnessId, where: FindOptions): Promise<Adapter | { problem: string }> {
@@ -190,19 +249,71 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
       if (!servers.some((existing) => existing.name === found.server.name)) servers.push(found.server);
     }
 
+    // A turn that goes on in a session holds it from before its program starts. A fresh session,
+    // or a fork's new one, is held once the program names it.
+    const runKey = call.runId ?? "run";
+    const resumes = call.continueFromSession && !call.fork ? call.continueFromSession.sessionId : undefined;
+    const turn: LiveTurn = { stop: new AbortController(), delivered: false };
+    let held: string | undefined;
+    const enter = (sessionId: string) => {
+      if (held !== undefined && held !== sessionId) {
+        live.delete(held);
+        holds?.release(runKey, held);
+        held = undefined;
+      }
+      if (held === undefined && !holds?.take(runKey, sessionId, call.label)) held = sessionId;
+      live.set(sessionId, turn);
+    };
     let release: (() => void) | undefined;
-    if (options.slots) {
-      options.onSlot?.({ label: call.label, state: "waiting" });
-      release = await options.slots.acquire({ runId: call.runId, label: call.label }, call.signal);
-      options.onSlot?.({ label: call.label, state: "running" });
+    for (;;) {
+      if (resumes) await free(runKey, resumes, call.label, call.signal);
+      if (options.slots) {
+        options.onSlot?.({ label: call.label, state: "waiting" });
+        release = await options.slots.acquire({ runId: call.runId, label: call.label }, call.signal);
+        options.onSlot?.({ label: call.label, state: "running" });
+      }
+      if (!resumes) break;
+      if (!handing.has(resumes) && !holds?.take(runKey, resumes, call.label)) {
+        held = resumes;
+        live.set(resumes, turn);
+        break;
+      }
+      release?.();
+      release = undefined;
     }
+    // The step's time limit counts from here, once it holds a slot, not while it waits for one.
+    const timeout = step.timeoutMs ? AbortSignal.timeout(step.timeoutMs) : undefined;
+    // A turn the run stops, or that runs past its time limit, lets go of its session at once. Its
+    // program may take longer to close, and a next attempt or a resume must not wait on it.
+    const ends = [call.signal, timeout].filter((signal): signal is AbortSignal => signal !== undefined);
+    const letGo = () => {
+      if (held === undefined || turn.joiner !== undefined) return;
+      if (live.get(held) === turn) live.delete(held);
+      holds?.release(runKey, held);
+      held = undefined;
+    };
+    for (const end of ends) end.addEventListener("abort", letGo, { once: true });
+    // The program reports the session it opened, then again once it has the prompt.
+    const opened = (ref: AgentSessionRef) => {
+      if (ends.some((end) => end.aborted)) return;
+      if (held !== ref.sessionId) enter(ref.sessionId);
+      if (ref.delivered === false) return;
+      turn.delivered = true;
+      if (turn.joiner !== undefined) turn.stop.abort();
+    };
+    const launch = launchOf(step, call);
+    const reported: StepRequest = {
+      ...call,
+      onSessionOpen: (ref) => {
+        call.onSessionOpen?.({ ...ref, ...launch });
+        opened(ref);
+      },
+    };
     // The note goes to the first call that holds a slot, once the checks above let it run.
     const note = noteFor(call);
     if (note !== undefined) report?.({ kind: "note", text: note });
 
-    // The step's time limit counts from here, once it holds a slot, not while it waits for one.
-    const timeout = step.timeoutMs ? AbortSignal.timeout(step.timeoutMs) : undefined;
-    const signals = [call.signal, timeout].filter((signal): signal is AbortSignal => signal !== undefined);
+    const signals = [call.signal, timeout, turn.stop.signal].filter((signal): signal is AbortSignal => signal !== undefined);
     const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
     // The attempt's tokens so far. A program's go to onUsage as it runs. A runner's are kept for
     // the end of the attempt.
@@ -212,13 +323,14 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     const usage = usageStep && ((now: AgentUsage) => usageTo(usageStep, (spent = now)));
     const counted: StepRequest = usageStep
       ? {
-          ...call,
+          ...reported,
           onUsage: (now) => {
             spent = now;
             call.onUsage?.(now);
           },
         }
-      : call;
+      : reported;
+    let handed = false;
     try {
       const account = options.accounts?.[step.harness];
       if (options.inner) return await runInner(options.inner, withNote(prompt, note), counted, step, { signal, servers, account });
@@ -226,8 +338,14 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
       const onNotes = notesTo && ((notes: string[]) => notesTo({ label: call.label, notes }));
       const steering = options.steering && activityStep(call.runId, call.callIndex, call.label);
       const board = steering ? { board: options.steering!, call: steering } : undefined;
-      return await runOnHarness(program ?? createHarness(step.harness), prompt, call, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account, onNotes, activity: report, board, usage, note });
+      return await runOnHarness(program ?? createHarness(step.harness), prompt, reported, step, { cwd: call.cwd ?? options.cwd, signal, servers, stop, account, onNotes, activity: report, board, usage, note });
     } catch (error) {
+      // The person stepped in. The program has closed, so the session is theirs now.
+      if (turn.joiner !== undefined && turn.stop.signal.aborted && !call.signal?.aborted) {
+        handed = handTo(runKey, held, turn.joiner);
+        report?.({ kind: "note", text: "The person stepped into the session. The step goes on once they leave." });
+        return { ...JOINED };
+      }
       if ((error as { code?: unknown } | undefined)?.code === WorkflowErrorCode.PROVIDER_USAGE_LIMIT) {
         options.onLimit?.({ program: step.harness, label: call.label });
       }
@@ -239,13 +357,49 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
       }
       throw error;
     } finally {
+      for (const end of ends) end.removeEventListener("abort", letGo);
       if (usageStep) usageTo!(usageStep, spent ?? NO_USAGE, true);
+      if (held !== undefined) {
+        if (live.get(held) === turn) live.delete(held);
+        // A turn that ended before the person's join stopped it closes its kept program, and the
+        // session goes to the person.
+        if (!handed && turn.joiner !== undefined) {
+          await closeKept(held);
+          handed = handTo(runKey, held, turn.joiner);
+        }
+        if (!handed) holds?.release(runKey, held);
+      }
       release?.();
     }
   };
 
+  /** Give the session to the `sous join` with pid `joiner`. True when this process held it. */
+  const handTo = (runId: string, sessionId: string | undefined, joiner: number): boolean => {
+    if (sessionId === undefined) return false;
+    holds?.give(runId, sessionId, joiner);
+    return true;
+  };
+
+  async function join(runId: string, sessionId: string, pid: number): Promise<void> {
+    const running = live.get(sessionId);
+    if (running) {
+      running.joiner = pid;
+      if (running.delivered) running.stop.abort();
+      return;
+    }
+    // Between two turns: close the program the step kept open, then hand the session over. A turn
+    // that starts meanwhile waits in free().
+    handing.add(sessionId);
+    try {
+      await closeKept(sessionId);
+      holds?.give(runId, sessionId, pid);
+    } finally {
+      handing.delete(sessionId);
+    }
+  }
+
   /** Closes the session's kept program on each program found, or every kept one. */
-  const release = async (sessionId?: string) => {
+  const closeKept = async (sessionId?: string) => {
     await Promise.all(
       [...programs.values()].map(async (pending) => {
         const program = await pending.catch(() => undefined);
@@ -258,12 +412,28 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     route: (ask) => routeStep(options.agents, ask),
     placeOf: (agentType) => options.agents?.agents.get(agentType)?.place,
     run,
-    release: (sessionId) => release(sessionId),
+    release: (sessionId) => closeKept(sessionId),
+    join,
     async dispose() {
-      await release();
+      await closeKept();
       await options.inner?.dispose?.();
     },
   };
+}
+
+/** Wait `ms`, or until the signal aborts. */
+function pause(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((done, fail) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", stop);
+      done();
+    }, ms);
+    const stop = () => {
+      clearTimeout(timer);
+      fail(signal!.reason);
+    };
+    signal?.addEventListener("abort", stop, { once: true });
+  });
 }
 
 /** A test's or the dry run's runner gets the planned step with the engine's own fields, and the
@@ -328,25 +498,7 @@ async function runOnHarness(
   const limits: StepLimits = call.limits ?? {};
   const model = stepModel(step.model);
   const images = checkImages(call.images, label);
-  const mcpServers = servers.map((server) => {
-    const converted = toMcpServer(server);
-    if ("problem" in converted) throw stop(converted.problem);
-    return converted;
-  });
-  const tools = step.tools || step.disallowedTools ? { tools: { ...(step.tools ? { allow: step.tools } : {}), ...(step.disallowedTools ? { deny: step.disallowedTools } : {}) } } : {};
-  const base: Omit<Step, "prompt"> = {
-    cwd,
-    ...(account ? { account } : {}),
-    ...(model ? { model } : {}),
-    ...(step.effort ? { effort: step.effort } : {}),
-    ...(call.instructions ? { instructions: call.instructions } : {}),
-    ...tools,
-    ...(step.skills ? { skills: step.skills } : {}),
-    ...(mcpServers.length ? { mcpServers } : {}),
-    ...(call.mode ? { mode: call.mode } : {}),
-    ...(signal ? { signal } : {}),
-    hold: true,
-  };
+  const base = turnBase(call, step, { cwd, servers, stop, ...(account ? { account } : {}), ...(signal ? { signal } : {}) });
 
   // What the attempt reports once, at the end.
   let spent: Usage | undefined;
@@ -455,7 +607,7 @@ async function runOnHarness(
     const turn = async (input: Step): Promise<Answer> => {
       try {
         const result = await once(input);
-        return { text: result.text, value: result.value, sessionId: result.sessionId };
+        return { text: result.text, value: result.value, sessionId: result.sessionId, ...(result.asked === undefined ? {} : { asked: result.asked }) };
       } catch (error) {
         const failure = failureOf(error);
         if (turnSchema && failure?.kind === "schema") return { text: failure.text, sessionId: (error as HarnessFailure).sessionId ?? reports.opened() };
@@ -497,9 +649,14 @@ async function runOnHarness(
       signal?.throwIfAborted();
     };
     answer ??= await turn({ ...base, ...fresh, ...turns.work });
+    // A question through the program's own tool ends the step's turn, as the status "question" does.
+    // A step that runs until done counts its turns, as a status row does.
+    const question = (asked: string) => ({ status: "question", result: null, message: asked, ...(call.untilDone && sent > 1 ? { turns: sent } : {}) });
+    if (answer.asked !== undefined) return question(answer.asked);
     if (turns.report) {
       room();
       answer = await turn({ ...base, ...turns.report, resume: answer.sessionId ?? reports.opened() });
+      if (answer.asked !== undefined) return question(answer.asked);
     }
 
     if (!turnSchema) {
@@ -521,6 +678,7 @@ async function runOnHarness(
       if (limits.maxRepairs !== undefined && repairs >= limits.maxRepairs) throw stepLimitError(label, "maxRepairs", limits.maxRepairs);
       room();
       answer = await turn({ ...base, prompt: REPROMPT_TEXT, schema: turnSchema as unknown as Record<string, unknown>, resume: answer.sessionId });
+      if (answer.asked !== undefined) return question(answer.asked);
     }
     throw new WorkflowError("Subagent did not produce valid structured output, and has no session to repair it in", WorkflowErrorCode.SCHEMA_NONCOMPLIANCE, {
       recoverable: false,
@@ -542,6 +700,32 @@ async function runOnHarness(
     if (history.length) call.onHistory?.(history);
     if (notes.size) onNotes?.([...notes]);
   }
+}
+
+/** What every turn of a step sends its program, besides the prompt. */
+function turnBase(call: StepRequest, step: RoutePlan, given: { cwd: string; servers: McpServerConfig[]; stop: (message: string) => WorkflowError; account?: Account; signal?: AbortSignal }): Omit<Step, "prompt"> {
+  const model = stepModel(step.model);
+  const mcpServers = given.servers.map((server) => {
+    const converted = toMcpServer(server);
+    if ("problem" in converted) throw given.stop(converted.problem);
+    return converted;
+  });
+  const tools = step.tools || step.disallowedTools ? { tools: { ...(step.tools ? { allow: step.tools } : {}), ...(step.disallowedTools ? { deny: step.disallowedTools } : {}) } } : {};
+  return {
+    cwd: given.cwd,
+    ...(given.account ? { account: given.account } : {}),
+    ...(model ? { model } : {}),
+    ...(step.effort ? { effort: step.effort } : {}),
+    ...(call.instructions ? { instructions: call.instructions } : {}),
+    ...tools,
+    ...(step.skills ? { skills: step.skills } : {}),
+    ...(mcpServers.length ? { mcpServers } : {}),
+    ...(call.mode ? { mode: call.mode } : {}),
+    ...(given.signal ? { signal: given.signal } : {}),
+    hold: true,
+    // The agent may call its program's own question tool. That ends the turn as a question.
+    ...(call.ask === false ? {} : { ask: true }),
+  };
 }
 
 /**
@@ -569,7 +753,8 @@ function sessionReports(call: StepRequest, resuming: () => boolean, fields: Omit
 }
 
 /** A turn's answer: its text, the schema's value when the program gave one, and its session. */
-type Answer = { text: string; value?: unknown; sessionId?: string };
+/** A turn's answer. `asked` is the question the agent asked through its program's own tool. */
+type Answer = { text: string; value?: unknown; sessionId?: string; asked?: string };
 
 /**
  * The schema each turn of a step answers with. A step that runs until done answers with the
@@ -578,7 +763,7 @@ type Answer = { text: string; value?: unknown; sessionId?: string };
  */
 function turnSchemaOf(call: StepRequest): TSchema | undefined {
   if (!call.untilDone) return call.schema;
-  return statusSchema({ ...(call.schema ? { schema: call.schema } : {}), ask: call.untilDone.ask !== false }) as unknown as TSchema;
+  return statusSchema({ ...(call.schema ? { schema: call.schema } : {}), ask: call.ask !== false }) as unknown as TSchema;
 }
 
 /**

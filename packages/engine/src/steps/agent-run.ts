@@ -83,9 +83,12 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
    *  a COPY, never mutate the hashed value. */
   schema?: S;
   /** Set when the step runs until the agent says done. Each turn then answers with the status
-   *  object, and the steps module returns that object. `ask` false drops the "question" status,
-   *  and the engine hashes it. */
-  untilDone?: { ask?: boolean };
+   *  object, and the steps module returns that object. */
+  untilDone?: true;
+  /** False keeps the agent from asking the person: no "question" status, and the program's own
+   *  question tool stays off. Otherwise a turn whose agent calls that tool ends as a question.
+   *  The engine hashes it. */
+  ask?: false;
   /** The step's limits on the turns the steps module sends. `maxRepairs` caps the repair turns,
    *  with no cap when unset. `turnsLeft` is how many turns the step's maxTurns leaves for this
    *  call. Reaching either fails the step with STEP_LIMIT. NOT hashed. */

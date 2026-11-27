@@ -14,7 +14,7 @@ import type { PlaceNotes } from "../places/places.js";
 import type { By, Through } from "./actions.js";
 import type { HomePaths, Place } from "./home.js";
 import type { Priority } from "./slots.js";
-import { activityFile, noteFile, pauseRequestFile, recordFile, recordFiles, snapshotFile, stopRequestFile, tellRequestFile } from "./store.js";
+import { activityFile, joinRequestFile, noteFile, pauseRequestFile, recordFile, recordFiles, snapshotFile, stopRequestFile, tellRequestFile } from "./store.js";
 import { Refusal } from "./refusal.js";
 
 export interface RunRecord {
@@ -293,6 +293,23 @@ export const TELL_RECEIPTS: Record<TellOutcome, string> = {
 /** The tells sent since the last take, as takeStepStops takes the stops. */
 export function takeTells(paths: HomePaths, runId: string): TellRequest[] {
   return takeLines(tellRequestFile(paths, runId)).map((line) => JSON.parse(line) as TellRequest);
+}
+
+/** A `sous join` asks the worker for a session: the session's id, and the pid of the `sous join`
+ *  that will hold it. */
+export interface JoinRequest {
+  sessionId: string;
+  pid: number;
+}
+
+/** Ask the worker to hand a session to a `sous join`. Each request is one appended line, as a step stop is. */
+export function requestJoin(paths: HomePaths, runId: string, join: JoinRequest): void {
+  appendFileSync(joinRequestFile(paths, runId), `${JSON.stringify(join)}\n`);
+}
+
+/** The joins asked since the last take, as takeStepStops takes the stops. */
+export function takeJoins(paths: HomePaths, runId: string): JoinRequest[] {
+  return takeLines(joinRequestFile(paths, runId)).map((line) => JSON.parse(line) as JoinRequest);
 }
 
 /** A note `sous resume --note` gives the resumed run: its text, and the step it is for, by its

@@ -45,6 +45,6 @@ export function sessionCost(ref: AgentSessionRecord | undefined, kept: SessionEn
 
 /** A session as the map keeps it: the ref, without the record's call fields and its gauge. */
 export function sessionRefOf(record: AgentSessionRef): AgentSessionRef {
-  const { costGauge: _gauge, callIndex: _index, label: _label, phase: _phase, keptOpen: _kept, ...ref } = record as AgentSessionRecord;
+  const { costGauge: _gauge, callIndex: _index, label: _label, phase: _phase, keptOpen: _kept, handle: _handle, ...ref } = record as AgentSessionRecord;
   return ref;
 }

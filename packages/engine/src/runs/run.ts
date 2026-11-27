@@ -374,8 +374,9 @@ export interface WaitHooks {
   until?: number;
   /** Gets the log as it grows. */
   log?: (text: string) => void;
-  /** Gets the questions the run asks, each once, and the wait goes on. Without it, the wait ends at them. */
-  asks?: (questions: RunQuestion[], record: RunRecord) => Promise<void>;
+  /** Gets the questions the run asks, each once, and the wait goes on. It ends at the questions
+   *  still open when `asks` gives "end". Without it, the wait ends at them. */
+  asks?: (questions: RunQuestion[], record: RunRecord) => Promise<"end" | void>;
 }
 
 export interface WaitEnd {
@@ -415,7 +416,11 @@ export async function waitForRun(paths: HomePaths, runId: string, hooks: WaitHoo
         return { code: view.exit!, summary: runSummary(record, shown, view), questions: open };
       }
       for (const question of open) asked.add(question.id);
-      await hooks.asks(open, record);
+      if ((await hooks.asks(open, record)) === "end") {
+        const still = listQuestions(paths, runId);
+        const { view, shown } = viewOf(record, readState(paths, runId), still, true);
+        return { code: view.exit!, summary: runSummary(record, shown, view), questions: still };
+      }
     }
     const left = hooks.until === undefined ? 400 : hooks.until - Date.now();
     if (left <= 0) {

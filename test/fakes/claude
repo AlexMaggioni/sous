@@ -20,7 +20,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { appendLog, debug, decide, loginPresent, mcpSummary, personLine, readJsonLines, sessionMessages, statusObject, valueWith, waitFor, makeEdits } from "./lib.mjs";
+import { appendLog, debug, decide, loginPresent, mcpSummary, personLine, personStays, readJsonLines, sessionMessages, statusObject, valueWith, waitFor, makeEdits } from "./lib.mjs";
 
 const VERSION = process.env.FAKE_VERSION ?? "2.1.330";
 const argv = process.argv.slice(2);
@@ -93,6 +93,7 @@ if (resumeId && !existsSync(join(sessionsDir, resumeId))) {
 
 // A person at a terminal: no stream to read. The fake types the person's line and leaves.
 if (resumeId && flags["input-format"] === undefined && flags.print === undefined && !argv.includes("-p")) {
+  await personStays();
   const person = personLine();
   if (person !== "") appendFileSync(join(sessionsDir, resumeId), `${JSON.stringify({ role: "user", text: person })}\n`);
   appendLog({ program: "claude", byHand: true, sessionId: resumeId, cwd: process.cwd(), args: argv, person });

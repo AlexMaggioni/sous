@@ -57,6 +57,8 @@ export { removeAccount, useAccount, waitingRuns } from "./runs/run-accounts.js";
 export { isAgentCall, logAfter, stepView, type StepView } from "./runs/step-view.js";
 export { runTexts } from "./runs/run-texts.js";
 export { tellResult, tellStep } from "./runs/tell.js";
+export { joinQuestion, joinTarget, leaveSession, takeSession, type JoinTarget } from "./runs/join.js";
+export { joinProgram } from "./runs/join-program.js";
 export { resumeWithNote } from "./runs/resume-note.js";
 export { homeStatus, sinceWindow, statusLine, type HomeStatus } from "./runs/status.js";
 export { isPlace } from "./places/places.js";

@@ -93,6 +93,13 @@ export interface AgentSessionRef {
    *  only in a session that holds the prompt. Absent reads as true, as on older refs. ADDITIVE
    *  and NOT a hash input. */
   delivered?: boolean;
+  /** What the step opened the program with, apart from the model: its effort, its mode, its
+   *  system text, and the names of its MCP servers from the config. `sous join` opens the
+   *  session's program the same way. ADDITIVE and NOT a hash input. */
+  effort?: string;
+  mode?: string;
+  instructions?: string;
+  mcp?: string[];
 }
 
 /** One run's session ref PLUS its workflow-call context — what lands in JournalEntry.session,
@@ -104,6 +111,9 @@ export interface AgentSessionRecord extends AgentSessionRef {
   label: string;
   phase?: string;
   keptOpen: boolean;
+  /** The label of the session() handle whose turn this is. `sous join` finds a handle's session
+   *  by it. ADDITIVE. */
+  handle?: string;
 }
 
 /** A running agent call's identity: the hash, inputs hash, path and working folder its call row gets. */

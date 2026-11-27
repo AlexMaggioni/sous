@@ -1,6 +1,7 @@
 // One run, in its own background process. `sous run` and `sous resume` start it detached, and it
 // keeps running when the terminal closes. It holds the run's lease, asks questions through the
-// inbox, and answers `sous pause` (SIGUSR1), `sous stop --step` and `sous tell` (SIGUSR2) and `sous stop` (SIGTERM).
+// inbox, and answers `sous pause` (SIGUSR1), `sous stop --step`, `sous tell` and `sous join` (SIGUSR2)
+// and `sous stop` (SIGTERM).
 
 import { readFileSync, existsSync } from "node:fs";
 import type { WorkflowRunResult } from "../workflow-result.js";
@@ -8,7 +9,7 @@ import type { DryRunCheck } from "../code-steps.js";
 import { limitNotice, runAccounts } from "../accounts.js";
 import { envFor, lookupAgents, lookupMcpServers, lookupSettings } from "../agents.js";
 import { projectWorkflows } from "../workflows/dir.js";
-import type { CheckpointCallContext } from "../checkpoint-call.js";
+import { shownPrompt, type CheckpointCallContext } from "../checkpoint-call.js";
 import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";
 import { closedLine, closeRunWorktrees, runPlaces } from "../places/places.js";
 import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
@@ -18,7 +19,8 @@ import { approvedLookup } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 import { authorAnsweredBy } from "./consent.js";
 import { Refusal } from "./refusal.js";
-import { activityWriter, endWorker, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeNote, takePause, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type NoteRequest, type RunRecord, type TellOutcome } from "./records.js";
+import { activityWriter, endWorker, loadRecord, loadSnapshot, placeNotes, saveSnapshot, scopePrefix, takeJoins, takeNote, takePause, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type NoteRequest, type RunRecord, type TellOutcome } from "./records.js";
+import { sessionHolds } from "./session-hold.js";
 import { goLimits } from "./limits.js";
 import { judge } from "./rule.js";
 import { agentSlots, managerStore } from "./store.js";
@@ -92,6 +94,15 @@ export function currentWorkflows(paths: HomePaths, projectDir: string): Record<s
  * open gets no_turn, and the cli tells from the run's steps whether the call still runs. A call an
  * older state saved with no call index gets the first open call of its label not told yet.
  */
+/** `sous join` writes the session it wants, with its own pid, then sends SIGUSR2. The steps module
+ *  hands each session over once its turn lets go of it, and every other step goes on. */
+function handJoins(paths: HomePaths, runId: string, runner: Pick<ReturnType<typeof createSteps>, "join">, log: (line: string) => void): void {
+  for (const { sessionId, pid } of takeJoins(paths, runId)) {
+    log(`${stamp()} joining    the person steps into session ${sessionId}`);
+    runner.join(runId, sessionId, pid).catch((error: unknown) => log(`${stamp()} join failed: ${oneLine(String(error))}`));
+  }
+}
+
 function sendTells(paths: HomePaths, runId: string, steering: SteeringBoard, onActivity: OnActivity, log: (line: string) => void): void {
   for (const { id, step, text, calls } of takeTells(paths, runId)) {
     const taken = new Set<string>();
@@ -240,6 +251,33 @@ function checkedText(paths: HomePaths, record: RunRecord, mode: "start" | "resum
 }
 
 /** Run one go of the run on its accounts, with `note`, the note `sous resume --note` left for it. */
+/** The question a checkpoint() call asks. An agent's question in its turn is the person's to
+ *  answer in its session, where they read it. The journal keeps the agent's message. The log, the
+ *  notice and the page name the step. */
+function questionOf(runId: string, workflow: string, prompt: string, checkpoint: { kind?: "confirm" | "input" | "select"; choices?: string[]; schema?: Record<string, unknown> }, context: CheckpointCallContext | undefined): Question {
+  const scope = context?.scope ?? runId;
+  const callIndex = context?.callIndex ?? 0;
+  const purpose = context?.purpose;
+  return {
+    id: questionId(scope, callIndex),
+    runId,
+    scope,
+    callIndex,
+    hash: context?.hash ?? "",
+    workflow,
+    prompt: shownPrompt(prompt, purpose),
+    kind: checkpoint.kind ?? "confirm",
+    ...(checkpoint.choices ? { choices: [...checkpoint.choices] } : {}),
+    breakpoint: purpose?.breakpoint === true,
+    ...(purpose?.title ? { title: purpose.title } : {}),
+    ...(purpose?.show ? { show: purpose.show } : {}),
+    answeredBy: authorAnsweredBy({ answeredBy: purpose?.answeredBy, breakpoint: purpose?.breakpoint }),
+    ...(purpose?.step ? { step: purpose.step } : {}),
+    ...(checkpoint.schema ? { schema: checkpoint.schema } : {}),
+    askedAt: new Date().toISOString(),
+  };
+}
+
 async function runOnAccounts(
   paths: HomePaths,
   record: RunRecord,
@@ -254,8 +292,9 @@ async function runOnAccounts(
   const config = loadConfig(paths);
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
   updateRecord(paths, runId, { pid: process.pid, pauseFile: true, limit: undefined, refused: undefined });
-  // A step stop the last worker never took names a step of that worker, not this one.
+  // A step stop or a join the last worker never took names a step of that worker, not this one.
   takeStepStops(paths, runId);
+  takeJoins(paths, runId);
   const goNote = noteForGo(note, log);
 
   // The environment with the run's accounts on it, for code steps and the agent lookup.
@@ -301,6 +340,9 @@ async function runOnAccounts(
     gate: limits.gate,
     onUsage: limits.onUsage,
     ...(goNote.steps ? { note: goNote.steps } : {}),
+    // A dry run's sessions are stand-ins that no person can step into.
+    ...(options.dryRun ? {} : { holds: sessionHolds(paths) }),
+    onWait: ({ label }) => log(`${stamp()} waiting    ${label ?? "agent"} waits while the person works in its session`),
   });
   // A run keeps the workflows as they were when it started. A resume takes the edited ones only
   // after `sous resume --latest`.
@@ -314,40 +356,23 @@ async function runOnAccounts(
   const waits = new AbortController();
   const pollMs = options.pollMs ?? 500;
   const confirm = (prompt: string, checkpoint: { kind?: "confirm" | "input" | "select"; choices?: string[]; schema?: Record<string, unknown> }, context?: CheckpointCallContext) => {
-    const scope = context?.scope ?? runId;
-    const callIndex = context?.callIndex ?? 0;
-    const id = questionId(scope, callIndex);
-    const question: Question = {
-      id,
-      runId,
-      scope,
-      callIndex,
-      hash: context?.hash ?? "",
-      workflow: record.workflow,
-      prompt,
-      kind: checkpoint.kind ?? "confirm",
-      ...(checkpoint.choices ? { choices: [...checkpoint.choices] } : {}),
-      breakpoint: context?.purpose?.breakpoint === true,
-      ...(context?.purpose?.title ? { title: context.purpose.title } : {}),
-      ...(context?.purpose?.show ? { show: context.purpose.show } : {}),
-      answeredBy: authorAnsweredBy({ answeredBy: context?.purpose?.answeredBy, breakpoint: context?.purpose?.breakpoint }),
-      ...(context?.purpose?.step ? { step: context.purpose.step } : {}),
-      ...(checkpoint.schema ? { schema: checkpoint.schema } : {}),
-      askedAt: new Date().toISOString(),
-    };
+    const question = questionOf(runId, record.workflow, prompt, checkpoint, context);
+    const { id, scope } = question;
+    const joins = question.answeredBy === "join";
     // An answer that did not fit the question's schema: the run asks again.
     if (context?.refused !== undefined) log(`${stamp()} refused    ${id}: ${oneLine(context.refused, 400)}`);
     if (options.dryRun) {
       // A stand-in that does not fit would be asked for again and again.
       if (context?.refused !== undefined) return Promise.reject(new Error(`a dry run has no answer that fits the schema of ${id}`));
       const value = standIn(question);
-      log(`${stamp()} question   ${from(scope)}${oneLine(prompt, 200)}\n           answered   ${JSON.stringify(value)} (dry run)`);
+      log(`${stamp()} question   ${from(scope)}${oneLine(question.prompt, 200)}\n           answered   ${JSON.stringify(value)} (dry run)`);
       return Promise.resolve(value);
     }
     const asked = () => {
       context?.asked?.();
-      log(`${stamp()} question   ${id}: ${oneLine(prompt, 400)}\n           answer with: ${hint(question, "log")}`);
-      notify(`${record.workflow} asks`, oneLine(prompt, 200), config.notify);
+      log(`${stamp()} question   ${id}: ${oneLine(question.prompt, 400)}\n           ${joins ? "step in with" : "answer with"}: ${hint(question, "log")}`);
+      if (joins) notify(`${question.step ?? "an agent"} needs you`, `Step in with: ${hint(question)}`, config.notify);
+      else notify(`${record.workflow} asks`, oneLine(prompt, 200), config.notify);
     };
     return ask(paths, question, { signal: waits.signal, pollMs, asked }).then((value) => {
       log(`${stamp()} answered   ${id}: ${oneLine(JSON.stringify(value))}`);
@@ -390,6 +415,7 @@ async function runOnAccounts(
   const onSteer = () => {
     sendTells(paths, runId, steering, onActivity, log);
     onStopSteps();
+    handJoins(paths, runId, runner, log);
   };
   const onStop = () => {
     stopping = true;

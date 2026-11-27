@@ -6,6 +6,7 @@ import { str, Usage, type Parsed } from "../args.js";
 import { reply, type Next, type Reply } from "../reply.js";
 import type { Ctx } from "./index.js";
 import { nextCalls, waitNext } from "./next.js";
+import { offerJoin } from "./step-in.js";
 
 /** How long ago, in one short unit. */
 export function age(iso: string | undefined, now: Date): string {
@@ -87,12 +88,20 @@ const WAIT_TIMED_OUT = 5;
 const AGENT_WAIT = 110;
 const AGENT_WAIT_NOTE = `An agent's wait ends after ${AGENT_WAIT} seconds unless it gives --timeout, since Claude Code stops a tool call after two minutes. The run goes on. Wait again, or give a longer --timeout with a longer tool timeout.`;
 
-/** Ask each question in the terminal and write the answer. "stop" at a breakpoint stops the run. */
-async function askHere(ctx: Ctx, questions: RunQuestion[]): Promise<void> {
+/** Ask each question in the terminal and write the answer. "stop" at a breakpoint stops the run.
+ *  An agent's question in its turn is answered in its session, so the person may step in here.
+ *  A person who does not step in ends the wait, since the step waits for them. */
+async function askHere(ctx: Ctx, questions: RunQuestion[]): Promise<"end" | void> {
+  let end = false;
   for (const question of questions) {
+    if (question.answeredBy === "join") {
+      if (!(await offerJoin(ctx, question))) end = true;
+      continue;
+    }
     const text = await ctx.machine.ask(`\n${question.prompt}\n(${hint(question, "prompt")}) > `);
     answerQuestion(ctx.paths, question, { via: "prompt", text }, ctx.who);
   }
+  if (end) return "end";
 }
 
 /** Say the run started, or wait for it with --wait. */
