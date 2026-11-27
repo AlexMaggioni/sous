@@ -1,7 +1,8 @@
-// One program per step, live. A step of two turns runs in one program: turn 1 starts a background
-// shell that writes its pid to a file and sleeps, and turn 2 finds that shell still alive. Once
-// the step ends and the adapter releases the session, the program has exited. The test prints
-// each turn's usage and cost, so a person can see what a second turn in the same program reports.
+// One program per step, live. A step of two turns runs in one program. Turn 1 starts a background
+// shell that writes its pid to a file and the time to another each second, and turn 2 finds that
+// time fresh. Once the step ends and the adapter releases the session, the program has exited. The
+// test prints each turn's usage and cost, so a person can see what a second turn in the same
+// program reports.
 //
 // It is off by default. It needs Claude Code and Codex and your own logins, so run it from
 // packages/harnesses without test/with-temp-home.mjs:
@@ -27,16 +28,20 @@ const KITS: Array<{ id: HarnessId; model: string; start: string }> = [
   {
     id: "claude",
     model: "haiku",
-    start: "Use your Bash tool with run_in_background set to true to run exactly this command: sh -c 'echo $$ > bg.pid; exec sleep 600'. Do not wait for it. Then reply only STARTED.",
+    start: "Use your Bash tool with run_in_background set to true to run exactly this command: sh -c 'echo $$ > bg.pid; while true; do date +%s > beat; sleep 1; done'. Do not wait for it. Then reply only STARTED.",
   },
   {
     id: "codex",
     model: "gpt-6-luna",
-    start: "Run exactly this shell command, which starts a background process and returns at once: sleep 600 > /dev/null 2>&1 & echo $! > bg.pid. Then reply only STARTED.",
+    // Codex's shell does not keep a `&` job between commands. A command that is still running when
+    // its exec call yields stays alive as a background terminal of the thread.
+    start: "Run exactly this shell command, which keeps running: sh -c 'echo $$ > bg.pid; while true; do date +%s > beat; sleep 1; done'. Do not wait for it to finish and do not stop it. As soon as it is running, reply only STARTED.",
   },
 ];
 const EFFORT = "low";
-const CHECK = "Run exactly this shell command: kill -0 $(cat bg.pid) && echo ALIVE || echo GONE. Reply only with what it printed.";
+// Turn 2 reads the age of the shell's last beat, not its pid, since Codex's sandbox refuses both
+// kill -0 and ps on a process that an earlier command started.
+const CHECK = "Run exactly this shell command: sleep 3; echo AGE $(( $(date +%s) - $(cat beat) )). Reply only with what it printed.";
 
 /** True while the process runs. */
 function alive(pid: number): boolean {
@@ -93,7 +98,8 @@ describe("one program per step, live", { skip: !ON && "set SOUS_LIVE_HOLD=1 to r
         assert.equal(second.sessionId, first.sessionId);
         assert.deepEqual(started(), programs, "turn 2 ran in turn 1's program");
         assert.ok(alive(shell), "the background shell from turn 1 still runs");
-        assert.match(second.text, /ALIVE/, "turn 2 found the background shell alive");
+        const age = Number(/AGE (\d+)/.exec(second.text)?.[1]);
+        assert.ok(age <= 2, `turn 2 found the background shell's beat fresh: ${second.text}`);
         if (first.usage.costUsd !== undefined && second.usage.costUsd !== undefined) {
           t.diagnostic(`cost: turn 1 $${first.usage.costUsd}, turn 2 $${second.usage.costUsd}, difference $${second.usage.costUsd - first.usage.costUsd}`);
         }
