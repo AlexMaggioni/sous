@@ -89,6 +89,12 @@ describe("statusSchema", () => {
     assert.match(description, /"question"[^.]*only for what you cannot decide or do without the person/i);
   });
 
+  it("says in the status description that done is the whole task, and a turn that ends with parts left is working", () => {
+    const description = String(properties(statusSchema({}))["status"]!["description"]);
+    assert.match(description, /"done": every part of the task is finished, parts it leaves for a later turn included/i);
+    assert.match(description, /end this turn with any part left[^.]*"working"/i);
+  });
+
   it("uses only what both harness schema copies keep as written", () => {
     const step = Type.Object({ verdict: Type.String() });
     for (const options of [{}, { ask: false }, { schema: step }]) {

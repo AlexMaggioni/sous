@@ -26,7 +26,9 @@ const ON = process.env.SOUS_LIVE_STATUS === "1";
 const EFFORT = "low";
 const PLAIN = "Name the largest planet in the solar system, in one word.";
 const SHAPED = "Name the largest planet in the solar system, and say how many letters its name has.";
-const EARLY = "List the files in this folder. Then stop and ask me whether to continue, before you do anything else. When I say to go on, give the first line of README.md.";
+// The prompt stops the model after the first part, with work left, and does not ask it to check
+// with the person. A prompt that says "ask me" asks for the person, so "question" is right there.
+const EARLY = "This task has two parts. Part one: list the files in this folder. Part two: give the first line of README.md. Do only part one in this turn, then end your turn. Do part two in your next turn.";
 const CONTINUE = "Continue the task.";
 const SCHEMA = {
   type: "object",
@@ -90,11 +92,11 @@ describe("live test 9: the status with no contract paragraph", { skip: ON ? fals
       assert.equal(typeof value.planet, "string");
       assert.ok(Number.isInteger(value.letters), `${program}, step shaped: letters is ${JSON.stringify(value.letters)}`);
 
-      // The early stop: the first turn says working, since the status says asking whether to go on
-      // is "working". Sous sends Continue the task. in the same session, and the step ends with done.
+      // The early stop: the first turn ends with part two left, so it says working. Sous sends
+      // Continue the task. in the same session, and the step ends with done.
       assert.ok(early.length >= 1, `${program}, step early: no turn`);
       const first = statusOf(program, early[0]!);
-      assert.equal(first.status, "working", `${program}, step early, turn 1 said ${first.status}, not working, when it stopped to ask whether to continue: ${JSON.stringify(early[0]!.result)}`);
+      assert.equal(first.status, "working", `${program}, step early, turn 1 said ${first.status}, not working, when it stopped with part two left: ${JSON.stringify(early[0]!.result)}`);
       assert.equal(run.code, 0, `${run.stdout}\n${run.stderr}`);
       assert.equal(state.status, "completed");
       assert.ok(early.length >= 2, `${program}, step early: one turn`);

@@ -38,8 +38,8 @@ export function statusSchema(options: StatusSchemaOptions = {}): Record<string, 
   const ask = options.ask !== false;
   const statuses: TurnStatusName[] = ask ? ["done", "working", "question"] : ["done", "working"];
   const status = [
-    '"done": the task is finished, and result holds the answer.',
-    '"working": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is "working".',
+    '"done": every part of the task is finished, parts it leaves for a later turn included, and result holds the answer.',
+    '"working": there is more to do, and message says what is left. When you end this turn with any part left, even because the task said to stop here, the status is "working". Asking whether to go on, or asking for leave to continue, is "working".',
     ...(ask ? ['"question": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.'] : []),
   ];
   const message = ask
