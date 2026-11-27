@@ -49,7 +49,8 @@ A workflow is a script whose first statement is `export const meta = {...}`. The
 rest in its own `vm` realm, with these globals:
 
 - Agent steps: `agent(prompt, options)`, and `session(options)`, whose handle's
-  `send(prompt, options)` runs each step of one session.
+  `send(prompt, options)` runs each step of one session. `fork(options)` on a handle copies its
+  session into a new handle.
 - Rooms: `room(options)` lets the sessions of several handles talk until they agree or a decider
   decides. Each member's turn is one `send()` on its handle.
 - Code steps: `sh`, `js`, `py`, `run` and `waitUntil`. The engine runs them itself, so they get

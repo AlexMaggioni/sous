@@ -4,23 +4,25 @@ ticket  <tmp>/check-ticket/project/.sous/workflows/ticket.js
 ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
   (log lines sorted)
+  <hh:mm:ss> check      implementer: `node --test --test-reporter=dot` ended with exit code 0
   <hh:mm:ss> completed  ticket
   <hh:mm:ss> done       commit
   <hh:mm:ss> done       diff 1
   <hh:mm:ss> done       implementer, 45 tokens
-  <hh:mm:ss> done       reviewer 1, 52 tokens
+  <hh:mm:ss> done       implementer: check
+  <hh:mm:ss> done       reviewer 1, 41 tokens
   <hh:mm:ss> done       tests
   <hh:mm:ss> done       verifier, 64 tokens
   <hh:mm:ss> log        Logs persisted to <tmp>/check-ticket/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
   <hh:mm:ss> log        review 1: approved
   <hh:mm:ss> phase      implement
-  <hh:mm:ss> phase      review
   <hh:mm:ss> phase      verify
   <hh:mm:ss> removed    <tmp>/check-ticket/sous-home/worktrees/<run-1> and sous/<run-1>, which changed no file
   <hh:mm:ss> run        ticket in <tmp>/check-ticket/sous-home/worktrees/<run-1>
   <hh:mm:ss> start      commit (exec)
   <hh:mm:ss> start      diff 1 (exec)
   <hh:mm:ss> start      implementer (claude/haiku)
+  <hh:mm:ss> start      implementer: check (exec)
   <hh:mm:ss> start      reviewer 1 (claude/haiku)
   <hh:mm:ss> start      tests (exec)
   <hh:mm:ss> start      verifier (claude/haiku)

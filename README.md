@@ -64,6 +64,12 @@ notifications, and CI runs the tests on Linux. To build it from source, see
   pipelines and nested workflows, in one script with typed inputs and outputs.
 - **Claude Code and Codex.** Each step runs on the program you have installed, with your models
   and your login. One workflow can mix both.
+- **Prompts as you would type them.** A step's prompt goes to the agent as written, so
+  `/goal every test passes`, a slash command or a skill runs in a step as in a session you opened.
+  A step runs until the agent reports it done, and a `check` such as `npm test` sends it back
+  until the check passes.
+- **Sessions to keep, fork or share.** Several steps can go on in one session. A fork copies a
+  session into a new one, and a room lets several sessions talk until they agree or one decides.
 - **Your agents, skills and MCP servers.** sous reads them from [rulesync](https://github.com/dyoshikawa/rulesync)
   or from each program's own folders, and never writes into them.
 - **Runs in the background.** A run survives the terminal. A service starts scheduled runs and
@@ -116,7 +122,8 @@ pass. `sous show <run>` prints each step, and the
 branch `sous/<run>` holds the change.
 
 The [examples README](examples/README.md) also walks through the factory, which triages tickets and
-builds two at once, and an email workflow that waits for your approval.
+builds two at once, an email workflow that waits for your approval, and a build that cuts a design
+into tickets and lands each one.
 
 ## A workflow
 
@@ -151,6 +158,8 @@ The steps a workflow can use:
 | --- | --- |
 | `agent(prompt, options)` | runs an agent in a fresh session, with its model, effort, skills, MCP servers, timeout and output schema |
 | `session(options)`, `.send(prompt, options)` | make one agent session that several steps share, then run a step on it |
+| `.fork(options)` | copy a session into a new one, which goes on apart from it |
+| `room(options)` | let several sessions talk in rounds until they agree or a decider decides |
 | `sh`, `js`, `py`, `run`, `waitUntil` | run code on this machine. They take no agent slot and count no tokens. |
 | `parallel`, `pipeline` | run steps at once, or run items through stages |
 | `ask(question, options)` | ask you a question through the inbox |
@@ -249,7 +258,7 @@ The home folder is `~/.sous`, or the folder `SOUS_HOME` names. A project keeps i
 ## Documentation
 
 - [The guide](docs/guide.md) covers every feature, command and file format.
-- [The examples](examples/README.md) are three workflows to run.
+- [The examples](examples/README.md) are four workflows to run.
 - [The proofs](docs/proof/README.md) record real agents running each feature end to end.
 - [The engine's README](packages/engine/README.md) describes the engine and its test kit.
 - [The changelog](CHANGELOG.md) says what changed, and how to move from `orc`.

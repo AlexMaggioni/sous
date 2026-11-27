@@ -14,10 +14,12 @@ cd ~/textkit
 
 ## The ticket workflow
 
-`ticket.js` implements one ticket in a worktree of its own. A reviewer reads the diff. Until it
-approves, its review goes to the implementer as plain text, in the implementer's own session, for
-at most `--rounds` rounds. A verifier then tries the cases, and the workflow commits on the run's
-branch only when the reviewer approved, the verifier passed it and `npm test` passes.
+`ticket.js` implements one ticket in a worktree of its own. When the implementer says it is done,
+`npm test` runs, and a failure goes back to it in its own session. Once the tests pass, a fresh
+reviewer reads the diff. Until it approves, its review goes back to the implementer the same way,
+for at most `--rounds` reviews. `--turns` caps the implementer's turns, 20 by default. A verifier
+then tries the cases, and the workflow commits on the run's branch only when the reviewer
+approved, the verifier passed it and `npm test` passes.
 
 ```sh
 sous run ticket --ticket "$(cat tickets/TK-1.md)" --rounds 3 --wait
@@ -61,3 +63,35 @@ sous send-back <question> "Shorter, please"   # redraft them with this note
 
 The approved drafts go to `drafts.md` in the run's scratch folder. Nothing is sent. Reading a
 real mailbox, such as Gmail, needs its connection set up first.
+
+## The build
+
+`build/.sous/workflows/build.js` builds one stage of a project from its design. A planner cuts the
+design into tickets and names the stage's gates. Each ticket starts once the tickets it needs have
+landed, in a worktree of its own. Its implementer writes the tests first, gives their failing
+output, and works until it says done. Then the stage's tests run, and a reviewer of its own reads
+the change. A test failure or the reviewer's blockers go back to the implementer in its own
+session.
+
+After `--rounds` rounds of blockers, or when the implementer is stuck, a fresh implementer takes
+the ticket in the same folder. When that one fails too, the ticket parks on its branch, and the
+tickets that need it are skipped. A ticket that passes lands on the run's branch as one commit,
+rebased on the tickets that landed before it. A conflict goes back to its implementer to rebase.
+Last, a verifier proves each gate with a script in `proofs/`. A proof that fails because of the
+build gets one fix ticket, then its script runs again.
+
+The workflow names four agents, `build-planner`, `implementer`, `reviewer` and `verifier`, which
+the project or your home must define. `--planner`, `--implementer`, `--reviewer` and `--verifier`
+name others. Three steps run at once. Copy the file into a project, or into `~/.sous/workflows/`
+for every project:
+
+```sh
+cp examples/build/.sous/workflows/build.js ~/app/.sous/workflows/
+cd ~/app
+sous check build --design docs/stage-2.md --dry-run
+sous run build --design docs/stage-2.md --wait
+```
+
+The result lists each ticket as landed, parked with why and its branch, or skipped. It lists each
+gate as passed, failed, waiting for a person with the steps to take, or blocked by a ticket that
+did not land.

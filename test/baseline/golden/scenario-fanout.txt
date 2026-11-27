@@ -216,7 +216,7 @@ exit 0
     },
     "environment": {
       "git": {
-        "head": "59880127557386c8b4a6a40f8ceb843d241cffe2",
+        "head": "9ad384ef8964b9906fe64c907e4f36027e54065b",
         "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       }
     },
@@ -224,7 +224,7 @@ exit 0
       "format": "identity-v1",
       "terminalEnvironment": {
         "git": {
-          "head": "59880127557386c8b4a6a40f8ceb843d241cffe2",
+          "head": "9ad384ef8964b9906fe64c907e4f36027e54065b",
           "dirtyDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       }

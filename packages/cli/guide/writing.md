@@ -11,16 +11,14 @@ agents a step can name.
 ## The person approves it
 
 sous keeps the person's yes for each workflow's exact text. Until the person approves a new or
-changed workflow, no agent, run step or schedule starts it. A scheduled run is skipped, with
-a notice. Once it is saved and checked, show them `sous workflows show <name> --diff --json`,
-what changed since their last yes. They approve it by saying yes to you or with
-`sous workflows approve <name>` in their own terminal.
+changed workflow, no agent, run step or schedule starts it. Once it is saved and checked, show
+them `sous workflows show <name> --diff --json`, what changed since their last yes. They approve
+it by saying yes to you or with `sous workflows approve <name>` in their own terminal.
 
 When they say yes to you, run `sous workflows approve <name> --by person --json`. Their yes
 counts for the text you showed, saved unchanged. If the check made you change it, show the diff
-and ask again. Without `--by person` the approve fails with `needs_person`. Never approve
-without their yes. A person's own `sous run <name>` approves the text it runs. Never change
-`approvals.json` or `approved/` in sous's home.
+and ask again. Never approve without their yes. A person's own `sous run <name>` approves the
+text it runs. Never change `approvals.json` or `approved/` in sous's home.
 
 ## The file
 
@@ -43,22 +41,24 @@ return { summary: built }
 ```
 
 - `meta` needs `name` and `description`. `inputs` become flags of `sous run`.
-- Give every step a `label`. Resume matches steps by prompt, options and label.
-- `Math.random()`, `Date.now()` and `new Date()` with no argument throw, as a resume replays
-  the script. Pass a time or a random value as an input.
+- Give every step a `label`, since resume matches steps by it.
+- `Math.random()`, `Date.now()` and `new Date()` with no argument throw. Pass a time or a
+  random value as an input.
 - Cap each loop, such as with a `rounds` input.
 
 ## Steps
 
 - `session({ label, agentType, model, effort, mode, skills, mcp, mcpServers, cwd })` makes a
   handle with a unique label. `<handle>.send(prompt, options)` runs a step in its session, with
-  `label`, `schema`, `timeout`, `retries`, `images`, `phase`, or a `model` on its program.
+  `label`, `schema`, `timeout`, `retries`, `images`, `phase` or `model`.
   `<handle>.fork({ label })` copies its session to a new handle.
 - `agent(prompt, options)` is one send on a fresh session. It takes both and `place`.
-- A step runs until its agent says done, or one turn with `until: "turn"`. Then `check`, a
-  command or a function, runs, and a failure goes back to the agent. `maxTurns` and `maxRepairs`
-  cap it when set. `ask: false` stops the agent asking the person.
-- `sh`, `js`, `py`, `run` and `waitUntil` run code on this machine and spend no tokens.
+- A prompt goes as written, so `/goal <objective>` or a skill runs as in a session.
+- A step runs until its agent says done, or one turn with `until: "turn"`. A failed `check`, a
+  command or a function, goes back to the agent. `maxTurns` and `maxRepairs` cap it when set.
+  `ask: false` stops the agent asking the person.
+- `room({ goal, members, decider })` lets sessions talk until they agree or the decider decides.
+- `sh`, `js`, `py`, `run` and `waitUntil` run code and spend no tokens.
 - `ask(question, { choices })` asks the person. `answeredBy: "anyone"` lets an agent answer too.
 - `breakpoint(title, step)` runs the step, then waits for the person to approve it. Code steps,
   `ask` and `breakpoint` take a JSON `input` and a `schema` the value must fit.

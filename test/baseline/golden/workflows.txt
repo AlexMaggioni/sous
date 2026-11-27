@@ -22,9 +22,10 @@ questions  A question and a breakpoint sent back once
 retry  A step that fails once and is retried, and one with no retries that pauses the run
 rulesync-mcp  A rulesync agent with MCP servers on each harness, and a step that names its own
 stop-step  Two steps at once; the test stops the slow one, then resumes the run
-ticket  Implement a ticket, loop with a reviewer until it approves, verify it, and commit
+ticket  Implement a ticket until its tests pass and a reviewer approves, verify it, and commit
   --ticket  string, required  What to build or fix
   --rounds  number, optional, default 3  Most review rounds
+  --turns  number, optional, default 20  Most turns of the implementer, check turns included
   --test  string, optional, default "npm test"  The command that runs the tests
   --reviewer  string, optional, default "reviewer"  The agent that reviews
 tools  An agent with an allow list and a deny list

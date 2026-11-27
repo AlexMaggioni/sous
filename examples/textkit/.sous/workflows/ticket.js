@@ -1,9 +1,10 @@
 export const meta = {
   name: "ticket",
-  description: "Implement a ticket, loop with a reviewer until it approves, verify it, and commit",
+  description: "Implement a ticket until its tests pass and a reviewer approves, verify it, and commit",
   inputs: {
     ticket: { type: "string", description: "What to build or fix", required: true },
     rounds: { type: "number", description: "Most review rounds", default: 3 },
+    turns: { type: "number", description: "Most turns of the implementer, check turns included", default: 20 },
     test: { type: "string", description: "The command that runs the tests", default: "npm test" },
     reviewer: { type: "string", description: "The agent that reviews", default: "reviewer" },
   },
@@ -20,35 +21,41 @@ const ticket = String(args.ticket).trim()
 const title = ticket.split("\n")[0].replace(/^#+\s*/, "").slice(0, 72)
 const last = (text, n = 4000) => (text.length > n ? text.slice(text.length - n) : text)
 
-phase("implement")
-const implementer = session({ agentType: "implementer", label: "implementer" })
-await implementer.send(`Implement this ticket in the current folder.\n\nTicket:\n${ticket}`)
-
-phase("review")
 const verdictSchema = {
   type: "object",
   properties: { approved: { type: "boolean" }, review: { type: "string" } },
   required: ["approved", "review"],
 }
 let approved = false
-let round = 0
-while (round < args.rounds) {
-  round++
-  const diff = await sh("git add -A && git diff --cached", { label: `diff ${round}` })
+let rounds = 0
+
+// A fresh reviewer each round. What it asks for goes back into the implementer's own session. After
+// the last round the implementer stops, and the workflow verifies without the reviewer's yes.
+async function review() {
+  rounds++
+  const diff = await sh("git add -A && git diff --cached", { label: `diff ${rounds}`, phase: "review" })
   const verdict = await agent(
     `Review this change for the ticket below.\n\nTicket:\n${ticket}\n\nChange (git diff):\n${last(diff.stdout, 20000)}`,
-    { agentType: args.reviewer, label: `reviewer ${round}`, schema: verdictSchema },
+    { agentType: args.reviewer, label: `reviewer ${rounds}`, until: "turn", schema: verdictSchema, phase: "review" },
   )
-  log(`review ${round}: ${verdict.approved ? "approved" : "changes asked"}`)
-  if (verdict.approved) {
-    approved = true
-    break
-  }
-  if (round === args.rounds) break
-  // The review goes to the implementer as plain text, in the implementer's own session.
-  await implementer.send(`The reviewer asks for these changes:\n\n${verdict.review}\n\nMake them, then run the tests.`, {
-    label: `implementer ${round + 1}`,
+  log(`review ${rounds}: ${verdict.approved ? "approved" : "changes asked"}`)
+  approved = verdict.approved
+  if (approved || rounds >= args.rounds) return true
+  return { ok: false, feedback: `The reviewer asks for these changes:\n\n${verdict.review}\n\nMake them, then run the tests.` }
+}
+
+// The implementer works until it says done. Then the tests run, and a failure goes back to it. Once
+// they pass, the reviewer reads the change.
+phase("implement")
+const implementer = session({ agentType: "implementer", label: "implementer" })
+try {
+  await implementer.send(`Implement this ticket in the current folder.\n\nTicket:\n${ticket}`, {
+    check: [args.test, review],
+    maxTurns: args.turns,
   })
+} catch (error) {
+  if (error.code !== "STEP_LIMIT") throw error
+  log(`the implementer used its ${args.turns} turns`)
 }
 
 phase("verify")
@@ -78,4 +85,4 @@ if (approved && verified) {
   commit = made.stdout.trim() || undefined
 }
 
-return { approved, verified, rounds: round, commit, evidence: check.evidence }
+return { approved, verified, rounds, commit, evidence: check.evidence }
