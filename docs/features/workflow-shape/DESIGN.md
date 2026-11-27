@@ -1210,6 +1210,16 @@ at low effort.
     stage's tests and each gate's proof passed again on the run's branch with no agent. Each run
     took 160 to 200 seconds and $0.03 to $0.05. The test is in
     `packages/cli/test/live/build.test.ts`, behind `SOUS_LIVE_BUILD=1`.
+15. The same workflow on a real stage, one the owner had built by hand with the same agents. On
+    2026-11-27 it ran on a copy of that repository, from the stage's skeleton commit, with the
+    owner's four agents as written but on Haiku at low effort. The stage is a local web page and
+    its service in Python, with one gate: a request at the machine's network address is refused.
+    The run took 41 minutes, 18 agent steps and $0.23. Its planner cut 5 tickets where the owner's
+    build had 3. All 5 landed, 3 of them after the reviewer's blockers went back to the
+    implementer, and the gate's proof passed. On the run's branch, the 249 tests, 212 at the
+    skeleton and 37 new, and the gate's script passed again with no agent. The person typed one
+    command, joined no session and answered nothing. Whether the owner's own run of that stage
+    took more is for the owner's notes.
 
 How the plan holds:
 
@@ -1246,5 +1256,5 @@ The owner answered on 2026-11-26. The design above follows these answers.
 
 ## Open
 
-- The real stage for scenario 15. The owner chooses it. Live test 14 runs a stand-in stage until
-  then.
+- The stage for scenario 15's verdict, and the count of actions in the owner's manual run of it.
+  Live test 15 ran a real stage the owner had built before, with one command and no other action.
