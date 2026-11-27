@@ -23,12 +23,17 @@ delete process.env.FAKE_VERSION;
 
 /** One line of the fake's request log. */
 interface LogLine {
+  program?: string;
+  pid?: number;
+  args?: string[];
+  person?: string;
+  ask?: { answers?: unknown; error?: string };
   sessionId: string;
   cwd?: string;
   prompt?: string;
   rule?: number | null;
   goal?: { turn: number; of: number };
-  byHand?: string;
+  byHand?: boolean;
 }
 
 const STATUS_SCHEMA = {
@@ -262,19 +267,55 @@ describe("the fake codex's rules", () => {
     const c = newCase();
     c.rules([{ match: "^Recall", recall: true }]);
     const step = await c.run({ prompt: "Remember the word PLUM." });
-    const ran = await byHand(["resume", "-m", "gpt-fake", "-c", "model_reasoning_effort=high", step.sessionId], "Also keep KIWI in mind.");
+    const args = ["resume", step.sessionId, "-C", c.cwd, "-m", "gpt-fake", "-c", "model_reasoning_effort=high", "--approve-for-me"];
+    const ran = await byHand(args, "Also keep KIWI in mind.");
     assert.equal(ran.code, 0, ran.stderr);
     const last = c.transcript(step.sessionId).trim().split("\n").at(-1) ?? "";
     assert.deepEqual(JSON.parse(last), { role: "user", text: "Also keep KIWI in mind." });
-    assert.deepEqual(
-      c.lines().filter((line) => line.byHand !== undefined).map((line) => ({ sessionId: line.sessionId, byHand: line.byHand })),
-      [{ sessionId: step.sessionId, byHand: "Also keep KIWI in mind." }],
-    );
-    const quiet = await byHand(["resume", step.sessionId], undefined);
-    assert.equal(quiet.code, 0, quiet.stderr);
-    assert.equal(c.lines().filter((line) => line.byHand !== undefined).length, 1);
+    const logged = c.lines().filter((line) => line.byHand !== undefined);
+    assert.equal(logged.length, 1);
+    const { pid, ...rest } = logged[0]!;
+    assert.equal(typeof pid, "number");
+    assert.deepEqual(rest, { program: "codex", byHand: true, sessionId: step.sessionId, cwd: c.cwd, args, person: "Also keep KIWI in mind." });
     const recalled = await c.run({ prompt: "Recall your words.", resume: step.sessionId });
     assert.equal(recalled.text, "PLUM KIWI");
+  });
+
+  test("codex resume by hand without FAKE_PERSON types a line with KESTREL-5150, which recall sees", async () => {
+    const c = newCase();
+    c.rules([{ match: "^Recall", recall: true }]);
+    const step = await c.run({ prompt: "Remember the word PLUM." });
+    const ran = await byHand(["resume", step.sessionId], undefined);
+    assert.equal(ran.code, 0, ran.stderr);
+    assert.deepEqual(
+      c.lines().filter((line) => line.byHand).map((line) => line.person),
+      ["I stepped in. Keep this word in mind: KESTREL-5150."],
+    );
+    const recalled = await c.run({ prompt: "Recall your words.", resume: step.sessionId });
+    assert.equal(recalled.text, "PLUM KESTREL-5150");
+  });
+
+  test("ask sends requestUserInput, and after a refusal the turn waits for turn/interrupt and ends interrupted", async () => {
+    const c = newCase();
+    c.rules([{ ask: "Which color do you want?", answer: "I went on." }]);
+    const answer = await c.run({ prompt: "Do the task.", ask: true });
+    assert.equal(answer.asked, "Which color do you want?");
+    assert.equal(answer.text, "");
+    assert.deepEqual(
+      c.lines().filter((line) => line.ask).map((line) => line.ask),
+      [{ answers: { question: { answers: ["The person will step into this session to answer you. End your turn now."] } } }],
+    );
+  });
+
+  test("ask goes on to its answer when the client answers requestUserInput with an error", async () => {
+    const c = newCase();
+    c.rules([{ ask: "Which color do you want?", answer: "I went on." }]);
+    const answer = await c.run({ prompt: "Do the task." });
+    assert.equal(answer.text, "I went on.");
+    assert.deepEqual(
+      c.lines().filter((line) => line.ask).map((line) => line.ask),
+      [{ error: "No one answers questions during a step. Ask the question in your answer instead." }],
+    );
   });
 
   test("codex resume on an unknown thread fails, and other subcommands still exit 2", async () => {

@@ -33,7 +33,7 @@ export const MODES: Record<string, Mode> = {
 export const DEFAULT_MODE = "agent";
 
 /** Codex config keys cannot hold whitespace, so a server name's whitespace becomes underscores. */
-const serverName = (name: string) => name.replace(/\p{White_Space}/gu, "_");
+export const serverName = (name: string) => name.replace(/\p{White_Space}/gu, "_");
 
 /** The MCP server names the user's config files give, from config/read with its layers. */
 export function configuredServers(read: ConfigReadResponse): Set<string> {
@@ -47,7 +47,7 @@ function asObject(value: unknown): Record<string, JsonValue | undefined> | undef
   return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, JsonValue | undefined>) : undefined;
 }
 
-function serverConfig(server: McpServer): Record<string, JsonValue> {
+export function serverConfig(server: McpServer): Record<string, JsonValue> {
   if (server.type === "http") return { url: server.url, ...(server.headers ? { http_headers: server.headers } : {}) };
   return { command: server.command, ...(server.args ? { args: server.args } : {}), ...(server.env ? { env: server.env } : {}) };
 }
@@ -103,6 +103,8 @@ export function threadConfig(step: Step, configured: Set<string>): { config: Rec
 
   const config: Record<string, JsonValue> = { projects: { [step.cwd]: { trust_level: "trusted" } } };
   if (Object.keys(servers).length) config.mcp_servers = servers;
+  // Codex offers request_user_input outside plan mode only with this feature on.
+  if (step.ask) config.features = { default_mode_request_user_input: true };
   return { config, notes };
 }
 

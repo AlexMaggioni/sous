@@ -85,14 +85,28 @@
 //                          Codex: N turns that thread/goal/set plays by itself, each with its own
 //                          turn/started and turn/completed. The rule sees "/goal <objective>".
 //                          Without a goal rule the goal plays one turn. test/fakes/codex says more.
-//               ask        Claude: the model calls AskUserQuestion before it answers. The fake
-//                          sends a can_use_tool control request for it and logs the reply as a
-//                          line { ask: { behavior, message, interrupt } }, or { ask: { error } }
-//                          when the client answers with an error. A deny with interrupt true ends
-//                          the turn with no success result. Any other reply goes on to the
-//                          answer. true asks a made-up question, a string asks that question.
-//                          When --disallowedTools names AskUserQuestion the model never sees the
-//                          tool, so the fake logs { ask: { skipped: "disallowed" } } and answers.
+//               ask        the model asks the person through the program's own question tool
+//                          before it answers. A string is the question, true asks a made-up one.
+//                          Claude: the fake sends a can_use_tool control request for
+//                          AskUserQuestion with the input { questions: [{ question, header:
+//                          "Question", options: [], multiSelect: false }] } and logs the reply as
+//                          { ask: { behavior, message, interrupt } }, or { ask: { error } } when
+//                          the client answers with an error. A deny with interrupt true ends the
+//                          turn as Claude Code 2.1.332 does: an is_error tool result with Claude
+//                          Code's own rejection text, the user text "[Request interrupted by user
+//                          for tool use]", and a result error_during_execution with stop_reason
+//                          tool_use and the call in permission_denials. Any other reply goes on to
+//                          the answer. When --disallowedTools names AskUserQuestion the model
+//                          never sees the tool, so the fake logs { ask: { skipped: "disallowed" } }
+//                          and answers.
+//                          Codex: the fake sends item/tool/requestUserInput with one question,
+//                          id "question", header "Question", no options and isBlocking true, and
+//                          logs the client's reply as { ask: { answers } } or { ask: { error } }.
+//                          An error reply goes on to the answer, as the model reads the error.
+//                          After an answer the turn waits for turn/interrupt and then completes as
+//                          interrupted with no agent message, as 0.169.0 does when the client
+//                          refuses the question and interrupts. A turn/interrupt that never comes
+//                          leaves the turn waiting, so the client must send it.
 // FAKE_DEBUG  a file. Each program appends what it reads and writes, for debugging.
 //
 // Steering. A message sent into a running turn (Claude: a user message with priority next,
@@ -115,9 +129,13 @@
 //   session, named by --session-id or made up, and the turn goes on in the new one alone. Codex:
 //   thread/fork with { threadId, cwd } copies them to a new thread in that cwd.
 //   By hand. `claude --resume <id>` with no --input-format and no --print, or `codex resume <id>`,
-//   is a person in a terminal. The fake appends the line in FAKE_PERSON to the session's
-//   messages, logs { byHand: line }, and exits 0 without reading stdin. With FAKE_PERSON unset or
-//   empty the person typed nothing. An unknown id fails as a real resume does.
+//   is a person in a terminal. The person's line is FAKE_PERSON when it is set, else
+//   "I stepped in. Keep this word in mind: KESTREL-5150." The fake appends it to the session's
+//   messages, so recall on the next turn sees it, logs one line { program, byHand: true,
+//   sessionId, cwd, args, person, pid }, and exits 0 without reading stdin. args is every
+//   argument after the program's name. cwd is Codex's -C folder, else the folder the fake runs
+//   in. An empty FAKE_PERSON adds no message. An unknown id prints to stderr and exits 1, as a
+//   real resume does.
 
 import { execSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -150,6 +168,11 @@ function readLines() {
         return {};
       }
     });
+}
+
+/** What the person types by hand: FAKE_PERSON, else a line with a canary word for recall. */
+export function personLine(env = process.env) {
+  return env.FAKE_PERSON ?? "I stepped in. Keep this word in mind: KESTREL-5150.";
 }
 
 export function appendLog(entry) {

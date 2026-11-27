@@ -6,6 +6,7 @@ import { findProgram } from "../lookup.js";
 import type { Account, FindOptions, Found, Harness, Step, StepEvents } from "../types.js";
 import type { ModelListResponse } from "./generated/v2/ModelListResponse.js";
 import { CODEX, codexEnv, codexLogin, codexPlaces, codexVersion } from "./program.js";
+import { codexJoinArgs } from "./join.js";
 import { openServer, runCodex, type CodexProgram } from "./run.js";
 
 export function createCodexHarness(lookup: FindOptions = {}): Harness {
@@ -49,6 +50,7 @@ export function createCodexHarness(lookup: FindOptions = {}): Harness {
       return runCodex(await ready(), step, events ?? {}, held);
     },
     release: (sessionId?: string) => held.release(sessionId),
+    joinArgs: codexJoinArgs,
     login: codexLogin,
     places: codexPlaces,
     env: codexEnv,
