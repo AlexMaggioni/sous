@@ -1,9 +1,9 @@
 // The sous home folder (~/.sous, or $SOUS_HOME) and a project's .sous folder.
 // A project's workflows win over the home folder's.
 
-import { constants, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { constants, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { readStrictJsonFile, writeJsonFile } from "../json-file.js";
 import { runFolders } from "./store.js";
 
@@ -114,21 +114,40 @@ export function findProjectDir(cwd = process.cwd()): string {
   }
 }
 
-/** The projects where sous ran, whose workflow files the service reads for a schedule. */
+/** The projects where sous ran, whose workflow files the service reads for a schedule. A run's
+ *  worktree is a copy of its project, not a project, though an older sous noted some. */
 export function knownProjects(paths: HomePaths = homePaths()): string[] {
   try {
-    return readStrictJsonFile<string[]>(paths.projects, []).filter((dir) => typeof dir === "string");
+    return readStrictJsonFile<string[]>(paths.projects, []).filter((dir) => typeof dir === "string" && !inWorktrees(paths, dir));
   } catch {
     return [];
   }
 }
 
+/** Note a project where sous ran. A folder in the home's worktrees is a run's copy of a project.
+ *  Noting it would make the service start each schedule of its workflow files a second time. */
 export function rememberProject(paths: HomePaths, projectDir: string): void {
   const dir = resolve(projectDir);
   const known = knownProjects(paths);
-  if (known.includes(dir) || !existsSync(join(dir, ".sous", "workflows"))) return;
+  if (known.includes(dir) || inWorktrees(paths, dir) || !existsSync(join(dir, ".sous", "workflows"))) return;
   mkdirSync(paths.home, { recursive: true });
   writeJsonFile(paths.projects, [...known, dir]);
+}
+
+/** True for the home's worktrees folder and any folder in it, by its path or by the folder a link
+ *  in its path leads to. */
+function inWorktrees(paths: HomePaths, dir: string): boolean {
+  const inside = (root: string, path: string) => {
+    const rel = relative(root, path);
+    return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+  };
+  if (inside(resolve(paths.worktrees), resolve(dir))) return true;
+  try {
+    return inside(realpathSync(paths.worktrees), realpathSync(dir));
+  } catch {
+    // One of the two is missing, so the folder is not in the worktrees.
+    return false;
+  }
 }
 
 export function workflowDirs(projectDir: string, paths: HomePaths = homePaths()): string[] {

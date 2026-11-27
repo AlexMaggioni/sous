@@ -16,6 +16,7 @@ import {
   writeSync,
 } from "node:fs";
 import { join } from "node:path";
+import { bootId, processAlive } from "../../process-alive.js";
 import type { AgentHistoryEntry } from "../../steps/agent-history.js";
 import type { AgentResultProvenance, AgentUsage } from "../../steps/agent-run.js";
 import type {
@@ -267,6 +268,8 @@ interface LockFile {
   runId: string;
   runPath: string;
   pid: number;
+  /** The boot the pid belongs to. A lock from another boot has no live owner. */
+  boot?: string;
   startedAt: string;
   token: string;
 }
@@ -351,17 +354,6 @@ export function createRunPersistence(
   const loadState = (runId: string): PersistedRunState | null =>
     loadRunState(runsDir, runId, { existsSync: _existsSync, readFileSync: _readFileSync });
   const events = createRunEventLog(runsDir, loadState, fsOverride);
-
-  const pidIsAlive = (pid: number): boolean => {
-    if (!Number.isInteger(pid) || pid <= 0) return false;
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch (err) {
-      if ((err as { code?: string }).code === "EPERM") return true;
-      return false;
-    }
-  };
 
   const readLockAt = (path: string): LockFile | null => {
     try {
@@ -475,6 +467,7 @@ export function createRunPersistence(
           runId,
           runPath: path,
           pid: process.pid,
+          ...(bootId() === undefined ? {} : { boot: bootId() }),
           startedAt: new Date().toISOString(),
           token,
         };
@@ -490,7 +483,7 @@ export function createRunPersistence(
           if (code !== "EEXIST") throw err;
           const existing = readLock(runId);
           const valid = validLockOwner(existing, runId, path);
-          if (valid && pidIsAlive(existing.pid)) {
+          if (valid && processAlive(existing.pid, typeof existing.boot === "string" ? existing.boot : undefined)) {
             return null;
           }
           if (valid) recoveredOwnerPid = existing.pid;

@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import type { AgentSessionRef } from "../src/workflow-result.js";
 import { createSteps, type InnerRunner } from "../src/steps/steps.js";
-import { processAlive } from "../src/runs/records.js";
+import { processAlive } from "../src/process-alive.js";
 import { releaseHold, sessionHolds } from "../src/runs/session-hold.js";
 import { holdFile } from "../src/runs/store.js";
 import { testHome } from "../src/testing.js";

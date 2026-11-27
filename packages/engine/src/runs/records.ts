@@ -8,6 +8,7 @@
 import { appendFileSync, existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import type { HarnessId, SteerOutcome } from "@sous-run/harnesses";
 import { appendJsonLine, readJsonFile, readJsonLines, writeJsonFile } from "../json-file.js";
+import { processAlive } from "../process-alive.js";
 import { redactText } from "../redact.js";
 import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";
 import type { PlaceNotes } from "../places/places.js";
@@ -37,6 +38,8 @@ export interface RunRecord {
   schedule?: string;
   /** The worker process, while one runs the run. */
   pid?: number;
+  /** The boot the pid belongs to. A pid from another boot names some other process. */
+  boot?: string;
   /** The worker's pid while it listens for `sous pause`. Until then, and once it stops, a pause
    *  only leaves its file. */
   listening?: number;
@@ -228,7 +231,7 @@ function pauseSignal(pid: number): void {
  *  does not pause on it. The pid clears first, so a pause after the take finds no worker. */
 export function endWorker(paths: HomePaths, runId: string): void {
   if (!loadRecord(paths, runId)) return;
-  updateRecord(paths, runId, { pid: undefined, listening: undefined, pauseFile: undefined });
+  updateRecord(paths, runId, { pid: undefined, boot: undefined, listening: undefined, pauseFile: undefined });
   takePause(paths, runId);
 }
 
@@ -409,12 +412,7 @@ export function findRecord(paths: HomePaths, idOrPrefix: string): RunRecord | un
   return matches[0];
 }
 
-export function processAlive(pid: number | undefined): boolean {
-  if (!pid) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
+/** True when the run's worker runs: its pid lives, and was saved in this boot. */
+export function workerAlive(record: Pick<RunRecord, "pid" | "boot"> | undefined): boolean {
+  return processAlive(record?.pid, record?.boot);
 }

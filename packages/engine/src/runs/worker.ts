@@ -19,7 +19,7 @@ import { approvedLookup } from "./approval-check.js";
 import { workflowHash } from "./approvals.js";
 import { authorAnsweredBy } from "./consent.js";
 import { Refusal } from "./refusal.js";
-import { activityWriter, endWorker, loadRecord, loadSnapshot, placeNotes, processAlive, requestJoin, saveSnapshot, scopePrefix, takeJoins, takeNote, takePause, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type NoteRequest, type RunRecord, type TellOutcome } from "./records.js";
+import { activityWriter, endWorker, loadRecord, loadSnapshot, placeNotes, requestJoin, saveSnapshot, scopePrefix, takeJoins, takeNote, takePause, takeStepStops, takeTells, TELL_RECEIPTS, updateRecord, type NoteRequest, type RunRecord, type TellOutcome } from "./records.js";
 import { sessionHolds } from "./session-hold.js";
 import { goLimits } from "./limits.js";
 import { judge } from "./rule.js";
@@ -27,6 +27,7 @@ import { agentSlots, managerStore } from "./store.js";
 import { createSteps, type InnerRunner, type StepsNote } from "../steps/steps.js";
 import { SteeringBoard } from "../steps/steering.js";
 import type { ActivityEntry, ActivityStep, OnActivity } from "../steps/activity.js";
+import { bootId, processAlive } from "../process-alive.js";
 import { programLookup } from "../programs.js";
 import { DRY_RUN_MAX_CALLS } from "../config.js";
 
@@ -291,7 +292,7 @@ async function runOnAccounts(
   const runId = record.runId;
   const config = loadConfig(paths);
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`));
-  updateRecord(paths, runId, { pid: process.pid, pauseFile: true, limit: undefined, refused: undefined });
+  updateRecord(paths, runId, { pid: process.pid, boot: bootId(), pauseFile: true, limit: undefined, refused: undefined });
   // A step stop the last worker never took names a step of that worker, not this one. A join names
   // a session, which outlives the worker, so one whose `sous join` still waits stays for this one.
   takeStepStops(paths, runId);

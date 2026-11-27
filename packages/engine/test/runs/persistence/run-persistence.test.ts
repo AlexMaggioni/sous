@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { AgentSessionRecord, AgentSessionRef } from "../../../src/workflow-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../../../src/errors.js";
+import { bootId } from "../../../src/process-alive.js";
 import { createRunPersistence, generateRunId, type PersistedRunState, type RunPersistence } from "../../../src/runs/persistence/run-persistence.js";
 import { WorkflowManager } from "../../../src/workflow-manager.js";
 import { workflowProjectPaths } from "../../../src/runs/persistence/project-paths.js";
@@ -645,6 +646,36 @@ test(
     assert.equal(lease.recoveredOwnerPid, 2147483647);
     const lock = JSON.parse(readFileSync(join(runsDir, "stale-lock.lock"), "utf-8")) as { token: string };
     assert.equal(lock.token, lease.token, "stale lock is replaced by the new owner");
+    rp.releaseRunLease(lease);
+  }),
+);
+
+test(
+  "run lease recovers a lock from an earlier boot, though its pid names a live process now",
+  withTempCwd(async (cwd) => {
+    const rp = createRunPersistence(cwd);
+    const runsDir = workflowProjectPaths(cwd).runsDir;
+    rp.save(persistedRun("old-boot", "running"));
+    // This process stands in for the one the new boot gave the old owner's pid.
+    writeFileSync(
+      join(runsDir, "old-boot.lock"),
+      JSON.stringify({
+        runId: "old-boot",
+        runPath: join(runsDir, "old-boot.json"),
+        pid: process.pid,
+        boot: "00000000-0000-0000-0000-000000000000",
+        startedAt: "2026-11-21T03:00:00.000Z",
+        token: "before-the-reboot",
+      }),
+      "utf8",
+    );
+    const lease = rp.acquireRunLease("old-boot");
+    assert.ok(lease, "a lock from an earlier boot has no live owner");
+    assert.equal(lease.recoveredOwnerPid, process.pid);
+    const lock = JSON.parse(readFileSync(join(runsDir, "old-boot.lock"), "utf8")) as { token: string; boot?: string };
+    assert.equal(lock.token, lease.token);
+    assert.equal(lock.boot, bootId(), "the new lock names this boot");
+    assert.equal(rp.acquireRunLease("old-boot"), null, "a lock of this boot keeps its owner");
     rp.releaseRunLease(lease);
   }),
 );

@@ -9,7 +9,7 @@
 import { recordAction, type Who } from "./actions.js";
 import type { HomePaths } from "./home.js";
 import { listQuestions, writeAnswer, type Question } from "./inbox.js";
-import { loadRecord, processAlive, readActivity, requestJoin, scopePrefix, takeJoins } from "./records.js";
+import { loadRecord, readActivity, requestJoin, scopePrefix, takeJoins, workerAlive } from "./records.js";
 import { Refusal } from "./refusal.js";
 import { runDetail } from "./run.js";
 import { readHolder, releaseHold, takeHold, type Holder } from "./session-hold.js";
@@ -158,7 +158,7 @@ export async function takeSession(paths: HomePaths, target: JoinTarget, who: Who
     toldPid = holder?.pid;
     await pause(pollMs, options.signal);
   };
-  if (record && processAlive(record.pid)) {
+  if (record && workerAlive(record)) {
     requestJoin(paths, target.runId, { sessionId: target.session.sessionId, pid: me });
     try {
       process.kill(record.pid!, "SIGUSR2");
@@ -166,7 +166,7 @@ export async function takeSession(paths: HomePaths, target: JoinTarget, who: Who
       // The worker ended since the look above. The loop below finds it gone and takes the hold.
     }
     try {
-      while (!ours() && processAlive(record.pid)) {
+      while (!ours() && workerAlive(record)) {
         const holder = readHolder(file);
         if (joined(holder)) throw refuse(holder!);
         await wait(holder);
@@ -176,7 +176,7 @@ export async function takeSession(paths: HomePaths, target: JoinTarget, who: Who
       // The worker has the request, and hands the session over once its turn lets go of it. A
       // process that goes on, such as sous wait, would then hold it for no one, so it gives the
       // session back at once and the step goes on.
-      while (!ours() && processAlive(record.pid) && !options.giveUp?.aborted) await pause(pollMs, options.giveUp).catch(() => undefined);
+      while (!ours() && workerAlive(record) && !options.giveUp?.aborted) await pause(pollMs, options.giveUp).catch(() => undefined);
       releaseHold(file, me);
       throw error;
     }

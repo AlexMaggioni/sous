@@ -179,6 +179,7 @@ const TOUCHES_MACHINE = [
   "packages/engine/src/code-steps.ts",
   "packages/engine/src/json-file.ts",
   "packages/engine/src/places/places.ts",
+  "packages/engine/src/process-alive.ts",
   "packages/engine/src/programs.ts",
   "packages/engine/src/run-environment.ts",
   "packages/engine/src/runs/home.ts",

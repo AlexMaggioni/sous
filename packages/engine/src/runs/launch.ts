@@ -9,6 +9,7 @@ import { checkInputs } from "../workflows/meta.js";
 import { makePlace, preparePlace, type PreparedPlace } from "../places/places.js";
 import { loadConfig, rememberProject, type HomePaths, type OrcConfig, type Place } from "./home.js";
 import { accountsForRun } from "../accounts.js";
+import { bootId } from "../process-alive.js";
 import { saveRecord, updateRecord, type RunRecord } from "./records.js";
 import { logFile } from "./store.js";
 import type { Priority } from "./slots.js";
@@ -148,7 +149,7 @@ export type Launcher = (paths: HomePaths, runId: string, mode: "start" | "resume
 /** The worker as a process of its own, in the background, as sous starts it. `cliFile` gives sous's
  *  built cli.js. It is read only when a worker starts. */
 export function workerProcess(cliFile: () => string): Launcher {
-  return (paths, runId, mode) => updateRecord(paths, runId, { pid: spawnWorker(paths, cliFile(), runId, mode), pauseFile: true });
+  return (paths, runId, mode) => updateRecord(paths, runId, { pid: spawnWorker(paths, cliFile(), runId, mode), boot: bootId(), pauseFile: true });
 }
 
 /** Start the run's worker in the background. Its output goes to logs/<run id>.log. */

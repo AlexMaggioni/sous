@@ -10,7 +10,7 @@
 import { linkSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import type { HomePaths } from "./home.js";
-import { processAlive } from "./records.js";
+import { processAlive } from "../process-alive.js";
 import { holdFile } from "./store.js";
 
 /** Who holds a session: the process, whether a step or a person who joined, when, and the step's label. */

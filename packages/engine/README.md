@@ -134,7 +134,8 @@ does not, such as `createRun` for a run that needs no worker.
 | `src/catalog/` | The agents, skills and MCP servers a project sees, one page each, for the page `sous serve` opens. `files.ts` is its only read of the disk. An MCP page masks each env and header value. |
 | `src/accounts.ts`, `src/agents.ts`, `src/programs.ts` | Accounts, the agent lookup and the installed programs. `programs.ts` also links the sous skill, and reads and writes Claude Code's settings for the session-start hook. |
 | `src/hook-settings.ts` | The pure edit behind `sous hook install` and `remove`: Claude Code's settings with sous's SessionStart hook added or taken out. |
-| `src/json-file.ts`, `src/workflow-paths.ts` | The reads and writes of the home's JSON files. A write replaces a file whole. `workflow-paths.ts` names the engine's home, `~/.sous/engine`. |
+| `src/json-file.ts`, `src/workflow-paths.ts` | The reads and writes of the home's JSON files. A write replaces a file whole. `writeJsonFileDurably` also waits until the file is on the disk. `workflow-paths.ts` names the engine's home, `~/.sous/engine`. |
+| `src/process-alive.ts` | Whether a process that a file names still runs. Each file that keeps a pid keeps the boot id with it, and a pid saved in another boot counts as gone. |
 
 ## License
 
