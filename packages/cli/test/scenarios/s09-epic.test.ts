@@ -49,9 +49,15 @@ async function heldEpic(world: FakeWorld): Promise<string> {
   for (let i = 0; i < 400; i++) {
     const lines = world.log();
     const [one, three] = [1, 3].map((n) => turnOf(lines, tests(n)));
-    const held = readState(world.paths, runId)?.agents?.find((row) => row.status === "running" && row.session !== undefined);
+    // The row of ticket 2's tests turn itself, found by the session the fake got its prompt in.
+    // Under load, the rows of ticket 2's first turn and of ticket 1's tests turn can still be saved
+    // as running, with their prompts delivered, while this one's prompt is not yet.
+    const two = turnOf(lines, tests(2));
+    const held = readState(world.paths, runId)?.agents?.find(
+      (row) => row.label === "tests" && row.status === "running" && two?.sessionId !== undefined && row.session?.sessionId === two.sessionId,
+    );
     const closed = [one, three].every((line) => line?.cwd !== undefined && !existsSync(line.cwd));
-    if (turnOf(lines, tests(2)) && closed && held?.session && held.session.delivered !== false) return runId;
+    if (two && closed && held?.session && held.session.delivered !== false && held.call) return runId;
     await new Promise((r) => setTimeout(r, 50));
   }
   assert.fail(`ticket 2's tests turn never ran with its prompt delivered while 1 and 3 returned:\n${JSON.stringify(readState(world.paths, runId), null, 2)}`);
