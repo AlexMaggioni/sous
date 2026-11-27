@@ -8,6 +8,7 @@ import { describe, it } from "node:test";
 import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { TSchema } from "typebox";
+import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { CALL_INPUTS_FORMAT, type WorkflowRunOptions, runWorkflow } from "../src/workflow.js";
 import { tempPlaces } from "./helpers/places.js";
 
@@ -76,13 +77,23 @@ describe("agent input fingerprints", () => {
           "{ label: 'fixed', mcpServers: [{ name: 'tools', command: 'tool-server', args: ['--stdio'], env: [] }] }",
           { cwd: nonGitCwd },
         ),
-        fingerprintFor("{ label: 'fixed', keepSession: true }", { cwd: nonGitCwd }),
-        fingerprintFor("{ label: 'fixed', isolation: 'worktree' }", { cwd: nonGitCwd }),
+        fingerprintFor("{ label: 'fixed', place: 'worktree' }", { cwd: nonGitCwd }),
       ]);
 
       for (const variant of variants) {
         assert.notEqual(variant, baseline);
       }
+      // keepSession was an input here. It is gone, so a step that sets it fails the script
+      // before the runner reads a fingerprint.
+      await assert.rejects(
+        fingerprintFor("{ label: 'fixed', keepSession: true }", { cwd: nonGitCwd }),
+        (error: unknown) => {
+          assert.ok(error instanceof WorkflowError);
+          assert.equal(error.code, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR);
+          assert.equal(error.message, "keepSession is gone. Make a session with session() and send() each turn on it.");
+          return true;
+        },
+      );
     } finally {
       rmSync(nonGitCwd, { recursive: true, force: true });
     }
@@ -95,7 +106,7 @@ describe("agent input fingerprints", () => {
     let afterCheckpoint: string | undefined;
     await runWorkflow(
       `export const meta = { name: 'default-label', description: 'default label path' }
-await checkpoint('occupy index')
+await ask('occupy index')
 return await agent('same-prompt')`,
       {
         agent: {
@@ -104,7 +115,7 @@ return await agent('same-prompt')`,
             return "ok";
           },
         },
-        confirm: async () => true,
+        confirm: async () => "yes",
         persistLogs: false,
       },
     );
@@ -144,7 +155,7 @@ return await agent('same-prompt')`,
       },
     };
     const script = `export const meta = { name: 'worktree-input', description: 'worktree input' }
-return await agent('same-prompt', { label: 'fixed', isolation: 'worktree' })`;
+return await agent('same-prompt', { label: 'fixed', place: 'worktree' })`;
 
     try {
       git("init", "-q");

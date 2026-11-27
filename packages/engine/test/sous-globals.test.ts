@@ -201,8 +201,8 @@ return 'went on'`;
 
 // Piece 8, questions. The author of a question says who may answer it: ask(q, { answeredBy }) takes
 // "people", the default, or "anyone". An "anyone" question goes through markedCheckpoint with
-// { answeredBy: "anyone" }, a breakpoint with { breakpoint: true }, and an agent's question with
-// the asking step's label. A breakpoint is always for people. The fake deps below give
+// { answeredBy: "anyone" }, and a breakpoint with { breakpoint: true }. A breakpoint is always for
+// people. The fake deps below give
 // markedCheckpoint, the dep the design names, and no breakpointCheckpoint.
 describe("piece 8: who may answer a question", () => {
   interface Asked {
@@ -278,44 +278,22 @@ describe("piece 8: who may answer a question", () => {
     assert.deepEqual(plain(asked[0]!.purpose), { breakpoint: true, title: "Check the plan", show: "all good?" });
   });
 
-  it("agent(..., { ask: true, answeredBy }) keeps answeredBy from the agent, and its question carries the step's label", async () => {
-    for (const [answeredBy, purpose] of [
-      ["anyone", { answeredBy: "anyone", step: "builder" }],
-      [undefined, { step: "builder" }],
-    ] as const) {
-      const { agent, asked, agentCalls } = globals("blue", ["QUESTION: Which color?", "built it"]);
-      const result = await agent("Build it", { label: "builder", ask: true, ...(answeredBy ? { answeredBy } : {}) });
-      assert.equal(result, "built it");
-      assert.equal(asked.length, 1, JSON.stringify(asked));
-      assert.equal(asked[0]!.via, "markedCheckpoint", JSON.stringify(asked));
-      assert.match(asked[0]!.prompt, /Which color\?/);
-      assert.deepEqual(plain(asked[0]!.purpose), purpose);
-      for (const call of agentCalls) assert.equal("answeredBy" in call.options, false, `the agent gets no answeredBy: ${JSON.stringify(call.options)}`);
-    }
-  });
-
-  it("agent(..., { ask: true, answeredBy: 'robots' }) fails the script before the agent runs", async () => {
-    const { agent, agentCalls } = globals();
-    await assert.rejects(() => agent("Build it", { label: "builder", ask: true, answeredBy: "robots" }), /answeredBy/);
-    assert.equal(agentCalls.length, 0);
-  });
-
-  it("in a run, the host's confirm gets the purpose of each: ask anyone, breakpoint and an agent's question", async () => {
-    const { runner } = recordingRunner((_prompt, options) => (options.label === "builder" ? "QUESTION: Which shade?" : "built it"));
+  it("in a run, the host's confirm gets the purpose of each: ask anyone and breakpoint", async () => {
+    const { runner } = recordingRunner(() => "built it");
     const purposes: unknown[] = [];
     const script = `export const meta = { name: 'p8', description: 'p8' }
 const color = await ask('Which color?', { choices: ['red', 'blue'], answeredBy: 'anyone' })
 await breakpoint('Check', { show: color })
-return await agent('Build it', { label: 'builder', ask: true })`;
+return await agent('Build it', { label: 'builder' })`;
     await runWorkflow(script, {
       agent: runner,
       persistLogs: false,
       confirm: async (_prompt, _options, context) => {
         purposes.push(plain(context?.purpose));
-        return purposes.length === 1 ? "blue" : purposes.length === 2 ? "approve" : "dark";
+        return purposes.length === 1 ? "blue" : "approve";
       },
     });
-    assert.deepEqual(purposes, [{ answeredBy: "anyone" }, { breakpoint: true, title: "Check", show: "blue" }, { step: "builder" }]);
+    assert.deepEqual(purposes, [{ answeredBy: "anyone" }, { breakpoint: true, title: "Check", show: "blue" }]);
   });
 });
 
@@ -450,11 +428,12 @@ return await agent("review", { agentType: "reviewer" });`);
     }
   });
 
-  it("continue reopens the session of the step with that label", async () => {
+  it("a second send() on a session reopens the session its first turn opened", async () => {
     const { runner, calls } = recordingRunner(() => "ok");
     const script = `export const meta = { name: 'cont', description: 'cont' }
-await agent('implement', { label: 'implementer', keepSession: true })
-await agent('fix the review', { label: 'implementer fix', continue: 'implementer' })
+const implementer = session({ label: 'implementer' })
+await implementer.send('implement')
+await implementer.send('fix the review', { label: 'implementer fix' })
 return 1`;
     await runWorkflow(script, { agent: runner, persistLogs: false });
     assert.equal(calls[0]!.options.continueFromSession, undefined);
@@ -476,23 +455,6 @@ return 1`;
     assert.equal(calls[1]!.options.model, "sonnet");
   });
 
-  it("ask: true lets the agent stop with a question and continue in the same session", async () => {
-    const { runner, calls } = recordingRunner((_prompt, _options, all) =>
-      all.length === 1 ? "QUESTION: Postgres or SQLite?" : "done with SQLite",
-    );
-    const script = `export const meta = { name: 'askagent', description: 'askagent' }
-return await agent('build the store', { label: 'builder', ask: true })`;
-    const result = await runWorkflow<string>(script, {
-      agent: runner,
-      persistLogs: false,
-      confirm: async () => "SQLite",
-    });
-    assert.equal(result.result, "done with SQLite");
-    assert.equal(calls.length, 2);
-    assert.match(calls[1]!.prompt, /The user answered: SQLite/);
-    assert.equal(calls[1]!.options.continueWithPrompt, true);
-    assert.equal((calls[1]!.options.continueFromSession as { sessionId: string }).sessionId, "session-1");
-  });
 });
 
 describe("choose", () => {

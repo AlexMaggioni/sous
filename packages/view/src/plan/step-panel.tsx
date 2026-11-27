@@ -23,15 +23,14 @@ const KIND_WORDS: Record<string, string> = {
   run: "Runs a file",
   wait: "Waits until a check passes",
   ask: "Question for you",
-  checkpoint: "Checkpoint",
   breakpoint: "Breakpoint",
   workflow: "Nested workflow",
   choose: "Picks what runs next",
   pipeline: "Pipeline",
 };
-const LOOP_WORDS: Record<string, string> = { gate: "Gate", retry: "Retry", for: "For loop", while: "While loop" };
+const LOOP_WORDS: Record<string, string> = { for: "For loop", while: "While loop" };
 
-/** What kind of part it is, in a few words, such as "Agent step" or "Gate". */
+/** What kind of part it is, in a few words, such as "Agent step" or "For loop". */
 function kindWords(part: Part, node: FlowNode | undefined): string {
   switch (part.t) {
     case "leaf":

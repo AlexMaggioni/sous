@@ -66,7 +66,7 @@ return xs`;
   assert.equal(result.agentCount, 4);
 });
 
-test("authored model/mode/config reach dispatch and actual call records unchanged", async () => {
+test("authored model/mode reach dispatch and actual call records unchanged", async () => {
   const seen: Array<{
     model?: string;
     mode?: string;
@@ -74,7 +74,7 @@ test("authored model/mode/config reach dispatch and actual call records unchange
   }> = [];
   const result = await runWorkflow(
     `export const meta = { name: 'host_config', description: 'host selected configuration' }
-await agent('one', { label: 'one', model: 'claude/opus', mode: 'code', configOptions: { effort: 'high', fast: false } })
+await agent('one', { label: 'one', model: 'claude/opus', mode: 'code' })
 return agent('two', { label: 'two', model: 'codex/gpt-5' })`,
     {
       agent: {
@@ -90,16 +90,16 @@ return agent('two', { label: 'two', model: 'codex/gpt-5' })`,
     },
   );
 
-  // No step reads configOptions, so dispatch carries the model and mode only.
+  // Steps take no configOptions, so dispatch carries the model and mode only.
   assert.deepEqual(seen, [
     { model: "claude/opus", mode: "code", configOptions: undefined },
     { model: "codex/gpt-5", mode: undefined, configOptions: undefined },
   ]);
   assert.deepEqual(result.calls?.map((call) => call.modelRequested), ["claude/opus", "codex/gpt-5"]);
-  assert.deepEqual(result.calls?.map((call) => call.configOptionsRequested), [{ effort: "high", fast: false }, undefined]);
+  assert.deepEqual(result.calls?.map((call) => call.configOptionsRequested), [undefined, undefined]);
 });
 
-test('configOptions "model" is rejected before the runner can open a session', async () => {
+test("configOptions is refused before the runner can open a session", async () => {
   let calls = 0;
   await assert.rejects(
     () =>
@@ -121,9 +121,7 @@ return agent('x', { label: 'reserved-call', configOptions: { model: 'shadow-mode
       assert.equal(error.code, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR);
       assert.equal(error.recoverable, false);
       assert.equal(error.agentLabel, "reserved-call");
-      assert.match(error.message, /reserved-call/);
-      assert.match(error.message, /shadow-model/);
-      assert.match(error.message, /model field/);
+      assert.equal(error.message, "configOptions is gone. No program read it. Remove it from the step.");
       return true;
     },
   );
@@ -153,7 +151,7 @@ return agent('x', { label: 'pi-call', backend: 'pi', model: 'openai/model', conf
       assert.equal(error.recoverable, false);
       assert.equal(error.agentLabel, "pi-call");
       assert.match(error.message, /agent "pi-call" options contain unknown keys "backend", "config"/);
-      assert.match(error.message, /valid keys: label, phase, schema, model, mode, configOptions/);
+      assert.match(error.message, /valid keys: label, phase, schema, model, mode, agentType/);
       return true;
     },
   );
@@ -444,10 +442,10 @@ test("runWorkflow threads the engine runId into the agent run options (correlati
 
 const configuredResumeSelection = {
   0: { model: "claude/haiku" },
-  1: { model: "claude/sonnet", mode: "code", configOptions: { effort: "high", fast: true } },
+  1: { model: "claude/sonnet", mode: "code", effort: "high" },
   2: { model: "codex/gpt-5" },
 } as const;
-const configuredResumeScript = (selection: { model: string; mode?: string; configOptions?: Record<string, string | boolean> } = configuredResumeSelection[1]) => `export const meta = { name: 'configured-resume', description: 'Actual routing replay identity' };
+const configuredResumeScript = (selection: { model: string; mode?: string; effort?: string } = configuredResumeSelection[1]) => `export const meta = { name: 'configured-resume', description: 'Actual routing replay identity' };
 const prefix = await agent('prefix', { label: 'prefix', model: 'claude/haiku' });
 const selected = await agent('selected', { label: 'selected', ...${JSON.stringify(selection)} });
 const suffix = await agent('suffix', { label: 'suffix', model: 'codex/gpt-5' });
@@ -485,14 +483,6 @@ test("actual effective configuration controls replay identity, and only the chan
 
   for (const [label, selectedConfiguration] of [
     ["identical", configuredResumeSelection[1]],
-    [
-      "reordered configOptions",
-      {
-        model: "claude/sonnet",
-        mode: "code",
-        configOptions: { fast: true, effort: "high" },
-      },
-    ],
   ] as const) {
     const replayAgent = markedAgent(`unexpected-${label}`);
     const replay = await runWorkflow(configuredResumeScript(selectedConfiguration), {
@@ -515,7 +505,7 @@ test("actual effective configuration controls replay identity, and only the chan
       {
         model: "codex/gpt-5",
         mode: "code",
-        configOptions: { effort: "high", fast: true },
+        effort: "high",
       },
     ],
     [
@@ -523,15 +513,15 @@ test("actual effective configuration controls replay identity, and only the chan
       {
         model: "claude/sonnet",
         mode: "plan",
-        configOptions: { effort: "high", fast: true },
+        effort: "high",
       },
     ],
     [
-      "one config option",
+      "effort",
       {
         model: "claude/sonnet",
         mode: "code",
-        configOptions: { effort: "medium", fast: true },
+        effort: "medium",
       },
     ],
     // Omission is a real choice (the provider's default), not "keep the previous value".
@@ -539,11 +529,11 @@ test("actual effective configuration controls replay identity, and only the chan
       "cleared mode",
       {
         model: "claude/sonnet",
-        configOptions: { effort: "high", fast: true },
+        effort: "high",
       },
     ],
     [
-      "cleared config options",
+      "cleared effort",
       {
         model: "claude/sonnet",
         mode: "code",
@@ -871,173 +861,18 @@ return 1`;
   assert.deepEqual(result.logs, []);
 });
 
-test("gate returns the structured first-pass verdict with extra fields intact", async () => {
-  const result = await runWorkflow(
-    `export const meta = { name: 'gate_structured', description: 'structured verdict' }
-const expected = { ok: true, commitSha: '9f4c2e17d8a6', scores: { correctness: 1, coverage: 0.96 } }
-const outcome = await gate(
-  () => ({ branch: 'issue-131', tests: 148 }),
-  () => expected,
-)
-return { outcome, sameVerdict: outcome.verdict === expected }`,
-    { agent: noopAgent, persistLogs: false },
-  );
-
-  assert.deepEqual(JSON.parse(JSON.stringify(result.result)), {
-    outcome: {
-      ok: true,
-      value: { branch: "issue-131", tests: 148 },
-      verdict: {
-        ok: true,
-        commitSha: "9f4c2e17d8a6",
-        scores: { correctness: 1, coverage: 0.96 },
-      },
-      attempts: 1,
-    },
-    sameVerdict: true,
-  });
-});
-
-test("gate threads rejection feedback and returns the third passing attempt", async () => {
-  const result = await runWorkflow(
-    `export const meta = { name: 'gate_feedback', description: 'feedback threading' }
-const feedbackSeen = []
-const outcome = await gate(
-  (feedback, attempt) => {
-    feedbackSeen.push(feedback === undefined ? null : feedback)
-    return { revision: attempt + 1, appliedFeedback: feedback ?? null }
-  },
-  (value) => value.revision < 3
-    ? { ok: false, feedback: 'fix revision ' + value.revision, rejectedRevision: value.revision }
-    : { ok: true, commitSha: 'third-pass', reviewedRevision: value.revision },
-  { attempts: 5 },
-)
-return { outcome, feedbackSeen }`,
-    { agent: noopAgent, persistLogs: false },
-  );
-
-  assert.deepEqual(JSON.parse(JSON.stringify(result.result)), {
-    outcome: {
-      ok: true,
-      value: { revision: 3, appliedFeedback: "fix revision 2" },
-      verdict: { ok: true, commitSha: "third-pass", reviewedRevision: 3 },
-      attempts: 3,
-    },
-    feedbackSeen: [null, "fix revision 1", "fix revision 2"],
-  });
-});
-
-test("gate exhaustion returns only the final producer value and rejection verdict", async () => {
-  const result = await runWorkflow(
-    `export const meta = { name: 'gate_exhaustion', description: 'final rejection' }
-return await gate(
-  (_feedback, attempt) => ({ revision: attempt + 1 }),
-  (value) => ({ ok: false, feedback: 'reject ' + value.revision, rejectionCode: 'R' + value.revision }),
-  { attempts: 2 },
-)`,
-    { agent: noopAgent, persistLogs: false },
-  );
-
-  assert.deepEqual(JSON.parse(JSON.stringify(result.result)), {
-    ok: false,
-    value: { revision: 2 },
-    verdict: { ok: false, feedback: "reject 2", rejectionCode: "R2" },
-    attempts: 2,
-  });
-});
-
-test("gate accepts bare true and exhausts bare false without feedback", async () => {
-  const passing = await runWorkflow(
-    `export const meta = { name: 'gate_true', description: 'boolean pass' }
-return await gate(() => 'accepted', () => true)`,
-    { agent: noopAgent, persistLogs: false },
-  );
-  assert.deepEqual(JSON.parse(JSON.stringify(passing.result)), {
-    ok: true,
-    value: "accepted",
-    verdict: true,
-    attempts: 1,
-  });
-
-  const rejecting = await runWorkflow(
-    `export const meta = { name: 'gate_false', description: 'boolean rejection' }
-const feedbackSeen = []
-const outcome = await gate((feedback, attempt) => {
-  feedbackSeen.push(feedback === undefined)
-  return attempt
-}, () => false)
-return { outcome, feedbackSeen }`,
-    { agent: noopAgent, persistLogs: false },
-  );
-  assert.deepEqual(JSON.parse(JSON.stringify(rejecting.result)), {
-    outcome: { ok: false, value: 2, verdict: false, attempts: 3 },
-    feedbackSeen: [true, true, true],
-  });
-});
-
-test("gate validates a null producer and preserves its structured rejection", async () => {
-  const result = await runWorkflow(
-    `export const meta = { name: 'gate_null_value', description: 'null producer' }
-let validatorSawNull = false
-const outcome = await gate(
-  () => null,
-  (value) => {
-    validatorSawNull = value === null
-    return { ok: false, feedback: 'The producer returned no result.' }
-  },
-  { attempts: 0 },
-)
-return { outcome, validatorSawNull }`,
-    { agent: noopAgent, persistLogs: false },
-  );
-
-  assert.deepEqual(JSON.parse(JSON.stringify(result.result)), {
-    outcome: {
-      ok: false,
-      value: null,
-      verdict: { ok: false, feedback: "The producer returned no result." },
-      attempts: 1,
-    },
-    validatorSawNull: true,
-  });
-});
-
-test("gate returns null when the validator returns null or undefined", async () => {
-  const nullResult = await runWorkflow(
-    `export const meta = { name: 'gate_null_verdict', description: 'null verdict' }
-return await gate((_feedback, attempt) => attempt, () => null, { attempts: 2 })`,
-    { agent: noopAgent, persistLogs: false },
-  );
-  assert.deepEqual(JSON.parse(JSON.stringify(nullResult.result)), {
-    ok: false,
-    value: 1,
-    verdict: null,
-    attempts: 2,
-  });
-
-  const undefinedResult = await runWorkflow(
-    `export const meta = { name: 'gate_undefined_verdict', description: 'undefined verdict' }
-return await gate(() => 'value', () => undefined, { attempts: 1 })`,
-    { agent: noopAgent, persistLogs: false },
-  );
-  assert.deepEqual(JSON.parse(JSON.stringify(undefinedResult.result)), {
-    ok: false,
-    value: "value",
-    verdict: null,
-    attempts: 1,
-  });
-});
-
-test("gate propagates producer and validator failures without running later callbacks", async () => {
+test("a check loop propagates producer and validator failures without running later steps", async () => {
   let validatorAgentCalls = 0;
   await assert.rejects(
     () =>
       runWorkflow(
-        `export const meta = { name: 'gate_producer_throw', description: 'producer throw' }
-return await gate(
-  () => { throw new Error('producer boom') },
-  () => agent('validator should not run'),
-)`,
+        `export const meta = { name: 'check_producer_throw', description: 'producer throw' }
+for (let attempt = 0; attempt < 3; attempt++) {
+  const value = (() => { throw new Error('producer boom') })()
+  const verdict = await agent('validator should not run')
+  if (verdict) return value
+}
+return null`,
         {
           agent: {
             async run() {
@@ -1062,12 +897,15 @@ return await gate(
   await assert.rejects(
     () =>
       runWorkflow(
-        `export const meta = { name: 'gate_validator_throw', description: 'validator throw' }
-return await gate(
-  (feedback, attempt) => agent('producer:' + attempt + ':' + String(feedback)),
-  () => agent('validator'),
-  { attempts: 3 },
-)`,
+        `export const meta = { name: 'check_validator_throw', description: 'validator throw' }
+let feedback
+for (let attempt = 0; attempt < 3; attempt++) {
+  const value = await agent('producer:' + attempt + ':' + String(feedback))
+  const verdict = await agent('validator')
+  if (verdict.ok) return value
+  feedback = verdict.feedback
+}
+return null`,
         {
           agent: {
             async run(prompt: string) {
@@ -1084,30 +922,18 @@ return await gate(
   assert.equal(runnerCalls, 2, "the producer and validator run once before the original error escapes");
 });
 
-test("gate retains unsupported legacy object verdicts with truthy ok fields", async () => {
-  const result = await runWorkflow(
-    `export const meta = { name: 'gate_legacy', description: 'legacy object behavior' }
-return await gate(
-  () => ({ artifact: 'kept' }),
-  () => ({ ok: 'legacy-truthy', evidence: { source: 'existing-script' } }),
-)`,
-    { agent: noopAgent, persistLogs: false },
-  );
-
-  assert.deepEqual(JSON.parse(JSON.stringify(result.result)), {
-    ok: true,
-    value: { artifact: "kept" },
-    verdict: { ok: "legacy-truthy", evidence: { source: "existing-script" } },
-    attempts: 1,
-  });
-});
-
-test("gate replay journals only producer and validator agents and recomputes the verdict", async () => {
-  const script = `export const meta = { name: 'gate_replay', description: 'gate replay' }
-return await gate(
-  () => agent('produce', { label: 'producer' }),
-  (value) => agent('validate:' + value.branch, { label: 'validator' }),
-)`;
+test("a check loop's replay journals only producer and validator agents and recomputes the verdict", async () => {
+  const script = `export const meta = { name: 'check_replay', description: 'check loop replay' }
+let value
+let verdict
+let attempts = 0
+while (attempts < 3) {
+  attempts++
+  value = await agent('produce', { label: 'producer' })
+  verdict = await agent('validate:' + value.branch, { label: 'validator' })
+  if (verdict.ok) break
+}
+return { ok: verdict.ok === true, value, verdict, attempts }`;
   const journal: JournalEntry[] = [];
   const first = await runWorkflow(script, {
     agent: {
@@ -1120,7 +946,7 @@ return await gate(
     onAgentJournal: (entry) => journal.push(entry),
   });
 
-  assert.equal(journal.length, 2, "gate itself must not allocate a journal entry");
+  assert.equal(journal.length, 2, "the loop itself must not allocate a journal entry");
   assert.deepEqual(
     journal.map((entry) => entry.index),
     [0, 1],

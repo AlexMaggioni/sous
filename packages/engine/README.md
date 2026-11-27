@@ -48,11 +48,13 @@ const end = await waitForRun(paths, record.runId, { log: (text) => process.stdou
 A workflow is a script whose first statement is `export const meta = {...}`. The engine runs the
 rest in its own `vm` realm, with these globals:
 
-- Agent steps: `agent(prompt, options)`.
+- Agent steps: `agent(prompt, options)`, and `session(options)`, whose handle's
+  `send(prompt, options)` runs each step of one session.
 - Code steps: `sh`, `js`, `py`, `run` and `waitUntil`. The engine runs them itself, so they get
   the journal, resume, retries and events of any step.
-- Flow: `parallel`, `pipeline`, `retry`, `gate`, `phase` and `log`.
-- People: `ask`, `breakpoint` and `checkpoint`.
+- Flow: `parallel`, `pipeline`, `phase` and `log`. A retry is a plain loop in the script.
+- People: `ask` and `breakpoint`.
+- `retry`, `gate` and `checkpoint` are gone. Each fails the script with what to write instead.
 - Other workflows: `workflow(name, args)` runs a saved workflow inside this one, and `choose` lets
   an agent pick the next step or workflow.
 - The read-only `args` and `cwd`.
@@ -110,9 +112,9 @@ does not, such as `createRun` for a run that needs no worker.
 | --- | --- |
 | `src/index.ts`, `src/testing.ts` | The two entries. `index.ts` exports only the names sous imports. `testing.ts` is the test kit above. |
 | `src/runs/` | The sous home, run records, the worker, the inbox, schedules and the service. `run.ts` has one function per sous command. `rule.ts` decides what a run's state means. `limits.ts` holds one go's time limit and token budget. `actions.ts` records who did each write, and `consent.ts` says what an agent may start. `remove.ts` removes one ended run, or moves one saved workflow to the home's trash. |
-| `src/workflow.ts`, `src/checkpoint-call.ts`, `src/failed-attempt.ts` | Runs one workflow script in its realm: the globals, the journal and the limits. `checkpoint-call.ts` asks one `checkpoint()` question and records its answer. `failed-attempt.ts` says what a step does after an attempt fails: retry, pause the run, return null or throw. |
-| `src/sous-globals.ts`, `src/code-steps.ts` | The script functions added on top of `agent()` and `checkpoint()`. `code-steps.ts` runs the code steps, `sh`, `js`, `py`, a script file and `wait`, in a child process in the step's folder. |
-| `src/call-path.ts`, `src/strict-json.ts`, `src/rejection-tripwire.ts` | Guards on the script's realm. `call-path.ts` keys an `agent()` or `checkpoint()` call by the script frames on its stack. `strict-json.ts` checks and freezes a step's result or a checkpoint's reply as strict JSON. `rejection-tripwire.ts` turns a script promise that rejects with no handler into a failed run. |
+| `src/workflow.ts`, `src/checkpoint-call.ts`, `src/failed-attempt.ts` | Runs one workflow script in its realm: the globals, the journal and the limits. `checkpoint-call.ts` asks one question of `ask()` or `breakpoint()` and records its answer. `failed-attempt.ts` says what a step does after an attempt fails: retry, pause the run, return null or throw. |
+| `src/sous-globals.ts`, `src/code-steps.ts` | The script functions added on top of the engine's agent step and question. `session()` and `agent()` come from `src/turns/`. `code-steps.ts` runs the code steps, `sh`, `js`, `py`, a script file and `wait`, in a child process in the step's folder. |
+| `src/call-path.ts`, `src/strict-json.ts`, `src/rejection-tripwire.ts` | Guards on the script's realm. `call-path.ts` keys an agent step or a question by the script frames on its stack. `strict-json.ts` checks and freezes a step's result or a checkpoint's reply as strict JSON. `rejection-tripwire.ts` turns a script promise that rejects with no handler into a failed run. |
 | `src/workflow-result.ts`, `src/errors.ts`, `src/recorded-error.ts` | What a run returns and records. `errors.ts` has `WorkflowError` and its codes. `recorded-error.ts` turns any thrown value into the error a run records. |
 | `src/config.ts`, `src/duration.ts`, `src/model-routing.ts` | The run's limits: agents per run, concurrency and retries. `duration.ts` reads a duration such as `90s` or `10m`. `model-routing.ts` picks a step's model from the phases in the workflow's `meta`. |
 | `src/workflow-manager.ts`, `src/host-pause.ts` | One run's manager: resume, pause, the run's state and its events. `host-pause.ts` has the pause a run makes at its time limit or its budget, with that limit as the reason. |
@@ -121,6 +123,7 @@ does not, such as `createRun` for a run that needs no worker.
 | `src/resume.ts`, `src/resume-matcher.ts`, `src/resume-identity.ts`, `src/checkpoint-provenance.ts`, `src/older-save.ts` | What a resume starts from. `resume-matcher.ts` checks a saved run and turns it into the `PreparedResume` of `resume.ts`, which the manager hands the run. `resume-identity.ts` has the keys of a recorded call and the ids of nested runs. `checkpoint-provenance.ts` refuses a checkpoint answer saved with no explicit decision. `older-save.ts` tells a run saved by older code, which shows and never resumes. |
 | `src/run-events.ts`, `src/run-observability.ts`, `src/display.ts` | A run's events and what the event log saves of them. `display.ts` has the fold that turns step events into the step list. |
 | `src/run-environment.ts`, `src/redact.ts` | `run-environment.ts` records the git commit of the run's folder and a digest of its uncommitted changes, for diagnosis only. A resume never checks them. `redact.ts` hides credentials in text the engine shows a host, and cuts long text on a code point boundary. |
+| `src/turns/` | Session handles. `session.ts` has `session()`, a handle's `send()` and `agent()`. Each turn reaches the engine's agent step with `session: { key, start }`, and the engine keeps the map from key to the program's session. |
 | `src/steps/` | One agent step. `agent-runner.ts` is the seam the engine calls, and `steps.ts` runs the step on a harness. |
 | `src/places/` | Where a run works: a worktree, the project folder or a scratch folder. `runPlaces(paths, notes)` gives the workflow core the places of one run tree. |
 | `src/workflows/`, `src/fabricate.ts` | Saved workflows: the folders that hold them, the check and the dry run. `fabricate.ts` makes a value that fits a JSON Schema, for the dry run's stand-in agents. |

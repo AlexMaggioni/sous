@@ -251,7 +251,7 @@ exit 0
           "cacheRead": 0,
           "cacheWrite": 0,
           "total": 150,
-          "cost": 0
+          "cost": 0.0012
         },
         "provenance": {
           "source": "live",
@@ -271,7 +271,7 @@ exit 0
             "list": true,
             "fork": true
           },
-          "costGauge": 0.0012,
+          "costGauge": 0.0024,
           "callIndex": 1,
           "label": "worker",
           "keptOpen": false
@@ -291,7 +291,7 @@ exit 0
       "input": 240,
       "output": 60,
       "total": 300,
-      "cost": 0.0012,
+      "cost": 0.0024,
       "cacheRead": 0,
       "cacheWrite": 0
     },

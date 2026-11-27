@@ -268,7 +268,7 @@ test("resume replay republishes execution observations without cached journal ev
     };
     const source = script(
       `const value = await agent('cached', { label: 'cached' })
-const decision = await checkpoint('continue', { })
+const decision = await ask('continue', { })
 return { value, decision }`,
       "replay-events",
     );

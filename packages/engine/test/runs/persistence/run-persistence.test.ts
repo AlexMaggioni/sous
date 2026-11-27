@@ -23,7 +23,8 @@ return { a }`;
 
 const persistedSessionScript = `export const meta = { name: 'persisted_session', description: 'persisted session', phases: [{ title: 'Recovery' }] }
 phase('Recovery')
-const answer = await agent('persist this session', { label: 'recovery-agent', keepSession: true })
+const recovery = session({ label: 'recovery-agent' })
+const answer = await recovery.send('persist this session')
 return answer`;
 
 const noSessionScript = `export const meta = { name: 'no_session', description: 'no agent session' }
@@ -258,7 +259,7 @@ test(
     });
 
     const script = `export const meta = { name: 'journal_events', description: 'journal events' }
-const approved = await checkpoint('continue?')
+const approved = await ask('continue?')
 const a = await agent('first', { label: 'first' })
 const b = await agent('second', { label: 'second' })
 return { approved, a, b }`;

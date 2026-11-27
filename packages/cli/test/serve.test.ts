@@ -16,7 +16,7 @@ import { sous, waitFor } from "./sous.js";
 // the live stream. Each test starts a server of its own on a free port of 127.0.0.1.
 
 const ship = `export const meta = { name: 'ship', description: 'asks, then runs a step', place: 'none' }
-const approved = await checkpoint('Ship it?')
+const approved = await ask('Ship it?', { choices: ['yes', 'no'] })
 await sh('echo shipping', { label: 'announce' })
 return await agent('ship, approved ' + approved, { label: 'ship' })`;
 
@@ -100,7 +100,7 @@ async function served(t: TestContext, options: Partial<ServeOptions> = {}): Prom
   return { paths, projectDir, workers, server };
 }
 
-/** A run that waits on its checkpoint, and a run that ended. */
+/** A run that waits on its question, and a run that ended. */
 async function twoRuns(paths: HomePaths, projectDir: string, workers: InProcessWorkers): Promise<{ asking: string; ended: string }> {
   const asking = startRun(paths, workers.launch, { who: PERSON, workflow: "ship", projectDir, inputs: {} }).runId;
   const ended = startRun(paths, workers.launch, { who: PERSON, workflow: "greet", projectDir, inputs: { who: "Ada" } }).runId;
@@ -215,7 +215,7 @@ describe("the routes of sous serve", () => {
     const page: RunPage = await get(`/api/runs/${asking}`);
     assert.equal(page.status, "needs");
     assert.equal(page.place, "none");
-    assert.deepEqual(page.questions.map((q) => [q.runId, q.kind, q.prompt, q.answeredBy, q.breakpoint]), [[asking, "confirm", "Ship it?", "people", false]]);
+    assert.deepEqual(page.questions.map((q) => [q.runId, q.kind, q.prompt, q.answeredBy, q.breakpoint]), [[asking, "select", "Ship it?", "people", false]]);
     assert.ok(page.flow && page.flow.nodes.length > 0, "the run page has the workflow's flow");
     assert.deepEqual(page.flows, {});
     assert.deepEqual(page.can, { stop: true, pause: true, resume: false, resumeChoice: false, rerun: true, remove: false });

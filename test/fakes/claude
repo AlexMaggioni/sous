@@ -14,6 +14,8 @@
 // --fork-session copies the parent's messages to the new session first. `claude --resume <id>`
 // with no stream is a person at a terminal: it adds FAKE_PERSON's line and exits. A goal rule
 // plays several model turns, and an ask rule sends a can_use_tool request. lib.mjs says more.
+// Cost: each result costs COST. A result's total_cost_usd is the session's whole cost so far, as
+// Claude Code restores a session's total on a resume. The totals live in claude-costs/<id>.
 
 import { randomUUID } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -129,6 +131,17 @@ const USAGE = { input_tokens: 120, cache_creation_input_tokens: 0, cache_read_in
 /** A rule's usage in the API's field names. */
 const apiUsage = (spent) => ({ input_tokens: spent.input ?? 0, cache_creation_input_tokens: spent.cacheWrite ?? 0, cache_read_input_tokens: spent.cacheRead ?? 0, output_tokens: spent.output ?? 0 });
 const COST = 0.0012;
+const costsDir = join(dirname(process.env.FAKE_LOG ?? join(process.cwd(), "fake.log")), "claude-costs");
+/** The session's cost so far: what its earlier processes reported last, then each result of this one. */
+let costSoFar = resumeId && !forking && existsSync(join(costsDir, resumeId)) ? Number(readFileSync(join(costsDir, resumeId), "utf8")) || 0 : 0;
+/** The session's total that a result reports, and keeps for the next resume. A result that sets its own total keeps none. */
+function sessionCost(fields) {
+  if (typeof fields.total_cost_usd === "number") return fields.total_cost_usd;
+  costSoFar += COST;
+  mkdirSync(costsDir, { recursive: true });
+  writeFileSync(join(costsDir, sessionId), String(costSoFar));
+  return costSoFar;
+}
 
 /** Control requests the fake sent and waits on, by request id. */
 const pending = new Map();
@@ -264,16 +277,17 @@ function streamText(model, text) {
 function result(fields) {
   const turn = state.turn;
   for (const uuid of turn?.read ?? []) lifecycle(uuid, "completed");
+  const cost = sessionCost(fields);
   write({
     type: "result",
     duration_ms: 1000,
     duration_api_ms: 900,
     num_turns: 1,
     stop_reason: "end_turn",
-    total_cost_usd: COST,
+    total_cost_usd: cost,
     usage: { ...USAGE, server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 }, service_tier: "standard" },
     modelUsage: {
-      [modelName(state.model)]: { inputTokens: 120, outputTokens: 30, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, webSearchRequests: 0, costUSD: COST, contextWindow: 200000, maxOutputTokens: 64000 },
+      [modelName(state.model)]: { inputTokens: 120, outputTokens: 30, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, webSearchRequests: 0, costUSD: cost, contextWindow: 200000, maxOutputTokens: 64000 },
     },
     permission_denials: [],
     user_message_uuids: [...(turn?.uuid ? [turn.uuid] : []), ...(turn?.read ?? [])],

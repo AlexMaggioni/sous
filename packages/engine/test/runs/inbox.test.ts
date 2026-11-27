@@ -85,7 +85,7 @@ function questionLines(lines: string[], runId: string): string[] {
 
 const pick = `export const meta = { name: 'pick', description: 'asks three ways' }
 const color = await ask('Pick a color', { choices: ['red', 'blue'] })
-const ship = await checkpoint('Ship it?')
+const ship = await ask('Ship it?')
 const plan = await breakpoint('Check the plan', { show: 'the plan' })
 return { color, ship, plan }`;
 
@@ -188,12 +188,13 @@ describe("a run that waits for an answer", () => {
     assert.deepEqual(inbox(paths, record.runId), [`<id>--${color!.callIndex}.answer.json`, `<id>--${color!.callIndex}.json`]);
     writeAnswer(paths, color!.id, color!.hash, "blue");
 
-    await until(() => runQuestions(paths, record.runId).some((q) => q.kind === "confirm"));
+    await until(() => runQuestions(paths, record.runId).some((q) => q.prompt === "Ship it?"));
     const [ship] = await asked(paths, record.runId, 1);
-    assert.equal(ship!.kind, "confirm");
+    assert.equal(ship!.kind, "input");
+    assert.equal(ship!.breakpoint, false);
     assert.equal(existsSync(answerFile(paths, color!.id)), false, "taking an answer removes its file");
     assert.equal(existsSync(join(paths.inbox, `${color!.id}.json`)), false, "and the question's file");
-    writeAnswer(paths, ship!.id, ship!.hash, true);
+    writeAnswer(paths, ship!.id, ship!.hash, "yes");
 
     await until(() => runQuestions(paths, record.runId).some((q) => q.breakpoint));
     const [plan] = await asked(paths, record.runId, 1);
@@ -203,14 +204,14 @@ describe("a run that waits for an answer", () => {
 
     const result = await worker;
     assert.equal(result?.status, "completed");
-    assert.deepEqual(JSON.parse(JSON.stringify(result?.result)), { color: "blue", ship: true, plan: { decision: "approve" } });
+    assert.deepEqual(JSON.parse(JSON.stringify(result?.result)), { color: "blue", ship: "yes", plan: { decision: "approve" } });
     assert.deepEqual(inbox(paths, record.runId), [], "the inbox is empty");
     const id = (question: Question) => `<id>--${question.callIndex}`;
     assert.deepEqual(questionLines(lines, record.runId), [
       `question   ${id(color!)}: Pick a color\n           answer with: sous answer ${id(color!)} "..."`,
       `answered   ${id(color!)}: "blue"`,
       `question   ${id(ship!)}: Ship it?\n           answer with: sous answer ${id(ship!)} "..."`,
-      `answered   ${id(ship!)}: true`,
+      `answered   ${id(ship!)}: "yes"`,
       `question   ${id(plan!)}: Breakpoint: Check the plan the plan Reply approve, stop, or send back with a note.\n           answer with: sous approve ${id(plan!)}  |  sous send-back ${id(plan!)} "note"  |  sous stop <id>`,
       `answered   ${id(plan!)}: "approve"`,
     ]);
@@ -246,18 +247,18 @@ describe("a dry run's questions", () => {
       dry: `export const meta = { name: 'dry', description: 'asks four ways' }
 const color = await ask('Pick a color', { choices: ['red', 'blue'] })
 const name = await ask('Your name?')
-const ship = await checkpoint('Ship it?')
+const ship = await ask('Ship it?', { choices: ['yes', 'no'] })
 const plan = await breakpoint('Check the plan', { show: 'the plan' })
 return { color, name, ship, plan }`,
     });
     const lines: string[] = [];
     const dry = await dryRun(paths, { who: PERSON, workflow: "dry", projectDir, inputs: {}, log: (line) => lines.push(line) });
     assert.equal(dry.status, "completed");
-    assert.deepEqual(dry.result, { color: "red", name: "stand-in answer", ship: true, plan: { decision: "approve" } });
+    assert.deepEqual(dry.result, { color: "red", name: "stand-in answer", ship: "yes", plan: { decision: "approve" } });
     assert.deepEqual(questionLines(lines, dry.runId), [
       `question   Pick a color\n           answered   "red" (dry run)`,
       `question   Your name?\n           answered   "stand-in answer" (dry run)`,
-      `question   Ship it?\n           answered   true (dry run)`,
+      `question   Ship it?\n           answered   "yes" (dry run)`,
       `question   Breakpoint: Check the plan the plan Reply approve, stop, or send back with a note.\n           answered   "approve" (dry run)`,
     ]);
   });
@@ -281,16 +282,16 @@ describe("piece 8: who may answer, in the question's file", () => {
     );
   });
 
-  it("a run writes answeredBy in each question's file, and the step of an agent's question", async () => {
+  it("a run writes answeredBy in each question's file", async () => {
     const { paths, projectDir } = setup({
-      who: `export const meta = { name: 'who', description: 'asks four ways' }
+      who: `export const meta = { name: 'who', description: 'asks three ways' }
 const color = await ask('Which color?', { choices: ['red', 'blue'], answeredBy: 'anyone' })
 const size = await ask('Which size?', { choices: ['S', 'L'] })
 await breakpoint('Check the plan', { show: color + size })
-return await agent('Build it', { label: 'builder', ask: true })`,
+return await agent('Build it', { label: 'builder' })`,
     });
     const record = createRun(paths, { who: PERSON, workflow: "who", projectDir, inputs: {} });
-    const held = heldRunner((call) => (call.label === "builder" ? "QUESTION: Which shade?" : "built it"));
+    const held = heldRunner(() => "built it");
     const worker = runWorker(record.runId, "start", { paths, inner: held.runner, pollMs: 20, log: () => {} });
     const file = (question: Question) => JSON.parse(readFileSync(join(paths.inbox, `${question.id}.json`), "utf8")) as Record<string, unknown>;
     const next = async (pattern: RegExp): Promise<Record<string, unknown>> => {
@@ -317,11 +318,6 @@ return await agent('Build it', { label: 'builder', ask: true })`,
       assert.equal(plan.breakpoint, true);
       assert.equal(plan.answeredBy, "people", JSON.stringify(plan));
       writeAnswer(paths, plan.id as string, plan.hash as string, "approve");
-
-      const shade = await next(/Which shade/);
-      assert.equal(shade.answeredBy, "people", JSON.stringify(shade));
-      assert.equal(shade.step, "builder", JSON.stringify(shade));
-      writeAnswer(paths, shade.id as string, shade.hash as string, "dark");
 
       const result = await worker;
       assert.equal(result?.status, "completed");

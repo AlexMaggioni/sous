@@ -17,7 +17,7 @@ limit  A step that hits the usage limit, which pauses the run
   -- --model  string, optional, default "claude"  Model of the step
 pause  The test pauses the run during its first step, then resumes it
 places  Report where the run works
-questions  A question, an agent that asks, and a breakpoint sent back once
+questions  A question and a breakpoint sent back once
 retry  A step that fails once and is retried, and one with no retries that pauses the run
 rulesync-mcp  A rulesync agent with MCP servers on each harness, and a step that names its own
 stop-step  Two steps at once; the test stops the slow one, then resumes the run

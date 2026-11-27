@@ -15,7 +15,7 @@ import { heldRunner, setup, until } from "./runs/fixture.js";
 import { git, initGitRepo } from "./helpers/git.js";
 import { PERSON } from "../src/testing.js";
 
-// A step with `isolation: "worktree"` gets its worktree from the places module, named like every
+// A step with `place: "worktree"` gets its worktree from the places module, named like every
 // other worktree sous makes: a folder under the home's worktrees folder, on branch sous/<name>.
 
 const gitRepo = () => initGitRepo(mkdtempSync(join(tmpdir(), "sous-places-repo-")));
@@ -84,13 +84,13 @@ describe("a step's worktree", () => {
     }
   });
 
-  it("a step with isolation worktree works in one from places, and it is gone after the step", async () => {
+  it("a step with place worktree works in one from places, and it is gone after the step", async () => {
     const home = tempHome();
     const repo = gitRepo();
     try {
       const seen: Array<{ cwd: string; branch: string }> = [];
       const script = `export const meta = { name: 'iso', description: 'isolated step' }
-await agent('edit', { label: 'editor', isolation: 'worktree' })
+await agent('edit', { label: 'editor', place: 'worktree' })
 return {}`;
       await runWorkflow(script, {
         cwd: repo,
@@ -115,14 +115,14 @@ return {}`;
     }
   });
 
-  it("a step with isolation worktree outside a git repository works in the run's folder, and the log says why", async () => {
+  it("a step with place worktree outside a git repository works in the run's folder, and the log says why", async () => {
     const home = tempHome();
     const dir = mkdtempSync(join(tmpdir(), "sous-places-nogit-"));
     try {
       const seen: string[] = [];
       const logs: string[] = [];
       await runWorkflow(`export const meta = { name: 'iso', description: 'isolated step' }
-await agent('edit', { label: 'editor', isolation: 'worktree' })
+await agent('edit', { label: 'editor', place: 'worktree' })
 return {}`, {
         cwd: dir,
         runId: "iso-run",
@@ -144,13 +144,13 @@ return {}`, {
     }
   });
 
-  it("a step with isolation worktree and no places works in the run's folder, and the log says why", async () => {
+  it("a step with place worktree and no places works in the run's folder, and the log says why", async () => {
     const repo = gitRepo();
     try {
       const seen: string[] = [];
       const logs: string[] = [];
       await runWorkflow(`export const meta = { name: 'iso', description: 'isolated step' }
-await agent('edit', { label: 'editor', isolation: 'worktree' })
+await agent('edit', { label: 'editor', place: 'worktree' })
 return {}`, {
         cwd: repo,
         runId: "iso-run",
@@ -174,7 +174,7 @@ return {}`, {
   it("the run's record names it while the step runs, and drops it after", async () => {
     const { paths, projectDir } = setup({
       iso: `export const meta = { name: 'iso', description: 'isolated step' }
-return await agent('edit', { label: 'editor', isolation: 'worktree' })`,
+return await agent('edit', { label: 'editor', place: 'worktree' })`,
     });
     git(projectDir, "init", "-q", "-b", "main");
     git(projectDir, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
@@ -195,7 +195,7 @@ return await agent('edit', { label: 'editor', isolation: 'worktree' })`,
     const { paths, projectDir } = setup({
       iso: `export const meta = { name: 'iso', description: 'asks, then edits', timeout: '300ms' }
 await ask('Go on?')
-return await agent('edit', { label: 'editor', isolation: 'worktree' })`,
+return await agent('edit', { label: 'editor', place: 'worktree' })`,
     });
     git(projectDir, "init", "-q", "-b", "main");
     git(projectDir, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");

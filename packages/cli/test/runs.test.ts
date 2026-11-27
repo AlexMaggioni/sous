@@ -68,25 +68,6 @@ const quiet = () => {};
 const commit = (cwd: string, ...args: string[]) => git(cwd, "-c", "user.email=t@example.com", "-c", "user.name=t", ...args);
 
 describe("runs", () => {
-  it("an agent asks a question, the answer comes through the inbox, and the same session goes on", async () => {
-    const { paths, projectDir } = testHome({
-      asking: `export const meta = { name: 'asking', description: 'asks', inputs: { task: 'What to do' } }
-const out = await agent('Do ' + args.task, { label: 'worker', ask: true })
-return out`,
-    });
-    const { runner, calls } = fakeRunner((call) => (call.label === "worker" ? "QUESTION: Postgres or SQLite?" : `built with ${/answered: (\w+)/.exec(call.prompt)?.[1]}`));
-    const workers = inProcess({ inner: runner });
-    const record = startRun(paths, workers.launch, { who: PERSON, workflow: "asking", projectDir, inputs: { task: "the store" } });
-    const running = workers.ended(record.runId);
-    const asked = await answerWhenAsked(paths, record.runId, () => "SQLite");
-    const result = await running;
-    assert.equal(result?.status, "completed");
-    assert.equal(result?.result, "built with SQLite");
-    assert.match(asked[0]!, /worker asks: Postgres or SQLite\?/);
-    assert.equal((calls[1]!.options.continueFromSession as { sessionId: string }).sessionId, "s1");
-    assert.equal(loadRecord(paths, record.runId)?.pid, undefined, "the record forgets the worker once it ends");
-  });
-
   it("a breakpoint sent back with a note runs the step again with that note, then approve goes on", async () => {
     const { paths, projectDir } = testHome({
       checked: `export const meta = { name: 'checked', description: 'a breakpoint' }

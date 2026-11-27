@@ -60,9 +60,10 @@ export const meta = {
   timeout: "2h",          // then the running steps stop and the run pauses
 }
 
-const built = await agent(`Implement this ticket:\n${args.ticket}`, { agentType: "implementer", label: "implementer", keepSession: true })
+const impl = session({ label: "implementer", agentType: "implementer" })
+const built = await impl.send(`Implement this ticket:\n${args.ticket}`)
 const review = await agent(`Review the change for: ${args.ticket}`, { agentType: "reviewer", label: "reviewer" })
-await agent(`Address this review:\n${review}`, { continue: "implementer" })
+await impl.send(`Address this review:\n${review}`, { label: "fix" })
 return { summary: built }
 ```
 
@@ -103,22 +104,53 @@ commit step failed with "nothing to commit". The workflow now commits only when 
 
 ### Steps
 
-The engine's own steps all work: `agent`, `parallel`, `pipeline`, `gate`, `retry`, `checkpoint`,
-`phase`, `log` (see [the engine README](../packages/engine/README.md#the-script-dsl)). sous adds these:
+A script has these steps (see also [the engine README](../packages/engine/README.md#the-script-dsl)):
 
-- `agent()` takes `timeout` ("10m"), `effort`, `skills`, `mcp` (server names, see [Agents](#agents)),
-  `continue: "<label>"` (go on in that earlier step's session, which set `keepSession: true`) and
-  `ask: true` (the agent may stop with a line starting `QUESTION:`; the user answers and the same
-  session goes on). An asking agent returns text, so `ask` and `schema` don't go together, and a
-  sixth question fails the step. Its questions name the step in `step`. `answeredBy: "anyone"`
-  with `ask: true` lets an agent answer them too.
+- `session(options)` makes a handle for one agent session that several steps share. It starts
+  nothing. `<handle>.send(prompt, options)` runs one step on it. The first send starts the
+  session, and each later send goes on in it, so the agent keeps what it saw:
+
+  ```js
+  const impl = session({ label: "implementer", agentType: "implementer" })
+  await impl.send(`Implement this ticket:\n${args.ticket}`)
+  const review = await agent("Review the change", { agentType: "reviewer", label: "reviewer" })
+  await impl.send(`Address this review:\n${review}`, { label: "fix" })
+  ```
+
+  A handle's options hold for every step on it:
+
+  - `label`, required. No other handle of the workflow may use it.
+  - `agentType`, `model`, `effort`, `mode`, `skills` and `mcp` (server names, see
+    [Agents](#agents)).
+  - `mcpServers`, servers given in full, and `cwd`, the folder the session works in.
+
+  A send's options belong to that one step:
+
+  - `label`, the step's name in `sous log`, `sous tell` and `--answers`. It defaults to the
+    handle's label.
+  - `schema`, `timeout` ("10m"), `retries`, `images` and `phase`.
+  - `model`, which must name a model on the handle's program.
+  - `until`, `"turn"` or `"done"`, and `ask`, `true` or `false`. Both are accepted and have no
+    effect yet.
+
+  A handle runs one step at a time, and a second send while one runs fails the script. The
+  handle's `label` and `cwd` are plain strings, for code steps: `sh("npm test", { cwd: impl.cwd })`.
+  `--set <label>.model=` may change a handle's model, to another on the same program. Any other
+  `--set` on a handle fails the script. A session option on `send()`, or a send option on
+  `session()`, fails the script and names where it goes. `place` on `session()` is not built yet
+  and fails.
+- `agent(prompt, options)` is one send on a fresh session that no later step uses. It takes a
+  handle's options and a send's options, and `place: "worktree"` (see [Places](#places)). Its
+  `label` may repeat.
+- An agent step does not stop to ask the person. `ask` has no effect yet.
 - Code steps: `sh(command)`, `js(source, input)`, `py(source, input)`, `run(file)` and
   `waitUntil(command, { every })`. They run on this machine, count no tokens and take no agent
   slot. Each returns `{ code, stdout, stderr, result }`. A non-zero exit fails the step unless
   `allowFail: true`. They run in the run's place, and `SOUS_PROJECT` holds the project folder. A
   code step is tried once unless it sets `retries`.
-- `ask(question, { choices, answeredBy })` waits for the answer. `answeredBy` is `"people"`, the
-  default, or `"anyone"`, which lets an agent answer too. Any other value fails the script.
+- `ask(question, { choices, answeredBy })` asks the person through the inbox and waits for the
+  answer. `answeredBy` is `"people"`, the default, or `"anyone"`, which lets an agent answer too.
+  Any other value fails the script.
 - `breakpoint(title, step, { show, max })` runs the step, then waits for the user to approve,
   stop the run, or send the step back with a note. The step reruns with the note, 5 times at most
   unless `max` says otherwise, then the breakpoint fails. A stop ends the run as `sous stop` does,
@@ -143,13 +175,23 @@ The engine's flow steps take these arguments:
   once. Each stage gets the last stage's result, the item and its index. A step that fails its
   last try pauses the run, as in `parallel`. A stage that throws an error of its own gives `null`
   for that item, and its later stages don't run.
-- `retry((attempt) => ..., { attempts, until })` calls the function until `until(result)` is true,
-  3 times at most by default, and returns the last result.
-- `gate((feedback, attempt) => ..., check, { attempts })` calls the function, then `check` on its
-  result. `check` returns `true`, `false` or `{ ok, feedback }`, and the feedback goes into the
-  next attempt, 3 attempts at most by default. It returns `{ ok, value, verdict, attempts }`.
-- `checkpoint(prompt, { kind, choices })` asks the user through the inbox. `kind` is `"confirm"`,
-  `"input"` or `"select"`, with `choices` for a select.
+
+To try a step again until a check passes, write a plain loop around it, capped by an input:
+
+```js
+const impl = session({ label: "implementer", agentType: "implementer" })
+await impl.send(`Implement this ticket:\n${args.ticket}`)
+for (let round = 1; round <= args.rounds; round++) {
+  const tests = await sh("npm test", { label: `tests ${round}`, allowFail: true })
+  if (tests.code === 0) break
+  await impl.send(`The tests fail:\n${tests.stdout}${tests.stderr}`, { label: `fix ${round}` })
+}
+```
+
+`retry()`, `gate()` and `checkpoint()` are gone, and a script that calls one fails with what to
+write instead. A loop replaces `retry()` and `gate()`, and `ask()` replaces `checkpoint()`. The
+step options `keepSession`, `continue`, `isolation`, `configOptions` and `answeredBy` fail the
+script the same way.
 
 ## Agents
 
@@ -490,11 +532,12 @@ the notices off.
 - `folder`: the project folder itself.
 - `none`: an empty scratch folder, for work that touches no repo, such as email.
 
-A step can work apart from the run, with `isolation: "worktree"` in its options or in its agent's
-frontmatter. It gets a new branch from the run's place, `sous/<run>-<n>-<label>`, in
-`~/.sous/worktrees/<run>-<n>-<label>`, where n counts the run's steps. sous removes that
-worktree and its branch when the step ends, so the step hands its work back in its answer. Outside
-a git repository the step works in the run's place, and the log says so.
+A step can work apart from the run, with `place: "worktree"` in the options of `agent()`, or
+`isolation: worktree` in its agent's frontmatter. It gets a new branch from the run's place,
+`sous/<run>-<n>-<label>`, in `~/.sous/worktrees/<run>-<n>-<label>`, where n counts the run's
+steps. sous removes that worktree and its branch when the step ends, so the step hands its work
+back in its answer. Outside a git repository the step works in the run's place, and the log says
+so.
 
 ## Schedules and the service
 

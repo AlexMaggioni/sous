@@ -31,17 +31,16 @@ export const meta = {
   description: "Implement a ticket, review it",
   inputs: {
     ticket: { type: "string", description: "What to build", required: true },
-    rounds: { type: "number", default: 3 },
   },
   outputs: { summary: "What was built" },
   place: "worktree",
   startedBy: "anyone",
-  timeout: "2h",
 }
 
-const built = await agent(`Implement this ticket:\n${args.ticket}`, { agentType: "implementer", label: "implementer", keepSession: true })
-const review = await agent(`Review the change for: ${args.ticket}`, { agentType: "reviewer", label: "reviewer" })
-await agent(`Address this review:\n${review}`, { continue: "implementer" })
+const impl = session({ label: "implementer", agentType: "implementer" })
+const built = await impl.send(`Implement this ticket:\n${args.ticket}`)
+const review = await agent("Review the change", { agentType: "reviewer", label: "reviewer" })
+await impl.send(`Address this review:\n${review}`, { label: "fix" })
 return { summary: built }
 ```
 
@@ -49,18 +48,19 @@ return { summary: built }
 - Give every step a `label`. Resume matches steps by prompt, options and label.
 - `Math.random()`, `Date.now()` and `new Date()` with no argument throw. A resume replays the
   script and must take the same path. Pass a time or a random value as an input.
-- Cap each loop, usually with an input such as `rounds`.
+- Cap each loop, such as with a `rounds` input.
 
 ## Steps
 
-- `agent(prompt, options)` runs one agent. Options include `label`, `agentType`, `model`,
-  `schema`, `timeout`, `skills`, `mcp`, `keepSession`, `continue` and `ask`.
+- `session({ label, agentType, model, effort, mode, skills, mcp, mcpServers, cwd })` makes a
+  handle with a unique label. `<handle>.send(prompt, options)` runs a step in its session, with
+  `label`, `schema`, `timeout`, `retries`, `images`, `phase`, or a `model` on its program.
+- `agent(prompt, options)` is one send on a fresh session. It takes both and `place`. `ask` and
+  `until` do nothing yet.
 - `sh`, `js`, `py`, `run` and `waitUntil` run code on this machine and spend no tokens.
-- `ask(question, { choices })` and `checkpoint(prompt, { kind, choices })` ask the person.
-  `answeredBy: "anyone"` in `ask` lets an agent answer too. `agent()` with `ask: true` takes it.
-- `breakpoint(title, step)` runs the step, then waits for the person to approve it. It is always
-  for people, so it takes no `answeredBy`.
-- `parallel`, `pipeline`, `retry`, `gate`, `choose` and `workflow` shape the flow.
+- `ask(question, { choices })` asks the person. `answeredBy: "anyone"` lets an agent answer too.
+- `breakpoint(title, step)` runs the step, then waits for the person to approve it.
+- `parallel`, `pipeline`, `choose` and `workflow` shape the flow. Write a retry as a loop.
 
 ## Check it
 
@@ -71,7 +71,7 @@ sous check ticket --ticket "x" --dry-run --answers answers.json --json
 ```
 
 The check parses the script, fits the inputs, and finds each agent, workflow and MCP server. A
-dry run runs the workflow once with stand-in agents. It spends no tokens. Code steps run for real
+dry run runs it once with stand-in agents and spends no tokens. Code steps run for real
 in a copy, so a step that writes to `SOUS_PROJECT` still changes the project. `--answers` gives
 the stand-ins' answers by step label, such as `{"reviewer *": {"approved": true}}`.
 

@@ -96,18 +96,18 @@ describe("a run over the graph of its text", () => {
     expect(asRan).toBe(true);
   });
 
-  test("a checkpoint waits on the person when its question is open, and reads done once a later step ran", () => {
+  test("an ask waits on the person when its question is open, and reads done once a later step ran", () => {
     const q: Question = { id: "q1", runId: "r1", scope: "r1", workflow: "w", prompt: "Plan the urgent ones now?", kind: "confirm", breakpoint: false, answeredBy: "people", askedAt: "" };
-    const f = flow(step("agent", "triage"), step("checkpoint", "Plan the urgent ones now?"), step("agent", "plan"));
+    const f = flow(step("agent", "triage"), step("ask", "Plan the urgent ones now?"), step("agent", "plan"));
     const waiting = runGraph({ flow: f, steps: ran("r1", [["triage", "agent", "done"]]), questions: [q], status: "needs" });
     expect(byLabel(waiting.graph, "Plan the urgent ones now?")).toMatchObject({ status: "needs", needs: true, ask: "q1" });
     const passed = runGraph({ flow: f, steps: ran("r1", [["triage", "agent", "done"], ["plan", "agent", "running"]]) });
     expect(byLabel(passed.graph, "Plan the urgent ones now?")?.status).toBe("done");
   });
 
-  test("a checkpoint answered on the page reads done at once, before the next step starts, and never queued between", () => {
+  test("an ask answered on the page reads done at once, before the next step starts, and never queued between", () => {
     const q: Question = { id: "q1", runId: "r1", scope: "r1", workflow: "w", prompt: "Ship it?", kind: "confirm", breakpoint: false, answeredBy: "people", askedAt: "" };
-    const f = flow(step("sh", "prepare"), step("checkpoint", "Ship it?"), step("checkpoint", "Tell the team?"), step("sh", "deploy"));
+    const f = flow(step("sh", "prepare"), step("ask", "Ship it?"), step("ask", "Tell the team?"), step("sh", "deploy"));
     const steps = ran("r1", [["prepare", "exec", "done"]]);
     // The server still lists the question for a moment, then drops it. Both read done.
     for (const questions of [[q], []]) {
@@ -120,7 +120,7 @@ describe("a run over the graph of its text", () => {
     expect(byLabel(runGraph({ flow: f, steps, status: "running" }).graph, "Ship it?")?.status).toBe("queued");
   });
 
-  test("a step named checkpoint, as the engine names a wait, takes the ask or checkpoint in order", () => {
+  test("a step named checkpoint, as the engine names a wait, takes the ask in order", () => {
     const { graph, asRan } = runGraph({
       flow: flow(step("ask", "Build these?"), step("sh", "build")),
       steps: ran("r1", [["checkpoint", "exec", "done"], ["build", "exec", "done"]]),
@@ -134,7 +134,7 @@ describe("the rounds of a loop", () => {
   const ticket = () =>
     flow(
       step("agent", "implementer"),
-      { t: "loop", ...at(), loop: "gate", limit: "args.rounds", body: [{ t: "if", ...at(), cond: "feedback", then: [step("agent", "address review")] }, step("agent", "reviewer")] },
+      { t: "loop", ...at(), loop: "for", label: "round < args.rounds", limit: "args.rounds", body: [{ t: "if", ...at(), cond: "feedback", then: [step("agent", "address review")] }, step("agent", "reviewer")] },
       step("sh", "tests"),
     );
 
@@ -151,9 +151,9 @@ describe("the rounds of a loop", () => {
       ]),
     });
     expect(asRan).toBe(false);
-    const [gate] = boxes(graph);
-    expect(gate).toMatchObject({ kind: "loop", sub: "round 2 of 3", again: "check fails ×3" });
-    expect(leaves(gate).map((l) => [l.label, l.step])).toEqual([
+    const [loop] = boxes(graph);
+    expect(loop).toMatchObject({ kind: "loop", sub: "round 2 of 3", again: "next ×3" });
+    expect(leaves(loop).map((l) => [l.label, l.step])).toEqual([
       ["address review", "r1:3"],
       ["reviewer", "r1:4"],
     ]);
@@ -171,7 +171,7 @@ describe("the rounds of a loop", () => {
 
   test("a loop takes no more rounds than its limit", () => {
     const { graph, asRan } = runGraph({
-      flow: flow({ t: "loop", ...at(), loop: "retry", limit: "2", body: [step("sh", "check")] }, step("sh", "check")),
+      flow: flow({ t: "loop", ...at(), loop: "for", label: "i < 2", limit: "2", body: [step("sh", "check")] }, step("sh", "check")),
       steps: ran("r1", [["check", "exec", "done"], ["check", "exec", "done"], ["check", "exec", "running"]]),
     });
     expect(asRan).toBe(false);

@@ -131,7 +131,7 @@ exit 0
     "through": {
       "kind": "person"
     },
-    "workflowHash": "8258b01087c7cfe67c291c1bb33b369ebdc027c9c567fada7d03940efe60c121",
+    "workflowHash": "bbe77d2613734f2e50ee8833a196b838ac620563f4b0f744b0cb9dde4e884c77",
     "accounts": {
       "claude": {
         "name": "default",
@@ -170,19 +170,6 @@ exit 0
     },
     "eventStreamId": "<eventStreamId>",
     "eventSeq": 13,
-    "fallbacks": [
-      {
-        "callIndex": 1,
-        "label": "planner again",
-        "requestedSpec": "(default)",
-        "kind": "continuation",
-        "continuation": {
-          "outcome": "reattached",
-          "method": "resume"
-        },
-        "message": "continuation: reattached via session/resume"
-      }
-    ],
     "callsAllocated": 2,
     "limits": {
       "maxAgents": 1000,
@@ -260,7 +247,7 @@ exit 0
           "cacheRead": 0,
           "cacheWrite": 0,
           "total": 150,
-          "cost": 0
+          "cost": 0.0012
         },
         "provenance": {
           "source": "live",
@@ -280,10 +267,10 @@ exit 0
             "list": true,
             "fork": true
           },
-          "costGauge": 0.0012,
+          "costGauge": 0.0024,
           "callIndex": 1,
           "label": "planner again",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       }
@@ -305,7 +292,7 @@ exit 0
       "input": 240,
       "output": 60,
       "total": 300,
-      "cost": 0.0012,
+      "cost": 0.0024,
       "cacheRead": 0,
       "cacheWrite": 0
     },

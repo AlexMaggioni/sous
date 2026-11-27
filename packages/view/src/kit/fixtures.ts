@@ -14,8 +14,15 @@ const flow = (...nodes: FlowNode[]): Flow => ({ nodes, notes: [] });
 
 const ticket = flow(
   agent("implementer"),
-  { t: "loop", ...at(), loop: "gate", limit: "args.rounds", body: [{ t: "if", ...at(), cond: "feedback", then: [agent("address review", "implementer")] }, agent("reviewer")] },
-  { t: "if", ...at(), cond: "!review.ok", then: [end()] },
+  {
+    t: "loop",
+    ...at(),
+    loop: "for",
+    label: "round < args.rounds",
+    limit: "args.rounds",
+    body: [{ t: "if", ...at(), cond: "review", then: [agent("address review", "implementer", { options: { session: "implementer", continues: "implementer" } })] }, agent("reviewer")],
+  },
+  { t: "if", ...at(), cond: "!review.approved", then: [end()] },
   sh("tests"),
   sh("commit"),
 );
@@ -47,7 +54,7 @@ const releaseNotes = flow(
 const fixFlaky = flow(
   step("run", "reproduce"),
   agent("investigate", "investigator"),
-  { t: "loop", ...at(), loop: "retry", limit: "2", body: [agent("fix", "implementer"), sh("check")] },
+  { t: "loop", ...at(), loop: "for", label: "attempt < 2", limit: "2", body: [agent("fix", "implementer"), sh("check")] },
   sh("verify", { retries: 2 }),
 );
 
@@ -64,7 +71,7 @@ const depsUpdate = flow(
 
 const triageBugs = flow(
   agent("triage", "triager"),
-  step("checkpoint", "Plan the urgent ones now?"),
+  step("ask", "Plan the urgent ones now?"),
   { t: "if", ...at(), cond: "!go", then: [end()] },
   agent("plan", "planner"),
   step("choose", "pick what to run"),
@@ -151,7 +158,7 @@ export const GRAPH_STATES: GraphState[] = [
   },
   {
     title: "Failed",
-    note: "fix-flaky. The retry ran both of its rounds, and verify failed after three tries.",
+    note: "fix-flaky. The fix loop ran both of its rounds, and verify failed after three tries.",
     props: {
       flow: fixFlaky,
       status: "failed",
@@ -168,7 +175,7 @@ export const GRAPH_STATES: GraphState[] = [
   },
   {
     title: "Needs you",
-    note: "triage-bugs waits at its checkpoint. Its node has the copper border.",
+    note: "triage-bugs waits at its question. Its node has the copper border.",
     props: {
       flow: triageBugs,
       status: "needs",

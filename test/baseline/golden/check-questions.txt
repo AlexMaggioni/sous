@@ -6,7 +6,6 @@ ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
   (log lines sorted)
   <hh:mm:ss> completed  questions
-  <hh:mm:ss> done       asker, 67 tokens
   <hh:mm:ss> done       drafter, 13 tokens
   <hh:mm:ss> log        Logs persisted to <tmp>/check-questions/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
   <hh:mm:ss> question   Breakpoint: Check the draft Draft: stand-in answer from drafter Reply approve, stop, or send back with a note.
@@ -14,11 +13,9 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> question   Pick a color for the draft
            answered   "red" (dry run)
   <hh:mm:ss> run        questions in <tmp>/check-questions/sous-home/scratch/<run-1>
-  <hh:mm:ss> start      asker
   <hh:mm:ss> start      drafter
-dry run completed, with 2 agent steps answered by stand-ins
+dry run completed, with 1 agent step answered by stand-ins
 {
   "color": "red",
-  "asked": "stand-in answer from asker",
   "draft": "stand-in answer from drafter"
 }

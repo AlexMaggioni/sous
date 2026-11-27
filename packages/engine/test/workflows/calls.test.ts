@@ -5,14 +5,16 @@
 // Decisions taken here, where the design leaves a choice:
 // - The calls sit on `refs.calls`, next to the other names the parse reads (ScriptRefs). The
 //   design says "readWorkflowScript gains calls", and refs is where that parse's results live.
-// - A call is { kind, label?, title?, agent?, model?, keepsSession?, workflow? }. `label` is the
+// - A call is { kind, label?, title?, agent?, model?, session?, workflow? }. `label` is the
 //   literal `label` option only. A label built at run time is left out, since the parse cannot
 //   know it, and so is the label sous makes up at run time (such as "sh: echo ok").
 // - ask() and breakpoint() take no label option. They carry `title`, their literal first
 //   argument, so an agent can tell the person what the workflow will stop to ask. The other
 //   option was a breakpoint with nothing but its kind, which tells the person little.
-// - An agent call carries the step's literal agentType as `agent`, its literal model, and
-//   `keepsSession` when keepSession is true. A workflow call carries the literal name it starts.
+// - An agent call carries the step's literal agentType as `agent` and its literal model. A send
+//   on a session handle is an agent call too: it carries its handle's agentType and model, its
+//   own label or else its handle's, and the handle's label as `session`. A workflow call carries
+//   the literal name it starts.
 // - A loop shows its calls once, and a call on an object, such as tools.sh(), is not a step,
 //   the same as the parse reads workflow() and run() today.
 //
@@ -34,7 +36,7 @@ interface Call {
   title?: string;
   agent?: string;
   model?: string;
-  keepsSession?: boolean;
+  session?: string;
   workflow?: string;
 }
 
@@ -69,9 +71,10 @@ describe("piece 10: the calls of a workflow script", () => {
     assert.deepEqual(calls.map((call) => [call.kind, call.title]), [["ask", "Which color?"]]);
   });
 
-  it("reads every kind in the order written, with an agent's name, model and kept session, and the workflow a call starts", () => {
+  it("reads every kind in the order written, with an agent's name, model and session, and the workflow a call starts", () => {
     const calls = callsOf(`export const meta = { name: "ticket", description: "Implement a ticket" }
-const built = await agent("Implement it", { agentType: "implementer", label: "implementer", model: "claude/haiku", keepSession: true })
+const impl = session({ agentType: "implementer", label: "implementer", model: "claude/haiku" })
+const built = await impl.send("Implement it")
 await sh("git diff", { label: "diff" })
 await py("print(1)", null, { label: "count" })
 const color = await ask("Which color?", { choices: ["red", "blue"] })
@@ -90,11 +93,11 @@ return built`);
     ]);
     assert.equal(calls[0]!.agent, "implementer");
     assert.equal(calls[0]!.model, "claude/haiku");
-    assert.equal(calls[0]!.keepsSession, true);
+    assert.equal(calls[0]!.session, "implementer");
     assert.equal(calls[5]!.workflow, "greet");
     assert.equal(calls[6]!.agent, "reviewer");
     assert.equal(calls[6]!.model, undefined, "a step that names no model has none in the parse");
-    assert.ok(!calls[6]!.keepsSession, "a step that keeps no session says nothing of it");
+    assert.equal(calls[6]!.session, undefined, "a step on no session says nothing of one");
   });
 
   it("shows a call in a loop once, leaves out a label made at run time, and skips calls on an object", () => {

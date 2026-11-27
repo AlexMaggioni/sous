@@ -34,10 +34,9 @@ function condText(cond: string): string {
   return one === "error" ? "on error" : clip(one);
 }
 
-/** The attempts of a gate or a retry as a number: written, from the run's args, or the engine's 3. */
+/** The rounds of a counted for loop as a number: written, or from the run's args. Null when not known. */
 function loopLimit(node: FlowLoop, args: Record<string, unknown>): number | null {
-  if (node.loop === "for" || node.loop === "while") return null;
-  if (node.limit === undefined) return 3;
+  if (node.limit === undefined) return null;
   const n = Number(node.limit);
   if (Number.isFinite(n) && n > 0) return Math.floor(n);
   const m = /^args\.([A-Za-z_$][\w$]*)$/.exec(node.limit.trim());
@@ -102,22 +101,41 @@ function loopBox(node: FlowLoop, w: Walk): Part[] {
   if (!node.body.length) return [];
   const limit = loopLimit(node, w.args);
   const over = node.label ? clip(node.label.replace(/\s+/g, " ").trim()) : "";
-  const title = node.loop === "gate" || node.loop === "retry" ? node.loop : `${node.loop}${over ? ` ${over}` : ""}`;
-  // The back arrow says why the work goes again, and how many times at most: a gate repeats while
-  // its check fails, a retry while its work fails.
-  const why = node.loop === "gate" ? "check fails" : node.loop === "retry" ? "fails" : "again";
+  const title = `${node.loop}${over ? ` ${over}` : ""}`;
+  // The back arrow says what comes again, and for a counted for loop how many times at most.
+  const why = node.loop === "for" ? "next" : "again";
   let again = why;
-  if (node.loop === "for") again = "next";
-  else if (limit !== null && node.loop !== "while") again = `${why} ×${limit}`;
+  if (limit !== null) again = `${why} ×${limit}`;
   else if (node.limit) again = `${why}, up to ${clip(node.limit)}`;
   const inner = { ...w, path: key };
   // The body has a key of its own: the drawing keys each open box's head by the box's key.
-  const walk = () => seqOf(node.body, inner, `${key}/body`, node.loop === "gate" || node.loop === "retry");
+  const walk = () => seqOf(node.body, inner, `${key}/body`, true);
   const { body, sub } = w.hooks ? w.hooks.rounds(node, limit, walk) : { body: walk(), sub: undefined };
   return [{ t: "box", key, kind: "loop", title, ...(sub ? { sub } : {}), again, body, node: node.id, ...inFlow(w) }];
 }
 
-function ifParts(node: FlowIf, w: Walk, firstInLoop: boolean): Part[] {
+/** True when a step in the nodes, nested ones too, keeps its result under the name. */
+function keeps(nodes: FlowNode[], name: string): boolean {
+  return nodes.some((node) => {
+    switch (node.t) {
+      case "step":
+        return node.result === name || keeps(node.body ?? [], name);
+      case "loop":
+        return keeps(node.body, name);
+      case "if":
+        return keeps(node.then, name) || keeps(node.else ?? [], name);
+      case "parallel":
+        return node.branches.some((branch) => keeps(branch, name));
+      case "pipeline":
+        return node.stages.some((stage) => keeps(stage, name));
+      default:
+        return false;
+    }
+  });
+}
+
+/** An if. `later` is the rest of a loop's work when the if starts it. */
+function ifParts(node: FlowIf, w: Walk, later?: FlowNode[]): Part[] {
   const key = `${w.path}/${node.id}`;
   const then = node.then;
   const els = node.else ?? [];
@@ -133,8 +151,10 @@ function ifParts(node: FlowIf, w: Walk, firstInLoop: boolean): Part[] {
   const body = then.length ? then : els;
   if (!body.length) return [];
   const label = !then.length ? `unless ${cond}` : cond === "on error" ? cond : `if ${cond}`;
-  // A gate's work starts with "if (feedback)": the detour its back arrow comes into.
-  const onBack = firstInLoop && !els.length && /^[A-Za-z_$][\w$]*$/.test(node.cond.trim());
+  // A loop's work starts with "if (feedback)", and a later step of it keeps feedback: the detour
+  // its back arrow comes into.
+  const name = node.cond.trim();
+  const onBack = !!later && !els.length && /^[A-Za-z_$][\w$]*$/.test(name) && keeps(later, name);
   const ends = body[body.length - 1].t === "end";
   return [{ t: "iff", key, label, body: seqOf(body, w, `${key}/body`), ...(onBack ? { onBack } : {}), ...(ends ? { ends } : {}), node: node.id, ...inFlow(w) }];
 }
@@ -166,7 +186,7 @@ export function seqOf(nodes: FlowNode[], w: Walk, key: string, inLoop = false): 
     }
     if (node.t === "step") items.push(...stepParts(node, w));
     else if (node.t === "loop") items.push(...loopBox(node, w));
-    else if (node.t === "if") items.push(...ifParts(node, w, inLoop && i === 0));
+    else if (node.t === "if") items.push(...ifParts(node, w, inLoop && i === 0 ? nodes.slice(1) : undefined));
     else if (node.t === "parallel") {
       const lanes = node.branches.filter((b) => b.length).map((b, j) => seqOf(b, { ...w, path: `${w.path}/${node.id}.${j}` }, `${w.path}/${node.id}.${j}`));
       if (lanes.length === 1) items.push(...lanes[0].items);

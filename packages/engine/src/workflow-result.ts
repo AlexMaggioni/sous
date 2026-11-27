@@ -87,7 +87,7 @@ export interface AgentSessionRef {
 
 /** One run's session ref PLUS its workflow-call context — what lands in JournalEntry.session,
  *  the agent snapshot, and WorkflowRunResult.agentSessions. `keptOpen` records whether the
- *  release-time best-effort `session/close` was SKIPPED (agent({ keepSession: true })). */
+ *  release-time best-effort `session/close` was SKIPPED, as for every step of a session handle. */
 export interface AgentSessionRecord extends AgentSessionRef {
   /** The owning agent() call's deterministic index (same key as JournalEntry.index). */
   callIndex: number;
@@ -443,7 +443,7 @@ export interface WorkflowCallRecord {
   modelRequested?: string;
   /** The mode this call set, which is part of its identity. */
   modeRequested?: string;
-  /** The configOptions this call set, which are part of its identity. No harness reads them. */
+  /** The configOptions a call set when steps still took them. Older records may hold it. Nothing sets it now. */
   configOptionsRequested?: Record<string, string | boolean>;
   /** The runner-reported concrete model id from the terminal attempt. */
   modelResolved?: string;

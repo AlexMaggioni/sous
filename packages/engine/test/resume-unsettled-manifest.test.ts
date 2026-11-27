@@ -125,7 +125,7 @@ describe("resume manifests for unsettled calls", () => {
           ? `export const meta = { name: "checkpoint-halt", description: "checkpoint halt" }
 return await parallel([
   () => agent("pending", { label: "pending" }),
-  () => checkpoint("approval", { }),
+  () => ask("approval", { }),
 ])`
           : parallelScript(["pending", "halt"], "auth-halt");
         const manager = new WorkflowManager({

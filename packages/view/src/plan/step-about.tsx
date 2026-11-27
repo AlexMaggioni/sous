@@ -161,9 +161,10 @@ function agentAbout(node: FlowStep, agent: AgentPage | undefined, reads: Read[],
           ["Retries", node.retries ? `Up to ${node.retries}` : undefined],
           ["Timeout", timeout, timeoutFrom],
           ["Returns", o.schema?.length ? <span className="font-mono text-xs">{o.schema.join(", ")}</span> : undefined],
-          ["Session", o.continues ? `Goes on in the session of ${o.continues}` : o.keepSession ? "Keeps its session for a later step" : undefined],
-          ["Asks you", o.asks ? (o.answeredBy === "anyone" ? "It may ask, and anyone may answer" : "It may stop to ask you") : undefined],
-          ["Works in", o.isolation === "worktree" ? "A worktree of its own" : undefined],
+          ["Session", o.session ? `${o.session}, ${o.continues ? `going on from ${o.continues}` : "from the start"}` : undefined],
+          ["Ends", o.until === "turn" ? "When its one turn ends" : o.until === "done" ? "When the agent reports done" : undefined],
+          ["Asks you", o.asks ? "It may stop to ask you" : undefined],
+          ["Works in", o.place === "worktree" ? "A worktree of its own" : undefined],
         ]}
       />
     </PanelPart>
@@ -203,12 +204,6 @@ function codeAbout(node: FlowStep): About {
   return { main, side };
 }
 
-const ANSWER: Record<string, string> = {
-  confirm: "Yes or no",
-  input: "Free text",
-  select: "One of the choices",
-};
-
 function askAbout(node: FlowStep, inside: Ref[], onSelect: (key: string) => void): About {
   const o = node.options ?? {};
   if (node.kind === "breakpoint") {
@@ -230,7 +225,7 @@ function askAbout(node: FlowStep, inside: Ref[], onSelect: (key: string) => void
         pairs={[
           ["Question", node.prompt && node.prompt !== node.label ? node.prompt : undefined],
           ["Choices", list(o.choices)],
-          ["Answer", o.answer ? ANSWER[o.answer] : o.choices?.length ? ANSWER.select : undefined],
+          ["Answer", o.choices?.length ? "One of the choices" : undefined],
         ]}
       />
     ),
@@ -312,9 +307,7 @@ function chooseAbout(node: FlowStep, reads: Read[], onSelect: (key: string) => v
 /** The sentence that says what a group does. */
 function groupSentence(part: Part, node: FlowNode | undefined): string {
   if (part.t === "box" && node?.t === "loop") {
-    const limit = node.limit ? `up to ${node.limit} times` : "up to 3 times";
-    if (node.loop === "gate") return `Runs the steps inside, then checks the result${node.until ? ` with ${node.until}` : ""}. While the check fails, it runs them again, ${limit}.`;
-    if (node.loop === "retry") return `Runs the steps inside, and again when they fail${node.until ? ` or ${node.until} says no` : ""}, ${limit}.`;
+    if (node.loop === "for" && node.limit) return `Runs the steps inside up to ${node.limit} times, one round after the other.`;
     if (node.loop === "for") return `Runs the steps inside once for each ${node.label ?? "item"}, one after the other.`;
     return `Runs the steps inside again while ${node.label ?? "its condition holds"}.`;
   }
@@ -357,7 +350,7 @@ export function useStepAbout({ part, node, flow, flows, graph, project, onSelect
   let kind: About = { main: null, side: null };
   if (step?.kind === "agent") kind = agentAbout(step, step.agent ? agent : undefined, reads, onSelect, search);
   else if (step && ["sh", "js", "py", "run", "wait"].includes(step.kind)) kind = codeAbout(step);
-  else if (step && ["ask", "checkpoint", "breakpoint"].includes(step.kind)) kind = askAbout(step, inside, onSelect);
+  else if (step && ["ask", "breakpoint"].includes(step.kind)) kind = askAbout(step, inside, onSelect);
   else if (step?.kind === "workflow") kind = workflowAbout(step, project);
   else if (step?.kind === "choose") kind = chooseAbout(step, reads, onSelect);
   const line = node?.line;

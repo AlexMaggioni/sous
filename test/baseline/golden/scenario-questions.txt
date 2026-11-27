@@ -79,10 +79,11 @@ exit 4
   "questions": [
     {
       "id": "<run-1>--2",
-      "step": "asker",
-      "prompt": "asker asks: Which file should I edit?",
+      "prompt": "Breakpoint: Check the draft\n\nDraft: Fake claude answer.\n\nReply approve, stop, or send back with a note.",
       "kind": "input",
-      "breakpoint": false,
+      "breakpoint": true,
+      "title": "Check the draft",
+      "show": "Draft: Fake claude answer.",
       "askedAt": "<time>",
       "answeredBy": "people"
     }
@@ -91,8 +92,12 @@ exit 4
   "notes": [],
   "next": [
     {
-      "call": "sous answer <run-1>--2 \"<answer>\" --json",
-      "does": "answers \"asker asks: Which file should I edit?\""
+      "call": "sous approve <run-1>--2 --json",
+      "does": "approves \"Breakpoint: Check the draft\""
+    },
+    {
+      "call": "sous send-back <run-1>--2 \"<note>\" --json",
+      "does": "sends the run back with a note"
     },
     {
       "call": "sous wait <run-1> --json",
@@ -101,13 +106,7 @@ exit 4
   ]
 }
 
-$ sous inbox <run-1>
-exit 0
-<run-1>--2  questions  <n>s ago
-  asker asks: Which file should I edit?
-  sous answer <run-1>--2 "..."
-
-$ sous answer <run-1> src/textkit.js
+$ sous send-back <run-1> "Make it shorter"
 exit 0
 answered <run-1>--2
 next: sous wait <run-1> --json  (waits for the run, which goes on with the answer)
@@ -120,7 +119,7 @@ exit 4
   "status": "asks",
   "questions": [
     {
-      "id": "<run-1>--5",
+      "id": "<run-1>--4",
       "prompt": "Breakpoint: Check the draft\n\nDraft: Fake claude answer.\n\nReply approve, stop, or send back with a note.",
       "kind": "input",
       "breakpoint": true,
@@ -134,52 +133,11 @@ exit 4
   "notes": [],
   "next": [
     {
-      "call": "sous approve <run-1>--5 --json",
+      "call": "sous approve <run-1>--4 --json",
       "does": "approves \"Breakpoint: Check the draft\""
     },
     {
-      "call": "sous send-back <run-1>--5 \"<note>\" --json",
-      "does": "sends the run back with a note"
-    },
-    {
-      "call": "sous wait <run-1> --json",
-      "does": "waits again once the answer is in"
-    }
-  ]
-}
-
-$ sous send-back <run-1> "Make it shorter"
-exit 0
-answered <run-1>--5
-next: sous wait <run-1> --json  (waits for the run, which goes on with the answer)
-
-$ sous wait <run-1> --json
-exit 4
-{
-  "runId": "<run-1>",
-  "workflow": "questions",
-  "status": "asks",
-  "questions": [
-    {
-      "id": "<run-1>--7",
-      "prompt": "Breakpoint: Check the draft\n\nDraft: Fake claude answer.\n\nReply approve, stop, or send back with a note.",
-      "kind": "input",
-      "breakpoint": true,
-      "title": "Check the draft",
-      "show": "Draft: Fake claude answer.",
-      "askedAt": "<time>",
-      "answeredBy": "people"
-    }
-  ],
-  "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
-  "notes": [],
-  "next": [
-    {
-      "call": "sous approve <run-1>--7 --json",
-      "does": "approves \"Breakpoint: Check the draft\""
-    },
-    {
-      "call": "sous send-back <run-1>--7 \"<note>\" --json",
+      "call": "sous send-back <run-1>--4 \"<note>\" --json",
       "does": "sends the run back with a note"
     },
     {
@@ -191,7 +149,7 @@ exit 4
 
 $ sous approve <run-1>
 exit 0
-answered <run-1>--7
+answered <run-1>--4
 next: sous wait <run-1> --json  (waits for the run, which goes on with the answer)
 
 $ sous wait <run-1> --json
@@ -203,13 +161,11 @@ exit 0
   "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
   "result": {
     "color": "blue",
-    "asked": "Fake claude answer.",
     "draft": "Fake claude answer."
   },
   "review": {
     "result": {
       "color": "blue",
-      "asked": "Fake claude answer.",
       "draft": "Fake claude answer."
     }
   },
@@ -231,16 +187,13 @@ started   <time>  by cli
 program   Claude Code 2.1.330  <repo>/test/fakes/claude
 account   Claude Code: default, Claude Code's own login in ~/.claude
 account   Codex: default, Codex's own login in ~/.codex
-tokens    600  in <n>s
+tokens    300  in <n>s
 steps
-  done  asker  (<n>s, 150 tokens)
-  done  asker (answer 1)  (<n>s, 150 tokens)
   done  drafter  (<n>s, 150 tokens)
   done  drafter  (<n>s, 150 tokens)
 result
 {
   "color": "blue",
-  "asked": "Fake claude answer.",
   "draft": "Fake claude answer."
 }
 
@@ -254,20 +207,8 @@ exit 0
   "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
   "startedAt": "<startedAt>",
   "seconds": "<seconds>",
-  "tokens": 600,
+  "tokens": 300,
   "steps": [
-    {
-      "label": "asker",
-      "status": "done",
-      "seconds": "<seconds>",
-      "tokens": 150
-    },
-    {
-      "label": "asker (answer 1)",
-      "status": "done",
-      "seconds": "<seconds>",
-      "tokens": 150
-    },
     {
       "label": "drafter",
       "status": "done",
@@ -296,7 +237,7 @@ exit 0
     "through": {
       "kind": "person"
     },
-    "workflowHash": "15219e1142420a512afcaa5bc2f84d04c6bdddd98983842bb6e4e071fca6588e",
+    "workflowHash": "e5d48ec1320125e40a1594d37407ad7347299ba241ffd6cfdfb2a9656243de50",
     "accounts": {
       "claude": {
         "name": "default",
@@ -332,20 +273,7 @@ exit 0
       "format": "identity-v1"
     },
     "eventStreamId": "<eventStreamId>",
-    "eventSeq": 35,
-    "fallbacks": [
-      {
-        "callIndex": 3,
-        "label": "asker (answer 1)",
-        "requestedSpec": "(default)",
-        "kind": "continuation",
-        "continuation": {
-          "outcome": "reattached",
-          "method": "resume"
-        },
-        "message": "continuation: reattached via session/resume"
-      }
-    ],
+    "eventSeq": 22,
     "checkpointsTaken": [
       {
         "callIndex": 0,
@@ -356,12 +284,6 @@ exit 0
       {
         "callIndex": 2,
         "kind": "input",
-        "decision": "src/textkit.js",
-        "source": "live"
-      },
-      {
-        "callIndex": 5,
-        "kind": "input",
         "decision": {
           "decision": "send back",
           "note": "Make it shorter"
@@ -369,13 +291,13 @@ exit 0
         "source": "live"
       },
       {
-        "callIndex": 7,
+        "callIndex": 4,
         "kind": "input",
         "decision": "approve",
         "source": "live"
       }
     ],
-    "callsAllocated": 8,
+    "callsAllocated": 5,
     "limits": {
       "maxAgents": 1000,
       "concurrency": 8,
@@ -386,8 +308,8 @@ exit 0
     "agents": [
       {
         "id": 1,
-        "label": "asker",
-        "prompt": "ASKER Which file should change?\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.",
+        "label": "drafter",
+        "prompt": "DRAFT first in blue",
         "status": "done",
         "callIndex": 1,
         "scope": "<run-1>",
@@ -396,11 +318,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "QUESTION: Which file should I edit?",
+            "text": "Fake claude answer.",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "QUESTION: Which file should I edit?",
+        "resultPreview": "Fake claude answer.",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -423,68 +345,17 @@ exit 0
           },
           "costGauge": 0.0012,
           "callIndex": 1,
-          "label": "asker",
-          "keptOpen": true
+          "label": "drafter",
+          "keptOpen": false
         },
         "endedAt": "<endedAt>"
       },
       {
         "id": 2,
-        "label": "asker (answer 1)",
-        "prompt": "The user answered: src/textkit.js\n\nContinue the task.\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.",
+        "label": "drafter",
+        "prompt": "DRAFT again in blue: Make it shorter",
         "status": "done",
         "callIndex": 3,
-        "scope": "<run-1>",
-        "startedAt": "<startedAt>",
-        "history": [
-          {
-            "role": "assistant",
-            "kind": "text",
-            "text": "Fake claude answer.",
-            "timestamp": "<timestamp>"
-          }
-        ],
-        "resultPreview": "Fake claude answer.",
-        "tokens": 150,
-        "usage": {
-          "input": 120,
-          "output": 30,
-          "cacheRead": 0,
-          "cacheWrite": 0,
-          "total": 150,
-          "cost": 0
-        },
-        "provenance": {
-          "source": "live",
-          "continuation": {
-            "reattached": true,
-            "method": "resume"
-          }
-        },
-        "session": {
-          "sessionId": "<id-1>",
-          "backendId": "claude",
-          "poolKey": "claude",
-          "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
-          "reopen": {
-            "load": true,
-            "resume": true,
-            "list": true,
-            "fork": true
-          },
-          "costGauge": 0.0012,
-          "callIndex": 3,
-          "label": "asker (answer 1)",
-          "keptOpen": true
-        },
-        "endedAt": "<endedAt>"
-      },
-      {
-        "id": 3,
-        "label": "drafter",
-        "prompt": "DRAFT first in blue",
-        "status": "done",
-        "callIndex": 4,
         "scope": "<run-1>",
         "startedAt": "<startedAt>",
         "history": [
@@ -517,51 +388,7 @@ exit 0
             "fork": true
           },
           "costGauge": 0.0012,
-          "callIndex": 4,
-          "label": "drafter",
-          "keptOpen": false
-        },
-        "endedAt": "<endedAt>"
-      },
-      {
-        "id": 4,
-        "label": "drafter",
-        "prompt": "DRAFT again in blue: Make it shorter",
-        "status": "done",
-        "callIndex": 6,
-        "scope": "<run-1>",
-        "startedAt": "<startedAt>",
-        "history": [
-          {
-            "role": "assistant",
-            "kind": "text",
-            "text": "Fake claude answer.",
-            "timestamp": "<timestamp>"
-          }
-        ],
-        "resultPreview": "Fake claude answer.",
-        "tokens": 150,
-        "usage": {
-          "input": 120,
-          "output": 30,
-          "cacheRead": 0,
-          "cacheWrite": 0,
-          "total": 150,
-          "cost": 0.0012
-        },
-        "session": {
-          "sessionId": "<id-3>",
-          "backendId": "claude",
-          "poolKey": "claude",
-          "cwd": "<tmp>/scenario-questions/sous-home/scratch/<run-1>",
-          "reopen": {
-            "load": true,
-            "resume": true,
-            "list": true,
-            "fork": true
-          },
-          "costGauge": 0.0012,
-          "callIndex": 6,
+          "callIndex": 3,
           "label": "drafter",
           "keptOpen": false
         },
@@ -573,14 +400,13 @@ exit 0
     ],
     "result": {
       "color": "blue",
-      "asked": "Fake claude answer.",
       "draft": "Fake claude answer."
     },
     "tokenUsage": {
-      "input": 480,
-      "output": 120,
-      "total": 600,
-      "cost": 0.0036,
+      "input": 240,
+      "output": 60,
+      "total": 300,
+      "cost": 0.0024,
       "cacheRead": 0,
       "cacheWrite": 0
     },
@@ -594,7 +420,5 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: asker","skills":null,"login":[],"prompt":"ASKER Which file should change?\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.","rule":0,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: drafter","skills":null,"login":[],"prompt":"DRAFT again in blue: Make it shorter","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: drafter","skills":null,"login":[],"prompt":"DRAFT first in blue","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--resume=<id-1>","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":true,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: asker (answer 1)","skills":null,"login":[],"prompt":"The user answered: src/textkit.js\n\nContinue the task.\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with \"QUESTION:\" followed by your question. You will get the answer in this same session and can continue.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: drafter","skills":null,"login":[],"prompt":"DRAFT again in blue: Make it shorter","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-questions/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: drafter","skills":null,"login":[],"prompt":"DRAFT first in blue","rule":null,"outcome":"answer"}

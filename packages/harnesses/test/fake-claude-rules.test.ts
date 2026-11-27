@@ -129,6 +129,20 @@ describe("the fake claude's rules", () => {
     assert.doesNotMatch(fresh.text, /PLUM|PELICAN/);
   });
 
+  test("a resume reports the session's whole cost so far, as Claude Code does, and a new session starts at its own", async () => {
+    const c = newCase();
+    const first = await c.run({ prompt: "Remember the word PLUM." });
+    const turn = first.usage.costUsd;
+    assert.ok(turn !== undefined && turn > 0, "a turn reports a cost");
+    const second = await c.run({ prompt: "Go on.", resume: first.sessionId });
+    const third = await c.run({ prompt: "Go on.", resume: first.sessionId });
+    const other = await c.run({ prompt: "Remember the word KIWI." });
+    const near = (actual: number | undefined, expected: number) => assert.ok(actual !== undefined && Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`);
+    near(second.usage.costUsd, turn * 2);
+    near(third.usage.costUsd, turn * 3);
+    near(other.usage.costUsd, turn);
+  });
+
   test("a fork starts with its parent's transcript, and the parent never learns the fork's words", async () => {
     const c = newCase();
     c.rules([{ match: "^Recall", recall: true }]);

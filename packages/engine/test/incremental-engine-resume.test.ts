@@ -80,7 +80,7 @@ function fanout(items: readonly string[], worktree: boolean): string {
 const items = ${JSON.stringify(items)}
 return await parallel(items.map((item, index) => () => agent(item, {
   label: "item-" + index,
-  ${worktree ? 'isolation: "worktree",' : ""}
+  ${worktree ? 'place: "worktree",' : ""}
 })))`, worktree ? "worktree-fanout" : "reader-fanout");
 }
 
@@ -317,23 +317,23 @@ return { first, second }`, "nested-between"), {
 describe("PreparedResume checkpoint integration", () => {
   it("replays a moved proven host decision and re-journals its current index", async () => {
     const recording = await record(source(`
-return await checkpoint("approve", { kind: "confirm", timeoutMs: 50 })`), {
-      confirm: async () => ({ approved: true }),
+return await ask("approve")`), {
+      confirm: async () => "approved",
     });
     const journal: JournalEntry[] = [];
     let confirms = 0;
     const result = await runWorkflow(source(`
 await agent("inserted", { label: "inserted" })
-return await checkpoint("approve", { kind: "confirm", timeoutMs: 50 })`), {
+return await ask("approve")`), {
       runId: "checkpoint-target",
       agent: { async run() { return "inserted"; } },
-      confirm: async () => { confirms += 1; return false; },
+      confirm: async () => { confirms += 1; return "refused"; },
       ...occurrence(seedFor(recording), "checkpoint-target"),
       persistLogs: false,
       onAgentJournal: (entry) => journal.push(entry),
     });
 
-    assert.deepEqual(JSON.parse(JSON.stringify(result.result)), { approved: true });
+    assert.equal(result.result, "approved");
     assert.equal(confirms, 0);
     assert.deepEqual(result.resumeReport?.calls, [
       { index: 0, kind: "agent", action: "live", reason: "not-recorded" },
@@ -355,18 +355,18 @@ return await checkpoint("approve", { kind: "confirm", timeoutMs: 50 })`), {
 
   it("keeps later rows after an explicit answer and while an unanswered checkpoint pauses", async () => {
     const recording = await record(source(`
-const decision = await checkpoint("source-decision", {})
+const decision = await ask("source-decision")
 const later = await agent("later", { label: "later" })
-return { decision, later }`), { confirm: async () => true });
+return { decision, later }`), { confirm: async () => "yes" });
 
     const confirmResult = await runWorkflow(source(`
-const decision = await checkpoint("changed-decision", {})
+const decision = await ask("changed-decision")
 const later = await agent("later", { label: "later" })
 return { decision, later }`), {
       runId: "confirm-barrier-target",
       agent: { async run(prompt) { return `live:${prompt}`; } },
       confirm: async () => {
-        return false;
+        return "no";
       },
       ...occurrence(seedFor(recording), "confirm-barrier-target"),
       persistLogs: false,
@@ -377,7 +377,7 @@ return { decision, later }`), {
     const waitingSeed = seedFor(recording);
     let waitingRunnerCalls = 0;
     await assert.rejects(runWorkflow(source(`
-const decision = await checkpoint("changed-decision")
+const decision = await ask("changed-decision")
 const later = await agent("later", { label: "later" })
 return { decision, later }`), {
       runId: "waiting-target",

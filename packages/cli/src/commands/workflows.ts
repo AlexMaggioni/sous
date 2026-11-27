@@ -163,7 +163,7 @@ function outlineText(outline: WorkflowOutline): string[] {
   for (const [name, spec] of Object.entries(outline.inputs)) text.push(inputLine(name, spec));
   text.push("steps:");
   for (const step of outline.steps) {
-    const bits = [step.agent && `agent ${step.agent}`, step.model, step.keepsSession && "keeps its session", step.workflow && `starts ${step.workflow}`, step.title && JSON.stringify(step.title)].filter(Boolean);
+    const bits = [step.agent && `agent ${step.agent}`, step.model, step.session && `in session ${step.session}`, step.workflow && `starts ${step.workflow}`, step.title && JSON.stringify(step.title)].filter(Boolean);
     text.push(`  ${step.kind}${step.step ? `  ${step.step}` : ""}${bits.length ? `  (${bits.join(", ")})` : ""}`);
   }
   const { approved } = outline;

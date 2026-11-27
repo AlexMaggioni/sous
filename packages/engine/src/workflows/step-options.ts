@@ -2,7 +2,7 @@
 // place counts: a string, a number, true, a list of strings, or the names of an object. A value
 // made at run time is left out. The graph's reader in flow.ts adds them to each step.
 
-import type { StepKind, StepOptions } from "./flow.js";
+import type { StepKind, StepOptions } from "./flow-types.js";
 import { keyOf, property, staticString, type AnyNode } from "./syntax.js";
 
 /** How the reader shows a node, and what a name stands for where it is written. */
@@ -23,20 +23,18 @@ const OPTIONS: Array<{ key: string; field: keyof StepOptions; kinds: StepKind[];
   { key: "timeout", field: "timeout", kinds: [...AGENT, ...CODE], read: duration },
   { key: "effort", field: "effort", kinds: AGENT, read: staticString },
   { key: "mode", field: "mode", kinds: AGENT, read: staticString },
-  { key: "isolation", field: "isolation", kinds: AGENT, read: oneOf("worktree") },
   { key: "skills", field: "skills", kinds: AGENT, read: strings },
   { key: "mcp", field: "mcp", kinds: AGENT, read: strings },
-  { key: "keepSession", field: "keepSession", kinds: AGENT, read: yes },
-  { key: "continue", field: "continues", kinds: AGENT, read: staticString },
+  { key: "until", field: "until", kinds: AGENT, read: oneOf("done", "turn") },
   { key: "ask", field: "asks", kinds: AGENT, read: yes },
-  { key: "answeredBy", field: "answeredBy", kinds: ["agent", "ask"], read: oneOf("people", "anyone") },
+  { key: "answeredBy", field: "answeredBy", kinds: ["ask"], read: oneOf("people", "anyone") },
   { key: "schema", field: "schema", kinds: AGENT, read: schemaNames },
   { key: "allowFail", field: "allowFail", kinds: CODE, read: yes },
-  { key: "choices", field: "choices", kinds: ["ask", "checkpoint"], read: strings },
-  { key: "kind", field: "answer", kinds: ["checkpoint"], read: oneOf("confirm", "input", "select") },
+  { key: "choices", field: "choices", kinds: ["ask"], read: strings },
   { key: "max", field: "max", kinds: ["breakpoint"], read: (value) => (isNumber(value) ? value.value : undefined) },
   { key: "every", field: "every", kinds: ["wait"], read: duration },
   { key: "place", field: "place", kinds: ["workflow"], read: staticString },
+  { key: "place", field: "place", kinds: AGENT, read: oneOf("worktree") },
   { key: "steps", field: "steps", kinds: ["choose"], read: namesOf },
   { key: "workflows", field: "workflows", kinds: ["choose"], read: workflowNames },
   { key: "any", field: "any", kinds: ["choose"], read: yes },

@@ -103,7 +103,7 @@ const threeWith = (options: string) => three("A").replace("{ label: 'a' }", `{ $
 
 const asks = (a: string) => `export const meta = { name: 'asks', description: 'asks' }
 const a = await agent('${a}', { label: 'a' })
-const name = await checkpoint('Name it', { kind: 'input' })
+const name = await ask('Name it')
 return await agent('Build ' + name, { label: 'build' })`;
 
 /** Pause the workflow with the prompt `fails` failing, apply the edits, and resume it as `sous resume` does.

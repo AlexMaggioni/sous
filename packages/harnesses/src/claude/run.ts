@@ -21,7 +21,7 @@ import { Tells } from "./tells.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"];
 const EFFORTS: EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
-// Questions go through the engine's QUESTION: reply, never through the program's own tool.
+// A step never asks the person through the program's own question tool.
 const ASK = "AskUserQuestion";
 
 /** The SDK options for a step, and the notes on what it could not honor. */

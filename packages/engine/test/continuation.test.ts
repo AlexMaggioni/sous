@@ -174,7 +174,7 @@ describe("live-boundary continuation", () => {
       rmSync(missing, { recursive: true, force: true });
       const worktreeSource = await recordInterrupted(
         git.cwd,
-        workflow("isolation: 'worktree'"),
+        workflow("place: 'worktree'"),
         WorkflowErrorCode.PROVIDER_USAGE_LIMIT,
         home.places("paused-source"),
       );
@@ -189,7 +189,7 @@ describe("live-boundary continuation", () => {
         { reason: "inputs-mismatch", script: workflow(), cwd: fixture.cwd, candidate: { ...source.candidate, inputsHash: undefined } },
         { reason: "cwd-mismatch", script: workflow(), cwd: fixture.cwd, candidate: { ...source.candidate, recordedCwd: join(fixture.cwd, "other") } },
         { reason: "cwd-missing", script: workflow("cwd: 'removed-cwd'"), cwd: fixture.cwd, candidate: missingSource.candidate },
-        { reason: "worktree-isolated", script: workflow("isolation: 'worktree'"), cwd: git.cwd, candidate: worktreeSource.candidate },
+        { reason: "worktree-isolated", script: workflow("place: 'worktree'"), cwd: git.cwd, candidate: worktreeSource.candidate },
       ];
 
       for (const item of cases) {
@@ -229,7 +229,6 @@ describe("live-boundary continuation", () => {
       const changed: Array<{ name: string; script: string }> = [
         { name: "images", script: workflow(`images: [{ data: "YQ==", mimeType: "image/png" }]`) },
         { name: "mcpServers", script: workflow(`mcpServers: [{ name: "tools", command: "tool-server" }]`) },
-        { name: "keepSession", script: workflow("keepSession: true") },
         {
           name: "label",
           script: workflow("", `return await agent('task', { label: 'changed-label' })`),
@@ -258,6 +257,30 @@ describe("live-boundary continuation", () => {
           item.name,
         );
       }
+
+      // keepSession was an unhashed input. It is gone, so a script that sets it fails before
+      // the runner, and the candidate is never offered.
+      let runs = 0;
+      await assert.rejects(
+        runWorkflow(workflow("keepSession: true"), {
+          cwd: fixture.cwd,
+          persistLogs: false,
+          resume: { continuation: prepared(source.candidate) },
+          agent: {
+            async run() {
+              runs += 1;
+              return "fresh";
+            },
+          },
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof WorkflowError);
+          assert.equal(error.code, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR);
+          assert.equal(error.message, "keepSession is gone. Make a session with session() and send() each turn on it.");
+          return true;
+        },
+      );
+      assert.equal(runs, 0);
     } finally {
       fixture.cleanup();
     }

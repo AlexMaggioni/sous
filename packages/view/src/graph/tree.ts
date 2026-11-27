@@ -70,7 +70,7 @@ export interface Iff {
   key: string;
   label: string;
   body: Seq;
-  /** The detour a loop's back arrow comes into, such as a gate's "if (feedback)". */
+  /** The detour a loop's back arrow comes into, such as the "if (feedback)" of a review loop. */
   onBack?: boolean;
   /** The detour ends the workflow, so it doesn't join the line again. */
   ends?: boolean;

@@ -297,8 +297,8 @@ test("a run's graph and steps views, and one step opened", async ({ page, reques
   await expect(page.getByText("6 of 6 steps done")).toBeVisible();
   const graph = page.getByRole("region", { name: `Graph of ${id}` });
   await expect(graph.getByRole("button", { name: /^parts\b.*, done$/ })).toBeVisible();
-  // The gate's box names its last round. Its title and round are two spans.
-  await expect(graph.getByText(/^gate\s*round 3 of 3$/)).toBeVisible();
+  // The loop's box names its last round. Its title and round are two spans.
+  await expect(graph.getByText(/^for attempt < 3\s*round 3 of 3$/)).toBeVisible();
   // The graph's steps in order, for a screen reader.
   const order = page.getByRole("list", { name: "The graph's steps, in order" });
   await expect(order).toContainText("check api");
@@ -312,13 +312,13 @@ test("a run's graph and steps views, and one step opened", async ({ page, reques
   await expect(graph).toBeVisible();
   await expect(summarize.getByText("JavaScript step", { exact: true })).toBeVisible();
   await expect(summarize.getByRole("region", { name: "Result of summarize" })).toContainText("summary");
-  // It ran once in each round of the gate. The panel shows the latest call, and switches to the others.
+  // It ran once in each round of the loop. The panel shows the latest call, and switches to the others.
   const calls = summarize.getByRole("group", { name: "Calls" });
   await expect(calls).toContainText("Call 3 of 3");
   await calls.getByRole("button", { name: "Earlier call" }).click();
   await expect(calls).toContainText("Call 2 of 3");
 
-  // The Steps view keeps the selected step, and shows summarize once, under its gate.
+  // The Steps view keeps the selected step, and shows summarize once, under its loop.
   await views.getByRole("radio", { name: "Steps" }).click();
   await expect(page.getByRole("region", { name: "Details of summarize" })).toBeVisible();
   const steps = page.getByRole("region", { name: "Steps" });
@@ -339,11 +339,11 @@ test("a run's graph and steps views, and one step opened", async ({ page, reques
   await expect(page.getByRole("region", { name: "Details of summarize" })).toHaveCount(0);
 
   // A group folds and unfolds at a press. The selected step is outside it, so its panel stays.
-  await steps.getByRole("button", { name: "Fold gate" }).click();
-  await expect(steps.getByRole("button", { name: "Open gate" })).toHaveAttribute("aria-expanded", "false");
+  await steps.getByRole("button", { name: "Fold for attempt < 3" }).click();
+  await expect(steps.getByRole("button", { name: "Open for attempt < 3" })).toHaveAttribute("aria-expanded", "false");
   await expect(summarizeRow).toHaveCount(0);
-  await steps.getByRole("button", { name: "Open gate" }).click();
-  await expect(steps.getByRole("button", { name: "Fold gate" })).toHaveAttribute("aria-expanded", "true");
+  await steps.getByRole("button", { name: "Open for attempt < 3" }).click();
+  await expect(steps.getByRole("button", { name: "Fold for attempt < 3" })).toHaveAttribute("aria-expanded", "true");
   await expect(summarizeRow).toHaveCount(1);
   await expect(details).toBeVisible();
 
@@ -371,8 +371,8 @@ test("a group that holds the selected step folds at a press", async ({ page, req
 
   const steps = page.getByRole("region", { name: "Steps" });
   await expect(steps.getByRole("button", { name: /^Done summarize\b/ })).toHaveCount(1);
-  await steps.getByRole("button", { name: "Fold gate" }).click();
-  await expect(steps.getByRole("button", { name: "Open gate" })).toHaveAttribute("aria-expanded", "false");
+  await steps.getByRole("button", { name: "Fold for attempt < 3" }).click();
+  await expect(steps.getByRole("button", { name: "Open for attempt < 3" })).toHaveAttribute("aria-expanded", "false");
   await expect(steps.getByRole("button", { name: /^Done summarize\b/ })).toHaveCount(0);
 });
 

@@ -156,7 +156,8 @@ describe("steps on the fake programs", () => {
   });
 
   it("counts only what a resumed Claude Code session adds to its cost", async () => {
-    // The fake reports a total of 0.0012 for each turn, as a resumed session that spent nothing new would.
+    // Each fake turn costs 0.0012, and a resumed session reports its whole total so far: 0.0024 on
+    // the first resume, 0.0036 on the second and 0.0048 on the third.
     const place = fakePlace([{ match: "city", times: 1, answer: { town: 1 } }]);
     const steps = createSteps(onFakes(place));
     const costs: number[] = [];
@@ -166,15 +167,17 @@ describe("steps on the fake programs", () => {
     try {
       await steps.run("first", routed(steps, { label: "a", model: "claude/haiku" }, { onSessionOpen: (ref: AgentSessionRef) => (first ??= ref), ...counted }));
       const recorded = (costGauge: number) => ({ ...first!, costGauge });
-      // The same total as recorded, a higher one, and a lower one, which means Claude Code started the total over.
-      for (const gauge of [0.0012, 0.0005, 0.005]) await steps.run("next", routed(steps, { label: "a", model: "claude/haiku" }, { continueFromSession: recorded(gauge), ...counted }));
-      // A schema repair resumes the step's own session, so its reading holds the first turn's cost.
+      // A recorded total equal to the reading, a lower one, and a higher one, which means Claude Code
+      // started the total over.
+      for (const gauge of [0.0024, 0.0029, 0.005]) await steps.run("next", routed(steps, { label: "a", model: "claude/haiku" }, { continueFromSession: recorded(gauge), ...counted }));
+      // A schema repair resumes the step's own session, so its reading holds the first turn's cost,
+      // and the step counts each of its two turns once.
       await steps.run("name a city", routed(steps, { label: "b", model: "claude/haiku" }, { schema: Type.Object({ city: Type.String() }, { additionalProperties: false }), ...counted }));
     } finally {
       await steps.dispose();
     }
-    assert.deepEqual(costs.map((cost) => Number(cost.toFixed(6))), [0.0012, 0, 0.0007, 0.0012, 0.0012]);
-    assert.deepEqual(gauges, [0.0012, 0.0012, 0.0012, 0.0012, 0.0012]);
+    assert.deepEqual(costs.map((cost) => Number(cost.toFixed(6))), [0.0012, 0, 0.0007, 0.0048, 0.0024]);
+    assert.deepEqual(gauges.map((gauge) => Number(gauge.toFixed(6))), [0.0012, 0.0024, 0.0036, 0.0048, 0.0024]);
   });
 
   it("gives the program the model of an agent file that names its harness, without the harness", async () => {
@@ -678,7 +681,8 @@ describe("piece 14: budget", () => {
       await steps.run("first", routed(steps, { label: "a", model: "claude/haiku" }, { runId: "run-cost", callIndex: 0, onSessionOpen: (ref: AgentSessionRef) => (first ??= ref) }));
       const fresh = running.splice(0);
       // A resumed session restores its total, so a reading equal to the recorded one adds nothing.
-      await steps.run("next", routed(steps, { label: "a", model: "claude/haiku" }, { runId: "run-cost", callIndex: 1, continueFromSession: { ...first!, costGauge: 0.0012 } }));
+      // The fake's resume reads 0.0024: the first turn's 0.0012 and its own.
+      await steps.run("next", routed(steps, { label: "a", model: "claude/haiku" }, { runId: "run-cost", callIndex: 1, continueFromSession: { ...first!, costGauge: 0.0024 } }));
       assert.equal(fresh.at(-1), 0.0012, `the count at the result keeps its cost: ${fresh}`);
       assert.equal(running.at(-1), 0, `a resumed turn adds only what it spent: ${running}`);
     } finally {

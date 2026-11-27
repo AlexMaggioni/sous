@@ -128,33 +128,34 @@ export const meta = {
   place: "worktree",
 }
 
-const built = await agent(`Implement this ticket:\n${args.ticket}`, {
-  agentType: "implementer",
-  label: "implementer",
-  keepSession: true,
-})
+const impl = session({ label: "implementer", agentType: "implementer" })
+const built = await impl.send(`Implement this ticket:\n${args.ticket}`)
 const review = await agent(`Review the change for: ${args.ticket}`, { agentType: "reviewer", label: "reviewer" })
-await agent(`Address this review:\n${review}`, { continue: "implementer" })
+await impl.send(`Address this review:\n${review}`, { label: "fix" })
 await sh("npm test")
 return { summary: built }
 ```
 
 `sous run ticket --ticket "..."` turns the flags into `args`. `implementer` and `reviewer` are
-agents you define once, in rulesync or in `.claude/agents/`.
+agents you define once, in rulesync or in `.claude/agents/`. The implementer's two steps run in
+one session, so it fixes the review with what it saw while it built.
 
 The steps a workflow can use:
 
 | Step | What it does |
 | --- | --- |
-| `agent(prompt, options)` | runs an agent, with its model, effort, skills, MCP servers, timeout and output schema |
+| `agent(prompt, options)` | runs an agent in a fresh session, with its model, effort, skills, MCP servers, timeout and output schema |
+| `session(options)`, `.send(prompt, options)` | make one agent session that several steps share, then run a step on it |
 | `sh`, `js`, `py`, `run`, `waitUntil` | run code on this machine. They take no agent slot and count no tokens. |
 | `parallel`, `pipeline` | run steps at once, or run items through stages |
-| `retry`, `gate` | try again until a check passes, feeding back what failed |
-| `ask`, `checkpoint` | ask you a question through the inbox |
+| `ask(question, options)` | ask you a question through the inbox |
 | `breakpoint(title, step)` | run a step, then wait for you to approve it or send it back with a note |
 | `choose(prompt, options)` | let an agent pick the next step or workflow |
 | `workflow(name, args)` | run another saved workflow inside this one |
 | `phase`, `log` | name a part of the run, write a line to its log |
+
+To try again until a check passes, write a plain `for` or `while` loop around the step and check
+its result.
 
 ## Agents and models
 

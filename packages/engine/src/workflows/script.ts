@@ -3,9 +3,10 @@
 
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
 import type { WorkflowMeta, WorkflowMetaPhase } from "../workflow-result.js";
-import { childrenOf, keyOf, parseWorkflowText, property, SAVED_WORKFLOW_NAME, staticString, type AnyNode } from "./syntax.js";
+import { boundNames, childrenOf, isFunction, keyOf, parseWorkflowText, property, SAVED_WORKFLOW_NAME, staticString, type AnyNode } from "./syntax.js";
 
-/** The options of one step as the script writes them: an object that names an agent or MCP servers. */
+/** The options of one step as the script writes them: an object that names an agent or MCP
+ *  servers, or a send() with the options of its handle. */
 export interface StepRefs {
   /** The agent, when the script names it with a string. */
   agentType?: string;
@@ -28,26 +29,27 @@ export interface ScriptRefs {
   workflows: string[];
   /** Each model: "name" in any object, the meta's too. */
   models: string[];
-  /** Each object that names an agent or MCP servers. */
+  /** Each object that names an agent or MCP servers, and each send() whose handle does. */
   steps: StepRefs[];
   /** The script files it runs, as run("file"). */
   scripts: string[];
   /** True when a choose() lets an agent pick any saved workflow. */
   choosesAnyWorkflow: boolean;
-  /** The ask(), breakpoint() and checkpoint() calls the script writes. One in a loop counts once. */
+  /** The ask() and breakpoint() calls the script writes. One in a loop counts once. */
   asks: number;
-  /** The step calls the script writes, in order. One in a loop shows once, and one on an object is none. */
+  /** The step calls the script writes, in order, a send() as an agent call. One in a loop shows
+   *  once, and one on another object is none. */
   calls: ScriptCall[];
   /**
-   * The agent() calls whose prompt starts with a value made at run time, in order. sous sends a
-   * prompt as written, so such a value that starts with "/" runs a slash command. A prompt
-   * starts with fixed words when it is a literal, a template whose text before its first ${} is
-   * not empty, or a + whose left end does. session().send() is not read yet.
+   * The agent() and send() calls whose prompt starts with a value made at run time, in order.
+   * sous sends a prompt as written, so such a value that starts with "/" runs a slash command. A
+   * prompt starts with fixed words when it is a literal, a template whose text before its first
+   * ${} is not empty, or a + whose left end does.
    */
   runTimePrompts: PromptRef[];
 }
 
-/** An agent() call, by its literal label and the line it starts on. */
+/** An agent() or a send() call, by its literal label and the line it starts on. */
 export interface PromptRef {
   label?: string;
   line: number;
@@ -55,25 +57,25 @@ export interface PromptRef {
 
 /** One step call as the script writes it. Only literal values are read. */
 export interface ScriptCall {
-  kind: "agent" | "sh" | "js" | "py" | "ask" | "breakpoint" | "checkpoint" | "workflow";
-  /** The literal label option. A label made at run time is left out. */
+  kind: "agent" | "sh" | "js" | "py" | "ask" | "breakpoint" | "workflow";
+  /** The literal label option, else a send()'s handle's. A label made at run time is left out. */
   label?: string;
-  /** The literal first argument of an ask(), a breakpoint() or a checkpoint(). */
+  /** The literal first argument of an ask() or a breakpoint(). */
   title?: string;
-  /** The literal agentType of an agent call. */
+  /** The literal agentType of an agent call, or of a send()'s handle. */
   agent?: string;
-  /** The literal model of an agent call. */
+  /** The literal model of an agent call, or of a send(), else of its handle. */
   model?: string;
-  /** True when an agent call keeps its session. */
-  keepsSession?: boolean;
-  /** The skills and the MCP servers an agent call lists with strings, when it lists any. */
+  /** The skills and the MCP servers an agent call or a send()'s handle lists with strings, when it lists any. */
   skills?: string[];
   mcp?: string[];
+  /** The literal label of the session() or fork() handle a send() runs on. */
+  session?: string;
   /** The literal name a workflow call starts. */
   workflow?: string;
 }
 
-/** Where each step call takes its options, by the index of its argument. ask, breakpoint and checkpoint take no label. */
+/** Where each step call takes its options, by the index of its argument. ask and breakpoint take no label. */
 const OPTIONS_AT: Record<ScriptCall["kind"], number | undefined> = {
   agent: 1,
   sh: 1,
@@ -82,7 +84,6 @@ const OPTIONS_AT: Record<ScriptCall["kind"], number | undefined> = {
   workflow: 2,
   ask: undefined,
   breakpoint: undefined,
-  checkpoint: undefined,
 };
 
 export function parseWorkflowScript(script: string): { meta: WorkflowMeta; body: string } {
@@ -296,6 +297,129 @@ function startsAtRunTime(node: AnyNode | undefined): boolean {
   }
 }
 
+/** The skills and the MCP servers a call lists with strings, when it lists any. */
+function listsOf(call: ScriptCall, option: (key: string) => AnyNode | undefined): void {
+  for (const key of ["skills", "mcp"] as const) {
+    const list = option(key);
+    const names = list?.type === "ArrayExpression" ? (list.elements as AnyNode[]).map(staticString).filter((name): name is string => Boolean(name)) : [];
+    if (names.length) call[key] = [...new Set(names)];
+  }
+}
+
+/** What each name the script declares is set to, when the script sets it once, anywhere: in its
+ *  declaration, or as a function it declares. Null for a name it declares with no value, declares
+ *  twice, or assigns again, since the script sets that one at run time. */
+type Names = Map<string, AnyNode | null>;
+
+function declaredNames(ast: AnyNode): Names {
+  const values = new Map<string, AnyNode | null>();
+  const writes = new Map<string, number>();
+  const write = (name: string, value: AnyNode | null) => {
+    writes.set(name, (writes.get(name) ?? 0) + 1);
+    values.set(name, value);
+  };
+  const pending = [ast];
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    if (node.type === "VariableDeclarator" && node.id?.type === "Identifier") write(node.id.name, node.init ?? null);
+    if (node.type === "FunctionDeclaration" && node.id) write(node.id.name, node);
+    if (node.type === "AssignmentExpression") boundNames(node.left).forEach((name) => write(name, null));
+    if (node.type === "UpdateExpression" && node.argument.type === "Identifier") write(node.argument.name, null);
+    if ((node.type === "ForInStatement" || node.type === "ForOfStatement") && node.left.type !== "VariableDeclaration") boundNames(node.left).forEach((name) => write(name, null));
+    pushAstChildren(node, pending);
+  }
+  const names: Names = new Map();
+  for (const [name, count] of writes) names.set(name, count === 1 ? (values.get(name) ?? null) : null);
+  return names;
+}
+
+/** The node a name stands for, else the node itself. */
+function resolved(node: AnyNode | undefined, names: Names): AnyNode | undefined {
+  return node?.type === "Identifier" ? (names.get(node.name) ?? undefined) : node;
+}
+
+/** True for <object>.<method>(...). */
+function isMethod(node: AnyNode, method: string): boolean {
+  const callee = node.callee as AnyNode | undefined;
+  return node.type === "CallExpression" && callee?.type === "MemberExpression" && !callee.computed && callee.property.type === "Identifier" && callee.property.name === method;
+}
+
+/** What a send() or a fork() runs on, as the graph's reader (flow.ts) finds it. The session() or
+ *  fork() call that makes the handle, when the script writes it in place or keeps it in a name set
+ *  once. "none" when the script shows the target is no handle: an object, an array, a new
+ *  expression, a literal, a function, or the result of a call to a function the script does not
+ *  declare, other than session() and fork(). Undefined when the script makes it at run time, such
+ *  as a parameter, a name assigned more than once, or the result of a function it declares. */
+function handleCall(target: AnyNode, names: Names, depth = 0): AnyNode | "none" | undefined {
+  const unwrapped = target.type === "AwaitExpression" ? (target.argument as AnyNode) : target;
+  let node = unwrapped.type === "Identifier" ? names.get(unwrapped.name) : unwrapped;
+  if (node === undefined || node === null) return undefined;
+  if (node.type === "AwaitExpression") node = node.argument as AnyNode;
+  if (node.type === "FunctionDeclaration" || isFunction(node)) return "none";
+  switch (node.type) {
+    case "CallExpression": {
+      const callee = node.callee as AnyNode;
+      if (callee.type === "Identifier" && names.has(callee.name)) return undefined;
+      if (callee.type === "Identifier" && callee.name === "session") return node;
+      if (!isMethod(node, "fork")) return "none";
+      if (depth > 20) return undefined;
+      return handleCall(callee.object, names, depth + 1) === "none" ? "none" : node;
+    }
+    case "ObjectExpression":
+    case "ArrayExpression":
+    case "NewExpression":
+    case "Literal":
+    case "TemplateLiteral":
+    case "ClassExpression":
+      return "none";
+    default:
+      return undefined;
+  }
+}
+
+/** The options objects of the handle a send() or a fork() is called on: a session({...}), then
+ *  each fork({...}), so a later one wins. Undefined when the script makes the handle at run time. */
+function handleObjects(target: AnyNode, names: Names, depth = 0): AnyNode[] | undefined {
+  const call = handleCall(target, names);
+  if (!call || call === "none" || depth > 20) return undefined;
+  const own = resolved(call.arguments[0] as AnyNode | undefined, names);
+  if (call.callee.type === "Identifier" && call.callee.name === "session") return own?.type === "ObjectExpression" ? [own] : undefined;
+  if (!isMethod(call, "fork")) return undefined;
+  const parent = handleObjects(call.callee.object, names, depth + 1);
+  if (!call.arguments.length) return parent;
+  return own?.type === "ObjectExpression" ? [...(parent ?? []), own] : undefined;
+}
+
+/** A send() as an agent call: its own label and model, else its handle's, and its handle's agent,
+ *  skills and MCP servers. Also the options check reads, when the handle names an agent or MCP servers. */
+function sendCall(node: AnyNode, names: Names): { call: ScriptCall; refs?: StepRefs } {
+  const options = node.arguments[1] as AnyNode | undefined;
+  const handle = handleObjects(node.callee.object, names) ?? [];
+  const objects = [...handle, ...(options?.type === "ObjectExpression" ? [options] : [])];
+  // The last object that writes the key, the send's own first.
+  const option = (key: string) => objects.reduce<AnyNode | undefined>((found, object) => property(object, key) ?? found, undefined);
+  const call: ScriptCall = { kind: "agent" };
+  const label = staticString(option("label"));
+  const session = staticString(handle.reduce<AnyNode | undefined>((found, object) => property(object, "label") ?? found, undefined));
+  const agent = staticString(option("agentType"));
+  const model = staticString(option("model"));
+  if (label !== undefined) call.label = label;
+  if (agent !== undefined) call.agent = agent;
+  if (model !== undefined) call.model = model;
+  listsOf(call, option);
+  if (session !== undefined) call.session = session;
+  if (!option("agentType") && !option("mcp")) return { call };
+  const servers = option("mcp");
+  const refs: StepRefs = {
+    ...(agent ? { agentType: agent } : {}),
+    setsAgentType: option("agentType") !== undefined,
+    ...(model ? { model } : {}),
+    setsModel: option("model") !== undefined,
+    mcp: [...new Set((servers?.type === "ArrayExpression" ? (servers.elements as AnyNode[]).map(staticString) : []).filter((name): name is string => Boolean(name)))],
+  };
+  return { call, refs };
+}
+
 /** The step a call writes, or nothing when the callee is not a step. */
 function scriptCall(node: AnyNode): ScriptCall | undefined {
   const kind = node.callee.name as ScriptCall["kind"];
@@ -306,7 +430,7 @@ function scriptCall(node: AnyNode): ScriptCall | undefined {
   const option = (key: string) => (options?.type === "ObjectExpression" ? property(options, key) : undefined);
   const label = staticString(option("label"));
   if (label !== undefined) call.label = label;
-  if (kind === "ask" || kind === "breakpoint" || kind === "checkpoint") {
+  if (kind === "ask" || kind === "breakpoint") {
     const title = staticString(node.arguments[0]);
     if (title !== undefined) call.title = title;
   }
@@ -315,13 +439,7 @@ function scriptCall(node: AnyNode): ScriptCall | undefined {
     const model = staticString(option("model"));
     if (agent !== undefined) call.agent = agent;
     if (model !== undefined) call.model = model;
-    for (const key of ["skills", "mcp"] as const) {
-      const list = option(key);
-      const names = list?.type === "ArrayExpression" ? (list.elements as AnyNode[]).map(staticString).filter((name): name is string => Boolean(name)) : [];
-      if (names.length) call[key] = [...new Set(names)];
-    }
-    const keep = option("keepSession");
-    if (keep?.type === "Literal" && keep.value === true) call.keepsSession = true;
+    listsOf(call, option);
   }
   if (kind === "workflow") {
     const name = staticString(node.arguments[0]);
@@ -339,9 +457,17 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
   let asks = 0;
   const calls: ScriptCall[] = [];
   const runTimePrompts: PromptRef[] = [];
+  const names = declaredNames(ast);
   const pending = [ast];
   while (pending.length > 0) {
     const node = pending.pop()!;
+    // A send() on something the script shows is no session handle is no step.
+    if (isMethod(node, "send") && handleCall(node.callee.object, names) !== "none") {
+      const { call, refs } = sendCall(node, names);
+      calls.push(call);
+      if (refs) steps.push(refs);
+      if (startsAtRunTime(node.arguments[0])) runTimePrompts.push({ ...(call.label === undefined ? {} : { label: call.label }), line: node.loc?.start.line ?? 0 });
+    }
     if (node.type === "CallExpression" && node.callee?.type === "Identifier") {
       const first = staticString(node.arguments[0]);
       const callee = node.callee.name;
@@ -352,7 +478,7 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
       }
       if (callee === "workflow" && first && SAVED_WORKFLOW_NAME.test(first)) workflows.add(first);
       if (callee === "run" && first) scripts.add(first);
-      if (callee === "ask" || callee === "breakpoint" || callee === "checkpoint") asks++;
+      if (callee === "ask" || callee === "breakpoint") asks++;
       if (callee === "choose") {
         for (const argument of node.arguments as AnyNode[]) {
           const any = argument.type === "ObjectExpression" ? property(argument, "any") : undefined;

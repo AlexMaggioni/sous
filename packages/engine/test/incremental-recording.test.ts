@@ -18,30 +18,30 @@ const script = (body: string, name = "incremental-recording") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: 'incremental recording' }\n${body}`;
 
 describe("checkpoint input recording and byte compatibility", () => {
-  it("captures option getters once and records fingerprints on resolved and waiting checkpoints", async () => {
+  it("records fingerprints on resolved and waiting asks", async () => {
     let seenOptions: unknown;
     const result = await runWorkflow(script(`
 let reads = 0
 const options = {
-  get kind() { reads++; return "select" },
   get choices() { reads++; return ["yes", "no"] },
-  get timeoutMs() { reads++; return 50 },
+  get answeredBy() { reads++; return undefined },
 }
-await checkpoint("confirmed", options)
-return reads`), {
+const answer = await ask("confirmed", options)
+return [answer, reads]`), {
       agent: { async run() { return "unused"; } }, persistLogs: false,
       confirm: async (_prompt, options) => { seenOptions = options; return "yes"; },
     });
-    assert.equal(result.result, 3);
-    assert.deepEqual(JSON.parse(JSON.stringify(seenOptions)), { kind: "select", choices: ["yes", "no"], timeoutMs: 50 });
-    assert.equal(result.calls?.[0].inputsHash, hashCheckpointInputs({ timeoutMs: 50 }));
+    assert.deepEqual([...(result.result as unknown[])], ["yes", 2]);
+    assert.deepEqual(JSON.parse(JSON.stringify(seenOptions)), { kind: "select", choices: ["yes", "no"] });
+    assert.equal(result.calls?.[0].inputsHash, hashCheckpointInputs({}));
     assert.equal(result.calls?.[0].checkpointDecision, "explicit-v1");
     const waiting: WorkflowCallRecord[] = [];
-    await assert.rejects(runWorkflow(script(`try { await checkpoint("paused", { timeoutMs: 75 }) } catch {}
+    await assert.rejects(runWorkflow(script(`try { await ask("paused") } catch {}
 return "caught"`), {
       agent: { async run() { return "unused"; } }, persistLogs: false, onCallRecord: row => waiting.push(row),
     }), (error: unknown) => error instanceof WorkflowError && error.code === WorkflowErrorCode.CHECKPOINT_REQUIRED);
-    assert.equal(waiting[0].inputsHash, hashCheckpointInputs({ timeoutMs: 75 }));
+    assert.equal(waiting.length, 1);
+    assert.equal(waiting[0].inputsHash, hashCheckpointInputs({}));
     assert.equal(waiting[0].error?.code, WorkflowErrorCode.CHECKPOINT_REQUIRED);
     assert.equal(waiting[0].checkpointDecision, undefined);
   });
@@ -54,7 +54,7 @@ describe("quiescence accounting", () => {
     await runWorkflow(
       script(`
 await agent("settled")
-await checkpoint("engine")
+await ask("engine")
 return "done"`),
       {
         agent: { async run() { return "ok"; } },
@@ -96,7 +96,7 @@ return "done"`),
 const running = js("return 1")
 const refused = []
 try { await agent("bad", { notAnOption: true }) } catch { refused.push("agent") }
-try { await checkpoint(42) } catch { refused.push("checkpoint") }
+try { await ask(42) } catch { refused.push("ask") }
 log("refused")
 await running
 return refused`),
@@ -109,7 +109,7 @@ return refused`),
         onResumeCallAllocated: (allocated) => allocations.push(allocated),
       },
     );
-    assert.deepEqual([...result.result], ["agent", "checkpoint"]);
+    assert.deepEqual([...result.result], ["agent", "ask"]);
     assert.deepEqual(seen, [1, 2, "refused", 1, 0]);
     assert.deepEqual(allocations, [1]);
   });

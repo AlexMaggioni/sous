@@ -397,15 +397,11 @@ const SCENARIOS = {
     },
   },
   questions: {
-    rules: [{ match: "ASKER", times: 1, answer: "QUESTION: Which file should I edit?" }],
     async drive(world) {
       const run = await start(world, "questions");
       await wait(world, run);
       await step(world, ["inbox"]);
       await step(world, ["answer", run, "blue"]);
-      await wait(world, run);
-      await step(world, ["inbox", run]);
-      await step(world, ["answer", run, "src/textkit.js"]);
       await wait(world, run);
       await step(world, ["send-back", run, "Make it shorter"]);
       await wait(world, run);

@@ -195,11 +195,11 @@ describe("piece 10 review: the outline and the diff", () => {
     assert.ok(diffed.notes.some((note: string) => note.includes("no longer has")), JSON.stringify(diffed.notes));
   });
 
-  it("a checkpoint is a step of the outline, with its prompt as its title", async () => {
+  it("an ask is a step of the outline, with its question as its title", async () => {
     const { paths, projectDir } = testHome();
-    writeFileSync(workflowFile(projectDir, "ship"), plain("ship", 'await checkpoint("Ship it?", { kind: "confirm" })\n'));
+    writeFileSync(workflowFile(projectDir, "ship"), plain("ship", 'await ask("Ship it?", { choices: ["yes", "no"] })\n'));
     const outline = await paste(paths, `sous workflows show ship --json --project ${projectDir}`, PERSON);
-    assert.deepEqual(outline.steps.map((step: Record<string, unknown>) => [step.kind, step.title]), [["sh", undefined], ["checkpoint", "Ship it?"]]);
+    assert.deepEqual(outline.steps.map((step: Record<string, unknown>) => [step.kind, step.title]), [["sh", undefined], ["ask", "Ship it?"]]);
   });
 
   it("--full with --diff says it changes nothing", async () => {

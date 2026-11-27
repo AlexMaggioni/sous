@@ -95,7 +95,7 @@ return await agent('retry', { label: 'retry', retries: 1 })`,
       `export const meta = { name: 'checkpoint-identity', description: 'checkpoint identity' }
 await Promise.resolve()
 const a = await agent('before', { label: 'before' })
-const approved = await checkpoint('Proceed?', { kind: 'confirm' })
+const approved = await ask('Proceed?')
 const b = await agent('after', { label: 'after' })
 return { a, approved, b }`,
       {
@@ -134,7 +134,7 @@ return { a, approved, b }`,
     };
     const result = await runWorkflow(
       `export const meta = { name: 'legacy-confirm', description: 'legacy confirm' }
-return await checkpoint('Choose', { kind: 'input' })`,
+return await ask('Choose')`,
       {
         agent: captureIdentity([]),
         confirm: legacyConfirm,
@@ -156,7 +156,7 @@ cyclicSchema.self = cyclicSchema
 try { await agent('bad-agent', { schema: cyclicSchema }) } catch {}
 const cyclicChoices = []
 cyclicChoices.push(cyclicChoices)
-try { await checkpoint('bad-checkpoint', { choices: cyclicChoices }) } catch {}
+try { await ask('bad-checkpoint', { choices: cyclicChoices }) } catch {}
 return await agent('good-agent', { label: 'good' })`,
       {
         agent: captureIdentity(calls),

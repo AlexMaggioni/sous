@@ -67,9 +67,8 @@ export interface PromptImage {
  * test's or the dry run's runner gets them again once the steps module has planned the step.
  * Inputs go in (prompt, schema, images, cwd, signal, instructions). Reports come back through the
  * on* callbacks, never through the return value. `mcpServers`, `runId` and the session hand-off
- * fields wire the call, so none enters the resume identity hash (hashAgentCall). A script's
- * configOptions and keepSession stay in the call's identity and inputs, but no
- * step reads them, so they are not here. The call identity context (`callIndex`, `callHash`,
+ * fields wire the call, so none enters the resume identity hash (hashAgentCall). A kept turn's
+ * hash holds the hash of its session's turn before it instead. The call identity context (`callIndex`, `callHash`,
  * `callPath`, `callInputsHash`) is scoped to one engine call and does not enter the resume
  * identity hash.
  */
@@ -138,8 +137,9 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
    *  (hashCallInputs): it changes how a live call reaches its result, never the logical call.
    *  Omitted => a fresh session with the original prompt. */
   continueFromSession?: AgentSessionRef;
-  /** With `continueFromSession`, send this call's own prompt into the reopened
-   *  session instead of the resume instruction. The engine sets it for agent({ continue }). */
+  /** With `continueFromSession`, this call is a kept turn of a session: send its own prompt into
+   *  the reopened session instead of the resume instruction. A kept turn never runs fresh. On
+   *  another program, or when the program lost the session, the step fails. */
   continueWithPrompt?: boolean;
   /** The engine's deterministic journal index for THIS agent() call — the same
    *  value as JournalEntry.index / WorkflowCallRecord.index. Assigned at lexical
@@ -165,8 +165,8 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
   callPath?: string;
   /** The input fingerprint for THIS call: sha256 of the canonical strict-JSON of
    *  the call's resolved unhashed execution inputs (cwd/isolation/images/mcpServers/
-   *  keepSession/label/effective timeout+retries), with the meta, promptMeta and
-   *  backends keys always null. Identical across retry attempts. ABSENT when any component fails
+   *  label/effective timeout+retries), with keepSession always false and the meta, promptMeta
+   *  and backends keys always null. Identical across retry attempts. ABSENT when any component fails
    *  strict-JSON canonicalization — never fabricated. ADDITIVE, not a hash input. */
   callInputsHash?: string;
 }

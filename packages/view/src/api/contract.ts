@@ -238,7 +238,7 @@ export interface Flow {
 
 export type FlowNode = FlowStep | FlowLoop | FlowIf | FlowEnd | FlowParallel | FlowPipeline;
 
-export type StepKind = "agent" | "sh" | "js" | "py" | "run" | "wait" | "ask" | "checkpoint" | "breakpoint" | "workflow" | "choose";
+export type StepKind = "agent" | "sh" | "js" | "py" | "run" | "wait" | "ask" | "breakpoint" | "workflow" | "choose";
 
 interface FlowBase {
   /** Unique in the flow, stable while the text does not change. */
@@ -250,7 +250,7 @@ interface FlowBase {
 export interface FlowStep extends FlowBase {
   t: "step";
   kind: StepKind;
-  /** The literal label, else the title of an ask, a breakpoint or a checkpoint, else the kind. */
+  /** The literal label, else the title of an ask or a breakpoint, else the kind. */
   label: string;
   /** The literal agentType of an agent step. */
   agent?: string;
@@ -289,29 +289,31 @@ export interface StepOptions {
   effort?: string;
   /** The harness's permission mode. */
   mode?: string;
-  isolation?: "worktree";
   skills?: string[];
   mcp?: string[];
-  keepSession?: true;
-  /** The label of the earlier step whose session it goes on in, from `continue`. */
+  /** The label of the session() or fork() handle a send() runs on. */
+  session?: string;
+  /** The label of the step whose session it goes on from: the handle's send before it, or for a
+   *  fork's first send, the parent's last send before the fork() call. */
   continues?: string;
+  /** When an agent step ends: when the agent reports done, or when its one turn ends. */
+  until?: "done" | "turn";
   /** `ask: true`: the agent may stop with a question for the person. */
   asks?: true;
+  /** Who may answer an ask(). */
   answeredBy?: "people" | "anyone";
   /** The field names of its schema, when the text writes them. */
   schema?: string[];
   allowFail?: true;
-  /** The choices of an ask or a select checkpoint. */
+  /** The choices of an ask. */
   choices?: string[];
-  /** A checkpoint's kind. */
-  answer?: "confirm" | "input" | "select";
   /** How many times a breakpoint's step can be sent back. */
   max?: number;
   /** How often waitUntil checks. */
   every?: string;
   /** The inputs a workflow() step passes, each as the text writes it. */
   inputs?: Record<string, string>;
-  /** Where a workflow() step's run works. */
+  /** Where a workflow() step's run works, or "worktree" for an agent step that works in a worktree of its own. */
   place?: string;
   /** What a choose may pick from. */
   steps?: string[];
@@ -319,16 +321,17 @@ export interface StepOptions {
   any?: true;
 }
 
-/** gate() and retry() repeat their work, a for or a while loop repeats its body. */
+/** A for or a while loop repeats its body. */
 export interface FlowLoop extends FlowBase {
   t: "loop";
-  loop: "gate" | "retry" | "for" | "while";
-  /** What the loop goes over or why it goes back, as the text writes it, such as "args.rounds". */
+  loop: "for" | "while";
+  /** What a for or a while loop goes over, or its condition, as the text writes it. */
   label?: string;
-  /** The attempts as the text gives them: a number, or the expression, such as "args.rounds". */
+  /**
+   * How many rounds a counted for loop runs, as the text gives them, such as "3" or "args.rounds":
+   * the bound of `for (let i = 0; i < N; i++)`, or of `for (let i = 1; i <= N; i++)`.
+   */
   limit?: string;
-  /** A gate's check or a retry's until, as the text writes it, such as "(r) => r.ok". */
-  until?: string;
   body: FlowNode[];
 }
 

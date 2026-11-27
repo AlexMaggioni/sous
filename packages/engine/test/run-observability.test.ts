@@ -16,7 +16,7 @@ test("a checkpoint call is attributed in the journal", async () => {
   const store = memoryPersistence();
   const manager = new WorkflowManager({ persistence: store.persistence, agent: runnerFrom(() => "unused") });
   const checkpointOnly = await manager.runSync(
-    'export const meta = { name: "checkpoint-metadata", description: "checkpoint", phases: [{ title: "Review" }] };\nphase("Review");\nreturn await checkpoint("continue?");',
+    'export const meta = { name: "checkpoint-metadata", description: "checkpoint", phases: [{ title: "Review" }] };\nphase("Review");\nreturn await ask("continue?");',
     undefined, { confirm: async () => true },
   );
   assert.deepEqual(store.persistence.load(checkpointOnly.runId)?.journal?.[0]?.call, {
@@ -44,7 +44,7 @@ test("journal attribution covers agents, checkpoints, and replay without changin
   const script = [
     'export const meta = { name: "metadata", description: "metadata", phases: [{ title: "Review" }] };',
     'phase("Review");',
-    'const approved = await checkpoint("continue?", { });',
+    'const approved = await ask("continue?", { });',
     'const answer = await agent("work", { label: "reviewer" });',
     'return { approved, answer };',
   ].join("\n");

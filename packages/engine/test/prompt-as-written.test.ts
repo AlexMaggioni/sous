@@ -43,10 +43,11 @@ for (const [harness, model] of [
       const place = fakePlace();
       const agent = createSteps(onFakes(place));
       const script = `export const meta = { name: 'kept', description: 'two turns of one session' }
+const impl = session({ label: 'impl', model: '${model}' })
 phase('Build')
-await agent('Build it.', { label: 'impl', model: '${model}', keepSession: true })
+await impl.send('Build it.')
 phase('Review')
-await agent('Address the review.', { label: 'impl', model: '${model}', continue: 'impl' })
+await impl.send('Address the review.')
 return 'done'`;
       try {
         const result = await runWorkflow(script, { agent, persistLogs: false });

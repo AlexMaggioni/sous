@@ -88,7 +88,7 @@ describe("where a part sits", () => {
   });
 
   test("a group lists the steps right inside it", () => {
-    const loop: FlowNode = { t: "loop", ...at(), loop: "gate", body: [step("agent", "address review"), step("agent", "reviewer")] };
+    const loop: FlowNode = { t: "loop", ...at(), loop: "while", label: "!approved", body: [step("agent", "address review"), step("agent", "reviewer")] };
     const graph = graphOf(flow(loop));
     expect(names(insideOf(findPart(graph, keyOf(loop))!))).toEqual(["address review", "reviewer"]);
   });
@@ -108,13 +108,13 @@ describe("what a step reads", () => {
 
 describe("the rows of the Steps view", () => {
   test("each step in order, a group's steps under it, and a lane named when it holds more than one step", () => {
-    const loop: FlowNode = { t: "loop", ...at(), loop: "gate", body: [step("agent", "reviewer")] };
+    const loop: FlowNode = { t: "loop", ...at(), loop: "while", label: "!approved", body: [step("agent", "reviewer")] };
     const par: FlowNode = { t: "parallel", ...at(), branches: [[step("agent", "a"), step("agent", "b")], [step("agent", "c")]] };
     const graph = graphOf(flow(step("sh", "build"), loop, par));
     const rows = planRows(graph, new Set());
     expect(rows.map((r) => [r.lane ?? nameOf(r.part), r.depth])).toEqual([
       ["build", 0],
-      ["gate", 0],
+      ["while !approved", 0],
       ["reviewer", 1],
       ["at once", 0],
       ["branch 1", 1],
@@ -122,14 +122,14 @@ describe("the rows of the Steps view", () => {
       ["b", 2],
       ["c", 1],
     ]);
-    expect(rows.find((r) => nameOf(r.part) === "gate")?.group).toBe(true);
+    expect(rows.find((r) => nameOf(r.part) === "while !approved")?.group).toBe(true);
   });
 
   test("a folded group hides its steps, and a selected step opens the groups around it", () => {
     const inner = step("agent", "reviewer");
-    const loop: FlowNode = { t: "loop", ...at(), loop: "gate", body: [inner] };
+    const loop: FlowNode = { t: "loop", ...at(), loop: "while", label: "!approved", body: [inner] };
     const graph = graphOf(flow(loop));
-    expect(planRows(graph, new Set([keyOf(loop)])).map((r) => nameOf(r.part))).toEqual(["gate"]);
+    expect(planRows(graph, new Set([keyOf(loop)])).map((r) => nameOf(r.part))).toEqual(["while !approved"]);
     expect(groupsAround(graph, findLeaf(graph, "reviewer")!.key)).toEqual([keyOf(loop)]);
     expect(groupsAround(graph, "/missing")).toEqual([]);
   });

@@ -4,7 +4,7 @@
 // the engine's job is to make that identity durable and addressable for HOSTS:
 //   - one AgentSessionRecord per live agent() call on result.agentSessions (callIndex/label/
 //     phase context + keptOpen);
-//   - keepSession only marks the record's keptOpen (the runner never gets it, not hashed);
+//   - a session() handle's turn marks the record's keptOpen (the runner never gets the mark);
 //   - journal entries carry the record, and resume REPLAYS it verbatim (the session lives in
 //     the agent's store, so the ref stays valid across process restarts exactly like results);
 //   - a failed call still surfaces its record (loading the session is a debugging path);
@@ -47,7 +47,8 @@ function sessionRunner() {
 }
 
 const twoCalls = `export const meta = { name: 's', description: 'sessions', phases: [{ title: 'Plan' }] }
-const a = await agent('first', { label: 'planner', keepSession: true })
+const planner = session({ label: 'planner' })
+const a = await planner.send('first')
 const b = await agent('second', { label: 'helper' })
 return [a, b]`;
 
@@ -72,7 +73,7 @@ describe("agent session records (result.agentSessions)", () => {
     assert.equal(second.callIndex, 1);
     assert.equal(second.label, "helper");
     assert.equal(second.keptOpen, false);
-    // keepSession only marks the record. No step reads it, so the runner never gets it.
+    // The handle only marks the record. The runner never gets a keepSession option.
     assert.deepEqual(
       runner.seen.map((c) => c.keepSession),
       [undefined, undefined],

@@ -10,7 +10,7 @@ import { WorkflowManager } from "../src/workflow-manager.js";
 const SCRIPT = `export const meta = { name: 'fallbacks', description: 'fallbacks', phases: [{ title: 'Review' }] }
 const first = await agent('one', { label: 'whole', model: 'missing-model' })
 const second = await agent('two', { label: 'modifier', phase: 'Review', model: 'gpt-example[high]' })
-const decision = await checkpoint('Release?', { kind: 'confirm' })
+const decision = await ask('Release?')
 return { first, second, decision }`;
 
 function sessionRunner(): AgentRunner {
@@ -41,7 +41,7 @@ test("manager persists checkpoint observability and replay-only executions omit 
     const persisted = manager.getPersistence().load(first.runId);
     assert.deepEqual(persisted?.fallbacks, first.fallbacks);
     assert.deepEqual(persisted?.checkpointsTaken, [
-      { callIndex: 2, kind: "confirm", decision: false, source: "live" },
+      { callIndex: 2, kind: "input", decision: false, source: "live" },
     ]);
 
     let replayCalls = 0;
@@ -60,7 +60,7 @@ test("manager persists checkpoint observability and replay-only executions omit 
     assert.equal(replayCalls, 0);
     assert.equal(replayed.fallbacks, undefined, "fallback entries arise only from live calls in this execution");
     assert.deepEqual(replayed.checkpointsTaken, [
-      { callIndex: 2, kind: "confirm", decision: false, source: "journal-replay" },
+      { callIndex: 2, kind: "input", decision: false, source: "journal-replay" },
     ]);
   } finally {
     rmSync(cwd, { recursive: true, force: true });

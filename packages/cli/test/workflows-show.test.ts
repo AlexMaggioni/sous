@@ -66,7 +66,8 @@ const TICKET = `export const meta = {
   place: "none",
 }
 
-const built = await agent(\`Implement this ticket:\\n\${args.ticket}\`, { agentType: "implementer", label: "implementer", model: "claude/haiku", keepSession: true })
+const impl = session({ agentType: "implementer", label: "implementer", model: "claude/haiku" })
+const built = await impl.send(\`Implement this ticket:\\n\${args.ticket}\`)
 await sh("git diff", { label: "diff" })
 const color = await ask("Which color?", { choices: ["red", "blue"] })
 await breakpoint("Approve the change", () => js("return 1", null, { label: "summary" }))
@@ -271,12 +272,14 @@ describe("piece 10: sous workflows show", () => {
     const implementer = outline.steps[0];
     assert.equal(implementer.agent, "implementer");
     assert.equal(implementer.model, "claude/haiku");
-    assert.equal(implementer.keepsSession, true);
+    assert.equal(implementer.session, "implementer");
     assert.equal(outline.asks, 2, "the ask and the breakpoint");
     assert.deepEqual(outline.workflows, ["greet"]);
     assert.deepEqual(Object.keys(outline.inputs), ["ticket"]);
     assert.ok(outline.check.problems.some((problem: string) => /no agent "implementer"/.test(problem)), `the check finds no agent implementer: ${JSON.stringify(outline.check)}`);
     assert.ok(outline.notes.some((note: string) => /order/i.test(note)), `a note says the steps are in the order written: ${JSON.stringify(outline.notes)}`);
+    const text = await sous(paths, ["workflows", "show", "ticket", "--project", projectDir], { env: PERSON });
+    assert.match(text.out, /^ {2}agent {2}implementer {2}\(agent implementer, claude\/haiku, in session implementer\)$/m);
   });
 
   it("from is home for a workflow in the home's folder and path for a file given by its path", async () => {

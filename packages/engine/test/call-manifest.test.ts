@@ -48,7 +48,7 @@ describe("engine call manifest", () => {
       meta(
         "terminal-exits",
         `const success = await agent('success', { label: 'success', schema: { type: 'object' } })
-const confirmed = await checkpoint('confirm?')
+const confirmed = await ask('confirm?')
 const exhausted = await agent('empty', { label: 'empty', retries: 1 })
 return { success, confirmed, exhausted }`,
       ),
@@ -74,7 +74,7 @@ return { success, confirmed, exhausted }`,
     await assert.rejects(runWorkflow(
       meta(
         "terminal-checkpoints",
-        `try { await checkpoint('bad?', { kind: 'input' }) } catch {}
+        `try { await ask('bad?') } catch {}
 return null`,
       ),
       {
@@ -136,7 +136,7 @@ return null`,
     const script = meta(
       "replay-rows",
       `const a = await agent('a', { label: 'a' })
-const c = await checkpoint('c?')
+const c = await ask('c?')
 return { a, c }`,
     );
     const first = await runWorkflow(script, {

@@ -17,7 +17,7 @@ describe("the graph of a saved workflow", () => {
   });
 
   test("each kind of step is a node with its kind, the agent when it differs, and its retries", () => {
-    const kinds: FlowStep["kind"][] = ["agent", "sh", "js", "py", "run", "wait", "ask", "checkpoint", "breakpoint", "workflow", "choose"];
+    const kinds: FlowStep["kind"][] = ["agent", "sh", "js", "py", "run", "wait", "ask", "breakpoint", "workflow", "choose"];
     const parts = inner(flow(...kinds.map((k) => step(k, `a ${k}`)), step("agent", "plan", { agent: "planner", retries: 2 }), step("agent", "reviewer", { agent: "reviewer" })));
     expect(parts.map((p) => (p as Leaf).kind)).toEqual([...kinds, "agent", "agent"]);
     const plan = parts[kinds.length] as Leaf;
@@ -36,22 +36,54 @@ describe("the graph of a saved workflow", () => {
     expect(c.label).toBe("name");
   });
 
-  test("a gate is a box with its back arrow and its limit, 3 when the text gives none", () => {
-    const [gate, retry, each] = inner(
+  test("a loop is a box with its back arrow, and a counted for loop's back arrow gives its limit", () => {
+    const [counted, byInput, each, again] = inner(
       flow(
-        { t: "loop", ...at(), loop: "gate", body: [step("agent", "reviewer")] },
-        { t: "loop", ...at(), loop: "retry", limit: "args.tries", body: [step("sh", "check")] },
+        { t: "loop", ...at(), loop: "for", label: "round < 3", limit: "3", body: [step("agent", "reviewer")] },
+        { t: "loop", ...at(), loop: "for", label: "i < args.tries", limit: "args.tries", body: [step("sh", "check")] },
         { t: "loop", ...at(), loop: "for", label: "tickets", body: [step("agent", "build")] },
+        { t: "loop", ...at(), loop: "while", label: "!review.ok", body: [step("agent", "reviewer")] },
       ),
     ) as Box[];
-    expect(gate).toMatchObject({ t: "box", kind: "loop", title: "gate", again: "check fails ×3" });
-    expect(retry).toMatchObject({ title: "retry", again: "fails, up to args.tries" });
+    expect(counted).toMatchObject({ t: "box", kind: "loop", title: "for round < 3", again: "next ×3" });
+    expect(byInput).toMatchObject({ title: "for i < args.tries", again: "next, up to args.tries" });
     expect(each).toMatchObject({ title: "for tickets", again: "next" });
+    expect(again).toMatchObject({ title: "while !review.ok", again: "again" });
   });
 
-  test("a gate's work that starts with if (feedback) is the detour its back arrow comes into", () => {
-    const [gate] = inner(flow({ t: "loop", ...at(), loop: "gate", body: [{ t: "if", ...at(), cond: "feedback", then: [step("agent", "address review")] }, step("agent", "reviewer")] })) as Box[];
-    expect(gate.body?.items[0]).toMatchObject({ t: "iff", onBack: true, label: "if feedback" });
+  test("a loop's work that starts with if (feedback), where a later step keeps feedback, is the detour its back arrow comes into", () => {
+    const [loop] = inner(flow({ t: "loop", ...at(), loop: "while", label: "!review.ok", body: [{ t: "if", ...at(), cond: "feedback", then: [step("agent", "address review")] }, step("agent", "reviewer", { result: "feedback" })] })) as Box[];
+    expect(loop.body?.items[0]).toMatchObject({ t: "iff", onBack: true, label: "if feedback" });
+  });
+
+  test("a loop's work that starts with an if on a name no later step keeps is no detour", () => {
+    const [before, notKept, inLater] = inner(
+      flow(
+        // The step that keeps the name runs before the loop.
+        step("agent", "plan", { result: "dry" }),
+        { t: "loop", ...at(), loop: "for", label: "tickets", body: [{ t: "if", ...at(), cond: "dry", then: [step("sh", "report")] }, step("agent", "build")] },
+        { t: "loop", ...at(), loop: "while", label: "more", body: [{ t: "if", ...at(), cond: "dry", then: [step("sh", "report")] }, step("agent", "build", { result: "other" })] },
+      ),
+    ) as Box[];
+    expect(before).toMatchObject({ t: "leaf", label: "plan" });
+    for (const loop of [notKept, inLater]) {
+      expect(loop.body?.items[0]).toMatchObject({ t: "iff", label: "if dry" });
+      expect((loop.body?.items[0] as Iff).onBack).toBeUndefined();
+    }
+  });
+
+  test("a detour's name may be kept by a step nested later in the loop's work", () => {
+    const [loop] = inner(
+      flow({
+        t: "loop",
+        ...at(),
+        loop: "for",
+        label: "round < 3",
+        limit: "3",
+        body: [{ t: "if", ...at(), cond: "review", then: [step("agent", "fix")] }, { t: "if", ...at(), cond: "args.strict", then: [step("agent", "reviewer", { result: "review" })] }],
+      }),
+    ) as Box[];
+    expect(loop.body?.items[0]).toMatchObject({ t: "iff", onBack: true, label: "if review" });
   });
 
   test("a condition: an early return, a detour, a detour that ends, and an if with an else", () => {

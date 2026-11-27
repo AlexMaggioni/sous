@@ -196,7 +196,8 @@ describe("the inputs hash", () => {
 await agent('Same step', { label: 'labelled' })
 await agent('Same step', { label: 'in a folder', cwd: 'sub' })
 await agent('Same step', { label: 'with tools', mcpServers: [{ name: 'docs', command: 'docs-server', args: ['--quiet'], env: [] }] })
-await agent('Same step', { label: 'kept', keepSession: true })
+const kept = session({ label: 'kept' })
+await kept.send('Same step')
 await agent('Same step', { label: 'with an image', images: [{ data: 'aGVsbG8=', mimeType: 'image/png' }] })
 return 'done'`,
     );
@@ -207,7 +208,7 @@ return 'done'`,
       labelled: { hash: same, model: null, inputs: "06da06b17e0a2c16e25e0ea7fe63ff2b25a357a7258ec4a1c8b13cf6834ae6dc" },
       "in a folder": { hash: same, model: null, inputs: "0c4cfcf0b2348a471a9f77c1d318a0fc812bcf9b89f379d57a1ff0156965df34" },
       "with tools": { hash: same, model: null, inputs: "a6c42b1362e08ced4e4fc3d9a66987cfe6f5bbfc1cabc371ea6ace27cc0e423d" },
-      kept: { hash: same, model: null, inputs: "e0c8d098fd34e97e5ef77d83756b27d39b43638916a65deadba90283cf55e9ae" },
+      kept: { hash: same, model: null, inputs: "dce73a4b636d919436e866067dc731d9442df8e689f899094887192bdcbbe87b" },
       "with an image": { hash: same, model: null, inputs: "9be87b50b01437f08839905c92029d7228be76a004fcecb2e76486c36e9264a7" },
     });
   });
@@ -215,15 +216,15 @@ return 'done'`,
   it("keeps its bytes for each kind of question", async () => {
     const { paths, projectDir } = setup({
       asks: `export const meta = { name: 'asks', description: 'one question per kind' }
-await checkpoint('Ship it?', { kind: 'confirm' })
-await checkpoint('Name it', { kind: 'input' })
-await checkpoint('Pick one', { kind: 'select', choices: ['red', 'blue'] })
-await checkpoint('Ship it?', { timeoutMs: 600000 })
+await ask('Ship it?', { choices: ['yes', 'no'] })
+await ask('Name it')
+await ask('Pick one', { choices: ['red', 'blue'] })
+await ask('Pick one', { choices: ['red', 'blue'], answeredBy: 'anyone' })
 return 'done'`,
     });
     const { runner } = standIn();
     const record = createRun(paths, { who: PERSON, workflow: "asks", projectDir, inputs: {} });
-    const answered = answerInTurn(paths, record.runId, [true, "sous", "blue", true]);
+    const answered = answerInTurn(paths, record.runId, ["yes", "sous", "blue", "red"]);
     const result = await runWorker(record.runId, "start", { paths, inner: runner, pollMs: 20, log: quiet });
     assert.equal((await answered).length, 4);
     assert.equal(result?.status, "completed");
@@ -235,15 +236,15 @@ return 'done'`,
       assert.equal(journal.get(call.index), call.hash, `the journal and the call record agree for call ${call.index}`);
       return { index: call.index, hash: call.hash, inputs: call.inputsHash };
     });
-    // A confirm is the default kind, so the first and the last question share a call hash. The
-    // time limit reaches the inputs hash only.
-    const confirm = "e3db4dfb15658c75558a30657f8a9b4e4fd47b82ea286df37571a857e8432864";
+    // An ask with choices is a select, and one without is an input. A question anyone may answer
+    // keeps the call hash and the inputs hash of the same question for people.
+    const pick = "69fa71b87ee301dadf9d18a1f756878fcf35143268242981ac8b3c110a07679b";
     const explicit = "7216174785cb3b5d11223e76b466afd6d8c0ec78655cea275a4499aac1efa188";
     assert.deepEqual(calls, [
-      { index: 0, hash: confirm, inputs: explicit },
+      { index: 0, hash: "5fcf01414f7ee8e38660fb3489395430d126baae046e0d00625faf27e0752999", inputs: explicit },
       { index: 1, hash: "772f3855ea146ecf5d198c84ef339f7442846c91206ef5dfe2da06ec1b904215", inputs: explicit },
-      { index: 2, hash: "69fa71b87ee301dadf9d18a1f756878fcf35143268242981ac8b3c110a07679b", inputs: explicit },
-      { index: 3, hash: confirm, inputs: "8f90526e8cbc69a2d80705e3262720543babc2ffff4657b642606d041c281312" },
+      { index: 2, hash: pick, inputs: explicit },
+      { index: 3, hash: pick, inputs: explicit },
     ]);
   });
 });

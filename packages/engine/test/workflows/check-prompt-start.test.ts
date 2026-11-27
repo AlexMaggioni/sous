@@ -2,7 +2,7 @@
 // sends a prompt as written, so a value that starts with "/" would run a slash command. The note
 // asks for fixed words first. It is a note, not a problem, so the check still passes.
 //
-// session(...).send(prompt) is not covered here: the script reader does not read send() calls yet.
+// A send() on a session handle gets the same note. test/workflows/session-reader.test.ts covers it.
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";

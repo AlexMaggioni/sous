@@ -6,8 +6,8 @@ import type { AgentResult, StepRequest } from "../src/steps/agent-run.js";
 import type { AgentRunner } from "../src/steps/agent-runner.js";
 import { runWorkflow } from "../src/workflow.js";
 
-// The script functions as the guide documents them: what a bad call says, retry(), choose() with
-// none, pipeline(), and the four functions an older engine had.
+// The script functions as the guide documents them: what a bad call says, a loop of agent steps,
+// choose() with none, pipeline(), and the four functions an older engine had.
 
 interface Call {
   prompt: string;
@@ -123,89 +123,20 @@ describe("a bad call to a script function fails the run with its message", () =>
     assert.equal(error.message, 'choose(): the agent picked "none", which is not listed');
   });
 
-  it("agent(..., { ask: true }) works with text results only", async () => {
-    const { runner, calls } = recordingRunner(() => "unused");
-    const error = await failureOf(
-      "return await agent('do it', { ask: true, schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] } })",
-      { agent: runner },
-    );
-    assert.equal(error.message, "agent(..., { ask: true }) works with text results only");
-    assert.equal(error.code, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR);
-    assert.equal(calls.length, 0, "no step started");
-  });
-
-  it('agent "asker" asked more than 5 questions, so the sixth fails the step', async () => {
-    const { runner, calls } = recordingRunner(() => "QUESTION: which file?");
-    const questions: string[] = [];
-    const error = await failureOf("return await agent('do it', { ask: true, label: 'asker' })", {
-      agent: runner,
-      confirm: async (prompt) => {
-        questions.push(prompt);
-        return "this one";
-      },
-    });
-    assert.equal(error.message, 'agent "asker" asked more than 5 questions');
-    assert.equal(error.code, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR);
-    assert.equal(questions.length, 5, "the person answered five questions");
-    assert.equal(questions[0], "asker asks: which file?");
-    assert.equal(calls.length, 6, "the first call and one more after each answer");
-  });
-
-  it("an asking agent with no label is named asking-agent-1 in the failure", async () => {
-    const { runner } = recordingRunner(() => "QUESTION: which file?");
-    const error = await failureOf("return await agent('do it', { ask: true })", { agent: runner, confirm: async () => "this one" });
-    assert.equal(error.message, 'agent "asking-agent-1" asked more than 5 questions');
-  });
 });
 
-describe("retry()", () => {
-  // Each attempt gets its number. The script keeps the numbers it saw.
-  const NEVER = "const seen = []\nconst value = await retry((attempt) => { seen.push(attempt); return attempt }, OPTIONS)\nreturn { seen, value }";
-  const withOptions = (options: string) => NEVER.replace("OPTIONS", options);
-
-  it("calls the function 3 times by default, and returns the last result", async () => {
-    const out = await resultOf<{ seen: number[]; value: number }>(withOptions("{ until: () => false }"), { agent: unused });
-    assert.deepEqual(out.seen, [0, 1, 2]);
-    assert.equal(out.value, 2);
-  });
-
-  it("calls the function as many times as attempts says", async () => {
-    const five = await resultOf<{ seen: number[]; value: number }>(withOptions("{ attempts: 5, until: () => false }"), { agent: unused });
-    assert.deepEqual(five.seen, [0, 1, 2, 3, 4]);
-    assert.equal(five.value, 4);
-    const one = await resultOf<{ seen: number[]; value: number }>(withOptions("{ attempts: 1, until: () => false }"), { agent: unused });
-    assert.deepEqual(one.seen, [0]);
-    assert.equal(one.value, 0);
-  });
-
-  it("stops at the first result that until accepts, and returns it", async () => {
-    const out = await resultOf<{ seen: number[]; value: number }>(withOptions("{ attempts: 5, until: (result) => result >= 1 }"), { agent: unused });
-    assert.deepEqual(out.seen, [0, 1]);
-    assert.equal(out.value, 1);
-  });
-
-  it("gives until the result of each attempt", async () => {
-    const out = await resultOf<{ judged: string[]; value: string }>(
-      `const judged = []
-const value = await retry((attempt) => 'result ' + attempt, { until: (result) => { judged.push(result); return result === 'result 2' } })
-return { judged, value }`,
-      { agent: unused },
-    );
-    assert.deepEqual(out.judged, ["result 0", "result 1", "result 2"]);
-    assert.equal(out.value, "result 2");
-  });
-
-  it("calls the function once when it has no until", async () => {
-    const out = await resultOf<{ seen: number[]; value: number }>(withOptions("{}"), { agent: unused });
-    assert.deepEqual(out.seen, [0]);
-    assert.equal(out.value, 0);
-  });
-
+describe("a loop of agent steps", () => {
   it("waits for an async function, and makes each agent step its own call", async () => {
     const { runner, calls } = recordingRunner((_prompt, _options, all) => (all.length < 3 ? "not yet" : "done"));
-    const value = await resultOf<string>("return await retry((attempt) => agent('try ' + attempt, { label: 'try' }), { attempts: 4, until: (result) => result === 'done' })", {
-      agent: runner,
-    });
+    const value = await resultOf<string>(
+      `let value
+for (let attempt = 0; attempt < 4; attempt++) {
+  value = await agent('try ' + attempt, { label: 'try' })
+  if (value === 'done') break
+}
+return value`,
+      { agent: runner },
+    );
     assert.equal(value, "done");
     assert.deepEqual(calls.map((call) => call.prompt), ["try 0", "try 1", "try 2"]);
   });

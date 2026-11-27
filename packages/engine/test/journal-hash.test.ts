@@ -6,13 +6,14 @@ import type { AgentSessionRef } from "../src/workflow-result.js";
 import type { StepRequest } from "../src/steps/agent-run.js";
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
+import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 
 // hashAgentCall() is module-private, but every live agent() emits its call hash on the
 // JournalEntry (workflow.ts: onAgentJournal({ index, hash, result })). The resume
 // contract is "replay a cached result iff cached.hash === hash", so this hash is the
 // load-bearing resume key: it MUST be byte-stable for a fixed call identity and MUST
-// change when any identity input (prompt / model / mode-when-set / configOptions-when-non-empty /
-// phase / agentType / agentDef / schema) changes. tier stays in the identity as a constant null,
+// change when any identity input (prompt / model / mode-when-set / phase / agentType / agentDef /
+// schema) changes. configOptions is refused now. tier stays in the identity as a constant null,
 // so old journals keep their keys. These tests pin that through the observable journal.
 
 const echo = {
@@ -148,37 +149,42 @@ return a`;
     assert.notEqual(plain.hash, mode.hash, "adding a mode changes the resume key even for an identical prompt");
   });
 
-  it("folds sorted configOptions into identity while omitting unset and empty maps", async () => {
+  it("refuses configOptions, empty or set, before any call is hashed or journaled", async () => {
     const absent = `export const meta = { name: 'h-config-absent', description: 'hash' }
 return agent('same', { label: 'a' })`;
-    const empty = `export const meta = { name: 'h-config-empty', description: 'hash' }
-return agent('same', { label: 'a', configOptions: {} })`;
-    const firstOrder = `export const meta = { name: 'h-config-first', description: 'hash' }
-return agent('same', { label: 'a', configOptions: { zeta: 'last', alpha: true } })`;
-    const reverseOrder = `export const meta = { name: 'h-config-reverse', description: 'hash' }
-return agent('same', { label: 'a', configOptions: { alpha: true, zeta: 'last' } })`;
-    const changed = `export const meta = { name: 'h-config-changed', description: 'hash' }
-return agent('same', { label: 'a', configOptions: { alpha: false, zeta: 'last' } })`;
-
-    const [[plain], [emptyMap], [ordered], [reordered], [different]] = await Promise.all([
-      journalOf(absent),
-      journalOf(empty),
-      journalOf(firstOrder),
-      journalOf(reverseOrder),
-      journalOf(changed),
-    ]);
-    assert.equal(emptyMap.hash, plain.hash, "empty configOptions is omitted from old journal bytes");
-    assert.equal(reordered.hash, ordered.hash, "authored key order cannot change replay identity");
-    assert.notEqual(ordered.hash, plain.hash, "adding configOptions changes replay identity");
-    assert.notEqual(different.hash, ordered.hash, "changing a configOptions value changes replay identity");
+    const refused = [
+      `return agent('same', { label: 'a', configOptions: {} })`,
+      `return agent('same', { label: 'a', configOptions: { zeta: 'last', alpha: true } })`,
+      `return agent('same', { label: 'a', configOptions: { alpha: false, zeta: 'last' } })`,
+      `return agent('same', { label: 'a', configOptions: { '2': 'two', '10': 'ten' } })`,
+    ];
+    const [plain] = await journalOf(absent);
+    assert.ok(plain.hash);
+    for (const body of refused) {
+      const journal: JournalEntry[] = [];
+      await assert.rejects(
+        runWorkflow(`export const meta = { name: 'h-config', description: 'hash' }\n${body}`, {
+          agent: echo,
+          persistLogs: false,
+          onAgentJournal: (e) => journal.push(e),
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof WorkflowError, body);
+          assert.equal(error.code, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, body);
+          assert.equal(error.message, "configOptions is gone. No program read it. Remove it from the step.", body);
+          return true;
+        },
+      );
+      assert.deepEqual(journal, [], body);
+    }
   });
 
-  it("serializes integer-like option ids in lexicographic rather than numeric key order", async () => {
-    const source = `export const meta = { name: 'h-config-integer-ids', description: 'hash' }
-return agent('same', { label: 'a', configOptions: { '2': 'two', '10': 'ten' } })`;
+  it("hashes a call with no configOptions with no configOptions key, as old journals hold it", async () => {
+    const source = `export const meta = { name: 'h-no-config', description: 'hash' }
+return agent('same', { label: 'a' })`;
     const [entry] = await journalOf(source);
     const expectedIdentity =
-      '{"prompt":"same","model":null,"configOptions":{"10":"ten","2":"two"},"tier":null,"phase":null,"agentType":null,"agentDef":null,"schema":null}';
+      '{"prompt":"same","model":null,"tier":null,"phase":null,"agentType":null,"agentDef":null,"schema":null}';
     assert.equal(entry.hash, createHash("sha256").update(expectedIdentity).digest("hex"));
   });
 

@@ -10,7 +10,7 @@ import { sous, waitFor } from "./sous.js";
 // must not take it for an answer.
 
 const ship = `export const meta = { name: 'ship', description: 'asks, then runs a step' }
-const approved = await checkpoint('Ship it?')
+const approved = await ask('Ship it?', { choices: ['yes', 'no'] })
 return await agent('ship, approved ' + approved, { label: 'ship' })`;
 
 describe("an answer file with no value", () => {
@@ -39,7 +39,7 @@ describe("an answer file with no value", () => {
     assert.equal((await workers.ended(record.runId))?.status, "completed");
     assert.deepEqual(
       calls.map((call) => call.prompt),
-      ["ship, approved true"],
+      ["ship, approved yes"],
     );
   });
 });

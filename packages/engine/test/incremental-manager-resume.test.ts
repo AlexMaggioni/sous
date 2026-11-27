@@ -90,7 +90,7 @@ const first = await agent("prefix-one", {
 const second = await agent("prefix-two", {
   label: "prefix-two",
 })
-const approval = await checkpoint("approve", { })
+const approval = await ask("approve", { })
 const after = await agent("after-checkpoint", {
   label: "after-checkpoint",
 })
@@ -152,7 +152,7 @@ async function assertDriftedCheckpointResume(
     assert.deepEqual(JSON.parse(JSON.stringify(resumed.result)), {
       first: "live:prefix-one",
       second: "live:prefix-two",
-      approval: true,
+      approval: "true",
       after: "live:after-checkpoint",
     });
   } finally {
@@ -272,7 +272,7 @@ describe("WorkflowManager resumeFromRunId admission", () => {
       const sourceRunId = await recordSafeSource(manager, ["one"]);
       const paused = await manager.runSync(workflow(`
 await agent("one", { label: "one" })
-return await checkpoint("approve", { })`, "legacy-ancestry"), undefined, {
+return await ask("approve", { })`, "legacy-ancestry"), undefined, {
         runId: "legacy-ancestry",
         resumeFromRunId: sourceRunId,
       });

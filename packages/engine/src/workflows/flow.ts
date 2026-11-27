@@ -4,142 +4,15 @@
 
 import { stepOptions } from "./step-options.js";
 import { boundNames, childrenOf, givenCalls, isFunction, parseWorkflowText, property, returned, SAVED_WORKFLOW_NAME, staticString, type AnyNode } from "./syntax.js";
+import type { Flow, FlowNode, FlowPipeline, FlowStep, StepKind, StepOptions } from "./flow-types.js";
 
-// The types below are the "Flow" section of packages/view/src/api/contract.ts, field for field.
-// The server passes this tree where the contract's type is expected.
-
-export interface Flow {
-  nodes: FlowNode[];
-  /** What the reader could not place, such as a label made at run time. */
-  notes: string[];
-}
-
-export type FlowNode = FlowStep | FlowLoop | FlowIf | FlowEnd | FlowParallel | FlowPipeline;
-
-export type StepKind = "agent" | "sh" | "js" | "py" | "run" | "wait" | "ask" | "checkpoint" | "breakpoint" | "workflow" | "choose";
-
-interface FlowBase {
-  /** Unique in the flow, stable while the text does not change. */
-  id: string;
-  /** The 1-based line of the text it starts on. */
-  line: number;
-}
-
-export interface FlowStep extends FlowBase {
-  t: "step";
-  kind: StepKind;
-  /** The literal label, else the title of an ask, a breakpoint or a checkpoint, else the kind. */
-  label: string;
-  /** The literal agentType of an agent step. */
-  agent?: string;
-  model?: string;
-  /** The literal `retries` option. */
-  retries?: number;
-  /** The saved workflow a workflow() step starts. */
-  workflow?: string;
-  /** The step a breakpoint runs before it waits for the person. */
-  body?: FlowNode[];
-  /** The label was made at run time, so a run's steps can't be matched to it by name. */
-  dynamic?: true;
-  /** The phase it runs in: its own `phase` option, else the last phase() call before it in the text. */
-  phase?: string;
-  /** An agent's or a choose's prompt, as the text writes it, with each expression as {source}. */
-  prompt?: string;
-  /**
-   * A code step's text as the text writes it, with each expression as {source}: the command of
-   * sh and waitUntil, the source of js and py, the file of run.
-   */
-  code?: string;
-  /** The name the text keeps its result under, such as "review" in `const review = await agent(...)`. */
-  result?: string;
-  /**
-   * What it reads, in the order the text names them: the result names of earlier steps, the
-   * inputs as "args.<name>", and the parameters of the callback it sits in, such as "feedback".
-   */
-  reads?: string[];
-  /** The options the text gives it literally. One the text makes at run time is left out. */
-  options?: StepOptions;
-}
-
-/** The options of a step that shape what it does, as the text writes them. */
-export interface StepOptions {
-  timeout?: string;
-  effort?: string;
-  /** The harness's permission mode. */
-  mode?: string;
-  isolation?: "worktree";
-  skills?: string[];
-  mcp?: string[];
-  keepSession?: true;
-  /** The label of the earlier step whose session it goes on in, from `continue`. */
-  continues?: string;
-  /** `ask: true`: the agent may stop with a question for the person. */
-  asks?: true;
-  answeredBy?: "people" | "anyone";
-  /** The field names of its schema, when the text writes them. */
-  schema?: string[];
-  allowFail?: true;
-  /** The choices of an ask or a select checkpoint. */
-  choices?: string[];
-  /** A checkpoint's kind. */
-  answer?: "confirm" | "input" | "select";
-  /** How many times a breakpoint's step can be sent back. */
-  max?: number;
-  /** How often waitUntil checks. */
-  every?: string;
-  /** The inputs a workflow() step passes, each as the text writes it. */
-  inputs?: Record<string, string>;
-  /** Where a workflow() step's run works. */
-  place?: string;
-  /** What a choose may pick from. */
-  steps?: string[];
-  workflows?: string[];
-  any?: true;
-}
-
-export interface FlowLoop extends FlowBase {
-  t: "loop";
-  loop: "gate" | "retry" | "for" | "while";
-  /** What a for or a while loop goes over, or its condition, as the text writes it. */
-  label?: string;
-  /** The attempts of a gate or a retry as the text gives them, such as "3" or "args.rounds". */
-  limit?: string;
-  /** A gate's check or a retry's until, as the text writes it, such as "(r) => r.ok". */
-  until?: string;
-  body: FlowNode[];
-}
-
-export interface FlowIf extends FlowBase {
-  t: "if";
-  /** The condition as the text writes it. A catch block's is "error". */
-  cond: string;
-  then: FlowNode[];
-  else?: FlowNode[];
-}
-
-/** A return before the end of the text: the workflow ends here. */
-export interface FlowEnd extends FlowBase {
-  t: "end";
-}
-
-export interface FlowParallel extends FlowBase {
-  t: "parallel";
-  branches: FlowNode[][];
-}
-
-export interface FlowPipeline extends FlowBase {
-  t: "pipeline";
-  /** The items it runs over, as the text writes them. */
-  over: string;
-  /** Each stage's steps, in order. Each item goes through every stage. */
-  stages: FlowNode[][];
-}
+export type { Flow, FlowNode, FlowStep } from "./flow-types.js";
 
 interface StepSpec {
   kind: StepKind;
   /** The argument that holds the step's options. */
   options?: number;
-  /** ask, checkpoint and breakpoint take no label. Their first argument, the title, names them. */
+  /** ask and breakpoint take no label. Their first argument, the title, names them. */
   titled?: true;
   /** What the first argument is: an agent's prompt, or a code step's command, source or file. */
   first?: "prompt" | "code";
@@ -156,16 +29,21 @@ const STEPS = new Map<string, StepSpec>([
   ["choose", { kind: "choose", options: 1, first: "prompt" }],
   ["workflow", { kind: "workflow", options: 2 }],
   ["ask", { kind: "ask", options: 1, titled: true }],
-  ["checkpoint", { kind: "checkpoint", options: 1, titled: true }],
   // A breakpoint with no step takes its options second.
   ["breakpoint", { kind: "breakpoint", options: 2, titled: true }],
 ]);
+
+/** A send() on a session handle: an agent step whose options sit second. */
+const SEND: StepSpec = { kind: "agent", options: 1, first: "prompt" };
 
 /** The Promise functions that start every promise of a list at once. */
 const PROMISE_GROUPS = new Set(["all", "allSettled", "race", "any"]);
 
 /** The array methods that call their function for every item at once, when it runs a step. */
 const PER_ITEM = new Set(["map", "forEach", "flatMap"]);
+
+/** How many fork() calls deep the reader follows a handle back to its session(). */
+const MAX_CHAIN = 20;
 
 /** How many functions deep the reader inlines a call. */
 const MAX_DEPTH = 3;
@@ -183,6 +61,15 @@ interface Scope {
   /** The names a function's parameters, a loop's variable or a catch's error give here. */
   bound?: Set<string>;
   parent?: Scope;
+}
+
+/** A handle that session({...}) or <handle>.fork({...}) makes, as the text writes it. */
+interface Handle {
+  /** Its options objects: the session's first, then each fork's, so a later one wins. Undefined
+   *  when the text makes them at run time. */
+  objects?: AnyNode[];
+  /** The label of the last send() read on it, which the next send goes on from. */
+  last?: string;
 }
 
 /** Where the reader stands in the text. */
@@ -216,8 +103,9 @@ export function workflowFlow(script: string): Flow {
 
 class FlowReader {
   private readonly notes = new Set<string>();
-  /** The agent of each step read so far, by its literal label. */
-  private readonly agents = new Map<string, string>();
+  /** The handle each session() or fork() call makes, by the call. Reading the call again, as a
+   *  function called twice does, makes a new handle. */
+  private readonly handles = new Map<AnyNode, Handle>();
   /** The name the text keeps a step call's result under, by the call. */
   private readonly results = new Map<AnyNode, string>();
   /** The result names of the steps read so far. */
@@ -334,7 +222,16 @@ class FlowReader {
       if (spec) return this.step(node, spec, at);
       if (callee.name === "parallel") return this.parallel(node, at, true);
       if (callee.name === "pipeline") return this.pipeline(node, at);
-      if (callee.name === "gate" || callee.name === "retry") return this.repeat(node, callee.name, at);
+      if (callee.name === "session") {
+        const before = this.list(node.arguments, at);
+        this.handles.set(node, this.made(node, undefined, at));
+        return before;
+      }
+      if (callee.name === "checkpoint") {
+        // checkpoint() is removed. A run refuses it, so the graph draws no step for it.
+        this.note(`The checkpoint() on line ${lineOf(node)} is gone. Use ask() to ask the person.`);
+        return this.list(node.arguments, at);
+      }
       if (callee.name === "phase" && node.arguments[0]) this.phase = this.rendered(node.arguments[0]);
     } else if (isFunction(callee)) {
       return [...this.list(node.arguments, at), ...this.body(callee, at)];
@@ -344,11 +241,21 @@ class FlowReader {
       if (promise && PROMISE_GROUPS.has(method)) return this.parallel(node, at, false);
       if (PER_ITEM.has(method)) return this.perItem(node, at, false);
       if (method === "then" || method === "catch" || method === "finally") return this.chained(node, method, at);
+      // A send() or a fork() on something the text shows is no session handle is a plain call.
+      const handle = method === "send" || method === "fork" ? this.handleOf(callee.object, at) : "none";
+      if (method === "send" && handle !== "none") return [...this.expression(callee.object, at), ...this.step(node, SEND, at, handle)];
+      if (method === "fork" && handle !== "none") {
+        const before = [...this.expression(callee.object, at), ...this.list(node.arguments, at)];
+        this.handles.set(node, this.made(node, handle, at));
+        return before;
+      }
     }
     return [...this.expression(callee, at), ...this.list(node.arguments, at)];
   }
 
-  private step(node: AnyNode, spec: StepSpec, at: At): FlowNode[] {
+  /** A step call. A send() comes with the handle it runs on, or null when the text makes that
+   *  handle at run time. */
+  private step(node: AnyNode, spec: StepSpec, at: At, handle?: Handle | null): FlowNode[] {
     const args = node.arguments as AnyNode[];
     const { kind } = spec;
     // A breakpoint's second argument may be the step it runs before it waits.
@@ -358,19 +265,22 @@ class FlowReader {
     const step: FlowStep = { t: "step", id: this.id("s", node, at), line: lineOf(node), kind, label: kind };
     const options = kind === "breakpoint" && args[1]?.type === "ObjectExpression" ? args[1] : spec.options === undefined ? undefined : args[spec.options];
     const object = options?.type === "ObjectExpression" ? options : undefined;
-    const labelNode = spec.titled ? args[0] : object && property(object, "label");
+    // A send's own label wins, else it takes its handle's.
+    const own = spec.titled ? args[0] : object && property(object, "label");
+    const labelNode = own ?? (handle ? handleOption(handle, "label") : undefined);
     if (labelNode) this.label(step, labelNode);
+    else if (handle === null) {
+      step.label = `{${this.src(node.callee.object)}}`;
+      step.dynamic = true;
+      this.note(`The send() on line ${step.line} goes to a session made at run time, so its label is not known.`);
+    }
     const spread = object?.properties.find((item: AnyNode) => item.type === "SpreadElement")?.argument as AnyNode | undefined;
     const unread = options && !object ? options : spread;
     if (!labelNode && unread) this.note(`The ${kind} step on line ${step.line} takes options from ${this.src(unread)}, so its label is not known.`);
-    // A step that goes on in an earlier step's session runs that step's agent.
-    const continues = staticString(object && property(object, "continue"));
-    const agent = staticString(object && property(object, "agentType")) ?? (continues === undefined ? undefined : this.agents.get(continues));
-    if (agent !== undefined) {
-      step.agent = agent;
-      if (!step.dynamic) this.agents.set(step.label, agent);
-    }
-    const model = staticString(object && property(object, "model"));
+    // A send runs its handle's agent, and the handle's model unless it names its own.
+    const agent = staticString(object && property(object, "agentType")) ?? staticString(handle ? handleOption(handle, "agentType") : undefined);
+    if (agent !== undefined) step.agent = agent;
+    const model = staticString(object && property(object, "model")) ?? staticString(handle ? handleOption(handle, "model") : undefined);
     if (model !== undefined) step.model = model;
     const retries = object && property(object, "retries");
     if (retries?.type === "Literal" && typeof retries.value === "number") step.retries = retries.value;
@@ -380,13 +290,41 @@ class FlowReader {
       if (name === undefined && args[0]) this.note(`The workflow step on line ${step.line} starts a workflow named at run time.`);
     }
     if (body?.length) step.body = body;
-    this.describe(step, node, spec, object, at);
+    this.describe(step, node, spec, object, at, handle ?? undefined);
+    if (handle) handle.last = step.dynamic ? undefined : step.label;
     return [...before, step];
+  }
+
+  /** The handle a session() or a fork() call makes. A fork starts from its parent's options and
+   *  goes on from its parent's last send. Options made at run time give a note. */
+  private made(node: AnyNode, parent: Handle | null | undefined, at: At): Handle {
+    const arg = node.arguments[0] as AnyNode | undefined;
+    const object = arg && valueOf(at.scope, arg);
+    if (object?.type === "ObjectExpression") return { objects: [...(parent?.objects ?? []), object], ...(parent?.last ? { last: parent.last } : {}) };
+    if (arg) this.note(`The session on line ${lineOf(node)} takes its options from ${this.src(arg)}, so its label is not known.`);
+    // A fork() with no options is its parent with a new session.
+    return arg || !parent ? {} : { ...(parent.objects ? { objects: parent.objects } : {}), ...(parent.last ? { last: parent.last } : {}) };
+  }
+
+  /** The handle a send() or a fork() is called on, as handleCall finds it. Null when the text
+   *  makes it at run time, such as a parameter, and "none" when the text shows it is no handle. */
+  private handleOf(target: AnyNode, at: At, depth = 0): Handle | null | "none" {
+    const call = handleCall(at.scope, target);
+    if (call === "none") return "none";
+    if (!call || depth > MAX_CHAIN) return null;
+    let handle = this.handles.get(call);
+    if (!handle) {
+      const callee = call.callee as AnyNode;
+      const parent = callee.type === "MemberExpression" ? this.handleOf(callee.object, at, depth + 1) : undefined;
+      handle = this.made(call, parent === "none" ? undefined : parent, at);
+      this.handles.set(call, handle);
+    }
+    return handle.objects ? handle : null;
   }
 
   /** What the step panel says of a step: its phase, its prompt or code, the name of its result,
    *  what it reads and its options. */
-  private describe(step: FlowStep, node: AnyNode, spec: StepSpec, object: AnyNode | undefined, at: At): void {
+  private describe(step: FlowStep, node: AnyNode, spec: StepSpec, object: AnyNode | undefined, at: At, handle?: Handle): void {
     const args = node.arguments as AnyNode[];
     const own = object && property(object, "phase");
     const phase = own ? this.rendered(own) : this.phase;
@@ -397,8 +335,14 @@ class FlowReader {
     const reads = readsOf(args, (name) => this.kept.has(name) || isBound(at.scope, name));
     if (reads.length) step.reads = reads;
     if (result !== undefined) this.kept.add(result);
-    const options = stepOptions(step.kind, object, args, { src: (part) => this.src(part), valueOf: (part) => valueOf(at.scope, part) });
-    if (options) step.options = options;
+    const reader = { src: (part: AnyNode) => this.src(part), valueOf: (part: AnyNode) => valueOf(at.scope, part) };
+    // A send takes its handle's options under its own.
+    const handleOptions = (handle?.objects ?? []).map((each) => stepOptions(step.kind, each, [], reader));
+    const options: StepOptions = Object.assign({}, ...handleOptions, stepOptions(step.kind, object, args, reader));
+    const name = handle && staticString(handleOption(handle, "label"));
+    if (name !== undefined) options.session = name;
+    if (handle?.last !== undefined) options.continues = handle.last;
+    if (Object.keys(options).length) step.options = options;
   }
 
   /** Notes the name a step call's result is kept under: `const review = await agent(...)`, or
@@ -491,21 +435,6 @@ class FlowReader {
     return [...before, { t: "pipeline", id: this.id("pipe", node, at), line: lineOf(node), over: this.src(items), stages }];
   }
 
-  /** gate(work, check, { attempts }) and retry(work, { attempts, until }) repeat their work. */
-  private repeat(node: AnyNode, loop: "gate" | "retry", at: At): FlowNode[] {
-    const args = node.arguments as AnyNode[];
-    const options = args[loop === "gate" ? 2 : 1];
-    const object = options?.type === "ObjectExpression" ? options : undefined;
-    const until = loop === "gate" ? args[1] : object && property(object, "until");
-    const body = [...this.calls(args[0], at), ...this.calls(until, at)];
-    if (!hasStep(body)) return [];
-    const attempts = object && property(object, "attempts");
-    const written = until && this.text.slice(until.start, until.end).trim();
-    return [
-      { t: "loop", id: this.id("loop", node, at), line: lineOf(node), loop, ...(attempts ? { limit: this.src(attempts) } : {}), ...(written ? { until: written } : {}), body },
-    ];
-  }
-
   /** promise.then(fn) and .finally(fn) run fn after it, .catch(fn) when it fails. */
   private chained(node: AnyNode, method: string, at: At): FlowNode[] {
     const [first, second] = node.arguments as AnyNode[];
@@ -544,7 +473,31 @@ class FlowReader {
     }
     if (!hasStep(body)) return before;
     const loop = node.type === "WhileStatement" || node.type === "DoWhileStatement" ? "while" : "for";
-    return [...before, { t: "loop", id: this.id("loop", node, at), line: lineOf(node), loop, ...(over ? { label: this.src(over) } : {}), body }];
+    const limit = node.type === "ForStatement" ? this.rounds(node) : undefined;
+    return [...before, { t: "loop", id: this.id("loop", node, at), line: lineOf(node), loop, ...(over ? { label: this.src(over) } : {}), ...(limit ? { limit } : {}), body }];
+  }
+
+  /** How many rounds `for (let i = A; i < N; i++)` runs, when A is 0 or 1 and the test is < or <=
+   *  on the same name: N for 0 and <, or 1 and <=. For a number N, N + 1 or N - 1 for the others.
+   *  A number gives a limit only when the rounds are a whole number of at least one. A bound that
+   *  is no name or number, such as a string, gives none. */
+  private rounds(node: AnyNode): string | undefined {
+    const init = node.init?.type === "VariableDeclaration" && node.init.declarations.length === 1 ? (node.init.declarations[0] as AnyNode) : undefined;
+    const name = init?.id?.type === "Identifier" ? (init.id.name as string) : undefined;
+    const from = init?.init?.type === "Literal" ? init.init.value : undefined;
+    const { test, update } = node as { test?: AnyNode; update?: AnyNode };
+    const counts = update?.type === "UpdateExpression" && update.operator === "++" && update.argument.type === "Identifier" && update.argument.name === name;
+    if (!name || (from !== 0 && from !== 1) || !counts || test?.type !== "BinaryExpression" || test.left.type !== "Identifier" || test.left.name !== name) return undefined;
+    if (test.operator !== "<" && test.operator !== "<=") return undefined;
+    const shift = (from === 0 ? 0 : -1) + (test.operator === "<=" ? 1 : 0);
+    const right = test.right as AnyNode;
+    const negative = right.type === "UnaryExpression" && right.operator === "-" && right.argument.type === "Literal";
+    if (right.type === "Literal" || negative) {
+      const value = negative ? -right.argument.value : right.value;
+      const n = typeof value === "number" ? value + shift : undefined;
+      return n !== undefined && Number.isInteger(n) && n >= 1 ? String(n) : undefined;
+    }
+    return shift === 0 ? this.src(right) : undefined;
   }
 
   /** The try block's steps in order, then the catch block's as an if on "error". */
@@ -645,19 +598,35 @@ class FlowReader {
 }
 
 /** The functions a list of statements keeps in a name: its function declarations and its
- *  variables set to a function. Also the values of its other const names. */
+ *  variables set to a function. Also the values of its other names: each const, and each let or
+ *  var that the statements never assign again. */
 function hoist(statements: AnyNode[], parent: Scope | undefined): Scope {
   const scope: Scope = { names: new Map(), values: new Map(), parent };
+  let assigned: Set<string> | undefined;
   for (const statement of statements) {
     if (statement.type === "FunctionDeclaration" && statement.id) scope.names.set(statement.id.name, { fn: statement, scope });
     if (statement.type !== "VariableDeclaration") continue;
     for (const declarator of statement.declarations as AnyNode[]) {
       if (declarator.id?.type !== "Identifier" || !declarator.init) continue;
-      if (isFunction(declarator.init)) scope.names.set(declarator.id.name, { fn: declarator.init, scope });
-      else if (statement.kind === "const") scope.values.set(declarator.id.name, declarator.init);
+      const name = declarator.id.name as string;
+      if (isFunction(declarator.init)) scope.names.set(name, { fn: declarator.init, scope });
+      else if (statement.kind === "const" || !(assigned ??= assignedNames(statements)).has(name)) scope.values.set(name, declarator.init);
     }
   }
   return scope;
+}
+
+/** The names that statements assign or count up or down, in any depth, functions too. */
+function assignedNames(statements: AnyNode[]): Set<string> {
+  const names = new Set<string>();
+  const stack = [...statements];
+  for (let node = stack.pop(); node; node = stack.pop()) {
+    if (node.type === "AssignmentExpression") boundNames(node.left).forEach((name) => names.add(name));
+    if (node.type === "UpdateExpression" && node.argument.type === "Identifier") names.add(node.argument.name);
+    if ((node.type === "ForInStatement" || node.type === "ForOfStatement") && node.left.type !== "VariableDeclaration") boundNames(node.left).forEach((name) => names.add(name));
+    stack.push(...childrenOf(node));
+  }
+  return names;
 }
 
 /** A scope inside another that holds the names a function's parameters or a loop's variable give. */
@@ -679,7 +648,7 @@ function isBound(scope: Scope | undefined, name: string): boolean {
   return false;
 }
 
-/** The value a const name is set to, where the text sets it, else the node itself. */
+/** The value a name is set to once, where the text sets it, else the node itself. */
 function valueOf(scope: Scope, node: AnyNode): AnyNode {
   if (node.type !== "Identifier") return node;
   for (let at: Scope | undefined = scope; at; at = at.parent) {
@@ -737,9 +706,63 @@ function firstStep(node: AnyNode, scope: Scope, seen: Set<AnyNode>): AnyNode | u
       if (firstStep(known.fn, known.scope, seen)) return node;
     }
   }
+  if (node.type === "CallExpression" && isSend(node.callee) && handleCall(scope, node.callee.object) !== "none") return node;
   for (const child of childrenOf(node)) {
     const found = firstStep(child, scope, seen);
     if (found) return found;
+  }
+  return undefined;
+}
+
+/** <target>.send: a send(), on a session handle unless handleCall says "none". */
+function isSend(callee: AnyNode): boolean {
+  return isMethod(callee, "send");
+}
+
+function isMethod(callee: AnyNode, name: string): boolean {
+  return callee.type === "MemberExpression" && !callee.computed && callee.property.type === "Identifier" && callee.property.name === name;
+}
+
+/** What a send() or a fork() runs on. The session() or fork() call that makes the handle, when
+ *  the text writes it in place or keeps it in a name set once. "none" when the text shows the
+ *  target is no handle: an object, an array, a new expression, a literal, a function, or the
+ *  result of a call to a function the text does not define, other than session() and fork().
+ *  Undefined when the text makes it at run time, such as a parameter, a name assigned more than
+ *  once, or the result of a function the text defines. */
+function handleCall(scope: Scope, target: AnyNode, depth = 0): AnyNode | "none" | undefined {
+  const unwrapped = target.type === "AwaitExpression" ? (target.argument as AnyNode) : target;
+  let node = valueOf(scope, unwrapped);
+  if (node.type === "AwaitExpression") node = node.argument as AnyNode;
+  switch (node.type) {
+    case "CallExpression": {
+      const callee = node.callee as AnyNode;
+      if (callee.type === "Identifier" && lookup(scope, callee.name)) return undefined;
+      if (callee.type === "Identifier" && callee.name === "session") return node;
+      if (!isMethod(callee, "fork")) return "none";
+      if (depth > MAX_CHAIN) return undefined;
+      return handleCall(scope, callee.object, depth + 1) === "none" ? "none" : node;
+    }
+    case "ObjectExpression":
+    case "ArrayExpression":
+    case "NewExpression":
+    case "Literal":
+    case "TemplateLiteral":
+    case "FunctionExpression":
+    case "ArrowFunctionExpression":
+    case "ClassExpression":
+      return "none";
+    case "Identifier":
+      return lookup(scope, node.name) ? "none" : undefined;
+    default:
+      return undefined;
+  }
+}
+
+/** The node a handle's options give for a key: the last options object that writes it. */
+function handleOption(handle: Handle, key: string): AnyNode | undefined {
+  for (const object of [...(handle.objects ?? [])].reverse()) {
+    const value = property(object, key);
+    if (value) return value;
   }
   return undefined;
 }

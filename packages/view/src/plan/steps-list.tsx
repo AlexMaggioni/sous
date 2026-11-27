@@ -59,8 +59,7 @@ function settingOf(part: Part, node: ReturnType<typeof nodeOf>): { text: string;
     case "wait":
       return step.code ? { text: firstLine(step.code) ?? "", code: true } : null;
     case "ask":
-    case "checkpoint":
-      return step.options?.choices?.length ? { text: step.options.choices.join(" / ") } : { text: step.options?.answer === "confirm" ? "yes or no" : "asks you" };
+      return step.options?.choices?.length ? { text: step.options.choices.join(" / ") } : { text: "asks you" };
     case "breakpoint":
       return { text: "waits for your yes" };
     case "workflow":

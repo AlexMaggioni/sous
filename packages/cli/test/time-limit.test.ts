@@ -43,7 +43,7 @@ return await agent('check ' + built.stdout.trim(), { label: 'check' })`,
     // The question comes first, so no step can be running when the limit is reached.
     const { paths, projectDir } = testHome({
       asks: `export const meta = { name: 'asks', description: 'asks', timeout: '1s' }
-const name = await checkpoint('Name it', { kind: 'input' })
+const name = await ask('Name it')
 return await agent('Build ' + name, { label: 'build' })`,
     });
     const { runner, calls } = fakeRunner((call) => `${call.prompt} done`);

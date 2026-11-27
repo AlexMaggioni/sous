@@ -21,12 +21,8 @@ const title = ticket.split("\n")[0].replace(/^#+\s*/, "").slice(0, 72)
 const last = (text, n = 4000) => (text.length > n ? text.slice(text.length - n) : text)
 
 phase("implement")
-let implementer = "implementer"
-await agent(`Implement this ticket in the current folder.\n\nTicket:\n${ticket}`, {
-  agentType: "implementer",
-  label: implementer,
-  keepSession: true,
-})
+const implementer = session({ agentType: "implementer", label: "implementer" })
+await implementer.send(`Implement this ticket in the current folder.\n\nTicket:\n${ticket}`)
 
 phase("review")
 const verdictSchema = {
@@ -50,14 +46,9 @@ while (round < args.rounds) {
   }
   if (round === args.rounds) break
   // The review goes to the implementer as plain text, in the implementer's own session.
-  const next = `implementer ${round + 1}`
-  await agent(`The reviewer asks for these changes:\n\n${verdict.review}\n\nMake them, then run the tests.`, {
-    agentType: "implementer",
-    label: next,
-    continue: implementer,
-    keepSession: true,
+  await implementer.send(`The reviewer asks for these changes:\n\n${verdict.review}\n\nMake them, then run the tests.`, {
+    label: `implementer ${round + 1}`,
   })
-  implementer = next
 }
 
 phase("verify")

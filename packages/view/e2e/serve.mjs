@@ -7,7 +7,7 @@
 //
 // --runs starts a few runs first, so the lists have something in them: one waits on a question,
 // one on a breakpoint, one runs a long step, one fails and one ends. Agent runs on the fake
-// programs follow: one plans, reviews and tests, then waits on a checkpoint, one keeps an agent
+// programs follow: one plans, reviews and tests, then waits on a question, one keeps an agent
 // working until `touch <world>/fake/release-investigate`, and one retries an overloaded step. On
 // Ctrl-C or SIGTERM it stops the runs still going, then the server.
 

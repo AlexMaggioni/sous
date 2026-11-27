@@ -83,7 +83,7 @@ class ScopeRun implements RunHooks {
   slots: Slot[] = [];
   allowed: Set<Entry> | null = null;
   item: string | undefined;
-  /** For each nested run claimed, how many slots came before it, so a checkpoint before it reads as passed. */
+  /** For each nested run claimed, how many slots came before it, so a question before it reads as passed. */
   scopesAt: number[] = [];
   /** The steps each node took in the rounds before the one the graph shows. */
   earlier = new Map<FlowStep, StepEntry[]>();
@@ -238,7 +238,7 @@ class ScopeRun implements RunHooks {
           leaf.status = "needs";
           leaf.ask = q.id;
         }
-      } else if (node.kind === "ask" || node.kind === "checkpoint" || node.kind === "breakpoint") {
+      } else if (node.kind === "ask" || node.kind === "breakpoint") {
         const q = open.find((q) => !q.step && !taken.has(q) && asks(node, q.prompt)) ?? (later(i) ? undefined : open.find((q) => !q.step && !taken.has(q)));
         if (q) {
           taken.add(q);
@@ -259,7 +259,7 @@ class ScopeRun implements RunHooks {
   }
 }
 
-/** Whether a question's prompt is this ask, checkpoint or breakpoint, by its title. */
+/** Whether a question's prompt is this ask or breakpoint, by its title. */
 function asks(node: FlowStep, prompt: string): boolean {
   const line = firstLine(prompt).replace(/^Breakpoint: /, "");
   if (node.dynamic) return namesStep({ ...node, kind: "agent" }, line);

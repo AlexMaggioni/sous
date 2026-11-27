@@ -13,19 +13,20 @@ export const WORKFLOW_TEXT = `export const meta = {
   place: "worktree",
 }
 
-// The implementer keeps its session, so the review rounds continue it.
-const built = await agent(\`Implement this ticket:\\n\${args.ticket}\`, {
-  agentType: "implementer", label: "implementer", keepSession: true,
-})
+// The review rounds go on in the implementer's session.
+const impl = session({ agentType: "implementer", label: "implementer" })
+const built = await impl.send(\`Implement this ticket:\\n\${args.ticket}\`)
 
-const review = await gate(async (feedback) => {
-  if (feedback) await agent(\`Address this review:\\n\${feedback}\`, { continue: "implementer" })
-  return agent(\`Review the change for: \${args.ticket}\`, {
+let review
+for (let round = 0; round < args.rounds; round++) {
+  if (review) await impl.send(\`Address this review:\\n\${review.review}\`, { label: "address review" })
+  review = await agent(\`Review the change for: \${args.ticket}\`, {
     agentType: "reviewer", label: "reviewer",
     schema: { approved: "boolean", review: "string" },
   })
-}, (r) => ({ ok: r.approved, feedback: r.review }), { attempts: args.rounds })
-if (!review.ok) return { summary: built, approved: false }
+  if (review.approved) break
+}
+if (!review.approved) return { summary: built, approved: false }
 
 await sh("pnpm test", { label: "tests" })
 return { summary: built }

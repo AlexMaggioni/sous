@@ -90,7 +90,7 @@ test("the first leased checkpoint answer wins; repeats are idempotent and confli
   const testRun = fixture({ async run() { return "unused"; } });
   try {
     const script = `export const meta = { name: "checkpoint-race", description: "checkpoint race" };
-return await checkpoint("ship?", { kind: "select", choices: ["ship", "hold"], });`;
+return await ask("ship?", { choices: ["ship", "hold"], });`;
     const paused = await testRun.manager.runSync(script, undefined, {
       runId: "checkpoint-race",
     });
@@ -122,8 +122,8 @@ test("a repeated earlier answer never moves the run past a later pending checkpo
   const testRun = fixture({ async run() { return "unused"; } });
   try {
     const script = `export const meta = { name: "two-gates", description: "two gates" };
-const first = await checkpoint("first?", { kind: "confirm" });
-const second = await checkpoint("second?", { kind: "confirm" });
+const first = await ask("first?");
+const second = await ask("second?");
 return { first, second };`;
     const paused = await testRun.manager.runSync(script, undefined, {
       runId: "two-gates",
@@ -162,7 +162,11 @@ return { first, second };`;
     if (!finished.accepted) assert.fail("answers refused");
     const completed = await finished.promise;
     assert.equal(completed.status, "completed");
-    assert.deepEqual(structuredClone(completed.result), { first: false, second: false });
+    assert.deepEqual(structuredClone(completed.result), { first: "false", second: "false" });
+    assert.deepEqual(
+      testRun.manager.getPersistence().load("two-gates")?.journal?.map((entry) => [entry.index, entry.result]),
+      [[0, false], [1, false]],
+    );
   } finally {
     testRun.cleanup();
   }
@@ -217,8 +221,8 @@ test("a fresh manager preserves actual authored configuration on cold continuati
   };
   try {
     const script = `export const meta = { name: "cold-dispatch", description: "cold dispatch" };
-const alpha = await agent("alpha", { label: "alpha", model: "claude/opus", mode: "bypassPermissions", configOptions: { effort: "high", verbose: true } });
-const beta = await agent("beta", { label: "beta", model: "codex/gpt", mode: "agent", configOptions: { reasoning_effort: "xhigh" } });
+const alpha = await agent("alpha", { label: "alpha", model: "claude/opus", mode: "bypassPermissions" });
+const beta = await agent("beta", { label: "beta", model: "codex/gpt", mode: "agent" });
 return { alpha, beta };`;
     const warm = new WorkflowManager({ cwd, persistenceRoot, agent: runner });
     const first = await warm.runSync(script, undefined, {
@@ -234,15 +238,15 @@ return { alpha, beta };`;
     const completed = await started.promise;
     assert.equal(completed.status, "completed");
     assert.equal(dispatched.length, 3, "alpha replays from the journal; only beta runs live");
-    // No step reads configOptions. The call record keeps them.
+    // The runner gets no configOptions. A script that sets them is refused (refused-options.test.ts).
     assert.deepEqual(structuredClone(dispatched[2]), {
       model: "codex/gpt",
       mode: "agent",
       configOptions: undefined,
     });
     assert.deepEqual(
-      completed.calls?.filter((call) => call.label === "beta").map((call) => call.configOptionsRequested),
-      [{ reasoning_effort: "xhigh" }],
+      completed.calls?.filter((call) => call.label === "beta").map((call) => [call.modelRequested, call.configOptionsRequested]),
+      [["codex/gpt", undefined]],
     );
   } finally {
     rmSync(cwd, { recursive: true, force: true });

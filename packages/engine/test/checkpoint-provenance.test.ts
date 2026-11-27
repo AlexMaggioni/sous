@@ -11,7 +11,7 @@ import { runWorkflow } from "../src/workflow.js";
 import { journalResume } from "./helpers/journal-resume.js";
 
 const script = `export const meta = { name: "explicit-checkpoint", description: "checkpoint provenance" }
-const answer = await checkpoint("Approve?")
+const answer = await ask("Approve?")
 return answer`;
 const noopAgent = { async run() { throw new Error("no agent work is expected"); } };
 
@@ -70,6 +70,7 @@ test("cold inspection remains available while same-run continuation refuses old 
     manager.getPersistence().save(recorded);
     const cold = new WorkflowManager({ cwd: root, persistenceRoot: root, agent: noopAgent });
     assert.equal(cold.getPersistence().load(completed.runId)?.journal?.[0].result, true);
+    assert.equal(completed.result, "true");
     await assert.rejects(cold.resumeInBackground(completed.runId), incompatible);
     assert.equal(cold.getPersistence().load(completed.runId)?.journal?.[0].checkpointDecision, undefined);
     assert.doesNotThrow(() => assertExplicitCheckpointProvenance(original));
@@ -78,15 +79,21 @@ test("cold inspection remains available while same-run continuation refuses old 
   }
 });
 
-test("a callback resolving after its timeout cannot create a durable answer", async () => {
+// ask() has no timeout. A pause request is what unwinds its waiting callback now.
+test("a callback resolving after a pause request cannot create a durable answer", async () => {
   let answer!: (value: unknown) => void;
+  let opened!: () => void;
+  const asking = new Promise<void>(resolve => { opened = resolve; });
+  const pause = new AbortController();
   const journal: JournalEntry[] = [];
-  const running = runWorkflow(script.replace('checkpoint("Approve?")', 'checkpoint("Approve?", { timeoutMs: 5 })'), {
-    agent: noopAgent, persistLogs: false,
-    confirm: () => new Promise(resolve => { answer = resolve; }),
+  const running = runWorkflow(script, {
+    agent: noopAgent, persistLogs: false, pauseSignal: pause.signal,
+    confirm: () => { opened(); return new Promise(resolve => { answer = resolve; }); },
     onAgentJournal: entry => journal.push(entry),
   });
-  await assert.rejects(running, (error: unknown) => error instanceof WorkflowError && error.code === WorkflowErrorCode.CHECKPOINT_REQUIRED);
+  await asking;
+  pause.abort();
+  await assert.rejects(running, (error: unknown) => error instanceof WorkflowError && error.code === WorkflowErrorCode.PAUSE_REQUESTED);
   answer(true);
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(journal, []);

@@ -57,7 +57,7 @@ const four = `export const meta = { name: 'four', description: 'asks four ways a
 const [color, name, ship, plan] = await Promise.all([
   ask('Pick a color', { choices: ['red', 'blue'] }),
   ask('Your name?'),
-  checkpoint('Ship it?'),
+  ask('Ship it?', { choices: ['yes', 'no'] }),
   breakpoint('Check the plan', { show: 'the plan' }),
 ])
 return { color, name, ship, plan }`;
@@ -86,7 +86,7 @@ describe("how sous shows a question", () => {
         `  sous answer ${n(name)} "..."`,
         `${n(ship)}  four  <age> ago`,
         `  Ship it?`,
-        `  sous answer ${n(ship)} yes|no`,
+        `  sous answer ${n(ship)} <one of: yes, no>`,
         `${n(plan)}  four  <age> ago`,
         `  Breakpoint: Check the plan`,
         `  `,
@@ -110,7 +110,7 @@ describe("how sous shows a question", () => {
         `asks      ${n(name)}: Your name?`,
         `          sous answer ${n(name)} "..."`,
         `asks      ${n(ship)}: Ship it?`,
-        `          sous answer ${n(ship)} yes|no`,
+        `          sous answer ${n(ship)} <one of: yes, no>`,
         `asks      ${n(plan)}: Breakpoint: Check the plan`,
         ``,
       ],
@@ -138,7 +138,7 @@ describe("how sous shows a question", () => {
         ``,
         `waiting for an answer to ${n(ship)}:`,
         `  Ship it?`,
-        `  sous answer ${n(ship)} yes|no`,
+        `  sous answer ${n(ship)} <one of: yes, no>`,
         `  then: sous wait <id>`,
         ``,
         `waiting for an answer to ${n(plan)}:`,
@@ -165,7 +165,7 @@ describe("how sous shows a question", () => {
     );
     const result = await workers.ended(record.runId);
     assert.equal(result?.status, "completed");
-    assert.deepEqual(JSON.parse(JSON.stringify(result?.result)), { color: "blue", name: "Ann Lee", ship: true, plan: { decision: "approve" } });
+    assert.deepEqual(JSON.parse(JSON.stringify(result?.result)), { color: "blue", name: "Ann Lee", ship: "yes", plan: { decision: "approve" } });
   });
 });
 
@@ -253,7 +253,7 @@ describe("the prompt of sous wait in a terminal", () => {
   const each = `export const meta = { name: 'each', description: 'asks four ways in turn' }
 const color = await ask('Pick a color', { choices: ['red', 'blue'] })
 const name = await ask('Your name?')
-const ship = await checkpoint('Ship it?')
+const ship = await ask('Ship it?', { choices: ['yes', 'no'] })
 const plan = await breakpoint('Check the plan', { show: 'the plan' })
 return { color, name, ship, plan }`;
 
@@ -261,11 +261,11 @@ return { color, name, ship, plan }`;
     const { paths, projectDir } = testHome({ each });
     const workers = inProcess({ inner: runner });
     const record = startRun(paths, workers.launch, { who: PERSON, workflow: "each", projectDir, inputs: {} });
-    const wait = await inTerminal(paths, ["wait", record.runId], ["BLUE", "  Ann ", "y", ""]);
+    const wait = await inTerminal(paths, ["wait", record.runId], ["BLUE", "  Ann ", "Yes", ""]);
     const result = await workers.ended(record.runId);
     assert.equal(wait.code, 0, wait.out);
-    assert.deepEqual(JSON.parse(JSON.stringify(result?.result)), { color: "blue", name: "Ann", ship: true, plan: { decision: "approve" } });
-    const prompts = ["\nPick a color\n(red / blue) > ", "\nYour name?\n(your answer) > ", "\nShip it?\n(yes or no) > ", "\nBreakpoint: Check the plan\n\nthe plan\n\nReply approve, stop, or send back with a note.\n(approve, stop, or a note to send back) > "];
+    assert.deepEqual(JSON.parse(JSON.stringify(result?.result)), { color: "blue", name: "Ann", ship: "yes", plan: { decision: "approve" } });
+    const prompts = ["\nPick a color\n(red / blue) > ", "\nYour name?\n(your answer) > ", "\nShip it?\n(yes / no) > ", "\nBreakpoint: Check the plan\n\nthe plan\n\nReply approve, stop, or send back with a note.\n(approve, stop, or a note to send back) > "];
     let at = 0;
     for (const prompt of prompts) {
       const found = wait.out.indexOf(prompt, at);

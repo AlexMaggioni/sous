@@ -2,16 +2,19 @@
 //
 // Code steps (sh, js, py, run, waitUntil) go to the engine's code() as a spec. The engine runs
 // them itself, so they get the journal, resume, retries, limits and events of any step.
+// session() and agent() come from turns/session.ts. Each removed function fails the script with
+// what to write instead.
 
 import type { CheckpointPurpose } from "./checkpoint-call.js";
 import type { ExecSpec } from "./code-steps.js";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { decisionOf } from "./runs/inbox.js";
 import { parseDurationSeconds } from "./duration.js";
+import { createSessions } from "./turns/session.js";
 
 export const DEFAULT_MAX_NESTING_DEPTH = 5;
 
-type AgentFn = (prompt: string, options?: Record<string, unknown>) => Promise<unknown>;
+type AgentFn = (prompt: string, options: Record<string, unknown>) => Promise<unknown>;
 /** What a code step passes besides its spec. */
 export interface CodeStepOptions {
   label: string;
@@ -28,14 +31,17 @@ export interface SousGlobalDeps {
   agent: AgentFn;
   code: CodeFn;
   checkpoint: CheckpointFn;
-  /** The checkpoint that marks its question: a breakpoint, a question anyone may answer, or an
-   *  asking agent's question with its step. */
+  /** The checkpoint that marks its question: a breakpoint, or a question anyone may answer. */
   markedCheckpoint: MarkedCheckpointFn;
   workflow: WorkflowFn;
   log: (message: string) => void;
   listSavedWorkflows?: () => Array<{ name: string; description?: string }>;
   /** Per-run changes to steps, by label, such as { reviewer: { model: "haiku" } }. */
   stepOverrides?: Record<string, Record<string, unknown>>;
+  /** A step's folder, resolved as the engine resolves a step's cwd. A handle's cwd comes from it. */
+  resolveCwd: (cwd: string | undefined) => string;
+  /** Wraps a function the script calls, as the script's globals are wrapped. A handle's send() gets it. */
+  track?: <F extends (...args: never[]) => unknown>(fn: F) => F;
 }
 
 interface StepOptions {
@@ -48,10 +54,13 @@ interface StepOptions {
   phase?: string;
 }
 
-const QUESTION_PREFIX = "QUESTION:";
-const ASK_INSTRUCTIONS =
-  `\n\nIf you cannot go on without a decision from the user, stop and reply with one line that starts with "${QUESTION_PREFIX}" followed by your question. ` +
-  "You will get the answer in this same session and can continue.";
+const LOOP = "Give the step check and maxTurns, or write a plain loop.";
+/** Functions a script once had. Each fails the script with what to write instead. */
+const REMOVED_GLOBALS = {
+  retry: `retry() is gone. ${LOOP}`,
+  gate: `gate() is gone. ${LOOP}`,
+  checkpoint: "checkpoint() is gone. Use ask() to ask the person.",
+} as const;
 
 function fail(message: string): never {
   throw new WorkflowError(message, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, { recoverable: false });
@@ -73,7 +82,12 @@ function plainCopy<T>(value: T): T {
 }
 
 export function createSousGlobals(deps: SousGlobalDeps) {
-  let askSeq = 0;
+  const { session, agent } = createSessions({
+    agent: deps.agent,
+    resolveCwd: deps.resolveCwd,
+    ...(deps.stepOverrides ? { stepOverrides: deps.stepOverrides } : {}),
+    ...(deps.track ? { track: deps.track } : {}),
+  });
 
   const exec = (spec: ExecSpec, options: StepOptions, defaultLabel: string): Promise<unknown> => {
     const fullSpec: ExecSpec = {
@@ -139,8 +153,10 @@ export function createSousGlobals(deps: SousGlobalDeps) {
    *  "anyone", an agent may answer too. */
   const ask = async (question: string, options: { choices?: string[]; answeredBy?: unknown } = {}) => {
     if (typeof question !== "string" || !question.trim()) fail("ask(question) needs a question");
-    const anyone = answeredByOf(options.answeredBy, "ask()") === "anyone";
-    return asked(question, options.choices ? [...options.choices] : undefined, anyone ? { answeredBy: "anyone" } : {});
+    // Each option is read once, so a getter can't give two answers.
+    const { choices, answeredBy } = options;
+    const anyone = answeredByOf(answeredBy, "ask()") === "anyone";
+    return asked(question, choices ? [...choices] : undefined, anyone ? { answeredBy: "anyone" } : {});
   };
 
   /**
@@ -238,37 +254,9 @@ export function createSousGlobals(deps: SousGlobalDeps) {
     return { choice: entry.name, reason: picked.reason, result };
   };
 
-  /**
-   * agent() with two sous additions: per-run step changes by label, and `ask: true`,
-   * where the agent can stop with a question, the user answers, and the same session goes on.
-   * Its questions carry the step's label, and `answeredBy` says who may answer them.
-   */
-  const agent = async (prompt: string, options: Record<string, unknown> = {}): Promise<unknown> => {
-    const { ask: canAsk, answeredBy, ...rest } = options;
-    const anyone = answeredByOf(answeredBy, "agent()") === "anyone";
-    if (anyone && !canAsk) fail("agent(): answeredBy \"anyone\" works with ask: true");
-    const label = typeof rest.label === "string" ? rest.label : undefined;
-    const override = label ? deps.stepOverrides?.[label] : undefined;
-    const merged: Record<string, unknown> = override ? { ...rest, ...override } : rest;
-    if (!canAsk) return deps.agent(prompt, merged);
-    if (merged.schema !== undefined) fail("agent(..., { ask: true }) works with text results only");
-    const askLabel = label ?? `asking-agent-${++askSeq}`;
-    let turn = 0;
-    let result = await deps.agent(`${prompt}${ASK_INSTRUCTIONS}`, { ...merged, label: askLabel, keepSession: true });
-    while (typeof result === "string" && result.trim().startsWith(QUESTION_PREFIX)) {
-      turn++;
-      if (turn > 5) fail(`agent "${askLabel}" asked more than 5 questions`);
-      const question = result.trim().slice(QUESTION_PREFIX.length).trim();
-      const answer = await asked(`${askLabel} asks: ${question}`, undefined, { ...(anyone ? { answeredBy: "anyone" as const } : {}), step: askLabel });
-      result = await deps.agent(`The user answered: ${answer}\n\nContinue the task.${ASK_INSTRUCTIONS}`, {
-        ...merged,
-        label: `${askLabel} (answer ${turn})`,
-        continue: turn === 1 ? askLabel : `${askLabel} (answer ${turn - 1})`,
-        keepSession: true,
-      });
-    }
-    return result;
-  };
+  const removed = Object.fromEntries(
+    Object.entries(REMOVED_GLOBALS).map(([name, message]) => [name, (): never => fail(message)]),
+  ) as Record<keyof typeof REMOVED_GLOBALS, () => never>;
 
-  return { agent, sh, js, py, run, waitUntil, ask, breakpoint, choose };
+  return { agent, session, sh, js, py, run, waitUntil, ask, breakpoint, choose, ...removed };
 }

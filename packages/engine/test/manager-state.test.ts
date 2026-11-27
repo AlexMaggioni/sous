@@ -96,7 +96,7 @@ describe("WorkflowManager PR3 state", () => {
     try {
       const workflow = script(
         `args.count++
-const answer = await checkpoint('continue', { })
+const answer = await ask('continue', { })
 return { count: args.count, answer }`,
         "resume-args",
       );

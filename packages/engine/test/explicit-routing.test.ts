@@ -85,15 +85,17 @@ test("aggregator selectors fail before dispatch", async () => {
 
 test("configuration is captured at call time before queued dispatch", async () => {
   const seen: unknown[] = [];
+  const dispatched: unknown[] = [];
   const result = await runWorkflow(`export const meta = { name: "config-capture", description: "Captured call configuration", model: "codex" };
-const configOptions = { reasoning_effort: "high" };
-const pending = agent("work", { configOptions });
-configOptions.reasoning_effort = "low";
+const options = { model: "codex/high" };
+const pending = agent("work", options);
+options.model = "codex/low";
 return await pending;`, {
-    agent: { async run(_prompt, options) { assert.equal("configOptions" in options, false); return "ok"; } },
-    onAgentStart: (event) => seen.push(event.configOptions),
+    agent: { async run(_prompt, options) { dispatched.push(options.model); return "ok"; } },
+    onAgentStart: (event) => seen.push(event.model),
     persistLogs: false,
   });
-  assert.deepEqual(seen, [{ reasoning_effort: "high" }]);
-  assert.deepEqual(result.calls?.[0].configOptionsRequested, { reasoning_effort: "high" });
+  assert.deepEqual(seen, ["codex/high"]);
+  assert.deepEqual(dispatched, ["codex/high"]);
+  assert.equal(result.calls?.[0].modelRequested, "codex/high");
 });

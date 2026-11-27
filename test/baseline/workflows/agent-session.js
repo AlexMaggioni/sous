@@ -5,9 +5,8 @@ export const meta = {
   place: "none",
 }
 
-const plan = await agent(`SESSION-1 Plan ${args.topic}.`, {
-  label: "planner",
-  keepSession: true,
+const planner = session({ label: "planner" })
+const plan = await planner.send(`SESSION-1 Plan ${args.topic}.`, {
   schema: {
     type: "object",
     properties: {
@@ -18,5 +17,5 @@ const plan = await agent(`SESSION-1 Plan ${args.topic}.`, {
     required: ["steps", "size", "done"],
   },
 })
-const more = await agent(`SESSION-2 Add one more step to: ${plan.steps.join(", ")}`, { label: "planner again", continue: "planner" })
+const more = await planner.send(`SESSION-2 Add one more step to: ${plan.steps.join(", ")}`, { label: "planner again" })
 return { plan, more }

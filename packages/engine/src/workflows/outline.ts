@@ -23,7 +23,8 @@ export interface OutlineStep {
   title?: string;
   agent?: string;
   model?: string;
-  keepsSession?: boolean;
+  /** The label of the session() or fork() handle a send() runs on. */
+  session?: string;
   /** The saved workflow a workflow() step starts. */
   workflow?: string;
 }

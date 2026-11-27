@@ -57,12 +57,13 @@ return "done"
 
 const parts = ["api", "page", "docs"]
 await parallel(parts.map((part) => () => sh("echo checked " + part, { label: "check " + part })))
-const summary = await gate(
-  (feedback, attempt) => js("return 'summary ' + input.attempt", { attempt }, { label: "summarize" }),
-  (step) => step.result === "summary 2" || { ok: false, feedback: "shorter" },
-  { attempts: 3 },
-)
-return { summary: summary.value }
+let summary
+for (let attempt = 0; attempt < 3; attempt++) {
+  const step = await js("return 'summary ' + input.attempt", { attempt }, { label: "summarize" })
+  summary = step.result
+  if (summary === "summary 2") break
+}
+return { summary }
 `,
   fails: `export const meta = {
   name: "fails",
@@ -88,7 +89,7 @@ const [review, tests] = await parallel([
   () => agent("Write the tests for the dark mode toggle.", { label: "write tests", agentType: "fixer" }),
 ])
 phase("Ship")
-const ship = await checkpoint("Ship the dark mode toggle?")
+const ship = await ask("Ship the dark mode toggle?", { choices: ["yes", "no"] })
 const note = await agent("Write the release note for the dark mode toggle.", { label: "release note", model: "claude/haiku" })
 return { review, tests, ship, note }
 `,

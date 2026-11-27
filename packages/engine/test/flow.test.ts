@@ -56,8 +56,9 @@ const each = <K extends keyof FlowStep>(nodes: FlowNode[], field: K) => steps(no
 test("reads each kind of step, in the order they run", () => {
   const flow = workflowFlow(
     wf(`
-const plan = await agent("plan", { label: "plan", agentType: "planner", model: "claude/opus", retries: 2, keepSession: true })
-await agent("more", { label: "plan again", continue: "plan" })
+const planner = session({ label: "plan", agentType: "planner", model: "claude/opus" })
+const plan = await planner.send("plan", { retries: 2 })
+await planner.send("more", { label: "plan again" })
 await sh("pnpm test", { label: "tests", retries: 1 })
 await js("return 1", null, { label: "count" })
 await py("print(1)", null, { label: "python" })
@@ -73,19 +74,18 @@ return plan
   );
   assert.deepEqual(outline(flow.nodes), [
     "agent plan (@planner, model claude/opus, retries 2)",
-    "agent plan again (@planner)",
+    "agent plan again (@planner, model claude/opus)",
     "sh tests (retries 1)",
     "js count",
     "py python",
     "run script",
     "wait server up",
     "ask Pick a color",
-    "checkpoint Go on?",
     "breakpoint Look at it",
     "workflow child (runs ticket)",
     "choose pick (@triager)",
   ]);
-  assert.deepEqual(flow.notes, []);
+  assert.deepEqual(flow.notes, ["The checkpoint() on line 11 is gone. Use ask() to ask the person."]);
 });
 
 test("reads a step anywhere in an expression, after the steps of its arguments", () => {
@@ -100,18 +100,18 @@ log(JSON.stringify(await py("1", null, { label: "deep" })))
   assert.deepEqual(outline(flow.nodes), ["agent first", "sh inside a template", "js argument", "agent after its argument", "py deep"]);
 });
 
-test("a label falls back to the title of an ask, a checkpoint or a breakpoint, then to the kind", () => {
+test("a label falls back to the title of an ask or a breakpoint, then to the kind", () => {
   const flow = workflowFlow(
     wf(`
 await agent("a")
 await sh("ls")
 await ask("Which one?")
-await checkpoint(\`Ready?\`)
+await ask(\`Ready?\`)
 await breakpoint("Check", () => agent("b"))
 await workflow("ticket")
 `),
   );
-  assert.deepEqual(outline(flow.nodes), ["agent agent", "sh sh", "ask Which one?", "checkpoint Ready?", "breakpoint Check", "  agent agent", "workflow workflow (runs ticket)"]);
+  assert.deepEqual(outline(flow.nodes), ["agent agent", "sh sh", "ask Which one?", "ask Ready?", "breakpoint Check", "  agent agent", "workflow workflow (runs ticket)"]);
 });
 
 test("a label made at run time is dynamic, with each expression as its source", () => {
@@ -239,31 +239,97 @@ await pipeline(args.items, (item) => agent(item, { label: "build" }), check, () 
   assert.deepEqual(outline(flow.nodes), ["pipeline over args.items", "  stage", "    agent build", "  stage", "    sh test"]);
 });
 
-test("gate() and retry() are loops with their attempts as the limit", () => {
+test("a counted for loop has its rounds as the limit, as the text writes them", () => {
   const flow = workflowFlow(
     wf(`
-const review = await gate(async (feedback) => {
+let feedback
+for (let round = 0; round < args.rounds; round++) {
   if (feedback) await agent(feedback, { label: "fix" })
-  return agent("review", { label: "review" })
-}, (r) => ({ ok: r.approved }), { attempts: args.rounds })
-await gate(() => agent("w", { label: "work" }), (v) => agent("good?", { label: "check" }), { attempts: 2 })
-await retry(() => sh("flaky", { label: "flaky" }), { attempts: 3, until: (r) => r.code === 0 })
-await retry(() => sh("again", { label: "no limit" }))
-await gate(() => 1 + 1, (v) => v > 1)
+  feedback = (await agent("review", { label: "review" })).review
+}
+for (let i = 1; i <= 2; i++) {
+  await agent("w", { label: "work" })
+  await agent("good?", { label: "check" })
+}
+for (let i = 0; i <= 2; i++) await sh("flaky", { label: "flaky" })
+for (let i = 1; i < 3; i++) await sh("from one", { label: "from one" })
+for (let i = 1; i < args.n; i++) await sh("shifted", { label: "shifted input" })
+for (let i = 0; i < 6; i += 2) await sh("by two", { label: "by two" })
+while (true) await sh("again", { label: "no limit" })
+for (let i = 0; i < 3; i++) log(i)
 `),
   );
   assert.deepEqual(outline(flow.nodes), [
-    "gate limit args.rounds",
+    "for round < args.rounds limit args.rounds",
     "  if feedback",
     "    agent fix",
     "  agent review",
-    "gate limit 2",
+    "for i <= 2 limit 2",
     "  agent work",
     "  agent check",
-    "retry limit 3",
+    "for i <= 2 limit 3",
     "  sh flaky",
-    "retry",
+    "for i < 3 limit 2",
+    "  sh from one",
+    "for i < args.n",
+    "  sh shifted input",
+    "for i < 6",
+    "  sh by two",
+    "while true",
     "  sh no limit",
+  ]);
+});
+
+test("a counted for loop's limit is a whole number of rounds, at least one, or the name the text bounds it by", () => {
+  const flow = workflowFlow(
+    wf(`
+for (let i = 0; i < 4; i++) await sh("a", { label: "four" })
+for (let i = 1; i <= 4; i++) await sh("a", { label: "four from one" })
+for (let i = 0; i < 2.5; i++) await sh("a", { label: "a fraction" })
+for (let i = 0; i < 0; i++) await sh("a", { label: "none" })
+for (let i = 1; i < 1; i++) await sh("a", { label: "none from one" })
+for (let i = 0; i < -1; i++) await sh("a", { label: "below none" })
+for (let i = 0; i < "3"; i++) await sh("a", { label: "a string" })
+for (let i = 0; i < args.n; i++) await sh("a", { label: "an input" })
+`),
+  );
+  assert.deepEqual(
+    flow.nodes.map((node) => (node.t === "loop" ? [node.label, node.limit] : [])),
+    [
+      ["i < 4", "4"],
+      ["i <= 4", "4"],
+      ["i < 2.5", undefined],
+      ["i < 0", undefined],
+      ["i < 1", undefined],
+      ["i < -1", undefined],
+      ['i < "3"', undefined],
+      ["i < args.n", "args.n"],
+    ],
+  );
+});
+
+test("checkpoint() is no step: it gives a note that ask() takes its place", () => {
+  const flow = workflowFlow(
+    wf(`
+const ok = await checkpoint("Go on?", { kind: "confirm" })
+if (ok) await checkpoint("Pick", { kind: "select", choices: ["x", (await agent("c", { label: "choice" }))] })
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), ["if ok", "  agent choice"]);
+  assert.deepEqual(flow.notes, ["The checkpoint() on line 2 is gone. Use ask() to ask the person.", "The checkpoint() on line 3 is gone. Use ask() to ask the person."]);
+});
+
+test("gate() and retry() are no loops: the steps of their functions are left out with a note", () => {
+  const flow = workflowFlow(
+    wf(`
+await gate(() => agent("w", { label: "work" }), (v) => agent("good?", { label: "check" }), { attempts: 2 })
+await retry(() => sh("flaky", { label: "flaky" }), { attempts: 3, until: (r) => r.code === 0 })
+`),
+  );
+  assert.deepEqual(outline(flow.nodes), []);
+  assert.deepEqual(flow.notes, [
+    "The step on line 2 is inside a function sous can't follow, so the graph leaves it out.",
+    "The step on line 3 is inside a function sous can't follow, so the graph leaves it out.",
   ]);
 });
 
@@ -287,7 +353,7 @@ for (const x of xs) log(x)
     "  agent each",
     "for groups",
     "  sh group",
-    "for i < args.n",
+    "for i < args.n limit args.n",
     "  sh count",
     "while !done",
     "  agent again",
@@ -448,7 +514,7 @@ if (x) {
 });
 
 test("ids stay the same when a line is added after the node", () => {
-  const before = `await sh("a", { label: "a" })\nconst r = await gate(() => agent("w", { label: "w" }), (v) => v.ok)\nif (!r.ok) return\n`;
+  const before = `await sh("a", { label: "a" })\nlet r\nfor (let i = 0; i < 2; i++) r = await agent("w", { label: "w" })\nif (!r.ok) return\n`;
   const after = "await sh(\"z\", { label: \"added\" })\n";
   const one = workflowFlow(wf(before + `await sh("c", { label: "c" })`));
   const two = workflowFlow(wf(before + after + `await sh("c", { label: "c" })`));
@@ -573,7 +639,7 @@ test("a step reads earlier results, inputs as args.<name> and the names of its c
     wf(`
 const plan = await agent("plan", { label: "plan" })
 await agent(\`Build \${plan.summary} for \${args.ticket}, see \${plan.notes} and \${args["ticket"]}\`, { label: "build", agentType: args.agent })
-await gate(async (feedback, attempt) => agent(\`fix \${feedback}\`, { label: "fix" }), (r) => r.ok)
+await parallel(reviews.map((feedback, attempt) => () => agent(\`fix \${feedback}\`, { label: "fix" })))
 await pipeline(args.items, (item) => sh(\`test \${item}\`, { label: "test" }))
 await pipeline(items, async (item) => {
   const inner = () => agent(\`build \${item}\`, { label: "inner" })
@@ -606,34 +672,39 @@ const later = await sh("x", { label: "later" })
 test("an agent's options as the text writes them", () => {
   const flow = workflowFlow(
     wf(`
-await agent("a", { label: "full", timeout: "10m", effort: "high", mode: "plan", isolation: "worktree", skills: ["tdd", "review"], mcp: ["github"], keepSession: true })
-await agent("b", { label: "asks", continue: "full", ask: true, answeredBy: "anyone", timeout: 600 })
-await sh("make", { label: "code", timeout: "5m", allowFail: true, effort: "high" })
-await agent("c", { label: "none", model: "x", retries: 2 })
+await agent("a", { label: "full", timeout: "10m", effort: "high", mode: "plan", place: "worktree", skills: ["tdd", "review"], mcp: ["github"], until: "turn" })
+const impl = session({ label: "impl", effort: "low", mode: "plan", skills: ["tdd"], mcp: ["github"] })
+await impl.send("b", { label: "first", until: "done" })
+await impl.send("c", { label: "asks", ask: true, timeout: 600, effort: "high" })
+await agent("d", { label: "odd", place: "home", until: "never", ask: false })
+await sh("make", { label: "code", timeout: "5m", allowFail: true, effort: "high", place: "worktree", until: "turn" })
+await agent("e", { label: "none", model: "x", retries: 2 })
 `),
   );
   assert.deepEqual(each(flow.nodes, "options"), [
-    ["full", { timeout: "10m", effort: "high", mode: "plan", isolation: "worktree", skills: ["tdd", "review"], mcp: ["github"], keepSession: true }],
-    ["asks", { timeout: "600", continues: "full", asks: true, answeredBy: "anyone" }],
+    ["full", { timeout: "10m", effort: "high", mode: "plan", place: "worktree", skills: ["tdd", "review"], mcp: ["github"], until: "turn" }],
+    ["first", { effort: "low", mode: "plan", skills: ["tdd"], mcp: ["github"], until: "done", session: "impl" }],
+    ["asks", { timeout: "600", effort: "high", mode: "plan", skills: ["tdd"], mcp: ["github"], asks: true, session: "impl", continues: "first" }],
+    ["odd", undefined],
     ["code", { timeout: "5m", allowFail: true }],
     ["none", undefined],
   ]);
 });
 
-test("the options of ask, checkpoint and breakpoint", () => {
+test("the options of ask and breakpoint", () => {
   const flow = workflowFlow(
     wf(`
 await ask("Which?", { choices: ["a", "b"], answeredBy: "people" })
-await checkpoint("Pick", { kind: "select", choices: ["x", "y"] })
-await checkpoint("Go on?", { kind: "confirm" })
+await ask("Pick", { choices: ["x", "y"], answeredBy: "anyone" })
+await ask("Go on?")
 await breakpoint("Check", () => agent("b", { label: "draft" }), { max: 3 })
 await breakpoint("Stop here", { max: 2 })
 `),
   );
   assert.deepEqual(each(flow.nodes, "options"), [
     ["Which?", { choices: ["a", "b"], answeredBy: "people" }],
-    ["Pick", { choices: ["x", "y"], answer: "select" }],
-    ["Go on?", { answer: "confirm" }],
+    ["Pick", { choices: ["x", "y"], answeredBy: "anyone" }],
+    ["Go on?", undefined],
     ["Check", { max: 3 }],
     ["draft", undefined],
     ["Stop here", { max: 2 }],
@@ -686,8 +757,8 @@ await agent("e", { label: "made", schema: makeSchema() })
 test("an option the text makes at run time is left out, with no note", () => {
   const flow = workflowFlow(
     wf(`
-let level = "high"
-await agent("a", { label: "made", timeout: limit, effort: level, skills: [first, "b"], keepSession: keep, isolation: where, schema: { properties: { ...base } } })
+let level = "high"; if (args.fast) level = "low"
+await agent("a", { label: "made", timeout: limit, effort: level, skills: [first, "b"], place: where, until: how, schema: { properties: { ...base } } })
 await agent("b", opts)
 await ask("Which?", { choices: list })
 await breakpoint("Check", { max: args.max })
@@ -704,23 +775,23 @@ await workflow("ticket", inputs, { place: args.place, label: "child" })
   assert.deepEqual(flow.notes, ["The agent step on line 4 takes options from opts, so its label is not known."]);
 });
 
-test("a gate's check and a retry's until, as the text writes them", () => {
+test("a while loop's and a do-while loop's condition on one line, and a for loop's limit", () => {
   const flow = workflowFlow(
     wf(`
-await gate(() => agent("w", { label: "work" }), (r) => r.ok, { attempts: 2 })
-await gate(() => agent("w", { label: "work 2" }), check)
-await retry(() => sh("flaky", { label: "flaky" }), { attempts: 3, until: (r) =>
-  r.code === 0 })
-await retry(() => sh("again", { label: "again" }))
+while (!check(review)) review = await agent("w", { label: "work" })
+do {
+  r = await sh("flaky", { label: "flaky" })
+} while (r.code !==
+  0)
+for (let i = 0; i < tries; i++) await sh("again", { label: "again" })
 `),
   );
   assert.deepEqual(
-    allNodes(flow.nodes).flatMap((node) => (node.t === "loop" ? [[node.loop, node.until]] : [])),
+    allNodes(flow.nodes).flatMap((node) => (node.t === "loop" ? [[node.loop, node.label, node.limit]] : [])),
     [
-      ["gate", "(r) => r.ok"],
-      ["gate", "check"],
-      ["retry", "(r) =>\n  r.code === 0"],
-      ["retry", undefined],
+      ["while", "!check(review)", undefined],
+      ["while", "r.code !== 0", undefined],
+      ["for", "i < tries", "tries"],
     ],
   );
 });
@@ -813,10 +884,101 @@ const mock = JSON.parse(vm.runInNewContext(`${readFileSync(join(ROOT, "docs/feat
   G: Record<string, MockNode[]>;
 };
 
-for (const name of Object.keys(mock.G)) {
+/** The mock texts that use gate(), retry() or keepSession. Their ports, below, take their place. */
+const PORTED = new Set(["ticket", "fix-flaky"]);
+
+/** The mock still draws a checkpoint() as a step. The reader draws none, and gives a note instead. */
+const notCheckpoint = (node: MockNode) => !(node.t === "step" && node.kind === "checkpoint");
+
+for (const name of Object.keys(mock.G).filter((name) => !PORTED.has(name))) {
   test(`the mock's ${name} reads as its hand-written graph`, () => {
     const flow = workflowFlow(mock.WF_TEXT[name]);
-    assert.deepEqual(flow.nodes.map(flowShape), mock.G[name].map(mockShape));
+    assert.deepEqual(flow.nodes.map(flowShape), mock.G[name].filter(notCheckpoint).map(mockShape));
+    const checkpoints = mock.G[name].length - mock.G[name].filter(notCheckpoint).length;
+    assert.equal(flow.notes.filter((note) => note.includes("checkpoint()")).length, checkpoints);
+    const ids = allNodes(flow.nodes).map((node) => node.id);
+    assert.equal(new Set(ids).size, ids.length);
+  });
+}
+
+/** The mock's ticket and fix-flaky, written with session() and a counted for loop, and their graphs. */
+const PORTS: Record<string, { text: string; graph: unknown[] }> = {
+  ticket: {
+    text: `export const meta = { name: "ticket", description: "Implement a ticket, then review it until the reviewer approves" }
+
+const impl = session({ agentType: "implementer", label: "implementer" })
+const built = await impl.send(\`Implement this ticket:\\n\${args.ticket}\`, { ask: true })
+
+let review
+for (let round = 0; round < args.rounds; round++) {
+  if (review) await impl.send(\`Address this review:\\n\${review.review}\`, { label: "address review" })
+  review = await agent(\`Review the change for: \${args.ticket}\`, {
+    agentType: "reviewer", label: "reviewer",
+    schema: { approved: "boolean", review: "string" },
+  })
+  if (review.approved) break
+}
+if (!review.approved) return { summary: built, approved: false }
+
+await sh("pnpm test", { label: "tests" })
+await sh(\`git add -A && git commit -m "\${args.ticket}"\`, { label: "commit" })
+
+return { summary: built }
+`,
+    graph: [
+      { step: "agent implementer", agent: "implementer", model: undefined, workflow: undefined },
+      {
+        loop: "for",
+        limit: "args.rounds",
+        body: [
+          { if: "review", then: [{ step: "agent address review", agent: "implementer", model: undefined, workflow: undefined }] },
+          { step: "agent reviewer", agent: "reviewer", model: undefined, workflow: undefined },
+        ],
+      },
+      { if: "!review.approved", then: ["end"] },
+      { step: "sh tests", agent: undefined, model: undefined, workflow: undefined },
+      { step: "sh commit", agent: undefined, model: undefined, workflow: undefined },
+    ],
+  },
+  "fix-flaky": {
+    text: `export const meta = { name: "fix-flaky", description: "Find why a test fails now and then, and fix it" }
+
+const repro = await run("scripts/flaky.sh", { label: "reproduce", args: [args.test, args.tries] })
+
+const cause = await agent(\`This test fails now and then:\\n\${args.test}\\n\\n\${repro.stdout}\`, {
+  agentType: "investigator", label: "investigate", ask: true,
+})
+
+for (let attempt = 1; attempt <= 2; attempt++) {
+  await agent(\`Fix the cause (attempt \${attempt}):\\n\${cause}\`, { agentType: "implementer", label: "fix" })
+  const check = await sh(\`pnpm vitest run \${args.test} --repeat 5\`, { label: "check", allowFail: true })
+  if (check.code === 0) break
+}
+
+await sh(\`pnpm vitest run \${args.test} --repeat \${args.tries}\`, { label: "verify", retries: 2 })
+`,
+    graph: [
+      { step: "run reproduce", agent: undefined, model: undefined, workflow: undefined },
+      { step: "agent investigate", agent: "investigator", model: undefined, workflow: undefined },
+      {
+        loop: "for",
+        limit: "2",
+        body: [
+          { step: "agent fix", agent: "implementer", model: undefined, workflow: undefined },
+          { step: "sh check", agent: undefined, model: undefined, workflow: undefined },
+        ],
+      },
+      { step: "sh verify", agent: undefined, model: undefined, workflow: undefined },
+    ],
+  },
+};
+
+for (const [name, port] of Object.entries(PORTS)) {
+  test(`the mock's ${name}, written with session() and a for loop, reads as its hand-written graph`, () => {
+    assert.ok(PORTED.has(name));
+    const flow = workflowFlow(port.text);
+    assert.deepEqual(flow.nodes.map(flowShape), port.graph);
+    assert.deepEqual(flow.notes, []);
     const ids = allNodes(flow.nodes).map((node) => node.id);
     assert.equal(new Set(ids).size, ids.length);
   });

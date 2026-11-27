@@ -75,6 +75,7 @@ return value.nested.value`),
   });
 
   it("accepts real vm-realm plain records and preserves JSON-observable members", async () => {
+    const journal: JournalEntry[] = [];
     // The schema carries a record made in the script's realm to the runner, which returns it.
     const runner: AgentRunner = {
       async run(_prompt, options) {
@@ -86,27 +87,29 @@ return value.nested.value`),
   label: 'echo',
   schema: { type: 'object', examples: [{ flag: null, nested: { order: ['a', 'b'] } }] }
 })
-const fromCheckpoint = await checkpoint('explicit')
+const fromCheckpoint = await ask('explicit')
 return {
   fromAgent,
   agentHasFlag: 'flag' in fromAgent,
   fromCheckpoint,
-  checkpointHasFlag: 'flag' in fromCheckpoint
+  checkpointHasFlag: 'flag' in JSON.parse(fromCheckpoint)
 }`),
-      { agent: runner, persistLogs: false, confirm: async () => ({ flag: null }) },
+      { agent: runner, persistLogs: false, confirm: async () => ({ flag: null }), onAgentJournal: (entry) => journal.push(entry) },
     );
+    // ask() hands the script the reply as JSON text. The journal keeps the reply's record.
     assert.deepEqual(JSON.parse(JSON.stringify(result.result)), {
       fromAgent: { flag: null, nested: { order: ["a", "b"] } },
       agentHasFlag: true,
-      fromCheckpoint: { flag: null },
+      fromCheckpoint: JSON.stringify({ flag: null }),
       checkpointHasFlag: true,
     });
+    assert.deepEqual(journal.find((entry) => entry.index === 1)?.result, { flag: null });
   });
 
   it("records invalid explicit JSON replies with the confirm origin", async () => {
     let call: WorkflowCallRecord | undefined;
     await assert.rejects(runWorkflow(
-      script(`try { await checkpoint('map reply') } catch (error) { return error.code }`),
+      script(`try { await ask('map reply') } catch (error) { return error.code }`),
       { agent: { async run() { return "unused"; } }, confirm: async () => new Map([["a", 1]]), persistLogs: false,
         onCallRecord: (record) => { call = record; } },
     ), (error: unknown) => error instanceof WorkflowError && error.code === WorkflowErrorCode.CHECKPOINT_REQUIRED);

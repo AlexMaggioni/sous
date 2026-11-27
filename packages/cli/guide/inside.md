@@ -28,9 +28,7 @@ sous show $SOUS_RUN_ID --json
 
 ## Asking the person
 
-When your step was started with `ask: true`, reply with only one line, which starts with
-`QUESTION:`. The run asks the person, and your session goes on with their answer. Otherwise, do your best with
-what you have, and say what you assumed in your answer.
+Do your best with what you have, and say what you assumed in your answer.
 
 ## Your account
 

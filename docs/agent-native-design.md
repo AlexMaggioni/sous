@@ -17,7 +17,7 @@ The live spike of 2026-11-24 answered the steering and marker questions. This do
 These facts come from `test/architecture.test.mjs` and the code. Every piece below fits them.
 
 1. **Line caps.** `workflow-manager.ts` sits exactly at its cap of 2,084 lines. A file fails above its cap, and also when it falls 50 or more lines below it. An edit to the manager keeps its line count, or a commit of its own raises the cap and says why. `workflow.ts` (cap 2,312) gets one net-zero edit. The function caps on `runLevel`, `agentImplementation` and `runLive` work the same way.
-2. **Member caps are exact.** `WorkflowManager` keeps 11 methods, `WorkflowRunOptions` 36 fields and `AgentOptions` 18 fields. No piece adds to them. New run settings travel on the run record and through `StepsOptions`, which has no cap. The script's `agent()` options are a plain record that `sous-globals.ts` strips before they reach `AgentOptions`, so `answeredBy` costs no field.
+2. **Member caps are exact.** `WorkflowManager` keeps 11 methods, `WorkflowRunOptions` 36 fields and `AgentOptions` 18 fields. No piece adds to them. New run settings travel on the run record and through `StepsOptions`, which has no cap. `answeredBy` goes on `ask()`, whose options never reach `AgentOptions`, so it costs no field.
 3. **Machine access.** A file that imports `fs`, `child_process`, `os` or the like must be listed in `TOUCHES_MACHINE`, and a listed file that stops importing them fails too. Every new file in this plan stays pure. It reaches the disk through files already listed: `json-file.ts`, `runs/records.ts`, `runs/store.ts` and `programs.ts` in the engine, and `cli.ts` in the cli. So no piece changes that table.
 4. **Run files.** Paths in the run folders (records, inbox, logs, slots, queue) are built only in `runs/store.ts` or `runs/persistence/`. The new per-run files (activity, tell, note) get their paths in `store.ts`.
 5. **Environment.** In the engine, only a few files read `process.env`, among them `runs/home.ts`, `launch.ts`, `worker.ts` and `notify.ts`. The whole cli `src` folder may. So the cli works out who is calling and passes it to the engine. `homedir()` is allowed only in a few files, `programs.ts` among them, and `CLAUDE_CONFIG_DIR` and `CODEX_HOME` may be named only in the adapters. Skill and hook places therefore come from the adapters.
@@ -297,7 +297,7 @@ export interface CheckpointCallContext { callIndex: number; hash: string; scope:
 - In `sous-globals.ts`:
   - `ask(question, { choices, answeredBy })` accepts `"people"` or `"anyone"` and fails on anything else. It calls `deps.markedCheckpoint` when `answeredBy` is `"anyone"`.
   - `breakpoint` passes `{ breakpoint: true }`. It fails when given `answeredBy`, because breakpoints stay with people.
-  - `agent(prompt, { ask: true, answeredBy })` strips `answeredBy` with `ask`, and its questions carry `step: askLabel`.
+  - This plan also let `agent(prompt, { ask: true, answeredBy })` ask, with `step: askLabel` on its questions. The workflow shape removed that. `answeredBy` on an agent step now fails the script, and `ask` on a step has no effect yet.
 - The worker's `Question` gains `answeredBy: "people" | "anyone"` and `step?: string`. A breakpoint is always `"people"`. Question files written before the change read as `"people"`.
 - `Answer` gains `by` and `through`.
 

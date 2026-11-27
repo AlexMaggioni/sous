@@ -1,7 +1,7 @@
 // How the engine names a step at run time, so a run's steps find their node in the graph of the
 // text. Read from the engine itself: packages/engine/src/sous-globals.ts names each call,
 // runs/records.ts prefixes a nested run's steps, and display.ts keeps only agent and code calls as
-// steps. ask, checkpoint and breakpoint wait as questions, under the label "checkpoint".
+// steps. ask and breakpoint wait as questions, under the label "checkpoint".
 import type { FlowStep, NestedRun, Step } from "../api/contract.ts";
 
 /** A run's step, with the answer turns of an asking agent, such as "triager (answer 1)". */
@@ -51,7 +51,7 @@ export function shownLabel(node: FlowStep): string {
 
 /** The node takes no label, so the engine names its step by its kind. */
 const unlabeled = (node: FlowStep) => node.label === node.kind;
-const waits = (node: FlowStep) => node.kind === "ask" || node.kind === "checkpoint" || node.kind === "breakpoint";
+const waits = (node: FlowStep) => node.kind === "ask" || node.kind === "breakpoint";
 
 /** Whether the engine gives this node's step this label: the same label, the same template, or the name of its kind. */
 export function namesStep(node: FlowStep, label: string): boolean {

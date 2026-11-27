@@ -7,7 +7,7 @@ Each question's `answeredBy` says who may answer it:
 - `"anyone"`: you may answer it yourself. The workflow's author allowed it, or the person started
   the run with `--let-agent-answer`.
 
-An agent's step that asks names itself in `step`. The calls in `next` are the ones that fit you.
+The calls in `next` are the ones that fit you.
 
 ## Show it, then pass on the answer
 

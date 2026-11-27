@@ -352,20 +352,18 @@ const AGENT_OPTION_KEYS = [
   "schema",
   "model",
   "mode",
-  "configOptions",
-  "isolation",
   "agentType",
   "retries",
   "cwd",
   "mcpServers",
   "images",
-  "keepSession",
   // sous additions
   "timeout",
   "effort",
   "skills",
   "mcp",
-  "continue",
+  "session",
+  "until",
 ] as const;
 const AGENT_OPTION_KEY_SET = new Set<string>(AGENT_OPTION_KEYS);
 // Options a step once took. A step that sets one is refused with a message that names it.
@@ -376,6 +374,13 @@ const REMOVED_AGENT_OPTIONS: ReadonlyArray<readonly [string, string]> = [
   ["meta", "meta is gone. No harness read it. Remove it from the step."],
   ["promptMeta", "promptMeta is gone. No harness read it. Remove it from the step."],
   ["resume", "resume is gone. A resume replays the calls that match the recorded ones. Remove it from the step."],
+  // A session handle replaced the two below. keepSession changed nothing at run time.
+  ["keepSession", "keepSession is gone. Make a session with session() and send() each turn on it."],
+  ["continue", "continue is gone. Make a session with session() and send() each turn on it."],
+  ["isolation", 'isolation is gone. Write place: "worktree" instead.'],
+  ["configOptions", "configOptions is gone. No program read it. Remove it from the step."],
+  // The person answers an agent's question in its session now.
+  ["answeredBy", "answeredBy is gone. Remove it. The person steps in with `sous join`."],
 ];
 
 export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema | undefined> {
@@ -395,13 +400,6 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    */
   mode?: string;
   /**
-   * Accepted for older scripts. No harness reads it. The reserved `model` id is still
-   * rejected (use `model`), and a non-empty map still enters the journal identity hash,
-   * in ascending option-id order, so old journals keep replaying.
-   */
-  configOptions?: Record<string, string | boolean>;
-  isolation?: "worktree";
-  /**
    * Name of an agent. The runner's route() finds it and binds its tools, model and prompt. An
    * explicit `model` overrides the agent's model, and the agent's model overrides the run's.
    * A runner with no route() gets the name as a prose hint in the instructions.
@@ -411,7 +409,7 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
   retries?: number;
   /**
    * Working directory for this agent's step. A relative path resolves against the
-   * run's base cwd (WorkflowRunOptions.cwd). Worktree isolation overrides it (the worktree
+   * run's base cwd (WorkflowRunOptions.cwd). A worktree place overrides it (the worktree
    * IS the agent's cwd). ADDITIVE like mcpServers: it wires the agent's environment, not
    * the logical call, so it is intentionally NOT part of the resume identity hash
    * (hashAgentCall).
@@ -430,12 +428,6 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    */
   images?: readonly PromptImage[];
   /**
-   * Marks the agent's session record `keptOpen` and changes nothing else. It stays in
-   * the call's input fingerprint (hashCallInputs), not in the resume identity hash
-   * (hashAgentCall).
-   */
-  keepSession?: boolean;
-  /**
    * Time limit for one attempt, in seconds or as "90s", "10m", "1h". When it
    * runs out the attempt fails with a recoverable error, so the step's retries apply.
    */
@@ -447,10 +439,31 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
   /** MCP server names (from the host's servers file). Replaces the agent definition's list. */
   mcp?: string[];
   /**
-   * Continue the session of an earlier step with this label instead of a fresh
-   * session. Falls back to fresh when the session cannot be reopened.
+   * The session this step is a turn of. turns/session.ts sets it: a handle's send() gives the
+   * handle's label as `key`, with start "fresh" on the first turn and "kept" after. A kept turn
+   * goes on in the session the run's map holds for its key, and fails rather than start fresh
+   * when the program lost it. agent() with `place: "worktree"` gives a session with no key and
+   * that place: the one step works in a worktree of its own. A step with no session is fresh.
    */
-  continue?: string;
+  session?: StepSession;
+  /** When the step ends: after one turn, or when the agent says it is done. Phase 3 reads it.
+   *  "done" goes into the call hash. */
+  until?: "turn" | "done";
+}
+
+/** A step's session. A step without a key runs one turn on a session no later step uses. */
+export interface StepSession {
+  key?: string;
+  start: "fresh" | "kept";
+  place?: "worktree";
+}
+
+/** What the run's map holds for a session key: the session, the hash of its last turn, and the
+ *  cost its turns recorded, which a kept turn's program reports again in its total. */
+interface SessionEntry {
+  ref?: AgentSessionRef;
+  lastHash: string;
+  cost: number;
 }
 
 interface RuntimeState {
@@ -589,17 +602,9 @@ async function runLevel<T>(
   // The current phase, one per parallel() or pipeline() branch (steps/phase-scope.ts).
   const phaseNow = phaseScope(meta.phases?.[0]?.title);
 
-  // The latest session of the step with this label, for agent({ continue }).
-  const sessionForLabel = (label: string | undefined): AgentSessionRef | undefined => {
-    if (typeof label !== "string" || label === "") return undefined;
-    for (let i = state.agentSessions.length - 1; i >= 0; i--) {
-      const record = state.agentSessions[i]!;
-      if (record.label !== label) continue;
-      const { callIndex: _callIndex, label: _label, phase: _phase, keptOpen: _keptOpen, ...ref } = record;
-      return ref as AgentSessionRef;
-    }
-    return undefined;
-  };
+  // Each session key's session, the hash of its last turn and its cost so far. A replayed turn
+  // fills it from its row, a live one when it settles. A nested workflow has a map of its own.
+  const sessions = new Map<string, SessionEntry>();
 
   const agentRunner = options.agent;
   // Global caps are shared with any nested workflow() so they hold across nesting.
@@ -619,7 +624,7 @@ async function runLevel<T>(
   };
   shared.resumeActivity = resumeActivity;
   const limiter = shared.limiter;
-  // A step with isolation "worktree" works in a worktree of its own, which places makes and removes.
+  // A step with place "worktree" works in a worktree of its own, which places makes and removes.
   const openStepWorktree = (callIndex: number, label: string): StepWorktree => {
     const made = places.makeStepWorktree(baseCwd, { runId, index: callIndex, label });
     return "tree" in made ? { isolated: true, cwd: made.tree.dir, tree: made.tree } : { isolated: false, cwd: baseCwd, reason: made.reason };
@@ -904,6 +909,7 @@ async function runLevel<T>(
     codeSpec?: ExecSpec,
   ): Promise<unknown> => {
     validateAgentOptions(agentOptions, realmObjectPrototype);
+    checkSessionFields(agentOptions);
     throwIfAborted();
 
     checkAgentLimit();
@@ -916,6 +922,7 @@ async function runLevel<T>(
 
     // The step as the engine knows it. The runner routes it, and the route gives the model the
     // step asked for, its agent's part of the call hash, its isolation and its agent's prompt.
+    // A step's place "worktree" goes to the runner as its isolation.
     // Model order: the step's own model, its agent's, then the run's model for this step. The
     // run's model is the phase's route, else meta.model, else the run's default.
     const ask: StepAsk = {
@@ -926,7 +933,7 @@ async function runLevel<T>(
       skills: agentOptions.skills,
       mcp: agentOptions.mcp,
       timeout: agentOptions.timeout,
-      isolation: agentOptions.isolation,
+      isolation: agentOptions.session?.place,
       runModel: resolveModelForPhase(assignedPhase, routingConfig) ?? options.defaultModel,
     };
     // A code step, and a runner with no route of its own, get the engine's route, which has no agent.
@@ -940,26 +947,13 @@ async function runLevel<T>(
       );
     }
     const effectiveMode = agentOptions.mode;
-    const effectiveConfigOptions = agentOptions.configOptions === undefined ? undefined : { ...agentOptions.configOptions };
-    const effectiveAgentOptions = { ...agentOptions, configOptions: effectiveConfigOptions };
     // For display in /workflows: the model this agent runs on, its explicit/phase/default
     // spec. The real resolved id overrides this via onModelResolved once the subagent
     // session is created.
     let displayModel = modelSpec;
-    if (hasModelConfigOption(effectiveConfigOptions)) {
-      // Surface the rejected effective call to validation/observability without invoking the
-      // AgentRunner. The following assertion is the pre-session authority.
-      options.onAgentStart?.({
-        label: pendingLabel,
-        phase: assignedPhase,
-        prompt,
-        model: displayModel,
-        configOptions: effectiveConfigOptions,
-        callIndex: state.callSeq,
-        scope: runId,
-      });
-    }
-    assertNoModelConfigOption(effectiveConfigOptions, pendingLabel);
+    // A kept turn goes on in its key's session. With no entry yet, it is the session's first turn.
+    const sessionKey = agentOptions.session?.key;
+    const kept = agentOptions.session?.start === "kept" && sessionKey !== undefined ? sessions.get(sessionKey) : undefined;
 
     const resolvedIsolation = route.isolation;
     const retryAttempts =
@@ -973,14 +967,16 @@ async function runLevel<T>(
       modelSpec,
       effectiveMode,
       assignedPhase,
-      effectiveAgentOptions,
+      agentOptions,
       route.agentKey,
+      kept?.lastHash,
     );
     const callPath = captureCallPath(vmFilename, preludeLines);
     const callInputs = {
       cwd: agentOptions.cwd ?? null,
       isolation: resolvedIsolation ?? null,
-      keepSession: agentOptions.keepSession === true,
+      // keepSession is gone. Its key stays, always false, so the inputs hash of every step holds.
+      keepSession: false,
       images: agentOptions.images ?? null,
       mcpServers: agentOptions.mcpServers ?? null,
       // meta, promptMeta and backends are gone. Their keys stay, always null, so the inputs
@@ -1004,7 +1000,6 @@ async function runLevel<T>(
         label,
         ...(modelSpec !== undefined ? { modelRequested: modelSpec } : {}),
         ...(effectiveMode === undefined ? {} : { modeRequested: effectiveMode }),
-        ...(effectiveConfigOptions === undefined ? {} : { configOptionsRequested: { ...effectiveConfigOptions } }),
         ...(resolvedIsolation !== undefined ? { isolation: resolvedIsolation } : {}),
       },
     });
@@ -1036,7 +1031,7 @@ async function runLevel<T>(
         phase: assignedPhase,
         prompt,
         model: displayModel,
-        configOptions: effectiveConfigOptions,
+        configOptions: undefined, // Gone from steps. The key stays, so the event's shape holds.
         callIndex,
         path: callPath,
         scope: runId,
@@ -1098,6 +1093,14 @@ async function runLevel<T>(
     // The cwd the runner gets: the worktree when it is isolated, else options.cwd under the base.
     const stepCwd = (worktree: StepWorktree | undefined): string =>
       worktree?.isolated ? worktree.cwd : resolvePath(baseCwd, agentOptions.cwd ?? ".");
+
+    // Puts this turn in its key's entry of the session map: its session, its hash, and the
+    // session's cost so far (sessionCost).
+    const settleSession = (ref: AgentSessionRecord | undefined, spent: number | undefined, lastAttempt: number | undefined) => {
+      if (sessionKey === undefined) return;
+      const held = ref ? sessionRefOf(ref) : kept?.ref;
+      sessions.set(sessionKey, { ...(held ? { ref: held } : {}), lastHash: callHash, cost: sessionCost(ref, kept, spent, lastAttempt) });
+    };
 
     // The recorded call whose session a live call can go on in: the one at its own index.
     let continuationIndex: number | undefined = callIndex;
@@ -1209,7 +1212,7 @@ async function runLevel<T>(
         const session = slot
           ? sessionRecord(
               slot,
-              agentOptions.keepSession === true ||
+              sessionKey !== undefined ||
                 isProviderUsageLimit(workflowError) ||
                 isAuthRequired(workflowError),
             )
@@ -1272,8 +1275,11 @@ async function runLevel<T>(
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           const slot: AttemptSlots = { sealed: false };
           const resumingTurn = attempt === 1 && continuationCandidate !== undefined && !continuationSkipReason;
-          const continueFromSession = (resumingTurn ? continuationCandidate.sessionRef : undefined)
-            ?? sessionForLabel(agentOptions.continue);
+          // A kept turn's gauge starts at its session's cost so far, with this step's earlier attempts.
+          const keptRef = !resumingTurn && kept?.ref
+            ? { ...kept.ref, costGauge: kept.cost + (sumUsage(sealedUsage)?.cost ?? 0) }
+            : undefined;
+          const continueFromSession = (resumingTurn ? continuationCandidate.sessionRef : undefined) ?? keptRef;
           let attemptController: AbortController | undefined;
           let unregisterAttempt: (() => void) | undefined;
           let hostAttemptRegistered = false;
@@ -1320,9 +1326,9 @@ async function runLevel<T>(
                   images: agentOptions.images,
                   runId,
                   ...(continueFromSession === undefined ? {} : { continueFromSession }),
-                  // Agent({ continue }) sends this step's prompt into the earlier
-                  // session. Only a resumed, interrupted turn gets the runner's resume instruction.
-                  ...(continueFromSession !== undefined && !resumingTurn ? { continueWithPrompt: true } : {}),
+                  // A kept turn sends this step's prompt into its session. Only a resumed,
+                  // interrupted turn gets the runner's resume instruction.
+                  ...(keptRef ? { continueWithPrompt: true } : {}),
                   callIndex,
                   callHash,
                   callPath,
@@ -1379,7 +1385,8 @@ async function runLevel<T>(
                 : await rawRunnerPromise;
             } finally {
               sealAttempt(slot);
-              if (continueFromSession !== undefined && !signal.aborted) {
+              // A kept turn goes on in its session or fails, so only a resumed turn gets a notice.
+              if (continueFromSession !== undefined && !keptRef && !signal.aborted) {
                 const continuation = slot.provenance?.source === "live"
                   ? slot.provenance.continuation
                   : undefined;
@@ -1409,8 +1416,9 @@ async function runLevel<T>(
             const resultSnapshot = strictSnapshot(result, `agent "${label}" result`, label);
             recordTokens(result, slot.usage);
             const usage = terminalUsage();
-            const session = sessionRecord(slot, agentOptions.keepSession === true);
+            const session = sessionRecord(slot, sessionKey !== undefined);
             if (session) state.agentSessions.push(session);
+            settleSession(session, usage?.cost, slot.usage?.cost);
             const entry = deepFreeze({
               index: callIndex,
               hash: callHash,
@@ -1564,6 +1572,7 @@ async function runLevel<T>(
       }
       const cachedUsage = row.entry.usage ? copyValidUsage(row.entry.usage) : undefined;
       if (cachedSession) state.agentSessions.push(cachedSession);
+      settleSession(cachedSession, cachedUsage?.cost, undefined);
       const entry = deepFreeze({
         index: callIndex,
         hash: callHash,
@@ -1801,48 +1810,6 @@ async function runLevel<T>(
     return observeResumeActivity(promise);
   };
 
-  // Thin bounded-retry / validation-gate combinators. Sugar over the for-loop +
-  // agent() pattern, but each attempt is a real agent() call so it auto-journals
-  // under a stable callSeq (resume-safe). No backoff: there is no timer in the vm
-  // and a delay has no resume value. NOTE: attempt N+1's call hash depends on N's
-  // live result, so a retry/gate chain cache-miss-cascades on resume (correct).
-  const retry = async (
-    thunk: (attempt: number) => Promise<unknown> | unknown,
-    opts: { attempts?: number; until?: (r: unknown) => boolean } = {},
-  ) => {
-    const attempts = Math.max(1, opts.attempts ?? 3);
-    let last: unknown;
-    for (let i = 0; i < attempts; i++) {
-      last = await thunk(i);
-      if (!opts.until || opts.until(last)) return last;
-    }
-    return last; // attempts exhausted — return the last result (caller inspects it)
-  };
-  const gate = async (
-    thunk: (feedback: string | undefined, attempt: number) => Promise<unknown> | unknown,
-    validator: (r: unknown) => Promise<unknown> | unknown,
-    opts: { attempts?: number } = {},
-  ) => {
-    const attempts = Math.max(1, opts.attempts ?? 3);
-    let feedback: string | undefined;
-    let last: unknown;
-    let lastVerdict: unknown = null;
-    for (let i = 0; i < attempts; i++) {
-      last = await thunk(feedback, i);
-      lastVerdict = await validator(last);
-      const accepted =
-        typeof lastVerdict === "boolean"
-          ? lastVerdict
-          : Boolean((lastVerdict as { ok?: unknown } | null)?.ok);
-      if (accepted) return { ok: true, value: last, verdict: lastVerdict ?? null, attempts: i + 1 };
-      feedback =
-        typeof lastVerdict === "boolean"
-          ? undefined
-          : (lastVerdict as { feedback?: string } | null)?.feedback; // fed into the next attempt
-    }
-    return { ok: false, value: last, verdict: lastVerdict ?? null, attempts };
-  };
-
   // What a checkpoint() call needs from this run.
   const checkpointRun: CheckpointRun = {
     runId,
@@ -1885,7 +1852,7 @@ async function runLevel<T>(
 
   // Code steps, questions, breakpoints and choose(), built on agent() and checkpoint().
   const sous = createSousGlobals({
-    agent: agent as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
+    agent: agent as (prompt: string, options: Record<string, unknown>) => Promise<unknown>,
     code,
     checkpoint: checkpoint as (prompt: string, options?: Record<string, unknown>) => Promise<unknown>,
     markedCheckpoint: markedCheckpoint as (prompt: string, options: Record<string, unknown>, purpose: CheckpointCallContext["purpose"]) => Promise<unknown>,
@@ -1893,24 +1860,15 @@ async function runLevel<T>(
     log,
     listSavedWorkflows: options.listSavedWorkflows,
     stepOverrides: options.stepOverrides,
+    resolveCwd: (cwd) => resolvePath(baseCwd, cwd ?? "."),
+    track: tracked,
   });
 
   const context = vm.createContext({
-    agent: tracked(sous.agent),
-    sh: tracked(sous.sh),
-    js: tracked(sous.js),
-    py: tracked(sous.py),
-    run: tracked(sous.run),
-    waitUntil: tracked(sous.waitUntil),
-    ask: tracked(sous.ask),
-    breakpoint: tracked(sous.breakpoint),
-    choose: tracked(sous.choose),
+    ...Object.fromEntries(Object.entries(sous).map(([name, fn]) => [name, tracked(fn as (...args: never[]) => unknown)])),
     parallel: tracked(parallel),
     pipeline: tracked(pipeline),
     workflow: tracked(workflowFn),
-    retry: tracked(retry),
-    gate: tracked(gate),
-    checkpoint: tracked(checkpoint),
     log,
     phase,
     args: options.args,
@@ -2141,8 +2099,8 @@ function hashAgentCall(
   phase: string | undefined,
   options: AgentOptions,
   agentDefKey: string | null,
+  after?: string,
 ): string {
-  const configOptions = sortedConfigOptions(options.configOptions);
   const identity = JSON.stringify({
     prompt,
     model: model ?? null,
@@ -2150,7 +2108,6 @@ function hashAgentCall(
     // but journals written before modes existed must keep replaying for mode-less
     // calls — an unconditional `mode: null` key would cache-miss every old journal.
     ...(mode !== undefined ? { mode } : {}),
-    ...(configOptions ? { configOptions } : {}),
     // tier is gone, and a step that sets it is refused. The key stays, always null, so every
     // call keeps the hash it had.
     tier: null,
@@ -2163,36 +2120,46 @@ function hashAgentCall(
     // Included only when set, so older journals keep replaying.
     ...(options.effort !== undefined ? { effort: options.effort } : {}),
     ...(options.skills !== undefined ? { skills: options.skills } : {}),
+    // A kept turn holds the hash of its session's turn before it, so the same prompt on two
+    // sessions hashes apart. A step that runs until done hashes apart from one turn.
+    ...(after !== undefined ? { after } : {}),
+    ...(options.until === "done" ? { until: options.until } : {}),
   });
   return createHash("sha256").update(identity).digest("hex");
 }
 
-function sortedConfigOptions(
-  configOptions: Record<string, string | boolean> | undefined,
-): Record<string, string | boolean> | undefined {
-  if (!configOptions || Object.keys(configOptions).length === 0) return undefined;
-  const ids = Object.keys(configOptions).sort();
-  const sorted = Object.fromEntries(ids.map((id) => [id, configOptions[id]]));
-  // JSON.stringify normally hoists integer-like object keys into numeric order. Option ids
-  // are unrestricted strings, so expose the already-sorted key list through [[OwnPropertyKeys]]
-  // and keep the contract lexicographic for ids such as "10" and "2" as well.
-  return new Proxy(sorted, { ownKeys: () => ids });
+/**
+ * A session's cost so far after a turn. That is the program's own total for the session when it
+ * gave one. Without it, the turn's cost: a kept turn's every attempt ran in the session, and a
+ * fresh turn's earlier attempts ran in sessions of their own, so only its last attempt counts.
+ */
+function sessionCost(ref: AgentSessionRecord | undefined, kept: SessionEntry | undefined, spent: number | undefined, lastAttempt: number | undefined): number {
+  const gauge = ref?.costGauge;
+  if (typeof gauge === "number" && Number.isFinite(gauge)) return gauge;
+  return kept?.ref ? kept.cost + (spent ?? 0) : (lastAttempt ?? spent ?? 0);
 }
 
-function assertNoModelConfigOption(
-  configOptions: Record<string, string | boolean> | undefined,
-  label: string,
-): void {
-  if (!configOptions || !("model" in configOptions)) return;
-  throw new WorkflowError(
-    `agent "${label}": configOptions option "model" with authored value ${JSON.stringify(configOptions.model)} is reserved; use the model field instead`,
-    WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
-    { recoverable: false, agentLabel: label },
-  );
+/** A session as the map keeps it: the ref, without the record's call fields and its gauge. */
+function sessionRefOf(record: AgentSessionRef): AgentSessionRef {
+  const { costGauge: _gauge, callIndex: _index, label: _label, phase: _phase, keptOpen: _kept, ...ref } = record as AgentSessionRecord;
+  return ref;
 }
 
-function hasModelConfigOption(configOptions: Record<string, string | boolean> | undefined): boolean {
-  return Boolean(configOptions && "model" in configOptions);
+/** Checks a step's session and until fields, which session handles and agent() send. */
+function checkSessionFields(options: AgentOptions): void {
+  const refuse = (message: string): never => {
+    throw new WorkflowError(message, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, { recoverable: false });
+  };
+  if (options.until !== undefined && options.until !== "turn" && options.until !== "done") refuse('until is "turn" or "done"');
+  const session = options.session as unknown;
+  if (session === undefined) return;
+  if (session === null || typeof session !== "object" || Array.isArray(session)) refuse("session takes an object");
+  const { key, start, place, ...rest } = session as Record<string, unknown>;
+  if (Object.keys(rest).length > 0) refuse(`session takes key, start and place, not ${Object.keys(rest).join(", ")}`);
+  if (start !== "fresh" && start !== "kept") refuse('session.start is "fresh" or "kept"');
+  if (key !== undefined && (typeof key !== "string" || key.trim() === "")) refuse("session.key is a label");
+  if (start === "kept" && key === undefined) refuse("a kept session needs a key");
+  if (place !== undefined && place !== "worktree") refuse('session.place is "worktree"');
 }
 
 /**
