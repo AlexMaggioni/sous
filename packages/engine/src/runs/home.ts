@@ -3,7 +3,7 @@
 
 import { constants, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { readStrictJsonFile, writeJsonFile } from "../json-file.js";
 import { runFolders } from "./store.js";
 
@@ -91,6 +91,12 @@ export function homeWriteProblem(paths: HomePaths = homePaths()): string | undef
   } catch (error) {
     return (error as Error).message;
   }
+}
+
+/** The config file as a person reads it, with ~ for the home folder when it is under it. */
+export function configName(paths: Pick<HomePaths, "config">): string {
+  const home = homedir();
+  return paths.config.startsWith(`${home}${sep}`) ? `~${paths.config.slice(home.length)}` : paths.config;
 }
 
 export function loadConfig(paths: HomePaths = homePaths()): OrcConfig {

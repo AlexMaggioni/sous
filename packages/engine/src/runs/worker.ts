@@ -12,7 +12,7 @@ import { projectWorkflows } from "../workflows/dir.js";
 import { shownPrompt, type CheckpointCallContext } from "../checkpoint-call.js";
 import { WorkflowManager, type PersistedRunStopResult } from "../workflow-manager.js";
 import { closedLine, closeRunWorktrees, runPlaces } from "../places/places.js";
-import { ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
+import { configName, ensureHome, homePaths, loadConfig, loadSecrets, type HomePaths } from "./home.js";
 import { ask, hint, questionId, removeRunQuestions, standIn, type Question } from "./inbox.js";
 import { notify } from "./notify.js";
 import { approvedLookup } from "./approval-check.js";
@@ -317,7 +317,7 @@ async function runOnAccounts(
     mcp: lookupMcpServers(settings, { ...base, ...secrets }),
     accounts,
     // A runner from a test or the dry run brings its own programs.
-    ...(inner ? {} : { programs: programLookup(config) }),
+    ...(inner ? {} : { programs: programLookup(config, configName(paths)) }),
     onSlot: ({ label, state }) => {
       if (state === "waiting" && slots.held().length >= Math.max(1, loadConfig(paths).maxAgents)) {
         log(`${stamp()} queued     ${label ?? "agent"} waits for a free agent slot`);

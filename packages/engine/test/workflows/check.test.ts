@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { checkWorkflow } from "../../src/workflows/check.js";
+import { configName } from "../../src/runs/home.js";
 import { setup } from "../runs/fixture.js";
 import { write } from "../helpers/files.js";
 
@@ -61,6 +62,8 @@ await agent('x', { agentType: args.who })`,
     const defaults = checkWorkflow(paths, projectDir, "named").problems;
     assert.equal(defaults.length, 1, defaults.join("\n"));
     assert.match(defaults[0]!, missing("builder", "builder"));
+    // No global rulesync folder is set, and the message names the config file of this home.
+    assert.ok(defaults[0]!.includes(`(none is set: rulesyncGlobal in ${configName(paths)})`), defaults[0]);
 
     // The values given replace the defaults.
     write(join(projectDir, ".rulesync", "subagents", "builder.md"), "---\nname: builder\ndescription: builds\n---\nBuild it.\n");

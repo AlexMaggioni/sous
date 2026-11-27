@@ -77,7 +77,7 @@ async function readStdin(): Promise<string> {
 }
 
 function runSetupToken(paths: HomePaths): void {
-  const found = setupTokenProgram(loadConfig(paths));
+  const found = setupTokenProgram(paths, loadConfig(paths));
   if ("problem" in found) throw new Error(found.problem);
   const ran = spawnSync(found.path, ["setup-token"], { stdio: "inherit", env: found.env });
   if (ran.error) throw new Error(`claude setup-token did not start: ${ran.error.message}`);

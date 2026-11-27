@@ -3,12 +3,12 @@
 
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { checkPrograms } from "../src/programs.js";
-import { homePaths, loadConfig } from "../src/runs/home.js";
+import { configName, homePaths, loadConfig } from "../src/runs/home.js";
 
 const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../test/fakes");
 delete process.env.FAKE_VERSION;
@@ -62,5 +62,17 @@ describe("checkPrograms --live", () => {
       reports.map((report) => report.live?.model.split("/")[0]),
       ["claude", "codex"],
     );
+  });
+});
+
+describe("configName", () => {
+  it("names the config file with ~ under the home folder, and in full elsewhere", () => {
+    assert.equal(configName(homePaths(join(homedir(), ".sous"))), "~/.sous/config.json");
+    assert.equal(configName(homePaths(join(homedir(), "elsewhere", "sous"))), "~/elsewhere/sous/config.json");
+    const outside = join(mkdtempSync(join(tmpdir(), "engine-config-")), "sous");
+    assert.ok(!outside.startsWith(homedir()), outside);
+    assert.equal(configName(homePaths(outside)), join(outside, "config.json"));
+    // A folder whose name only starts like the home folder's is not under it.
+    assert.equal(configName({ config: `${homedir()}-other/config.json` }), `${homedir()}-other/config.json`);
   });
 });

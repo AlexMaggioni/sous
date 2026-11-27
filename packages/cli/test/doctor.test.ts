@@ -34,9 +34,10 @@ describe("sous doctor", () => {
     const run = await sous(paths, ["doctor"]);
     assert.equal(run.code, 1);
     const lines = run.out.split("\n");
+    // The test's home is outside HOME, so the line names its config file in full.
     assert.deepEqual(lines.slice(0, 3), [
       "Claude Code",
-      "  missing   claudePath in ~/.sous/config.json is /nonexistent/claude, which is not a program file. Point it at Claude Code, or remove it.",
+      `  missing   claudePath in ${paths.config} is /nonexistent/claude, which is not a program file. Point it at Claude Code, or remove it.`,
       "Codex 0.169.0",
     ]);
     assert.ok(lines.includes("  talks     yes"), "Codex is checked all the same");
@@ -60,7 +61,7 @@ describe("sous doctor", () => {
     const reports = async (claudePath?: string) => {
       const { paths } = fakeHome(claudePath ? { claudePath } : {});
       const run = await sous(paths, ["doctor", "--json"]);
-      return { code: run.code, reports: (JSON.parse(run.out) as { programs: Array<Record<string, unknown>> }).programs };
+      return { code: run.code, config: paths.config, reports: (JSON.parse(run.out) as { programs: Array<Record<string, unknown>> }).programs };
     };
     const healthy = await reports();
     assert.equal(healthy.code, 0);
@@ -75,7 +76,7 @@ describe("sous doctor", () => {
 
     const missing = await reports("/nonexistent/claude");
     assert.equal(missing.code, 1);
-    assert.match(String(missing.reports[0]!.problem), /claudePath in ~\/\.sous\/config\.json is \/nonexistent\/claude, which is not a program file/);
+    assert.ok(String(missing.reports[0]!.problem).startsWith(`claudePath in ${missing.config} is /nonexistent/claude, which is not a program file`), String(missing.reports[0]!.problem));
     assert.equal(missing.reports[0]!.path, undefined);
     assert.equal(missing.reports[1]!.talks, true);
   });

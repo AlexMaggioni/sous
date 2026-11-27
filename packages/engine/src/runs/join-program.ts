@@ -9,7 +9,7 @@ import { runAccounts } from "../accounts.js";
 import { envFor, harnessName, isHarness, lookupMcpServers, lookupSettings, stepModel } from "../agents.js";
 import { programLookup } from "../programs.js";
 import { toMcpServer } from "../steps/answer.js";
-import { loadConfig, loadSecrets, type HomePaths } from "./home.js";
+import { configName, loadConfig, loadSecrets, type HomePaths } from "./home.js";
 import type { JoinTarget } from "./join.js";
 import { loadRecord } from "./records.js";
 import { Refusal } from "./refusal.js";
@@ -42,10 +42,10 @@ export function joinProgram(paths: HomePaths, target: JoinTarget, write: (name: 
     throw new Refusal("no_program", `the session of "${target.step}" runs on ${harness}, which sous cannot open by hand.`, "Join a step that runs on Claude Code or Codex.", null);
   }
   const config = loadConfig(paths);
-  const program: Harness = createHarness(harness, programLookup(config)(harness));
+  const program: Harness = createHarness(harness, programLookup(config, configName(paths))(harness));
   const found = program.find();
   if (!("path" in found)) {
-    throw new Refusal("no_program", `sous found no ${harnessName(harness)} to open the session of "${target.step}" in: ${found.problem}`, "Install it, or set its path in ~/.sous/config.json.", "sous doctor");
+    throw new Refusal("no_program", `sous found no ${harnessName(harness)} to open the session of "${target.step}" in: ${found.problem}`, `Install it, or set its path in ${configName(paths)}.`, "sous doctor");
   }
   const record = loadRecord(paths, target.runId);
   const account = record?.accounts ? runAccounts(paths, record.accounts)[harness] : undefined;

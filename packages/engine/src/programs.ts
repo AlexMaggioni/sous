@@ -6,17 +6,17 @@ import { dirname, join, resolve, sep } from "node:path";
 import { createHarness, type FindOptions, type HarnessId } from "@sous-run/harnesses";
 import { CALLER, currentAccount, DEFAULT, stepAccount } from "./accounts.js";
 import { envFor, HARNESSES, harnessName, loginOf, routeHarness, stepModel } from "./agents.js";
-import type { HomePaths, OrcConfig } from "./runs/home.js";
+import { configName, type HomePaths, type OrcConfig } from "./runs/home.js";
 import { HOOK_COMMAND, type Settings, withoutSessionHook, withSessionHook } from "./hook-settings.js";
 import { recordAction, type Who } from "./runs/actions.js";
 import { Refusal } from "./runs/refusal.js";
 
 /** Where to look for each program: the path config.json gives, then the harness's own order. */
-export function programLookup(config: OrcConfig): (harness: HarnessId) => FindOptions {
+export function programLookup(config: OrcConfig, file: string): (harness: HarnessId) => FindOptions {
   return (harness) => {
     const key = harness === "claude" ? "claudePath" : "codexPath";
     const path = config[key];
-    return { ...(path ? { path } : {}), setting: `${key} in ~/.sous/config.json` };
+    return { ...(path ? { path } : {}), setting: `${key} in ${file}` };
   };
 }
 
@@ -50,7 +50,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
  */
 export async function checkPrograms(paths: HomePaths, config: OrcConfig, options: { live?: boolean; model?: string } = {}): Promise<ProgramReport[]> {
   const asked = options.model ? routeHarness(options.model) : undefined;
-  const lookup = programLookup(config);
+  const lookup = programLookup(config, configName(paths));
   // Made only for a live step, so a home sous cannot write still gets its report.
   const cwd = join(paths.scratch, "doctor");
   const reports: ProgramReport[] = [];
@@ -103,8 +103,8 @@ export async function checkPrograms(paths: HomePaths, config: OrcConfig, options
 }
 
 /** Claude Code with the environment `claude setup-token` needs, or why it can't start. */
-export function setupTokenProgram(config: OrcConfig): { path: string; env: Record<string, string | undefined> } | { problem: string } {
-  const found = createHarness("claude", programLookup(config)("claude")).find();
+export function setupTokenProgram(paths: HomePaths, config: OrcConfig): { path: string; env: Record<string, string | undefined> } | { problem: string } {
+  const found = createHarness("claude", programLookup(config, configName(paths))("claude")).find();
   if ("problem" in found) return { problem: found.problem };
   // The login it makes is for the browser account, whatever this shell is logged in with.
   return { path: found.path, env: envFor("claude", { folder: loginOf("claude").value, named: true }) };

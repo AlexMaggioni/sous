@@ -44,6 +44,8 @@ says.
 - `sous join <run> <step>` opens the step's own session in your terminal. When you leave, the step
   goes on in the same session. Nothing else in the run stops while you are in it.
 - `ask` is on by default. `ask: false` keeps a step from asking.
+- A message that points at the config file names the one sous reads, under `SOUS_HOME` when it is
+  set, where it always named `~/.sous/config.json`.
 
 ### Places and resume
 

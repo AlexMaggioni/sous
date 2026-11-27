@@ -11,7 +11,7 @@ import { createHarness, type Account, type HarnessId } from "@sous-run/harnesses
 import type { McpServerConfig } from "./steps/mcp-config.js";
 import { parseDurationSeconds } from "./duration.js";
 import type { StepAsk, StepRoute } from "./steps/agent-runner.js";
-import { loadConfig, type HomePaths, type OrcConfig } from "./runs/home.js";
+import { configName, loadConfig, type HomePaths, type OrcConfig } from "./runs/home.js";
 import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
 
@@ -65,6 +65,8 @@ export interface LookupSettings {
   /** Model for an agent whose harness block names none, when it is on that harness. */
   defaultModel?: string;
   env?: Record<string, string | undefined>;
+  /** The config file a message names, as configName gives it. */
+  configFile?: string;
 }
 
 /** The configured default harness, else the default model's harness, else Claude Code. */
@@ -82,6 +84,7 @@ export function lookupSettings(paths: HomePaths, projectDir: string, config: Orc
     defaultHarness: defaultHarness(config),
     ...(config.defaultModel ? { defaultModel: config.defaultModel } : {}),
     env,
+    configFile: configName(paths),
   };
 }
 
@@ -515,7 +518,7 @@ export function definitionOf(agent: FoundAgent): AgentDefinition {
 function missingAgent(lookup: AgentLookup, name: string): string {
   const global = lookup.settings.rulesyncGlobal
     ? `the global rulesync folder (${lookup.settings.rulesyncGlobal}/.rulesync/subagents/)`
-    : "the global rulesync folder (none is set: rulesyncGlobal in ~/.sous/config.json)";
+    : `the global rulesync folder (none is set: rulesyncGlobal in ${lookup.settings.configFile ?? "~/.sous/config.json"})`;
   return `no agent "${name}". sous looks in .rulesync/subagents/, then ${global}, then .claude/agents/ and .codex/agents/ in the project and in the home folder.`;
 }
 
