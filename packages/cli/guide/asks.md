@@ -21,7 +21,8 @@ sous join <run> <step>
 ```
 
 They read the agent's message there, answer it and leave. The step then goes on in the same
-session. Nobody answers it with `sous answer`, and you cannot join it yourself.
+session. Until then `sous show` lists the call that asked as `asks`, not `done`. Nobody answers it
+with `sous answer`, and you cannot join it yourself.
 
 ## Show it, then pass on the answer
 

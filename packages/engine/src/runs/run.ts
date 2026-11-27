@@ -13,7 +13,7 @@ import { decisionOf, listQuestions, questionView, readQuestion, removeRunQuestio
 import { answerCalls, letAgentAnswerBy, mayAnswer } from "./consent.js";
 import { createRun, type CreateRunRequest, type Launcher } from "./launch.js";
 import { findRecord, isRunId, listRecords, loadRecord, loadSnapshot, processAlive, requestNote, requestPause, requestStepStop, scopePrefix, updateRecord, type NoteRequest, type RunRecord } from "./records.js";
-import { liveSteps, withTries, type RunningStep, type Step } from "./live-steps.js";
+import { liveSteps, withAsking, withTries, type RunningStep, type Step } from "./live-steps.js";
 import { olderSave } from "../older-save.js";
 import { readWorkflowScript } from "../workflows/script.js";
 import { resolveWorkflow } from "../workflows/dir.js";
@@ -197,11 +197,13 @@ export function runDetail(paths: HomePaths, id: string): RunDetail {
   const { view, shown } = viewOf(record, state, listQuestions(paths, record.runId), alive);
   // The event log has the steps the worker did not save yet, and a killed worker never saves them.
   const live = state ? liveSteps(paths, record, state) : undefined;
-  const steps = withTries(live?.steps ?? shown?.agents ?? [], shown?.calls, record.runId);
+  const tried = withTries(live?.steps ?? shown?.agents ?? [], shown?.calls, record.runId);
+  const steps = withAsking(tried, view.questions, record.runId);
   let engineState: RunDetail["engineState"];
   if (shown) {
     const { script: _script, journal: _journal, nestedJournal: _nested, calls: _calls, ...rest } = shown;
-    engineState = { ...rest, agents: steps };
+    // The engine's state keeps the statuses the engine saves, so there a step that asked is done.
+    engineState = { ...rest, agents: tried };
   }
   return {
     ...view,

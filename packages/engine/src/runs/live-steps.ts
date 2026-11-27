@@ -7,18 +7,33 @@ import type { HomePaths } from "./home.js";
 import { loadRecord, scopePrefix, type RunRecord } from "./records.js";
 import { readEventsAfter } from "./store.js";
 
+type SavedStep = PersistedRunState["agents"][number];
+
 /** A step as the state saves it, with how many tries its call took when more than one. */
-export type Step = PersistedRunState["agents"][number] & { tries?: number };
+export type TriedStep = SavedStep & { tries?: number };
+
+/** A step as readers show it. Its status may also be "asks", which the engine never saves. See
+ *  withAsking. */
+export type Step = Omit<TriedStep, "status"> & { status: SavedStep["status"] | "asks" };
 
 /** The steps, each run's own step with the tries its call took when more than one. The state keeps
  *  the calls of the run itself, not those of its nested runs. */
-export function withTries(steps: readonly Step[], calls: PersistedRunState["calls"], runId: string): Step[] {
+export function withTries(steps: readonly SavedStep[], calls: PersistedRunState["calls"], runId: string): TriedStep[] {
   const tries = new Map((calls ?? []).flatMap((call) => (call.attempts ?? 1) > 1 ? [[call.index, call.attempts!] as const] : []));
   return steps.map((step) => {
     const own = step.scope === undefined || step.scope === runId;
     const count = own && step.callIndex !== undefined ? tries.get(step.callIndex) : undefined;
     return count ? { ...step, tries: count } : step;
   });
+}
+
+/** The steps, with the last call of each step an open question names as "asks". Its turn ended
+ *  on the agent's question, and the step goes on in that session once the person answers. */
+export function withAsking(steps: readonly TriedStep[], questions: ReadonlyArray<{ scope: string; step?: string }>, runId: string): Step[] {
+  const last = new Map<string, number>();
+  steps.forEach((step, i) => last.set(`${typeof step.scope === "string" ? step.scope : runId}\0${step.label}`, i));
+  const asks = new Set(questions.flatMap((question) => (question.step ? [last.get(`${question.scope}\0${question.step}`)] : [])));
+  return steps.map((step, i): Step => (asks.has(i) && step.status === "done" ? { ...step, status: "asks" } : step));
 }
 
 /** A step's key: its scope and its call. Retries of a step happen inside the one call. */
@@ -43,8 +58,8 @@ export interface RunningStep {
  * the run: it is saved when a step ends. The event log has every step that started or ended since.
  * The steps are left unset when the run has no state or its event log cannot be read.
  */
-export function liveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): { steps?: Step[]; running: RunningStep[] } {
-  const agents: Step[] = (state?.agents ?? []).map((agent) => ({ ...agent }));
+export function liveSteps(paths: HomePaths, record: RunRecord, state: PersistedRunState | undefined): { steps?: SavedStep[]; running: RunningStep[] } {
+  const agents: SavedStep[] = (state?.agents ?? []).map((agent) => ({ ...agent }));
   const running = new Map<string, Omit<RunningStep, "name">>();
   const start = (scope: string | undefined, label: string, callIndex: number | undefined) => {
     const step = { scope: typeof scope === "string" ? scope : record.runId, label, ...(callIndex === undefined ? {} : { callIndex }) };

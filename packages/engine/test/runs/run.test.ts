@@ -341,7 +341,7 @@ return 1`;
     // the event log alone.
     plantState(paths, { ...saved, agents: [], eventSeq: 0 });
     updateRecord(paths, record.runId, { pid: process.pid });
-    const view = (steps: typeof saved.agents) =>
+    const view = (steps: ReturnType<typeof runDetail>["steps"]) =>
       steps.map(({ id, label, prompt, status, callIndex, scope, error, errorCode, recoverable, tokens, model, usage, provenance }) =>
         JSON.parse(JSON.stringify({ id, label, prompt, status, callIndex, scope, error, errorCode, recoverable, tokens, model, usage, provenance })));
     assert.deepEqual(view(runDetail(paths, record.runId).steps), view(saved.agents));

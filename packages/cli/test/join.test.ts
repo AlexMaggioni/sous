@@ -14,6 +14,7 @@ import { describe, it } from "node:test";
 import { logFile, readRun } from "@sous-run/engine";
 import { readState } from "@sous-run/engine/testing";
 import type { Machine } from "../src/commands/index.js";
+import { runPage } from "../src/serve/runs.js";
 import { fakeWorld, type FakeLine, type FakeRule, type FakeWorld } from "./helpers/fake-world.js";
 import { sous } from "./sous.js";
 
@@ -228,6 +229,14 @@ for (const [program, model, name] of [
       const inbox = await sous(world.paths, ["inbox"]);
       assert.ok(inbox.out.includes(`  "impl" needs you in its session.\n  sous join ${runId} impl`), inbox.out);
       assert.ok(!inbox.out.includes(QUESTION), inbox.out);
+      // The turn that asked has ended, and the step waits on the person, so it reads as asking.
+      const shown = await sous(world.paths, ["show", runId]);
+      assert.match(shown.out, /\n  done  setup\b.*\n  asks  impl\b/, shown.out);
+      const short = await sous(world.paths, ["show", runId, "--json"]);
+      assert.deepEqual((JSON.parse(short.out) as { steps: Array<{ label: string; status: string }> }).steps.map((step) => [step.label, step.status]), [["setup", "done"], ["impl", "asks"]]);
+      assert.deepEqual(runPage(world.paths, runId).steps.map((step) => [step.name, step.status]), [["setup", "done"], ["impl", "needs"]]);
+      const stepped = await sous(world.paths, ["step", runId, "impl", "--json"]);
+      assert.equal((JSON.parse(stepped.out) as { status: string }).status, "asks", stepped.out);
 
       const here = terminal(world);
       const joined = await sous(world.paths, ["join", runId, "impl"], { machine: here.machine });
@@ -248,6 +257,8 @@ for (const [program, model, name] of [
         [PROMPT, CONTINUE],
       );
       assert.equal(asked[1]!.sessionId, asked[0]!.sessionId);
+      // Once answered, the turn that asked is done, as the turn after it is.
+      assert.deepEqual(runPage(world.paths, runId).steps.map((step) => [step.name, step.status]), [["setup", "done"], ["impl", "done"], ["impl", "done"]]);
     });
   });
 }

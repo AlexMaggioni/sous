@@ -168,6 +168,9 @@ function stepStatus(status: string, scope: string, label: string, state: RunStat
       return "failed";
     case "skipped":
       return "skipped";
+    // The step's turn ended on its agent's question, and it goes on once the person answers.
+    case "asks":
+      return "needs";
     default:
       if (state.asking.has(`${scope}\0${label}`)) return "needs";
       if (state.alive) return "running";
