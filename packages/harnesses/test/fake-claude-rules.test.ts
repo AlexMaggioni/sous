@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, test } from "node:test";
@@ -24,13 +24,22 @@ delete process.env.FAKE_VERSION;
 
 /** One line of the fake's request log. */
 interface LogLine {
+  program?: string;
+  pid?: number;
+  cwd?: string;
+  args?: string[];
+  person?: string;
   sessionId: string;
   prompt?: string;
   rule?: number | null;
   goal?: { turn: number; of: number };
   ask?: { behavior?: string; message?: string; interrupt?: boolean; error?: string; skipped?: string };
-  byHand?: string;
+  byHand?: boolean;
 }
+
+/** The line Claude Code 2.1.332 writes as the tool result of a tool the client denied with interrupt. */
+const REJECTED =
+  "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
 
 const STATUS_SCHEMA = {
   type: "object",
@@ -89,11 +98,11 @@ async function sdkTurn(cwd: string, prompt: string, options: Partial<Options> = 
 }
 
 /** The fake started as a person starts it in a terminal. stdin stays open, as a terminal's does. */
-function byHand(id: string, person: string | undefined): Promise<{ code: number | null; stderr: string }> {
+function byHand(args: string[], person: string | undefined, cwd?: string): Promise<{ code: number | null; stderr: string }> {
   const env = { ...process.env };
   if (person === undefined) delete env.FAKE_PERSON;
   else env.FAKE_PERSON = person;
-  const child = spawn(CLAUDE, ["--resume", id], { env, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(CLAUDE, args, { env, stdio: ["pipe", "pipe", "pipe"], ...(cwd ? { cwd } : {}) });
   let stderr = "";
   child.stderr.on("data", (chunk) => (stderr += String(chunk)));
   return new Promise((resolve, reject) => {
@@ -264,41 +273,77 @@ describe("the fake claude's rules", () => {
     const c = newCase();
     c.rules([{ match: "^Recall", recall: true }]);
     const step = await c.run({ prompt: "Remember the word PLUM." });
-    const ran = await byHand(step.sessionId, "Also keep KIWI in mind.");
+    const args = ["--resume", step.sessionId, "--model", "haiku", "--append-system-prompt", "Be brief."];
+    const ran = await byHand(args, "Also keep KIWI in mind.", c.cwd);
     assert.equal(ran.code, 0, ran.stderr);
     const last = c.transcript(step.sessionId).trim().split("\n").at(-1) ?? "";
     assert.deepEqual(JSON.parse(last), { role: "user", text: "Also keep KIWI in mind." });
+    const logged = c.lines().filter((line) => line.byHand !== undefined);
+    assert.equal(logged.length, 1);
+    const { pid, ...rest } = logged[0]!;
+    assert.equal(typeof pid, "number");
+    assert.deepEqual(rest, { program: "claude", byHand: true, sessionId: step.sessionId, cwd: realpathSync(c.cwd), args, person: "Also keep KIWI in mind." });
     const recalled = await c.run({ prompt: "Recall your words.", resume: step.sessionId });
     assert.equal(recalled.text, "PLUM KIWI");
   });
 
+  test("by hand without FAKE_PERSON types a line with KESTREL-5150, which recall sees", async () => {
+    const c = newCase();
+    c.rules([{ match: "^Recall", recall: true }]);
+    const step = await c.run({ prompt: "Remember the word PLUM." });
+    const ran = await byHand(["--resume", step.sessionId], undefined, c.cwd);
+    assert.equal(ran.code, 0, ran.stderr);
+    const person = "I stepped in. Keep this word in mind: KESTREL-5150.";
+    assert.deepEqual(
+      c.lines().filter((line) => line.byHand).map((line) => line.person),
+      [person],
+    );
+    const recalled = await c.run({ prompt: "Recall your words.", resume: step.sessionId });
+    assert.equal(recalled.text, "PLUM KESTREL-5150");
+  });
+
   test("by hand on an unknown session fails as a real resume does", async () => {
     newCase();
-    const ran = await byHand(randomUUID(), "Hello.");
+    const ran = await byHand(["--resume", randomUUID()], "Hello.");
     assert.notEqual(ran.code, 0);
     assert.match(ran.stderr, /No conversation found/);
   });
 
-  test("ask sends a can_use_tool request for AskUserQuestion and logs a deny with interrupt", async () => {
+  test("ask sends a can_use_tool request for AskUserQuestion and ends a deny with interrupt as Claude Code 2.1.332 does", async () => {
     const c = newCase();
-    c.rules([{ ask: true, answer: "I went on." }]);
+    c.rules([{ ask: "Which color do you want?", answer: "I went on." }]);
     const asked: Array<{ tool: string; input: Record<string, unknown> }> = [];
     const canUseTool: CanUseTool = async (tool, input) => {
       asked.push({ tool, input });
       return { behavior: "deny", message: "Put the question in your answer.", interrupt: true };
     };
     const messages = await sdkTurn(c.cwd, "Do the task.", { canUseTool });
-    assert.equal(asked.length, 1);
-    assert.equal(asked[0]?.tool, "AskUserQuestion");
-    assert.ok(Array.isArray(asked[0]?.input.questions));
+    const input = { questions: [{ question: "Which color do you want?", header: "Question", options: [], multiSelect: false }] };
+    assert.deepEqual(asked, [{ tool: "AskUserQuestion", input }]);
     const replies = c.lines().filter((line) => line.ask);
     assert.deepEqual(
       replies.map((line) => line.ask),
       [{ behavior: "deny", message: "Put the question in your answer.", interrupt: true }],
     );
+    // The model reads Claude Code's own rejection, then the interrupt line.
+    const call = messages.findIndex((message) => message.type === "assistant");
+    const after = messages.slice(call).filter((message) => message.type === "user").map((message) => (message.type === "user" ? message.message.content : undefined));
+    assert.deepEqual(
+      after.map((content) => (Array.isArray(content) ? content.map((block: { type: string; content?: unknown; text?: string; is_error?: boolean }) => (block.type === "tool_result" ? { result: block.content, is_error: block.is_error } : { text: block.text })) : content)),
+      [[{ result: REJECTED, is_error: true }], [{ text: "[Request interrupted by user for tool use]" }]],
+    );
     const results = messages.filter((message) => message.type === "result");
     assert.equal(results.length, 1);
-    assert.ok(results.every((message) => message.type === "result" && (message.subtype !== "success" || message.is_error)));
+    const result = results[0]!;
+    assert.ok(result.type === "result" && result.subtype === "error_during_execution");
+    assert.equal(result.is_error, true);
+    assert.equal(result.stop_reason, "tool_use");
+    assert.deepEqual(result.errors, ["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use"]);
+    assert.deepEqual(
+      result.permission_denials.map((denial) => ({ tool: denial.tool_name, input: denial.tool_input })),
+      [{ tool: "AskUserQuestion", input }],
+    );
+    assert.doesNotMatch(messages.map(text).join("\n"), /I went on/);
   });
 
   test("ask goes on to its answer after a deny without interrupt", async () => {

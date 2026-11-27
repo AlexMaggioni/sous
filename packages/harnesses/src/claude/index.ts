@@ -6,6 +6,7 @@ import { findProgram } from "../lookup.js";
 import type { Account, FindOptions, Found, Harness, Step, StepEvents } from "../types.js";
 import { CLAUDE, claudeEnv, claudeLogin, claudePlaces, claudeVersion } from "./program.js";
 import { Held } from "../held.js";
+import { claudeJoinArgs } from "./join.js";
 import { runClaude, type ClaudeProgram } from "./run.js";
 
 export function createClaudeHarness(lookup: FindOptions = {}): Harness {
@@ -49,6 +50,7 @@ export function createClaudeHarness(lookup: FindOptions = {}): Harness {
       return runClaude(await ready(), step, events ?? {}, held);
     },
     release: (sessionId?: string) => held.release(sessionId),
+    joinArgs: claudeJoinArgs,
     login: claudeLogin,
     places: claudePlaces,
     env: claudeEnv,

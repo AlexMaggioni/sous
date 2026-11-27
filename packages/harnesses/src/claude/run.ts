@@ -15,6 +15,7 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { addAsked, ASKED_REFUSAL, questionText } from "../ask.js";
 import { addUsage, checkStep, noUsage, StepFailure, usage } from "../failure.js";
 import { toAnthropicJsonSchema } from "../schema.js";
 import { refusal, toolName } from "../tools.js";
@@ -23,13 +24,18 @@ import type { Held, HeldProgram } from "../held.js";
 import { claudeEnv, spawnClaude } from "./program.js";
 import { Tells } from "./tells.js";
 
-const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"];
-const EFFORTS: EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
-// A step never asks the person through the program's own question tool.
+export const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"];
+export const EFFORTS: EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
+// The program's own question tool. Only a step with ask has it.
 const ASK = "AskUserQuestion";
 
+/** Where the program's question tool reports to the turn that runs now. */
+interface Asking {
+  record?(question: string): void;
+}
+
 /** The SDK options for a step, and the notes on what it could not honor. */
-function claudeOptions(path: string, step: Step, sessionId: string) {
+function claudeOptions(path: string, step: Step, sessionId: string, asking: Asking) {
   const notes: string[] = [];
   const allow = step.tools?.allow;
   const deny = step.tools?.deny ?? [];
@@ -39,8 +45,13 @@ function claudeOptions(path: string, step: Step, sessionId: string) {
     env: claudeEnv(step.account),
     settingSources: ["user", "project", "local"],
     systemPrompt: step.instructions ? { type: "preset", preset: "claude_code", append: step.instructions } : { type: "preset", preset: "claude_code" },
-    disallowedTools: [...new Set([...deny, ASK])],
+    disallowedTools: [...new Set(step.ask ? deny : [...deny, ASK])],
     canUseTool: async (tool, input) => {
+      // The deny with interrupt ends the turn. The person answers in the session later.
+      if (tool === ASK && step.ask) {
+        asking.record?.(questionText(input));
+        return { behavior: "deny", message: ASKED_REFUSAL, interrupt: true };
+      }
       const why = tool === ASK ? "Ask the question in your answer instead." : refusal(step.tools, tool);
       return why ? { behavior: "deny", message: why } : { behavior: "allow", updatedInput: input };
     },
@@ -62,7 +73,7 @@ function claudeOptions(path: string, step: Step, sessionId: string) {
   }
   // An allow list names the only built-in tools the step has.
   if (allow) {
-    options.tools = [...new Set(allow.filter((entry) => !entry.startsWith("mcp__")).map(toolName))];
+    options.tools = [...new Set([...allow.filter((entry) => !entry.startsWith("mcp__")).map(toolName), ...(step.ask ? [ASK] : [])])];
     options.allowedTools = [...allow];
   }
   if (step.mode) {
@@ -74,7 +85,7 @@ function claudeOptions(path: string, step: Step, sessionId: string) {
   return { options, notes };
 }
 
-function mcpConfig(server: McpServer): McpServerConfig {
+export function mcpConfig(server: McpServer): McpServerConfig {
   if (server.type === "http") return { type: "http", url: server.url, ...(server.headers ? { headers: server.headers } : {}) };
   return { type: "stdio", command: server.command, ...(server.args ? { args: server.args } : {}), ...(server.env ? { env: server.env } : {}) };
 }
@@ -119,6 +130,8 @@ export interface ClaudeProgram extends HeldProgram {
   readonly query: Query;
   readonly abort: AbortController;
   readonly notes: string[];
+  /** The running turn sets record, since a kept program's canUseTool outlives its first turn. */
+  readonly asking: Asking;
   model: string;
   /** The tail of the program's stderr. */
   stderr: string;
@@ -128,12 +141,12 @@ export interface ClaudeProgram extends HeldProgram {
 
 /** The settings a turn must share with a kept program to run in it. */
 function claudeFits(path: string, step: Step): string {
-  const { cwd, account, model, effort, instructions, schema, tools, skills, mcpServers, mode } = step;
-  return JSON.stringify({ path, cwd, account, model, effort, instructions, schema, tools, skills, mcpServers, mode });
+  const { cwd, account, model, effort, instructions, schema, tools, skills, mcpServers, mode, ask } = step;
+  return JSON.stringify({ path, cwd, account, model, effort, instructions, schema, tools, skills, mcpServers, mode, ask: ask === true });
 }
 
 /** Starts Claude Code for a step's session. Its first turn still has to send. */
-function openProgram(step: Step, sessionId: string, options: Options, notes: string[], fits: string): ClaudeProgram {
+function openProgram(step: Step, sessionId: string, options: Options, notes: string[], fits: string, asking: Asking): ClaudeProgram {
   const abort = new AbortController();
   const turns: AsyncIterable<SDKUserMessage>[] = [];
   let wake: (() => void) | undefined;
@@ -182,6 +195,7 @@ function openProgram(step: Step, sessionId: string, options: Options, notes: str
     query: q,
     abort,
     notes,
+    asking,
     model: step.model ?? "",
     stderr: "",
     send(turn) {
@@ -207,14 +221,17 @@ function openProgram(step: Step, sessionId: string, options: Options, notes: str
 
 export async function runClaude(path: string, step: Step, events: StepEvents, held: Held<ClaudeProgram>): Promise<StepResult> {
   const fits = claudeFits(path, step);
-  const { options, notes } = claudeOptions(path, step, step.resume && !step.fork ? step.resume : randomUUID());
+  const asking: Asking = {};
+  const { options, notes } = claudeOptions(path, step, step.resume && !step.fork ? step.resume : randomUUID(), asking);
   checkStep(step, notes);
   if (step.signal?.aborted) throw new StepFailure("The step was stopped before it started.", { kind: "stopped" }, { notes });
   // A fork always opens a program of its own, and the resumed session's kept program stays kept.
   const kept = step.fork ? undefined : await held.take(step.resume, fits);
-  const program = kept ?? openProgram(step, options.sessionId ?? step.resume!, options, notes, fits);
+  const program = kept ?? openProgram(step, options.sessionId ?? step.resume!, options, notes, fits, asking);
   const { sessionId, abort } = program;
   program.stderr = "";
+  let asked: string | undefined;
+  program.asking.record = (question) => (asked = addAsked(asked, question));
   const stop = () => abort.abort();
   step.signal?.addEventListener("abort", stop, { once: true });
 
@@ -339,7 +356,13 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
           const u = message.usage;
           finalUsage = usage(u.input_tokens ?? 0, u.output_tokens ?? 0, u.cache_read_input_tokens ?? 0, u.cache_creation_input_tokens ?? 0, message.total_cost_usd);
           events.usage?.(finalUsage);
-          if (message.subtype === "success" && !message.is_error) {
+          if (asked !== undefined) {
+            // sous ended the turn on the question, so the turn answers whatever the subtype says.
+            const ok = message.subtype === "success" && !message.is_error;
+            const value = ok && step.schema ? message.structured_output : undefined;
+            const said = (ok && message.result) || text;
+            answer = { sessionId, model: program.model, text: said, usage: finalUsage, asked, ...(value !== undefined ? { value } : {}), ...(notes.length ? { notes } : {}) };
+          } else if (message.subtype === "success" && !message.is_error) {
             const said = message.result || text;
             const cut = message.stop_reason ? STOPS[message.stop_reason] : undefined;
             if (cut) {
@@ -375,9 +398,11 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
   } finally {
     release();
     step.signal?.removeEventListener("abort", stop);
+    program.asking.record = undefined;
     // A held turn that answered, or gave no value for its schema, keeps the program for the
-    // step's next turn. Any other end closes it.
-    const keep = step.hold && resulted && !unreadTell && !abort.signal.aborted && (answer !== undefined || failure?.kind === "schema");
+    // step's next turn. Any other end closes it. A turn that asked closes it too, since the person
+    // answers in the session by hand, in a program of their own.
+    const keep = step.hold && resulted && !unreadTell && !abort.signal.aborted && asked === undefined && (answer !== undefined || failure?.kind === "schema");
     if (keep) await held.keep(sessionId, program);
     else await program.close();
   }
@@ -385,6 +410,8 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
   // A stop after the result keeps the answer.
   if (answer) return answer;
   if (step.signal?.aborted) fail("The step was stopped.", { kind: "stopped" });
+  // The question is in the session even when the program ended before its result.
+  if (asked !== undefined) return { sessionId, model: program.model, text, usage: total(), asked, ...(notes.length ? { notes } : {}) };
   if (failure) fail(failureText, failure);
   if (/No conversation found/i.test(program.stderr)) {
     const missing = step.resume ?? sessionId;

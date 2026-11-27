@@ -12,7 +12,7 @@
 // the result. A message with priority now or later stops the fake with an error, since sous never
 // sends one. Each session keeps the user messages it read in claude-sessions/<id>, one per line.
 // --fork-session copies the parent's messages to the new session first. `claude --resume <id>`
-// with no stream is a person at a terminal: it adds FAKE_PERSON's line and exits. A goal rule
+// with no stream is a person at a terminal: it adds the person's line and exits. A goal rule
 // plays several model turns, and an ask rule sends a can_use_tool request. lib.mjs says more.
 // Cost: each result costs COST. A result's total_cost_usd is the session's whole cost so far, as
 // Claude Code restores a session's total on a resume. The totals live in claude-costs/<id>.
@@ -20,7 +20,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { appendLog, debug, decide, loginPresent, mcpSummary, readJsonLines, sessionMessages, statusObject, valueWith, waitFor, makeEdits } from "./lib.mjs";
+import { appendLog, debug, decide, loginPresent, mcpSummary, personLine, readJsonLines, sessionMessages, statusObject, valueWith, waitFor, makeEdits } from "./lib.mjs";
 
 const VERSION = process.env.FAKE_VERSION ?? "2.1.330";
 const argv = process.argv.slice(2);
@@ -91,13 +91,11 @@ if (resumeId && !existsSync(join(sessionsDir, resumeId))) {
   process.exit(1);
 }
 
-// A person at a terminal: no stream to read. The fake types FAKE_PERSON's line and leaves.
+// A person at a terminal: no stream to read. The fake types the person's line and leaves.
 if (resumeId && flags["input-format"] === undefined && flags.print === undefined && !argv.includes("-p")) {
-  const line = process.env.FAKE_PERSON ?? "";
-  if (line !== "") {
-    appendFileSync(join(sessionsDir, resumeId), `${JSON.stringify({ role: "user", text: line })}\n`);
-    appendLog({ program: "claude", sessionId: resumeId, byHand: line });
-  }
+  const person = personLine();
+  if (person !== "") appendFileSync(join(sessionsDir, resumeId), `${JSON.stringify({ role: "user", text: person })}\n`);
+  appendLog({ program: "claude", byHand: true, sessionId: resumeId, cwd: process.cwd(), args: argv, person });
   process.exit(0);
 }
 
@@ -142,6 +140,10 @@ function sessionCost(fields) {
   writeFileSync(join(costsDir, sessionId), String(costSoFar));
   return costSoFar;
 }
+
+/** The tool result Claude Code 2.1.332 writes for a tool the client denied with interrupt. */
+const REJECTED =
+  "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
 
 /** Control requests the fake sent and waits on, by request id. */
 const pending = new Map();
@@ -396,8 +398,15 @@ async function runTurn(message, fromTell = false) {
     const text = `API Error: 500 ${decision.message}`;
     write(assistant("<synthetic>", text, { error: "server_error" }));
     result({ subtype: "success", is_error: true, result: text, ...spent });
-  } else if (asked === "interrupted") {
-    result({ subtype: "error_during_execution", is_error: true, errors: ["Request interrupted by user for tool use"], stop_reason: null });
+  } else if (asked?.interrupted) {
+    // Claude Code 2.1.332 ends the turn this way after a deny with interrupt.
+    result({
+      subtype: "error_during_execution",
+      is_error: true,
+      errors: ["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use"],
+      stop_reason: "tool_use",
+      permission_denials: [{ tool_name: "AskUserQuestion", tool_use_id: asked.toolId, tool_input: asked.input }],
+    });
   } else if (decision.goal !== undefined) {
     await playGoal(model, decision, turn);
   } else if (decision.listTools) {
@@ -421,8 +430,8 @@ async function runTurn(message, fromTell = false) {
 }
 
 /**
- * The model calls AskUserQuestion, as a turn of an ask rule does. Returns "interrupted" when the
- * client denies it with interrupt, so the turn ends there.
+ * The model calls AskUserQuestion, as a turn of an ask rule does. Returns { interrupted, toolId,
+ * input } when the client denies it with interrupt, so the turn ends there.
  */
 async function askQuestion(model, wanted) {
   if ((list(flags.disallowedTools) ?? []).some((entry) => entry.replace(/\(.*\)$/, "") === "AskUserQuestion")) {
@@ -430,7 +439,7 @@ async function askQuestion(model, wanted) {
     return undefined;
   }
   const question = typeof wanted === "string" ? wanted : "Which way should I go?";
-  const input = { questions: [{ question, header: "Choice", options: [{ label: "Left", description: "Go left." }, { label: "Right", description: "Go right." }], multiSelect: false }] };
+  const input = { questions: [{ question, header: "Question", options: [], multiSelect: false }] };
   const toolId = `toolu_fake_${randomUUID().slice(0, 8)}`;
   const call = assistant(model, "", {});
   call.message.content = [{ type: "tool_use", id: toolId, name: "AskUserQuestion", input }];
@@ -441,11 +450,13 @@ async function askQuestion(model, wanted) {
   if (reply?.subtype !== "success") appendLog({ program: "claude", sessionId, ask: { error: reply?.error ?? "no reply" } });
   else appendLog({ program: "claude", sessionId, ask: { behavior: answer.behavior ?? null, message: answer.message ?? null, interrupt: answer.interrupt === true } });
   const allowed = reply?.subtype === "success" && answer.behavior === "allow";
-  const said = allowed ? "The person picked Left." : (answer.message ?? reply?.error ?? "The tool was refused.");
+  const interrupted = reply?.subtype === "success" && answer.behavior === "deny" && answer.interrupt === true;
+  // A deny with interrupt shows the model Claude Code's own rejection, not the deny's message.
+  const said = allowed ? "The person answered." : interrupted ? REJECTED : (answer.message ?? reply?.error ?? "The tool was refused.");
   write({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: toolId, content: said, is_error: !allowed }] }, parent_tool_use_id: null, ...base() });
-  if (reply?.subtype === "success" && answer.behavior === "deny" && answer.interrupt === true) {
+  if (interrupted) {
     write({ type: "user", message: { role: "user", content: [{ type: "text", text: "[Request interrupted by user for tool use]" }] }, parent_tool_use_id: null, ...base() });
-    return "interrupted";
+    return { interrupted: true, toolId, input };
   }
   return undefined;
 }

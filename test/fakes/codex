@@ -20,16 +20,17 @@
 // with status active, and the last one says complete just before the last turn/completed. Each
 // turn logs { goal: { turn, of } }. thread/goal/get answers the goal, and thread/goal/clear
 // clears it and sends thread/goal/cleared.
-// `codex resume <id>` is a person in the full-screen view. It appends the line in FAKE_PERSON to
-// the thread's file, logs { byHand: line }, and exits 0 without reading stdin. With FAKE_PERSON
-// unset or empty the person typed nothing. An unknown id fails as the real one does. Its -m and
-// -c flags are accepted and ignored.
+// `codex resume <id>` is a person in the full-screen view. It appends the person's line to the
+// thread's file, logs it, and exits 0 without reading stdin. An unknown id fails as the real one
+// does. Its flags are accepted and ignored, and the log keeps them. lib.mjs says more.
+// An ask rule sends item/tool/requestUserInput during the turn and logs the answer. A turn/interrupt
+// then ends the turn as interrupted, as 0.169.0 does after a refused question. lib.mjs says more.
 // `codex --version` prints a version like the real one, or FAKE_VERSION.
 
 import { randomUUID } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { appendLog, debug, decide, limitRule, loginPresent, mcpSummary, readJsonLines, sessionMessages, waitFor, makeEdits } from "./lib.mjs";
+import { appendLog, debug, decide, limitRule, loginPresent, mcpSummary, personLine, readJsonLines, sessionMessages, waitFor, makeEdits } from "./lib.mjs";
 
 const VERSION = process.env.FAKE_VERSION ?? "0.169.0";
 const argv = process.argv.slice(2);
@@ -49,7 +50,7 @@ function words(args) {
   return out;
 }
 
-// A person at a terminal: `codex resume <id>`. The fake types FAKE_PERSON's line and leaves.
+// A person at a terminal: `codex resume <id>`. The fake types the person's line and leaves.
 const [subcommand, threadArg] = words(argv);
 if (subcommand === "resume") {
   const file = join(dirname(process.env.FAKE_LOG ?? join(process.cwd(), "fake.log")), "codex-threads", threadArg ?? "");
@@ -57,11 +58,11 @@ if (subcommand === "resume") {
     process.stderr.write(`No saved session found with ID ${threadArg ?? ""}. Run \`codex resume\` without an ID to choose from existing sessions.\n`);
     process.exit(1);
   }
-  const line = process.env.FAKE_PERSON ?? "";
-  if (line !== "") {
-    appendFileSync(file, `${JSON.stringify({ role: "user", text: line })}\n`);
-    appendLog({ program: "codex", sessionId: threadArg, byHand: line });
-  }
+  const person = personLine();
+  if (person !== "") appendFileSync(file, `${JSON.stringify({ role: "user", text: person })}\n`);
+  const at = argv.findIndex((arg) => arg === "-C" || arg === "--cd");
+  const cwd = at >= 0 && argv[at + 1] ? argv[at + 1] : process.cwd();
+  appendLog({ program: "codex", byHand: true, sessionId: threadArg, cwd, args: argv, person });
   process.exit(0);
 }
 if (!argv.includes("app-server")) {
@@ -478,7 +479,23 @@ async function runTurn(thread, turnId, params) {
   const turnView = (status, items = [], error = null) => ({ id: turnId, items, itemsView: "full", status, error, startedAt: 1700000000, completedAt: status === "inProgress" ? null : 1700000001, durationMs: status === "inProgress" ? null : 1000 });
   notify("turn/started", { threadId: thread.id, turn: turnView("inProgress") });
 
-  const tool = decision.tool && { type: "commandExecution", id: `call_${randomUUID().slice(0, 8)}`, pluginId: null, scriptPath: null, command: decision.tool, cwd: thread.cwd, processId: null, source: "agent", commandActions: [], durationMs: null };
+  // The model asks through request_user_input. A refusal leaves the turn to the client's
+  // turn/interrupt, and an error reply lets the model go on.
+  if (decision.ask && decision.kind === "answer") {
+    const question = typeof decision.ask === "string" ? decision.ask : "Which way should I go?";
+    const questions = [{ id: "question", header: "Question", question, isOther: false, isSecret: false, options: null }];
+    const reply = await ask("item/tool/requestUserInput", { ...base, itemId: `call_${randomUUID().slice(0, 8)}`, questions, isBlocking: true, autoResolutionMs: null });
+    appendLog({ program: "codex", sessionId: thread.id, ask: reply.error ? { error: reply.error.message ?? reply.error } : { answers: reply.result?.answers ?? null } });
+    if (!reply.error) {
+      while (!turn.interrupted) await new Promise((resolve) => setTimeout(resolve, 20));
+      thread.turn = undefined;
+      notify("thread/tokenUsage/updated", { ...base, tokenUsage: tokenUsage(thread, codexUsage(decision.usage)) });
+      notify("turn/completed", { threadId: thread.id, turn: turnView("interrupted") });
+      return;
+    }
+  }
+
+  const tool = decision.tool &&{ type: "commandExecution", id: `call_${randomUUID().slice(0, 8)}`, pluginId: null, scriptPath: null, command: decision.tool, cwd: thread.cwd, processId: null, source: "agent", commandActions: [], durationMs: null };
   if (tool) notify("item/started", { ...base, item: { ...tool, status: "inProgress", aggregatedOutput: null, exitCode: null }, startedAtMs: 1700000000000 });
   await waitFor(decision, () => turn.interrupted);
   if (decision.kind === "exit") {

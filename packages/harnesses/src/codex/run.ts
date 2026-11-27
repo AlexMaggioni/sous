@@ -2,6 +2,7 @@
 // server and its thread open for the session's next turn, which then sends only its turn/start.
 
 import { readFileSync } from "node:fs";
+import { ASKED_REFUSAL, addAsked, questionText } from "../ask.js";
 import { addUsage, checkStep, noUsage, StepFailure } from "../failure.js";
 import { toStrictJsonSchema } from "../schema.js";
 import { refusal } from "../tools.js";
@@ -65,12 +66,20 @@ function turnInput(step: Step): UserInput[] {
   ];
 }
 
+/** The params of item/tool/requestUserInput. The generated types leave this experimental request out. */
+interface UserInputRequest {
+  threadId: string;
+  turnId: string;
+  questions: { id: string; question: string; options: { label: string }[] | null }[];
+}
+
 /**
- * Answers what the server asks during a turn: approvals by the step's tool lists, and no question
- * to a person. running holds the tool each MCP server runs now, since an MCP approval names only
- * the server.
+ * Answers what the server asks during a turn: approvals by the step's tool lists, and questions to
+ * a person. A step without ask answers a question with an error. A step with ask hands it to ask,
+ * which ends the turn, and refuses it. running holds the tool each MCP server runs now, since an
+ * MCP approval names only the server.
  */
-function requestHandler(step: Step, history: (entry: Omit<HistoryEntry, "at">) => void, running: Map<string, string>) {
+function requestHandler(step: Step, history: (entry: Omit<HistoryEntry, "at">) => void, running: Map<string, string>, ask: (request: UserInputRequest) => void) {
   function decline(tool: string, why: string) {
     history({ role: "tool", kind: "toolResult", text: `Declined: ${why}`, toolName: tool, isError: true });
   }
@@ -105,8 +114,12 @@ function requestHandler(step: Step, history: (entry: Omit<HistoryEntry, "at">) =
         if (why) decline(tool, why);
         return { action: why ? "decline" : "accept", content: null, _meta: null } satisfies McpServerElicitationRequestResponse;
       }
-      case "item/tool/requestUserInput":
-        throw new RpcError("No one answers questions during a step. Ask the question in your answer instead.", -32000);
+      case "item/tool/requestUserInput": {
+        if (!step.ask) throw new RpcError("No one answers questions during a step. Ask the question in your answer instead.", -32000);
+        const request = params as UserInputRequest;
+        ask(request);
+        return { answers: Object.fromEntries((request.questions ?? []).map((question) => [question.id, { answers: [ASKED_REFUSAL] }])) };
+      }
       case "currentTime/read":
         return { currentTimeAt: Math.floor(Date.now() / 1000) };
       default:
@@ -231,12 +244,22 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
   step.signal?.addEventListener("abort", stop, { once: true });
   history({ role: "user", kind: "text", text: step.prompt });
 
+  // The question the agent asked through requestUserInput, on a step with ask.
+  let asked: string | undefined;
+  const ask = (request: UserInputRequest) => {
+    asked = addAsked(asked, questionText(request));
+    history({ role: "assistant", kind: "toolCall", text: questionText(request), toolName: "request_user_input" });
+    // The interrupt goes after the refusal, which the server writes once this handler returns.
+    setImmediate(() => server?.request("turn/interrupt", { threadId: request.threadId, turnId: request.turnId }).catch(() => undefined));
+    stopTimer ??= setTimeout(() => finish({ status: "interrupted", error: null }), STOP_WAIT_MS);
+  };
+
   let turn: Pick<Turn, "status" | "error"> | undefined;
   let answer: StepResult | undefined;
   // What config/read gave that the step could not honor. A kept program brings its own.
   let configNotes: string[] = kept?.notes ?? [];
   try {
-    const handlers = { notification: onNotification, request: requestHandler(step, history, running) };
+    const handlers = { notification: onNotification, request: requestHandler(step, history, running, ask) };
     if (kept) {
       threadId = kept.threadId;
       model = step.model || kept.model;
@@ -275,7 +298,17 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
       throw new RpcError(server?.stderr.trim() || why, -32000);
     });
     turn = await Promise.race([turnDone, exited]);
-    if (turn.status === "completed" && !step.signal?.aborted) {
+    if (asked !== undefined && !step.signal?.aborted) {
+      // sous ended the turn on the question. A value counts only from a turn that completed.
+      answer = { sessionId: threadId, model, text, usage: spent, asked, ...(notes.length ? { notes } : {}) };
+      if (step.schema && turn.status === "completed") {
+        try {
+          answer = { ...answer, value: JSON.parse(text) };
+        } catch {
+          // The question stands without a value.
+        }
+      }
+    } else if (turn.status === "completed" && !step.signal?.aborted) {
       answer = { sessionId: threadId, model, text, usage: spent, ...(notes.length ? { notes } : {}) };
       if (step.schema) {
         try {
@@ -297,8 +330,9 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
     clearTimeout(stopTimer);
     step.signal?.removeEventListener("abort", stop);
     // A turn that completed keeps its program when it asked to, also when its answer missed the
-    // schema, since the repair turn goes on in it. Any other turn closes it.
-    const completed = turn?.status === "completed" && !step.signal?.aborted;
+    // schema, since the repair turn goes on in it. Any other turn closes it. A turn that asked
+    // closes it too, since the person answers in the session by hand, in a program of their own.
+    const completed = turn?.status === "completed" && !step.signal?.aborted && asked === undefined;
     if (server && threadId && completed && step.hold) {
       await held.keep(threadId, codexProgram(server, threadId, model, configNotes, codexFits(path, step)));
     } else if (server) {
@@ -339,7 +373,7 @@ export interface CodexProgram extends HeldProgram {
  * model, effort and schema, so those stay out.
  */
 function codexFits(path: string, step: Step): string {
-  return JSON.stringify([path, step.cwd, step.account ?? null, step.instructions ?? null, step.tools ?? null, step.skills ?? null, step.mcpServers ?? null, step.mode ?? null]);
+  return JSON.stringify([path, step.cwd, step.account ?? null, step.instructions ?? null, step.tools ?? null, step.skills ?? null, step.mcpServers ?? null, step.mode ?? null, step.ask === true]);
 }
 
 function codexProgram(server: AppServer, threadId: string, model: string, notes: string[], fits: string): CodexProgram {

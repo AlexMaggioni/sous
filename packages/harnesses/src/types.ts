@@ -89,6 +89,13 @@ export interface Step {
    * runs in it. A failed or stopped turn always closes its program. release() closes a kept one.
    */
   hold?: boolean;
+  /**
+   * The agent may ask the person through the program's own question tool: AskUserQuestion on
+   * Claude Code, item/tool/requestUserInput on Codex. sous refuses the call, records the question
+   * and ends the turn, and the result's asked holds the question. Default false: the program's
+   * question tool stays off, as on every step before.
+   */
+  ask?: boolean;
   signal?: AbortSignal;
 }
 
@@ -113,6 +120,27 @@ export interface StepResult {
   usage: Usage;
   /** What the adapter could not honor and did not refuse, such as a deny entry Codex has no form for. */
   notes?: string[];
+  /**
+   * The question the agent asked through the program's own question tool in this turn, with ask
+   * on. sous refused the tool and ended the turn. Each question is a line, and a line that starts
+   * "Options:" follows a question that offered options. value is set only when a valid value for
+   * the schema came before the turn ended.
+   */
+  asked?: string;
+}
+
+/** What `sous join` needs to open a step's session by hand in the program's own full-screen view. It
+ * stays unexported until a caller imports it. Name it as Parameters<Harness["joinArgs"]>[0]. */
+interface JoinStep {
+  sessionId: string;
+  cwd: string;
+  model?: string;
+  effort?: string;
+  /** The step's mode, as Step.mode. Undefined passes none, so the program uses its default. */
+  mode?: string;
+  /** The step's appended system text, as Step.instructions. */
+  instructions?: string;
+  mcpServers?: McpServer[];
 }
 
 export type Failure =
@@ -179,6 +207,11 @@ export interface Harness {
    * hold keeps nothing. It never throws.
    */
   release(sessionId?: string): Promise<void>;
+  /**
+   * The program's arguments to open the session by hand, and what it could not pass. `write` saves
+   * a text in a private file of the caller's and gives its path, for a config that holds secrets.
+   */
+  joinArgs(join: JoinStep, write: (name: string, text: string) => string): { args: string[]; notes: string[] };
   /**
    * The program's login in env, for callers that start no step, such as an account list.
    * variable moves the program's folder, value is what env sets it to, folder is the folder the
