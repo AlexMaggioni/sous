@@ -609,7 +609,7 @@ return { a, nested }`;
   const result = await runWorkflow<{ a: string; nested: { child: string } }>(parent, {
     agent: countingAgent().runner,
     persistLogs: false,
-    loadSavedWorkflow: (name) => (name === "child" ? child : undefined),
+    savedWorkflows: { load: (name) => (name === "child" ? child : undefined) },
   });
 
   assert.equal(result.agentCount, 2);
@@ -632,7 +632,7 @@ return { err, deepest }`;
   const five = await runWorkflow<{ err: string | null; deepest: number }>(parent(5), {
     agent: countingAgent().runner,
     persistLogs: false,
-    loadSavedWorkflow: (name) => (name === "level" ? level : undefined),
+    savedWorkflows: { load: (name) => (name === "level" ? level : undefined) },
     maxNestingDepth: 5,
   });
   assert.equal(five.result.err, null);
@@ -641,7 +641,7 @@ return { err, deepest }`;
   const six = await runWorkflow<{ err: string }>(parent(6), {
     agent: countingAgent().runner,
     persistLogs: false,
-    loadSavedWorkflow: (name) => (name === "level" ? level : undefined),
+    savedWorkflows: { load: (name) => (name === "level" ? level : undefined) },
     maxNestingDepth: 5,
   });
   assert.match(six.result.err, /at most 5 levels deep/);

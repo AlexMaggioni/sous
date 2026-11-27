@@ -24,6 +24,7 @@ import type {
   AgentSessionRecord,
   AgentSessionRef,
   JournalEntry,
+  TurnSessionEvent,
   WorkflowCallRecord,
   WorkflowCheckpointTaken,
   WorkflowResumeCallDecision,
@@ -265,6 +266,8 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   onCheckpointTaken?: (entry: WorkflowCheckpointTaken) => void;
   /** Called at each call's terminal transition after the authoritative manifest append. */
   onCallRecord?: (record: WorkflowCallRecord) => void;
+  /** A running agent call's session, at its open and again once the program has the prompt. */
+  onTurnSession?: (event: TurnSessionEvent) => void;
   /**
    * Registers one live runner attempt for host-directed per-call cancellation. The optional
    * cleanup returned by the host is called exactly once when that attempt settles.
@@ -272,8 +275,14 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   onAgentAttempt?: (attempt: WorkflowAgentAttemptControl) => void | (() => void);
   /** Called synchronously when workflow() allocates a unique child-run ordinal. */
   onNestedWorkflow?: (ordinal: number, childRunId: string) => void;
-  /** Resolve a saved-workflow name to its script, enabling `workflow('name', args)`. */
-  loadSavedWorkflow?: (name: string) => string | undefined;
+  /**
+   * The saved workflows. `load` gives the script of a name, for `workflow('name', args)`. `list`
+   * names those an agent may pick with choose({ any: true }).
+   */
+  savedWorkflows?: {
+    load?: (name: string) => string | undefined;
+    list?: () => Array<{ name: string; description?: string }>;
+  };
   /** Per-run changes to steps, by label, such as { reviewer: { model: "haiku" } }. */
   stepOverrides?: Record<string, Record<string, unknown>>;
   /** The environment code steps run with. Nested runs get the same. */
@@ -281,8 +290,6 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
   /** How deep workflow() may nest. None when unset. The root workflow's meta.maxNestingDepth sets
    *  it when this does not. */
   maxNestingDepth?: number;
-  /** Names of the saved workflows an agent may pick with choose({ any: true }). */
-  listSavedWorkflows?: () => Array<{ name: string; description?: string }>;
   /**
    * The places of the run tree: where nested runs and steps with `isolation: "worktree"` get their
    * worktrees, and where those are noted. Nested runs get the same object. Without it, a step works
@@ -1002,14 +1009,13 @@ async function runLevel<T>(
       backends: null,
     };
     const callInputsHash = hashCallInputs(callInputs);
+    const callIds = { hash: callHash, ...(callPath !== undefined ? { path: callPath } : {}), ...(callInputsHash !== undefined ? { inputsHash: callInputsHash } : {}) };
 
     // Deterministic resume key: assigned at lexical call time, before the limiter,
     // so parallel()/pipeline() fan-out is reproducible for a fixed script.
     const stepSlot = open({
       kind: "agent",
-      hash: callHash,
-      ...(callPath !== undefined ? { path: callPath } : {}),
-      ...(callInputsHash !== undefined ? { inputsHash: callInputsHash } : {}),
+      ...callIds,
       hasSchema: agentOptions.schema !== undefined,
       fields: {
         label,
@@ -1344,12 +1350,13 @@ async function runLevel<T>(
                   ...(keptRef ? { continueWithPrompt: true } : {}), ...(sessionKey === undefined ? {} : { hold: true }),
                   callIndex,
                   callHash,
-                  callPath,
-                  callInputsHash,
+                  callPath, callInputsHash,
                   onSessionOpen: (ref: AgentSessionRef) => {
-                    if (slot.sealed) return;
-                    const copied = cloneTelemetry(ref);
-                    if (copied) slot.sessionRef = copied;
+                    const copied = slot.sealed ? undefined : cloneTelemetry(ref);
+                    if (!copied) return;
+                    slot.sessionRef = copied;
+                    const session = sessionRecord(slot, sessionKey !== undefined);
+                    if (session) guardTerminal("onTurnSession", () => options.onTurnSession?.(deepFreeze({ session, callIndex, scope: runId, ...callIds, ...(runCwd === undefined ? {} : { resolvedCwd: runCwd }) })));
                   },
                   onSessionCostGauge: (amount: number) => {
                     if (slot.sealed) return;
@@ -1781,7 +1788,7 @@ async function runLevel<T>(
     const childRunId = nestedRunId(runId, localOrdinal);
     nestedWorkflows = true;
     options.onNestedWorkflow?.(ordinal, childRunId);
-    const resolved = options.loadSavedWorkflow?.(String(nameOrScript));
+    const resolved = options.savedWorkflows?.load?.(String(nameOrScript));
     const childScript = resolved ?? String(nameOrScript);
     const childName = resolved ? String(nameOrScript) : "inline";
     const label = typeof nestedOptions?.label === "string" ? nestedOptions.label : undefined;
@@ -1873,7 +1880,7 @@ async function runLevel<T>(
     markedCheckpoint: markedCheckpoint as (prompt: string, options: Record<string, unknown>, purpose: CheckpointCallContext["purpose"]) => Promise<unknown>,
     workflow: workflowFn,
     log,
-    listSavedWorkflows: options.listSavedWorkflows,
+    listSavedWorkflows: options.savedWorkflows?.list,
     stepOverrides: options.stepOverrides,
     resolveCwd: (cwd) => resolvePath(baseCwd, cwd ?? "."),
     track: tracked, onDryRunCheck: options.codeEnv?.onDryRunCheck, endSession: endSession(sessions, agentRunner),

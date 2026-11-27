@@ -69,7 +69,7 @@ const good = await workflow('child', { ticket: { title: 'Add a flag' } })
 return { bad, good }`;
     const { result, journal } = await run<{ bad: string; good: string }>(script, {
       runId: "root",
-      loadSavedWorkflow: (name: string) => (name === "child" ? child : undefined),
+      savedWorkflows: { load: (name: string) => (name === "child" ? child : undefined) },
     });
     assert.match(result.bad, /^workflow\("child"\): --ticket does not fit its schema: /);
     assert.match(result.bad, /title/);
@@ -97,7 +97,7 @@ try { await workflow('child', { summary: 'no branch' }) } catch (error) { bad = 
 const good = await workflow('child', { branch: 'sous/a' })
 return { bad, good }`;
     const { result } = await run<{ bad: string; good: unknown }>(script, {
-      loadSavedWorkflow: (name: string) => (name === "child" ? child : undefined),
+      savedWorkflows: { load: (name: string) => (name === "child" ? child : undefined) },
     });
     assert.match(result.bad, /^workflow\("child"\): its result does not fit meta.schema: /);
     assert.match(result.bad, /branch/);

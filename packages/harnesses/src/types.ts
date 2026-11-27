@@ -146,6 +146,11 @@ export interface StepEvents {
    * goes into the step's history once it is delivered.
    */
   steer?(send: Steer | undefined): void;
+  /**
+   * The program has the turn's prompt, so a session resumed after the program dies holds it. It
+   * comes once per turn, after session.
+   */
+  delivered?(): void;
 }
 
 export interface Harness {

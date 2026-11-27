@@ -287,3 +287,134 @@ return await agent("build it", { label: "impl", place: "worktree" })`;
     }
   });
 });
+
+// A running step's session goes to disk with its call's identity, so a run whose process died
+// goes on in that session when it resumes, the same as after a pause.
+
+/** A promise the test opens by hand. */
+function gate() {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => (open = resolve));
+  return { open, opened };
+}
+
+/** The session a test runner reports, as the step runner reports it at open: not delivered yet. */
+function testSession(sessionId: string, options: StepRequest) {
+  return { sessionId, backendId: "test-backend", poolKey: "test-backend", cwd: options.cwd ?? "", reopen: { load: true, resume: true, list: true } };
+}
+
+/** The call identity a call row gives, as a running row saves it. */
+const identityOf = (row: { hash: string; inputsHash?: string; path?: string; resolvedCwd?: string }) =>
+  JSON.parse(JSON.stringify({ hash: row.hash, inputsHash: row.inputsHash, path: row.path, resolvedCwd: row.resolvedCwd }));
+
+describe("a running step's saved session", () => {
+  it("is saved at open, marked not delivered, then again at delivery, and its end removes the call", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "turn-session-saved-"));
+    const store = memoryPersistence();
+    const reached = [gate(), gate()];
+    const go = [gate(), gate()];
+    const runner: AgentRunner = {
+      async run(_prompt, options) {
+        const ref = testSession("live-session", options);
+        options.onSessionOpen?.({ ...ref, delivered: false });
+        reached[0]!.open();
+        await go[0]!.opened;
+        options.onSessionOpen?.(ref);
+        reached[1]!.open();
+        await go[1]!.opened;
+        return "done";
+      },
+    };
+    try {
+      const manager = new WorkflowManager({ cwd, persistence: store.persistence, agent: runner });
+      const { promise } = manager.startInBackground(script, undefined, { runId: "saved-turn" });
+      const row = () => store.states.get("saved-turn")?.agents[0];
+      await reached[0]!.opened;
+      assert.equal(row()?.status, "running");
+      assert.equal(row()?.session?.sessionId, "live-session");
+      assert.equal(row()?.session?.delivered, false);
+      const opened = row()?.call;
+      go[0]!.open();
+      await reached[1]!.opened;
+      assert.equal(row()?.status, "running");
+      assert.equal(row()?.session ? "delivered" in row()!.session! : undefined, false, "the delivered session has no mark");
+      assert.deepEqual(row()?.call, opened);
+      go[1]!.open();
+      const completed = await promise;
+      assert.equal(completed.status, "completed");
+      const saved = store.states.get("saved-turn")!;
+      assert.equal(saved.agents[0]?.status, "done");
+      assert.equal(saved.agents[0]?.call, undefined, "the step's end removed its call");
+      const [callRow] = saved.calls ?? [];
+      assert.ok(callRow?.inputsHash && callRow.resolvedCwd === cwd);
+      assert.deepEqual(opened, identityOf(callRow), "the saved call is the call row the step ended with");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  const crashed = `export const meta = { name: "crashed", description: "a run whose process died" }
+const plan = await agent("plan it", { label: "plan" })
+const built = await agent("build it", { label: "build" })
+return { plan, built }`;
+
+  const CRASHES = [
+    { title: "goes on in its session after the process died", delivered: true, settle: true },
+    { title: "runs the step again when its program never had the prompt", delivered: false, settle: true },
+    { title: "settles the dead run on its own when it resumes, and goes on in the session", delivered: true, settle: false },
+  ];
+  for (const { title, delivered, settle } of CRASHES) {
+    it(title, async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "turn-session-crash-"));
+      const first = memoryPersistence();
+      const hung = gate();
+      const dying: AgentRunner = {
+        async run(prompt, options) {
+          const ref = testSession(`${prompt}-session`, options);
+          options.onSessionOpen?.({ ...ref, delivered: false });
+          if (prompt === "plan it" || delivered) options.onSessionOpen?.(ref);
+          if (prompt === "plan it") return "planned";
+          hung.open();
+          return await new Promise<string>((_, reject) => options.signal?.addEventListener("abort", () => reject(new Error("stopped")), { once: true }));
+        },
+      };
+      const dead = new WorkflowManager({ cwd, persistence: first.persistence, agent: dying });
+      const { promise } = dead.startInBackground(crashed, undefined, { runId: "crashed" });
+      try {
+        await hung.opened;
+        // The state a process that died here left on disk.
+        const left = first.states.get("crashed")!;
+        assert.equal(left.status, "running");
+        const second = memoryPersistence();
+        second.seed(left);
+        const runner = new PausingRunner("never");
+        const manager = new WorkflowManager({ cwd, persistence: second.persistence, agent: runner });
+
+        // `sous resume` calls only resumeInBackground, which settles the run itself.
+        if (settle) {
+          const reconciled = manager.reconcileExternallyDeadRun("crashed");
+          assert.equal(reconciled?.status, "paused");
+          assert.equal(reconciled?.pauseReason, "interrupted");
+          const build = reconciled?.agents.find((agent) => agent.label === "build");
+          assert.equal(build?.status, "error");
+          assert.equal(build?.errorCode, WorkflowErrorCode.AGENT_EXECUTION_ERROR);
+          assert.equal(build?.call, undefined);
+          assert.deepEqual(reconciled?.calls?.map((row) => [row.index, row.outcome]), [[0, "result"], [1, "error"]]);
+          assert.deepEqual(identityOf(reconciled!.calls![1]!), left.agents.find((agent) => agent.label === "build")?.call);
+          assert.equal(build?.session?.delivered, delivered ? undefined : false);
+        }
+
+        const resumed = await manager.resumeInBackground("crashed");
+        assert.equal(resumed.accepted, true);
+        const completed = await resumed.promise;
+        assert.equal(completed.status, "completed", JSON.stringify(completed));
+        assert.deepEqual(runner.calls, [{ prompt: "build it", cwd, resumed: delivered ? "build it-session" : undefined }], "the finished step did not run again");
+        assert.equal(JSON.stringify(completed.result), JSON.stringify({ plan: "planned", built: delivered ? "build it went on" : "build it done" }));
+      } finally {
+        dead.stop("crashed");
+        await promise.catch(() => {});
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    });
+  }
+});

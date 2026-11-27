@@ -369,20 +369,13 @@ async function runOnHarness(
   const history: AgentHistoryEntry[] = [];
   // Each turn repeats what the program could not do as asked, so the step reports each note once.
   const notes = new Set<string>();
-  let opened: string | undefined;
-  const open = (sessionId: string) => {
-    if (opened) return;
-    opened = sessionId;
-    const ref: AgentSessionRef = {
-      sessionId,
-      backendId: harness,
-      poolKey: harness,
-      cwd,
-      reopen: { load: true, resume: true, list: true, fork: true },
-      ...(model ? { model: `${harness}/${model}` } : {}),
-    };
-    call.onSessionOpen?.(ref);
-  };
+  const reports = sessionReports(call, () => resuming, {
+    backendId: harness,
+    poolKey: harness,
+    cwd,
+    reopen: { load: true, resume: true, list: true, fork: true },
+    ...(model ? { model: `${harness}/${model}` } : {}),
+  });
   // The attempt's tokens as the program last reported them while a turn ran.
   let running: AgentUsage | undefined;
   // The step's signal aborts on a stop the host asks for (the budget, the run's time limit,
@@ -404,7 +397,8 @@ async function runOnHarness(
   let prompted = false;
   const seam = board && new CallSeam(board.board, board.call);
   const events: StepEvents = {
-    session: open,
+    session: reports.open,
+    delivered: reports.delivered,
     history: (entry) => {
       if (entry.role === "user") {
         if (prompted) activity?.({ kind: "tell", text: entry.text });
@@ -434,7 +428,7 @@ async function runOnHarness(
       if (isFailure(error)) {
         if (error.usage) count(error.usage, turn.resume !== undefined);
         for (const note of error.notes ?? []) notes.add(note);
-        if (error.sessionId) open(error.sessionId);
+        if (error.sessionId) reports.open(error.sessionId);
       }
       throw error;
     }
@@ -463,7 +457,7 @@ async function runOnHarness(
         return { text: result.text, value: result.value, sessionId: result.sessionId };
       } catch (error) {
         const failure = failureOf(error);
-        if (turnSchema && failure?.kind === "schema") return { text: failure.text, sessionId: (error as HarnessFailure).sessionId ?? opened };
+        if (turnSchema && failure?.kind === "schema") return { text: failure.text, sessionId: (error as HarnessFailure).sessionId ?? reports.opened() };
         throw error;
       }
     };
@@ -504,7 +498,7 @@ async function runOnHarness(
     answer ??= await turn({ ...base, ...fresh, ...turns.work });
     if (turns.report) {
       room();
-      answer = await turn({ ...base, ...turns.report, resume: answer.sessionId ?? opened });
+      answer = await turn({ ...base, ...turns.report, resume: answer.sessionId ?? reports.opened() });
     }
 
     if (!turnSchema) {
@@ -538,6 +532,7 @@ async function runOnHarness(
     signal?.removeEventListener("abort", stopped);
     seam?.close();
     // A held call keeps its program for the step's next turn. Any other closes it here.
+    const opened = reports.opened();
     if (opened && (failed || !call.hold)) await adapter.release(opened);
     if (spent) {
       call.onUsage?.(agentUsage(spent, cost ?? 0));
@@ -546,6 +541,30 @@ async function runOnHarness(
     if (history.length) call.onHistory?.(history);
     if (notes.size) onNotes?.([...notes]);
   }
+}
+
+/**
+ * Reports a step's session to the caller. The first open reports it, marked not delivered unless
+ * the step goes on in a session that already holds its task, since a kept turn sends a new prompt.
+ * Once the program has the prompt, the mark reports it again without the false mark.
+ */
+function sessionReports(call: StepRequest, resuming: () => boolean, fields: Omit<AgentSessionRef, "sessionId" | "delivered">) {
+  let ref: AgentSessionRef | undefined;
+  return {
+    opened: () => ref?.sessionId,
+    open: (sessionId: string) => {
+      if (ref) return;
+      const holds = resuming() && call.continueFromSession?.sessionId === sessionId && !call.continueWithPrompt;
+      ref = { sessionId, ...fields, ...(holds ? {} : { delivered: false }) };
+      call.onSessionOpen?.(ref);
+    },
+    delivered: () => {
+      if (ref?.delivered !== false) return;
+      const { delivered: _, ...held } = ref;
+      ref = held;
+      call.onSessionOpen?.(ref);
+    },
+  };
 }
 
 /** A turn's answer: its text, the schema's value when the program gave one, and its session. */

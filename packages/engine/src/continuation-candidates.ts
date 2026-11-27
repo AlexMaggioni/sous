@@ -6,9 +6,11 @@
  * resume throw.
  */
 
+import { WorkflowError, WorkflowErrorCode } from "./errors.js";
+import { projectRecordedError } from "./recorded-error.js";
 import { continuationKey, type ContinuationCandidate, type PreparedContinuation } from "./resume.js";
-import type { PersistedRunState } from "./runs/persistence/run-persistence.js";
-import type { AgentSessionRecord } from "./workflow-result.js";
+import type { PersistedAgentState, PersistedRunState } from "./runs/persistence/run-persistence.js";
+import type { AgentSessionRecord, WorkflowCallRecord } from "./workflow-result.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -36,6 +38,7 @@ function isContinuationSession(value: unknown): value is AgentSessionRecord & { 
     typeof value.reopen.resume === "boolean" &&
     typeof value.reopen.list === "boolean" &&
     (value.reopen.fork === undefined || typeof value.reopen.fork === "boolean") &&
+    (value.delivered === undefined || typeof value.delivered === "boolean") &&
     isNonNegativeSafeInteger(value.callIndex) &&
     typeof value.label === "string" &&
     isOptionalString(value, "phase") &&
@@ -57,6 +60,8 @@ function erroredSessions(persisted: PersistedRunState): Map<string, AgentSession
     const scope = scopeOf(value, persisted.runId);
     if (scope === undefined || !isNonNegativeSafeInteger(value.callIndex)) continue;
     if (!isContinuationSession(value.session) || value.session.callIndex !== value.callIndex) continue;
+    // A session whose program never had the prompt does not hold the task. The step runs again.
+    if (value.session.delivered === false) continue;
     sessions.set(continuationKey(scope, value.callIndex), value.session);
   }
   return sessions;
@@ -103,4 +108,45 @@ export function continuationCandidates(persisted: PersistedRunState): PreparedCo
     if (candidate) candidates.set(key, candidate);
   }
   return candidates.size === 0 ? undefined : { candidates };
+}
+
+const DEAD_STEP = "The process running the step ended before the step did.";
+
+/**
+ * The steps and call rows of a run whose process died, with each step it left running settled as
+ * an error. A step that saved its session and its call's identity also gets an error call row, so
+ * continuationCandidates pairs the two and a resume goes on in the session. A step with a call row
+ * already, or with no call index, stays as it is.
+ */
+export function settleDeadSteps(state: PersistedRunState, at: string): Pick<PersistedRunState, "agents" | "calls"> {
+  const calls: WorkflowCallRecord[] = Array.isArray(state.calls) ? [...state.calls] : [];
+  let pushed = false;
+  const rowed = new Set(calls.map((row: unknown) => (isRecord(row) ? continuationKey(scopeOf(row, state.runId) ?? "", Number(row.index)) : "")));
+  const code = WorkflowErrorCode.AGENT_EXECUTION_ERROR;
+  const settle = (row: PersistedAgentState): PersistedAgentState => {
+    const scope = isRecord(row) ? scopeOf(row, state.runId) : undefined;
+    if (scope === undefined || row.status !== "running" || !isNonNegativeSafeInteger(row.callIndex)) return row;
+    if (rowed.has(continuationKey(scope, row.callIndex))) return row;
+    const { call, ...settled } = row;
+    if (isRecord(call) && typeof call.hash === "string" && isContinuationSession(row.session)) {
+      pushed = true;
+      calls.push({
+        index: row.callIndex,
+        kind: "agent",
+        hash: call.hash,
+        ...(typeof call.path === "string" ? { path: call.path } : {}),
+        ...(typeof call.inputsHash === "string" ? { inputsHash: call.inputsHash } : {}),
+        label: row.label,
+        outcome: "error",
+        origin: "engine",
+        error: projectRecordedError(new WorkflowError(DEAD_STEP, code, { recoverable: true, agentLabel: row.label })),
+        backendId: row.session.backendId,
+        ...(typeof call.resolvedCwd === "string" ? { resolvedCwd: call.resolvedCwd } : {}),
+        scope,
+      });
+    }
+    return { ...settled, status: "error", error: DEAD_STEP, errorCode: code, recoverable: true, endedAt: at };
+  };
+  const agents = Array.isArray(state.agents) ? state.agents.map(settle) : state.agents;
+  return { agents, ...(pushed ? { calls } : {}) };
 }

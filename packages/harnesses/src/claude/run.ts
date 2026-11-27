@@ -233,6 +233,17 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
     events.model?.(program.model);
     const send = tells.open();
     if (send) events.steer?.(send);
+    if (heard) delivered();
+  };
+  /**
+   * Claude Code writes the prompt into the session file before its first assistant, user or result
+   * frame of the turn. The mark waits until the turn named its session.
+   */
+  const delivered = () => {
+    heard = true;
+    if (!opened || marked) return;
+    marked = true;
+    events.delivered?.();
   };
   program.send(
     (async function* turn(): AsyncGenerator<SDKUserMessage> {
@@ -247,6 +258,8 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
   let finalUsage: Usage | undefined;
   const total = () => finalUsage ?? spent;
   let opened = false;
+  let heard = false;
+  let marked = false;
   let text = "";
   let limit: { resetAt?: string } | undefined;
   let limitSeen = false;
@@ -269,6 +282,7 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
       const next = await program.query.next();
       if (next.done) break;
       const message = next.value as SDKMessage | Lifecycle;
+      if (message.type === "assistant" || message.type === "user" || message.type === "result") delivered();
       switch (message.type) {
         case "command_lifecycle":
           tells.lifecycle(message.command_uuid, message.state);

@@ -262,6 +262,8 @@ export async function runCodex(path: string, step: Step, events: StepEvents, hel
       ...(step.schema ? { outputSchema: toStrictJsonSchema(step.schema) as Record<string, never> } : {}),
     });
     turnId ??= started.turn.id;
+    // The thread holds the prompt once turn/start has returned.
+    events.delivered?.();
     if (!turnEnded) {
       seam = steerTurn({ server: server!, threadId, turnId, delivered: (told) => history({ role: "user", kind: "text", text: told }), note: (note) => notes.push(note) });
       events.steer?.(seam.send);

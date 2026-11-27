@@ -125,9 +125,10 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
   /** Base64 image attachments sent with the prompt. The steps module checks each one's data
    *  and mimeType, and a bad one fails the step with SCRIPT_VALIDATION_ERROR. */
   images?: readonly PromptImage[];
-  /** The step's session handle, fired once, the first time the harness reports a session id
-   *  (a failure that carries one counts). It holds the sessionId, the harness, the cwd, the
-   *  reopen flags and, when the step picked one, the model. Like every on* callback it is
+  /** The step's session handle, fired the first time the harness reports a session id (a
+   *  failure that carries one counts). It holds the sessionId, the harness, the cwd, the reopen
+   *  flags and, when the step picked one, the model. When it opens with `delivered: false`, it
+   *  fires once more without that mark as the program gets the prompt. Like every on* callback it is
    *  OUT-OF-BAND: run()'s return value stays the bare AgentResult. NOT part of the resume
    *  identity hash. */
   onSessionOpen?: (session: AgentSessionRef) => void;

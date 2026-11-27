@@ -4,43 +4,17 @@
 // never a turn of its own. Run against the fake programs in test/fakes.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir, userInfo } from "node:os";
-import { dirname, join, resolve } from "node:path";
 import { describe, test } from "node:test";
-import { fileURLToPath } from "node:url";
 import { createHarness } from "../src/index.js";
 import type { HarnessId, Step } from "../src/index.js";
+import { caseRoot, fakeCase } from "./helpers/fake-case.js";
 
-const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../test/fakes");
-
-if (!process.env.HOME || process.env.HOME === userInfo().homedir || !existsSync(process.env.HOME)) process.env.HOME = mkdtempSync(join(tmpdir(), "harness-note-home-"));
-const ROOT = mkdtempSync(join(process.env.HOME, "note-"));
-delete process.env.FAKE_VERSION;
-
-/** One line of the fake's request log. */
-interface LogLine {
-  prompt: string;
-  texts?: string[];
-  images?: unknown[];
-  rule?: number | null;
-}
+const ROOT = caseRoot("note");
 
 function newCase(id: HarnessId, rules: object[] = []) {
-  const dir = mkdtempSync(join(ROOT, `${id}-`));
-  const cwd = join(dir, "project");
-  mkdirSync(cwd);
-  mkdirSync(join(dir, "account"));
-  const log = join(dir, "fake.log");
-  const rulesFile = join(dir, "rules.json");
-  writeFileSync(rulesFile, JSON.stringify(rules));
-  process.env.FAKE_LOG = log;
-  process.env.FAKE_RULES = rulesFile;
-  const harness = createHarness(id, { path: join(FAKES, id), env: {} });
-  return {
-    run: (fields: Partial<Step> & { prompt: string }) => harness.run({ cwd, account: { folder: join(dir, "account") }, ...fields }),
-    lines: () => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as LogLine) : []),
-  };
+  const c = fakeCase(ROOT, id, rules);
+  const harness = createHarness(id, c.options);
+  return { run: (fields: Partial<Step> & { prompt: string }) => harness.run(c.step(fields)), lines: c.lines };
 }
 
 const NOTE = "Use the v2 API this time.";

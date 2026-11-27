@@ -22,6 +22,7 @@ import type {
   AgentSessionRecord,
   JournalEntry,
   RunStatus,
+  RunningCall,
   WorkflowCallRecord,
   WorkflowCheckpointTaken,
   WorkflowContinuationResult,
@@ -54,6 +55,8 @@ export interface PersistedAgentState {
   /** The session record captured when this agent's call opened a session; absent
    *  on pre-session-record persisted runs and agents that opened no session. */
   session?: AgentSessionRecord;
+  /** A running step's call identity, saved with its session. The step's end removes it. */
+  call?: RunningCall;
   startedAt?: string;
   endedAt?: string;
   /** The model this agent ran on (provider/id), when known. */

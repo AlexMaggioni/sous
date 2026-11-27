@@ -106,10 +106,14 @@ describe("steps on the fake programs", () => {
     }
     assert.deepEqual(found, [`claude ${join(FAKES, "claude")} 2.1.330`, `codex ${join(FAKES, "codex")} 0.169.0`]);
     assert.deepEqual(models, ["claude/haiku", "claude/haiku", "codex/gpt-6.1-sol"]);
-    assert.deepEqual(sessions.map((ref) => [ref.backendId, ref.cwd, ref.model]), [
-      ["claude", place.cwd, "claude/haiku"],
-      ["claude", place.cwd, "claude/haiku"],
-      ["codex", place.cwd, "codex/gpt-6.1-sol"],
+    // Each step reports its session at open, marked not delivered, and again once the program has the prompt.
+    assert.deepEqual(sessions.map((ref) => [ref.backendId, ref.cwd, ref.model, ref.delivered]), [
+      ["claude", place.cwd, "claude/haiku", false],
+      ["claude", place.cwd, "claude/haiku", undefined],
+      ["claude", place.cwd, "claude/haiku", false],
+      ["claude", place.cwd, "claude/haiku", undefined],
+      ["codex", place.cwd, "codex/gpt-6.1-sol", false],
+      ["codex", place.cwd, "codex/gpt-6.1-sol", undefined],
     ]);
     assert.equal(usage.length, 3);
     assert.ok(usage.every((u) => u.total > 0));
@@ -345,16 +349,18 @@ describe("steps on the fake programs", () => {
       const place = fakePlace([{ hold: "never" }]);
       const steps = createSteps(onFakes(place));
       const controller = new AbortController();
-      const sessions: string[] = [];
+      const sessions: AgentSessionRef[] = [];
       try {
-        const running = steps.run("hello", routed(steps, { label: "a", model }, { signal: controller.signal, onSessionOpen: (ref: AgentSessionRef) => sessions.push(ref.sessionId) }));
+        const running = steps.run("hello", routed(steps, { label: "a", model }, { signal: controller.signal, onSessionOpen: (ref: AgentSessionRef) => sessions.push(ref) }));
         await waitUntil(() => place.lines().length === 1, "the program should receive the step", 10_000);
         controller.abort();
         await assert.rejects(running);
       } finally {
         await steps.dispose();
       }
-      assert.deepEqual(sessions, [place.lines()[0]?.sessionId]);
+      // The program had the prompt before the stop, so the second report drops the mark.
+      const id = place.lines()[0]?.sessionId;
+      assert.deepEqual(sessions.map((ref) => [ref.sessionId, ref.delivered]), [[id, false], [id, undefined]]);
     });
 
     it(`times out a ${harness} step as a failure a retry can fix`, async () => {
@@ -440,20 +446,24 @@ describe("steps on the fake programs", () => {
       const steps = createSteps(onFakes(place));
       const provenance: AgentResultProvenance[] = [];
       let first: AgentSessionRef | undefined;
+      const reports: Record<"second" | "third", AgentSessionRef[]> = { second: [], third: [] };
       try {
         await steps.run("first", routed(steps, { label: "a", model }, { onSessionOpen: (ref: AgentSessionRef) => (first ??= ref) }));
         assert.ok(first);
         // A journal from before the harnesses records only these three fields.
         const old = { sessionId: first.sessionId, backendId: first.backendId, cwd: first.cwd } as AgentSessionRef;
-        await steps.run("second", routed(steps, { label: "a", model }, { continueFromSession: old, onResultProvenance: (p: AgentResultProvenance) => provenance.push(p) }));
+        await steps.run("second", routed(steps, { label: "a", model }, { continueFromSession: old, onResultProvenance: (p: AgentResultProvenance) => provenance.push(p), onSessionOpen: (ref: AgentSessionRef) => reports.second.push(ref) }));
         const gone = { ...old, sessionId: "00000000-0000-4000-8000-000000000000" };
         assert.equal(
-          await steps.run("third", routed(steps, { label: "a", model }, { continueFromSession: gone, onResultProvenance: (p: AgentResultProvenance) => provenance.push(p) })),
+          await steps.run("third", routed(steps, { label: "a", model }, { continueFromSession: gone, onResultProvenance: (p: AgentResultProvenance) => provenance.push(p), onSessionOpen: (ref: AgentSessionRef) => reports.third.push(ref) })),
           `Fake ${harness} answer.`,
         );
       } finally {
         await steps.dispose();
       }
+      // The recorded session already holds the task. The fresh one holds it once the program has the prompt.
+      assert.deepEqual(reports.second.map((ref) => [ref.sessionId, ref.delivered]), [[first!.sessionId, undefined]]);
+      assert.deepEqual(reports.third.map((ref) => ref.delivered), [false, undefined]);
       assert.deepEqual(provenance, [
         { source: "live", continuation: { reattached: true, method: "resume" } },
         { source: "live", continuation: { reattached: false, reason: "reattach-failed" } },
@@ -464,6 +474,24 @@ describe("steps on the fake programs", () => {
       assert.notEqual(lines.at(-1)?.sessionId, first!.sessionId);
     });
   }
+
+  it("keeps the not-delivered mark on a codex step stopped before its turn started", async () => {
+    const place = fakePlace();
+    const steps = createSteps(onFakes(place));
+    const controller = new AbortController();
+    const sessions: AgentSessionRef[] = [];
+    const onSessionOpen = (ref: AgentSessionRef) => {
+      sessions.push(ref);
+      controller.abort();
+    };
+    try {
+      await assert.rejects(steps.run("hello", routed(steps, { label: "a", model: "codex/gpt-6.1-sol" }, { signal: controller.signal, onSessionOpen })));
+    } finally {
+      await steps.dispose();
+    }
+    assert.equal(place.lines().length, 0, "the program got no turn");
+    assert.deepEqual(sessions.map((ref) => ref.delivered), [false]);
+  });
 });
 
 describe("steps with a runner of their own", () => {

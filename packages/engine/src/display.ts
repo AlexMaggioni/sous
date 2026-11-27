@@ -2,7 +2,7 @@
 // one rule that turns a step's start and end into the step list.
 import type { AgentHistoryEntry } from "./steps/agent-history.js";
 import type { AgentResultProvenance, AgentUsage } from "./steps/agent-run.js";
-import type { AgentSessionRecord } from "./workflow-result.js";
+import type { AgentSessionRecord, RunningCall, TurnSessionEvent } from "./workflow-result.js";
 import type { WorkflowErrorCode } from "./errors.js";
 import type { RunAgentEndPayload, RunAgentStartPayload } from "./run-events.js";
 
@@ -25,6 +25,9 @@ export interface WorkflowAgentSnapshot {
   model?: string;
   /** The agent's session re-attach record (live or journal-replayed), when one exists. */
   session?: AgentSessionRecord;
+  /** A running step's call identity, saved with its session. A run whose process died writes its
+   *  call row from this, so a resume goes on in the session. The step's end removes it. */
+  call?: RunningCall;
   callIndex?: number;
   scope?: string;
   usage?: AgentUsage;
@@ -109,7 +112,24 @@ export function foldStep(steps: WorkflowAgentSnapshot[], event: StepEvent, at: s
   if (event.usage !== undefined) step.usage = event.usage;
   if (event.provenance !== undefined) step.provenance = event.provenance;
   if (event.model) step.model = event.model;
-  if (event.session) step.session = event.session;
+  if (event.session) {
+    // A running step noted its session early. The end puts it back in its saved place.
+    delete step.session;
+    step.session = event.session;
+  }
+  delete step.call;
   step.endedAt = at;
   return step;
+}
+
+/**
+ * Note a running step's session and call identity on its row, and return whether a running row
+ * took it. A step that ended keeps what its end gave it.
+ */
+export function holdTurnSession(steps: WorkflowAgentSnapshot[], { session, callIndex, scope, ...call }: TurnSessionEvent): boolean {
+  const step = steps.find((row) => row.scope === scope && row.callIndex === callIndex && row.status === "running");
+  if (!step) return false;
+  step.session = session;
+  step.call = call;
+  return true;
 }

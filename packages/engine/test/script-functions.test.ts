@@ -75,7 +75,7 @@ describe("a bad call to a script function fails the run with its message", () =>
   }
 
   it("choose() needs at least one step or workflow, also with any: true and no saved workflow", async () => {
-    const error = await failureOf("return await choose('What next?', { any: true })", { agent: unused, listSavedWorkflows: () => [] });
+    const error = await failureOf("return await choose('What next?', { any: true })", { agent: unused, savedWorkflows: { list: () => [] } });
     assert.equal(error.message, "choose() needs at least one step or workflow");
   });
 
@@ -174,9 +174,11 @@ describe("choose() with none: true", () => {
     let loaded = 0;
     const out = await resultOf<Record<string, unknown>>("return await choose('What next?', { none: true, workflows: ['triage'] })", {
       agent: runner,
-      loadSavedWorkflow: (name) => {
-        loaded++;
-        return name === "triage" ? `${META}\nreturn 'triaged'` : undefined;
+      savedWorkflows: {
+        load: (name) => {
+          loaded++;
+          return name === "triage" ? `${META}\nreturn 'triaged'` : undefined;
+        },
       },
     });
     assert.deepEqual(out, { choice: "none", reason: "skip" });

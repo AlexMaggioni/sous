@@ -89,6 +89,10 @@ export interface AgentSessionRef {
    *  baselines it and reports only the spend that follows. Absent when the agent reported no
    *  cost. ADDITIVE and NOT a hash input. */
   costGauge?: number;
+  /** False from the session's open until its program has the step's prompt. A resume goes on
+   *  only in a session that holds the prompt. Absent reads as true, as on older refs. ADDITIVE
+   *  and NOT a hash input. */
+  delivered?: boolean;
 }
 
 /** One run's session ref PLUS its workflow-call context — what lands in JournalEntry.session,
@@ -100,6 +104,21 @@ export interface AgentSessionRecord extends AgentSessionRef {
   label: string;
   phase?: string;
   keptOpen: boolean;
+}
+
+/** A running agent call's identity: the hash, inputs hash, path and working folder its call row gets. */
+export interface RunningCall {
+  hash: string;
+  inputsHash?: string;
+  path?: string;
+  resolvedCwd?: string;
+}
+
+/** A running agent call's session with its identity. A host that saves it can go on in the session after its process died. */
+export interface TurnSessionEvent extends RunningCall {
+  session: AgentSessionRecord;
+  callIndex: number;
+  scope: string;
 }
 
 /** One notice observed while serving an agent() call: a continuation attempt on resume. */

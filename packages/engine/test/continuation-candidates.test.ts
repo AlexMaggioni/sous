@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AgentSessionRecord, WorkflowCallRecord } from "../src/workflow-result.js";
 import { WorkflowErrorCode } from "../src/errors.js";
-import { continuationCandidates } from "../src/continuation-candidates.js";
+import { continuationCandidates, settleDeadSteps } from "../src/continuation-candidates.js";
 import { continuationKey, type PreparedContinuation } from "../src/resume.js";
 import type { PersistedAgentState, PersistedRunState } from "../src/runs/persistence/run-persistence.js";
 
@@ -212,5 +212,74 @@ describe("continuation candidates", () => {
     assert.equal(candidate(persisted, 0, NESTED)?.sessionRef.sessionId, "nested-0");
     assert.equal(candidate(persisted, 2, NESTED)?.sessionRef.sessionId, "nested-2");
     assert.equal(build(persisted)?.candidates.size, 3);
+  });
+
+  it("skip a session whose program never had the prompt, and keep one from before the mark", () => {
+    const undelivered = (index: number): PersistedAgentState => ({ ...agent(index), session: { ...session(index), delivered: false } });
+    const persisted = state({ pauseReason: "interrupted", agents: [undelivered(0), agent(1)], calls: [call(0), call(1)] });
+    assert.equal(candidate(persisted, 0), undefined, "the step runs its prompt again");
+    assert.equal(candidate(persisted, 1)?.sessionRef.sessionId, "session-1", "a session saved without the mark goes on");
+    const odd = state({ agents: [{ ...agent(0), session: { ...session(0), delivered: "yes" } as unknown as AgentSessionRecord }] });
+    assert.equal(build(odd), undefined, "a malformed mark removes the candidate");
+  });
+});
+
+// A run whose process died leaves its running steps on disk as running. The settle makes each an
+// error, and a step that saved its session and call gets an error call row a resume pairs with.
+describe("settling a dead run's steps", () => {
+  const AT = "2026-02-02T00:00:00.000Z";
+  const running = (index: number, fields: Partial<PersistedAgentState> = {}): PersistedAgentState => ({
+    id: index,
+    label: `agent-${index}`,
+    prompt: "task",
+    status: "running",
+    callIndex: index,
+    scope: runId,
+    ...fields,
+  });
+  const identity = (index: number) => ({ hash: `hash-${index}`, inputsHash: `inputs-${index}`, path: `path-${index}`, resolvedCwd: "/workspace" });
+  const dead = (agents: PersistedAgentState[], calls: WorkflowCallRecord[] = []) =>
+    state({ status: "running", pauseReason: undefined, agents, calls });
+
+  it("gives a step with a saved session and call an error call row, and resumes it in its session", () => {
+    const settled = settleDeadSteps(dead([running(0, { session: session(0), call: identity(0) })]), AT);
+    const [row] = settled.agents;
+    assert.equal(row?.status, "error");
+    assert.equal(row?.errorCode, WorkflowErrorCode.AGENT_EXECUTION_ERROR);
+    assert.equal(row?.recoverable, true);
+    assert.equal(row?.endedAt, AT);
+    assert.equal(row?.call, undefined);
+    const [callRow] = settled.calls ?? [];
+    assert.deepEqual(
+      { ...callRow, error: undefined },
+      { index: 0, kind: "agent", ...identity(0), label: "agent-0", outcome: "error", origin: "engine", error: undefined, backendId: "test-backend", scope: runId },
+    );
+    assert.equal(callRow?.error?.code, WorkflowErrorCode.AGENT_EXECUTION_ERROR);
+    const resumable = { ...dead(settled.agents, settled.calls), status: "paused" as const, pauseReason: "interrupted" as const };
+    assert.equal(candidate(resumable)?.sessionRef.sessionId, "session-0");
+  });
+
+  it("settles a step with no session and writes no call row, so it runs again", () => {
+    const settled = settleDeadSteps(dead([running(0)]), AT);
+    assert.equal(settled.agents[0]?.status, "error");
+    assert.equal(settled.calls, undefined, "the saved calls stay as they were");
+  });
+
+  it("leaves finished steps, steps with a call row, and rows with no call index as they are", () => {
+    const done = { ...running(0), status: "done" as const };
+    const rowed = running(1, { session: session(1), call: identity(1) });
+    const old = { ...running(2), callIndex: undefined };
+    const persisted = dead([done, rowed, old], [{ ...call(1), outcome: "result", error: undefined }]);
+    const settled = settleDeadSteps(persisted, AT);
+    assert.deepEqual(settled.agents, persisted.agents);
+    assert.equal(settled.calls, undefined);
+  });
+
+  it("keeps malformed rows and never throws", () => {
+    const persisted = { ...dead([]), agents: [null, 7, running(0, { call: { hash: 3 } as never, session: session(0) })] as never, calls: "bad" as never };
+    const settled = settleDeadSteps(persisted, AT);
+    assert.deepEqual(settled.agents.slice(0, 2), [null, 7]);
+    assert.equal(settled.agents[2]?.status, "error");
+    assert.equal(settled.calls, undefined);
   });
 });

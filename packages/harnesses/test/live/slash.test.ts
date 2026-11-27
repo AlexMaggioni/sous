@@ -1,6 +1,7 @@
-// Live tests 1, 4, 6 and 8 of the workflow shape: slash prompts on Claude Code. A slash prompt with
-// a note still runs its command, a /goal turn and a report turn after it, whether the goal
-// evaluator's tokens reach the usage sous reports, and whether skills load as they do by hand.
+// Live tests 1, 4, 5, 6 and 8 of the workflow shape: slash prompts on Claude Code. A slash prompt
+// with a note still runs its command, a /goal turn and a report turn after it, a goal stopped in
+// the middle of its loop, whether the goal evaluator's tokens reach the usage sous reports, and
+// whether skills load as they do by hand.
 //
 // It is off by default. It needs Claude Code and your own login, so run it from packages/harnesses
 // without test/with-temp-home.mjs:
@@ -268,6 +269,39 @@ describe("slash prompts on Claude Code", { skip: !ON && "set SOUS_LIVE_SLASH=1 t
     const sessionId = await goalLeftSet(t, cwd);
     await step(t, "/goal clear", { prompt: "/goal clear", cwd, resume: sessionId });
     const after = await step(t, "/goal after clear", { prompt: "/goal", cwd, resume: sessionId });
+    assert.match(after.text, /No goal set/);
+  });
+
+  test("5. after a stop in the middle of the loop, the goal is still set, and the slash prompt sent again meets it", { timeout: 300_000 }, async (t) => {
+    const cwd = project("goal-mid");
+    const files = ["one.txt", "two.txt", "three.txt"];
+    const goal = `/goal The files ${files.join(", ")} in the current folder each hold exactly the text OK`;
+    // The middle of the loop: the goal is set and the agent has called its first tool.
+    const stop = new AbortController();
+    let sessionId = "";
+    let set = false;
+    await assert.rejects(
+      harness.run(
+        { prompt: goal, cwd, model: MODEL, effort: EFFORT, signal: stop.signal },
+        {
+          session: (id) => (sessionId = id),
+          history: (entry) => {
+            if (entry.role === "assistant" && entry.text.startsWith("Goal set")) set = true;
+            if (set && entry.kind === "toolCall") stop.abort();
+          },
+        },
+      ),
+      (error: { failure?: { kind: string } }) => error.failure?.kind === "stopped",
+    );
+    t.diagnostic(`stopped after the first tool call, files written: ${files.filter((file) => existsSync(join(cwd, file))).join(", ") || "none"}`);
+    const before = await step(t, "/goal after the stop", { prompt: "/goal", cwd, resume: sessionId });
+    assert.match(before.text, /Goal active/);
+
+    // What sous does when it resumes a slash step: the prompt again as written, in the session.
+    const again = await step(t, "the slash prompt again", { prompt: goal, cwd, resume: sessionId });
+    assert.equal(again.sessionId, sessionId);
+    for (const file of files) assert.equal(readFileSync(join(cwd, file), "utf8").trim(), "OK", file);
+    const after = await step(t, "/goal after the slash prompt again", { prompt: "/goal", cwd, resume: sessionId });
     assert.match(after.text, /No goal set/);
   });
 

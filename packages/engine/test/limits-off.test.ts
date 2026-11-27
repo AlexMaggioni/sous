@@ -57,7 +57,7 @@ describe("the calls of a run", () => {
   });
 
   it("count a nested workflow's steps against the root's meta.maxAgents", async () => {
-    const run = await runWorkflow(nested(4, ", maxAgents: 3"), { agent: echo, persistLogs: false, loadSavedWorkflow: loadLevel });
+    const run = await runWorkflow(nested(4, ", maxAgents: 3"), { agent: echo, persistLogs: false, savedWorkflows: { load: loadLevel } });
     assert.match(String(run.result), /limit/i, "the fourth level's step is refused");
   });
 
@@ -77,21 +77,21 @@ describe("the calls of a run", () => {
 
 describe("how deep workflows nest", () => {
   it("has no cap by default: seven levels run", async () => {
-    const run = await runWorkflow(nested(7), { agent: echo, persistLogs: false, loadSavedWorkflow: loadLevel });
+    const run = await runWorkflow(nested(7), { agent: echo, persistLogs: false, savedWorkflows: { load: loadLevel } });
     assert.equal(run.result, 7);
   });
 
   it("stops at meta.maxNestingDepth, in every nested level", async () => {
-    const three = await runWorkflow(nested(3, ", maxNestingDepth: 3"), { agent: echo, persistLogs: false, loadSavedWorkflow: loadLevel });
+    const three = await runWorkflow(nested(3, ", maxNestingDepth: 3"), { agent: echo, persistLogs: false, savedWorkflows: { load: loadLevel } });
     assert.equal(three.result, 3);
-    const four = await runWorkflow(nested(4, ", maxNestingDepth: 3"), { agent: echo, persistLogs: false, loadSavedWorkflow: loadLevel });
+    const four = await runWorkflow(nested(4, ", maxNestingDepth: 3"), { agent: echo, persistLogs: false, savedWorkflows: { load: loadLevel } });
     assert.match(String(four.result), /at most 3 levels deep/);
   });
 
   it("stops at the run's own maxNestingDepth, or the meta's when it is smaller", async () => {
-    const run = await runWorkflow(nested(3), { agent: echo, persistLogs: false, loadSavedWorkflow: loadLevel, maxNestingDepth: 2 });
+    const run = await runWorkflow(nested(3), { agent: echo, persistLogs: false, savedWorkflows: { load: loadLevel }, maxNestingDepth: 2 });
     assert.match(String(run.result), /at most 2 levels deep/);
-    const meta = await runWorkflow(nested(3, ", maxNestingDepth: 2"), { agent: echo, persistLogs: false, loadSavedWorkflow: loadLevel, maxNestingDepth: 5 });
+    const meta = await runWorkflow(nested(3, ", maxNestingDepth: 2"), { agent: echo, persistLogs: false, savedWorkflows: { load: loadLevel }, maxNestingDepth: 5 });
     assert.match(String(meta.result), /at most 2 levels deep/);
   });
 });

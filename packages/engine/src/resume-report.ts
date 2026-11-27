@@ -13,6 +13,7 @@ import type { RunEnvironmentIdentity } from "./run-environment.js";
 import type { PersistedRunState } from "./runs/persistence/run-persistence.js";
 import { cloneFrozenStrictJson } from "./strict-json.js";
 import type {
+  JournalEntry,
   WorkflowReplayEligibility,
   WorkflowReplayFirstNonReplay,
   WorkflowReplayOperationalChange,
@@ -21,6 +22,14 @@ import type {
   WorkflowResumeReport,
   WorkflowRunLimits,
 } from "./workflow-result.js";
+
+/** How many of a run's own journal rows run from index 0 with no gap: the prefix a continued run replays. */
+export function journalPrefix(entries: readonly JournalEntry[], runId: string): number {
+  const indexes = new Set(entries.filter((entry) => entry.scope === undefined || entry.scope === runId).map((entry) => entry.index));
+  let index = 0;
+  while (indexes.has(index)) index++;
+  return index;
+}
 
 /** What the report reads from the resumed run, once, when it starts. */
 export interface ResumingRun {

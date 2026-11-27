@@ -485,8 +485,10 @@ return await choose('What next?', { any: true, input: { id: 7 } })`;
     const result = await runWorkflow<{ choice: string; result: string }>(script, {
       agent: runner,
       persistLogs: false,
-      loadSavedWorkflow: (name) => (name === "triage" ? triage : undefined),
-      listSavedWorkflows: () => [{ name: "triage", description: "Sort a ticket" }],
+      savedWorkflows: {
+        load: (name) => (name === "triage" ? triage : undefined),
+        list: () => [{ name: "triage", description: "Sort a ticket" }],
+      },
     });
     assert.equal(result.result.choice, "triage");
     assert.equal(result.result.result, "triaged");
@@ -512,7 +514,7 @@ return await workflow('child', {}, { place: 'worktree' })`;
         cwd: repo,
         runId: "parent-run",
         places: placesIn(home, "parent-run"),
-        loadSavedWorkflow: (name) => (name === "child" ? child : undefined),
+        savedWorkflows: { load: (name) => (name === "child" ? child : undefined) },
       });
       // The places module makes the worktree, named after the child run.
       const dir = join(home.worktrees, "parent-run-nested1");
@@ -532,7 +534,7 @@ return 1`;
     const script = `export const meta = { name: 'parent', description: 'p' }
 return await workflow('child', {}, { place: 'cloud' })`;
     await assert.rejects(
-      runWorkflow(script, { agent: runner, persistLogs: false, loadSavedWorkflow: (name) => (name === "child" ? child : undefined) }),
+      runWorkflow(script, { agent: runner, persistLogs: false, savedWorkflows: { load: (name) => (name === "child" ? child : undefined) } }),
       /place must be worktree, folder or none, got "cloud"/,
     );
   });
@@ -548,7 +550,7 @@ return await workflow('child', {}, { place: '${place}' })`, {
         agent: runner,
         persistLogs: false,
         cwd: dir,
-        loadSavedWorkflow: (name) => (name === "child" ? child : undefined),
+        savedWorkflows: { load: (name) => (name === "child" ? child : undefined) },
       });
     try {
       for (const place of ["worktree", "none"]) {
@@ -578,7 +580,7 @@ return { given, missing, wrong, unknown, plain }`;
     const result = await runWorkflow<Record<string, unknown>>(script, {
       agent: runner,
       persistLogs: false,
-      loadSavedWorkflow: (name) => (name === "child" ? child : undefined),
+      savedWorkflows: { load: (name) => (name === "child" ? child : undefined) },
     });
     assert.deepEqual(JSON.parse(JSON.stringify(result.result)), {
       given: { task: "fix it", rounds: 2, test: "npm test" },

@@ -1133,7 +1133,8 @@ The building agent runs the person-in-the-loop tests itself:
 The `/goal` tests, on Claude Code through `query()` with an open prompt stream. Tests 1 to 3 ran
 on 2026-11-26 with Claude Code 2.1.330, SDK 0.3.330 and Haiku at low effort, for under one cent
 each. Tests 1, 4, 5 in part, 6 and 8 ran later that day with Claude Code 2.1.332, where `haiku`
-is `claude-haiku-5-5` (`packages/harnesses/test/live/slash.test.ts`, `SOUS_LIVE_SLASH=1`).
+is `claude-haiku-5-5` (`packages/harnesses/test/live/slash.test.ts`, `SOUS_LIVE_SLASH=1`). The
+rest of test 5 ran on 2026-11-27.
 
 1. `/goal <condition>` starts the loop when it is the whole prompt. It did, and `goal` is in the
    init message's `slash_commands`. Today's label line in front stops it. With `sous resume
@@ -1151,9 +1152,11 @@ is `claude-haiku-5-5` (`packages/harnesses/test/live/slash.test.ts`, `SOUS_LIVE_
    sent the model back until the goal was met, and the turn's answer was the goal's last message.
    `/goal` with no condition reports the goal, and `/goal clear` clears it. Neither spends a
    token. A met goal clears by itself.
-5. After an abort in the middle of the loop, whether a `resume` finds the goal still active. In
-   part: after a stop at "Goal set", `/goal` on the resumed session answered "Goal active: ...
-   (not yet evaluated)". Phase 4 runs the abort mid-loop.
+5. After an abort in the middle of the loop, whether a `resume` finds the goal still active. It
+   does. After a stop at "Goal set", and again after a stop at the agent's first tool call,
+   `/goal` on the resumed session answered "Goal active: ... (not yet evaluated)". The slash
+   prompt sent again in that session, as sous sends it on a resume, met the goal, and the goal
+   cleared (2026-11-27, Claude Code 2.1.332).
 6. Whether the evaluator's tokens are in the usage sous reads (`claude/run.ts:201-205`,
    `:228-230`). They are not. On a goal turn, the model calls came to about 11,100 to 11,300
    tokens more than `result.usage`, most of them cache writes. A plain turn has a gap of about

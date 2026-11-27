@@ -32,7 +32,7 @@ import {
   type RunPausedPayload,
   type RunPauseReason,
 } from "./run-events.js";
-import { foldStep, preview, type WorkflowSnapshot } from "./display.js";
+import { foldStep, holdTurnSession, preview, type WorkflowSnapshot } from "./display.js";
 import { errorMessage, WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { captureRunEnvironment, type RunEnvironmentIdentity } from "./run-environment.js";
 import { continueRows, newRows, reuseRows, reviseRows, type RunRows } from "./run-rows.js";
@@ -48,8 +48,8 @@ import {
   type WorkflowScriptRevision,
 } from "./runs/persistence/run-persistence.js";
 import { admitResumeSource } from "./resume-matcher.js";
-import { continuationCandidates } from "./continuation-candidates.js";
-import { startResumeReport, type ResumeReporting } from "./resume-report.js";
+import { continuationCandidates, settleDeadSteps } from "./continuation-candidates.js";
+import { journalPrefix, startResumeReport, type ResumeReporting } from "./resume-report.js";
 import type { OccurrenceResume } from "./resume.js";
 import { hasEventLog, type RunEventLog } from "./runs/persistence/run-event-persistence.js";
 import { projectRecordedError } from "./recorded-error.js";
@@ -235,7 +235,9 @@ export interface ExecOptions {
 }
 
 /** Options every run of a manager gets. */
-export interface SousOptions extends Pick<WorkflowRunOptions, "maxNestingDepth" | "listSavedWorkflows"> {
+export interface SousOptions extends Pick<WorkflowRunOptions, "maxNestingDepth"> {
+  /** Names of the saved workflows an agent may pick with choose({ any: true }). */
+  listSavedWorkflows?: () => Array<{ name: string; description?: string }>;
   /** The places of a run tree, from its root run's id. A run without them has none. */
   places?: (rootRunId: string) => RunPlaces;
 }
@@ -508,6 +510,7 @@ export class WorkflowManager extends EventEmitter {
       if (!this.persistence.validateRunLease(lease)) return current;
       const reconciled: PersistedRunState = {
         ...current,
+        ...settleDeadSteps(current, new Date().toISOString()),
         status: "paused",
         pauseReason: "interrupted",
         reason: interruptedReason(lease.recoveredOwnerPid),
@@ -1006,7 +1009,7 @@ export class WorkflowManager extends EventEmitter {
       const agent = this.resolveAgent(exec);
       const vmArgsSnapshot = managed.argsSnapshotOk ? snapshotArgs(managed.args) : { ok: false as const };
       const argsForVm = vmArgsSnapshot.ok ? vmArgsSnapshot.clone : managed.args;
-      const { places, ...sous } = this.sousOptions;
+      const { places, listSavedWorkflows, ...sous } = this.sousOptions;
       const engineResult = await runWorkflow(script, {
         cwd: managed.effectiveCwd,
         args: argsForVm,
@@ -1025,7 +1028,7 @@ export class WorkflowManager extends EventEmitter {
           managed.nestedWorkflows = true;
           onNestedWorkflow?.(ordinal, childRunId);
         },
-        loadSavedWorkflow: this.loadSavedWorkflow,
+        savedWorkflows: { ...(this.loadSavedWorkflow ? { load: this.loadSavedWorkflow } : {}), ...(listSavedWorkflows ? { list: listSavedWorkflows } : {}) },
         ...sous,
         // This run is the root of its run tree, so its places are noted under its id.
         ...(places ? { places: places(managed.runId) } : {}),
@@ -1107,6 +1110,10 @@ export class WorkflowManager extends EventEmitter {
           foldStep(managed.snapshot.agents, { type: "agentEnd", ...event, resultPreview: event.result == null ? undefined : preview(event.result) }, new Date().toISOString());
           publish(this.createRunEvent("agentEnd", { runId: managed.runId, ...event }));
           this.completeAgentCancellation(managed, event);
+        },
+        // The running step's session goes to disk, so a resume after this process dies goes on in it.
+        onTurnSession: (event) => {
+          if (!this.dropPostTerminal(managed, "turnSession") && holdTurnSession(managed.snapshot.agents, event)) this.persistRun(managed);
         },
         onAgentHistory: (event) => {
           if (this.dropPostTerminal(managed, "agentHistory")) return;
@@ -1571,6 +1578,8 @@ export class WorkflowManager extends EventEmitter {
     if (active?.status === "running") {
       return { accepted: false };
     }
+    // A run a dead process left running settles first, so its running steps pair with their sessions.
+    this.reconcileExternallyDeadRun(runId);
     const lease = this.persistence.acquireRunLease(runId);
     if (!lease) {
       return { accepted: false };
@@ -1706,7 +1715,7 @@ export class WorkflowManager extends EventEmitter {
     }
     const continuation: WorkflowContinuationResult = deepFreeze({
       generation,
-      replayedPrefix: contiguousJournalPrefix(persisted.journal ?? [], runId),
+      replayedPrefix: journalPrefix(persisted.journal ?? [], runId),
       ...(revision === undefined ? {} : { scriptRevised: true as const }),
     });
     managed.continuation = continuation;
@@ -1947,17 +1956,6 @@ export class WorkflowManager extends EventEmitter {
   getPersistence(): RunPersistence {
     return this.persistence;
   }
-}
-
-function contiguousJournalPrefix(entries: readonly JournalEntry[], runId: string): number {
-  const indexes = new Set(
-    entries
-      .filter((entry) => entry.scope === undefined || entry.scope === runId)
-      .map((entry) => entry.index),
-  );
-  let index = 0;
-  while (indexes.has(index)) index++;
-  return index;
 }
 
 /** Why a pause request paused the run: a limit of the run, a failed or stopped step, or a request. */
