@@ -8,8 +8,9 @@ import { describe, it } from "node:test";
 import { readJsonLines } from "../../src/json-file.js";
 import type { HomePaths } from "../../src/runs/home.js";
 import { listQuestions } from "../../src/runs/inbox.js";
-import { joinQuestion, joinTarget, leaveSession, takeSession, type JoinTarget } from "../../src/runs/join.js";
+import { askedWords, joinQuestion, joinTarget, leaveSession, takeSession, type JoinTarget } from "../../src/runs/join.js";
 import { createRun } from "../../src/runs/launch.js";
+import { activityWriter } from "../../src/runs/records.js";
 import { Refusal } from "../../src/runs/refusal.js";
 import { readHolder, releaseHold, takeHold } from "../../src/runs/session-hold.js";
 import { holdFile, readState } from "../../src/runs/store.js";
@@ -206,6 +207,32 @@ describe("sous join in the engine", () => {
     await assert.rejects(taking, /stopped waiting/);
     assert.equal(readHolder(file)?.pid, JOINER);
     releaseHold(file, JOINER);
+  });
+
+  it("gives what the agent asked with its program's own tool in the call, and nothing for a call that asked through its status", () => {
+    const { paths } = setup();
+    const runId = "run-asked";
+    const write = activityWriter(paths, runId);
+    const at = (callIndex: number) => ({ scope: runId, callIndex, label: "impl" });
+    write(at(0), { kind: "prompt", text: "Build it." });
+    write(at(0), { kind: "tool", tool: "request_user_input", text: "Which API should I call?\nOptions: v1, v2" });
+    // The person answered, and the turn after it asked again, through its status.
+    write(at(1), { kind: "prompt", text: CONTINUE_PROMPT });
+    write(at(1), { kind: "tool", tool: "Bash", text: "ls" });
+    write(at(1), { kind: "text", text: '{"status":"question","result":null,"message":"Which port?"}' });
+    const target = (callIndex?: number): JoinTarget => ({
+      runId,
+      step: "impl",
+      label: "impl",
+      scope: runId,
+      call: 1,
+      ...(callIndex === undefined ? {} : { callIndex }),
+      session: { ...REF, callIndex: callIndex ?? 1, label: "impl", keptOpen: false },
+      running: false,
+    });
+    assert.equal(askedWords(paths, target(0)), "Which API should I call?\nOptions: v1, v2");
+    assert.equal(askedWords(paths, target(1)), undefined, "that call asked through its status");
+    assert.equal(askedWords(paths, target()), undefined, "by its label, the step's last turn began after the answer");
   });
 
   it("finds a handle's session by the handle's label, and refuses a step with no session", async () => {

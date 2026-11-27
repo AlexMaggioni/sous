@@ -82,7 +82,7 @@ sous join opens the step's program in this terminal, and this shell has none.
 $ sous join <run-1> builder
 exit 0
 "builder" asked you a question in its session.
-Claude Code shows it as declined or interrupted, because sous ended the turn there. Answer it in your own words.
+Its last message there holds the question. Answer it in your own words.
 waiting for run <run-1> to hand the session of "builder" over.
 note: Claude Code may ask whether you trust this folder. sous made it for the run, so answer yes. No closes Claude Code.
 opening Claude Code in <tmp>/scenario-join/sous-home/scratch/<run-1>, in the session of "builder". Leave it to give the session back to the step.

@@ -182,10 +182,13 @@ for (const [program, model, name] of [
         here.err.some((line) => line.startsWith(`opening ${name} in ${held.cwd}, in the session of "impl".`)),
         here.err.join("\n"),
       );
-      // Claude Code asks whether to trust a folder it has not opened before, and sous made this one.
+      // Each program asks whether to trust a folder it has not opened before, and sous made this one.
       assert.ok(held.cwd?.startsWith(`${world.paths.home}/`), held.cwd);
-      const trust = "note: Claude Code may ask whether you trust this folder. sous made it for the run, so answer yes. No closes Claude Code.";
-      assert.equal(here.err.includes(trust), program === "claude", here.err.join("\n"));
+      const trust = {
+        claude: "note: Claude Code may ask whether you trust this folder. sous made it for the run, so answer yes. No closes Claude Code.",
+        codex: "note: Codex may ask whether you trust this folder. sous made it for the run, so trust it.",
+      }[program];
+      assert.ok(here.err.includes(trust), here.err.join("\n"));
       assert.ok(here.folders.every((dir) => !existsSync(dir)), "the private folder is gone");
 
       const byHand = world.log().filter((line) => line.byHand);
@@ -242,9 +245,16 @@ for (const [program, model, name] of [
       const joined = await sous(world.paths, ["join", runId, "impl"], { machine: here.machine });
       assert.equal(joined.code, 0, `${here.out.join("\n")}\n${here.err.join("\n")}`);
       assert.ok(here.err.includes(`"impl" asked you a question in its session.`), here.err.join("\n"));
-      // sous ended the turn on the question, so the program shows it as declined.
-      assert.ok(here.err.includes(`${name} shows it as declined or interrupted, because sous ended the turn there. Answer it in your own words.`), here.err.join("\n"));
-      assert.ok(![...here.out, ...here.err].some((line) => line.includes(QUESTION)), here.err.join("\n"));
+      if (program === "claude") {
+        // sous ended the turn on the question, so Claude Code shows it as declined, with its words.
+        assert.ok(here.err.includes(`${name} shows it as declined or interrupted, because sous ended the turn there. Answer it in your own words.`), here.err.join("\n"));
+        assert.ok(![...here.out, ...here.err].some((line) => line.includes(QUESTION)), here.err.join("\n"));
+      } else {
+        // Codex opens the session on the prompt and the interrupted turn, without the question.
+        const from = here.err.indexOf(`${name} does not show it when it opens the session. It asked:`);
+        assert.ok(from >= 0, here.err.join("\n"));
+        assert.deepEqual(here.err.slice(from + 1, from + 3), [`  ${QUESTION}`, "Answer it in your own words."], here.err.join("\n"));
+      }
       assert.equal(here.out[0], `left the session of "impl" in ${runId}.`);
       assert.equal(here.out[1], `"impl" has its answer and goes on in its session.`);
 

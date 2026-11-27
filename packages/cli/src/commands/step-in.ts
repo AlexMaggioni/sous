@@ -4,7 +4,7 @@
 // opens the program on the session, and gives the session back to the step when the person
 // leaves. Every other step goes on.
 
-import { joinProgram, joinQuestion, joinTarget, leaveSession, readRun, Refusal, takeSession, word, type JoinTarget, type RunQuestion, type RunView } from "@sous-run/engine";
+import { askedWords, joinProgram, joinQuestion, joinTarget, leaveSession, readRun, Refusal, takeSession, word, type JoinTarget, type RunQuestion, type RunView } from "@sous-run/engine";
 import type { Next } from "../reply.js";
 import type { Ctx } from "./index.js";
 import { waitNext } from "./next.js";
@@ -68,11 +68,22 @@ export async function stepIn(ctx: Ctx, target: JoinTarget): Promise<Joined | { s
     const program = joinProgram(paths, target, files.write, ctx.env);
     const say = (line: string) => machine.err(line);
     const question = joinQuestion(paths, target);
-    // The agent's question is in its session, where the person reads it. sous ended the turn
-    // there, so the program shows the question as declined or interrupted.
+    // The agent's question is in its session, where the person reads it. A question asked with the
+    // program's own tool ends with the turn sous ended there: Claude Code shows it as declined or
+    // interrupted, and Codex shows only the prompt, so sous gives its words. A question asked
+    // through the status is the session's last message.
     if (question) {
       say(`"${target.label}" asked you a question in its session.`);
-      say(`${program.name} shows it as declined or interrupted, because sous ended the turn there. Answer it in your own words.`);
+      const words = askedWords(paths, target);
+      if (words !== undefined && !program.showsAsked) {
+        say(`${program.name} does not show it when it opens the session. It asked:`);
+        for (const line of words.split("\n")) say(`  ${line}`);
+        say("Answer it in your own words.");
+      } else if (words !== undefined) {
+        say(`${program.name} shows it as declined or interrupted, because sous ended the turn there. Answer it in your own words.`);
+      } else {
+        say("Its last message there holds the question. Answer it in your own words.");
+      }
     }
     const stop = new AbortController();
     const off = machine.onStop(() => stop.abort());

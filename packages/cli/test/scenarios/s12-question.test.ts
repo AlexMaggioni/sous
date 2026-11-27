@@ -84,7 +84,10 @@ for (const [program, model, name] of [
       const joined = await joining;
       assert.equal(joined.code, 0, joined.stdout);
       assert.ok(joined.stdout.includes(`"impl" asked you a question in its session.`), joined.stdout);
-      assert.ok(joined.stdout.includes(`${name} shows it as declined or interrupted, because sous ended the turn there. Answer it in your own words.`), joined.stdout);
+      // The agent asked through its status, so its question is the session's last message.
+      assert.ok(joined.stdout.includes("Its last message there holds the question. Answer it in your own words."), joined.stdout);
+      assert.ok(!joined.stdout.includes("declined or interrupted"), joined.stdout);
+      assert.ok(!joined.stdout.includes(QUESTION), "sous leaves the agent's message to its session");
       assert.ok(joined.stdout.includes(`opening ${name} in ${asked.cwd}, in the session of "impl".`), joined.stdout);
       assert.ok(joined.stdout.includes(`left the session of "impl" in ${runId}.`), joined.stdout);
       assert.ok(joined.stdout.includes(`"impl" has its answer and goes on in its session.`), joined.stdout);

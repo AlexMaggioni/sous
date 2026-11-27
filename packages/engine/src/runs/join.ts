@@ -9,7 +9,7 @@
 import { recordAction, type Who } from "./actions.js";
 import type { HomePaths } from "./home.js";
 import { listQuestions, writeAnswer, type Question } from "./inbox.js";
-import { loadRecord, processAlive, requestJoin } from "./records.js";
+import { loadRecord, processAlive, readActivity, requestJoin } from "./records.js";
 import { Refusal } from "./refusal.js";
 import { runDetail } from "./run.js";
 import { readHolder, releaseHold, takeHold, type Holder } from "./session-hold.js";
@@ -27,6 +27,8 @@ export interface JoinTarget {
   scope: string;
   /** The call of the step whose session it is, counted from 1 as sous step --call counts. */
   call: number;
+  /** That call's index in the run, as its activity names it. */
+  callIndex?: number;
   session: AgentSessionRecord;
   /** The model the step ran on, such as claude/haiku. */
   model?: string;
@@ -64,13 +66,39 @@ export function joinTarget(paths: HomePaths, runId: string, step: string, option
   }
   const { agent, scope, call } = chosen;
   const running = detail.running.includes(name) && call === numbered.length;
-  return { runId: id, step: name, label: agent.label, scope, call, session: agent.session!, ...(agent.model ? { model: agent.model } : {}), running };
+  return {
+    runId: id,
+    step: name,
+    label: agent.label,
+    scope,
+    call,
+    ...(agent.callIndex === undefined ? {} : { callIndex: agent.callIndex }),
+    session: agent.session!,
+    ...(agent.model ? { model: agent.model } : {}),
+    running,
+  };
 }
 
 /** The open question of the step that waits for the person to step in, if it asked one. */
 export function joinQuestion(paths: HomePaths, target: JoinTarget): Question | undefined {
   const asker = target.session.handle ?? target.label;
   return listQuestions(paths, target.runId).find((question) => question.answeredBy === "join" && question.scope === target.scope && question.step === asker);
+}
+
+/** The tools through which an agent asks the person in its program. */
+const ASK_TOOLS = new Set(["AskUserQuestion", "request_user_input"]);
+
+/**
+ * What the agent asked through its program's own question tool in the call `target` names, as the
+ * run's activity saved it. Undefined when the call's last turn asked nothing that way, as when it
+ * asked through its status.
+ */
+export function askedWords(paths: HomePaths, target: JoinTarget): string | undefined {
+  const last = readActivity(paths, target.runId)
+    .filter((line) => line.scope === target.scope && (target.callIndex === undefined ? line.label === target.label : line.callIndex === target.callIndex))
+    .filter((line) => line.kind === "prompt" || (line.kind === "tool" && line.tool !== undefined && ASK_TOOLS.has(line.tool)))
+    .at(-1);
+  return last?.kind === "tool" ? last.text : undefined;
 }
 
 export interface TakeOptions {

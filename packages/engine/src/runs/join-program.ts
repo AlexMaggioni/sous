@@ -24,6 +24,9 @@ export interface JoinProgram {
   cwd: string;
   /** What the step had that the person's program opens without. */
   notes: string[];
+  /** Whether the program shows the question its agent asked with its own tool when it opens the
+   *  session. Codex shows only the prompt, then the turn interrupted. */
+  showsAsked: boolean;
 }
 
 /**
@@ -69,10 +72,14 @@ export function joinProgram(paths: HomePaths, target: JoinTarget, write: (name: 
     ...(mcpServers.length ? { mcpServers } : {}),
   };
   const args = program.joinArgs(join, write);
-  // Claude Code asks whether to trust a folder it has not opened by hand, and its No closes it.
-  // The run's scratch folder and its worktrees are folders sous made under its home.
-  if (harness === "claude" && session.cwd.startsWith(`${paths.home}${sep}`)) {
-    notes.push("Claude Code may ask whether you trust this folder. sous made it for the run, so answer yes. No closes Claude Code.");
+  // Each program asks whether to trust a folder it has not opened by hand. Claude Code's No closes
+  // it. The run's scratch folder and its worktrees are folders sous made under its home.
+  if (session.cwd.startsWith(`${paths.home}${sep}`)) {
+    notes.push(
+      harness === "claude"
+        ? "Claude Code may ask whether you trust this folder. sous made it for the run, so answer yes. No closes Claude Code."
+        : "Codex may ask whether you trust this folder. sous made it for the run, so trust it.",
+    );
   }
-  return { name: harnessName(harness), path: found.path, args: args.args, env: opened, cwd: session.cwd, notes: [...notes, ...args.notes] };
+  return { name: harnessName(harness), path: found.path, args: args.args, env: opened, cwd: session.cwd, notes: [...notes, ...args.notes], showsAsked: harness === "claude" };
 }

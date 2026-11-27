@@ -673,11 +673,14 @@ out, and a note says so.
 - When the agent asked, leaving answers its question. sous shows such a question as
   `"<step>" needs you in its session.` with the `sous join` line, in `sous status`, `sous inbox`,
   `sous wait`, the run's log, the notice and the page. The agent's own words stay in its session.
-  sous ended the agent's turn on the question, so the program shows it as declined or
-  interrupted. The person answers it in their own words. Until then `sous show` and `sous step`
-  list the call that asked as `asks`, and the page shows the step as needing you.
-- Claude Code asks whether to trust a folder it has not opened by hand before, such as a run's
-  worktree. Its No closes it, so `sous join` says to answer yes.
+  Until the person leaves, `sous show` and `sous step` list the call that asked as `asks`, and
+  the page shows the step as needing you.
+- An agent that asked through its status ends its turn with the question as its last message.
+  An agent that asked with its program's own tool had its turn ended there by sous. Claude Code
+  shows that question as declined or interrupted. Codex shows only the prompt, so `sous join`
+  prints the question's words before it opens Codex. The person answers in their own words.
+- Claude Code and Codex ask whether to trust a folder they have not opened by hand before, such
+  as a run's worktree. `sous join` says to answer yes. Claude Code's No closes it.
 - `sous wait` in a terminal offers to step in when an agent needs you. `n` leaves the step
   waiting.
 - Ctrl-C while sous waits for the session stops the wait and opens nothing. The step keeps its
