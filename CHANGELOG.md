@@ -74,14 +74,6 @@ says.
 - An `--answers` key of the form `<label> (answer N)` matches nothing, since an agent's question
   has no text answer now.
 
-### Upgrading from 0.1.0
-
-A run paused under 0.1.0 runs its agent steps again after the upgrade, since their hash now holds
-`until`. Its code steps and the answers to its `ask()` and `breakpoint()` calls replay. Finish or
-stop paused runs before you upgrade, or start them again with `sous rerun`.
-
-## 0.1.1 (unreleased)
-
 ### Fixed
 
 - After a reboot, a pid that sous saved before it may name another process. sous saved the pid
@@ -94,6 +86,12 @@ stop paused runs before you upgrade, or start them again with `sous rerun`.
 - A run started from inside a run's worktree made that worktree a known project, so the service
   started the schedules of its workflow files once more for each such worktree. A folder in the
   home's `worktrees/` is no longer a project, and those an older sous noted are skipped.
+
+### Upgrading from 0.1.0
+
+A run paused under 0.1.0 runs its agent steps again after the upgrade, since their hash now holds
+`until`. Its code steps and the answers to its `ask()` and `breakpoint()` calls replay. Finish or
+stop paused runs before you upgrade, or start them again with `sous rerun`.
 
 ## 0.1.0 (2026-11-26)
 
