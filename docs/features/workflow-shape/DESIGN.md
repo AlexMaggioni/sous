@@ -1218,8 +1218,16 @@ at low effort.
     build had 3. All 5 landed, 3 of them after the reviewer's blockers went back to the
     implementer, and the gate's proof passed. On the run's branch, the 249 tests, 212 at the
     skeleton and 37 new, and the gate's script passed again with no agent. The person typed one
-    command, joined no session and answered nothing. Whether the owner's own run of that stage
-    took more is for the owner's notes.
+    command, joined no session and answered nothing.
+
+    The owner's Claude Code transcript records their own build of that stage. From the message
+    that started it to the stage landing, 2 hours 27 minutes, they typed seven messages to the
+    session that ran it. They joined none of its eight agent sessions and answered no question,
+    since the session asked none. One message started the build. Four asked how it was going, and
+    one asked to see the page. The last asked for news, and it also restarted the session, whose
+    turn an API error had ended just after a ticket was parked. So the sous run took one action
+    where the owner's took seven, or two when only the messages the build needed count. By the
+    rule of scenario 15, it passes on this stage.
 
 How the plan holds:
 
@@ -1256,5 +1264,6 @@ The owner answered on 2026-11-26. The design above follows these answers.
 
 ## Open
 
-- The stage for scenario 15's verdict, and the count of actions in the owner's manual run of it.
-  Live test 15 ran a real stage the owner had built before, with one command and no other action.
+- Whether the stage of live test 15 is the one the owner wants for scenario 15's verdict. The
+  design leaves that choice to the owner. Live test 15 picked a stage the owner had built by hand
+  with the same agents, and the verdict there is one action against seven.
