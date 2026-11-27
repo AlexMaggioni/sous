@@ -8,6 +8,7 @@ import { closeRunWorktrees, NO_PLACES, runPlaces, type PlaceNotes, type Worktree
 import { ensureHome, homePaths, type HomePaths } from "../src/runs/home.js";
 import type { RunRecord } from "../src/runs/records.js";
 import { git, initGitRepo } from "./helpers/git.js";
+import { stepTree } from "./helpers/places.js";
 
 // The worktree of a session, or of one step, with place "worktree". It is named for its run and
 // its label, so a resumed run finds the same one. When its scope ends, sous commits what is left
@@ -71,8 +72,8 @@ describe("a session's worktree", () => {
 
   it("of one step ends in the call's occurrence", (t) => {
     const w = world(t);
-    const tree = made(w.places.sessionPlace(w.repo, { runId: "run-9", label: "Edit it", occurrence: 2 }));
-    assert.equal(tree.dir, join(w.home.worktrees, "run-9-edit-it-2"));
+    const tree = made(w.places.sessionPlace(w.repo, { runId: "run-9", label: "Edit it", step: { prompt: "Edit it.", occurrence: 2 } }));
+    assert.equal(tree.dir, join(w.home.worktrees, stepTree("run-9", "Edit it", "Edit it.", 2)));
   });
 
   it("starts from the HEAD of the folder around it, a worktree included", (t) => {

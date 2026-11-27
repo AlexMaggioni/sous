@@ -13,7 +13,7 @@ import { resumeRows } from "../src/resume-rows.js";
 import type { PersistedResumeSeed } from "../src/runs/persistence/run-persistence.js";
 import { runWorkflow, type WorkflowResume } from "../src/workflow.js";
 import type { RunPlaces } from "../src/places/places.js";
-import { tempPlaces } from "./helpers/places.js";
+import { stepTree, tempPlaces } from "./helpers/places.js";
 import { git, initGitRepo } from "./helpers/git.js";
 import { tempDirs } from "./helpers/temp.js";
 
@@ -226,7 +226,8 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
 
       // A branch already named like the step's worktree is checked out, so the step still works
       // in a worktree, and the calls after it replay.
-      git(dirs.cwd, "branch", "sous/degrade-item-0-1");
+      const taken = stepTree("degrade", "item-0", "worktree-0-changed");
+      git(dirs.cwd, "branch", `sous/${taken}`);
       const degraded = [...original];
       degraded[0] = "worktree-0-changed";
       const degradedPrompts: string[] = [];
@@ -241,7 +242,7 @@ describe("PreparedResume allocation-ordered barriers and fan-out", () => {
         persistLogs: false,
       });
       assert.deepEqual(degradedPrompts, ["worktree-0-changed"]);
-      assert.deepEqual(degradedCwds, [join(home.home.worktrees, "degrade-item-0-1")]);
+      assert.deepEqual(degradedCwds, [join(home.home.worktrees, taken)]);
       assert.equal(degradedResult.resumeReport?.replayed, 2);
       assert.equal(degradedResult.resumeReport?.live, 1);
       assert.deepEqual(degradedResult.resumeReport?.calls.slice(0, 2).map((decision) =>

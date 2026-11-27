@@ -155,6 +155,11 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
    *  the reopened session instead of the resume instruction. A kept turn never runs fresh. On
    *  another program, or when the program lost the session, the step fails. */
   continueWithPrompt?: boolean;
+  /** This call is a later turn of a session, or a fork's turn. With `continueFromSession` it never
+   *  runs fresh, also when it goes on with an interrupted turn: on another program, or when the
+   *  program lost the session, the step fails, since a new session would not hold the turns
+   *  before. NOT hashed. */
+  inSession?: boolean;
   /** With `continueFromSession` and `continueWithPrompt`, this turn is a fork's first: the
    *  program forks the session into a new one, which the turn reports, and the original stays as
    *  it was. NOT hashed here: the engine puts `fork` in the call hash itself. */

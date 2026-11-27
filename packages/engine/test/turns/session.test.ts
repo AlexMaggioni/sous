@@ -75,14 +75,14 @@ return [s.label, s.cwd]`,
     assert.equal(new Set(lines.map((line) => line.sessionId)).size, 1, "one session id");
   });
 
-  it("gives each agent() call a fresh session, also with a handle's label", async () => {
+  it("gives each agent() call a fresh session, also after a handle's send", async () => {
     const place = fakePlace();
     await run(
       place,
       `const s = session({ label: 'impl', model: '${MODEL}' })
 await s.send('One.')
-await agent('Other.', { label: 'impl', model: '${MODEL}' })
-await agent('Other again.', { label: 'impl', model: '${MODEL}' })
+await agent('Other.', { label: 'other', model: '${MODEL}' })
+await agent('Other again.', { label: 'other', model: '${MODEL}' })
 return 'ok'`,
     );
     const lines = place.lines();

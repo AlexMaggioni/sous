@@ -10,7 +10,7 @@ import type { AgentRunner } from "../src/steps/agent-runner.js";
 import type { TSchema } from "typebox";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import { CALL_INPUTS_FORMAT, type WorkflowRunOptions, runWorkflow } from "../src/workflow.js";
-import { tempPlaces } from "./helpers/places.js";
+import { stepTree, tempPlaces } from "./helpers/places.js";
 
 type RunOverrides = Omit<WorkflowRunOptions, "agent">;
 
@@ -173,8 +173,8 @@ return await agent('same-prompt', { label: 'fixed', place: 'worktree' })`;
       assert.notEqual(resolvedCwds[0], resolvedCwds[1]);
       assert.notEqual(resolvedCwds[0], repo);
       assert.notEqual(resolvedCwds[1], repo);
-      assert.match(resolvedCwds[0], /worktree-a-fixed-1$/);
-      assert.match(resolvedCwds[1], /worktree-b-fixed-1$/);
+      assert.equal(resolvedCwds[0], join(home.home.worktrees, stepTree("worktree-a", "fixed", "same-prompt")));
+      assert.equal(resolvedCwds[1], join(home.home.worktrees, stepTree("worktree-b", "fixed", "same-prompt")));
     } finally {
       rmSync(repo, { recursive: true, force: true });
       home.cleanup();

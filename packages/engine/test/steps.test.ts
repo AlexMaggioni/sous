@@ -478,6 +478,26 @@ describe("steps on the fake programs", () => {
       assert.equal(lines.at(-1)?.resume, false);
       assert.notEqual(lines.at(-1)?.sessionId, first!.sessionId);
     });
+
+    it(`stops a resumed later turn of a ${harness} session that is gone, and never runs it fresh`, async () => {
+      const place = fakePlace();
+      const steps = createSteps(onFakes(place));
+      let first: AgentSessionRef | undefined;
+      try {
+        await steps.run("first", routed(steps, { label: "a", model }, { onSessionOpen: (ref: AgentSessionRef) => (first ??= ref) }));
+        assert.ok(first);
+        const gone = { ...first, sessionId: "00000000-0000-4000-8000-000000000000" };
+        await assert.rejects(steps.run("later", routed(steps, { label: "a", model }, { continueFromSession: gone, inSession: true })), (error: unknown) => {
+          assert.ok(error instanceof WorkflowError);
+          assert.equal(error.recoverable, false);
+          assert.match(error.message, /could not find session 00000000-0000-4000-8000-000000000000 to go on in/);
+          return true;
+        });
+      } finally {
+        await steps.dispose();
+      }
+      assert.deepEqual(place.lines().map((line) => line.prompt), ["first"], "no fresh session got the later turn");
+    });
   }
 
   it("keeps the not-delivered mark on a codex step stopped before its turn started", async () => {

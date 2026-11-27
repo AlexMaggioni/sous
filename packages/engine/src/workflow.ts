@@ -1348,6 +1348,8 @@ async function runLevel<T>(
                   // A kept turn sends this step's prompt into its session. Only a resumed, interrupted turn gets the
                   // runner's resume instruction. A session's turn keeps its program open until its step ends (endSession).
                   ...(keptRef ? { continueWithPrompt: true, ...(forking ? { fork: true } : {}) } : {}), ...(keepsOpen ? { hold: true } : {}),
+                  // A later turn that goes on with its interrupted turn still goes on in its session or fails.
+                  ...(kept?.ref ? { inSession: true } : {}),
                   callIndex,
                   callHash,
                   callPath, callInputsHash,
@@ -2103,13 +2105,13 @@ function sessionPlaces(deps: {
     deps.log("reason" in closed ? `the worktree of "${label}" stays at ${tree.dir} (${closed.reason})` : closedLine(tree, closed));
   };
   return {
-    open(label, occurrence, from) {
-      const made = deps.places.sessionPlace(from ?? deps.baseCwd, { runId: deps.runId, label, ...(occurrence === undefined ? {} : { occurrence }) });
+    open(label, step, from) {
+      const made = deps.places.sessionPlace(from ?? deps.baseCwd, { runId: deps.runId, label, ...(step ? { step } : {}) });
       if ("reason" in made) {
         deps.log(`place ignored for "${label}" (${made.reason})`);
         return undefined;
       }
-      if (occurrence === undefined) opened.push({ tree: made.tree, label });
+      if (step === undefined) opened.push({ tree: made.tree, label });
       return made.tree;
     },
     close,

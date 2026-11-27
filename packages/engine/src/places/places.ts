@@ -105,11 +105,12 @@ export interface PlaceNotes {
   stepWorktree(tree: Worktree & { label?: string }, keep: boolean): void;
 }
 
-/** Who a session's or one step's worktree belongs to. A step's has the occurrence of its label. */
+/** Who a session's or one step's worktree belongs to. */
 export interface PlaceOwner {
   runId: string;
   label: string;
-  occurrence?: number;
+  /** For one agent() step: its prompt and its count among the calls with the same label and prompt. */
+  step?: { prompt: string; occurrence: number };
 }
 
 /** What closing a worktree did: whether sous committed leftover work, and whether the branch stays. */
@@ -140,11 +141,13 @@ export interface RunPlaces {
   closePlace(baseDir: string, tree: Worktree, label: string): Closed | { reason: string };
 }
 
-/** The worktree of a session, `<run>-<label>-<suffix>`. The suffix keeps apart labels whose slugs
- *  match: a short hash of the run and the label, or one step's occurrence. */
+/** The worktree of a session, `<run>-<label>-<hash>`, or of one step, `<run>-<label>-<hash>-<count>`.
+ *  The hash of the run, the label and a step's prompt keeps apart labels whose slugs match, and
+ *  steps of one label with different prompts, whatever order a resume calls them in. */
 function placeName(owner: PlaceOwner): string {
-  const suffix = owner.occurrence ?? createHash("sha256").update(`${owner.runId}\n${owner.label}`).digest("hex").slice(0, 6);
-  return `${slug(owner.runId)}-${slug(owner.label).slice(0, 32) || "agent"}-${suffix}`;
+  const named = owner.step ? `${owner.runId}\n${owner.label}\n${owner.step.prompt}` : `${owner.runId}\n${owner.label}`;
+  const hash = createHash("sha256").update(named).digest("hex").slice(0, 6);
+  return `${slug(owner.runId)}-${slug(owner.label).slice(0, 32) || "agent"}-${hash}${owner.step ? `-${owner.step.occurrence}` : ""}`;
 }
 
 /** The places of one run tree under this home, noted in `notes`. */

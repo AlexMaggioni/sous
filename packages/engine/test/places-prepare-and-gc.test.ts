@@ -66,7 +66,7 @@ describe("gc of worktrees of a project it was not told to check", () => {
     const checked = gitRepo();
     const unchecked = gitRepo();
     const place = (repo: string, occurrence: number) => {
-      const result = placesIn(home, "run-9").sessionPlace(repo, { runId: "run-9", label: "edit", occurrence });
+      const result = placesIn(home, "run-9").sessionPlace(repo, { runId: "run-9", label: "edit", step: { prompt: "edit", occurrence } });
       assert.ok("tree" in result, "a worktree was made");
       return result.tree;
     };

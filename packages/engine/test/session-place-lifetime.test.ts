@@ -16,7 +16,7 @@ import type { HomePaths } from "../src/runs/home.js";
 import type { RunPlaces } from "../src/places/places.js";
 import { git, initGitRepo } from "./helpers/git.js";
 import { journalResume } from "./helpers/journal-resume.js";
-import { tempPlaces } from "./helpers/places.js";
+import { stepTree, tempPlaces } from "./helpers/places.js";
 import { runnerFrom } from "./helpers/runners.js";
 
 const meta = "export const meta = { name: 'placed', description: 'steps in worktrees' }";
@@ -236,7 +236,8 @@ return { cwd: s.cwd, branch: s.branch ?? null }`,
 describe("agent() with place worktree", () => {
   it("runs every turn and its check in a worktree of its own, which closes when the step ends", async (t) => {
     const w = world(t);
-    const dir = join(w.home.worktrees, "run-f-edit-it-1");
+    const name = stepTree("run-f", "Edit it", "build it");
+    const dir = join(w.home.worktrees, name);
     const seen: boolean[] = [];
     const { settled, turns } = start(
       w,
@@ -263,8 +264,8 @@ return built`,
     ]);
     assert.equal(turns[2]!.cwd, w.repo, "a step with no place works in the project folder");
     assert.deepEqual(seen, [false], "the step's end removed the folder before the next step");
-    assert.equal(lastMessage(w.repo, "sous/run-f-edit-it-1"), leftover("Edit it"));
-    assert.equal(fileOn(w.repo, "sous/run-f-edit-it-1", "made.txt"), "made");
+    assert.equal(lastMessage(w.repo, `sous/${name}`), leftover("Edit it"));
+    assert.equal(fileOn(w.repo, `sous/${name}`, "made.txt"), "made");
   });
 
   it("gives each call with the same label a worktree of its own", async (t) => {
@@ -280,14 +281,35 @@ return 'ok'`,
     assert.equal((await settled).error, undefined);
     assert.deepEqual(
       turns.map((turn) => turn.cwd),
-      [join(w.home.worktrees, "run-g-edit-it-1"), join(w.home.worktrees, "run-g-edit-it-2")],
+      [join(w.home.worktrees, stepTree("run-g", "Edit it", "write a.txt")), join(w.home.worktrees, stepTree("run-g", "Edit it", "write b.txt"))],
     );
-    assert.equal(fileOn(w.repo, "sous/run-g-edit-it-2", "b.txt"), "b.txt");
+    assert.equal(fileOn(w.repo, `sous/${stepTree("run-g", "Edit it", "write b.txt")}`, "b.txt"), "b.txt");
+  });
+
+  it("counts the calls with the same label and prompt, and keeps apart labels whose names match", async (t) => {
+    const w = world(t);
+    const { settled, turns } = start(
+      w,
+      "run-k",
+      `await agent('write a.txt', { label: 'Fix A', place: 'worktree' })
+await agent('write a.txt', { label: 'Fix A', place: 'worktree' })
+await agent('write a.txt', { label: 'fix-a', place: 'worktree' })
+return 'ok'`,
+      writes,
+    );
+    assert.equal((await settled).error, undefined);
+    const dirs = turns.map((turn) => turn.cwd);
+    assert.deepEqual(dirs, [
+      join(w.home.worktrees, stepTree("run-k", "Fix A", "write a.txt", 1)),
+      join(w.home.worktrees, stepTree("run-k", "Fix A", "write a.txt", 2)),
+      join(w.home.worktrees, stepTree("run-k", "fix-a", "write a.txt", 1)),
+    ]);
+    assert.equal(new Set(dirs).size, 3, "each step had a worktree of its own");
   });
 
   it("keeps the folder when the run pauses during the step", async (t) => {
     const w = world(t);
-    const dir = join(w.home.worktrees, "run-h-edit-it-1");
+    const dir = join(w.home.worktrees, stepTree("run-h", "Edit it", "write a.txt"));
     const pause = new AbortController();
     const { settled, turns } = start(
       w,

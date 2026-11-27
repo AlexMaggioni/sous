@@ -135,7 +135,8 @@ A script has these steps (see also [the engine README](../packages/engine/README
 
   A handle's options hold for every step on it:
 
-  - `label`, required. No other handle of the workflow may use it.
+  - `label`, required. No other handle and no `agent()` step of the workflow may use it, since
+    `sous join` finds a session by it.
   - `agentType`, `model`, `effort`, `mode`, `skills` and `mcp` (server names, see
     [Agents](#agents)).
   - `mcpServers`, servers given in full, and `cwd`, the folder the session works in.
@@ -714,8 +715,10 @@ from the `HEAD` of the folder around it, in `~/.sous/worktrees/`:
   handle returns.
 - A fork's is named as a session's. sous makes it when `fork()` is called, from the `HEAD` of its
   parent's folder. It lasts until the workflow that made the fork returns.
-- One step's is `sous/<run>-<label>-<n>`, where n counts the `agent()` calls with that label from
-  1. It lasts until the step ends, its checks included.
+- One step's is `sous/<run>-<label>-<hash>-<n>`, where the hash is six characters of the run, the
+  label and the prompt, and n counts the `agent()` calls with that label and prompt from 1. A
+  resume gives each step the same worktree back, whatever order its calls come in. It lasts until
+  the step ends, its checks included.
 
 A step's `cwd` is read under the worktree's folder. When the worktree's scope ends, sous commits
 what is left uncommitted as `sous: uncommitted work of <label>`, skipping the project's hooks, and

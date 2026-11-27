@@ -229,7 +229,7 @@ export function createSteps(options: StepsOptions): Steps {
     if (problem) throw stop(problem);
     if (!step) throw stop("the step has no plan. The engine routes each step with route() before it runs it.");
     // A session stays on one program. A kept turn routed to another fails before any program runs.
-    const keptOn = call.continueWithPrompt ? call.continueFromSession : undefined;
+    const keptOn = call.continueWithPrompt || call.inSession ? call.continueFromSession : undefined;
     const keptHarness = keptOn && (keptOn.backendId !== step.harness ? keptOn.backendId : keptOn.poolKey ?? keptOn.backendId);
     if (keptOn && keptHarness !== step.harness) {
       throw stop(`the session runs on ${keptHarness}, and this turn asks for ${step.harness}. A session stays on one program.`);
@@ -631,7 +631,7 @@ async function runOnHarness(
         } catch (error) {
           if (failureOf(error)?.kind !== "no_session" || signal?.aborted) throw error;
           // A kept turn goes on in its session or fails. A new session would not hold the turns before.
-          if (call.continueWithPrompt) {
+          if (call.continueWithPrompt || call.inSession) {
             throw new WorkflowError(
               `step "${label ?? "agent"}": the program could not find session ${recorded.sessionId} to ${call.fork ? "fork" : "go on in"}. The session's earlier turns are gone, so the step stops.`,
               WorkflowErrorCode.AGENT_EXECUTION_ERROR,

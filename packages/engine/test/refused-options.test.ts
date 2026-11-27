@@ -69,3 +69,25 @@ test("a place other than worktree on session() or agent() fails the script", asy
   await refuses("const s = session({ label: 's', place: 'folder' })\nreturn await s.send('p')", 'session "s": place is "worktree"');
   await refuses("return await agent('p', { place: 'folder' })", 'agent(): place is "worktree"');
 });
+
+// sous join finds a step by its label, and a session by its handle's label, so the two may not share one.
+test("agent() refuses the label of a session of the workflow", async () => {
+  await refuses(
+    `const s = session({ label: 'impl' })\nreturn await agent('p', { label: 'impl' })`,
+    'agent(): the label "impl" is in use by a session of this workflow, so sous join could not tell them apart. Give the step another label.',
+  );
+});
+
+test("session() refuses the label of an earlier agent() step", async () => {
+  const { runner, calls } = countingRunner();
+  const script = `export const meta = { name: 'refused', description: 'refused' }
+await agent('p', { label: 'impl' })
+const s = session({ label: 'impl' })
+return await s.send('q')`;
+  await assert.rejects(runWorkflow(script, { agent: runner, persistLogs: false }), (error: unknown) => {
+    assert.ok(error instanceof WorkflowError);
+    assert.match(error.message, /^session\(\): the label "impl" is in use by an agent\(\) step of this workflow, so sous join could not tell them apart/);
+    return true;
+  });
+  assert.equal(calls(), 1, "the step ran, and the session never did");
+});

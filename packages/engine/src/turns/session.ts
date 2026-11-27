@@ -38,15 +38,22 @@ import type { StepUntil, Until } from "./until.js";
 
 type AgentFn = (prompt: string, options: Record<string, unknown>) => Promise<unknown>;
 
+/** What names one agent() step's worktree: its prompt, and its count among the calls with the same
+ *  label and prompt, which stays the same on a resume whatever order the calls come in. */
+export interface StepPlace {
+  prompt: string;
+  occurrence: number;
+}
+
 /** The worktrees of the sessions and steps with place "worktree". The engine gives one per workflow. */
 export interface SessionPlaces {
   /**
-   * Makes or finds the worktree of the session `label`, or of one step when `occurrence` counts
-   * the step's calls with that label. It starts from the workflow's folder, or from the last
-   * commit of `from`, a fork's parent's folder. Undefined when there can be none, after the log
-   * says why.
+   * Makes or finds the worktree of the session `label`, or of one agent() step when `step` gives
+   * its prompt and how many calls before it had the same label and prompt. It starts from the
+   * workflow's folder, or from the last commit of `from`, a fork's parent's folder. Undefined when
+   * there can be none, after the log says why.
    */
-  open(label: string, occurrence?: number, from?: string): Worktree | undefined;
+  open(label: string, step?: StepPlace, from?: string): Worktree | undefined;
   /** Ends a step's worktree: commits the work left in it, removes the folder and keeps a branch that moved. */
   close(tree: Worktree, label: string): void;
   /** True while the run stops or pauses. A worktree stays then, for a resume. */
@@ -177,6 +184,9 @@ export interface HandleInfo {
 
 export function createSessions(deps: SessionDeps) {
   const labels = new Set<string>();
+  /** The labels of this workflow's agent() steps. A handle may not share one, so sous join, which
+   *  takes either, never has to guess which session a name means. */
+  const stepLabels = new Set<string>();
   /** The handles of this workflow, for describe(). */
   const handles = new WeakMap<object, HandleInfo>();
   /** What watches each session key, for watch(). */
@@ -189,7 +199,7 @@ export function createSessions(deps: SessionDeps) {
   const roomTurn = new AsyncLocalStorage<RoomTag>();
   const track = deps.track ?? (<F>(fn: F) => fn);
   let agents = 0;
-  /** How many agent() calls with place "worktree" each label had. */
+  /** How many agent() calls with place "worktree" each label and prompt had. */
   const occurrences = new Map<string, number>();
 
   /**
@@ -263,6 +273,7 @@ export function createSessions(deps: SessionDeps) {
     const label = typeof options.label === "string" ? options.label.trim() : "";
     if (!label) fail(`${where} needs a label`);
     if (labels.has(label)) fail(`${where}: the label "${label}" is in use by another session of this workflow`);
+    if (stepLabels.has(label)) fail(`${where}: the label "${label}" is in use by an agent() step of this workflow, so sous join could not tell them apart`);
     if (options.cwd !== undefined && typeof options.cwd !== "string") fail(`session "${label}": cwd must be a string`);
     return label;
   };
@@ -360,6 +371,10 @@ export function createSessions(deps: SessionDeps) {
     const written = optionsOf(given, "agent()");
     if (written.session !== undefined) fail("agent() takes no session option. Make a session with session() and send() each turn on it.");
     const label = typeof written.label === "string" ? written.label : undefined;
+    if (label !== undefined && labels.has(label.trim())) {
+      fail(`agent(): the label "${label}" is in use by a session of this workflow, so sous join could not tell them apart. Give the step another label.`);
+    }
+    if (label !== undefined) stepLabels.add(label.trim());
     const change = label ? deps.stepOverrides?.[label] : undefined;
     const options: Record<string, unknown> = change ? { ...written, ...change } : written;
     checkLoopOptions(options, "agent()");
@@ -369,9 +384,10 @@ export function createSessions(deps: SessionDeps) {
     const name = label ?? "agent";
     let tree: Worktree | undefined;
     if (place !== undefined) {
-      const occurrence = (occurrences.get(name) ?? 0) + 1;
-      occurrences.set(name, occurrence);
-      tree = deps.places?.open(name, occurrence);
+      const same = `${name}\n${prompt}`;
+      const occurrence = (occurrences.get(same) ?? 0) + 1;
+      occurrences.set(same, occurrence);
+      tree = deps.places?.open(name, { prompt, occurrence });
     }
     const placed = placeFields(place, tree);
     // A key no script can name: a session label is trimmed, and this one starts with a space. A

@@ -8,7 +8,7 @@ import { type AgentDefinition, agentDefinitionKey, lookupAgents } from "../src/a
 import type { JournalEntry } from "../src/workflow.js";
 import { runWorkflow } from "../src/workflow.js";
 import { homePaths } from "../src/runs/home.js";
-import { placesIn } from "./helpers/places.js";
+import { placesIn, stepTree } from "./helpers/places.js";
 import { createSteps, type InnerRunner } from "../src/steps/steps.js";
 import type { PlannedRequest } from "../src/steps/agent-run.js";
 import { journalResume } from "./helpers/journal-resume.js";
@@ -168,7 +168,7 @@ return {}`;
       assert.equal(seen.length, 1);
       assert.ok(seen[0].cwd, "isolated agent should receive a cwd");
       assert.notEqual(seen[0].cwd, repo, "agent cwd should not be the base repo");
-      assert.equal(seen[0].cwd, join(home.worktrees, "iso-test-a-1"), "isolated cwd is under the home's worktrees folder");
+      assert.equal(seen[0].cwd, join(home.worktrees, stepTree("iso-test", "a", "audit")), "isolated cwd is under the home's worktrees folder");
       assert.equal(seen[0].cwdExists, true, "worktree cwd should exist while the agent runs");
       // The system text is the agent's prompt and the label, with no isolation line: the cwd above shows the worktree.
       assert.equal(seen[0].instructions, "Run isolated.\n\nTask label: a");
