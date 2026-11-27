@@ -21,6 +21,7 @@ import type {
 import { checkUntil, untilFields, untilHash, type Until } from "./turns/until.js";
 import type { AgentRunner, StepAsk, StepRoute } from "./steps/agent-runner.js";
 import type { SessionPlaces } from "./turns/session.js";
+import { endSession, forkSession, sessionCost, sessionRefOf, type SessionEntry } from "./turns/session-map.js";
 import type {
   AgentSessionRecord,
   AgentSessionRef,
@@ -445,8 +446,10 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    * The session this step is a turn of. turns/session.ts sets it: a handle's send() gives the
    * handle's label as `key`, with start "fresh" on the first turn and "kept" after. A kept turn
    * goes on in the session the run's map holds for its key, and fails rather than start fresh
-   * when the program lost it. A step with place "worktree" gives its worktree's folder as
-   * `worktree`, and its cwd is read under that folder. A step with no session is fresh.
+   * when the program lost it. A fork's first turn has start "fork": it forks the copy of its
+   * parent's session that fork() put in the map. A step with place "worktree" gives its
+   * worktree's folder as `worktree`, and its cwd is read under that folder. A step with no
+   * session is fresh.
    */
   session?: StepSession;
   /** When the step ends: after one turn, or when the agent says it is done. turns/loop.ts sends
@@ -458,26 +461,12 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
 /** A step's session. A step without a key runs one turn on a session no later step uses. */
 export interface StepSession {
   key?: string;
-  start: "fresh" | "kept";
+  start: "fresh" | "kept" | "fork";
   /** The place the step asked for. Its inputs record it, whether or not sous could make it. */
   place?: "worktree";
   /** The folder of the worktree the step works in, which turns/session.ts made. */
   worktree?: string;
 }
-
-/** What the run's map holds for a session key: the session, the hash of its last turn, and the
- *  cost its turns recorded, which a kept turn's program reports again in its total. */
-interface SessionEntry {
-  ref?: AgentSessionRef;
-  lastHash: string;
-  cost: number;
-}
-
-/** Ends a session's step: the runner closes the program the step's turns kept open. */
-const endSession = (sessions: Map<string, SessionEntry>, runner: AgentRunner) => async (key: string) => {
-  const sessionId = sessions.get(key)?.ref?.sessionId;
-  if (sessionId !== undefined) await runner.release?.(sessionId);
-};
 
 interface RuntimeState {
   logs: string[];
@@ -960,8 +949,14 @@ async function runLevel<T>(
     // session is created.
     let displayModel = modelSpec;
     // A kept turn goes on in its key's session. With no entry yet, it is the session's first turn.
+    // A fork's turn finds its parent's session there until its own first turn settles, and forks it.
     const sessionKey = agentOptions.session?.key;
-    const kept = agentOptions.session?.start === "kept" && sessionKey !== undefined ? sessions.get(sessionKey) : undefined;
+    const start = agentOptions.session?.start;
+    const kept = start !== undefined && start !== "fresh" && sessionKey !== undefined ? sessions.get(sessionKey) : undefined;
+    const forking = kept?.forked === true;
+    if (start === "fork" && !forking) {
+      throw new WorkflowError(`step "${requestedLabel ?? "agent"}": a fork's first turn has no session to fork`, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, { recoverable: false });
+    }
 
     // A step in a worktree works under the worktree's folder. Its inputs record the place it
     // asked for, not the folder, which differs from run to run.
@@ -981,6 +976,7 @@ async function runLevel<T>(
       agentOptions,
       route.agentKey,
       kept?.lastHash,
+      forking,
     );
     const callPath = captureCallPath(vmFilename, preludeLines);
     const callInputs = {
@@ -1096,10 +1092,12 @@ async function runLevel<T>(
 
     // Puts this turn in its key's entry of the session map: its session, its hash, and the
     // session's cost so far (sessionCost).
+    // A fork's entry stays a copy of its parent's until the fork's turn reports its own session.
     const settleSession = (ref: AgentSessionRecord | undefined, spent: number | undefined, lastAttempt: number | undefined) => {
       if (sessionKey === undefined) return;
       const held = ref ? sessionRefOf(ref) : kept?.ref;
-      sessions.set(sessionKey, { ...(held ? { ref: held } : {}), lastHash: callHash, cost: sessionCost(ref, kept, spent, lastAttempt) });
+      const cost = sessionCost(ref, forking ? undefined : kept, spent, lastAttempt);
+      sessions.set(sessionKey, { ...(held ? { ref: held } : {}), lastHash: callHash, cost, ...(forking && !ref ? { forked: true as const } : {}) });
     };
 
     // The recorded call whose session a live call can go on in: the one at its own index.
@@ -1272,8 +1270,9 @@ async function runLevel<T>(
           const slot: AttemptSlots = { sealed: false };
           const resumingTurn = attempt === 1 && continuationCandidate !== undefined && !continuationSkipReason;
           // A kept turn's gauge starts at its session's cost so far, with this step's earlier attempts.
+          // A fork's every attempt forks anew, and its program counts from nothing.
           const keptRef = !resumingTurn && kept?.ref
-            ? { ...kept.ref, costGauge: kept.cost + (sumUsage(sealedUsage)?.cost ?? 0) }
+            ? forking ? { ...kept.ref } : { ...kept.ref, costGauge: kept.cost + (sumUsage(sealedUsage)?.cost ?? 0) }
             : undefined;
           const continueFromSession = (resumingTurn ? continuationCandidate.sessionRef : undefined) ?? keptRef;
           let attemptController: AbortController | undefined;
@@ -1324,7 +1323,7 @@ async function runLevel<T>(
                   ...(continueFromSession === undefined ? {} : { continueFromSession }),
                   // A kept turn sends this step's prompt into its session. Only a resumed, interrupted turn gets the
                   // runner's resume instruction. A session's turn keeps its program open until its step ends (endSession).
-                  ...(keptRef ? { continueWithPrompt: true } : {}), ...(sessionKey === undefined ? {} : { hold: true }),
+                  ...(keptRef ? { continueWithPrompt: true, ...(forking ? { fork: true } : {}) } : {}), ...(sessionKey === undefined ? {} : { hold: true }),
                   callIndex,
                   callHash,
                   callPath, callInputsHash,
@@ -1843,7 +1842,7 @@ async function runLevel<T>(
     listSavedWorkflows: options.savedWorkflows?.list,
     stepOverrides: options.stepOverrides,
     resolveCwd: (cwd) => resolvePath(baseCwd, cwd ?? "."),
-    track: tracked, onDryRunCheck: options.codeEnv?.onDryRunCheck, endSession: endSession(sessions, agentRunner),
+    track: tracked, onDryRunCheck: options.codeEnv?.onDryRunCheck, endSession: endSession(sessions, agentRunner), forkSession: forkSession(sessions),
     places: stepPlaces,
   });
 
@@ -2080,8 +2079,8 @@ function sessionPlaces(deps: {
     deps.log("reason" in closed ? `the worktree of "${label}" stays at ${tree.dir} (${closed.reason})` : closedLine(tree, closed));
   };
   return {
-    open(label, occurrence) {
-      const made = deps.places.sessionPlace(deps.baseCwd, { runId: deps.runId, label, ...(occurrence === undefined ? {} : { occurrence }) });
+    open(label, occurrence, from) {
+      const made = deps.places.sessionPlace(from ?? deps.baseCwd, { runId: deps.runId, label, ...(occurrence === undefined ? {} : { occurrence }) });
       if ("reason" in made) {
         deps.log(`place ignored for "${label}" (${made.reason})`);
         return undefined;
@@ -2121,6 +2120,7 @@ function hashAgentCall(
   options: AgentOptions,
   agentDefKey: string | null,
   after?: string,
+  fork?: boolean,
 ): string {
   const identity = JSON.stringify({
     prompt,
@@ -2144,26 +2144,11 @@ function hashAgentCall(
     // A kept turn holds the hash of its session's turn before it, so the same prompt on two
     // sessions hashes apart. A step that runs until done hashes apart from one turn.
     ...(after !== undefined ? { after } : {}),
+    // A fork's turn hashes apart from the same turn in its parent's session.
+    ...(fork ? { fork: true } : {}),
     ...untilHash(options.until),
   });
   return createHash("sha256").update(identity).digest("hex");
-}
-
-/**
- * A session's cost so far after a turn. That is the program's own total for the session when it
- * gave one. Without it, the turn's cost: a kept turn's every attempt ran in the session, and a
- * fresh turn's earlier attempts ran in sessions of their own, so only its last attempt counts.
- */
-function sessionCost(ref: AgentSessionRecord | undefined, kept: SessionEntry | undefined, spent: number | undefined, lastAttempt: number | undefined): number {
-  const gauge = ref?.costGauge;
-  if (typeof gauge === "number" && Number.isFinite(gauge)) return gauge;
-  return kept?.ref ? kept.cost + (spent ?? 0) : (lastAttempt ?? spent ?? 0);
-}
-
-/** A session as the map keeps it: the ref, without the record's call fields and its gauge. */
-function sessionRefOf(record: AgentSessionRef): AgentSessionRef {
-  const { costGauge: _gauge, callIndex: _index, label: _label, phase: _phase, keptOpen: _kept, ...ref } = record as AgentSessionRecord;
-  return ref;
 }
 
 /** Checks a step's session and until fields, which session handles and agent() send. */
@@ -2177,9 +2162,9 @@ function checkSessionFields(options: AgentOptions): void {
   if (session === null || typeof session !== "object" || Array.isArray(session)) refuse("session takes an object");
   const { key, start, place, worktree, ...rest } = session as Record<string, unknown>;
   if (Object.keys(rest).length > 0) refuse(`session takes key, start, place and worktree, not ${Object.keys(rest).join(", ")}`);
-  if (start !== "fresh" && start !== "kept") refuse('session.start is "fresh" or "kept"');
+  if (start !== "fresh" && start !== "kept" && start !== "fork") refuse('session.start is "fresh", "kept" or "fork"');
   if (key !== undefined && (typeof key !== "string" || key.trim() === "")) refuse("session.key is a label");
-  if (start === "kept" && key === undefined) refuse("a kept session needs a key");
+  if (start !== "fresh" && key === undefined) refuse(`a ${start === "fork" ? "forked" : "kept"} session needs a key`);
   if (place !== undefined && place !== "worktree") refuse('session.place is "worktree"');
   if (worktree !== undefined && (typeof worktree !== "string" || !isAbsolute(worktree))) refuse("session.worktree is a folder's full path");
   if (worktree !== undefined && place === undefined) refuse("session.worktree needs place");

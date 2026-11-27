@@ -46,6 +46,8 @@ export interface SousGlobalDeps {
   onDryRunCheck?: CodeStepEnv["onDryRunCheck"];
   /** Closes the program a step in the session `key` kept open, when the step ends. */
   endSession?: (key: string) => Promise<void>;
+  /** Starts the session `key` as a copy of the session `from`, for a handle's fork(). */
+  forkSession?: (from: string, key: string) => boolean;
   /** Where sessions and steps with place "worktree" work. */
   places?: SessionPlaces;
 }
@@ -125,6 +127,7 @@ export function createSousGlobals(deps: SousGlobalDeps) {
     // A question waits on a join row. Only the person who steps into the session answers it.
     join: (message, label) => deps.markedCheckpoint(message, { kind: "input" }, { answeredBy: "join", step: label }),
     ...(deps.endSession ? { end: deps.endSession } : {}),
+    ...(deps.forkSession ? { fork: deps.forkSession } : {}),
     ...(deps.stepOverrides ? { stepOverrides: deps.stepOverrides } : {}),
     ...(deps.track ? { track: deps.track } : {}),
     ...(deps.places ? { places: deps.places } : {}),

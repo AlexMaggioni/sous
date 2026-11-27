@@ -150,6 +150,10 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
    *  the reopened session instead of the resume instruction. A kept turn never runs fresh. On
    *  another program, or when the program lost the session, the step fails. */
   continueWithPrompt?: boolean;
+  /** With `continueFromSession` and `continueWithPrompt`, this turn is a fork's first: the
+   *  program forks the session into a new one, which the turn reports, and the original stays as
+   *  it was. NOT hashed here: the engine puts `fork` in the call hash itself. */
+  fork?: boolean;
   /** This turn is one of a step's turns: its program stays open for the step's next turn, until
    *  the engine calls AgentRunner.release with the session. NOT hashed. */
   hold?: boolean;

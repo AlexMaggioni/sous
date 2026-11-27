@@ -175,6 +175,23 @@ A script has these steps (see also [the engine README](../packages/engine/README
   program. The next send starts the program again and resumes the session, so an idle session
   holds no process. On Claude Code, a turn with a different schema, such as the report turn after
   a slash command, also resumes the session in a new program.
+
+  `<handle>.fork(options)` makes a new handle whose session starts as a copy of this one, as its
+  last finished turn left it. It takes a handle's options and keeps its parent's for those it
+  does not set. It needs a new `label`, and a `model` on its parent's program. The fork's turns
+  never reach its parent's session, and the parent's later turns never reach the fork's. fork()
+  fails the script before the handle's first send finishes and while a send runs. A fork without
+  `place` works in its parent's folder, on the same branch. With `place: "worktree"` it gets a
+  worktree of its own, made from the last commit of its parent's folder, so the parent's
+  uncommitted work is not in it. A fork's cost counts its own turns only.
+
+  ```js
+  const plan = session({ label: "planner" })
+  await plan.send("Read the code and plan the change.")
+  const a = plan.fork({ label: "plan a", place: "worktree" })
+  const b = plan.fork({ label: "plan b", place: "worktree" })
+  await parallel([() => a.send("Build it with a new table."), () => b.send("Build it with a new column.")])
+  ```
 - `agent(prompt, options)` is one send on a fresh session that no later step uses. It takes a
   handle's options and a send's options, and `place: "worktree"` (see [Places](#places)). Its
   `label` may repeat.
@@ -625,6 +642,8 @@ from the `HEAD` of the folder around it, in `~/.sous/worktrees/`:
 - A session's is `sous/<run>-<label>-<hash>`, where the hash is six characters of the run and the
   label. sous makes it when `session()` is called. It lasts until the workflow that made the
   handle returns.
+- A fork's is named as a session's. sous makes it when `fork()` is called, from the `HEAD` of its
+  parent's folder. It lasts until the workflow that made the fork returns.
 - One step's is `sous/<run>-<label>-<n>`, where n counts the `agent()` calls with that label from
   1. It lasts until the step ends, its checks included.
 

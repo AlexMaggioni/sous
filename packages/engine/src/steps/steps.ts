@@ -473,14 +473,14 @@ async function runOnHarness(
           // program. Any other step goes on with Continue the task.
           const text = call.continueWithPrompt || isSlash(prompt) ? fresh : withNote(CONTINUE_PROMPT, note);
           if (typeof recorded.costGauge === "number" && Number.isFinite(recorded.costGauge)) gauge = recorded.costGauge;
-          answer = await turn({ ...base, ...text, ...turns.work, resume: recorded.sessionId });
+          answer = await turn({ ...base, ...text, ...turns.work, resume: recorded.sessionId, ...(call.fork ? { fork: true } : {}) });
           continuation = { reattached: true, method: "resume" };
         } catch (error) {
           if (failureOf(error)?.kind !== "no_session" || signal?.aborted) throw error;
           // A kept turn goes on in its session or fails. A new session would not hold the turns before.
           if (call.continueWithPrompt) {
             throw new WorkflowError(
-              `step "${label ?? "agent"}": the program could not find session ${recorded.sessionId} to go on in. The session's earlier turns are gone, so the step stops.`,
+              `step "${label ?? "agent"}": the program could not find session ${recorded.sessionId} to ${call.fork ? "fork" : "go on in"}. The session's earlier turns are gone, so the step stops.`,
               WorkflowErrorCode.AGENT_EXECUTION_ERROR,
               { recoverable: false, agentLabel: label },
             );

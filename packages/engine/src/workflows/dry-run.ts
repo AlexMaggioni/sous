@@ -95,8 +95,10 @@ function standInAgents(answers: Answers = {}): InnerRunner & { calls: string[] }
   const run = async (_prompt: string, request: PlannedRequest): Promise<unknown> => {
     const label = request.label ?? "agent";
     calls.push(label);
-    // A session id lets a later step continue this one, as with real agents.
-    request.onSessionOpen?.({ sessionId: `dry-run-${calls.length}`, backendId: "claude", cwd: request.cwd!, reopen: { load: true, resume: true, list: true } });
+    // One session id per session, as with real agents: a kept turn goes on in its session, and a
+    // fork gets a new one.
+    const kept = request.continueFromSession && !request.fork ? request.continueFromSession.sessionId : undefined;
+    request.onSessionOpen?.({ sessionId: kept ?? `dry-run-${calls.length}`, backendId: "claude", cwd: request.cwd!, reopen: { load: true, resume: true, list: true } });
     const answer = answerFor(label);
     const schema = request.schema as Record<string, unknown> | undefined;
     if (!request.untilDone) return answer ? answer.value : madeUp(schema, label);

@@ -7,13 +7,19 @@
 // map from key to the session, so a resume finds it again from the journal. A step in a worktree
 // adds the worktree's folder to it, and its cwd is read under that folder.
 //
+// fork() makes a handle whose session starts as a copy of its parent's, as the parent's last
+// finished turn left it. deps.fork copies the parent's entry in the engine's map at the fork()
+// call, and the fork's first send has start "fork". Nothing the fork does reaches the parent.
+//
 // A step runs until its agent says "done", unless it sets `until: "turn"`. turns/loop.ts sends its
 // turns. agent() gets a key no script can name, so its later turns go on in its own session.
 // When a keyed step ends, deps.end closes the program its turns kept open.
 //
 // A handle with place "worktree" gets its worktree when session() is called, and the workflow
 // that made it closes it when it returns. agent() with place "worktree" gets one for its step,
-// which closes when the step ends. A run that stops or pauses keeps both, for a resume.
+// which closes when the step ends. A run that stops or pauses keeps both, for a resume. A fork
+// works in its parent's folder, or with place "worktree" in a worktree of its own, made from the
+// last commit of its parent's folder.
 
 import { resolve } from "node:path";
 import { WorkflowError, WorkflowErrorCode } from "../errors.js";
@@ -27,9 +33,11 @@ type AgentFn = (prompt: string, options: Record<string, unknown>) => Promise<unk
 export interface SessionPlaces {
   /**
    * Makes or finds the worktree of the session `label`, or of one step when `occurrence` counts
-   * the step's calls with that label. Undefined when there can be none, after the log says why.
+   * the step's calls with that label. It starts from the workflow's folder, or from the last
+   * commit of `from`, a fork's parent's folder. Undefined when there can be none, after the log
+   * says why.
    */
-  open(label: string, occurrence?: number): Worktree | undefined;
+  open(label: string, occurrence?: number, from?: string): Worktree | undefined;
   /** Ends a step's worktree: commits the work left in it, removes the folder and keeps a branch that moved. */
   close(tree: Worktree, label: string): void;
   /** True while the run stops or pauses. A worktree stays then, for a resume. */
@@ -51,6 +59,11 @@ export interface SessionDeps {
   resolveCwd: (cwd: string | undefined) => string;
   /** Closes the program the turns of a step in the session `key` kept open. */
   end?: (key: string) => Promise<void>;
+  /**
+   * Starts the session `key` as a copy of the session `from` as its last finished turn left it.
+   * False when `from` has no session yet. Without it, fork() fails.
+   */
+  fork?: (from: string, key: string) => boolean;
   /** Wraps a function the script calls, as the script's globals are wrapped. */
   track?: <F extends (...args: never[]) => unknown>(fn: F) => F;
   /** Where steps with place "worktree" work. Without it, they work in the workflow's folder. */
@@ -71,6 +84,23 @@ export interface SessionHandle {
   /** The branch of the handle's worktree, when it has one. */
   readonly branch?: string;
   send(prompt: string, options?: Record<string, unknown>): Promise<unknown>;
+  /** A new handle whose session starts as a copy of this one's. It takes session options. */
+  fork(options?: Record<string, unknown>): SessionHandle;
+}
+
+/** What a handle holds: its options for every turn, its place, and the model a --set gives it. */
+interface HandleState {
+  label: string;
+  held: Record<string, unknown>;
+  /** The cwd the handle was given, as written. */
+  cwdOption: unknown;
+  tree?: Worktree;
+  /** The handle's folder: its cwd under its worktree, else resolved as a step's. */
+  cwd: string;
+  placed: { place?: "worktree"; worktree?: string };
+  changed?: string;
+  /** The start of the handle's first turn: "fresh", or "fork" for a fork. */
+  first: "fresh" | "fork";
 }
 
 function fail(message: string): never {
@@ -174,24 +204,41 @@ export function createSessions(deps: SessionDeps) {
     return change.model;
   };
 
+  /** Checks a handle's options: only session options, and a label no handle of this workflow has. */
+  const checkHandle = (options: Record<string, unknown>, where: string): string => {
+    for (const key of Object.keys(options)) {
+      if (!SESSION_KEY_SET.has(key)) fail(`${where}: ${key} is not a session option. A session takes ${SESSION_KEYS.join(", ")}. A turn's options go on send().`);
+    }
+    const label = typeof options.label === "string" ? options.label.trim() : "";
+    if (!label) fail(`${where} needs a label`);
+    if (labels.has(label)) fail(`${where}: the label "${label}" is in use by another session of this workflow`);
+    if (options.cwd !== undefined && typeof options.cwd !== "string") fail(`session "${label}": cwd must be a string`);
+    return label;
+  };
+
+  /** The options a handle holds for every turn: its session options without its label and place. */
+  const heldOf = (options: Record<string, unknown>): Record<string, unknown> => {
+    const held: Record<string, unknown> = {};
+    for (const key of SESSION_KEYS) if (options[key] !== undefined && key !== "label" && key !== "place") held[key] = options[key];
+    return held;
+  };
+
   /** Makes a handle. Its label is unique among this workflow's handles. */
   const session = (given?: unknown): SessionHandle => {
     const options = optionsOf(given, "session()");
-    for (const key of Object.keys(options)) {
-      if (!SESSION_KEY_SET.has(key)) fail(`session(): ${key} is not a session option. A session takes ${SESSION_KEYS.join(", ")}. A turn's options go on send().`);
-    }
-    const label = typeof options.label === "string" ? options.label.trim() : "";
-    if (!label) fail("session() needs a label");
-    if (labels.has(label)) fail(`session(): the label "${label}" is in use by another session of this workflow`);
-    if (options.cwd !== undefined && typeof options.cwd !== "string") fail(`session "${label}": cwd must be a string`);
+    const label = checkHandle(options, "session()");
     const place = placeOf(options, `session "${label}"`, deps.places);
-    const held: Record<string, unknown> = {};
-    for (const key of SESSION_KEYS) if (options[key] !== undefined && key !== "label" && key !== "place") held[key] = options[key];
+    const held = heldOf(options);
     const changed = changedModel(label, label, held.model);
     labels.add(label);
     const tree = place === undefined ? undefined : deps.places?.open(label);
     const cwd = tree ? cwdIn(tree, options.cwd) : deps.resolveCwd(options.cwd as string | undefined);
-    const placed = placeFields(place, tree);
+    return handle({ label, held, cwdOption: options.cwd, ...(tree ? { tree } : {}), cwd, placed: placeFields(place, tree), ...(changed ? { changed } : {}), first: "fresh" });
+  };
+
+  /** A handle on its state. Its first send starts the session, fresh or as a fork. */
+  const handle = (state: HandleState): SessionHandle => {
+    const { label, held, tree, cwd, placed, changed } = state;
     let turns = 0;
     let running = false;
 
@@ -213,7 +260,7 @@ export function createSessions(deps: SessionDeps) {
       running = true;
       try {
         return await runStep(prompt, options, stepLabel, label, tree ? cwd : held.cwd, label, (text, until) => {
-          const start = turns === 0 ? "fresh" : "kept";
+          const start = turns === 0 ? state.first : "kept";
           turns++;
           return deps.agent(text, { ...step, until, session: { key: label, start, ...placed } });
         });
@@ -222,7 +269,35 @@ export function createSessions(deps: SessionDeps) {
       }
     };
 
-    return Object.freeze({ label, cwd, ...(tree ? { branch: tree.branch } : {}), send: track(send) });
+    /**
+     * A handle whose session starts as a copy of this one's. Its options are a session's, over
+     * this handle's. Without its own place or cwd it works in this handle's folder. Its label is
+     * new, and its model stays on this handle's program.
+     */
+    const fork = (given?: unknown): SessionHandle => {
+      const where = `session "${label}": fork()`;
+      const options = optionsOf(given, where);
+      const forkLabel = checkHandle(options, where);
+      if (options.model !== undefined && !sameProgram(options.model, held.model)) {
+        fail(`${where} asks for ${String(options.model)}, which is on another program than the session's ${String(held.model)}. A fork stays on its parent's program.`);
+      }
+      if (running) fail(`${where}: the session runs a turn. Fork it once its send() finishes, so the fork starts from a finished turn.`);
+      const place = placeOf(options, `session "${forkLabel}"`, deps.places);
+      const forkHeld = { ...held, ...heldOf(options) };
+      const forkChanged = changedModel(forkLabel, forkLabel, forkHeld.model);
+      if (!deps.fork || turns === 0 || !deps.fork(label, forkLabel)) fail(`${where}: the session has no finished turn yet, so there is nothing to fork`);
+      labels.add(forkLabel);
+      // With place "worktree", a worktree of its own from the parent's folder. Else the parent's
+      // folder, with the fork's own cwd under it when it gives one.
+      const ownTree = place === undefined ? undefined : deps.places?.open(forkLabel, undefined, tree?.dir ?? cwd);
+      const forkTree = place === undefined ? tree : ownTree;
+      const cwdOption = options.cwd ?? state.cwdOption;
+      const forkCwd = forkTree ? cwdIn(forkTree, cwdOption) : options.cwd === undefined ? cwd : deps.resolveCwd(options.cwd as string);
+      const forkPlaced = place === undefined ? placed : placeFields(place, ownTree);
+      return handle({ label: forkLabel, held: forkHeld, cwdOption, ...(forkTree ? { tree: forkTree } : {}), cwd: forkCwd, placed: forkPlaced, ...(forkChanged ? { changed: forkChanged } : {}), first: "fork" });
+    };
+
+    return Object.freeze({ label, cwd, ...(tree ? { branch: tree.branch } : {}), send: track(send), fork: track(fork) });
   };
 
   /** One send on a session no later step uses. It takes a session's options and a turn's. */

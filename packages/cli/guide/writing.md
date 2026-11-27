@@ -5,8 +5,8 @@ project's `.sous/workflows/<name>.js`. Change `~/.sous/workflows/`, a schedule, 
 only when the person asks.
 
 Start from a workflow that exists. `sous workflows --json` lists them. Before you change or run
-one you don't know, read `sous workflows show <name> --json`: its steps, inputs, approval and
-last runs. `sous agents --json` lists the agents a step can name.
+one you don't know, read `sous workflows show <name> --json`. `sous agents --json` lists the
+agents a step can name.
 
 ## The person approves it
 
@@ -19,8 +19,8 @@ what changed since their last yes. They approve it by saying yes to you or with
 When they say yes to you, run `sous workflows approve <name> --by person --json`. Their yes
 counts for the text you showed, saved unchanged. If the check made you change it, show the diff
 and ask again. Without `--by person` the approve fails with `needs_person`. Never approve
-without their yes. A person's own `sous run <name>` approves the text it runs. Never edit, move
-or delete `approvals.json` or `approved/` in sous's home.
+without their yes. A person's own `sous run <name>` approves the text it runs. Never change
+`approvals.json` or `approved/` in sous's home.
 
 ## The file
 
@@ -44,8 +44,8 @@ return { summary: built }
 
 - `meta` needs `name` and `description`. `inputs` become flags of `sous run`.
 - Give every step a `label`. Resume matches steps by prompt, options and label.
-- `Math.random()`, `Date.now()` and `new Date()` with no argument throw. A resume replays the
-  script on the same path, so pass a time or a random value as an input.
+- `Math.random()`, `Date.now()` and `new Date()` with no argument throw, as a resume replays
+  the script. Pass a time or a random value as an input.
 - Cap each loop, such as with a `rounds` input.
 
 ## Steps
@@ -53,6 +53,7 @@ return { summary: built }
 - `session({ label, agentType, model, effort, mode, skills, mcp, mcpServers, cwd })` makes a
   handle with a unique label. `<handle>.send(prompt, options)` runs a step in its session, with
   `label`, `schema`, `timeout`, `retries`, `images`, `phase`, or a `model` on its program.
+  `<handle>.fork({ label })` copies its session to a new handle.
 - `agent(prompt, options)` is one send on a fresh session. It takes both and `place`.
 - A step runs until its agent says done, or one turn with `until: "turn"`. Then `check`, a
   command or a function, runs, and a failure goes back to the agent. `maxTurns` and `maxRepairs`
