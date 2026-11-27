@@ -37,6 +37,10 @@ export enum WorkflowErrorCode {
   SCRIPT_ERROR = "SCRIPT_ERROR",
   /** A schema agent never produced valid structured output (after repair + extraction). Non-recoverable. */
   SCHEMA_NONCOMPLIANCE = "SCHEMA_NONCOMPLIANCE",
+  /** A step reached its maxTurns or maxRepairs. Non-recoverable: the engine fails the step at
+   *  once, with no retry and no pause. The script may catch it. Uncaught, it fails the run. The
+   *  message names the limit and the step's label. */
+  STEP_LIMIT = "STEP_LIMIT",
   /** A non-schema agent completed with no assistant text. Recoverable. */
   AGENT_EMPTY_OUTPUT = "AGENT_EMPTY_OUTPUT",
   AGENT_EXECUTION_ERROR = "AGENT_EXECUTION_ERROR",
@@ -159,6 +163,17 @@ export function isProviderUsageLimit(error: unknown): error is WorkflowError {
 
 export function isAuthRequired(error: unknown): error is WorkflowError {
   return isWorkflowError(error) && error.code === WorkflowErrorCode.AUTH_REQUIRED;
+}
+
+export function isStepLimit(error: unknown): error is WorkflowError {
+  return isWorkflowError(error) && error.code === WorkflowErrorCode.STEP_LIMIT;
+}
+
+/** The error of a step that reached its maxTurns or its maxRepairs. `value` is the limit, when known. */
+export function stepLimitError(label: string | undefined, limit: "maxTurns" | "maxRepairs", value?: number): WorkflowError {
+  const named = value === undefined ? limit : `${limit} (${value})`;
+  const why = limit === "maxTurns" ? "before it ended" : "and its answer still does not fit";
+  return new WorkflowError(`step "${label ?? "agent"}" reached its ${named} ${why}.`, WorkflowErrorCode.STEP_LIMIT, { recoverable: false, agentLabel: label });
 }
 
 export function isAbortError(error: unknown): boolean {

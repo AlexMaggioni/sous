@@ -33,8 +33,8 @@ exit 0
   "status": "completed",
   "cwd": "<tmp>/scenario-fanout/project",
   "result": {
-    "left": "Fake claude answer.",
-    "right": "Fake claude answer.",
+    "left": "fake-result",
+    "right": "fake-result",
     "files": [
       "src:",
       "textkit.js",
@@ -53,8 +53,8 @@ exit 0
   },
   "review": {
     "result": {
-      "left": "Fake claude answer.",
-      "right": "Fake claude answer.",
+      "left": "fake-result",
+      "right": "fake-result",
       "files": [
         "src:",
         "textkit.js",
@@ -100,8 +100,8 @@ steps
     done  child echo  (<n>s)  exec
 result
 {
-  "left": "Fake claude answer.",
-  "right": "Fake claude answer.",
+  "left": "fake-result",
+  "right": "fake-result",
   "files": [
     "src:",
     "textkit.js",
@@ -258,11 +258,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "Fake claude answer.",
+            "text": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "Fake claude answer.",
+        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -287,7 +287,7 @@ exit 0
           "callIndex": 0,
           "label": "left",
           "phase": "fan out",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       },
@@ -305,11 +305,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "Fake claude answer.",
+            "text": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "Fake claude answer.",
+        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -335,7 +335,7 @@ exit 0
           "callIndex": 1,
           "label": "right",
           "phase": "fan out",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       },
@@ -365,11 +365,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "{\"summary\":\"fake-summary\",\"count\":1}",
+            "text": "{\"status\":\"done\",\"result\":{\"summary\":\"fake-summary\",\"count\":1},\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"summary\":\"fake-summary\",\"count\":1}",
+        "resultPreview": "{\"status\":\"done\",\"result\":{\"summary\":\"fake-summary\",\"count\":1},\"message\":\"fake-…",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -393,7 +393,7 @@ exit 0
           "costGauge": 0.0012,
           "callIndex": 0,
           "label": "child agent",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       },
@@ -415,8 +415,8 @@ exit 0
       "Logs persisted to <tmp>/scenario-fanout/sous-home/runs/projects/project-<hash>/runs/<run-1>.log"
     ],
     "result": {
-      "left": "Fake claude answer.",
-      "right": "Fake claude answer.",
+      "left": "fake-result",
+      "right": "fake-result",
       "files": [
         "src:",
         "textkit.js",
@@ -451,6 +451,6 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"summary\":{\"type\":\"string\"},\"count\":{\"type\":\"integer\"}},\"required\":[\"summary\",\"count\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-fanout/project","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-3>","resume":false,"schema":{"type":"object","properties":{"summary":{"type":"string"},"count":{"type":"integer"}},"required":["summary","count"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: child agent","skills":null,"login":[],"prompt":"CHILD Work on nested.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--model=haiku","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-fanout/project","model":"haiku","effort":null,"sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: right","skills":null,"login":[],"prompt":"FANOUT-RIGHT Name one test.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-fanout/project","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: left","skills":null,"login":[],"prompt":"FANOUT-LEFT Name one file.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"object\",\"properties\":{\"summary\":{\"type\":\"string\"},\"count\":{\"type\":\"integer\"}},\"required\":[\"summary\",\"count\"],\"additionalProperties\":false},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as a value that fits this schema. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-fanout/project","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-3>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"object","properties":{"summary":{"type":"string"},"count":{"type":"integer"}},"required":["summary","count"],"additionalProperties":false},{"type":"null"}],"description":"With \"done\", the answer, as a value that fits this schema. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: child agent","skills":null,"login":[],"prompt":"CHILD Work on nested.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-fanout/project","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: left","skills":null,"login":[],"prompt":"FANOUT-LEFT Name one file.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--model=haiku","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-fanout/project","model":"haiku","effort":null,"sessionId":"<id-2>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: right","skills":null,"login":[],"prompt":"FANOUT-RIGHT Name one test.","rule":null,"outcome":"answer"}

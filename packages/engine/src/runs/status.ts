@@ -3,12 +3,13 @@
 
 import type { HomePaths } from "./home.js";
 import type { Who } from "./actions.js";
+import type { AnsweredBy } from "./inbox.js";
 import { answeredByFor } from "./consent.js";
 import { answerCallsFor, listRuns, runDetail } from "./run.js";
 import { daemonPid } from "./service.js";
 
 export interface HomeStatus {
-  needsYou: Array<{ runId: string; workflow: string; what: string; question?: { id: string; prompt: string; answeredBy: "people" | "anyone" }; since: string; call: string; sendBack?: string }>;
+  needsYou: Array<{ runId: string; workflow: string; what: string; question?: { id: string; prompt: string; answeredBy: AnsweredBy }; since: string; call: string; sendBack?: string }>;
   running: Array<{ runId: string; workflow: string; minutes: number; tokens: number; steps: string[] }>;
   waiting: Array<{ runId: string; workflow: string; what: string; resumesAt?: string }>;
   finished: Array<{ runId: string; workflow: string; status: string; at: string; branch?: string }>;

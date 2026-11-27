@@ -4,7 +4,8 @@
 // the engine's job is to make that identity durable and addressable for HOSTS:
 //   - one AgentSessionRecord per live agent() call on result.agentSessions (callIndex/label/
 //     phase context + keptOpen);
-//   - a session() handle's turn marks the record's keptOpen (the runner never gets the mark);
+//   - a session() handle's turn marks the record's keptOpen (the runner never gets the mark), and
+//     so does an agent() step that runs until done, since its next turn goes on in that session;
 //   - journal entries carry the record, and resume REPLAYS it verbatim (the session lives in
 //     the agent's store, so the ref stays valid across process restarts exactly like results);
 //   - a failed call still surfaces its record (loading the session is a debugging path);
@@ -49,7 +50,7 @@ function sessionRunner() {
 const twoCalls = `export const meta = { name: 's', description: 'sessions', phases: [{ title: 'Plan' }] }
 const planner = session({ label: 'planner' })
 const a = await planner.send('first')
-const b = await agent('second', { label: 'helper' })
+const b = await agent('second', { label: 'helper', until: 'turn' })
 return [a, b]`;
 
 describe("agent session records (result.agentSessions)", () => {
@@ -77,6 +78,20 @@ describe("agent session records (result.agentSessions)", () => {
     assert.deepEqual(
       runner.seen.map((c) => c.keepSession),
       [undefined, undefined],
+    );
+  });
+
+  it("keeps the session of an agent() step that runs until done open, for its next turn", async () => {
+    const script = `export const meta = { name: 'd', description: 'until done' }
+return await agent('build', { label: 'builder' })`;
+    const runner = sessionRunner();
+    const run = await runWorkflow(script, { agent: runner, persistLogs: false });
+    assert.equal(run.agentSessions?.length, 1);
+    assert.equal(run.agentSessions![0]!.label, "builder");
+    assert.equal(run.agentSessions![0]!.keptOpen, true);
+    assert.deepEqual(
+      runner.seen.map((c) => c.keepSession),
+      [undefined],
     );
   });
 

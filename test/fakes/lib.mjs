@@ -56,10 +56,16 @@
 //               status     a list of statuses the rule answers in turn, one per matching request,
 //                          counted as times counts. The last one repeats once the list runs out.
 //                          An entry is a status ("done", "working" or "question") or an object
-//                          { status, result, message }. The answer is the status object
-//                          { status, result, message }, with result null and a made-up message
-//                          when the entry leaves them out. With a schema the object goes over the
-//                          value the schema makes.
+//                          { status, result, message }. The answer is the status object. A field
+//                          the entry gives, null included, stays as given. Left out, "done" has
+//                          message null and the result the schema makes, and "working" and
+//                          "question" have result null and a made-up message. With a schema the
+//                          object goes over the value the schema makes.
+//                          Without a status rule, a request whose schema is sous's status schema
+//                          gets "done", as a model that did the job answers. Its result is the
+//                          rule's answer (the text, or the value for the step's own schema), or
+//                          the value the schema makes. An answer that is a status object already
+//                          goes as it is.
 //               goal       Claude: N. The rule matches only a prompt that starts with "/goal".
 //                          The turn plays N model turns. Between two of them the session gets a
 //                          user message that starts "Stop hook feedback:", as the goal's Stop
@@ -170,11 +176,28 @@ export function sessionMessages(file) {
     .map((entry) => entry.text);
 }
 
-/** A status object from a status entry: a status, or { status, result, message }. */
+/** A status object from a status entry: a status, or { status, result, message }. A "done" with
+ *  no result leaves it out, so the value the schema makes gives it. */
 export function statusObject(entry) {
   const fields = typeof entry === "string" ? { status: entry } : (entry ?? {});
   const status = fields.status ?? "done";
-  return { status, result: fields.result ?? null, message: fields.message ?? `Fake status ${status}.` };
+  const done = status === "done";
+  const result = "result" in fields ? { result: fields.result } : done ? {} : { result: null };
+  return { status, ...result, message: "message" in fields ? fields.message : done ? null : `Fake status ${status}.` };
+}
+
+/** True when a request's schema is sous's status schema: status, result and message, with "done". */
+export function isStatusSchema(schema) {
+  const properties = schema?.properties;
+  if (!properties || typeof properties !== "object") return false;
+  const names = Object.keys(properties).sort().join(",");
+  return names === "message,result,status" && JSON.stringify(properties.status).includes('"done"');
+}
+
+/** True when a value is a status object already: a status, and no field but result and message. */
+function isStatus(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.status !== "string") return false;
+  return Object.keys(value).every((name) => name === "status" || name === "result" || name === "message");
 }
 
 /** The value a schema makes, with fields laid over it when it makes an object. */
@@ -241,6 +264,7 @@ export function decide(program, prompt, schema, context = {}) {
   let value;
   if (schema) {
     value = rule.answer === undefined ? fabricate(schema) : typeof rule.answer === "string" ? parseOr(rule.answer) : rule.answer;
+    if (rule.answer !== undefined && isStatusSchema(schema) && !isStatus(value)) value = { status: "done", result: value, message: null };
   }
   const text = schema ? JSON.stringify(value) : typeof rule.answer === "string" ? rule.answer : rule.answer === undefined ? `Fake ${program} answer.` : JSON.stringify(rule.answer);
   return { ...out, kind: "answer", text, value };

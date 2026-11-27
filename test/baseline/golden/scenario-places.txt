@@ -36,14 +36,14 @@ exit 0
     "where": [
       "no git"
     ],
-    "said": "Fake claude answer."
+    "said": "fake-result"
   },
   "review": {
     "result": {
       "where": [
         "no git"
       ],
-      "said": "Fake claude answer."
+      "said": "fake-result"
     }
   },
   "notes": [],
@@ -96,7 +96,7 @@ exit 0
       "package.json",
       "src"
     ],
-    "said": "Fake claude answer."
+    "said": "fake-result"
   },
   "review": {
     "result": {
@@ -106,7 +106,7 @@ exit 0
         "package.json",
         "src"
       ],
-      "said": "Fake claude answer."
+      "said": "fake-result"
     }
   },
   "notes": [],
@@ -161,7 +161,7 @@ exit 0
       "package.json",
       "src"
     ],
-    "said": "Fake claude answer."
+    "said": "fake-result"
   },
   "review": {
     "branch": "sous/<run-3>",
@@ -173,7 +173,7 @@ exit 0
         "package.json",
         "src"
       ],
-      "said": "Fake claude answer."
+      "said": "fake-result"
     }
   },
   "notes": [],
@@ -203,7 +203,7 @@ result
   "where": [
     "no git"
   ],
-  "said": "Fake claude answer."
+  "said": "fake-result"
 }
 
 $ sous show <run-1> --full --json
@@ -316,11 +316,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "Fake claude answer.",
+            "text": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "Fake claude answer.",
+        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -344,7 +344,7 @@ exit 0
           "costGauge": 0.0012,
           "callIndex": 1,
           "label": "where agent",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       }
@@ -356,7 +356,7 @@ exit 0
       "where": [
         "no git"
       ],
-      "said": "Fake claude answer."
+      "said": "fake-result"
     },
     "tokenUsage": {
       "input": 120,
@@ -396,7 +396,7 @@ result
     "package.json",
     "src"
   ],
-  "said": "Fake claude answer."
+  "said": "fake-result"
 }
 
 $ sous show <run-2> --full --json
@@ -521,11 +521,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "Fake claude answer.",
+            "text": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "Fake claude answer.",
+        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -549,7 +549,7 @@ exit 0
           "costGauge": 0.0012,
           "callIndex": 1,
           "label": "where agent",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       }
@@ -564,7 +564,7 @@ exit 0
         "package.json",
         "src"
       ],
-      "said": "Fake claude answer."
+      "said": "fake-result"
     },
     "tokenUsage": {
       "input": 120,
@@ -604,7 +604,7 @@ result
     "package.json",
     "src"
   ],
-  "said": "Fake claude answer."
+  "said": "fake-result"
 }
 
 $ sous show <run-3> --full --json
@@ -733,11 +733,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "Fake claude answer.",
+            "text": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "Fake claude answer.",
+        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -761,7 +761,7 @@ exit 0
           "costGauge": 0.0012,
           "callIndex": 1,
           "label": "where agent",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       }
@@ -776,7 +776,7 @@ exit 0
         "package.json",
         "src"
       ],
-      "said": "Fake claude answer."
+      "said": "fake-result"
     },
     "tokenUsage": {
       "input": 120,
@@ -796,6 +796,6 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-places/project","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: where agent","skills":null,"login":[],"prompt":"PLACES Say where you are.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-places/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: where agent","skills":null,"login":[],"prompt":"PLACES Say where you are.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-places/sous-home/worktrees/<run-3>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: where agent","skills":null,"login":[],"prompt":"PLACES Say where you are.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-places/project","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-2>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: where agent","skills":null,"login":[],"prompt":"PLACES Say where you are.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-places/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: where agent","skills":null,"login":[],"prompt":"PLACES Say where you are.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-places/sous-home/worktrees/<run-3>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-3>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: where agent","skills":null,"login":[],"prompt":"PLACES Say where you are.","rule":null,"outcome":"answer"}

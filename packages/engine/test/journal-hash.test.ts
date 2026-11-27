@@ -34,8 +34,9 @@ async function journalOf(script: string, args?: unknown): Promise<JournalEntry[]
   return journal.sort((a, b) => a.index - b.index);
 }
 
+// until: "turn" keeps the bytes a step had before steps ran until done.
 const singleCall = `export const meta = { name: 'h', description: 'hash' }
-const a = await agent('only', { label: 'a' })
+const a = await agent('only', { label: 'a', until: 'turn' })
 return a`;
 
 describe("journal hash (hashAgentCall byte-stability)", () => {
@@ -181,11 +182,25 @@ return agent('same', { label: 'a' })`;
 
   it("hashes a call with no configOptions with no configOptions key, as old journals hold it", async () => {
     const source = `export const meta = { name: 'h-no-config', description: 'hash' }
-return agent('same', { label: 'a' })`;
+return agent('same', { label: 'a', until: 'turn' })`;
     const [entry] = await journalOf(source);
     const expectedIdentity =
       '{"prompt":"same","model":null,"tier":null,"phase":null,"agentType":null,"agentDef":null,"schema":null}';
     assert.equal(entry.hash, createHash("sha256").update(expectedIdentity).digest("hex"));
+  });
+
+  it("hashes a step that runs until done, as each step does unless it sets until turn, with until done last", async () => {
+    const identity = (extra: string) =>
+      createHash("sha256")
+        .update(`{"prompt":"same","model":null,"tier":null,"phase":null,"agentType":null,"agentDef":null,"schema":null${extra}}`)
+        .digest("hex");
+    const hashOf = async (options: string) =>
+      (await journalOf(`export const meta = { name: 'h-done', description: 'hash' }\nreturn agent('same', { label: 'a'${options} })`))[0]!.hash;
+    assert.equal(await hashOf(""), identity(',"until":"done"'));
+    assert.equal(await hashOf(", until: 'done'"), identity(',"until":"done"'));
+    assert.equal(await hashOf(", ask: false"), identity(',"until":"done","ask":false'));
+    // The limits and the checks belong to the loop, not to the call.
+    assert.equal(await hashOf(", maxTurns: 3, maxRepairs: 2, check: 'true'"), identity(',"until":"done"'));
   });
 
   it("folds phase into the identity (phase change => different hash)", async () => {

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { captureCallPath } from "./call-path.js";
 import { assertExplicitCheckpointDecision } from "./checkpoint-provenance.js";
+import { fitAnswer, isSchemaObject } from "./steps/answer.js";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { projectRecordedError } from "./recorded-error.js";
 import type { LedgerCall, Pairing, StepSlot } from "./step-ledger.js";
@@ -18,6 +19,9 @@ export interface CheckpointOptions {
   choices?: string[];
   /** Per-checkpoint timeout in ms for the interactive prompt. */
   timeoutMs?: number;
+  /** The shape of the answer, a JSON schema. An answer that does not fit is refused, with the
+   *  reason, and the question is asked again. It goes into the hash when set. */
+  schema?: Record<string, unknown>;
 }
 
 /** What marks a question, beside its call: a breakpoint, a question anyone may answer, and the
@@ -29,7 +33,9 @@ export interface CheckpointPurpose {
    *  hint for the terminal. */
   title?: string;
   show?: string;
-  answeredBy?: "anyone";
+  /** "anyone" lets an agent answer too. "join" is a question an agent's turn asked: the person
+   *  answers it by stepping into the session, so the inbox and the page refuse it. */
+  answeredBy?: "anyone" | "join";
   step?: string;
 }
 
@@ -47,6 +53,9 @@ export interface CheckpointCallContext {
   /** Set by the run manager. The host calls it once it has asked the question, and the run's
    *  event log gets an "asked" event. */
   asked?: () => void;
+  /** Why the last answer was refused, when the question is asked again: it did not fit the
+   *  question's schema. */
+  refused?: string;
 }
 
 /** The host's answer to a checkpoint() question. */
@@ -112,10 +121,12 @@ export async function checkpointCall(
   const checkpointTimeoutMs = checkpointOptions.timeoutMs;
   const checkpointKind = checkpointOptions.kind;
   const checkpointChoices = checkpointOptions.choices;
+  const checkpointSchema = checkpointOptions.schema;
   const capturedCheckpointOptions: CheckpointOptions = {
     ...(checkpointKind !== undefined ? { kind: checkpointKind } : {}),
     ...(checkpointChoices !== undefined ? { choices: checkpointChoices } : {}),
     ...(checkpointTimeoutMs !== undefined ? { timeoutMs: checkpointTimeoutMs } : {}),
+    ...(checkpointSchema !== undefined ? { schema: checkpointSchema } : {}),
   };
   validateCheckpointOptions(capturedCheckpointOptions);
   const callHash = hashCheckpoint(promptText, capturedCheckpointOptions);
@@ -223,41 +234,59 @@ export async function checkpointCall(
     },
   );
   try {
-    if (!run.host.confirm) throw waiting();
-    let reply: unknown;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    let onAbort: (() => void) | undefined;
-    let onPause: (() => void) | undefined;
-    try {
-      const answer = run.host.confirm(promptText, capturedCheckpointOptions, {
-        callIndex,
-        hash: callHash,
-        scope: run.runId,
-        path: callPath,
-        ...(purpose ? { purpose } : {}),
-      });
-      const interruption = new Promise<never>((_, reject) => {
-        onAbort = () => reject(new WorkflowError("workflow aborted", WorkflowErrorCode.WORKFLOW_ABORTED, { recoverable: true }));
-        run.signal.addEventListener("abort", onAbort, { once: true });
-        if (run.signal.aborted) onAbort();
-        // A pause request unwinds a waiting question the same way a stop does; the pending
-        // checkpoint keeps its durable context and is asked again on resume.
-        onPause = () => reject(run.gates.pauseError());
-        run.pauseSignal?.addEventListener("abort", onPause, { once: true });
-        if (run.gates.pauseRequested()) onPause();
-        if (checkpointTimeoutMs !== undefined) timeout = setTimeout(() => reject(waiting()), checkpointTimeoutMs);
-      });
-      reply = await Promise.race([answer, interruption]);
-    } catch {
-      run.gates.throwIfAborted();
-      throw waiting();
-    } finally {
-      if (timeout !== undefined) clearTimeout(timeout);
-      if (onAbort) run.signal.removeEventListener("abort", onAbort);
-      if (onPause) run.pauseSignal?.removeEventListener("abort", onPause);
+    const confirm = run.host.confirm;
+    if (!confirm) throw waiting();
+    // One ask of the question. When an answer did not fit the schema, the question is asked again
+    // with the reason.
+    const askOnce = async (refused: string | undefined): Promise<unknown> => {
+      let reply: unknown;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      let onAbort: (() => void) | undefined;
+      let onPause: (() => void) | undefined;
+      try {
+        const prompt = refused === undefined ? promptText : `${promptText}\n\nThe last answer was refused: ${refused}. Answer again.`;
+        const answer = confirm.call(run.host, prompt, capturedCheckpointOptions, {
+          callIndex,
+          hash: callHash,
+          scope: run.runId,
+          path: callPath,
+          ...(purpose ? { purpose } : {}),
+          ...(refused === undefined ? {} : { refused }),
+        });
+        const interruption = new Promise<never>((_, reject) => {
+          onAbort = () => reject(new WorkflowError("workflow aborted", WorkflowErrorCode.WORKFLOW_ABORTED, { recoverable: true }));
+          run.signal.addEventListener("abort", onAbort, { once: true });
+          if (run.signal.aborted) onAbort();
+          // A pause request unwinds a waiting question the same way a stop does; the pending
+          // checkpoint keeps its durable context and is asked again on resume.
+          onPause = () => reject(run.gates.pauseError());
+          run.pauseSignal?.addEventListener("abort", onPause, { once: true });
+          if (run.gates.pauseRequested()) onPause();
+          if (checkpointTimeoutMs !== undefined) timeout = setTimeout(() => reject(waiting()), checkpointTimeoutMs);
+        });
+        reply = await Promise.race([answer, interruption]);
+      } catch {
+        run.gates.throwIfAborted();
+        throw waiting();
+      } finally {
+        if (timeout !== undefined) clearTimeout(timeout);
+        if (onAbort) run.signal.removeEventListener("abort", onAbort);
+        if (onPause) run.pauseSignal?.removeEventListener("abort", onPause);
+      }
+      return reply;
+    };
+    let reply = await askOnce(undefined);
+    for (;;) {
+      if (reply === undefined) throw waiting();
+      run.gates.throwIfHalted();
+      if (checkpointSchema === undefined) break;
+      const fit = fitAnswer(reply, checkpointSchema, purpose?.breakpoint === true);
+      if (fit.ok) {
+        reply = fit.value;
+        break;
+      }
+      reply = await askOnce(fit.reason);
     }
-    if (reply === undefined) throw waiting();
-    run.gates.throwIfHalted();
     let replySnapshot: unknown;
     try {
       replySnapshot = strictSnapshot(reply, `checkpoint "${promptText}" reply`);
@@ -305,6 +334,8 @@ function hashCheckpoint(promptText: string, options: CheckpointOptions): string 
     promptText,
     kind: options.kind ?? "confirm",
     choices: options.choices ?? null,
+    // Set only when given, so a question asked before schemas existed keeps its hash.
+    ...(options.schema !== undefined ? { schema: options.schema } : {}),
   });
   return createHash("sha256").update(identity).digest("hex");
 }
@@ -318,7 +349,7 @@ function validateCheckpointOptionKeys(options: CheckpointOptions, realmObjectPro
   if (prototype !== null && prototype !== Object.prototype && prototype !== realmObjectPrototype) {
     invalid("options must be a plain object");
   }
-  const allowed = new Set(["kind", "choices", "timeoutMs"]);
+  const allowed = new Set(["kind", "choices", "timeoutMs", "schema"]);
   for (const key of Reflect.ownKeys(options)) {
     if (typeof key !== "string" || !allowed.has(key)) {
       invalid(`unsupported option ${String(key)}; checkpoints require an explicit answer (headless and default are retired)`);
@@ -337,4 +368,5 @@ function validateCheckpointOptions(options: CheckpointOptions): void {
   if (options.timeoutMs !== undefined && (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)) {
     invalid("timeoutMs must be a positive finite number");
   }
+  if (options.schema !== undefined && !isSchemaObject(options.schema)) invalid("schema must be a JSON schema object");
 }

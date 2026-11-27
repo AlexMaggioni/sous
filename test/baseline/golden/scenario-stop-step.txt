@@ -65,15 +65,15 @@ exit 0
   "status": "completed",
   "cwd": "<tmp>/scenario-stop-step/sous-home/scratch/<run-1>",
   "result": {
-    "slow": "Fake claude answer.",
-    "quick": "Fake claude answer.",
-    "after": "Fake claude answer."
+    "slow": "fake-result",
+    "quick": "fake-result",
+    "after": "fake-result"
   },
   "review": {
     "result": {
-      "slow": "Fake claude answer.",
-      "quick": "Fake claude answer.",
-      "after": "Fake claude answer."
+      "slow": "fake-result",
+      "quick": "fake-result",
+      "after": "fake-result"
     }
   },
   "notes": [],
@@ -101,9 +101,9 @@ steps
   done  after  (<n>s, 150 tokens)
 result
 {
-  "slow": "Fake claude answer.",
-  "quick": "Fake claude answer.",
-  "after": "Fake claude answer."
+  "slow": "fake-result",
+  "quick": "fake-result",
+  "after": "fake-result"
 }
 
 $ sous show <run-1> --full --json
@@ -213,11 +213,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "Fake claude answer.",
+            "text": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "Fake claude answer.",
+        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -241,7 +241,7 @@ exit 0
           "costGauge": 0.0012,
           "callIndex": 0,
           "label": "slow",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       },
@@ -253,7 +253,7 @@ exit 0
         "callIndex": 1,
         "scope": "<run-1>",
         "startedAt": "<startedAt>",
-        "resultPreview": "Fake claude answer.",
+        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
         "tokens": 0,
         "usage": {
           "input": 120,
@@ -277,7 +277,7 @@ exit 0
           "costGauge": 0.0012,
           "callIndex": 1,
           "label": "quick",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       },
@@ -293,11 +293,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "Fake claude answer.",
+            "text": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "Fake claude answer.",
+        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -321,7 +321,7 @@ exit 0
           "costGauge": 0.0012,
           "callIndex": 2,
           "label": "after",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       }
@@ -332,9 +332,9 @@ exit 0
       "Logs persisted to <tmp>/scenario-stop-step/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
     ],
     "result": {
-      "slow": "Fake claude answer.",
-      "quick": "Fake claude answer.",
-      "after": "Fake claude answer."
+      "slow": "fake-result",
+      "quick": "fake-result",
+      "after": "fake-result"
     },
     "tokenUsage": {
       "input": 360,
@@ -354,7 +354,7 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-stop-step/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: after","skills":null,"login":[],"prompt":"STOP-AFTER Wrap up.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-stop-step/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: quick","skills":null,"login":[],"prompt":"STOP-QUICK Answer now.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-4>"],"cwd":"<tmp>/scenario-stop-step/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-4>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: slow","skills":null,"login":[],"prompt":"STOP-SLOW Take your time.","rule":0,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-stop-step/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: slow","skills":null,"login":[],"prompt":"STOP-SLOW Take your time.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-3>"],"cwd":"<tmp>/scenario-stop-step/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-3>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: after","skills":null,"login":[],"prompt":"STOP-AFTER Wrap up.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-stop-step/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-2>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: quick","skills":null,"login":[],"prompt":"STOP-QUICK Answer now.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-4>"],"cwd":"<tmp>/scenario-stop-step/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-4>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: slow","skills":null,"login":[],"prompt":"STOP-SLOW Take your time.","rule":0,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-stop-step/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: slow","skills":null,"login":[],"prompt":"STOP-SLOW Take your time.","rule":null,"outcome":"answer"}

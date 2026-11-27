@@ -6,6 +6,7 @@
 //     inputs: { ticket: { type: "string", description: "What to build", required: true },
 //               tries: { type: "number", default: 3 } },
 //     outputs: { summary: "What was built" },
+//     schema: { type: "object", required: ["branch"] }, // the shape of the workflow's result
 //     place: "worktree",
 //     concurrency: 2,
 //     startedBy: "people",   // or "anyone", the default: agents may start it too
@@ -17,9 +18,11 @@
 // workflowExtras reads these fields from the parsed meta once, into a typed WorkflowExtras.
 
 import { parseDurationSeconds } from "../duration.js";
+import { WorkflowError, WorkflowErrorCode } from "../errors.js";
 import { isPlace } from "../places/places.js";
 import type { Place } from "../runs/home.js";
 import { parseCron } from "../runs/cron.js";
+import { fitSchema, isSchemaObject } from "../steps/answer.js";
 import type { WorkflowMeta } from "../workflow-result.js";
 
 export interface InputSpec {
@@ -28,6 +31,8 @@ export interface InputSpec {
   required?: boolean;
   default?: unknown;
   choices?: unknown[];
+  /** A json input's shape. A value that does not fit is a problem, as a wrong type is. */
+  schema?: Record<string, unknown>;
 }
 
 /** An input a run must be given: one with no default that its spec does not mark required: false. */
@@ -39,6 +44,8 @@ export interface WorkflowExtras {
   description?: string;
   inputs: Record<string, InputSpec>;
   outputs?: Record<string, unknown>;
+  /** The shape of the workflow's result, from meta.schema. A result that does not fit fails. */
+  schema?: Record<string, unknown>;
   place?: Place;
   concurrency?: number;
   /** "people" keeps agents from starting it. */
@@ -71,6 +78,15 @@ export function workflowExtras(meta: WorkflowMeta): WorkflowExtras {
     startedBy: meta.startedBy === "people" ? "people" : "anyone",
   };
   const problems: string[] = [];
+  if (meta.schema !== undefined) {
+    if (isSchemaObject(meta.schema)) extras.schema = meta.schema;
+    else problems.push("meta.schema must be a JSON schema object");
+  }
+  for (const [name, spec] of Object.entries(inputs)) {
+    if (!spec || typeof spec !== "object" || spec.schema === undefined) continue;
+    if (!isSchemaObject(spec.schema)) problems.push(`meta.inputs.${name}.schema must be a JSON schema object`);
+    else if (spec.type !== "json") problems.push(`meta.inputs.${name}.schema needs type: "json"`);
+  }
   const timeout = timeoutOf(meta.timeout);
   if (timeout.timeout) extras.timeout = timeout.timeout;
   if (timeout.problem) problems.push(timeout.problem);
@@ -148,6 +164,11 @@ export function checkInputs(extras: WorkflowExtras, given: Record<string, unknow
     try {
       args[name] = coerce(name, spec, value);
       if (spec.choices && !spec.choices.includes(args[name])) problems.push(`--${name} must be one of: ${spec.choices.join(", ")}`);
+      if (spec.type === "json" && isSchemaObject(spec.schema)) {
+        const fit = fitSchema(args[name], spec.schema);
+        if (fit.ok) args[name] = fit.value;
+        else problems.push(`--${name} does not fit its schema: ${fit.reason}`);
+      }
     } catch (error) {
       problems.push((error as Error).message);
     }
@@ -171,4 +192,17 @@ export function nestedArgs(name: string, meta: WorkflowMeta, args: unknown): unk
   const checked = checkInputs(workflowExtras(meta), (args ?? {}) as Record<string, unknown>);
   if (checked.problems.length) throw new Error(`workflow("${name}"): ${checked.problems.join("; ")}`);
   return checked.args;
+}
+
+/**
+ * The result as it fits the workflow's meta.schema. With no schema, any result fits. A misfit
+ * throws: for a workflow() call a plain error, which the parent may catch, and for a top-level run
+ * a script error, which fails the run.
+ */
+export function fittedResult(meta: WorkflowMeta, result: unknown, child?: string): unknown {
+  if (!isSchemaObject(meta.schema)) return result;
+  const fit = fitSchema(result, meta.schema);
+  if (fit.ok) return fit.value;
+  if (child !== undefined) throw new Error(`workflow("${child}"): its result does not fit meta.schema: ${fit.reason}`);
+  throw new WorkflowError(`the result does not fit meta.schema: ${fit.reason}`, WorkflowErrorCode.SCRIPT_ERROR, { recoverable: false });
 }

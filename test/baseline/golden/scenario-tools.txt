@@ -33,13 +33,13 @@ exit 0
   "status": "completed",
   "cwd": "<tmp>/scenario-tools/sous-home/scratch/<run-1>",
   "result": {
-    "limited": "Fake claude answer.",
-    "free": "Fake claude answer."
+    "limited": "fake-result",
+    "free": "fake-result"
   },
   "review": {
     "result": {
-      "limited": "Fake claude answer.",
-      "free": "Fake claude answer."
+      "limited": "fake-result",
+      "free": "fake-result"
     }
   },
   "notes": [],
@@ -66,8 +66,8 @@ steps
   done  free  (<n>s, 150 tokens)
 result
 {
-  "limited": "Fake claude answer.",
-  "free": "Fake claude answer."
+  "limited": "fake-result",
+  "free": "fake-result"
 }
 
 $ sous show <run-1> --full --json
@@ -169,11 +169,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "Fake claude answer.",
+            "text": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "Fake claude answer.",
+        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -198,7 +198,7 @@ exit 0
           "costGauge": 0.0012,
           "callIndex": 0,
           "label": "limited",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       },
@@ -214,11 +214,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "Fake claude answer.",
+            "text": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "Fake claude answer.",
+        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -242,7 +242,7 @@ exit 0
           "costGauge": 0.0012,
           "callIndex": 1,
           "label": "free",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       }
@@ -251,8 +251,8 @@ exit 0
       "Logs persisted to <tmp>/scenario-tools/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log"
     ],
     "result": {
-      "limited": "Fake claude answer.",
-      "free": "Fake claude answer."
+      "limited": "fake-result",
+      "free": "fake-result"
     },
     "tokenUsage": {
       "input": 240,
@@ -272,5 +272,5 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--model=sonnet","--permission-prompt-tool=stdio","--allowedTools=Read,Grep,Bash(git *),mcp__notes__search","--disallowedTools=Write,WebFetch,AskUserQuestion","--tools=Read,Grep,Bash","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-tools/sous-home/scratch/<run-1>","model":"sonnet","effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":null,"mcpServers":[],"allowedTools":["Read","Grep","Bash(git *)","mcp__notes__search"],"disallowedTools":["Write","WebFetch","AskUserQuestion"],"tools":["Read","Grep","Bash"],"systemPrompt":null,"appendSystemPrompt":"You read the code and report what you find. You change no file.\n\nTask label: limited","skills":null,"login":[],"prompt":"TOOLS-LIMITED Read the code.","rule":null,"outcome":"answer"}
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-tools/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-2>","resume":false,"schema":null,"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: free","skills":null,"login":[],"prompt":"TOOLS-FREE Do anything.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-2>"],"cwd":"<tmp>/scenario-tools/sous-home/scratch/<run-1>","model":null,"effort":null,"permissionMode":"auto","sessionId":"<id-2>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: free","skills":null,"login":[],"prompt":"TOOLS-FREE Do anything.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--model=sonnet","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as text. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--allowedTools=Read,Grep,Bash(git *),mcp__notes__search","--disallowedTools=Write,WebFetch,AskUserQuestion","--tools=Read,Grep,Bash","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-tools/sous-home/scratch/<run-1>","model":"sonnet","effort":null,"permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":["Read","Grep","Bash(git *)","mcp__notes__search"],"disallowedTools":["Write","WebFetch","AskUserQuestion"],"tools":["Read","Grep","Bash"],"systemPrompt":null,"appendSystemPrompt":"You read the code and report what you find. You change no file.\n\nTask label: limited","skills":null,"login":[],"prompt":"TOOLS-LIMITED Read the code.","rule":null,"outcome":"answer"}

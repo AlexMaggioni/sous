@@ -7,7 +7,7 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> completed  emails
   <hh:mm:ss> done       read mailbox
   <hh:mm:ss> done       save drafts
-  <hh:mm:ss> done       sort, 344 tokens
+  <hh:mm:ss> done       sort, 355 tokens
   <hh:mm:ss> log        Logs persisted to <tmp>/check-emails/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
   <hh:mm:ss> question   Breakpoint: Approve these replies Reply approve, stop, or send back with a note.
            answered   "approve" (dry run)

@@ -3,7 +3,7 @@
 // opened by hand.
 
 import type { TSchema } from "typebox";
-import { Check, Convert } from "typebox/value";
+import { Check, Convert, Errors } from "typebox/value";
 import type { Image, McpServer } from "@sous-run/harnesses";
 import type { McpServerConfig } from "./mcp-config.js";
 import type { PromptImage } from "./agent-run.js";
@@ -59,6 +59,77 @@ export function validateValue(value: unknown, schema: TSchema): unknown {
     // typebox throws on some schemas. That counts as no fit.
   }
   return undefined;
+}
+
+/** True for a value that can be a JSON schema: a plain object that is no array. */
+export function isSchemaObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * The value checked against a schema, with validateValue's check. A fit gives the converted value.
+ * A misfit gives the reason: each place that does not fit, by its path, as "n must be number".
+ */
+export function fitSchema(value: unknown, schema: unknown): { ok: true; value: unknown } | { ok: false; reason: string } {
+  const fitted = validateValue(value, schema as TSchema);
+  if (fitted !== undefined) return { ok: true, value: fitted };
+  let reasons: string[] = [];
+  try {
+    reasons = Errors(schema as TSchema, value).map((error) => `${error.instancePath ? error.instancePath.slice(1).replaceAll("/", ".") : "the value"} ${error.message}`);
+  } catch {
+    // typebox throws on some schemas. The reason stays general.
+  }
+  return { ok: false, reason: reasons.length ? [...new Set(reasons)].join("; ") : "the value does not fit" };
+}
+
+/** A text answer's value: its JSON when that fits, else the text itself when that fits. */
+function fitText(text: string, schema: Record<string, unknown>): { ok: true; value: unknown } | { ok: false; reason: string; notJson?: true } {
+  let parsed: { value: unknown } | undefined;
+  try {
+    parsed = { value: JSON.parse(text) };
+  } catch {
+    // not JSON: the text itself may still fit a string schema
+  }
+  if (parsed) {
+    const fit = fitSchema(parsed.value, schema);
+    if (fit.ok) return fit;
+    const asText = fitSchema(text, schema);
+    return asText.ok ? asText : fit;
+  }
+  const asText = fitSchema(text, schema);
+  return asText.ok ? asText : { ok: false, reason: "the answer is not JSON", notJson: true };
+}
+
+/**
+ * A person's answer to a question with a schema, checked. Text is read as JSON. An ask's value
+ * must fit. At a breakpoint, approve, stop and send back pass as they are, and an approve that
+ * carries a value, or an answer in JSON, must fit: it gives { decision: "approve", value }.
+ */
+export function fitAnswer(
+  answer: unknown,
+  schema: Record<string, unknown>,
+  breakpoint: boolean,
+): { ok: true; value: unknown } | { ok: false; reason: string; notJson?: true } {
+  if (!breakpoint) return typeof answer === "string" ? fitText(answer, schema) : fitSchema(answer, schema);
+  const approved = (value: unknown, note?: unknown) => {
+    const fit = typeof value === "string" ? fitText(value, schema) : fitSchema(value, schema);
+    return fit.ok ? { ok: true as const, value: { decision: "approve", value: fit.value, ...(typeof note === "string" && note ? { note } : {}) } } : fit;
+  };
+  if (typeof answer === "boolean") return { ok: true, value: answer };
+  if (typeof answer === "string") {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(answer);
+    } catch {
+      return { ok: true, value: answer };
+    }
+    return typeof parsed === "string" ? { ok: true, value: answer } : approved(parsed);
+  }
+  if (isSchemaObject(answer) && "decision" in answer) {
+    if (String(answer.decision).toLowerCase() === "approve" && "value" in answer) return approved(answer.value, answer.note);
+    return { ok: true, value: answer };
+  }
+  return approved(answer);
 }
 
 /** The JSON in the text, when it fits the schema. */

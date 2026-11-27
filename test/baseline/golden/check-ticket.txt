@@ -7,10 +7,10 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   <hh:mm:ss> completed  ticket
   <hh:mm:ss> done       commit
   <hh:mm:ss> done       diff 1
-  <hh:mm:ss> done       implementer, 35 tokens
-  <hh:mm:ss> done       reviewer 1, 41 tokens
+  <hh:mm:ss> done       implementer, 45 tokens
+  <hh:mm:ss> done       reviewer 1, 52 tokens
   <hh:mm:ss> done       tests
-  <hh:mm:ss> done       verifier, 54 tokens
+  <hh:mm:ss> done       verifier, 64 tokens
   <hh:mm:ss> log        Logs persisted to <tmp>/check-ticket/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
   <hh:mm:ss> log        review 1: approved
   <hh:mm:ss> phase      implement

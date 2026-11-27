@@ -82,6 +82,14 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
    *  downstream. Freeze the exact object handed to hashAgentCall; normalize for Codex on
    *  a COPY, never mutate the hashed value. */
   schema?: S;
+  /** Set when the step runs until the agent says done. Each turn then answers with the status
+   *  object, and the steps module returns that object. `ask` false drops the "question" status,
+   *  and the engine hashes it. */
+  untilDone?: { ask?: boolean };
+  /** The step's limits on the turns the steps module sends. `maxRepairs` caps the repair turns,
+   *  with no cap when unset. `turnsLeft` is how many turns the step's maxTurns leaves for this
+   *  call. Reaching either fails the step with STEP_LIMIT. NOT hashed. */
+  limits?: StepLimits;
   /** The step's system text: its agent's prompt and its label. The engine builds it, the same for
    *  every turn of one session. NOT hashed. */
   instructions?: string;
@@ -169,6 +177,14 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
    *  and backends keys always null. Identical across retry attempts. ABSENT when any component fails
    *  strict-JSON canonicalization — never fabricated. ADDITIVE, not a hash input. */
   callInputsHash?: string;
+}
+
+/** The limits of one call. EngineFields.limits says more. */
+export interface StepLimits {
+  maxRepairs?: number;
+  /** The step's maxTurns, which the error names. */
+  maxTurns?: number;
+  turnsLeft?: number;
 }
 
 /** What the engine sends the runner for one agent call. */

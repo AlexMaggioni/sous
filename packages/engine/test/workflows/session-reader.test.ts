@@ -181,6 +181,24 @@ await agent("c", { label: "new", place: "worktree", until: "turn" })
       ],
     );
   });
+
+  it("an agent step's options read check, maxTurns and maxRepairs, a check function as function", () => {
+    const flow = workflowFlow(
+      wf(`
+const review = async (result) => true
+const impl = session({ label: "impl" })
+await impl.send("a", { check: "npm test", maxTurns: 12 })
+await agent("b", { label: "listed", check: ["npm test", review, (result) => true], maxRepairs: 2 })
+`),
+    );
+    assert.deepEqual(
+      steps(flow.nodes).map((step) => [step.label, step.options]),
+      [
+        ["impl", { session: "impl", check: ["npm test"], maxTurns: 12 }],
+        ["listed", { check: ["npm test", "function", "function"], maxRepairs: 2 }],
+      ],
+    );
+  });
 });
 
 describe("the script's reader reads a send as an agent call", () => {

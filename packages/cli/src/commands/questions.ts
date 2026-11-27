@@ -49,7 +49,7 @@ export function cmdAnswer(args: Parsed, ctx: Ctx, via: Exclude<Typed["via"], "pr
   }
   if ("stopped" in answer) return stopReply(runId, answer.stopped, { question: id, runId, answered: true, outcome: answer.stopped.outcome });
   const notes: string[] = [];
-  if (via === "answer" && !question.breakpoint && !valueJson && looksLikeJson(text)) notes.push("The answer went as text. Add --value-json to pass it as JSON.");
+  if (via === "answer" && !question.breakpoint && !question.schema && !valueJson && looksLikeJson(text)) notes.push("The answer went as text. Add --value-json to pass it as JSON.");
   if (answer.notJson) notes.push("The text is not JSON, so it went as text.");
   const next = answer.running
     ? [waitNext(runId, "waits for the run, which goes on with the answer")]

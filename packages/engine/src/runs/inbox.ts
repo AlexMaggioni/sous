@@ -4,6 +4,7 @@
 
 import { unlinkSync } from "node:fs";
 import { readJsonFile, writeJsonFile } from "../json-file.js";
+import { fitAnswer, fitSchema } from "../steps/answer.js";
 import type { By, Through, Who } from "./actions.js";
 import { answerCommand, answeredByFor, authorAnsweredBy, type Tried } from "./consent.js";
 import type { HomePaths } from "./home.js";
@@ -29,13 +30,20 @@ export interface Question {
   title?: string;
   show?: string;
   /** Who may answer, as the author said: people, or anyone, an agent too. A breakpoint is always
-   *  for people. sous writes it on each question and fills it when it reads an older file, so
-   *  only a question built by hand lacks it, and then it is for people. */
-  answeredBy?: "people" | "anyone";
+   *  for people. "join" is an agent's question in its turn: the person answers it by stepping into
+   *  the session, never through the inbox. sous writes it on each question and fills it when it
+   *  reads an older file, so only a question built by hand lacks it, and then it is for people. */
+  answeredBy?: AnsweredBy;
   /** The label of the agent step that asks, for an agent's question. */
   step?: string;
+  /** The shape of the answer, a JSON schema. An answer that does not fit is refused. At a
+   *  breakpoint, it checks the value an approve carries. */
+  schema?: Record<string, unknown>;
   askedAt: string;
 }
+
+/** Who may answer a question. See Question.answeredBy. */
+export type AnsweredBy = "people" | "anyone" | "join";
 
 export interface Answer {
   hash: string;
@@ -127,11 +135,31 @@ export function ask(paths: HomePaths, question: Question, options: AskOptions): 
 }
 
 /** The answer a dry run gives a question: approve, yes, the first choice, or a stand-in text. */
-export function standIn(question: Pick<Question, "kind" | "choices" | "breakpoint">): unknown {
+export function standIn(question: Pick<Question, "kind" | "choices" | "breakpoint" | "schema">): unknown {
   if (question.breakpoint) return "approve";
+  if (question.schema) return sampleOf(question.schema);
   if (question.kind === "select") return question.choices?.[0] ?? "";
   if (question.kind === "input") return "stand-in answer";
   return true;
+}
+
+/** A small value that fits a schema, for a dry run's answer: the first of its enum or const, an
+ *  object with each required field, an empty list, a zero, or a stand-in text. */
+function sampleOf(schema: Record<string, unknown>): unknown {
+  if (Array.isArray(schema.enum) && schema.enum.length) return schema.enum[0];
+  if ("const" in schema) return schema.const;
+  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  if (type === "object" || (type === undefined && schema.properties)) {
+    const properties = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
+    const required = Array.isArray(schema.required) ? (schema.required as string[]) : [];
+    return Object.fromEntries(required.map((name) => [name, sampleOf(properties[name] ?? {})]));
+  }
+  if (type === "array") return [];
+  if (type === "number" || type === "integer") return typeof schema.minimum === "number" ? schema.minimum : 0;
+  if (type === "boolean") return true;
+  if (type === "null") return null;
+  const text = "stand-in answer";
+  return fitSchema(text, schema).ok ? text : {};
 }
 
 /** Open questions, oldest first, optionally for one run. Answered ones are left out. */
@@ -175,6 +203,8 @@ function normalizeAnswer(question: Question, raw: unknown): unknown {
 export interface Decision {
   decision: "approve" | "send back" | "stop";
   note?: string;
+  /** The value an approve carries, at a breakpoint with a schema. */
+  value?: unknown;
 }
 
 /** The words that approve a breakpoint, trimmed and in lower case. */
@@ -207,9 +237,10 @@ export function triedOf(typed: Pick<Reply, "via" | "text">): Tried {
  */
 export function decisionOf(answer: unknown): Decision {
   if (answer && typeof answer === "object") {
-    const record = answer as { decision?: unknown; note?: unknown };
+    const record = answer as { decision?: unknown; note?: unknown; value?: unknown };
     const decision = String(record.decision ?? "").toLowerCase();
     const note = typeof record.note === "string" && record.note.trim() ? record.note.trim() : undefined;
+    if (decision === "approve" && "value" in record) return { decision, ...(note ? { note } : {}), value: record.value };
     if (decision === "approve" || decision === "stop") return { decision, ...(note ? { note } : {}) };
     if (decision === "send back" || decision === "send-back") return { decision: "send back", ...(note ? { note } : {}) };
   }
@@ -271,10 +302,12 @@ function choicesOf(question: Question): string[] {
 function meaningOf(question: Question, { via, text, valueJson }: Reply): { value: unknown; notJson?: true } | { stop: true } | Misfit {
   if (via === "prompt") {
     const typed = text.trim();
+    if (question.schema) return schemaMeaning(question, question.schema, typed);
     if (!question.breakpoint) return { value: normalizeAnswer(question, typed) };
     const value = breakpointValue(typed);
     return value === "stop" ? { stop: true } : { value };
   }
+  if (via === "approve" && question.schema && !question.breakpoint) return { usage: `${question.id} takes JSON that fits its schema. Use sous answer ${question.id} '<json>'` };
   if (via === "approve") return { value: question.kind === "confirm" && !question.breakpoint ? true : "approve" };
   if (via === "send-back") {
     if (!question.breakpoint) return { usage: `${question.id} is not a breakpoint. Use sous answer ${question.id} "..."` };
@@ -282,6 +315,7 @@ function meaningOf(question: Question, { via, text, valueJson }: Reply): { value
     return { value: { decision: "send back", note: text } };
   }
   if (!text && question.kind !== "confirm") return { usage: `sous answer ${question.id} "your answer"` };
+  if (question.schema) return schemaMeaning(question, question.schema, text);
   let value: unknown;
   let notJson = false;
   if (question.breakpoint) value = breakpointValue(text);
@@ -303,6 +337,21 @@ function meaningOf(question: Question, { via, text, valueJson }: Reply): { value
   return notJson ? { value, notJson: true } : { value };
 }
 
+/**
+ * An answer to a question with a schema. The text is read as JSON, whatever --value-json says.
+ * An answer that does not fit is refused with the reason. At a breakpoint, text that is not JSON
+ * is approve, stop or send back, as without a schema.
+ */
+function schemaMeaning(question: Question, schema: Record<string, unknown>, text: string): { value: unknown } | { stop: true } | Misfit {
+  const fit = fitAnswer(text, schema, question.breakpoint);
+  if (!fit.ok) {
+    return { usage: fit.notJson ? "the answer is not JSON. Answer with JSON that fits the question's schema." : `the answer does not fit the question's schema: ${fit.reason}` };
+  }
+  if (!question.breakpoint || typeof fit.value !== "string") return { value: fit.value };
+  const value = breakpointValue(fit.value);
+  return value === "stop" ? { stop: true } : { value };
+}
+
 /** A question as a reply shows it, with who may answer it as it stands for its run. */
 export interface QuestionView {
   id: string;
@@ -315,7 +364,9 @@ export interface QuestionView {
   title?: string;
   show?: string;
   askedAt: string;
-  answeredBy: "people" | "anyone";
+  answeredBy: AnsweredBy;
+  /** The JSON schema an answer must fit. */
+  schema?: Record<string, unknown>;
 }
 
 /** A breakpoint's title and shown text. A question an older sous asked has them only in its prompt:
@@ -329,9 +380,9 @@ function shownOf(question: Question): { title: string; show?: string } {
 
 /** The view of a question, for its root run's record: one started with --let-agent-answer or not. */
 export function questionView(question: Question, record?: Pick<RunRecord, "letAgentAnswer">): QuestionView {
-  const { id, step, prompt, kind, choices, breakpoint, askedAt } = question;
+  const { id, step, prompt, kind, choices, breakpoint, askedAt, schema } = question;
   const shown = breakpoint ? shownOf(question) : {};
-  return { id, ...(step ? { step } : {}), prompt, kind, ...(choices ? { choices } : {}), breakpoint, ...shown, askedAt, answeredBy: answeredByFor(question, record) };
+  return { id, ...(step ? { step } : {}), prompt, kind, ...(choices ? { choices } : {}), breakpoint, ...shown, askedAt, answeredBy: answeredByFor(question, record), ...(schema ? { schema } : {}) };
 }
 
 /**
@@ -342,11 +393,14 @@ export function questionView(question: Question, record?: Pick<RunRecord, "letAg
 export function hint(question: Question, where: "sous" | "log" | "prompt" = "sous"): string {
   if (where === "prompt") {
     if (question.breakpoint) return "approve, stop, or a note to send back";
+    if (question.schema) return "JSON that fits the question's schema";
     if (question.kind === "confirm") return "yes or no";
     if (question.kind === "select") return (question.choices ?? []).join(" / ");
     return "your answer";
   }
+  if (question.answeredBy === "join") return `sous join ${question.runId}${question.step ? ` ${question.step}` : ""}`;
   if (question.breakpoint) return `${answerCommand(question, "approve")}  |  ${answerCommand(question, "send-back", '"note"')}  |  sous stop ${question.runId}`;
+  if (question.schema) return answerCommand(question, "answer", "'<json>'");
   if (where === "log") return answerCommand(question, "answer", '"..."');
   if (question.kind === "confirm") return answerCommand(question, "answer", "yes|no");
   if (question.kind === "select") return answerCommand(question, "answer", `<one of: ${(question.choices ?? []).join(", ")}>`);

@@ -754,6 +754,33 @@ await agent("e", { label: "made", schema: makeSchema() })
   );
 });
 
+test("the input and the schema of a code step, an ask and a breakpoint", () => {
+  const flow = workflowFlow(
+    wf(`
+const shape = { type: "object", properties: { n: { type: "number" } } }
+await sh("jq .n", { label: "sh", input: { n: 1 }, schema: shape })
+await js("return input", args.x, { label: "js", schema: { type: "object", properties: { a: {} } } })
+await py("result = input", 1, { label: "py", schema: Type.Object({ b: Type.Number() }) })
+await run("scripts/x.mjs", { label: "run", input: args.ticket, schema: shape })
+await waitUntil("cat", { label: "wait", input: [1, 2], schema: shape })
+await ask("How many?", { input: plan, schema: shape })
+await breakpoint("Check", () => agent("b", { label: "draft" }), { input: { a: 1 }, schema: shape })
+await breakpoint("Stop", { input: "x", schema: shape })
+`),
+  );
+  assert.deepEqual(each(flow.nodes, "options"), [
+    ["sh", { schema: ["n"], input: "{ n: 1 }" }],
+    ["js", { schema: ["a"] }],
+    ["py", { schema: ["b"] }],
+    ["run", { schema: ["n"], input: "args.ticket" }],
+    ["wait", { schema: ["n"], input: "[1, 2]" }],
+    ["How many?", { schema: ["n"], input: "plan" }],
+    ["Check", { schema: ["n"], input: "{ a: 1 }" }],
+    ["draft", undefined],
+    ["Stop", { schema: ["n"], input: '"x"' }],
+  ]);
+});
+
 test("an option the text makes at run time is left out, with no note", () => {
   const flow = workflowFlow(
     wf(`

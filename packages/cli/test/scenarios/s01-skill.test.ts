@@ -1,7 +1,8 @@
 // Scenario 1, a skill runs from the prompt. A step's prompt reaches the program as written, so a
 // leading slash command runs as it does in a session opened by hand. The step's label goes in the
-// session's system text. A slash step with a schema runs its command with no schema, then asks for
-// the value in a report turn of the same session. The fakes stand in for the programs: a rule
+// session's system text. A slash step runs its command with no schema. A step that runs until done,
+// the default, then asks for the status in a report turn of the same session, and a step with
+// until "turn" and a schema asks for the value there. The fakes stand in for the programs: a rule
 // answers the canary word only to a prompt that starts with "/canary".
 
 import assert from "node:assert/strict";
@@ -21,6 +22,10 @@ const RULES: FakeRule[] = [
   { match: "^/canary", slash: true, answer: CANARY },
   { match: "", answer: "OTHER-WORD" },
 ];
+/** The fields of the status schema a report turn of a step that runs until done carries. */
+const STATUS = ["status", "result", "message"];
+/** The schema's property names a turn got, or null when it got none. */
+const fields = (line: FakeLine) => (line.schema === null || line.schema === undefined ? null : Object.keys((line.schema as { properties: object }).properties));
 
 /** A workflow whose one step sends `/canary` on `model`, with `options` added to the call. */
 const slashStep = (model: string, options = "") => `export const meta = { name: 'skill', description: 'A skill from the prompt' }
@@ -46,8 +51,27 @@ for (const [program, model] of [
 ] as const) {
   describe(`a slash prompt on the fake ${program}`, () => {
     it("reaches the program as written, with the label in the system text, and the step returns the canary", async (t) => {
-      const world = fakeWorld(t, { rules: RULES });
+      const world = fakeWorld(t, { rules: [RULES[0]!, { match: `^${REPORT}$`, answer: CANARY }, RULES[1]!] });
       world.workflow("skill", slashStep(model));
+
+      const value = await runSkill(world);
+
+      const [turn, report, ...more] = turns(world.log());
+      assert.equal(more.length, 0, JSON.stringify(world.log()));
+      assert.equal(turn!.program, program);
+      assert.equal(turn!.prompt, "/canary");
+      assert.equal(turn!.rule, 0);
+      assert.equal(fields(turn!), null);
+      assert.match(turn!.system ?? "", /Task label: canary step/);
+      // The step runs until done, so the report turn asks for the status in the same session.
+      assert.deepEqual([report!.prompt, fields(report!), report!.rule, report!.resume], [REPORT, STATUS, 1, true]);
+      assert.equal(report!.sessionId, turn!.sessionId);
+      assert.equal(value, CANARY);
+    });
+
+    it("with until turn runs the one turn as written and returns the canary", async (t) => {
+      const world = fakeWorld(t, { rules: RULES });
+      world.workflow("skill", slashStep(model, ", until: 'turn'"));
 
       const value = await runSkill(world);
 
@@ -60,26 +84,31 @@ for (const [program, model] of [
       assert.equal(value, CANARY);
     });
 
-    it("with a schema runs /canary with no schema, then a report turn in the same session, and returns the schema's value", async (t) => {
-      const world = fakeWorld(t, { rules: [{ match: "^/canary", slash: true, answer: CANARY }, { match: `^${REPORT}$`, answer: { word: CANARY } }] });
-      world.workflow("skill", slashStep(model, `, schema: { type: 'object', properties: { word: { type: 'string' } }, required: ['word'], additionalProperties: false }`));
+    for (const [until, reportFields] of [
+      ["done", STATUS],
+      ["turn", ["word"]],
+    ] as const) {
+      it(`with a schema and until ${until} runs /canary with no schema, then a report turn in the same session, and returns the schema's value`, async (t) => {
+        const world = fakeWorld(t, { rules: [{ match: "^/canary", slash: true, answer: CANARY }, { match: `^${REPORT}$`, answer: { word: CANARY } }] });
+        world.workflow("skill", slashStep(model, `, until: '${until}', schema: { type: 'object', properties: { word: { type: 'string' } }, required: ['word'], additionalProperties: false }`));
 
-      const value = await runSkill(world);
+        const value = await runSkill(world);
 
-      const lines = turns(world.log());
-      assert.deepEqual(
-        lines.map((line) => [line.prompt, line.schema === null ? null : Object.keys((line.schema as { properties: object }).properties)]),
-        [
-          ["/canary", null],
-          [REPORT, ["word"]],
-        ],
-      );
-      const [work, report] = lines;
-      assert.deepEqual([work!.rule, report!.rule], [0, 1]);
-      assert.equal(report!.sessionId, work!.sessionId);
-      assert.equal(report!.resume, true);
-      assert.deepEqual(value, { word: CANARY });
-    });
+        const lines = turns(world.log());
+        assert.deepEqual(
+          lines.map((line) => [line.prompt, fields(line)]),
+          [
+            ["/canary", null],
+            [REPORT, [...reportFields]],
+          ],
+        );
+        const [work, report] = lines;
+        assert.deepEqual([work!.rule, report!.rule], [0, 1]);
+        assert.equal(report!.sessionId, work!.sessionId);
+        assert.equal(report!.resume, true);
+        assert.deepEqual(value, { word: CANARY });
+      });
+    }
   });
 }
 

@@ -7,7 +7,7 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   (log lines sorted)
   <hh:mm:ss> completed  limit
   <hh:mm:ss> done       before
-  <hh:mm:ss> done       worker, 13 tokens
+  <hh:mm:ss> done       worker, 23 tokens
   <hh:mm:ss> log        Logs persisted to <tmp>/check-limit/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
   <hh:mm:ss> run        limit in <tmp>/check-limit/sous-home/scratch/<run-1>
   <hh:mm:ss> start      before (exec)

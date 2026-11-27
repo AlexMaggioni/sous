@@ -18,6 +18,7 @@ import type {
   AgentUsage,
   PromptImage,
 } from "./steps/agent-run.js";
+import { checkUntil, untilFields, untilHash, type Until } from "./turns/until.js";
 import type { AgentRunner, StepAsk, StepRoute } from "./steps/agent-runner.js";
 import type {
   AgentSessionRecord,
@@ -42,6 +43,7 @@ import {
   errorMessage,
   isAuthRequired,
   isProviderUsageLimit,
+  isStepLimit,
   WorkflowError,
   WorkflowErrorCode,
   wrapError,
@@ -74,7 +76,7 @@ import {
 } from "./strict-json.js";
 import { captureCallPath } from "./call-path.js";
 import { isPlace, NO_PLACES, type RunPlaces, type Worktree } from "./places/places.js";
-import { nestedArgs } from "./workflows/meta.js";
+import { fittedResult, nestedArgs } from "./workflows/meta.js";
 import { parseWorkflowScript } from "./workflows/script.js";
 import {
   createSousGlobals,
@@ -446,9 +448,10 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
    * that place: the one step works in a worktree of its own. A step with no session is fresh.
    */
   session?: StepSession;
-  /** When the step ends: after one turn, or when the agent says it is done. Phase 3 reads it.
-   *  "done" goes into the call hash. */
-  until?: "turn" | "done";
+  /** When the step ends: after one turn, or when the agent says it is done. turns/loop.ts sends
+   *  the object form, which also carries ask and the step's limits for the steps module. "done"
+   *  goes into the call hash, and so does ask when it is false. */
+  until?: Until;
 }
 
 /** A step's session. A step without a key runs one turn on a session no later step uses. */
@@ -540,11 +543,14 @@ export function sanitizeVmName(name: string): string {
   return sanitized || "workflow";
 }
 
-export function runWorkflow<T = unknown>(
+/** Runs a workflow. Its result must fit its meta.schema, or the run fails. A nested workflow's
+ *  result is checked by the workflow() call that starts it. */
+export async function runWorkflow<T = unknown>(
   script: string,
   options: WorkflowRunOptions,
 ): Promise<EngineRunResult<T>> {
-  return runLevel<T>(script, options, undefined);
+  const run = await runLevel<T>(script, options, undefined);
+  return { ...run, result: fittedResult(run.meta, run.result) as T };
 }
 
 /** Runs one level of a run tree. `runWorkflow` starts the root, and workflow() starts each nested level. */
@@ -1315,7 +1321,7 @@ async function runLevel<T>(
                   timeoutMs: millis(agentOptions.timeout),
                 }) : agentRunner.run(prompt, {
                   label,
-                  schema: agentOptions.schema,
+                  schema: agentOptions.schema, ...untilFields(agentOptions.until),
                   signal: attemptSignal,
                   instructions: buildAgentInstructions(agentOptions.agentType, route.prompt, label),
                   model: modelSpec,
@@ -1461,7 +1467,7 @@ async function runLevel<T>(
             return result;
           } catch (error) {
             if (!slot.sealed) sealAttempt(slot);
-            const failed = afterFailedAttempt({
+            const failed = isStepLimit(error) ? { next: "throw" as const, error } : afterFailedAttempt({
               hostStop: attemptController ? agentCancellationReason(attemptController.signal) : undefined,
               runStopped: signal.aborted,
               pausePending: pauseRequested(),
@@ -1796,7 +1802,7 @@ async function runLevel<T>(
     }, { runtime: shared, depth: ownDepth + 1 });
     state.fallbacks.push(...(child.fallbacks ?? []));
     state.checkpointsTaken.push(...(child.checkpointsTaken ?? []));
-    return child.result;
+    return fittedResult(child.meta, child.result, childName);
   };
 
   const workflowFn = (nameOrScript: string, childArgs?: unknown, nestedOptions?: { place?: string; label?: string }): Promise<unknown> => {
@@ -1861,7 +1867,7 @@ async function runLevel<T>(
     listSavedWorkflows: options.listSavedWorkflows,
     stepOverrides: options.stepOverrides,
     resolveCwd: (cwd) => resolvePath(baseCwd, cwd ?? "."),
-    track: tracked,
+    track: tracked, onDryRunCheck: options.codeEnv?.onDryRunCheck,
   });
 
   const context = vm.createContext({
@@ -2123,7 +2129,7 @@ function hashAgentCall(
     // A kept turn holds the hash of its session's turn before it, so the same prompt on two
     // sessions hashes apart. A step that runs until done hashes apart from one turn.
     ...(after !== undefined ? { after } : {}),
-    ...(options.until === "done" ? { until: options.until } : {}),
+    ...untilHash(options.until),
   });
   return createHash("sha256").update(identity).digest("hex");
 }
@@ -2150,7 +2156,7 @@ function checkSessionFields(options: AgentOptions): void {
   const refuse = (message: string): never => {
     throw new WorkflowError(message, WorkflowErrorCode.SCRIPT_VALIDATION_ERROR, { recoverable: false });
   };
-  if (options.until !== undefined && options.until !== "turn" && options.until !== "done") refuse('until is "turn" or "done"');
+  checkUntil(options.until);
   const session = options.session as unknown;
   if (session === undefined) return;
   if (session === null || typeof session !== "object" || Array.isArray(session)) refuse("session takes an object");

@@ -335,7 +335,9 @@ class FlowReader {
     const reads = readsOf(args, (name) => this.kept.has(name) || isBound(at.scope, name));
     if (reads.length) step.reads = reads;
     if (result !== undefined) this.kept.add(result);
-    const reader = { src: (part: AnyNode) => this.src(part), valueOf: (part: AnyNode) => valueOf(at.scope, part) };
+    // A name kept for a function reads as that function, so a check names one.
+    const named = (part: AnyNode) => (part.type === "Identifier" && !isBound(at.scope, part.name) ? lookup(at.scope, part.name)?.fn : undefined) ?? part;
+    const reader = { src: (part: AnyNode) => this.src(part), valueOf: (part: AnyNode) => named(valueOf(at.scope, part)) };
     // A send takes its handle's options under its own.
     const handleOptions = (handle?.objects ?? []).map((each) => stepOptions(step.kind, each, [], reader));
     const options: StepOptions = Object.assign({}, ...handleOptions, stepOptions(step.kind, object, args, reader));

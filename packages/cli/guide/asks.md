@@ -44,6 +44,11 @@ sous inbox --json
 sous answer <question> '{"a": 1}' --value-json --json
 ```
 
+A question with a `schema` takes JSON that fits it, with or without `--value-json`. An answer that
+is not JSON, or does not fit, exits 64 with the reason, and the question stays open. Read the
+schema in `sous inbox --json` and answer again. A breakpoint with a schema also takes an approve
+with such a value: `sous answer <question> '{"n": 2}'`.
+
 ## Breakpoints
 
 A question with `breakpoint: true` waits for the person to review a step's work. It is always for

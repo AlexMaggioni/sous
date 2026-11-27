@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, resolve } from "node:path";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
 import type { ActivityStep, OnActivity } from "./steps/activity.js";
+import { fitSchema } from "./steps/answer.js";
 
 /** The model name a code step records. Old run files hold it, so it stays. */
 export const EXEC_MODEL = "exec";
@@ -40,8 +41,11 @@ export interface ExecSpec {
   /** file: the script file, run by its extension (.js .mjs .py .sh, else directly). */
   file?: string;
   args?: string[];
-  /** js, py and file: a JSON value the code reads as `input` (stdin for files). */
+  /** A JSON value. Every kind gets it on stdin as JSON. js and py also read it as `input`. */
   input?: unknown;
+  /** The shape of the step's value: the code's result when it gives one, else stdout read as
+   *  JSON. A value that does not fit, or stdout that is not JSON, fails the step. */
+  schema?: Record<string, unknown>;
   cwd?: string;
   env?: Record<string, string>;
   /** sh and file: return a non-zero exit as a result instead of failing the step. */
@@ -60,6 +64,16 @@ export interface CodeStepEnv {
   base?: Record<string, string | undefined>;
   /** Called with each step's command, then with its output once it exits. */
   onActivity?: OnActivity;
+  /** Set in a dry run. A check command's exit code goes here, and its step goes on as if the
+   *  check passed, so a stand-in that never fixes anything cannot loop forever. */
+  onDryRunCheck?: (check: DryRunCheck) => void;
+}
+
+/** A check command a dry run ran: the step, the command and its exit code. */
+export interface DryRunCheck {
+  step: string;
+  command: string;
+  code: number;
 }
 
 export interface ExecResult {
@@ -131,6 +145,22 @@ function readResult(file: string): unknown {
   } catch {
     return text;
   }
+}
+
+/** The step's value checked against its schema: the code's result, else stdout read as JSON. */
+function checkedValue(result: unknown, stdout: string, schema: Record<string, unknown>): unknown {
+  let value = result;
+  if (value === undefined) {
+    try {
+      value = JSON.parse(stdout);
+    } catch {
+      const shown = stdout.trim();
+      throw stepError(`stdout is not JSON, and the step has a schema: ${shown ? shown.slice(0, FAILURE_TEXT) : "(empty)"}`);
+    }
+  }
+  const fit = fitSchema(value, schema);
+  if (!fit.ok) throw stepError(`the step's value does not fit its schema: ${fit.reason}`);
+  return fit.value;
 }
 
 interface Spawned {
@@ -259,7 +289,7 @@ async function runSpec(spec: ExecSpec, context: ExecContext, seen: (output: stri
       SOUS_INPUT_FILE: inputFile,
       SOUS_SOURCE_FILE: sourceFile,
     };
-    const base = { cwd, env, signal: context.signal, timeoutMs: context.timeoutMs, seen };
+    const base = { cwd, env, signal: context.signal, timeoutMs: context.timeoutMs, seen, stdin: inputText };
 
     let spawned: Spawned;
     let checks: number | undefined;
@@ -279,7 +309,7 @@ async function runSpec(spec: ExecSpec, context: ExecContext, seen: (output: stri
         const file = isAbsolute(spec.file ?? "") ? spec.file! : resolve(cwd, spec.file ?? "");
         if (!existsSync(file)) throw stepError(`script file not found: ${file}`);
         const { command, args } = fileCommand(file);
-        spawned = await runProcess(command, [...args, ...(spec.args ?? [])], { ...base, stdin: inputText });
+        spawned = await runProcess(command, [...args, ...(spec.args ?? [])], base);
         break;
       }
       case "wait": {
@@ -301,7 +331,8 @@ async function runSpec(spec: ExecSpec, context: ExecContext, seen: (output: stri
         throw new WorkflowError(`unknown code step kind: ${String((spec as { kind?: unknown }).kind)}`, WorkflowErrorCode.INVALID_ARGUMENT, { recoverable: false });
     }
 
-    const result = readResult(resultFile);
+    let result = readResult(resultFile);
+    if (spec.schema && spawned.code === 0) result = checkedValue(result, spawned.stdout, spec.schema);
     const out: ExecResult = {
       code: spawned.code,
       stdout: spawned.stdout,

@@ -4,6 +4,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import type { WorkflowRunResult } from "../workflow-result.js";
+import type { DryRunCheck } from "../code-steps.js";
 import { limitNotice, runAccounts } from "../accounts.js";
 import { envFor, lookupAgents, lookupMcpServers, lookupSettings } from "../agents.js";
 import { projectWorkflows } from "../workflows/dir.js";
@@ -37,8 +38,19 @@ export interface WorkerOptions {
   /** Set by the process wrapper so signals pause and stop the run. */
   handleSignals?: boolean;
   /** A dry run (`sous check --dry-run`): each question gets a stand-in answer at once, agents take
-   *  no slot, and nothing notifies. */
+   *  no slot, nothing notifies, and a check command runs once and the step goes on as if it passed. */
   dryRun?: boolean;
+  /** In a dry run, each check command that ran, with its exit code. */
+  onDryRunCheck?: (check: DryRunCheck) => void;
+}
+
+/** A dry run notes each check command's exit code, and its step goes on as if the check passed. */
+function dryRunCheck(log: (line: string) => void, options: WorkerOptions) {
+  return (check: DryRunCheck) => {
+    const after = check.code === 0 ? "" : ", and the dry run goes on as if it passed";
+    log(`${stamp()} check      ${check.step}: \`${oneLine(check.command, 200)}\` ended with exit code ${check.code}${after}`);
+    options.onDryRunCheck?.(check);
+  };
 }
 
 function stamp(): string {
@@ -289,7 +301,7 @@ async function runOnAccounts(
 
   const waits = new AbortController();
   const pollMs = options.pollMs ?? 500;
-  const confirm = (prompt: string, checkpoint: { kind?: "confirm" | "input" | "select"; choices?: string[] }, context?: CheckpointCallContext) => {
+  const confirm = (prompt: string, checkpoint: { kind?: "confirm" | "input" | "select"; choices?: string[]; schema?: Record<string, unknown> }, context?: CheckpointCallContext) => {
     const scope = context?.scope ?? runId;
     const callIndex = context?.callIndex ?? 0;
     const id = questionId(scope, callIndex);
@@ -308,9 +320,14 @@ async function runOnAccounts(
       ...(context?.purpose?.show ? { show: context.purpose.show } : {}),
       answeredBy: authorAnsweredBy({ answeredBy: context?.purpose?.answeredBy, breakpoint: context?.purpose?.breakpoint }),
       ...(context?.purpose?.step ? { step: context.purpose.step } : {}),
+      ...(checkpoint.schema ? { schema: checkpoint.schema } : {}),
       askedAt: new Date().toISOString(),
     };
+    // An answer that did not fit the question's schema: the run asks again.
+    if (context?.refused !== undefined) log(`${stamp()} refused    ${id}: ${oneLine(context.refused, 400)}`);
     if (options.dryRun) {
+      // A stand-in that does not fit would be asked for again and again.
+      if (context?.refused !== undefined) return Promise.reject(new Error(`a dry run has no answer that fits the schema of ${id}`));
       const value = standIn(question);
       log(`${stamp()} question   ${from(scope)}${oneLine(prompt, 200)}\n           answered   ${JSON.stringify(value)} (dry run)`);
       return Promise.resolve(value);
@@ -383,7 +400,7 @@ async function runOnAccounts(
     cwd: record.cwd,
     confirm: confirm as never,
     // Code steps also get the project folder, since a run may work elsewhere (a worktree, a scratch folder).
-    codeEnv: { env: { ...secrets, SOUS_PROJECT: record.projectDir }, base, onActivity },
+    codeEnv: { env: { ...secrets, SOUS_PROJECT: record.projectDir }, base, onActivity, ...(options.dryRun ? { onDryRunCheck: dryRunCheck(log, options) } : {}) },
     ...(record.concurrency ? { concurrency: record.concurrency } : {}),
     ...(record.overrides ? { stepOverrides: record.overrides } : {}),
     ...(record.defaultModel ?? config.defaultModel ? { defaultModel: record.defaultModel ?? config.defaultModel } : {}),

@@ -224,7 +224,9 @@ export interface Question {
    *  with a hint for the terminal. */
   title?: string;
   show?: string;
-  answeredBy: "people" | "anyone";
+  /** "join" is an agent's question in its turn. The person answers it in the agent's session,
+   *  with sous join, so the page's answer box refuses it. */
+  answeredBy: "people" | "anyone" | "join";
   askedAt: string;
 }
 
@@ -300,6 +302,13 @@ export interface StepOptions {
   until?: "done" | "turn";
   /** `ask: true`: the agent may stop with a question for the person. */
   asks?: true;
+  /** The checks that run when the agent says done: each command as the text writes it, or
+   *  "function" for a function. */
+  check?: string[];
+  /** The most turns sous sends in the step. */
+  maxTurns?: number;
+  /** The most repair turns after an answer that does not fit. */
+  maxRepairs?: number;
   /** Who may answer an ask(). */
   answeredBy?: "people" | "anyone";
   /** The field names of its schema, when the text writes them. */

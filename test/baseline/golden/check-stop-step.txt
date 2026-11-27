@@ -6,9 +6,9 @@ ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
   (log lines sorted)
   <hh:mm:ss> completed  stop-step
-  <hh:mm:ss> done       after, 13 tokens
-  <hh:mm:ss> done       quick, 13 tokens
-  <hh:mm:ss> done       slow, 14 tokens
+  <hh:mm:ss> done       after, 24 tokens
+  <hh:mm:ss> done       quick, 24 tokens
+  <hh:mm:ss> done       slow, 25 tokens
   <hh:mm:ss> log        Logs persisted to <tmp>/check-stop-step/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
   <hh:mm:ss> run        stop-step in <tmp>/check-stop-step/sous-home/scratch/<run-1>
   <hh:mm:ss> start      after

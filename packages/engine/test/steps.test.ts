@@ -262,14 +262,16 @@ describe("steps on the fake programs", () => {
       assert.ok(repair?.schema, "the repair turn carries the schema");
     });
 
-    it(`gives up on a ${harness} schema answer that never fits after its repair turns`, async () => {
+    // Repair turns have no cap unless the step sets maxRepairs. This step sets 2.
+    it(`gives up on a ${harness} schema answer that never fits after its maxRepairs repair turns`, async () => {
       const schema = Type.Object({ city: Type.String() }, { additionalProperties: false });
       const place = fakePlace([{ answer: { town: 1 } }]);
       const steps = createSteps(onFakes(place));
       try {
-        await assert.rejects(steps.run("name a city", routed(steps, { label: "lbl", model }, { schema })), (error: unknown) => {
+        await assert.rejects(steps.run("name a city", routed(steps, { label: "lbl", model }, { schema, limits: { maxRepairs: 2 } })), (error: unknown) => {
           assert.ok(error instanceof WorkflowError);
-          assert.equal(error.code, WorkflowErrorCode.SCHEMA_NONCOMPLIANCE);
+          assert.equal(error.code, WorkflowErrorCode.STEP_LIMIT);
+          assert.match(error.message, /maxRepairs/);
           assert.equal(error.recoverable, false);
           assert.equal(error.agentLabel, "lbl");
           return true;

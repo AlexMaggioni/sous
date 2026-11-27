@@ -9,7 +9,7 @@ import { keyOf, property, staticString, type AnyNode } from "./syntax.js";
 export interface OptionsReader {
   /** The text of a node on one line. */
   src(node: AnyNode): string;
-  /** The value a const name is set to in the text, else the node itself. */
+  /** The value a const name is set to in the text, or the function a name keeps, else the node itself. */
   valueOf(node: AnyNode): AnyNode;
 }
 
@@ -27,8 +27,11 @@ const OPTIONS: Array<{ key: string; field: keyof StepOptions; kinds: StepKind[];
   { key: "mcp", field: "mcp", kinds: AGENT, read: strings },
   { key: "until", field: "until", kinds: AGENT, read: oneOf("done", "turn") },
   { key: "ask", field: "asks", kinds: AGENT, read: yes },
+  { key: "check", field: "check", kinds: AGENT, read: checks },
+  { key: "maxTurns", field: "maxTurns", kinds: AGENT, read: numberOf },
+  { key: "maxRepairs", field: "maxRepairs", kinds: AGENT, read: numberOf },
   { key: "answeredBy", field: "answeredBy", kinds: ["ask"], read: oneOf("people", "anyone") },
-  { key: "schema", field: "schema", kinds: AGENT, read: schemaNames },
+  { key: "schema", field: "schema", kinds: [...AGENT, ...CODE, "ask", "breakpoint"], read: schemaNames },
   { key: "allowFail", field: "allowFail", kinds: CODE, read: yes },
   { key: "choices", field: "choices", kinds: ["ask"], read: strings },
   { key: "max", field: "max", kinds: ["breakpoint"], read: (value) => (isNumber(value) ? value.value : undefined) },
@@ -40,6 +43,9 @@ const OPTIONS: Array<{ key: string; field: keyof StepOptions; kinds: StepKind[];
   { key: "any", field: "any", kinds: ["choose"], read: yes },
 ];
 
+/** The steps that take an `input` option. js and py take theirs as their second argument. */
+const TAKES_INPUT: StepKind[] = ["sh", "run", "wait", "ask", "breakpoint"];
+
 /** The options a step's text gives it, from its options object and, for workflow(), the inputs it
  *  passes. Undefined when the text gives none of them. */
 export function stepOptions(kind: StepKind, object: AnyNode | undefined, args: AnyNode[], reader: OptionsReader): StepOptions | undefined {
@@ -49,6 +55,9 @@ export function stepOptions(kind: StepKind, object: AnyNode | undefined, args: A
     const literal = value && read(reader.valueOf(value), reader);
     if (literal !== undefined) options[field] = literal;
   }
+  // The input as the text writes it, a name and all, since it is most often made at run time.
+  const input = object && TAKES_INPUT.includes(kind) ? property(object, "input") : undefined;
+  if (input) options.input = reader.src(input);
   const inputs = kind === "workflow" && args[1] ? inputsOf(reader.valueOf(args[1]), reader) : undefined;
   if (inputs) options.inputs = inputs;
   return Object.keys(options).length ? (options as StepOptions) : undefined;
@@ -73,6 +82,23 @@ function duration(value: AnyNode, reader: OptionsReader): string | undefined {
 
 function isNumber(value: AnyNode): boolean {
   return value.type === "Literal" && typeof value.value === "number";
+}
+
+function numberOf(value: AnyNode): number | undefined {
+  return isNumber(value) ? value.value : undefined;
+}
+
+/** A step's checks: a command, a function, or a list of them. A command reads as its text, a
+ *  function as "function". Undefined when one is made at run time. */
+function checks(value: AnyNode, reader: OptionsReader): string[] | undefined {
+  const one = (item: AnyNode | null): string | undefined => {
+    if (!item) return undefined;
+    const found = reader.valueOf(item);
+    if (found.type === "ArrowFunctionExpression" || found.type === "FunctionExpression" || found.type === "FunctionDeclaration") return "function";
+    return staticString(found);
+  };
+  const items = value.type === "ArrayExpression" ? (value.elements as Array<AnyNode | null>).map(one) : [one(value)];
+  return items.length && items.every((item) => item !== undefined) ? (items as string[]) : undefined;
 }
 
 function yes(value: AnyNode): true | undefined {

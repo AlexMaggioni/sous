@@ -6,10 +6,10 @@ ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
   (log lines sorted)
   <hh:mm:ss> completed  rulesync-mcp
-  <hh:mm:ss> done       docs step on codex, 19 tokens
-  <hh:mm:ss> done       docs step, 14 tokens
-  <hh:mm:ss> done       researcher on codex, 17 tokens
-  <hh:mm:ss> done       researcher, 15 tokens
+  <hh:mm:ss> done       docs step on codex, 29 tokens
+  <hh:mm:ss> done       docs step, 25 tokens
+  <hh:mm:ss> done       researcher on codex, 27 tokens
+  <hh:mm:ss> done       researcher, 25 tokens
   <hh:mm:ss> log        Logs persisted to <tmp>/check-rulesync-mcp/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
   <hh:mm:ss> run        rulesync-mcp in <tmp>/check-rulesync-mcp/sous-home/scratch/<run-1>
   <hh:mm:ss> start      docs step

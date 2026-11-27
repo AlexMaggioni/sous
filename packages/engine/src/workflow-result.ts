@@ -30,6 +30,8 @@ export interface WorkflowMeta {
   // The fields below are as the script wrote them. workflowExtras checks them and gives them types.
   inputs?: unknown;
   outputs?: unknown;
+  /** The shape of the workflow's result, a JSON schema. */
+  schema?: unknown;
   place?: unknown;
   concurrency?: unknown;
   startedBy?: unknown;

@@ -7,8 +7,8 @@ dry run with stand-in agents. Code steps run for real, never in the project fold
   (log lines sorted)
   <hh:mm:ss> completed  retry
   <hh:mm:ss> done       failing code
-  <hh:mm:ss> done       no retries, 15 tokens
-  <hh:mm:ss> done       retried, 14 tokens
+  <hh:mm:ss> done       no retries, 25 tokens
+  <hh:mm:ss> done       retried, 24 tokens
   <hh:mm:ss> log        Logs persisted to <tmp>/check-retry/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
   <hh:mm:ss> run        retry in <tmp>/check-retry/sous-home/scratch/<run-1>
   <hh:mm:ss> start      failing code (exec)

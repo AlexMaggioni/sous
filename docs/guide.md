@@ -69,6 +69,12 @@ return { summary: built }
 
 A `schedule` in the meta starts the workflow on a timer, as in [Schedules](#schedules-and-the-service).
 
+An input of type `json` may take a `schema`, a JSON schema object. sous checks the value against
+it with the other inputs, before the first step, and a value that does not fit fails the run or
+the `workflow()` call with the field and the reason. `schema` in the meta is the shape of the
+workflow's result. A result that does not fit fails the `workflow()` call, or the run at the top
+level. `outputs` stays a description only. `sous check` refuses a schema that is not an object.
+
 `sous run ticket --ticket "Add a --json flag"` turns flags into `args`. A path to a script file,
 such as `./ticket.js`, runs that file instead of a saved workflow. `sous workflows` lists the saved
 workflows and their inputs.
@@ -98,6 +104,13 @@ series of answers given in turn, the last one repeating:
   "implementer*": "Done. The tests pass."
 }
 ```
+
+A step that runs until done takes its turns from the answers. A status name plays one turn, so
+`["working", "working", "done"]` is three turns. So does an object with `status` and no other key
+than `status`, `result` and `message`. Any other answer is "done", with that answer as the result.
+With no answer, the stand-in says "done" at once. A check command runs once: the dry run prints
+its exit code, and `--json` lists it under `checks`. Then the step goes on as if the check passed.
+An agent's question gets a stand-in answer, as a question from `ask()` does.
 
 A dry run of the example ticket workflow found a bug: when the implementer changed nothing, the
 commit step failed with "nothing to commit". The workflow now commits only when a file changed.
@@ -130,8 +143,22 @@ A script has these steps (see also [the engine README](../packages/engine/README
     handle's label.
   - `schema`, `timeout` ("10m"), `retries`, `images` and `phase`.
   - `model`, which must name a model on the handle's program.
-  - `until`, `"turn"` or `"done"`, and `ask`, `true` or `false`. Both are accepted and have no
-    effect yet.
+  - `until`, `"done"` by default or `"turn"`. A step runs turns in its session until the agent
+    reports `done`. Each turn answers with a status: `done` with its result, `working` when there
+    is more to do (sous sends `Continue the task.`), or `question` when the agent needs the
+    person. A question waits in the inbox, and the person answers it inside the agent's session
+    with `sous join`, which is not built yet. `sous answer` and the page refuse it. With
+    `until: "turn"` the step ends with its one turn and returns its text or its schema's value.
+  - `ask`, `true` by default. `ask: false` takes `question` out of the status.
+  - `check`, run when the agent reports `done`: a command, a function, or a list of them, in
+    order. A command runs as a code step labelled `<label>: check`, in the step's folder, and
+    passes when it exits 0. A function gets the result and the round, and returns `true`,
+    `false` or `{ ok, feedback }`. A failed check sends its output or its feedback as the next
+    turn, in the same session. The step returns the result once every check passes.
+  - `maxTurns` and `maxRepairs`, off unless set. `maxTurns` counts every turn sous sends in the
+    step, report and repair turns too. `maxRepairs` counts the turns that ask again for an
+    answer that did not fit. Reaching either fails the step with the code `STEP_LIMIT`, which
+    the script can catch. Uncaught, it fails the run.
 
   A handle runs one step at a time, and a second send while one runs fails the script. The
   handle's `label` and `cwd` are plain strings, for code steps: `sh("npm test", { cwd: impl.cwd })`.
@@ -148,13 +175,40 @@ A script has these steps (see also [the engine README](../packages/engine/README
   slot. Each returns `{ code, stdout, stderr, result }`. A non-zero exit fails the step unless
   `allowFail: true`. They run in the run's place, and `SOUS_PROJECT` holds the project folder. A
   code step is tried once unless it sets `retries`.
-- `ask(question, { choices, answeredBy })` asks the person through the inbox and waits for the
-  answer. `answeredBy` is `"people"`, the default, or `"anyone"`, which lets an agent answer too.
-  Any other value fails the script.
-- `breakpoint(title, step, { show, max })` runs the step, then waits for the user to approve,
-  stop the run, or send the step back with a note. The step reruns with the note, 5 times at most
-  unless `max` says otherwise, then the breakpoint fails. A stop ends the run as `sous stop` does,
-  and `sous wait` exits with 3. A breakpoint is always for people, so it fails on `answeredBy`.
+
+  Code steps take structured input and output. `sh`, `run` and `waitUntil` take an `input`
+  option, and `js` and `py` take it as their second argument. Each gets the input on stdin as
+  JSON, and `js` and `py` also as the variable `input`. With a `schema`, a JSON schema object, the
+  step's value is checked when it exits 0: the value `js` and `py` return or a script file writes
+  to `$SOUS_RESULT`, else stdout read as JSON. It goes in `result`. Stdout that is not JSON, or a
+  value that does not fit, fails the step with the reason. `waitUntil` checks the value of the
+  check that exits 0.
+
+  ```js
+  const counted = await sh("jq '{n: (.tickets | length)}'", {
+    input: { tickets: ["a", "b"] },
+    schema: { type: "object", properties: { n: { type: "number" } }, required: ["n"] },
+  })
+  counted.result.n // 2
+  ```
+- `ask(question, { choices, answeredBy, input, schema })` asks the person through the inbox and
+  waits for the answer. `answeredBy` is `"people"`, the default, or `"anyone"`, which lets an
+  agent answer too. Any other value fails the script. `input` shows below the question as JSON.
+  With a `schema`, the answer is read as JSON and `ask` returns the value. An answer that does
+  not fit is refused with the reason, and the question stays open, at `sous answer`, on the page
+  and through an answer file alike.
+- `breakpoint(title, step, { show, max, input, schema })` runs the step, then waits for the user
+  to approve, stop the run, or send the step back with a note. The step reruns with the note, 5
+  times at most unless `max` says otherwise, then the breakpoint fails. A stop ends the run as
+  `sous stop` does, and `sous wait` exits with 3. A breakpoint is always for people, so it fails
+  on `answeredBy`. `input` shows with the title. With a `schema`, the person may approve with a
+  JSON value instead, such as `sous answer <id> '{"n": 2}'`. The value must fit, and the
+  breakpoint returns it. A plain approve still returns the step's result, or the decision when
+  there is no step.
+
+  An `input` option must be strict JSON and `schema` a JSON schema object, or the step fails when
+  it is called. Both go into the step's call hash, so a resume replays a step only when they are
+  the same.
 - `choose(prompt, { steps, workflows, any, none, input })` lets an agent pick the next step or
   workflow and runs it. `any: true` allows every saved workflow except those for people only.
 - `workflow(name, args, { place, label })` runs a saved workflow inside this one, five levels
@@ -176,7 +230,14 @@ The engine's flow steps take these arguments:
   last try pauses the run, as in `parallel`. A stage that throws an error of its own gives `null`
   for that item, and its later stages don't run.
 
-To try a step again until a check passes, write a plain loop around it, capped by an input:
+To send a step back until the tests pass, give it a `check`, and cap it with `maxTurns`:
+
+```js
+const impl = session({ label: "implementer", agentType: "implementer" })
+await impl.send(`Implement this ticket:\n${args.ticket}`, { check: "npm test", maxTurns: 12 })
+```
+
+For a loop around something other than one step, write a plain loop, capped by an input:
 
 ```js
 const impl = session({ label: "implementer", agentType: "implementer" })

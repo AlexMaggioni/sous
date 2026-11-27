@@ -6,8 +6,8 @@ ok
 dry run with stand-in agents. Code steps run for real, never in the project folder, and what they make is deleted after.
   (log lines sorted)
   <hh:mm:ss> completed  tools
-  <hh:mm:ss> done       free, 14 tokens
-  <hh:mm:ss> done       limited, 16 tokens
+  <hh:mm:ss> done       free, 25 tokens
+  <hh:mm:ss> done       limited, 26 tokens
   <hh:mm:ss> log        Logs persisted to <tmp>/check-tools/sous-home/runs/projects/<run-1>-<hash>/runs/<run-1>.log
   <hh:mm:ss> run        tools in <tmp>/check-tools/sous-home/scratch/<run-1>
   <hh:mm:ss> start      free

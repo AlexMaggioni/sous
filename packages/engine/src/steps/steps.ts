@@ -1,9 +1,10 @@
 // The steps module. It turns a workflow's agent call into one step on Claude Code or Codex.
 // It routes the step with routeStep, finds the program once per run, names the MCP servers, takes
-// a slot, sets the time limit and runs the step. The prompt goes as written. A slash prompt runs
-// with no schema, and a step with a schema then sends a report turn for its value. A schema answer
-// that does not fit gets repair turns in the same session. Code steps never come here: the engine
-// runs them.
+// a slot, sets the time limit and runs the step. The prompt goes as written. A step that runs until
+// done answers each turn with the status object of turns/status.ts. A slash prompt runs with no
+// schema, and a step that runs until done or has a schema then sends a report turn for its value.
+// An answer that does not fit gets repair turns in the same session, with no cap unless the step
+// sets maxRepairs. Code steps never come here: the engine runs them.
 // A test or the dry run gives `inner`, a runner of its own, and then no program starts.
 
 import type { TSchema } from "typebox";
@@ -25,12 +26,13 @@ import {
 import type { AgentHistoryEntry } from "./agent-history.js";
 import { activityStep, type ActivityEntry, type ActivityStep, type OnActivity } from "./activity.js";
 import type { LiveCall, SteeringBoard } from "./steering.js";
-import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, PlannedRequest, StepRequest } from "./agent-run.js";
+import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, PlannedRequest, StepLimits, StepRequest } from "./agent-run.js";
 import type { AgentRunner, StepAsk, StepRoute } from "./agent-runner.js";
 import type { AgentSessionRef } from "../workflow-result.js";
 import type { McpServerConfig } from "./mcp-config.js";
 import { harnessName, missingServer, routeStep, stepModel, withHarness, type AgentLookup, type McpLookup, type RoutePlan } from "../agents.js";
-import { WorkflowError, WorkflowErrorCode } from "../errors.js";
+import { stepLimitError, WorkflowError, WorkflowErrorCode } from "../errors.js";
+import { readStatus, statusSchema, type TurnStatus } from "../turns/status.js";
 import { hostStopError, type HostPause } from "../host-pause.js";
 import type { SlotPool } from "../runs/slots.js";
 import { checkImages, CONTINUATION_INSTRUCTION, extractValidated, isSlash, REPORT_PROMPT, REPROMPT_TEXT, toMcpServer, validateValue, withNote } from "./answer.js";
@@ -88,9 +90,6 @@ export interface StepsNote {
   taken?: () => void;
 }
 
-
-/** Repair turns for a schema answer that does not fit. */
-const REPAIRS = 2;
 
 const isFailure = (error: unknown): error is HarnessFailure => error instanceof Error && "failure" in error;
 const failureOf = (error: unknown): Failure | undefined => (isFailure(error) ? error.failure : undefined);
@@ -254,7 +253,7 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
 
 /** A test's or the dry run's runner gets the planned step with the engine's own fields, and the
  *  account. A slash prompt's note goes apart from the prompt, in the request. It gets one call, with
- *  the schema: a runner keeps no session for a report turn. */
+ *  the turn's schema: a runner keeps no session for a report turn. Its value comes back as is. */
 async function runInner(
   inner: InnerRunner,
   { prompt, note }: { prompt: string; note?: string },
@@ -267,8 +266,10 @@ async function runInner(
   const resolved = call.onModelResolved;
   const onModelResolved = resolved && ((id: string) => resolved(withHarness(step.harness, id)));
   if (step.model && step.model !== route.requested) onModelResolved?.(step.model);
+  const turnSchema = turnSchemaOf(call);
   const request: PlannedRequest = {
     ...rest,
+    ...(turnSchema ? { schema: turnSchema } : {}),
     ...(onModelResolved ? { onModelResolved } : {}),
     ...(step.model ? { model: step.model } : {}),
     ...(step.effort ? { effort: step.effort } : {}),
@@ -308,6 +309,8 @@ async function runOnHarness(
   const harness = step.harness;
   const label = call.label;
   const schema = call.schema;
+  const turnSchema = turnSchemaOf(call);
+  const limits: StepLimits = call.limits ?? {};
   const model = stepModel(step.model);
   const images = checkImages(call.images, label);
   const mcpServers = servers.map((server) => {
@@ -337,6 +340,8 @@ async function runOnHarness(
   let cost: number | undefined;
   // Whether the turn that runs resumed a session.
   let resuming = false;
+  // The turns this call sent, report and repair turns included.
+  let sent = 0;
   // The step's cost with a turn's reading. A reading below the gauge means the program started the total over.
   const costWith = (reading: number | undefined, resumed: boolean) =>
     reading === undefined ? cost : (cost ?? 0) + (resumed && gauge !== undefined && reading >= gauge ? reading - gauge : reading);
@@ -401,6 +406,7 @@ async function runOnHarness(
     },
   };
   const once = async (turn: Step): Promise<StepResult> => {
+    sent++;
     prompted = false;
     resuming = turn.resume !== undefined;
     try {
@@ -431,7 +437,7 @@ async function runOnHarness(
     if (model) call.onModelResolved?.(withHarness(harness, model));
     else if (step.model && step.model !== call.route.requested) call.onModelResolved?.(withHarness(harness, step.model));
     const fresh = { ...withNote(prompt, note), ...(images.length ? { images } : {}) };
-    const turns = stepTurns(prompt, schema);
+    const turns = stepTurns(prompt, turnSchema);
     let answer: Answer | undefined;
     // A schema answer the program refused still has text to read.
     const turn = async (input: Step): Promise<Answer> => {
@@ -440,7 +446,7 @@ async function runOnHarness(
         return { text: result.text, value: result.value, sessionId: result.sessionId };
       } catch (error) {
         const failure = failureOf(error);
-        if (schema && failure?.kind === "schema") return { text: failure.text, sessionId: (error as HarnessFailure).sessionId ?? opened };
+        if (turnSchema && failure?.kind === "schema") return { text: failure.text, sessionId: (error as HarnessFailure).sessionId ?? opened };
         throw error;
       }
     };
@@ -471,25 +477,38 @@ async function runOnHarness(
       }
       report({ source: "live", continuation });
     }
+    // A report or repair turn that maxTurns leaves no room for fails the step.
+    const room = () => {
+      if (limits.turnsLeft !== undefined && sent >= limits.turnsLeft) throw stepLimitError(label, "maxTurns", limits.maxTurns);
+      signal?.throwIfAborted();
+    };
     answer ??= await turn({ ...base, ...fresh, ...turns.work });
     if (turns.report) {
-      signal?.throwIfAborted();
+      room();
       answer = await turn({ ...base, ...turns.report, resume: answer.sessionId ?? opened });
     }
 
-    if (!schema) {
+    if (!turnSchema) {
       const text = answer.text.trim();
       if (!text) throw new WorkflowError("Subagent produced no assistant output", WorkflowErrorCode.AGENT_EMPTY_OUTPUT, { recoverable: true, agentLabel: label });
       return text;
     }
-    for (let repair = 0; ; repair++) {
-      const value = fits(answer, schema);
-      if (value !== undefined) return value;
-      if (repair >= REPAIRS || !answer.sessionId) break;
-      signal?.throwIfAborted();
-      answer = await turn({ ...base, prompt: REPROMPT_TEXT, schema: schema as unknown as Record<string, unknown>, resume: answer.sessionId });
+    // Repair turns have no cap unless the step sets maxRepairs.
+    for (let repairs = 0; ; repairs++) {
+      if (call.untilDone) {
+        const status = fitsStatus(answer, turnSchema, schema);
+        // A row that took more than one turn says how many, so maxTurns counts them on a resume.
+        if (status) return sent > 1 ? { ...status, turns: sent } : status;
+      } else {
+        const value = fits(answer, turnSchema);
+        if (value !== undefined) return value;
+      }
+      if (!answer.sessionId) break;
+      if (limits.maxRepairs !== undefined && repairs >= limits.maxRepairs) throw stepLimitError(label, "maxRepairs", limits.maxRepairs);
+      room();
+      answer = await turn({ ...base, prompt: REPROMPT_TEXT, schema: turnSchema as unknown as Record<string, unknown>, resume: answer.sessionId });
     }
-    throw new WorkflowError("Subagent did not produce valid structured output after repair attempts", WorkflowErrorCode.SCHEMA_NONCOMPLIANCE, {
+    throw new WorkflowError("Subagent did not produce valid structured output, and has no session to repair it in", WorkflowErrorCode.SCHEMA_NONCOMPLIANCE, {
       recoverable: false,
       agentLabel: label,
     });
@@ -512,10 +531,21 @@ async function runOnHarness(
 type Answer = { text: string; value?: unknown; sessionId?: string };
 
 /**
+ * The schema each turn of a step answers with. A step that runs until done answers with the
+ * status object, whose result is the step's schema, or text with none. Another step answers with
+ * its own schema, or with text.
+ */
+function turnSchemaOf(call: StepRequest): TSchema | undefined {
+  if (!call.untilDone) return call.schema;
+  return statusSchema({ ...(call.schema ? { schema: call.schema } : {}), ask: call.untilDone.ask !== false }) as unknown as TSchema;
+}
+
+/**
  * The schema of a step's work turn, and the report turn after it. A plain prompt's turn carries
  * the schema. A slash prompt's turn carries none, since a schema cuts a command such as /goal
- * short. A slash step with a schema then sends the report turn, with the schema, in the same
- * session. The step's own prompt decides, so a continued slash step reports too.
+ * short. A slash step with a schema, the status schema included, then sends the report turn, with
+ * the schema, in the same session. The step's own prompt decides, so a continued slash step
+ * reports too.
  */
 function stepTurns(prompt: string, schema: TSchema | undefined): { work: Pick<Step, "schema">; report?: Pick<Step, "prompt" | "schema"> } {
   if (!schema) return { work: {} };
@@ -538,6 +568,18 @@ function fits(answer: { text: string; value?: unknown }, schema: TSchema): unkno
     if (fitted !== undefined) return fitted;
   }
   return extractValidated(answer.text, schema);
+}
+
+/**
+ * The answer's status, when it is one: the status object of the turn's schema, whose "done"
+ * result fits the step's schema, or is text when the step has none. Undefined means a misfit.
+ */
+function fitsStatus(answer: { text: string; value?: unknown }, turnSchema: TSchema, schema: TSchema | undefined): TurnStatus | undefined {
+  const status = readStatus(fits(answer, turnSchema));
+  if (status?.status !== "done") return status;
+  if (!schema) return typeof status.result === "string" ? status : undefined;
+  const result = validateValue(status.result, schema);
+  return result === undefined ? undefined : { ...status, result };
 }
 
 /** A harness failure as the error the engine records. Anything else passes as it is. */

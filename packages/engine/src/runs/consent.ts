@@ -6,7 +6,7 @@ import type { ResolvedWorkflow } from "../workflows/dir.js";
 import { workflowExtras } from "../workflows/meta.js";
 import { parseWorkflowScript } from "../workflows/script.js";
 import type { Through, Who } from "./actions.js";
-import type { Question } from "./inbox.js";
+import type { AnsweredBy, Question } from "./inbox.js";
 import type { RunRecord } from "./records.js";
 import { Refusal, word } from "./refusal.js";
 
@@ -45,15 +45,19 @@ export function nestedLookup(through: Through | undefined, lookup: (name: string
 // Answering: who may answer a question, and the calls that answer it. Every reply, refusal and
 // worker reads the rule here.
 
-/** Who may answer, as the author said. A breakpoint, and a file that says nothing, is for people. */
-export function authorAnsweredBy(question: { answeredBy?: unknown; breakpoint?: boolean }): "people" | "anyone" {
+/** Who may answer, as the author said. A breakpoint, and a file that says nothing, is for people.
+ *  An agent's question in its turn stays "join". */
+export function authorAnsweredBy(question: { answeredBy?: unknown; breakpoint?: boolean }): AnsweredBy {
+  if (question.answeredBy === "join") return "join";
   return question.answeredBy === "anyone" && !question.breakpoint ? "anyone" : "people";
 }
 
 /** Who may answer a question as it stands for its run. A run started with --let-agent-answer
  *  opens its people questions to anyone, never its breakpoints. `record` is the root run's. */
-export function answeredByFor(question: Pick<Question, "breakpoint" | "answeredBy">, record?: Pick<RunRecord, "letAgentAnswer">): "people" | "anyone" {
-  return authorAnsweredBy(question) === "anyone" || (record?.letAgentAnswer && !question.breakpoint) ? "anyone" : "people";
+export function answeredByFor(question: Pick<Question, "breakpoint" | "answeredBy">, record?: Pick<RunRecord, "letAgentAnswer">): AnsweredBy {
+  const author = authorAnsweredBy(question);
+  if (author === "join") return author;
+  return author === "anyone" || (record?.letAgentAnswer && !question.breakpoint) ? "anyone" : "people";
 }
 
 /**
@@ -62,6 +66,7 @@ export function answeredByFor(question: Pick<Question, "breakpoint" | "answeredB
  * cannot reach the person. With no caller, the calls are the person's.
  */
 function callMode(question: Pick<Question, "breakpoint" | "answeredBy">, who: Who | undefined, record?: Pick<RunRecord, "letAgentAnswer">): "plain" | "by person" | "none" {
+  if (question.answeredBy === "join") return "none";
   if (who === undefined || who.through.kind === "person" || answeredByFor(question, record) === "anyone") return "plain";
   return who.through.kind === "agent" ? "by person" : "none";
 }
@@ -103,13 +108,18 @@ function decisionCall(question: Question, tried: Tried): string {
 }
 
 /**
- * Refuse an answer the caller may not give, with question_for_people. It allows, in this order:
+ * Refuse an answer the caller may not give, with question_for_people. An agent's question in its
+ * turn ("join") is refused to everyone, since the person answers it in the session. Then it allows, in this order:
  * the person, typed or passed on with --by person; nothing else for a breakpoint; anyone for a
  * question open to anyone, by its author or by --let-agent-answer. `record` is the root run's, so
  * the consent covers its nested runs. An agent's refusal calls pass on the person's decision,
  * `tried` at a breakpoint. A step of a run gets no call: only the person answers.
  */
 export function mayAnswer(question: Question, record: Pick<RunRecord, "letAgentAnswer">, who: Who, tried: Tried = { decision: "approve" }): void {
+  if (question.answeredBy === "join") {
+    const message = `${question.id} is a question from the agent of step "${question.step ?? "agent"}". The person answers it inside the agent's session, with sous join, not with sous answer or the page.`;
+    throw new Refusal("question_for_people", message, `Step into the session: sous join ${question.runId}${question.step ? ` ${question.step}` : ""}. Answer the agent there, then leave.`, null);
+  }
   if (who.by === "person") return;
   if (!question.breakpoint && answeredByFor(question, record) === "anyone") return;
   const agent = who.through.kind === "agent";

@@ -6,10 +6,12 @@
 // what to write instead.
 
 import type { CheckpointPurpose } from "./checkpoint-call.js";
-import type { ExecSpec } from "./code-steps.js";
+import type { CodeStepEnv, ExecSpec } from "./code-steps.js";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
-import { decisionOf } from "./runs/inbox.js";
+import { decisionOf, type Decision } from "./runs/inbox.js";
 import { parseDurationSeconds } from "./duration.js";
+import { isSchemaObject } from "./steps/answer.js";
+import { cloneStrictJsonValue } from "./strict-json.js";
 import { createSessions } from "./turns/session.js";
 
 export const DEFAULT_MAX_NESTING_DEPTH = 5;
@@ -42,6 +44,8 @@ export interface SousGlobalDeps {
   resolveCwd: (cwd: string | undefined) => string;
   /** Wraps a function the script calls, as the script's globals are wrapped. A handle's send() gets it. */
   track?: <F extends (...args: never[]) => unknown>(fn: F) => F;
+  /** Set in a dry run: the code steps' hook for a check command's exit code. */
+  onDryRunCheck?: CodeStepEnv["onDryRunCheck"];
 }
 
 interface StepOptions {
@@ -52,6 +56,29 @@ interface StepOptions {
   timeout?: number | string;
   retries?: number;
   phase?: string;
+  /** The shape of the step's value. A value that does not fit fails the step. */
+  schema?: unknown;
+}
+
+/** The step's input, which must be strict JSON. The step fails the script when it is not. */
+function inputOf(value: unknown, where: string): unknown {
+  if (value === undefined) return undefined;
+  const copy = cloneStrictJsonValue(value);
+  if (!copy.ok) fail(`${where}: input must be strict JSON, and it is not at ${copy.path}`);
+  return copy.clone;
+}
+
+/** The step's schema, which must be a JSON schema object. The step fails the script when it is not. */
+function schemaOf(value: unknown, where: string): Record<string, unknown> | undefined {
+  if (value === undefined) return undefined;
+  const copy = cloneStrictJsonValue(value);
+  if (!copy.ok || !isSchemaObject(copy.clone)) fail(`${where}: schema must be a JSON schema object`);
+  return copy.clone as Record<string, unknown>;
+}
+
+/** An input as the question shows it, after the question and a blank line. */
+function inputBlock(input: unknown): string {
+  return `Input:\n${JSON.stringify(input, null, 2)}`;
 }
 
 const LOOP = "Give the step check and maxTurns, or write a plain loop.";
@@ -85,13 +112,26 @@ export function createSousGlobals(deps: SousGlobalDeps) {
   const { session, agent } = createSessions({
     agent: deps.agent,
     resolveCwd: deps.resolveCwd,
+    // A check command is a code step that may fail, as sh runs it.
+    command: async (command, { step, ...options }) => {
+      const ran = await exec({ kind: "sh", command }, { ...options, allowFail: true }, options.label, "check");
+      if (!deps.onDryRunCheck) return ran;
+      const code = (ran as { code?: unknown } | undefined)?.code;
+      deps.onDryRunCheck({ step, command, code: typeof code === "number" ? code : -1 });
+      return { ...(ran as object), code: 0 };
+    },
+    // A question waits on a join row. Only the person who steps into the session answers it.
+    join: (message, label) => deps.markedCheckpoint(message, { kind: "input" }, { answeredBy: "join", step: label }),
     ...(deps.stepOverrides ? { stepOverrides: deps.stepOverrides } : {}),
     ...(deps.track ? { track: deps.track } : {}),
   });
 
-  const exec = (spec: ExecSpec, options: StepOptions, defaultLabel: string): Promise<unknown> => {
+  const exec = (spec: ExecSpec, options: StepOptions, defaultLabel: string, where: string): Promise<unknown> => {
+    const schema = schemaOf(options.schema, where);
     const fullSpec: ExecSpec = {
       ...spec,
+      // Set only when given, so a step written before schemas keeps its hash.
+      ...(schema === undefined ? {} : { schema }),
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       ...(options.env === undefined ? {} : { env: { ...options.env } }),
       ...(options.allowFail ? { allowFail: true } : {}),
@@ -104,59 +144,79 @@ export function createSousGlobals(deps: SousGlobalDeps) {
     });
   };
 
-  /** Run a shell command. Returns { code, stdout, stderr }. */
-  const sh = (command: string, options: StepOptions = {}) => {
+  /** Run a shell command. Returns { code, stdout, stderr }. `input` goes to stdin as JSON. With
+   *  a schema, stdout is read as JSON, checked, and becomes `result`. */
+  const sh = (command: string, options: StepOptions & { input?: unknown } = {}) => {
     if (typeof command !== "string" || !command.trim()) fail("sh(command) needs a command string");
-    return exec({ kind: "sh", command }, options, shortLabel("sh", command));
+    const { input, ...rest } = options;
+    const json = inputOf(input, "sh()");
+    return exec({ kind: "sh", command, ...(json === undefined ? {} : { input: json }) }, rest, shortLabel("sh", command), "sh()");
+  };
+
+  /** js and py take their input as the second argument, so an input option is a mistake. */
+  const noInputOption = (options: StepOptions, name: string) => {
+    if (options && typeof options === "object" && "input" in options) fail(`${name}() takes its input as its second argument, not as an option`);
   };
 
   /** Run JavaScript in Node. `input` is a variable in the code; a returned value is `result`. */
   const js = (source: string, input?: unknown, options: StepOptions = {}) => {
     if (typeof source !== "string") fail("js(source, input) needs the code as a string");
-    return exec({ kind: "js", source, input: plainCopy(input) }, options, options.label ? options.label : "js");
+    noInputOption(options, "js");
+    return exec({ kind: "js", source, input: plainCopy(input) }, options, options.label ? options.label : "js", "js()");
   };
 
   /** Run Python. `input` is a variable in the code; a returned value is `result`. */
   const py = (source: string, input?: unknown, options: StepOptions = {}) => {
     if (typeof source !== "string") fail("py(source, input) needs the code as a string");
-    return exec({ kind: "py", source, input: plainCopy(input) }, options, options.label ? options.label : "py");
+    noInputOption(options, "py");
+    return exec({ kind: "py", source, input: plainCopy(input) }, options, options.label ? options.label : "py", "py()");
   };
 
   /** Run a script file. It reads `input` as JSON on stdin and may write its result as JSON to $SOUS_RESULT. */
   const run = (file: string, options: StepOptions & { args?: string[]; input?: unknown } = {}) => {
     if (typeof file !== "string" || !file.trim()) fail("run(file) needs a file path");
     const { args, input, ...rest } = options;
-    return exec({ kind: "file", file, ...(args ? { args: [...args] } : {}), input: plainCopy(input) }, rest, shortLabel("run", file));
+    const json = inputOf(input, "run()");
+    return exec({ kind: "file", file, ...(args ? { args: [...args] } : {}), input: json }, rest, shortLabel("run", file), "run()");
   };
 
-  /** Check a command every few seconds, with no agent, until it exits 0. */
-  const waitUntil = (command: string, options: StepOptions & { every?: number | string } = {}) => {
+  /** Check a command every few seconds, with no agent, until it exits 0. `input` goes to its
+   *  stdin as JSON. With a schema, the value it prints when it exits 0 is checked. */
+  const waitUntil = (command: string, options: StepOptions & { every?: number | string; input?: unknown } = {}) => {
     if (typeof command !== "string" || !command.trim()) fail("waitUntil(command) needs a command string");
     const everySeconds = parseDurationSeconds(options.every ?? 60) ?? 60;
     const timeoutSeconds = parseDurationSeconds(options.timeout);
-    const { every: _every, timeout: _timeout, ...rest } = options;
+    const { every: _every, timeout: _timeout, input, ...rest } = options;
+    const json = inputOf(input, "waitUntil()");
     return exec(
-      { kind: "wait", command, everySeconds, ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }) },
+      { kind: "wait", command, everySeconds, ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }), ...(json === undefined ? {} : { input: json }) },
       rest,
       shortLabel("wait", command),
+      "waitUntil()",
     );
   };
 
-  /** Ask a question, marked with its purpose when it has one. */
-  const asked = async (question: string, choices: string[] | undefined, purpose: CheckpointPurpose) => {
-    const options = choices ? { kind: "select", choices } : { kind: "input" };
+  /** Ask a question, marked with its purpose when it has one. With a schema, the answer is the
+   *  value that fits it. */
+  const asked = async (question: string, choices: string[] | undefined, purpose: CheckpointPurpose, schema?: Record<string, unknown>) => {
+    const options = { ...(choices ? { kind: "select", choices } : { kind: "input" }), ...(schema ? { schema } : {}) };
     const reply = Object.keys(purpose).length ? await deps.markedCheckpoint(question, options, purpose) : await deps.checkpoint(question, options);
+    if (schema) return reply;
     return typeof reply === "string" ? reply : reply === undefined || reply === null ? "" : JSON.stringify(reply);
   };
 
   /** Ask the user. With choices, the answer is one of them; without, free text. With answeredBy
-   *  "anyone", an agent may answer too. */
-  const ask = async (question: string, options: { choices?: string[]; answeredBy?: unknown } = {}) => {
+   *  "anyone", an agent may answer too. `input` shows with the question. With a schema, the answer
+   *  is read as JSON, an answer that does not fit is refused, and ask returns the value. */
+  const ask = async (question: string, options: { choices?: string[]; answeredBy?: unknown; input?: unknown; schema?: unknown } = {}) => {
     if (typeof question !== "string" || !question.trim()) fail("ask(question) needs a question");
     // Each option is read once, so a getter can't give two answers.
-    const { choices, answeredBy } = options;
+    const { choices, answeredBy, input, schema } = options;
     const anyone = answeredByOf(answeredBy, "ask()") === "anyone";
-    return asked(question, choices ? [...choices] : undefined, anyone ? { answeredBy: "anyone" } : {});
+    const json = inputOf(input, "ask()");
+    const shape = schemaOf(schema, "ask()");
+    const text = json === undefined ? question : `${question}\n\n${inputBlock(json)}`;
+    return asked(text, choices ? [...choices] : undefined, anyone ? { answeredBy: "anyone" } : {}, shape);
   };
 
   /**
@@ -166,19 +226,31 @@ export function createSousGlobals(deps: SousGlobalDeps) {
    */
   const breakpoint = async (
     title: string,
-    stepOrOptions?: ((note?: string) => unknown) | { show?: unknown },
-    maybeOptions: { show?: (result: unknown) => unknown; max?: number } = {},
+    stepOrOptions?: ((note?: string) => unknown) | { show?: unknown; input?: unknown; schema?: unknown },
+    maybeOptions: { show?: (result: unknown) => unknown; max?: number; input?: unknown; schema?: unknown } = {},
   ): Promise<unknown> => {
     if (typeof title !== "string" || !title.trim()) fail("breakpoint(title) needs a title");
     const marked = (options: unknown) => typeof options === "object" && options !== null && (options as { answeredBy?: unknown }).answeredBy !== undefined;
     if (marked(stepOrOptions) || marked(maybeOptions)) fail("breakpoint() takes no answeredBy: a breakpoint is always for people");
+    const structured = typeof stepOrOptions === "function" ? maybeOptions : (stepOrOptions ?? {});
+    const json = inputOf(structured.input, "breakpoint()");
+    const shape = schemaOf(structured.schema, "breakpoint()");
     // JSON.stringify gives undefined for a function or a symbol, which shows as its String.
     const render = (value: unknown) => (value === undefined ? "" : typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? String(value)));
-    const prompt = (shown: unknown) =>
-      `Breakpoint: ${title}\n${shown === undefined ? "" : `\n${render(shown)}\n`}\nReply approve, stop, or send back with a note.`;
+    // What the breakpoint shows: the shown value, then the input.
+    const shownText = (shown: unknown): string | undefined => {
+      if (json === undefined) return shown === undefined ? undefined : render(shown);
+      return [...(shown === undefined ? [] : [render(shown)]), inputBlock(json)].join("\n\n");
+    };
+    const reply = shape ? "Reply approve, stop, or send back with a note, or approve with a JSON value that fits the schema." : "Reply approve, stop, or send back with a note.";
+    const prompt = (shown: unknown) => {
+      const text = shownText(shown);
+      return `Breakpoint: ${title}\n${text === undefined ? "" : `\n${text}\n`}\n${reply}`;
+    };
     const decide = async (shown: unknown) => {
-      const show = render(shown).trim();
-      const decision = decisionOf(await deps.markedCheckpoint(prompt(shown), { kind: "input" }, { breakpoint: true, title, ...(show ? { show } : {}) }));
+      const show = (shownText(shown) ?? "").trim();
+      const options = { kind: "input", ...(shape ? { schema: shape } : {}) };
+      const decision = decisionOf(await deps.markedCheckpoint(prompt(shown), options, { breakpoint: true, title, ...(show ? { show } : {}) }));
       if (decision.decision === "stop") {
         throw new WorkflowError(`Stopped at breakpoint "${title}"${decision.note ? `: ${decision.note}` : ""}`, WorkflowErrorCode.WORKFLOW_ABORTED, {
           recoverable: false,
@@ -186,13 +258,18 @@ export function createSousGlobals(deps: SousGlobalDeps) {
       }
       return decision;
     };
-    if (typeof stepOrOptions !== "function") return decide(stepOrOptions?.show);
+    // With a schema, an approve may carry a value that fits it, and the breakpoint returns it.
+    const approvedValue = (decision: Decision) => shape !== undefined && decision.decision === "approve" && "value" in decision;
+    if (typeof stepOrOptions !== "function") {
+      const decision = await decide(stepOrOptions?.show);
+      return approvedValue(decision) ? decision.value : decision;
+    }
     const max = maybeOptions.max ?? 5;
     let note: string | undefined;
     for (let round = 1; ; round++) {
       const result = await stepOrOptions(note);
       const decision = await decide(maybeOptions.show ? maybeOptions.show(result) : result);
-      if (decision.decision === "approve") return result;
+      if (decision.decision === "approve") return approvedValue(decision) ? decision.value : result;
       if (round >= max) fail(`breakpoint "${title}" was sent back ${max} times`);
       note = decision.note;
     }

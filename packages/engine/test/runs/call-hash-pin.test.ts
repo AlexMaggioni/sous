@@ -74,16 +74,16 @@ describe("the call hash", () => {
     const run = await runOne(
       "pins",
       `export const meta = { name: 'pins', description: 'one step per hash input' }
-await agent('Plain step', { label: 'plain' })
-await agent('Haiku step', { label: 'haiku', model: 'claude/haiku' })
-await agent('Review it', { label: 'reviewer', agentType: 'reviewer' })
-await agent('Review it', { label: 'reviewer on codex', agentType: 'reviewer', model: 'codex' })
-await agent('Double it', { label: 'doubled', agentType: 'doubler' })
-await agent('Effort step', { label: 'effort', effort: 'high', skills: ['tdd'] })
-await agent('Mode step', { label: 'mode', mode: 'plan' })
-await agent('Schema step', { label: 'schema', schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] } })
+await agent('Plain step', { label: 'plain', until: 'turn' })
+await agent('Haiku step', { label: 'haiku', until: 'turn', model: 'claude/haiku' })
+await agent('Review it', { label: 'reviewer', until: 'turn', agentType: 'reviewer' })
+await agent('Review it', { label: 'reviewer on codex', until: 'turn', agentType: 'reviewer', model: 'codex' })
+await agent('Double it', { label: 'doubled', until: 'turn', agentType: 'doubler' })
+await agent('Effort step', { label: 'effort', until: 'turn', effort: 'high', skills: ['tdd'] })
+await agent('Mode step', { label: 'mode', until: 'turn', mode: 'plan' })
+await agent('Schema step', { label: 'schema', until: 'turn', schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] } })
 await sh('echo pinned', { label: 'code' })
-await agent('Isolated step', { label: 'isolated', agentType: 'isolated' })
+await agent('Isolated step', { label: 'isolated', until: 'turn', agentType: 'isolated' })
 return 'done'`,
     );
     assert.equal(run.result?.status, "completed");
@@ -119,9 +119,9 @@ return 'done'`,
     const run = await runOne(
       "defaults",
       `export const meta = { name: 'defaults', description: 'the run model' }
-await agent('Plain step', { label: 'run model' })
-await agent('Override step', { label: 'over' })
-await agent('Build it', { label: 'no block model', agentType: 'implementer' })
+await agent('Plain step', { label: 'run model', until: 'turn' })
+await agent('Override step', { label: 'over', until: 'turn' })
+await agent('Build it', { label: 'no block model', until: 'turn', agentType: 'implementer' })
 return 'done'`,
       { defaultModel: "codex/gpt-run", overrides: { over: { model: "claude/sonnet" } } },
     );
@@ -142,9 +142,9 @@ return 'done'`,
     const run = await runOne(
       "routed",
       `export const meta = { name: 'routed', description: 'meta model and a phase route', model: 'claude/sonnet', phases: [{ title: 'Plan' }, { title: 'Review', model: 'codex/gpt-phase' }] }
-await agent('Meta step', { label: 'meta model' })
+await agent('Meta step', { label: 'meta model', until: 'turn' })
 phase('Review')
-await agent('Phase step', { label: 'phase route' })
+await agent('Phase step', { label: 'phase route', until: 'turn' })
 return 'done'`,
     );
     assert.equal(run.result?.status, "completed");
@@ -154,6 +154,30 @@ return 'done'`,
     });
     const by = (label: string) => run.seen.find((call) => call.label === label)!;
     assert.deepEqual([by("meta model").model, by("phase route").model], ["claude/sonnet", "codex/gpt-phase"]);
+  });
+
+  it("keeps its bytes for steps that run until done, the default", async () => {
+    const run = await runOne(
+      "done",
+      `export const meta = { name: 'done', description: 'steps that run until done' }
+await agent('Plain step', { label: 'plain' })
+await agent('Plain step', { label: 'no question', ask: false })
+await agent('Plain step', { label: 'limited', maxTurns: 4, maxRepairs: 2 })
+const kept = session({ label: 'kept' })
+await kept.send('Plain step')
+return 'done'`,
+    );
+    assert.equal(run.result?.status, "completed");
+    // until "done" is in the call hash, and ask false beside it. The limits are not. The agent's
+    // hidden session is in neither hash: plain and kept keep the inputs hashes of the same steps
+    // with until "turn" above.
+    const done = "f8a6980fe108024a58548ad2e62132aafbf7f731aaee12f585eceeb1c30e0e79";
+    assert.deepEqual(pins(run.paths, run.record.runId), {
+      plain: { hash: done, model: null, inputs: "50526967a1114655a6e0cda28feeb866221cea7710b83d3f107ee67d01c126a4" },
+      "no question": { hash: "5fda09278140b103ffd790a5a37b39ca9f3bed0f0a0f1c29f70bd91e1ae26fe7", model: null, inputs: "333f9a4ec9029211580ef494b39969dc3027fa86096c8c2808b894a201983f7d" },
+      limited: { hash: done, model: null, inputs: "a05cdb6e06cc2749adcd67274b2abca579341c70d99109bcd9540f634efe8c4b" },
+      kept: { hash: done, model: null, inputs: "dce73a4b636d919436e866067dc731d9442df8e689f899094887192bdcbbe87b" },
+    });
   });
 
   it("refuses a step with a tier, so no call keeps a hash for it", async () => {
@@ -193,12 +217,12 @@ describe("the inputs hash", () => {
     const run = await runOne(
       "inputs",
       `export const meta = { name: 'inputs', description: 'one step per input' }
-await agent('Same step', { label: 'labelled' })
-await agent('Same step', { label: 'in a folder', cwd: 'sub' })
-await agent('Same step', { label: 'with tools', mcpServers: [{ name: 'docs', command: 'docs-server', args: ['--quiet'], env: [] }] })
+await agent('Same step', { label: 'labelled', until: 'turn' })
+await agent('Same step', { label: 'in a folder', until: 'turn', cwd: 'sub' })
+await agent('Same step', { label: 'with tools', until: 'turn', mcpServers: [{ name: 'docs', command: 'docs-server', args: ['--quiet'], env: [] }] })
 const kept = session({ label: 'kept' })
-await kept.send('Same step')
-await agent('Same step', { label: 'with an image', images: [{ data: 'aGVsbG8=', mimeType: 'image/png' }] })
+await kept.send('Same step', { until: 'turn' })
+await agent('Same step', { label: 'with an image', until: 'turn', images: [{ data: 'aGVsbG8=', mimeType: 'image/png' }] })
 return 'done'`,
     );
     assert.equal(run.result?.status, "completed");

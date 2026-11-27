@@ -41,7 +41,7 @@ exit 0
       "answer": "fake-answer",
       "sure": true
     },
-    "codexAgent": "Fake codex answer."
+    "codexAgent": "fake-result"
   },
   "review": {
     "result": {
@@ -53,7 +53,7 @@ exit 0
         "answer": "fake-answer",
         "sure": true
       },
-      "codexAgent": "Fake codex answer."
+      "codexAgent": "fake-result"
     }
   },
   "notes": [],
@@ -90,7 +90,7 @@ result
     "answer": "fake-answer",
     "sure": true
   },
-  "codexAgent": "Fake codex answer."
+  "codexAgent": "fake-result"
 }
 
 $ sous show <run-1> --full --json
@@ -202,11 +202,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "{\"answer\":\"fake-answer\",\"sure\":true}",
+            "text": "{\"status\":\"done\",\"result\":{\"answer\":\"fake-answer\",\"sure\":true},\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"answer\":\"fake-answer\",\"sure\":true}",
+        "resultPreview": "{\"status\":\"done\",\"result\":{\"answer\":\"fake-answer\",\"sure\":true},\"message\":\"fake-…",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -231,7 +231,7 @@ exit 0
           "costGauge": 0.0012,
           "callIndex": 0,
           "label": "on claude",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       },
@@ -248,11 +248,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "{\"answer\":\"fake-answer\",\"sure\":true}",
+            "text": "{\"status\":\"done\",\"result\":{\"answer\":\"fake-answer\",\"sure\":true},\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "{\"answer\":\"fake-answer\",\"sure\":true}",
+        "resultPreview": "{\"status\":\"done\",\"result\":{\"answer\":\"fake-answer\",\"sure\":true},\"message\":\"fake-…",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -275,7 +275,7 @@ exit 0
           },
           "callIndex": 1,
           "label": "on codex",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       },
@@ -292,11 +292,11 @@ exit 0
           {
             "role": "assistant",
             "kind": "text",
-            "text": "Fake codex answer.",
+            "text": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
             "timestamp": "<timestamp>"
           }
         ],
-        "resultPreview": "Fake codex answer.",
+        "resultPreview": "{\"status\":\"done\",\"result\":\"fake-result\",\"message\":\"fake-message\"}",
         "tokens": 150,
         "usage": {
           "input": 120,
@@ -319,7 +319,7 @@ exit 0
           },
           "callIndex": 2,
           "label": "codex agent",
-          "keptOpen": false
+          "keptOpen": true
         },
         "endedAt": "<endedAt>"
       }
@@ -336,7 +336,7 @@ exit 0
         "answer": "fake-answer",
         "sure": true
       },
-      "codexAgent": "Fake codex answer."
+      "codexAgent": "fake-result"
     },
     "tokenUsage": {
       "input": 360,
@@ -356,6 +356,6 @@ exit 0
 }
 
 fake requests (sorted):
-{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--effort=low","--model=opus","--json-schema={\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\"},\"sure\":{\"type\":\"boolean\"}},\"required\":[\"answer\",\"sure\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-harnesses/sous-home/scratch/<run-1>","model":"opus","effort":"low","permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"answer":{"type":"string"},"sure":{"type":"boolean"}},"required":["answer","sure"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: on claude","skills":null,"login":[],"prompt":"HARNESS-CLAUDE Answer on Claude Code.","rule":null,"outcome":"answer"}
-{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-harnesses/sous-home/scratch/<run-1>","model":"gpt-fake","effort":"high","sessionId":"<id-3>","resume":false,"schema":null,"mcpServers":[],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":"You answer on Codex.\n\nTask label: codex agent","login":[],"prompt":"HARNESS-CODEX-AGENT Answer as the Codex agent.","rule":null,"outcome":"answer"}
-{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-harnesses/sous-home/scratch/<run-1>","model":"gpt-fake","effort":"high","sessionId":"<id-2>","resume":false,"schema":{"type":"object","properties":{"answer":{"type":"string"},"sure":{"type":"boolean"}},"required":["answer","sure"],"additionalProperties":false},"mcpServers":[],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":"Task label: on codex","login":[],"prompt":"HARNESS-CODEX Answer on Codex.","rule":null,"outcome":"answer"}
+{"program":"claude","argv":["--output-format","stream-json","--verbose","--input-format","stream-json","--effort=low","--model=opus","--json-schema={\"type\":\"object\",\"properties\":{\"status\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"done\",\"working\",\"question\"]},{\"type\":\"null\"}],\"description\":\"Where the task stands. \\\"done\\\": the task is finished, and result holds the answer. \\\"working\\\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \\\"working\\\". \\\"question\\\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer.\"},\"result\":{\"anyOf\":[{\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\"},\"sure\":{\"type\":\"boolean\"}},\"required\":[\"answer\",\"sure\"],\"additionalProperties\":false},{\"type\":\"null\"}],\"description\":\"With \\\"done\\\", the answer, as a value that fits this schema. null otherwise.\"},\"message\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"With \\\"working\\\", what is left to do. With \\\"question\\\", the question for the person. null with \\\"done\\\".\"}},\"required\":[\"status\",\"result\",\"message\"],\"additionalProperties\":false}","--permission-prompt-tool=stdio","--disallowedTools=AskUserQuestion","--setting-sources=user,project,local","--session-id=<id-1>"],"cwd":"<tmp>/scenario-harnesses/sous-home/scratch/<run-1>","model":"opus","effort":"low","permissionMode":"auto","sessionId":"<id-1>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"object","properties":{"answer":{"type":"string"},"sure":{"type":"boolean"}},"required":["answer","sure"],"additionalProperties":false},{"type":"null"}],"description":"With \"done\", the answer, as a value that fits this schema. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"allowedTools":[],"disallowedTools":["AskUserQuestion"],"tools":null,"systemPrompt":null,"appendSystemPrompt":"Task label: on claude","skills":null,"login":[],"prompt":"HARNESS-CLAUDE Answer on Claude Code.","rule":null,"outcome":"answer"}
+{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-harnesses/sous-home/scratch/<run-1>","model":"gpt-fake","effort":"high","sessionId":"<id-2>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"object","properties":{"answer":{"type":"string"},"sure":{"type":"boolean"}},"required":["answer","sure"],"additionalProperties":false},{"type":"null"}],"description":"With \"done\", the answer, as a value that fits this schema. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":"Task label: on codex","login":[],"prompt":"HARNESS-CODEX Answer on Codex.","rule":null,"outcome":"answer"}
+{"program":"codex","argv":["app-server"],"cwd":"<tmp>/scenario-harnesses/sous-home/scratch/<run-1>","model":"gpt-fake","effort":"high","sessionId":"<id-3>","resume":false,"schema":{"type":"object","properties":{"status":{"anyOf":[{"type":"string","enum":["done","working","question"]},{"type":"null"}],"description":"Where the task stands. \"done\": the task is finished, and result holds the answer. \"working\": there is more to do, and message says what is left. Asking whether to go on, or asking for leave to continue, is \"working\". \"question\": only for what you cannot decide or do without the person. message holds the question, and the person steps into this session to answer."},"result":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"done\", the answer, as text. null otherwise."},"message":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"With \"working\", what is left to do. With \"question\", the question for the person. null with \"done\"."}},"required":["status","result","message"],"additionalProperties":false},"mcpServers":[],"approvalPolicy":"on-request","sandboxPolicy":"workspaceWrite","baseInstructions":null,"developerInstructions":"You answer on Codex.\n\nTask label: codex agent","login":[],"prompt":"HARNESS-CODEX-AGENT Answer as the Codex agent.","rule":null,"outcome":"answer"}
