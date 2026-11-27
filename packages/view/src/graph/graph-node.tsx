@@ -8,6 +8,7 @@ import {
   GitFork,
   Layers,
   MessageCircleQuestion,
+  MessagesSquare,
   Minus,
   OctagonPause,
   SquareTerminal,
@@ -33,6 +34,7 @@ const KIND: Record<KindIcon, { icon: LucideIcon; name: string }> = {
   breakpoint: { icon: OctagonPause, name: "breakpoint" },
   workflow: { icon: Workflow, name: "workflow" },
   choose: { icon: GitFork, name: "choose" },
+  room: { icon: MessagesSquare, name: "room" },
   pipeline: { icon: Layers, name: "pipeline" },
 };
 

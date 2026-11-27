@@ -31,7 +31,7 @@ const OPTIONS: Array<{ key: string; field: keyof StepOptions; kinds: StepKind[];
   { key: "maxTurns", field: "maxTurns", kinds: AGENT, read: numberOf },
   { key: "maxRepairs", field: "maxRepairs", kinds: AGENT, read: numberOf },
   { key: "answeredBy", field: "answeredBy", kinds: ["ask"], read: oneOf("people", "anyone") },
-  { key: "schema", field: "schema", kinds: [...AGENT, ...CODE, "ask", "breakpoint"], read: schemaNames },
+  { key: "schema", field: "schema", kinds: [...AGENT, ...CODE, "ask", "breakpoint", "room"], read: schemaNames },
   { key: "allowFail", field: "allowFail", kinds: CODE, read: yes },
   { key: "choices", field: "choices", kinds: ["ask"], read: strings },
   { key: "max", field: "max", kinds: ["breakpoint"], read: (value) => (isNumber(value) ? value.value : undefined) },
@@ -41,6 +41,9 @@ const OPTIONS: Array<{ key: string; field: keyof StepOptions; kinds: StepKind[];
   { key: "steps", field: "steps", kinds: ["choose"], read: namesOf },
   { key: "workflows", field: "workflows", kinds: ["choose"], read: workflowNames },
   { key: "any", field: "any", kinds: ["choose"], read: yes },
+  { key: "turns", field: "turns", kinds: ["room"], read: oneOf("together", "in order", "moderated") },
+  { key: "hears", field: "hears", kinds: ["room"], read: oneOf("all", "addressed") },
+  { key: "maxRounds", field: "maxRounds", kinds: ["room"], read: numberOf },
 ];
 
 /** The steps that take an `input` option. js and py take theirs as their second argument. */

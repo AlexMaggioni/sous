@@ -253,7 +253,7 @@ export interface Flow {
 
 export type FlowNode = FlowStep | FlowLoop | FlowIf | FlowEnd | FlowParallel | FlowPipeline;
 
-export type StepKind = "agent" | "sh" | "js" | "py" | "run" | "wait" | "ask" | "breakpoint" | "workflow" | "choose";
+export type StepKind = "agent" | "sh" | "js" | "py" | "run" | "wait" | "ask" | "breakpoint" | "workflow" | "choose" | "room";
 
 interface FlowBase {
   /** Unique in the flow, stable while the text does not change. */
@@ -276,11 +276,13 @@ export interface FlowStep extends FlowBase {
   workflow?: string;
   /** The step a breakpoint runs before it waits for the person. */
   body?: FlowNode[];
+  /** A room's members, in order: each one's label, or {source} for one the text makes at run time. */
+  members?: string[];
   /** The label was made at run time, so a run's steps can't be matched to it by name. */
   dynamic?: true;
   /** The phase it runs in: its own `phase` option, else the last phase() call before it in the text. */
   phase?: string;
-  /** An agent's or a choose's prompt, as the text writes it, with each expression as {source}. */
+  /** An agent's or a choose's prompt, or a room's goal, as the text writes it, with each expression as {source}. */
   prompt?: string;
   /**
    * A code step's text as the text writes it, with each expression as {source}: the command of
@@ -324,7 +326,7 @@ export interface StepOptions {
   maxRepairs?: number;
   /** Who may answer an ask(). */
   answeredBy?: "people" | "anyone";
-  /** The field names of its schema, when the text writes them. */
+  /** The field names of its schema, when the text writes them. A room's schema is its decision's. */
   schema?: string[];
   allowFail?: true;
   /** The choices of an ask. */
@@ -341,6 +343,14 @@ export interface StepOptions {
   steps?: string[];
   workflows?: string[];
   any?: true;
+  /** A room's order of turns. */
+  turns?: "together" | "in order" | "moderated";
+  /** Which messages a room's members read. */
+  hears?: "all" | "addressed";
+  /** The label of a room's decider. */
+  decider?: string;
+  /** The most rounds a room runs. */
+  maxRounds?: number;
 }
 
 /** A for or a while loop repeats its body. */

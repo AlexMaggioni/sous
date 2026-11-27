@@ -64,6 +64,8 @@ function settingOf(part: Part, node: ReturnType<typeof nodeOf>): { text: string;
       return { text: "waits for your yes" };
     case "workflow":
       return step.workflow && step.workflow !== step.label ? { text: step.workflow } : null;
+    case "room":
+      return step.prompt ? { text: firstLine(step.prompt) ?? "" } : step.members?.length ? { text: step.members.join(", ") } : null;
   }
 }
 

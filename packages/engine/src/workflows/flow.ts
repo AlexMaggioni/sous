@@ -2,6 +2,7 @@
 // parallel parts and pipelines around them. The page draws it for a saved workflow, and lays a
 // run's steps over it by label. It reads only the text it is given, and never throws.
 
+import { bind, hoist, isBound, lookup, valueOf, type Known, type Scope } from "./flow-scope.js";
 import { stepOptions } from "./step-options.js";
 import { boundNames, childrenOf, givenCalls, isFunction, parseWorkflowText, property, returned, SAVED_WORKFLOW_NAME, staticString, type AnyNode } from "./syntax.js";
 import type { Flow, FlowNode, FlowPipeline, FlowStep, StepKind, StepOptions } from "./flow-types.js";
@@ -47,21 +48,6 @@ const MAX_CHAIN = 20;
 
 /** How many functions deep the reader inlines a call. */
 const MAX_DEPTH = 3;
-
-/** A function the text keeps in a name, and the names it sees where it is written. */
-interface Known {
-  fn: AnyNode;
-  scope: Scope;
-}
-
-interface Scope {
-  names: Map<string, Known>;
-  /** What its const names are set to, such as a schema the text keeps in a name. */
-  values: Map<string, AnyNode>;
-  /** The names a function's parameters, a loop's variable or a catch's error give here. */
-  bound?: Set<string>;
-  parent?: Scope;
-}
 
 /** A handle that session({...}) or <handle>.fork({...}) makes, as the text writes it. */
 interface Handle {
@@ -222,6 +208,7 @@ class FlowReader {
       if (spec) return this.step(node, spec, at);
       if (callee.name === "parallel") return this.parallel(node, at, true);
       if (callee.name === "pipeline") return this.pipeline(node, at);
+      if (callee.name === "room") return this.room(node, at);
       if (callee.name === "session") {
         const before = this.list(node.arguments, at);
         this.handles.set(node, this.made(node, undefined, at));
@@ -292,6 +279,46 @@ class FlowReader {
     if (body?.length) step.body = body;
     this.describe(step, node, spec, object, at, handle ?? undefined);
     if (handle) handle.last = step.dynamic ? undefined : step.label;
+    return [...before, step];
+  }
+
+  /** A room() call: one step, with each member by its handle's label. A member the text makes at
+   *  run time reads as {source}. After the room, each member's session goes on from it. */
+  private room(node: AnyNode, at: At): FlowNode[] {
+    const before = this.list(node.arguments, at);
+    const step: FlowStep = { t: "step", id: this.id("s", node, at), line: lineOf(node), kind: "room", label: "room" };
+    const given = node.arguments[0] as AnyNode | undefined;
+    const value = given && valueOf(at.scope, given);
+    const object = value?.type === "ObjectExpression" ? value : undefined;
+    if (given && !object) this.note(`The room on line ${step.line} takes its options from ${this.src(given)}, so its members are not known.`);
+    const name = object && property(object, "name");
+    if (name) this.label(step, name);
+    const labelOf = (target: AnyNode | undefined) => {
+      const handle = target && this.handleOf(target, at);
+      const label = handle && handle !== "none" ? handleOption(handle, "label") : undefined;
+      return { handle: handle && handle !== "none" ? handle : undefined, label: label && this.rendered(label) };
+    };
+    const written = object && property(object, "members");
+    const list = written && valueOf(at.scope, written);
+    const handles: Handle[] = [];
+    if (list?.type === "ArrayExpression") {
+      step.members = (list.elements as Array<AnyNode | null>).flatMap((item) => {
+        if (!item) return [];
+        if (item.type === "SpreadElement") return [`{...${this.src(item.argument)}}`];
+        const member = valueOf(at.scope, item);
+        const target = member.type === "ObjectExpression" ? property(member, "session") : item;
+        const { handle, label } = labelOf(target);
+        if (handle) handles.push(handle);
+        return [label ?? `{${this.src(target ?? item)}}`];
+      });
+    } else if (written) step.members = [`{${this.src(written)}}`];
+    if (step.members?.some((member) => member.startsWith("{"))) this.note(`The room on line ${step.line} has members made at run time, so the graph can't name each one.`);
+    this.describe(step, node, { kind: "room" }, object, at);
+    const goal = object && property(object, "goal");
+    if (goal) step.prompt = this.rendered(goal);
+    const decider = labelOf(object && property(object, "decider")).label;
+    if (decider !== undefined) step.options = { ...step.options, decider };
+    for (const handle of handles) handle.last = step.dynamic ? undefined : step.label;
     return [...before, step];
   }
 
@@ -599,68 +626,6 @@ class FlowReader {
   }
 }
 
-/** The functions a list of statements keeps in a name: its function declarations and its
- *  variables set to a function. Also the values of its other names: each const, and each let or
- *  var that the statements never assign again. */
-function hoist(statements: AnyNode[], parent: Scope | undefined): Scope {
-  const scope: Scope = { names: new Map(), values: new Map(), parent };
-  let assigned: Set<string> | undefined;
-  for (const statement of statements) {
-    if (statement.type === "FunctionDeclaration" && statement.id) scope.names.set(statement.id.name, { fn: statement, scope });
-    if (statement.type !== "VariableDeclaration") continue;
-    for (const declarator of statement.declarations as AnyNode[]) {
-      if (declarator.id?.type !== "Identifier" || !declarator.init) continue;
-      const name = declarator.id.name as string;
-      if (isFunction(declarator.init)) scope.names.set(name, { fn: declarator.init, scope });
-      else if (statement.kind === "const" || !(assigned ??= assignedNames(statements)).has(name)) scope.values.set(name, declarator.init);
-    }
-  }
-  return scope;
-}
-
-/** The names that statements assign or count up or down, in any depth, functions too. */
-function assignedNames(statements: AnyNode[]): Set<string> {
-  const names = new Set<string>();
-  const stack = [...statements];
-  for (let node = stack.pop(); node; node = stack.pop()) {
-    if (node.type === "AssignmentExpression") boundNames(node.left).forEach((name) => names.add(name));
-    if (node.type === "UpdateExpression" && node.argument.type === "Identifier") names.add(node.argument.name);
-    if ((node.type === "ForInStatement" || node.type === "ForOfStatement") && node.left.type !== "VariableDeclaration") boundNames(node.left).forEach((name) => names.add(name));
-    stack.push(...childrenOf(node));
-  }
-  return names;
-}
-
-/** A scope inside another that holds the names a function's parameters or a loop's variable give. */
-function bind(scope: Scope, names: string[]): Scope {
-  return names.length ? { names: new Map(), values: new Map(), bound: new Set(names), parent: scope } : scope;
-}
-
-function lookup(scope: Scope | undefined, name: string): Known | undefined {
-  for (let at = scope; at; at = at.parent) {
-    const known = at.names.get(name);
-    if (known) return known;
-  }
-  return undefined;
-}
-
-/** True when a parameter, a loop's variable or a catch's error gives the name where it is read. */
-function isBound(scope: Scope | undefined, name: string): boolean {
-  for (let at = scope; at; at = at.parent) if (at.bound?.has(name)) return true;
-  return false;
-}
-
-/** The value a name is set to once, where the text sets it, else the node itself. */
-function valueOf(scope: Scope, node: AnyNode): AnyNode {
-  if (node.type !== "Identifier") return node;
-  for (let at: Scope | undefined = scope; at; at = at.parent) {
-    if (at.bound?.has(node.name)) return node;
-    const value = at.values.get(node.name);
-    if (value) return value;
-  }
-  return node;
-}
-
 /** What a step's arguments read, in the order the text names them: each name `counts` takes, and
  *  each input as args.<name>. A function written in them runs later, so it is not read here. */
 function readsOf(nodes: AnyNode[], counts: (name: string) => boolean): string[] {
@@ -702,7 +667,7 @@ function branchValues(node: AnyNode | null | undefined): Array<AnyNode | undefin
 function firstStep(node: AnyNode, scope: Scope, seen: Set<AnyNode>): AnyNode | undefined {
   if (node.type === "CallExpression" && node.callee.type === "Identifier") {
     const known = lookup(scope, node.callee.name);
-    if (!known && STEPS.has(node.callee.name)) return node;
+    if (!known && (STEPS.has(node.callee.name) || node.callee.name === "room")) return node;
     if (known && !seen.has(known.fn)) {
       seen.add(known.fn);
       if (firstStep(known.fn, known.scope, seen)) return node;

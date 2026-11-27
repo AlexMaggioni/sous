@@ -27,6 +27,8 @@ export interface OutlineStep {
   session?: string;
   /** The saved workflow a workflow() step starts. */
   workflow?: string;
+  /** The literal labels of a room's members, in order. */
+  members?: string[];
 }
 
 /** The person's yes that speaks for the file: the one of its text, else the newest. */

@@ -47,7 +47,30 @@ export interface ScriptRefs {
    * ${} is not empty, or a + whose left end does.
    */
   runTimePrompts: PromptRef[];
+  /** The room() calls the script writes, with what the text shows of their options. */
+  rooms: RoomRef[];
 }
+
+/** A room() call: the line it starts on and its options as the text shows them. */
+export interface RoomRef {
+  line: number;
+  options: Seen;
+}
+
+/**
+ * A value as the text shows it, for the checks of `sous check`. A literal is a string, a number, a
+ * boolean or null. A handle is a session() or fork() call, by where it starts in the text, with
+ * its literal label. An object holds its keys, unless a spread or a computed key hides some. A
+ * list stops at its first spread. "other" is a value the text shows is no handle and no literal,
+ * such as a function. Anything made at run time is "unknown".
+ */
+export type Seen =
+  | { t: "literal"; value: string | number | boolean | null }
+  | { t: "handle"; at: number; label?: string }
+  | { t: "object"; props: Record<string, Seen>; open: boolean }
+  | { t: "list"; items: Seen[]; open: boolean }
+  | { t: "other" }
+  | { t: "unknown" };
 
 /** An agent() or a send() call, by its literal label and the line it starts on. */
 export interface PromptRef {
@@ -57,7 +80,7 @@ export interface PromptRef {
 
 /** One step call as the script writes it. Only literal values are read. */
 export interface ScriptCall {
-  kind: "agent" | "sh" | "js" | "py" | "ask" | "breakpoint" | "workflow";
+  kind: "agent" | "sh" | "js" | "py" | "ask" | "breakpoint" | "workflow" | "room";
   /** The literal label option, else a send()'s handle's. A label made at run time is left out. */
   label?: string;
   /** The literal first argument of an ask() or a breakpoint(). */
@@ -73,10 +96,12 @@ export interface ScriptCall {
   session?: string;
   /** The literal name a workflow call starts. */
   workflow?: string;
+  /** The literal labels of a room's members, in order. A member made at run time is left out. */
+  members?: string[];
 }
 
 /** Where each step call takes its options, by the index of its argument. ask and breakpoint take no label. */
-const OPTIONS_AT: Record<ScriptCall["kind"], number | undefined> = {
+const OPTIONS_AT: Record<Exclude<ScriptCall["kind"], "room">, number | undefined> = {
   agent: 1,
   sh: 1,
   js: 2,
@@ -422,7 +447,7 @@ function sendCall(node: AnyNode, names: Names): { call: ScriptCall; refs?: StepR
 
 /** The step a call writes, or nothing when the callee is not a step. */
 function scriptCall(node: AnyNode): ScriptCall | undefined {
-  const kind = node.callee.name as ScriptCall["kind"];
+  const kind = node.callee.name as keyof typeof OPTIONS_AT;
   if (!Object.hasOwn(OPTIONS_AT, kind)) return undefined;
   const call: ScriptCall = { kind };
   const at = OPTIONS_AT[kind];
@@ -448,6 +473,57 @@ function scriptCall(node: AnyNode): ScriptCall | undefined {
   return call;
 }
 
+/** What the text shows of a value. A name set once reads as its value. */
+function seen(node: AnyNode | undefined | null, names: Names, depth = 0): Seen {
+  if (!node || depth > 20) return { t: "unknown" };
+  const call = handleCall(node, names);
+  if (call && call !== "none") {
+    const label = staticString(handleObjects(node, names)?.reduce<AnyNode | undefined>((found, object) => property(object, "label") ?? found, undefined));
+    return { t: "handle", at: call.start, ...(label === undefined ? {} : { label }) };
+  }
+  const value = resolved(node, names);
+  if (!value) return { t: "unknown" };
+  const text = staticString(value);
+  if (text !== undefined) return { t: "literal", value: text };
+  if (value.type === "Literal" && !(value.value instanceof RegExp)) return { t: "literal", value: value.value };
+  if (value.type === "UnaryExpression" && value.operator === "-" && typeof value.argument.value === "number") return { t: "literal", value: -value.argument.value };
+  if (value.type === "ObjectExpression") {
+    const props: Record<string, Seen> = {};
+    let open = false;
+    for (const item of value.properties as AnyNode[]) {
+      const key = item.type === "Property" ? keyOf(item) : undefined;
+      if (key === undefined) open = true;
+      else props[key] = seen(item.value, names, depth + 1);
+    }
+    return { t: "object", props, open };
+  }
+  if (value.type === "ArrayExpression") {
+    const items: Seen[] = [];
+    for (const item of value.elements as Array<AnyNode | null>) {
+      if (item?.type === "SpreadElement") return { t: "list", items, open: true };
+      items.push(seen(item, names, depth + 1));
+    }
+    return { t: "list", items, open: false };
+  }
+  // A call may return a handle, a list or an object, so only a function or a class is known to be none of them.
+  return value.type === "FunctionDeclaration" || value.type === "ClassExpression" || isFunction(value) ? { t: "other" } : { t: "unknown" };
+}
+
+/** A room() as a step call: its literal name as its label, and its members' literal labels. */
+function roomCall(options: Seen): ScriptCall {
+  const call: ScriptCall = { kind: "room" };
+  const props = options.t === "object" ? options.props : {};
+  const name = props["name"];
+  if (name?.t === "literal" && typeof name.value === "string" && name.value.trim()) call.label = name.value.trim();
+  const members = props["members"];
+  const labels = (members?.t === "list" ? members.items : []).flatMap((item) => {
+    const handle = item.t === "object" ? item.props["session"] : item;
+    return handle?.t === "handle" && handle.label !== undefined ? [handle.label] : [];
+  });
+  if (labels.length) call.members = labels;
+  return call;
+}
+
 function scriptRefs(ast: AnyNode): ScriptRefs {
   const workflows = new Set<string>();
   const models = new Set<string>();
@@ -457,6 +533,7 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
   let asks = 0;
   const calls: ScriptCall[] = [];
   const runTimePrompts: PromptRef[] = [];
+  const rooms: RoomRef[] = [];
   const names = declaredNames(ast);
   const pending = [ast];
   while (pending.length > 0) {
@@ -479,6 +556,11 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
       if (callee === "workflow" && first && SAVED_WORKFLOW_NAME.test(first)) workflows.add(first);
       if (callee === "run" && first) scripts.add(first);
       if (callee === "ask" || callee === "breakpoint") asks++;
+      if (callee === "room" && !names.has("room")) {
+        const options = seen(node.arguments[0], names);
+        rooms.push({ line: node.loc?.start.line ?? 0, options });
+        calls.push(roomCall(options));
+      }
       if (callee === "choose") {
         for (const argument of node.arguments as AnyNode[]) {
           const any = argument.type === "ObjectExpression" ? property(argument, "any") : undefined;
@@ -509,5 +591,5 @@ function scriptRefs(ast: AnyNode): ScriptRefs {
     }
     pushAstChildren(node, pending);
   }
-  return { workflows: [...workflows], models: [...models], steps, scripts: [...scripts], choosesAnyWorkflow, asks, calls, runTimePrompts };
+  return { workflows: [...workflows], models: [...models], steps, scripts: [...scripts], choosesAnyWorkflow, asks, calls, runTimePrompts, rooms };
 }
