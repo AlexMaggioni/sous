@@ -21,6 +21,7 @@ import { CONTINUE_PROMPT } from "../src/turns/status.js";
 import { runWorkflow } from "../src/workflow.js";
 import { waitUntil } from "./helpers/async.js";
 import { write } from "./helpers/files.js";
+import { wentOn } from "./helpers/fake-steps.js";
 
 const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../test/fakes");
 const temp = (name: string) => mkdtempSync(join(tmpdir(), `engine-${name}-`));
@@ -33,6 +34,8 @@ interface LogLine {
   program: string;
   model: string | null;
   effort: string | null;
+  /** The program's process id. Turns with the same pid ran in one program. */
+  pid: number;
   sessionId: string;
   resume: boolean;
   prompt: string;
@@ -255,7 +258,8 @@ describe("steps on the fake programs", () => {
       assert.equal(typeof (value as { city?: unknown }).city, "string");
       const [first, repair] = place.lines();
       assert.equal(place.lines().length, 2);
-      assert.equal(repair?.resume, true);
+      // The repair turn goes on in the step's open program.
+      assert.equal(wentOn(first, repair), "held");
       assert.equal(repair?.sessionId, first?.sessionId);
       // The repair turn asks with the report turn's words, and the schema again.
       assert.equal(repair?.prompt, "Report on the task you were given.");

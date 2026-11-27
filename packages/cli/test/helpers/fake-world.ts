@@ -34,6 +34,8 @@ export interface FakeRule {
  *  into a turn (steer), a by-hand session (byHand), a question (ask) or a goal's turn (goal). */
 export interface FakeLine {
   program: "claude" | "codex";
+  /** The program's process id. Turns with the same pid ran in one program. */
+  pid?: number;
   sessionId?: string | null;
   argv?: string[];
   cwd?: string;
@@ -73,6 +75,16 @@ export interface FakeLine {
   ask?: Record<string, unknown>;
   goal?: { turn: number; of: number };
   [field: string]: unknown;
+}
+
+/**
+ * How a later turn went on in an earlier turn's session: "held" in the earlier turn's program,
+ * "resumed" in a new program that resumed the session, else "apart".
+ */
+export function wentOn(earlier: FakeLine | undefined, later: FakeLine | undefined): "held" | "resumed" | "apart" {
+  if (!earlier || !later || later.sessionId !== earlier.sessionId) return "apart";
+  if (later.pid !== undefined && later.pid === earlier.pid) return "held";
+  return later.resume ? "resumed" : "apart";
 }
 
 /** What a sous command gave. */

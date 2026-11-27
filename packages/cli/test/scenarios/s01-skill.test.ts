@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { listRecords } from "@sous-run/engine";
 import { readState } from "@sous-run/engine/testing";
-import { fakeWorld, type FakeLine, type FakeRule, type FakeWorld } from "../helpers/fake-world.js";
+import { fakeWorld, wentOn, type FakeLine, type FakeRule, type FakeWorld } from "../helpers/fake-world.js";
 
 const CANARY = "PELICAN-4417";
 const REPORT = "Report on the task you were given.";
@@ -63,8 +63,9 @@ for (const [program, model] of [
       assert.equal(turn!.rule, 0);
       assert.equal(fields(turn!), null);
       assert.match(turn!.system ?? "", /Task label: canary step/);
-      // The step runs until done, so the report turn asks for the status in the same session.
-      assert.deepEqual([report!.prompt, fields(report!), report!.rule, report!.resume], [REPORT, STATUS, 1, true]);
+      // The step runs until done, so the report turn asks for the status in the same session. Claude
+      // Code takes a schema once per program, so there the report turn resumes the session in a new one.
+      assert.deepEqual([report!.prompt, fields(report!), report!.rule, wentOn(turn, report)], [REPORT, STATUS, 1, program === "claude" ? "resumed" : "held"]);
       assert.equal(report!.sessionId, turn!.sessionId);
       assert.equal(value, CANARY);
     });
@@ -105,7 +106,7 @@ for (const [program, model] of [
         const [work, report] = lines;
         assert.deepEqual([work!.rule, report!.rule], [0, 1]);
         assert.equal(report!.sessionId, work!.sessionId);
-        assert.equal(report!.resume, true);
+        assert.equal(wentOn(work, report), program === "claude" ? "resumed" : "held");
         assert.deepEqual(value, { word: CANARY });
       });
     }

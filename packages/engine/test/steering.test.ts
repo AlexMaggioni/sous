@@ -169,6 +169,58 @@ describe("piece 12: the steering board", () => {
   });
 });
 
+interface Seam {
+  readonly steer: (send: Steer | undefined) => void;
+  close(): void;
+}
+const seamOf = async () => (await import("../src/steps/steering.js")) as unknown as { SteeringBoard: new () => Board; CallSeam: new (board: Board, call: LiveCall) => Seam };
+
+// One program runs every turn of a step, so a call's seam outlives each turn. The adapter opens
+// it at each turn's start with steer(send) and closes it at the turn's end with steer(undefined).
+describe("one program per step: a call's seam across its turns", () => {
+  it("sends a tell into the turn that runs now", async () => {
+    const { SteeringBoard, CallSeam } = await seamOf();
+    const board = new SteeringBoard();
+    const seam = new CallSeam(board, call(1));
+    const turn = sender();
+    seam.steer(turn.send);
+    const id = randomUUID();
+    assert.deepEqual(await board.tell({ label: "impl" }, "Use the v2 API.", id), [{ call: call(1), outcome: "delivered" }]);
+    assert.deepEqual(turn.got, [{ text: "Use the v2 API.", id }]);
+  });
+
+  it("keeps a tell sent between two turns and sends it into the next one", async () => {
+    const { SteeringBoard, CallSeam } = await seamOf();
+    const board = new SteeringBoard();
+    const seam = new CallSeam(board, call(1));
+    const first = sender();
+    const second = sender();
+    seam.steer(first.send);
+    seam.steer(undefined);
+    const id = randomUUID();
+    const told = board.tell({ label: "impl" }, "Between turns.", id);
+    seam.steer(second.send);
+    assert.deepEqual(await told, [{ call: call(1), outcome: "delivered" }]);
+    assert.deepEqual([first.got, second.got], [[], [{ text: "Between turns.", id }]]);
+  });
+
+  it("answers ended for a tell still waiting when the call ends, and takes no tell after", async () => {
+    const { SteeringBoard, CallSeam } = await seamOf();
+    const board = new SteeringBoard();
+    const seam = new CallSeam(board, call(1));
+    const turn = sender();
+    seam.steer(turn.send);
+    seam.steer(undefined);
+    const told = board.tell({ label: "impl" }, "Too late.", randomUUID());
+    seam.close();
+    assert.deepEqual(await told, [{ call: call(1), outcome: "ended" }]);
+    assert.deepEqual(await board.tell({ label: "impl" }, "After.", randomUUID()), [], "the ended call is off the board");
+    seam.steer(sender().send);
+    assert.deepEqual(await board.tell({ label: "impl" }, "Still after.", randomUUID()), [], "a closed seam does not open again");
+    assert.deepEqual(turn.got, []);
+  });
+});
+
 // The steps module on the fake programs, with a board in StepsOptions.steering. StepsOptions has
 // no steering field yet, so the options go through a cast.
 

@@ -1,14 +1,17 @@
 // The Codex adapter. It speaks to `codex app-server` over JSON-RPC.
 
 import { StepFailure } from "../failure.js";
+import { Held } from "../held.js";
 import { findProgram } from "../lookup.js";
 import type { Account, FindOptions, Found, Harness, Step, StepEvents } from "../types.js";
 import type { ModelListResponse } from "./generated/v2/ModelListResponse.js";
 import { CODEX, codexEnv, codexLogin, codexPlaces, codexVersion } from "./program.js";
-import { openServer, runCodex } from "./run.js";
+import { openServer, runCodex, type CodexProgram } from "./run.js";
 
 export function createCodexHarness(lookup: FindOptions = {}): Harness {
   const find = (): Found => findProgram(CODEX, lookup);
+  // The servers turns with hold kept open, by thread.
+  const held = new Held<CodexProgram>();
 
   /** The program's path, or the failure that says why the step cannot run. */
   async function ready(): Promise<string> {
@@ -39,12 +42,13 @@ export function createCodexHarness(lookup: FindOptions = {}): Harness {
         } while (cursor);
         return models;
       } finally {
-        server.close();
+        await server.close();
       }
     },
     async run(step: Step, events?: StepEvents) {
-      return runCodex(await ready(), step, events);
+      return runCodex(await ready(), step, events ?? {}, held);
     },
+    release: (sessionId?: string) => held.release(sessionId),
     login: codexLogin,
     places: codexPlaces,
     env: codexEnv,

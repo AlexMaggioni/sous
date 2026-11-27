@@ -15,6 +15,8 @@ const FAKES = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../test
 /** One turn line of the fakes' request log. */
 export interface FakeLine {
   program: string;
+  /** The program's process id. Turns with the same pid ran in one program. */
+  pid: number;
   sessionId: string;
   resume: boolean;
   schema: unknown;
@@ -26,6 +28,16 @@ export interface FakeLine {
 }
 
 export type FakePlace = ReturnType<typeof fakePlace>;
+
+/**
+ * How a later turn went on in an earlier turn's session: "held" in the earlier turn's program,
+ * "resumed" in a new program that resumed the session, else "apart".
+ */
+export function wentOn(earlier: Pick<FakeLine, "pid" | "sessionId"> | undefined, later: Pick<FakeLine, "pid" | "sessionId" | "resume"> | undefined): "held" | "resumed" | "apart" {
+  if (!earlier || !later || later.sessionId !== earlier.sessionId) return "apart";
+  if (later.pid === earlier.pid) return "held";
+  return later.resume ? "resumed" : "apart";
+}
 
 /** A folder with the fakes' log and rules, a project and an account folder per program. */
 export function fakePlace(rules: object[] = []) {

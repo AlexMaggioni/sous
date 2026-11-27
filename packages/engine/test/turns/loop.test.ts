@@ -14,7 +14,7 @@ import { runWorker } from "../../src/runs/worker.js";
 import { createSteps } from "../../src/steps/steps.js";
 import { PERSON, writeAnswer, type InnerRunner } from "../../src/testing.js";
 import { isStepFailedPause, runWorkflow, type JournalEntry, type WorkflowRunOptions } from "../../src/workflow.js";
-import { fakePlace, onFakes, type FakePlace } from "../helpers/fake-steps.js";
+import { fakePlace, onFakes, wentOn, type FakePlace } from "../helpers/fake-steps.js";
 import { journalResume } from "../helpers/journal-resume.js";
 import { quiet, setup } from "../runs/fixture.js";
 
@@ -56,9 +56,10 @@ describe("the loop", () => {
         lines.map((line) => line.prompt),
         ["Build it.", CONTINUE, CONTINUE],
       );
+      // The step's later turns go on in the first turn's open program.
       assert.deepEqual(
-        lines.map((line) => line.resume),
-        [false, true, true],
+        [lines[0]!.resume, ...lines.slice(1).map((line) => wentOn(lines[0], line))],
+        [false, "held", "held"],
       );
       assert.equal(new Set(lines.map((line) => line.sessionId)).size, 1, "one session");
       const rows = agentRows(journal);
@@ -76,10 +77,10 @@ describe("the loop", () => {
     assert.equal(result.result, "Done.");
     const lines = place.lines();
     assert.deepEqual(
-      lines.map((line) => [line.prompt, line.resume]),
+      lines.map((line, i) => [line.prompt, i === 0 ? line.resume : wentOn(lines[0], line)]),
       [
         ["Build it.", false],
-        [CONTINUE, true],
+        [CONTINUE, "held"],
       ],
     );
     assert.equal(lines[1]?.sessionId, lines[0]?.sessionId);

@@ -1,9 +1,12 @@
-// Where Claude Code is, which version the SDK needs, and the environment a step runs in.
+// Where Claude Code is, which version the SDK needs, the environment a step runs in, and how a
+// step starts it.
 
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import type { SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
 import { compareVersions, programVersion, type ProgramInfo } from "../lookup.js";
 import type { Account } from "../types.js";
 
@@ -69,4 +72,15 @@ export function claudeEnv(account: Account | undefined, base: Record<string, str
 function put(env: Record<string, string | undefined>, name: string, value: string | undefined) {
   if (value === undefined || value === "") delete env[name];
   else env[name] = value;
+}
+
+/**
+ * Starts Claude Code for the SDK's spawnClaudeCodeProcess, so the adapter can wait for the process
+ * to exit. Each piece of its stderr goes to stderr, since the SDK reads none from a process it did
+ * not start.
+ */
+export function spawnClaude(options: SpawnOptions, stderr: (text: string) => void): ChildProcessWithoutNullStreams {
+  const child = spawn(options.command, options.args, { cwd: options.cwd, env: options.env, signal: options.signal, windowsHide: true });
+  child.stderr.setEncoding("utf8").on("data", stderr);
+  return child;
 }

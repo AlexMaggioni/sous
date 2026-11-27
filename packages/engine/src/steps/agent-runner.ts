@@ -75,4 +75,11 @@ export interface AgentRunner {
    * with no agent, and the agent's name as a hint in the instructions.
    */
   route?(ask: StepAsk): StepRoute;
+
+  /**
+   * Closes the program a step's turns kept open for the session (request.hold), and settles once
+   * it has exited. The engine calls it when the step ends, before a question waits, and when the
+   * run ends. It never throws. A runner without it keeps no program.
+   */
+  release?(sessionId: string): Promise<void>;
 }

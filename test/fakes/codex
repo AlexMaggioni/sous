@@ -161,6 +161,16 @@ const MODEL = {
 };
 
 const USAGE = { totalTokens: 150, inputTokens: 120, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 30, reasoningOutputTokens: 0 };
+/**
+ * A thread/tokenUsage/updated's counts: last is the response's own, and total runs on across the
+ * thread's turns in this server, as the real one's does.
+ */
+function tokenUsage(thread, last) {
+  const total = { ...(thread.tokens ?? {}) };
+  for (const [key, value] of Object.entries(last)) total[key] = (total[key] ?? 0) + value;
+  thread.tokens = total;
+  return { total, last, modelContextWindow: 272000 };
+}
 /** A rule's usage as Codex counts it, with cached tokens inside inputTokens. */
 function codexUsage(spent) {
   if (!spent) return USAGE;
@@ -480,7 +490,7 @@ async function runTurn(thread, turnId, params) {
 
   if (request?.item) notify("item/completed", { ...base, item: request.item(request.accepts(answer.result ?? {})), completedAtMs: 1700000000500 });
   // A failed or stopped turn still reports what it spent, as the real one does.
-  const spent = () => notify("thread/tokenUsage/updated", { ...base, tokenUsage: { total: codexUsage(decision.usage), last: codexUsage(decision.usage), modelContextWindow: 272000 } });
+  const spent = () => notify("thread/tokenUsage/updated", { ...base, tokenUsage: tokenUsage(thread, codexUsage(decision.usage)) });
   if (turn.interrupted) {
     spent();
     notify("turn/completed", { threadId: thread.id, turn: turnView("interrupted") });
@@ -511,7 +521,7 @@ async function runTurn(thread, turnId, params) {
   notify("item/agentMessage/delta", { ...base, itemId, delta: decision.text });
   const done = { ...item, text: decision.text };
   notify("item/completed", { ...base, item: done, completedAtMs: 1700000001000 });
-  notify("thread/tokenUsage/updated", { ...base, tokenUsage: { total: USAGE, last: USAGE, modelContextWindow: 272000 } });
+  notify("thread/tokenUsage/updated", { ...base, tokenUsage: tokenUsage(thread, USAGE) });
   notify("turn/completed", { threadId: thread.id, turn: turnView("completed", [done]) });
 }
 
@@ -591,7 +601,7 @@ async function playGoal(thread, objective) {
     notify("item/agentMessage/delta", { ...base, itemId, delta: said });
     const done = { ...item, text: said };
     notify("item/completed", { ...base, item: done, completedAtMs: 1700000001000 });
-    notify("thread/tokenUsage/updated", { ...base, tokenUsage: { total: USAGE, last: USAGE, modelContextWindow: 272000 } });
+    notify("thread/tokenUsage/updated", { ...base, tokenUsage: tokenUsage(thread, USAGE) });
     thread.goal.tokensUsed += USAGE.totalTokens;
     // The status leaves active just before the last turn ends, as the real one does.
     if (at === turns) setGoal(thread, "complete");

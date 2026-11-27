@@ -1,11 +1,13 @@
-// One step on Codex: one app-server, one thread, one turn.
+// One turn on Codex: one turn/start on a thread of an app-server. A turn with hold keeps the
+// server and its thread open for the session's next turn, which then sends only its turn/start.
 
 import { readFileSync } from "node:fs";
 import { addUsage, noUsage, StepFailure } from "../failure.js";
 import { toStrictJsonSchema } from "../schema.js";
 import { refusal } from "../tools.js";
+import type { Held, HeldProgram } from "../held.js";
 import type { Failure, HistoryEntry, Step, StepEvents, StepResult } from "../types.js";
-import { configuredServers, DEFAULT_MODE, MODES, mergeLimits, resetAt, threadConfig, toolNotes, turnUsage } from "./config.js";
+import { configuredServers, DEFAULT_MODE, MODES, type Mode, mergeLimits, resetAt, threadConfig, toolNotes, turnUsage } from "./config.js";
 import type { AccountRateLimitsUpdatedNotification } from "./generated/v2/AccountRateLimitsUpdatedNotification.js";
 import type { CommandExecutionRequestApprovalResponse } from "./generated/v2/CommandExecutionRequestApprovalResponse.js";
 import type { ErrorNotification } from "./generated/v2/ErrorNotification.js";
@@ -37,7 +39,7 @@ export async function openServer(path: string, env: Record<string, string | unde
       capabilities: { experimentalApi: true, requestAttestation: false },
     });
   } catch (error) {
-    server.close();
+    await server.close();
     throw error;
   }
   server.notify("initialized");
@@ -63,7 +65,57 @@ function turnInput(step: Step): UserInput[] {
   ];
 }
 
-export async function runCodex(path: string, step: Step, events: StepEvents = {}): Promise<StepResult> {
+/**
+ * Answers what the server asks during a turn: approvals by the step's tool lists, and no question
+ * to a person. running holds the tool each MCP server runs now, since an MCP approval names only
+ * the server.
+ */
+function requestHandler(step: Step, history: (entry: Omit<HistoryEntry, "at">) => void, running: Map<string, string>) {
+  function decline(tool: string, why: string) {
+    history({ role: "tool", kind: "toolResult", text: `Declined: ${why}`, toolName: tool, isError: true });
+  }
+
+  return function onRequest(method: string, params: unknown): unknown {
+    switch (method) {
+      case "item/commandExecution/requestApproval": {
+        const why = refusal(step.tools, "Bash");
+        if (why) decline("Bash", why);
+        return { decision: why ? "decline" : "accept" } satisfies CommandExecutionRequestApprovalResponse;
+      }
+      case "item/fileChange/requestApproval": {
+        const why = refusal(step.tools, "Edit") ?? refusal(step.tools, "Write");
+        if (why) decline("Edit", why);
+        return { decision: why ? "decline" : "accept" } satisfies FileChangeRequestApprovalResponse;
+      }
+      case "item/permissions/requestApproval": {
+        // Extra sandbox rights for this turn only. The deny list acts on the actions themselves.
+        const { permissions } = params as PermissionsRequestApprovalParams;
+        return {
+          permissions: { ...(permissions.network ? { network: permissions.network } : {}), ...(permissions.fileSystem ? { fileSystem: permissions.fileSystem } : {}) },
+          scope: "turn",
+        } satisfies PermissionsRequestApprovalResponse;
+      }
+      case "mcpServer/elicitation/request": {
+        const p = params as McpServerElicitationRequestParams;
+        const meta = p._meta as { codex_approval_kind?: string } | null;
+        // A tool approval runs unless the lists refuse it. A form wants a person, so it is declined.
+        if (meta?.codex_approval_kind !== "mcp_tool_call") return { action: "decline", content: null, _meta: null } satisfies McpServerElicitationRequestResponse;
+        const tool = `mcp__${p.serverName}__${running.get(p.serverName) ?? ""}`;
+        const why = refusal(step.tools, tool);
+        if (why) decline(tool, why);
+        return { action: why ? "decline" : "accept", content: null, _meta: null } satisfies McpServerElicitationRequestResponse;
+      }
+      case "item/tool/requestUserInput":
+        throw new RpcError("No one answers questions during a step. Ask the question in your answer instead.", -32000);
+      case "currentTime/read":
+        return { currentTimeAt: Math.floor(Date.now() / 1000) };
+      default:
+        throw new RpcError(`sous does not answer ${method}.`, -32601);
+    }
+  };
+}
+
+export async function runCodex(path: string, step: Step, events: StepEvents, held: Held<CodexProgram>): Promise<StepResult> {
   const notes: string[] = [...toolNotes(step)];
   if (step.skills?.length) notes.push(`Codex gets no skills from a step, so ${step.skills.join(", ")} did not reach it.`);
   let mode = MODES[DEFAULT_MODE]!;
@@ -166,50 +218,8 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
     }
   }
 
-  function decline(tool: string, why: string) {
-    history({ role: "tool", kind: "toolResult", text: `Declined: ${why}`, toolName: tool, isError: true });
-  }
-
-  function onRequest(method: string, params: unknown): unknown {
-    switch (method) {
-      case "item/commandExecution/requestApproval": {
-        const why = refusal(step.tools, "Bash");
-        if (why) decline("Bash", why);
-        return { decision: why ? "decline" : "accept" } satisfies CommandExecutionRequestApprovalResponse;
-      }
-      case "item/fileChange/requestApproval": {
-        const why = refusal(step.tools, "Edit") ?? refusal(step.tools, "Write");
-        if (why) decline("Edit", why);
-        return { decision: why ? "decline" : "accept" } satisfies FileChangeRequestApprovalResponse;
-      }
-      case "item/permissions/requestApproval": {
-        // Extra sandbox rights for this turn only. The deny list acts on the actions themselves.
-        const { permissions } = params as PermissionsRequestApprovalParams;
-        return {
-          permissions: { ...(permissions.network ? { network: permissions.network } : {}), ...(permissions.fileSystem ? { fileSystem: permissions.fileSystem } : {}) },
-          scope: "turn",
-        } satisfies PermissionsRequestApprovalResponse;
-      }
-      case "mcpServer/elicitation/request": {
-        const p = params as McpServerElicitationRequestParams;
-        const meta = p._meta as { codex_approval_kind?: string } | null;
-        // A tool approval runs unless the lists refuse it. A form wants a person, so it is declined.
-        if (meta?.codex_approval_kind !== "mcp_tool_call") return { action: "decline", content: null, _meta: null } satisfies McpServerElicitationRequestResponse;
-        const tool = `mcp__${p.serverName}__${running.get(p.serverName) ?? ""}`;
-        const why = refusal(step.tools, tool);
-        if (why) decline(tool, why);
-        return { action: why ? "decline" : "accept", content: null, _meta: null } satisfies McpServerElicitationRequestResponse;
-      }
-      case "item/tool/requestUserInput":
-        throw new RpcError("No one answers questions during a step. Ask the question in your answer instead.", -32000);
-      case "currentTime/read":
-        return { currentTimeAt: Math.floor(Date.now() / 1000) };
-      default:
-        throw new RpcError(`sous does not answer ${method}.`, -32601);
-    }
-  }
-
-  let server: AppServer | undefined;
+  const kept = await held.take(step.resume, codexFits(path, step));
+  let server: AppServer | undefined = kept?.server;
   let stopTimer: NodeJS.Timeout | undefined;
   const stop = () => {
     if (threadId && turnId) server?.request("turn/interrupt", { threadId, turnId }).catch(() => undefined);
@@ -219,40 +229,29 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
   step.signal?.addEventListener("abort", stop, { once: true });
   history({ role: "user", kind: "text", text: step.prompt });
 
-  let turn: Pick<Turn, "status" | "error">;
+  let turn: Pick<Turn, "status" | "error"> | undefined;
+  let answer: StepResult | undefined;
+  // What config/read gave that the step could not honor. A kept program brings its own.
+  let configNotes: string[] = kept?.notes ?? [];
   try {
-    server = await openServer(path, codexEnv(step.account), step.cwd);
-    server.handlers = { notification: onNotification, request: onRequest };
-    const read = await server.request("config/read", { includeLayers: true, cwd: step.cwd });
-    const { config, notes: configNotes } = threadConfig(step, configuredServers(read));
-    notes.push(...configNotes);
-    const thread = {
-      cwd: step.cwd,
-      approvalPolicy: mode.approvalPolicy,
-      approvalsReviewer: mode.approvalsReviewer,
-      sandbox: mode.sandbox,
-      config,
-      ...(step.model ? { model: step.model } : {}),
-      ...(step.instructions ? { developerInstructions: step.instructions } : {}),
-    };
-    let opened: ThreadOpened;
-    if (step.resume) {
-      try {
-        opened = await server.request("thread/resume", { threadId: step.resume, ...thread });
-      } catch (error) {
-        if (isThreadError(error)) fail(`No Codex thread ${step.resume} to resume.`, { kind: "no_session", sessionId: step.resume });
-        throw error;
-      }
+    const handlers = { notification: onNotification, request: requestHandler(step, history, running) };
+    if (kept) {
+      threadId = kept.threadId;
+      model = step.model || kept.model;
+      kept.server.handlers = handlers;
     } else {
-      opened = await server.request("thread/start", thread);
+      server = await openServer(path, codexEnv(step.account), step.cwd);
+      server.handlers = handlers;
+      const opened = await openThread(server, step, mode, (found) => (configNotes = found), fail);
+      threadId = opened.thread.id;
+      model = opened.model || model;
     }
-    threadId = opened.thread.id;
-    model = opened.model || model;
+    notes.push(...configNotes);
     events.session?.(threadId);
     events.model?.(model);
     if (step.signal?.aborted) fail("The step was stopped.", { kind: "stopped" });
 
-    const started = await server.request("turn/start", {
+    const started = await server!.request("turn/start", {
       threadId,
       input: turnInput(step),
       approvalPolicy: mode.approvalPolicy,
@@ -264,14 +263,24 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
     });
     turnId ??= started.turn.id;
     if (!turnEnded) {
-      seam = steerTurn({ server, threadId, turnId, delivered: (told) => history({ role: "user", kind: "text", text: told }), note: (note) => notes.push(note) });
+      seam = steerTurn({ server: server!, threadId, turnId, delivered: (told) => history({ role: "user", kind: "text", text: told }), note: (note) => notes.push(note) });
       events.steer?.(seam.send);
     }
     if (step.signal?.aborted) stop();
-    const exited = server.exited.then((why): never => {
+    const exited = server!.exited.then((why): never => {
       throw new RpcError(server?.stderr.trim() || why, -32000);
     });
     turn = await Promise.race([turnDone, exited]);
+    if (turn.status === "completed" && !step.signal?.aborted) {
+      answer = { sessionId: threadId, model, text, usage: spent, ...(notes.length ? { notes } : {}) };
+      if (step.schema) {
+        try {
+          answer = { ...answer, value: JSON.parse(text) };
+        } catch {
+          answer = undefined;
+        }
+      }
+    }
   } catch (error) {
     if (error instanceof StepFailure) throw error;
     if (step.signal?.aborted) fail("The step was stopped.", { kind: "stopped" });
@@ -283,22 +292,23 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
     closeSeam();
     clearTimeout(stopTimer);
     step.signal?.removeEventListener("abort", stop);
-    if (server && threadId) await withTimeout(server.request("thread/unsubscribe", { threadId }), 2000);
-    server?.close();
+    // A turn that completed keeps its program when it asked to, also when its answer missed the
+    // schema, since the repair turn goes on in it. Any other turn closes it.
+    const completed = turn?.status === "completed" && !step.signal?.aborted;
+    if (server && threadId && completed && step.hold) {
+      await held.keep(threadId, codexProgram(server, threadId, model, configNotes, codexFits(path, step)));
+    } else if (server) {
+      await shut(server, threadId);
+    }
   }
 
+  if (answer) return answer;
+  // The try returns or throws unless the turn ended.
+  turn = turn!;
   if (turn.status === "interrupted" || step.signal?.aborted) {
     return fail("The step was stopped.", step.signal?.aborted ? { kind: "stopped" } : { kind: "failed", retry: true });
   }
-  if (turn.status === "completed") {
-    const result: StepResult = { sessionId: threadId!, model, text, usage: spent, ...(notes.length ? { notes } : {}) };
-    if (!step.schema) return result;
-    try {
-      return { ...result, value: JSON.parse(text) };
-    } catch {
-      return fail("Codex gave an answer that is not JSON, so it has no value for the schema.", { kind: "schema", text });
-    }
-  }
+  if (turn.status === "completed") return fail("Codex gave an answer that is not JSON, so it has no value for the schema.", { kind: "schema", text });
   const error = turn.error ?? lastError;
   const info = error?.codexErrorInfo;
   const message = error?.message ?? "Codex ended the turn without an answer.";
@@ -308,6 +318,63 @@ export async function runCodex(path: string, step: Step, events: StepEvents = {}
   }
   if (info === "unauthorized") return fail(message, { kind: "auth" });
   return fail(message, { kind: "failed", retry: !(typeof info === "string" && FINAL_ERRORS.has(info)) });
+}
+
+/** A Codex app-server a turn kept open, with its thread. */
+export interface CodexProgram extends HeldProgram {
+  server: AppServer;
+  threadId: string;
+  /** The model of the turn that kept it. */
+  model: string;
+  /** What config/read gave that the step could not honor, for each later turn's notes. */
+  notes: string[];
+}
+
+/**
+ * The settings a turn must share with a kept program to run in it. Each turn/start carries its own
+ * model, effort and schema, so those stay out.
+ */
+function codexFits(path: string, step: Step): string {
+  return JSON.stringify([path, step.cwd, step.account ?? null, step.instructions ?? null, step.tools ?? null, step.skills ?? null, step.mcpServers ?? null, step.mode ?? null]);
+}
+
+function codexProgram(server: AppServer, threadId: string, model: string, notes: string[], fits: string): CodexProgram {
+  return { fits, server, threadId, model, notes, alive: () => server.running, close: () => shut(server, threadId) };
+}
+
+/** Leaves the thread and stops the server, and settles once it has exited. */
+async function shut(server: AppServer, threadId: string | undefined): Promise<void> {
+  if (threadId && server.running) await withTimeout(server.request("thread/unsubscribe", { threadId }), 2000);
+  await server.close();
+}
+
+/** Reads the config, then starts the step's thread or resumes its session. */
+async function openThread(
+  server: AppServer,
+  step: Step,
+  mode: Mode,
+  found: (notes: string[]) => void,
+  fail: (message: string, failure: Failure) => never,
+): Promise<ThreadOpened> {
+  const read = await server.request("config/read", { includeLayers: true, cwd: step.cwd });
+  const { config, notes } = threadConfig(step, configuredServers(read));
+  found(notes);
+  const thread = {
+    cwd: step.cwd,
+    approvalPolicy: mode.approvalPolicy,
+    approvalsReviewer: mode.approvalsReviewer,
+    sandbox: mode.sandbox,
+    config,
+    ...(step.model ? { model: step.model } : {}),
+    ...(step.instructions ? { developerInstructions: step.instructions } : {}),
+  };
+  if (!step.resume) return server.request("thread/start", thread);
+  try {
+    return await server.request("thread/resume", { threadId: step.resume, ...thread });
+  } catch (error) {
+    if (isThreadError(error)) fail(`No Codex thread ${step.resume} to resume.`, { kind: "no_session", sessionId: step.resume });
+    throw error;
+  }
 }
 
 /** The reset time from account/rateLimits/read, on a fresh server since the step's has closed. */
@@ -322,7 +389,7 @@ async function readReset(path: string, step: Step): Promise<string | undefined> 
   } catch {
     return undefined;
   } finally {
-    server?.close();
+    await server?.close();
   }
 }
 

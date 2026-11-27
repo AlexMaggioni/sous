@@ -10,7 +10,7 @@ import { Type } from "typebox";
 import { WorkflowError, WorkflowErrorCode } from "../src/errors.js";
 import type { StepRequest } from "../src/steps/agent-run.js";
 import { createSteps } from "../src/steps/steps.js";
-import { fakePlace, onFakes, routed, type FakeLine } from "./helpers/fake-steps.js";
+import { fakePlace, onFakes, routed, wentOn, type FakeLine } from "./helpers/fake-steps.js";
 
 for (const name of ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) delete process.env[name];
 
@@ -66,10 +66,11 @@ for (const [harness, model] of [
     it("with a slash prompt and no schema runs its turn with none, then the report turn asks for the status in the same session", async () => {
       const { value, lines } = await step("/canary", DONE, [], model);
       assert.deepEqual(
-        lines.map((line) => [line.prompt, fields(line), line.resume]),
+        lines.map((line, i) => [line.prompt, fields(line), i === 0 ? line.resume : wentOn(lines[0], line)]),
         [
           ["/canary", null, false],
-          [REPORT, STATUS, true],
+          // Claude Code takes a schema once per program, so its report turn resumes the session in a new one.
+          [REPORT, STATUS, harness === "claude" ? "resumed" : "held"],
         ],
       );
       assert.equal(lines[1]?.sessionId, lines[0]?.sessionId);
@@ -81,10 +82,11 @@ for (const [harness, model] of [
     it("with a slash prompt and a schema runs its turn with none, then the report turn with the status schema", async () => {
       const { value, lines } = await step("/canary", { ...DONE, schema: SCHEMA }, [], model);
       assert.deepEqual(
-        lines.map((line) => [line.prompt, fields(line), line.resume]),
+        lines.map((line, i) => [line.prompt, fields(line), i === 0 ? line.resume : wentOn(lines[0], line)]),
         [
           ["/canary", null, false],
-          [REPORT, STATUS, true],
+          // Claude Code takes a schema once per program, so its report turn resumes the session in a new one.
+          [REPORT, STATUS, harness === "claude" ? "resumed" : "held"],
         ],
       );
       assert.equal(lines[1]?.sessionId, lines[0]?.sessionId);
@@ -145,10 +147,10 @@ describe("a status that does not fit", () => {
   it("gets a repair turn with the report prompt and the status schema, in the same session", async () => {
     const { value, lines } = await step("Build it.", DONE, [{ answer: { verdict: "fine" }, times: 1 }]);
     assert.deepEqual(
-      lines.map((line) => [line.prompt, fields(line), line.resume]),
+      lines.map((line, i) => [line.prompt, fields(line), i === 0 ? line.resume : wentOn(lines[0], line)]),
       [
         ["Build it.", STATUS, false],
-        [REPORT, STATUS, true],
+        [REPORT, STATUS, "held"],
       ],
     );
     assert.equal(lines[1]?.sessionId, lines[0]?.sessionId);

@@ -97,13 +97,28 @@ export class AppServer {
     this.write({ method, ...(params === undefined ? {} : { params }) });
   }
 
-  /** Stops the server: stdin closes, then SIGTERM if it is still running a second later. */
-  close() {
-    if (this.ended) return;
-    this.child.stdin.end();
-    const timer = setTimeout(() => this.child.kill("SIGTERM"), 1000);
-    timer.unref();
-    this.child.once("exit", () => clearTimeout(timer));
+  /** Whether the server still runs. */
+  get running(): boolean {
+    return this.ended === undefined;
+  }
+
+  /**
+   * Stops the server: stdin closes, then SIGTERM if it is still running a second later, and
+   * SIGKILL a second after that. Settles once it has exited.
+   */
+  close(): Promise<void> {
+    if (!this.ended) {
+      this.child.stdin.end();
+      const term = setTimeout(() => this.child.kill("SIGTERM"), 1000);
+      const kill = setTimeout(() => this.child.kill("SIGKILL"), 2000);
+      term.unref();
+      kill.unref();
+      void this.exited.then(() => {
+        clearTimeout(term);
+        clearTimeout(kill);
+      });
+    }
+    return this.exited.then(() => undefined);
   }
 
   private write(message: object) {

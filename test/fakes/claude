@@ -297,8 +297,6 @@ function result(fields) {
   if (turn?.uuid) lifecycle(turn.uuid, "completed");
 }
 
-let initSent = false;
-
 async function runTurn(message, fromTell = false) {
   const prompt = promptText(message);
   const texts = promptTexts(message);
@@ -341,26 +339,24 @@ async function runTurn(message, fromTell = false) {
   // The replay of the user message tells the SDK client which turn is now running.
   write({ ...message, session_id: sessionId, isReplay: true });
   sessionState("running");
-  if (!initSent) {
-    initSent = true;
-    write({
-      type: "system",
-      subtype: "init",
-      cwd: process.cwd(),
-      tools: sessionTools(),
-      mcp_servers: mcpSummary(mcpServers()).map((server) => ({ name: server.name, status: "connected" })),
-      model: modelName(state.model),
-      permissionMode: typeof flags["permission-mode"] === "string" ? flags["permission-mode"] : "default",
-      slash_commands: [],
-      apiKeySource: "none",
-      claude_code_version: VERSION,
-      output_style: "default",
-      agents: [],
-      skills: [],
-      plugins: [],
-      ...base(),
-    });
-  }
+  // Claude Code sends init at the start of every turn, also on a later turn in the same process.
+  write({
+    type: "system",
+    subtype: "init",
+    cwd: process.cwd(),
+    tools: sessionTools(),
+    mcp_servers: mcpSummary(mcpServers()).map((server) => ({ name: server.name, status: "connected" })),
+    model: modelName(state.model),
+    permissionMode: typeof flags["permission-mode"] === "string" ? flags["permission-mode"] : "default",
+    slash_commands: [],
+    apiKeySource: "none",
+    claude_code_version: VERSION,
+    output_style: "default",
+    agents: [],
+    skills: [],
+    plugins: [],
+    ...base(),
+  });
 
   const model = modelName(state.model);
   const toolId = `toolu_fake_${randomUUID().slice(0, 8)}`;

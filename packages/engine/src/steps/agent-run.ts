@@ -149,6 +149,9 @@ export interface EngineFields<S extends TSchema | undefined = TSchema | undefine
    *  the reopened session instead of the resume instruction. A kept turn never runs fresh. On
    *  another program, or when the program lost the session, the step fails. */
   continueWithPrompt?: boolean;
+  /** This turn is one of a step's turns: its program stays open for the step's next turn, until
+   *  the engine calls AgentRunner.release with the session. NOT hashed. */
+  hold?: boolean;
   /** The engine's deterministic journal index for THIS agent() call — the same
    *  value as JournalEntry.index / WorkflowCallRecord.index. Assigned at lexical
    *  call time BEFORE the concurrency limiter; identical on every retry attempt.

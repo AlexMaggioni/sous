@@ -6,6 +6,8 @@
 // An answer that does not fit gets repair turns in the same session, with no cap unless the step
 // sets maxRepairs. Code steps never come here: the engine runs them.
 // A test or the dry run gives `inner`, a runner of its own, and then no program starts.
+// Every turn asks its program to stay open. A call that does not hold (StepRequest.hold), or that
+// fails, closes it at its end. A held one stays open until release() or dispose().
 
 import type { TSchema } from "typebox";
 import {
@@ -25,7 +27,7 @@ import {
 } from "@sous-run/harnesses";
 import type { AgentHistoryEntry } from "./agent-history.js";
 import { activityStep, type ActivityEntry, type ActivityStep, type OnActivity } from "./activity.js";
-import type { LiveCall, SteeringBoard } from "./steering.js";
+import { CallSeam, type LiveCall, type SteeringBoard } from "./steering.js";
 import type { AgentResultProvenance, AgentUsage, ContinuationAttempt, PlannedRequest, StepLimits, StepRequest } from "./agent-run.js";
 import type { AgentRunner, StepAsk, StepRoute } from "./agent-runner.js";
 import type { AgentSessionRef } from "../workflow-result.js";
@@ -135,7 +137,7 @@ const toHistory = (entry: HistoryEntry): AgentHistoryEntry => ({
   timestamp: entry.at,
 });
 
-export function createSteps(options: StepsOptions): AgentRunner & { route(ask: StepAsk): StepRoute; dispose(): Promise<void> } {
+export function createSteps(options: StepsOptions): AgentRunner & { route(ask: StepAsk): StepRoute; release(sessionId: string): Promise<void>; dispose(): Promise<void> } {
   const lookup = options.programs ?? (options.inner ? undefined : () => ({}));
   const programs = new Map<HarnessId, Promise<Adapter | { problem: string }>>();
   const noteFor = noteTaker(options.note);
@@ -242,10 +244,22 @@ export function createSteps(options: StepsOptions): AgentRunner & { route(ask: S
     }
   };
 
+  /** Closes the session's kept program on each program found, or every kept one. */
+  const release = async (sessionId?: string) => {
+    await Promise.all(
+      [...programs.values()].map(async (pending) => {
+        const program = await pending.catch(() => undefined);
+        if (program && !("problem" in program)) await program.release(sessionId);
+      }),
+    );
+  };
+
   return {
     route: (ask) => routeStep(options.agents, ask),
     run,
+    release: (sessionId) => release(sessionId),
     async dispose() {
+      await release();
       await options.inner?.dispose?.();
     },
   };
@@ -330,6 +344,7 @@ async function runOnHarness(
     ...(mcpServers.length ? { mcpServers } : {}),
     ...(call.mode ? { mode: call.mode } : {}),
     ...(signal ? { signal } : {}),
+    hold: true,
   };
 
   // What the attempt reports once, at the end.
@@ -387,6 +402,7 @@ async function runOnHarness(
   signal?.addEventListener("abort", stopped, { once: true });
   // Each turn's first user entry is its prompt. A later one is a tell the program read.
   let prompted = false;
+  const seam = board && new CallSeam(board.board, board.call);
   const events: StepEvents = {
     session: open,
     history: (entry) => {
@@ -398,7 +414,7 @@ async function runOnHarness(
       history.push(toHistory(entry));
       activity?.({ kind: ACTIVITY_KINDS[entry.kind], ...(entry.toolName === undefined ? {} : { tool: entry.toolName }), text: entry.text });
     },
-    ...(board ? { steer: (send) => (send ? board.board.open(board.call, send) : board.board.close(board.call)) } : {}),
+    ...(seam ? { steer: seam.steer } : {}),
     // The turn's running total, on top of the turns of this attempt before it.
     usage: (turn) => {
       running = agentUsage(spent ? addUsage(spent, turn) : turn, costWith(turn.costUsd, resuming) ?? 0);
@@ -432,6 +448,7 @@ async function runOnHarness(
   };
 
   const recorded = call.continueFromSession;
+  let failed = false;
   try {
     // The record names the model, or the harness alone when the step picks none.
     if (model) call.onModelResolved?.(withHarness(harness, model));
@@ -515,11 +532,13 @@ async function runOnHarness(
       agentLabel: label,
     });
   } catch (error) {
+    failed = true;
     throw mapFailure(error, harness, label, call.signal);
   } finally {
     signal?.removeEventListener("abort", stopped);
-    // The adapter closes the seam at the end of each turn. A turn that threw may not have.
-    if (board) board.board.close(board.call);
+    seam?.close();
+    // A held call keeps its program for the step's next turn. Any other closes it here.
+    if (opened && (failed || !call.hold)) await adapter.release(opened);
     if (spent) {
       call.onUsage?.(agentUsage(spent, cost ?? 0));
       if (gauge !== undefined) call.onSessionCostGauge?.(gauge);
