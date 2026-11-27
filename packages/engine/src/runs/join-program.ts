@@ -3,6 +3,7 @@
 // person's terminal. MCP servers that a script passed inline are not in the session's record, so
 // the person's program opens without them.
 
+import { sep } from "node:path";
 import { createHarness, type Harness } from "@sous-run/harnesses";
 import { runAccounts } from "../accounts.js";
 import { envFor, harnessName, isHarness, lookupMcpServers, lookupSettings, stepModel } from "../agents.js";
@@ -68,5 +69,10 @@ export function joinProgram(paths: HomePaths, target: JoinTarget, write: (name: 
     ...(mcpServers.length ? { mcpServers } : {}),
   };
   const args = program.joinArgs(join, write);
+  // Claude Code asks whether to trust a folder it has not opened by hand, and its No closes it.
+  // The run's scratch folder and its worktrees are folders sous made under its home.
+  if (harness === "claude" && session.cwd.startsWith(`${paths.home}${sep}`)) {
+    notes.push("Claude Code may ask whether you trust this folder. sous made it for the run, so answer yes. No closes Claude Code.");
+  }
   return { name: harnessName(harness), path: found.path, args: args.args, env: opened, cwd: session.cwd, notes: [...notes, ...args.notes] };
 }

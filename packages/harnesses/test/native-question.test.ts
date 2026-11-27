@@ -83,6 +83,15 @@ for (const program of ["claude", "codex"] as const) {
       assert.equal(next.asked, undefined);
     });
 
+    test("a turn that asked counts what its messages spent", async () => {
+      const c = newCase(program);
+      const answer = await c.run({ prompt: "Do the task.", ask: true });
+      assert.equal(answer.asked, QUESTION);
+      // The fakes' model message spends 120 in and 30 out. Claude Code's result for a turn that
+      // asked counts none of it.
+      assert.equal(answer.usage.total, 150);
+    });
+
     test("with ask and a schema, the question comes back with no value and no failure", async () => {
       const c = newCase(program);
       const answer = await c.run({ prompt: "Do the task.", ask: true, schema: SCHEMA });

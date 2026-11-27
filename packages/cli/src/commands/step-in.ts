@@ -68,8 +68,12 @@ export async function stepIn(ctx: Ctx, target: JoinTarget): Promise<Joined | { s
     const program = joinProgram(paths, target, files.write, ctx.env);
     const say = (line: string) => machine.err(line);
     const question = joinQuestion(paths, target);
-    // The agent's question is in its session, where the person reads it.
-    if (question) say(`"${target.label}" asked you a question in its session.`);
+    // The agent's question is in its session, where the person reads it. sous ended the turn
+    // there, so the program shows the question as declined or interrupted.
+    if (question) {
+      say(`"${target.label}" asked you a question in its session.`);
+      say(`${program.name} shows it as declined or interrupted, because sous ended the turn there. Answer it in your own words.`);
+    }
     const stop = new AbortController();
     const off = machine.onStop(() => stop.abort());
     try {

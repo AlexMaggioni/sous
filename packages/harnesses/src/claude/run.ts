@@ -277,7 +277,12 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
   const perMessage = new Map<string, Usage>();
   let spent = noUsage();
   let finalUsage: Usage | undefined;
-  const total = () => finalUsage ?? spent;
+  // A turn that sous ends on a question gets a result that counts nothing, though its messages
+  // spent tokens. The larger count wins, with the result's cost.
+  const total = (): Usage => {
+    if (finalUsage === undefined || finalUsage.total >= spent.total) return finalUsage ?? spent;
+    return finalUsage.costUsd === undefined ? spent : { ...spent, costUsd: finalUsage.costUsd };
+  };
   let opened = false;
   let heard = false;
   let marked = false;
@@ -361,7 +366,7 @@ export async function runClaude(path: string, step: Step, events: StepEvents, he
             const ok = message.subtype === "success" && !message.is_error;
             const value = ok && step.schema ? message.structured_output : undefined;
             const said = (ok && message.result) || text;
-            answer = { sessionId, model: program.model, text: said, usage: finalUsage, asked, ...(value !== undefined ? { value } : {}), ...(notes.length ? { notes } : {}) };
+            answer = { sessionId, model: program.model, text: said, usage: total(), asked, ...(value !== undefined ? { value } : {}), ...(notes.length ? { notes } : {}) };
           } else if (message.subtype === "success" && !message.is_error) {
             const said = message.result || text;
             const cut = message.stop_reason ? STOPS[message.stop_reason] : undefined;

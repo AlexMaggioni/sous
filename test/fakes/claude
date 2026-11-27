@@ -400,9 +400,11 @@ async function runTurn(message, fromTell = false) {
     write(assistant("<synthetic>", text, { error: "server_error" }));
     result({ subtype: "success", is_error: true, result: text, ...spent });
   } else if (asked?.interrupted) {
-    // Claude Code 2.1.332 ends the turn this way after a deny with interrupt.
+    // Claude Code 2.1.332 ends the turn this way after a deny with interrupt. Its usage counts
+    // nothing, though the model message before it spent tokens.
     result({
       subtype: "error_during_execution",
+      usage: { ...apiUsage({}), server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 }, service_tier: "standard" },
       is_error: true,
       errors: ["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use"],
       stop_reason: "tool_use",
