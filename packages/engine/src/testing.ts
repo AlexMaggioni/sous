@@ -24,6 +24,7 @@ export { createRun } from "./runs/launch.js";
 export { processAlive, requestStepStop, requestTell, saveRecord, updateRecord } from "./runs/records.js";
 export { tick } from "./runs/service.js";
 export { enginePersistence, readState, stopRequestFile } from "./runs/store.js";
+export { readStatus } from "./turns/status.js";
 export { workflowProjectPaths } from "./runs/persistence/project-paths.js";
 export type { PersistedRunState } from "./runs/persistence/run-persistence.js";
 export type { InnerRunner } from "./steps/steps.js";

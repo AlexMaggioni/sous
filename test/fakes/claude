@@ -20,7 +20,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { appendLog, debug, decide, loginPresent, mcpSummary, readJsonLines, sessionMessages, statusObject, valueWith, waitFor } from "./lib.mjs";
+import { appendLog, debug, decide, loginPresent, mcpSummary, readJsonLines, sessionMessages, statusObject, valueWith, waitFor, writeFiles } from "./lib.mjs";
 
 const VERSION = process.env.FAKE_VERSION ?? "2.1.330";
 const argv = process.argv.slice(2);
@@ -410,6 +410,7 @@ async function runTurn(message, fromTell = false) {
     write(assistant(model, text));
     result({ subtype: "success", is_error: false, result: text });
   } else {
+    writeFiles(decision.files, process.cwd());
     streamText(model, decision.text);
     write(assistant(model, decision.text));
     result({ subtype: "success", is_error: false, result: decision.text, ...(decision.stop ? { stop_reason: decision.stop } : {}), ...(schema ? { structured_output: decision.value } : {}) });
@@ -466,7 +467,9 @@ async function playGoal(model, decision, turn) {
       write({ type: "user", message: { role: "user", content: [{ type: "text", text: feedback }] }, parent_tool_use_id: null, ...base() });
     }
     appendLog({ program: "claude", sessionId, goal: { turn: at, of: decision.goal } });
-    const said = at === turns && !schema ? decision.text : `Working on the goal, model turn ${at}.`;
+    const met = at === turns && !schema;
+    if (met) writeFiles(decision.files, process.cwd());
+    const said = met ? decision.text : `Working on the goal, model turn ${at}.`;
     streamText(model, said);
     write(assistant(model, said));
     if (turn.interrupted) break;
